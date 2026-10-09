@@ -85,7 +85,8 @@ While it runs:
 
 - Work on a branch, open a PR against `main`.
 - A PR is required, with 1 code-owner approval (CODEOWNERS + the branch ruleset); new commits dismiss it.
-- Required checks: `owner-approval`, `specs`, `protected-paths` and `signed-commits`. Commits must be signed.
+- Required checks: `owner-approval`, `specs` (each mod and the marketplace) and `signed-commits`. Commits must be signed.
+- `protected-paths` is a warning, not a requirement: it turns red when a PR touches `.github/`, CODEOWNERS or removes or shrinks tests, so the owner reviews those changes with extra care.
 - The `owner-approval` status is success only when the owner's latest review is an approval of the PR's current head; the `owner-approved` label mirrors it and a label set by hand is overwritten.
 - No direct pushes and no force pushes to `main`, not even for admins: an admin can bypass the rules only by merging a PR.
 
