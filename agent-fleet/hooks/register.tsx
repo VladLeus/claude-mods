@@ -11,15 +11,20 @@ import {
   autopilotLine,
   bar,
   basename,
+  beatFile,
+  clean,
   displayName,
+  identityFromRows,
   liveness,
   messageLines,
-  pickIdentity,
   shortId,
   shortModel,
   tokensK,
   upsertLink,
+  validBadge,
+  validBeat,
   visible,
+  MAX_BEAT_BYTES,
 } from './fleet'
 
 const PANE = 'agent-fleet'
@@ -53,9 +58,10 @@ let dir = ''
 let transcript = ''
 let writing: Promise<void> = Promise.resolve()
 let isPaneOpen = false
+let isDirReady = false
 
 function fileOf(id: string): string {
-  return `${dir}/${id.replace(/[^\w.-]/g, '_')}.json`
+  return `${dir}/${beatFile(id)}`
 }
 
 function setAgent(id: string, change: (row: AgentRow) => AgentRow): void {
@@ -69,14 +75,14 @@ async function refreshIdentity($: EngineInterface): Promise<void> {
   let out = ''
   try {
     const grep = $.process.spawn({
-      argv: ['grep', '-o', '-E', '"type":"(custom-title|agent-name|ai-title|agent-color)","[a-zA-Z]+":"[^"]*"', transcript],
+      argv: ['/usr/bin/grep', '-E', '^\\{"type":"(custom-title|agent-name|ai-title|agent-color)"', '--', transcript],
     })
     for await (const chunk of grep) if (chunk.stream === 'stdout') out += chunk.text
   } catch {
     return
   }
-  const identity = pickIdentity(out)
-  me.name = identity.name
+  const identity = identityFromRows(out.split('\n'))
+  me.name = identity.name === null ? null : clean(identity.name)
   me.color = identity.color
 }
 
@@ -101,8 +107,8 @@ async function refreshCounts($: EngineInterface): Promise<void> {
     if (!me.agents.some(row => row.id === info.id)) {
       me.agents.push({
         id: info.id,
-        label: info.description || info.name || info.type,
-        type: info.type,
+        label: clean(info.description || info.name || info.type),
+        type: clean(info.type),
         model: null,
         status,
         startedAt: now,
@@ -131,9 +137,9 @@ function beat($: EngineInterface): Promise<void> {
 
 /** The autopilot mod's status for a session, when it runs there; null otherwise. */
 async function readAutopilot($: EngineInterface, id: string): Promise<AutopilotBadge | null> {
+  // `id` has passed validBeat: a plain file-safe name equal to its beat file's stem.
   try {
-    const badge = JSON.parse(await $.fs.read(`${dir.replace(/\/fleet$/, '/autopilot')}/${id}.json`)) as AutopilotBadge
-    return badge.isOn ? badge : null
+    return validBadge(JSON.parse(await $.fs.read(`${dir.replace(/\/fleet$/, '/autopilot')}/${id}.json`)))
   } catch {
     return null
   }
@@ -142,20 +148,23 @@ async function readAutopilot($: EngineInterface, id: string): Promise<AutopilotB
 async function scan($: EngineInterface): Promise<void> {
   if (!dir) return
   const entries = await $.fs.list(dir).catch(() => [])
-  const beats: Beat[] = []
+  const byId = new Map<string, Beat>()
   for (const entry of entries) {
     if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
+    if (entry.size > MAX_BEAT_BYTES) continue
     try {
-      const parsed = JSON.parse(await $.fs.read(`${dir}/${entry.name}`)) as Beat
-      // A beat written by an older version of the mod lacks these.
-      if (!Array.isArray(parsed.agents) || !Array.isArray(parsed.links)) continue
-      parsed.autopilot = await readAutopilot($, parsed.id)
-      beats.push(parsed)
+      const valid = validBeat(JSON.parse(await $.fs.read(`${dir}/${entry.name}`)), entry.name)
+      if (!valid) continue
+      // Two files cannot share an id (the id is the stem); if one ever does, the newest beat wins.
+      const seen = byId.get(valid.id)
+      if (seen && seen.beatAt >= valid.beatAt) continue
+      valid.autopilot = await readAutopilot($, valid.id)
+      byId.set(valid.id, valid)
     } catch {
       // A file mid-write or foreign: skip it this round.
     }
   }
-  await update($, fleet, () => beats)
+  await update($, fleet, () => [...byId.values()])
 }
 
 /**
@@ -178,7 +187,22 @@ async function adopt($: EngineInterface): Promise<void> {
   }
 
   const home = await $.env.get('HOME')
-  dir = `${home ?? '.'}/.claude/fleet`
+  if (!home || !home.startsWith('/')) {
+    // No usable home: write and scan nothing.
+    dir = ''
+    transcript = ''
+    return
+  }
+  dir = `${home}/.claude/fleet`
+  if (!isDirReady) {
+    isDirReady = true
+    try {
+      await $.process.run(['/bin/mkdir', '-p', dir])
+      await $.process.run(['/bin/chmod', '700', dir])
+    } catch {
+      // Best effort: the directory is then created on the first write.
+    }
+  }
   // The project root, not the current directory: a shell `cd` moves only the latter,
   // and the transcript lives under the root's folder.
   const [cwd, model, usage] = await Promise.all([
@@ -186,13 +210,13 @@ async function adopt($: EngineInterface): Promise<void> {
     $.session.model(),
     $.session.usage().catch(() => null),
   ])
-  transcript = `${home ?? '.'}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/${id}.jsonl`
+  transcript = `${home}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}/${id}.jsonl`
   await update($, selfId, () => id)
 
   // A hot reload or a /resume: pick that session's agents and links back up.
   let previous: Partial<Beat> | null = null
   try {
-    previous = JSON.parse(await $.fs.read(fileOf(id))) as Partial<Beat>
+    previous = validBeat(JSON.parse(await $.fs.read(fileOf(id))), fileOf(id).slice(dir.length + 1))
   } catch {
     previous = null
   }
@@ -200,7 +224,7 @@ async function adopt($: EngineInterface): Promise<void> {
     id,
     name: null,
     color: null,
-    label: `${basename(cwd)}·${shortId(id)}`,
+    label: clean(`${basename(cwd)}·${shortId(id)}`),
     cwd,
     model,
     startedAt: usage?.startedAt ?? now,
@@ -225,7 +249,7 @@ async function cleanup($: EngineInterface): Promise<void> {
   if (!dir) return
   try {
     const find = $.process.spawn({
-      argv: ['find', dir, '-maxdepth', '1', '-type', 'f', '-name', '*.json', '-mmin', `+${CLEANUP_MINUTES}`, '-delete'],
+      argv: ['/usr/bin/find', dir, '-maxdepth', '1', '-type', 'f', '-name', '*.json', '-mmin', `+${CLEANUP_MINUTES}`, '-delete'],
     })
     for await (const _ of find) {
       // Nothing to read: find prints nothing with -delete.
@@ -298,7 +322,7 @@ export const register: Register = on => {
     if (e.agentId) {
       // An agent ending its turn reports back to the main conversation.
       const agentId = e.agentId
-      me.links = upsertLink(me.links, agentId, me.id)
+      me.links = upsertLink(me.links, clean(agentId), me.id)
       setAgent(agentId, row =>
         row.isWorkflow ? { ...row, status: e.isAborted ? 'failed' : 'done', endedAt: now } : row,
       )
@@ -323,8 +347,8 @@ export const register: Register = on => {
       me.agents = me.agents.filter(row => row.id !== agentId)
       me.agents.push({
         id: agentId,
-        label: e.description || e.subagentType,
-        type: e.subagentType,
+        label: clean(e.description || e.subagentType),
+        type: clean(e.subagentType),
         model: 'model' in result ? (result.model ?? null) : null,
         status: 'running',
         startedAt: await $.clock.now(),
@@ -340,7 +364,7 @@ export const register: Register = on => {
   on('session.send', async ($, e, next) => {
     const result = await next(e)
     if (me && result.isDelivered) {
-      me.links = upsertLink(me.links, e.agentId ?? me.id, e.to)
+      me.links = upsertLink(me.links, clean(e.agentId ?? me.id), clean(e.to))
       void tick($)
     }
 
@@ -351,7 +375,7 @@ export const register: Register = on => {
     // A delivery to one of our own agents was already counted by its send.
     if (me && !e.agentId) {
       const origin = e.origin
-      if ('teammate' in origin) me.links = upsertLink(me.links, origin.teammate, me.id)
+      if ('teammate' in origin) me.links = upsertLink(me.links, clean(origin.teammate), me.id)
       if (!('teammate' in origin) && origin.kind === 'peer') me.inboundUnknown += 1
       void tick($)
     }
@@ -397,7 +421,7 @@ export const register: Register = on => {
         {beats.map(b => {
           const state = liveness(b, now)
           const pill = STATE_PILL[state]
-          const tint = b.color ? (SESSION_COLORS[b.color] ?? b.color) : undefined
+          const tint = b.color && Object.hasOwn(SESSION_COLORS, b.color) ? SESSION_COLORS[b.color] : undefined
           const since =
             state === 'active' && b.turnStartedAt
               ? ago(now - b.turnStartedAt)
@@ -422,7 +446,7 @@ export const register: Register = on => {
             >
               <Box justifyContent="space-between">
                 <Text bold color={tint} wrap="truncate-end">
-                  {displayName(b)}
+                  {clean(displayName(b))}
                   {b.id === self ? <Text dimColor> (this)</Text> : ''}
                 </Text>
                 <Text color={pill.color}>
@@ -458,12 +482,12 @@ export const register: Register = on => {
                   <Box key={agent.id} justifyContent="space-between">
                     <Text wrap="truncate-end">
                       {'  '}
-                      <Text color={glyph.color}>{glyph.glyph}</Text> {agent.label}
+                      <Text color={glyph.color}>{glyph.glyph}</Text> {clean(agent.label)}
                       <Text dimColor>
                         {'  '}
                         {agent.isWorkflow ? 'workflow · ' : ''}
-                        {agent.type}
-                        {agent.model ? ` · ${shortModel(agent.model)}` : ''}
+                        {clean(agent.type)}
+                        {agent.model ? ` · ${clean(shortModel(agent.model))}` : ''}
                       </Text>
                     </Text>
                     <Text dimColor>{ago(took)}</Text>
@@ -480,7 +504,7 @@ export const register: Register = on => {
               )}
 
               <Text dimColor wrap="truncate-end">
-                {shortModel(b.model)} · {basename(b.cwd)}
+                {clean(shortModel(b.model))} · {clean(basename(b.cwd))}
                 {b.costUsd !== null ? ` · $${b.costUsd.toFixed(2)} API-equivalent` : ''}
               </Text>
             </Box>
