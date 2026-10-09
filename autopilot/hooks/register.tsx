@@ -2,15 +2,19 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { FinalReason, Run, TokenWindow } from '../types'
 import {
-  ASK_ANSWER,
   CONTINUE_PROMPT,
   DEFAULT_CEILING,
   DEFERRED_NOTE,
+  FULL_WAIT_TOOL,
   RESTART_TOOL,
   RESUME_AFTER_WAIT_PROMPT,
+  WAIT_REASONS,
+  WAIT_TOOL,
   afterTurn,
+  askAnswer,
   autoAnswersQuestions,
   effectiveTrigger,
+  endsWait,
   finalPrompt,
   followsNewSessionId,
   formatLeft,
@@ -23,12 +27,17 @@ import {
   limitAction,
   namedSkills,
   parseCommand,
+  parseWaitInput,
   resolveHandoffPath,
   restartsText,
   roleSection,
   shouldDropStopBlock,
   triggerCeiling,
+  waitPhaseRefusal,
   waitPrompt,
+  waitRefusal,
+  waitText,
+  waitTimeoutPrompt,
   wrapMidTurn,
   wrapupPrompt,
 } from './autopilot'
@@ -92,6 +101,9 @@ async function save($: EngineInterface): Promise<void> {
       maxRestarts: run.maxRestarts,
       waitUntil: run.waitUntil,
       hasGoal: run.goal !== null,
+      waitingFor: run.awaiting?.reason ?? null,
+      waitingFrom: run.awaiting?.from ?? null,
+      waitingSince: run.awaiting?.since ?? null,
     }),
   )
 }
@@ -229,6 +241,8 @@ async function enterFinal($: EngineInterface, reason: FinalReason): Promise<stri
   if (!run) return null
   run.phase = 'final'
   run.finalReason = reason
+  // A declared wait ends with the run's last stage (the time running out while awaiting).
+  run.awaiting = null
   await clearGoal($)
   await save($)
   await log($, `final handoff requested (${reason})`)
@@ -310,12 +324,54 @@ function watchGoal($: EngineInterface): void {
   })
 }
 
+/** The wait as a status line, with the time of its one check if it has a timeout. */
+function waitingLines(now: number): string[] {
+  const awaiting = run?.awaiting ?? null
+  if (run?.phase !== 'awaiting' || !awaiting) return []
+  const check = awaiting.timeoutAt ? ` · checks at ${clockTime(awaiting.timeoutAt)} UTC` : ''
+
+  return [`Waiting: ${waitText(awaiting, now)}${check}`]
+}
+
+/**
+ * Ends a declared wait, back to running: a new turn started (something
+ * arrived), or the session went on working (`tool` names the call).
+ */
+async function endWait($: EngineInterface, tool: string | null = null): Promise<void> {
+  if (run?.phase !== 'awaiting') return
+  const awaiting = run.awaiting ?? null
+  // Flipped before the first await, so parallel tool calls end the wait once.
+  run.phase = 'running'
+  run.awaiting = null
+  run.idleTurns = 0
+  const now = await $.clock.now()
+  await save($)
+  if (tool) {
+    await log($, `wait ended: the session went on working (${tool})`)
+    return
+  }
+  await log($, awaiting ? `woke after ${formatLeft(now - awaiting.since)} waiting for ${awaiting.reason}` : 'woke from a wait')
+}
+
+/** Once a declared wait passes its timeout, autopilot asks the session to check on it. */
+async function checkWaitTimeout($: EngineInterface, now: number): Promise<void> {
+  const awaiting = run?.awaiting ?? null
+  if (!run || run.phase !== 'awaiting' || !awaiting?.timeoutAt) return
+  if (now < awaiting.timeoutAt || awaiting.pinged) return
+  awaiting.pinged = true
+  await save($)
+  await log($, `wait timed out after ${formatLeft(now - awaiting.since)} (${awaiting.reason}): asking the session to check`)
+  queue($, waitTimeoutPrompt(awaiting, now))
+}
+
 function statusText(now: number): string {
   if (!run) return 'Autopilot is off.'
 
   return [
     `Autopilot: ${run.phase}${run.waitUntil ? ` until ${clockTime(run.waitUntil)} UTC` : ''} · ${formatLeft(run.until - now)} left · handoff at ${effectiveTrigger(run, ceiling)}% (asked ${run.threshold}%, ceiling ${ceiling}% below auto-compact) · restarts ${restartsText(run)}`,
+    ...waitingLines(now),
     `Token limits: park at ${run.fiveHourStop}% of the 5-hour window, stop at ${run.weekStop}% of the week`,
+    ...(run.askUser === true ? ['Asks the person: critical only'] : []),
     `Role: ${run.role}`,
     ...(run.skills.length ? [`Skills recognised in the role: ${run.skills.map(name => `/${name}`).join(', ')}`] : []),
     ...(run.goal ? [`Goal: ${run.goal}${isGoalSet ? '' : ' (not set right now)'}`] : []),
@@ -339,7 +395,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'autopilot',
       description: 'Run this session on autopilot with a fixed role; no args shows status, "0 0 stop" hands back',
-      argumentHint: '<time> <threshold%> [max restarts] "<role>" [--goal "…"] [--5h 95] [--week 80] | 0 0 stop',
+      argumentHint: '<time> <threshold%> [max restarts] "<role>" [--goal "…"] [--5h 95] [--week 80] [--ask-user] | 0 0 stop',
     })
     await $.tool.register({
       name: RESTART_TOOL,
@@ -356,6 +412,21 @@ export const register: Register = on => {
         required: ['handoffPath'],
       },
     })
+    await $.tool.register({
+      name: WAIT_TOOL,
+      description:
+        'Autopilot only: declares that this session is waiting for something (another session, a subagent, a workflow, a background task, the person), so autopilot stops nudging it. End your turn right after calling it; any new message wakes the session.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', enum: [...WAIT_REASONS], description: 'What the session waits for' },
+          from: { type: 'string', description: 'Who the answer comes from: a session name, a subagent, a workflow' },
+          note: { type: 'string', description: 'What is awaited, in one line (for the person: the question or the action)' },
+          timeout: { type: 'string', description: 'When autopilot checks once whether the wait is stuck, e.g. "30m", "1h"' },
+        },
+        required: ['reason'],
+      },
+    })
 
     // Time and the 5-hour reset can come while the session sits idle (or after a reload lost the timers).
     $.clock.every(30_000, () => {
@@ -363,12 +434,13 @@ export const register: Register = on => {
         await syncId($)
         if (!run || isTurnRunning) return
         const now = await $.clock.now()
-        if ((run.phase === 'running' || run.phase === 'waiting') && now >= run.until) {
+        if ((run.phase === 'running' || run.phase === 'waiting' || run.phase === 'awaiting') && now >= run.until) {
           const instruction = await enterFinal($, 'time')
           if (instruction) queue($, instruction)
           return
         }
         if (run.phase === 'waiting' && run.waitUntil && now >= run.waitUntil) await wake($)
+        await checkWaitTimeout($, now)
       })()
     })
 
@@ -418,11 +490,13 @@ export const register: Register = on => {
       weekStop: command.weekStop,
       waitUntil: null,
       finalReason: null,
+      awaiting: null,
+      askUser: command.askUser,
     }
     await save($)
     await log(
       $,
-      `started: ${formatLeft(command.durationMs)}, trigger ${command.threshold}%, restarts ${restartsText(run)}, 5h ${command.fiveHourStop}%, week ${command.weekStop}%${command.goal ? `, goal: ${command.goal}` : ''}; role: ${command.role}`,
+      `started: ${formatLeft(command.durationMs)}, trigger ${command.threshold}%, restarts ${restartsText(run)}, 5h ${command.fiveHourStop}%, week ${command.weekStop}%${command.goal ? `, goal: ${command.goal}` : ''}${command.askUser ? ', asks the person: critical only' : ''}; role: ${command.role}`,
     )
     if (capNote) await log($, `threshold ${command.threshold}% capped to ${limit}% below auto-compact`)
 
@@ -479,10 +553,58 @@ export const register: Register = on => {
     toolsThisTurn = 0
     turnSeq += 1
     await syncId($)
+    // turn.start carries no agentId: it is the main loop's turn.
+    await endWait($)
     await refreshIdentity($)
 
     return next(e)
   })
+
+  on('tool.call', { tool: FULL_WAIT_TOOL }, async ($, e) => {
+    // Only the main loop waits; a subagent's turn ending is not the session's.
+    if (e.agentId) {
+      await log($, `wait refused: called by a subagent (${e.agentId})`)
+      return { deny: 'Only the main session may wait under autopilot; a subagent may not.' }
+    }
+    await syncId($)
+    const now = await $.clock.now()
+    // Check, parse and flip before the first await: a parallel tool call may move the phase meanwhile.
+    if (!run) return { deny: 'Autopilot is not driving right now: no wait needed.' }
+    const phaseRefusal = waitPhaseRefusal(run.phase)
+    if (phaseRefusal) return { deny: phaseRefusal }
+    const isRepeat = run.phase === 'awaiting'
+    const parsed = parseWaitInput(e, now, run.until)
+    if (parsed.kind === 'error') return { deny: parsed.message }
+    const refusal = waitRefusal(parsed.awaiting, run.askUser === true)
+    if (refusal) {
+      await log($, `wait refused (${parsed.awaiting.reason}): ${refusal}`)
+      return { deny: refusal }
+    }
+
+    const previous = { phase: run.phase, awaiting: run.awaiting ?? null }
+    run.phase = 'awaiting'
+    run.awaiting = parsed.awaiting
+    run.idleTurns = 0
+    try {
+      await save($)
+      const timeout = parsed.awaiting.timeoutAt ? `, checks at ${clockTime(parsed.awaiting.timeoutAt)} UTC` : ', no timeout'
+      // A repeat in the same turn replaces the wait it declared.
+      await log($, `${isRepeat ? 'wait updated: ' : 'waiting for '}${waitText(parsed.awaiting, now)}${timeout}`)
+    } catch (error) {
+      // Not recorded: back to where it was, or the session would sit in a wait nothing knows about.
+      if (run) {
+        run.phase = previous.phase
+        run.awaiting = previous.awaiting
+      }
+      await save($).catch(() => undefined)
+      await log($, `could not record the wait: ${String(error)}`).catch(() => undefined)
+      return { deny: 'Autopilot could not record the wait. Continue your work.' }
+    }
+
+    return {
+      result: `Waiting recorded (${waitText(parsed.awaiting, now)}). End your turn now; any incoming message (another session, a subagent, a workflow, the person) wakes you and autopilot will not nudge you meanwhile.`,
+    }
+  }).catch(() => ({ deny: 'Autopilot could not record the wait. Continue your work.' }))
 
   on('tool.call', { tool: FULL_RESTART_TOOL }, async ($, e) => {
     // Only the main loop restarts the session; a subagent never does.
@@ -545,12 +667,15 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     if (e.agentId || !run || run.phase === 'paused') return next(e)
     toolsThisTurn += 1
+    // Working on after wait_for ends the wait; the call is then handled as usual.
+    // A sibling call in the same parallel batch ends it too: working means not waiting.
+    if (endsWait(run.phase, e.tool)) await endWait($, e.tool)
 
     // While waiting the person is in control: their questions and refusals are theirs.
     const isAway = autoAnswersQuestions(run.phase)
     if (isAway && e.tool === 'AskUserQuestion') {
       await log($, `question answered by autopilot (decide yourself): ${JSON.stringify(e).slice(0, 400)}`)
-      return { deny: ASK_ANSWER }
+      return { deny: askAnswer(run.askUser === true) }
     }
 
     const ran = await next(e)

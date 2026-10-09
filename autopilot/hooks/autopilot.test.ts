@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Run } from '../types'
+import type { Awaiting, Run, WaitReason } from '../types'
 import {
+  ASK_ANSWER,
   CONTINUE_PROMPT,
+  FULL_WAIT_TOOL,
+  WAIT_REASONS,
   afterTurn,
+  askAnswer,
   autoAnswersQuestions,
   canRestart,
   effectiveTrigger,
+  endsWait,
   finalPrompt,
   followsNewSessionId,
   goalState,
@@ -18,9 +23,14 @@ import {
   namedSkills,
   parseCommand,
   parseDuration,
+  parseWaitInput,
   roleSection,
   shouldDropStopBlock,
   triggerCeiling,
+  waitPhaseRefusal,
+  waitRefusal,
+  waitText,
+  waitTimeoutPrompt,
   wrapMidTurn,
 } from './autopilot'
 
@@ -43,11 +53,33 @@ function run(over: Partial<Run>): Run {
     weekStop: 80,
     waitUntil: null,
     finalReason: null,
+    awaiting: null,
+    askUser: false,
     ...over,
   }
 }
 
-const START_DEFAULTS = { goal: null, fiveHourStop: 95, weekStop: 80 }
+const START_DEFAULTS = { goal: null, fiveHourStop: 95, weekStop: 80, askUser: false }
+
+/** The fastest of three runs, in ms: timing specs compare growth, not a wall-clock budget. */
+function fastest(work: () => void): number {
+  let best = Infinity
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const started = performance.now()
+    work()
+    best = Math.min(best, performance.now() - started)
+  }
+
+  return best
+}
+
+/** Whether 10x more input takes well under 100x the time: linear grows ~10x, quadratic ~100x. */
+function growsLinearly(work: (size: number) => void, size: number): boolean {
+  const small = fastest(() => work(size))
+  const large = fastest(() => work(size * 10))
+
+  return large < 30 * Math.max(small, 1)
+}
 
 describe('command', () => {
   test('durations', async () => {
@@ -73,7 +105,7 @@ describe('command', () => {
   test('flags: goal with spaces, 5-hour and weekly stops, in any order after the role', async () => {
     expect(parseCommand('10h 65 "You are the docs writer" --goal "issue #42 resolved" --5h 90 --week 75')).toEqual({
       kind: 'start', durationMs: 600 * 60_000, threshold: 65, maxRestarts: null, role: 'You are the docs writer',
-      goal: 'issue #42 resolved', fiveHourStop: 90, weekStop: 75,
+      goal: 'issue #42 resolved', fiveHourStop: 90, weekStop: 75, askUser: false,
     })
     expect(parseCommand('10h 65 "You are the docs writer" --week 70').kind === 'start' &&
       (parseCommand('10h 65 "You are the docs writer" --week 70') as { weekStop: number }).weekStop).toBe(70)
@@ -88,7 +120,7 @@ describe('command', () => {
       })
       expect(parseCommand(`2h 60 3 ${open}${inner}${close} --goal "real goal" --5h 90 --week 70`)).toEqual({
         kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: 3, role: inner,
-        goal: 'real goal', fiveHourStop: 90, weekStop: 70,
+        goal: 'real goal', fiveHourStop: 90, weekStop: 70, askUser: false,
       })
     }
   })
@@ -109,7 +141,7 @@ describe('command', () => {
     for (const [open, close] of [['"', '"'], ['“', '”'], ['«', '»'], ["'", "'"]]) {
       expect(parseCommand(`2h 60 ${open}${inner}${close} --goal «real goal» --5h 90 --week 70`)).toEqual({
         kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role: inner,
-        goal: 'real goal', fiveHourStop: 90, weekStop: 70,
+        goal: 'real goal', fiveHourStop: 90, weekStop: 70, askUser: false,
       })
     }
   })
@@ -151,8 +183,51 @@ describe('command', () => {
   test('an unquoted role still gives up its flags as before', async () => {
     expect(parseCommand('2h 60 You are the docs writer --goal "x done" --week 70')).toEqual({
       kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role: 'You are the docs writer',
-      goal: 'x done', fiveHourStop: 95, weekStop: 70,
+      goal: 'x done', fiveHourStop: 95, weekStop: 70, askUser: false,
     })
+  })
+
+  test('--ask-user: after the role, in any order with other flags; default off', async () => {
+    const role = 'You are the docs writer'
+    const start = (args: string) => parseCommand(args) as { kind: string; askUser?: boolean; role?: string; goal?: string | null; weekStop?: number }
+    expect(start(`2h 60 "${role}"`).askUser).toBe(false)
+    expect(start(`2h 60 "${role}" --ask-user`)).toEqual({
+      kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role, ...START_DEFAULTS, askUser: true,
+    })
+    const mixed = start(`2h 60 3 «${role}» --week 70 --ask-user --goal "x done"`)
+    expect(mixed.askUser).toBe(true)
+    expect(mixed.role).toBe(role)
+    expect(mixed.goal).toBe('x done')
+    expect(mixed.weekStop).toBe(70)
+    expect(start(`2h 60 "${role}" --ask-user --ask-user`).askUser).toBe(true)
+    expect(start(`2h 60 ${role} --ask-user`)).toEqual({
+      kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role, ...START_DEFAULTS, askUser: true,
+    })
+  })
+
+  test('--ask-user inside a quoted role or a quoted goal stays there', async () => {
+    const inner = 'You are the writer --ask-user here'
+    expect(parseCommand(`2h 60 "${inner}"`)).toEqual({
+      kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role: inner, ...START_DEFAULTS,
+    })
+    const tail = 'You are the writer --ask-user'
+    expect(parseCommand(`2h 60 '${tail}'`)).toEqual({
+      kind: 'start', durationMs: 120 * 60_000, threshold: 60, maxRestarts: null, role: tail, ...START_DEFAULTS,
+    })
+    const goal = parseCommand('2h 60 "You are the docs writer" --goal "ask --ask-user later"') as { goal: string; askUser: boolean }
+    expect(goal.goal).toBe('ask --ask-user later')
+    expect(goal.askUser).toBe(false)
+    expect((parseCommand('2h 60 "You are the docs writer" --ask-user-x') as { askUser?: boolean }).askUser).not.toBe(true)
+  })
+
+  test('many --ask-user repeats are read in linear time', async () => {
+    const inputs = [
+      (n: number) => `2h 60 "role of the writer"${' --ask-user'.repeat(n / 11)}`,
+      (n: number) => `2h 60 "${' --ask-user'.repeat(n / 11)}`,
+      (n: number) => `2h 60 "${' --ask-user"'.repeat(n / 12)} X`,
+      (n: number) => `2h 60 You are the writer${' --ask-user'.repeat(n / 11)}`,
+    ]
+    for (const input of inputs) expect(growsLinearly(size => parseCommand(input(size)), 20_000)).toBe(true)
   })
 
   test('refuses an unreadable time, a wild threshold, a missing role', async () => {
@@ -281,16 +356,162 @@ describe('identity', () => {
 describe('stop hook', () => {
   test('a goal block is dropped only while a handoff, restart or final is under way', async () => {
     for (const phase of ['paused', 'waiting', 'running', 'resuming'] as const) expect(shouldDropStopBlock(phase)).toBe(false)
-    for (const phase of ['wrapping', 'restarting', 'final'] as const) expect(shouldDropStopBlock(phase)).toBe(true)
+    for (const phase of ['wrapping', 'restarting', 'final', 'awaiting'] as const) expect(shouldDropStopBlock(phase)).toBe(true)
   })
 })
 
 describe('questions while the person is in control', () => {
   test('autopilot answers questions and defers refusals only while it drives', async () => {
     for (const phase of ['paused', 'waiting'] as const) expect(autoAnswersQuestions(phase)).toBe(false)
-    for (const phase of ['running', 'resuming', 'wrapping', 'restarting', 'final'] as const) {
+    for (const phase of ['running', 'resuming', 'wrapping', 'restarting', 'final', 'awaiting'] as const) {
       expect(autoAnswersQuestions(phase)).toBe(true)
     }
+  })
+
+  test('the answer points to the critical-only wait only with --ask-user', async () => {
+    expect(askAnswer(false)).toBe(ASK_ANSWER)
+    expect(askAnswer(true).startsWith(ASK_ANSWER)).toBe(true)
+    expect(askAnswer(true)).toContain('wait_for user-answer')
+    expect(askAnswer(true)).toContain('PushNotification')
+  })
+})
+
+describe('wait_for', () => {
+  const now = 1_000
+  const until = 10 * 60 * 60_000
+
+  test('a valid wait: reason, from, note, timeout', async () => {
+    expect(parseWaitInput({ reason: 'session-answer', from: 'BE-expert', note: 'API shape', timeout: '30m' }, now, until)).toEqual({
+      kind: 'ok',
+      awaiting: { reason: 'session-answer', from: 'BE-expert', note: 'API shape', since: now, timeoutAt: now + 30 * 60_000, pinged: false },
+    })
+    expect(parseWaitInput({ reason: 'workflow-end' }, now, until)).toEqual({
+      kind: 'ok',
+      awaiting: { reason: 'workflow-end', from: null, note: null, since: now, timeoutAt: null, pinged: false },
+    })
+  })
+
+  test('every reason is accepted; an unknown or missing one is refused', async () => {
+    for (const reason of WAIT_REASONS) expect(parseWaitInput({ reason }, now, until).kind).toBe('ok')
+    expect(parseWaitInput({ reason: 'coffee' }, now, until).kind).toBe('error')
+    expect(parseWaitInput({}, now, until).kind).toBe('error')
+    expect(parseWaitInput(null, now, until).kind).toBe('error')
+    expect(parseWaitInput('session-answer', now, until).kind).toBe('error')
+  })
+
+  test('non-string fields and unreadable or zero timeouts are refused', async () => {
+    expect(parseWaitInput({ reason: 'other', from: 5 }, now, until).kind).toBe('error')
+    expect(parseWaitInput({ reason: 'other', note: ['x'] }, now, until).kind).toBe('error')
+    expect(parseWaitInput({ reason: 'other', timeout: 30 }, now, until).kind).toBe('error')
+    expect(parseWaitInput({ reason: 'other', timeout: 'soon' }, now, until).kind).toBe('error')
+    expect(parseWaitInput({ reason: 'other', timeout: '0m' }, now, until).kind).toBe('error')
+  })
+
+  test('the timeout never runs past the end of the run', async () => {
+    const parsed = parseWaitInput({ reason: 'other', timeout: '99h' }, now, until)
+    expect(parsed.kind === 'ok' && parsed.awaiting.timeoutAt).toBe(until)
+  })
+
+  test('from and note lose invisible characters, are trimmed and capped; empty is null', async () => {
+    const parsed = parseWaitInput(
+      { reason: 'session-answer', from: ` BE\u{202e}-ex​pert\n ${'f'.repeat(100)}`, note: `  ${'n'.repeat(300)}  ` },
+      now,
+      until,
+    )
+    if (parsed.kind !== 'ok') throw new Error('expected ok')
+    expect(parsed.awaiting.from?.startsWith('BE-expert')).toBe(true)
+    expect(parsed.awaiting.from).toHaveLength(64)
+    expect(parsed.awaiting.note).toHaveLength(200)
+    const empty = parseWaitInput({ reason: 'other', from: ' ​ ', note: '' }, now, until)
+    expect(empty.kind === 'ok' && [empty.awaiting.from, empty.awaiting.note]).toEqual([null, null])
+  })
+
+  test('waiting for the person needs --ask-user, and then a note', async () => {
+    const wait = (reason: WaitReason, note: string | null): Awaiting => ({ reason, from: null, note, since: 0, timeoutAt: null, pinged: false })
+    for (const reason of ['user-answer', 'user-input'] as const) {
+      expect(waitRefusal(wait(reason, 'Push to main?'), false)).toContain('no --ask-user')
+      expect(waitRefusal(wait(reason, null), true)).toContain('note')
+      expect(waitRefusal(wait(reason, 'Push to main?'), true)).toBe(null)
+    }
+    for (const reason of ['session-answer', 'subagent-result', 'other'] as const) {
+      expect(waitRefusal(wait(reason, null), false)).toBe(null)
+      expect(waitRefusal(wait(reason, null), true)).toBe(null)
+    }
+  })
+
+  test('the wait text and the timeout prompt quote from and note', async () => {
+    const awaiting: Awaiting = { reason: 'session-answer', from: 'BE-expert', note: null, since: 0, timeoutAt: null, pinged: false }
+    expect(waitText(awaiting, 12 * 60_000)).toBe('session-answer ← "BE-expert" · 12m')
+    expect(waitText({ ...awaiting, note: 'API "shape"' }, 12 * 60_000)).toBe('session-answer ← "BE-expert" · 12m — "API \\"shape\\""')
+    expect(waitText({ ...awaiting, from: null }, 0)).toBe('session-answer · 0m')
+    const prompt = waitTimeoutPrompt({ ...awaiting, note: 'API shape' }, 45 * 60_000)
+    expect(prompt).toContain('45m for session-answer from "BE-expert" ("API shape")')
+    expect(prompt).toContain('PushNotification')
+    expect(prompt).toContain('wait_for')
+    expect(waitTimeoutPrompt({ ...awaiting, from: null }, 60_000)).toContain('1m for session-answer.')
+  })
+
+  test('an awaiting run queues nothing after a turn and is never wrapped mid-turn', async () => {
+    const awaiting: Awaiting = { reason: 'other', from: null, note: null, since: 0, timeoutAt: null, pinged: false }
+    expect(afterTurn(run({ phase: 'awaiting', awaiting }), 10, 30, false)).toBe('none')
+    expect(afterTurn(run({ phase: 'awaiting', awaiting, idleTurns: 5 }), 10, 99, false)).toBe('none')
+    expect(wrapMidTurn(run({ phase: 'awaiting', awaiting }), 10, 99)).toBe(null)
+  })
+
+  test('any main-loop tool but wait_for itself ends a declared wait', async () => {
+    expect(FULL_WAIT_TOOL).toBe('mcp__autopilot__wait_for')
+    for (const tool of ['Bash', 'AskUserQuestion', 'mcp__autopilot__restart_session']) expect(endsWait('awaiting', tool)).toBe(true)
+    expect(endsWait('awaiting', FULL_WAIT_TOOL)).toBe(false)
+    for (const phase of ['running', 'resuming', 'wrapping', 'restarting', 'final', 'paused', 'waiting'] as const) {
+      expect(endsWait(phase, 'Bash')).toBe(false)
+    }
+  })
+
+  test('wait_for is taken while running and again while awaiting; refused while resuming or not driving', async () => {
+    expect(waitPhaseRefusal('running')).toBe(null)
+    expect(waitPhaseRefusal('awaiting')).toBe(null)
+    expect(waitPhaseRefusal('resuming')).toBe(
+      'Autopilot is finishing the resume from the handoff: end this turn normally; you can call wait_for in the next turn.',
+    )
+    for (const phase of ['wrapping', 'restarting', 'final', 'paused', 'waiting'] as const) {
+      expect(waitPhaseRefusal(phase)).toBe('Autopilot is not driving right now: no wait needed.')
+    }
+  })
+
+  test('the continue prompt points to wait_for', async () => {
+    expect(CONTINUE_PROMPT).toContain('call wait_for instead of working around it')
+  })
+
+  test('the role section explains wait_for and shows the current wait', async () => {
+    expect(roleSection(run({}), 10)).toContain('call the wait_for tool with the reason')
+    const awaiting: Awaiting = { reason: 'subagent-result', from: 'scout', note: null, since: 0, timeoutAt: null, pinged: false }
+    const waiting = roleSection(run({ phase: 'awaiting', awaiting }), 5 * 60_000)
+    expect(waiting).toContain('Rules while the person is away')
+    expect(waiting).toContain('- Right now you are waiting: subagent-result ← "scout" · 5m.')
+    expect(roleSection(run({}), 10)).not.toContain('Right now you are waiting')
+  })
+
+  test('with --ask-user the role section allows a critical-only wait for the person', async () => {
+    const plain = roleSection(run({}), 10)
+    const asking = roleSection(run({ askUser: true }), 10)
+    expect(plain).toContain('then continue with whatever else you can do')
+    expect(plain).not.toContain('reason user-answer')
+    expect(plain).toContain('a workflow or a background task, and nothing else useful is left for you')
+    expect(plain).not.toContain('or need the person')
+    expect(asking).toContain('a workflow or a background task, or need the person, and nothing else useful is left for you')
+    expect(asking).toContain('Only when the person is truly required')
+    expect(asking).toContain('call wait_for with reason user-answer (or user-input')
+    expect(asking).toContain('Everything else you decide yourself.')
+    expect(asking).toContain('- Ordinary questions: decide yourself')
+  })
+
+  test('a run stored by an older version, without the new fields, reads as not waiting and not asking', async () => {
+    const legacy = run({}) as Partial<Run>
+    delete legacy.awaiting
+    delete legacy.askUser
+    const text = roleSection(legacy as Run, 10)
+    expect(text).not.toContain('Right now you are waiting')
+    expect(text).not.toContain('reason user-answer')
   })
 })
 
@@ -333,10 +554,7 @@ describe('skills in the role', () => {
   })
 
   test('a long run of trailing punctuation is trimmed in linear time', async () => {
-    const role = `/a${'.'.repeat(100_000)}x`
-    const started = Date.now()
-    namedSkills(role, ['a'])
-    expect(Date.now() - started < 50).toBe(true)
+    expect(growsLinearly(size => namedSkills(`/a${'.'.repeat(size)}x`, ['a']), 10_000)).toBe(true)
     expect(namedSkills('Then run /resume-handoff-doc.', ['resume-handoff-doc'])).toEqual(['resume-handoff-doc'])
     expect(namedSkills('Use /explore), then stop', ['explore'])).toEqual(['explore'])
   })
@@ -400,9 +618,8 @@ describe('done marker', () => {
 
   test('long runs of blank lines are read in linear time', async () => {
     for (const blank of ['\n', ' \n']) {
-      const started = Date.now()
       expect(isDoneAnswer(`${blank.repeat(100_000)}x`)).toBe(false)
-      expect(Date.now() - started).toBeLessThan(50)
+      expect(growsLinearly(size => isDoneAnswer(`${blank.repeat(size)}x`), 10_000)).toBe(true)
     }
   })
 })
@@ -500,10 +717,7 @@ describe('hardening', () => {
   })
 
   test('a root of many slashes is checked in linear time', async () => {
-    const root = `/${'/'.repeat(100_000)}x`
-    const start = Date.now()
-    isValidHandoffPath(root, 'thoughts/shared/handoffs/a.md')
-    expect(Date.now() - start).toBeLessThan(50)
+    expect(growsLinearly(size => isValidHandoffPath(`/${'/'.repeat(size)}x`, 'thoughts/shared/handoffs/a.md'), 10_000)).toBe(true)
   })
 
   test('only the restarting phase follows a new session id', async () => {

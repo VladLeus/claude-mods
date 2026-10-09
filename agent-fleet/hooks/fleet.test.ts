@@ -180,6 +180,21 @@ describe('validBeat', () => {
     expect(validBadge({ isOn: true, restarts: 'x' }, now)).toBe(null)
     expect(validBadge({ isOn: false }, now)).toBe(null)
   })
+
+  test('the waiting fields are type-checked; a badge without them is still valid', async () => {
+    const waiting = { isOn: true, phase: 'awaiting', waitingFor: 'session-answer', waitingFrom: 'BE-expert', waitingSince: now - 1000 }
+    expect(validBadge(waiting, now)?.waitingFor).toBe('session-answer')
+    expect(validBadge(waiting, now)?.waitingFrom).toBe('BE-expert')
+    expect(validBadge({ isOn: true, waitingFor: null, waitingFrom: null, waitingSince: null }, now)?.isOn).toBe(true)
+    expect(validBadge({ isOn: true, phase: 'running' }, now)?.waitingFor).toBe(undefined)
+    expect(validBadge({ ...waiting, waitingFor: 'coffee' }, now)).toBe(null)
+    expect(validBadge({ ...waiting, waitingFor: 3 }, now)).toBe(null)
+    expect(validBadge({ ...waiting, waitingFrom: 5 }, now)).toBe(null)
+    expect(validBadge({ ...waiting, waitingFrom: 'x'.repeat(65) }, now)).toBe(null)
+    expect(validBadge({ ...waiting, waitingFrom: 'x'.repeat(64) }, now)?.waitingFrom).toHaveLength(64)
+    expect(validBadge({ ...waiting, waitingSince: 1e300 }, now)).toBe(null)
+    expect(validBadge({ ...waiting, waitingSince: 'x' }, now)).toBe(null)
+  })
 })
 
 describe('clean', () => {
@@ -196,11 +211,25 @@ describe('clean', () => {
   })
 })
 
+/** The fastest of three runs, in ms: timing specs compare growth, not a wall-clock budget. */
+function fastest(work: () => void): number {
+  let best = Infinity
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const started = performance.now()
+    work()
+    best = Math.min(best, performance.now() - started)
+  }
+
+  return best
+}
+
 describe('basename', () => {
   test('trailing slashes are trimmed in linear time', async () => {
-    const started = Date.now()
+    // 10x more input: linear grows ~10x, quadratic ~100x.
     expect(basename(`${'/'.repeat(100_000)}x`)).toBe('x')
-    expect(Date.now() - started).toBeLessThan(50)
+    const small = fastest(() => basename(`${'/'.repeat(10_000)}x`))
+    const large = fastest(() => basename(`${'/'.repeat(100_000)}x`))
+    expect(large).toBeLessThan(30 * Math.max(small, 1))
     expect(basename('/a/b/')).toBe('b')
     expect(basename('/')).toBe('/')
   })
@@ -250,6 +279,21 @@ describe('autopilot badge', () => {
       0,
     )
     expect(line).toBe('⚙ autopilot · waiting · resumes 03:40 UTC · trigger 65% · restarts 0/3')
+  })
+
+  test('a declared wait: what for, from whom, for how long, then the usual parts', async () => {
+    const badge = {
+      isOn: true, phase: 'awaiting', until: 3_600_000, threshold: 65, restarts: 0, maxRestarts: null, hasGoal: true,
+      waitingFor: 'session-answer', waitingFrom: 'BE-expert', waitingSince: 0,
+    }
+    expect(autopilotLine(badge, 12 * 60_000)).toBe(
+      '⚙ autopilot · ⏸ session-answer ← BE-expert · 12m00s · 48m00s left · trigger 65% · restarts 0/∞ · ⚑ goal',
+    )
+    expect(autopilotLine({ ...badge, waitingFrom: null, waitingSince: null, hasGoal: false }, 0)).toBe(
+      '⚙ autopilot · ⏸ session-answer · 1h00m left · trigger 65% · restarts 0/∞',
+    )
+    expect(autopilotLine({ ...badge, waitingFrom: 'a\u{202e}b\nc' }, 0)).toContain('← abc ·')
+    expect(autopilotLine({ ...badge, waitingFor: null }, 0).startsWith('⚙ autopilot · awaiting · ')).toBe(true)
   })
 })
 
