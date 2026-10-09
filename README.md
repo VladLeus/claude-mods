@@ -13,16 +13,15 @@ Function-hook mods are early access: you need a recent Claude Code (built and te
 
 ### Just use them
 
-In a Claude Code terminal session:
+Install a signed release tag, not `main`: pick the latest tag from the [releases](https://github.com/VladLeus/claude-mods/releases) and put it after `#`.
 
+```bash
+claude plugin marketplace add VladLeus/claude-mods#v0.2.0
+claude plugin install autopilot@local-mods
+claude plugin install agent-fleet@local-mods
 ```
-/plugin install autopilot --marketplace VladLeus/claude-mods
-/plugin install agent-fleet --marketplace VladLeus/claude-mods
-```
 
-Answer `y` to add the marketplace, pick the user scope. Restart Claude Code.
-
-<!-- TODO(owner): pinned install by release tag -->
+Restart Claude Code. The marketplace stays on that tag, and third-party marketplaces do not auto-update unless you turn it on in `/plugin` → Marketplaces. To move to a newer release, check its notes and diff first, then remove the marketplace and add it again with the new tag.
 
 ### Develop them (clone + local marketplace)
 
