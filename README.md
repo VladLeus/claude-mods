@@ -16,7 +16,7 @@ Function-hook mods are early access: you need a recent Claude Code (built and te
 Install a signed release tag, not `main`: pick the latest tag from the [releases](https://github.com/VladLeus/claude-mods/releases) and put it after `#`.
 
 ```bash
-claude plugin marketplace add VladLeus/claude-mods#v0.2.0
+claude plugin marketplace add VladLeus/claude-mods#v0.3.0
 claude plugin install autopilot@local-mods
 claude plugin install agent-fleet@local-mods
 ```
