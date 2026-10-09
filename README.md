@@ -76,6 +76,17 @@ While it runs:
 
 `/fleet` toggles the pane (`/fleet open`, `/fleet close`). Every session with the mod writes a heartbeat to `~/.claude/fleet/<session id>.json` every 15 s and on every turn, spawn and message; the pane reads that folder. Ended and cleared sessions are hidden at once (a resume brings them back), a silent one shows "no signal" after 3 minutes and is dropped after an hour, and files older than a day are deleted.
 
+## Contributing
+
+`main` takes changes through pull requests only, and a PR merges after the owner (@VladLeus) approves it:
+
+- Work on a branch, open a PR against `main`.
+- The owner's approval is required (CODEOWNERS + the branch ruleset); new commits dismiss it.
+- On approval the PR gets the `owner-approved` label and the `owner-approval` status turns green. Only the owner can set that label; anyone else's is removed automatically.
+- Force-pushing or deleting `main` is blocked.
+
+Collaborators push branches to this repository. A PR from a fork works too, but its label and status are then set by the owner by hand (a fork's workflow token cannot write to this repository).
+
 ## Developing
 
 - Edit, then `/reload-plugins` in a session. Check with:

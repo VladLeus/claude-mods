@@ -1,0 +1,79 @@
+# The `owner-approval` status and the `owner-approved` label of a pull request.
+#
+# - The owner approves a PR: the label is added and the status turns green.
+# - New commits, a dismissed approval or changes requested: label off, status pending.
+# - Anyone but the owner adds the label: it is removed again, with a comment.
+#
+# The hard guarantee is the ruleset's required code-owner review (CODEOWNERS);
+# this workflow is the visible marker on top of it. The label guard runs on
+# pull_request_target, so it always runs as written on main, never as a PR
+# branch changed it.
+name: owner-approval
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  pull-requests: write
+  issues: write
+  statuses: write
+
+env:
+  OWNER: VladLeus
+  LABEL: owner-approved
+
+jobs:
+  owner-approval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = process.env.OWNER
+            const label = process.env.LABEL
+            const pr = context.payload.pull_request
+            const repo = context.repo
+            const issue = { ...repo, issue_number: pr.number }
+            const action = context.payload.action
+
+            const setStatus = (state, description) =>
+              github.rest.repos.createCommitStatus({ ...repo, sha: pr.head.sha, state, context: 'owner-approval', description })
+            const waiting = (why) => setStatus('pending', why ?? `Waiting for @${owner}'s approval`)
+            const approved = () => setStatus('success', `Approved by @${owner}`)
+            const removeLabel = () => github.rest.issues.removeLabel({ ...issue, name: label }).catch(() => undefined)
+            const hasLabel = async () =>
+              (await github.rest.issues.listLabelsOnIssue(issue)).data.some((one) => one.name === label)
+
+            if (context.eventName === 'pull_request_review') {
+              const review = context.payload.review
+              if (review.user.login !== owner) return
+              if (action === 'submitted' && review.state === 'approved') {
+                await github.rest.issues.addLabels({ ...issue, labels: [label] })
+                await approved()
+                return
+              }
+              if (action === 'dismissed' || review.state === 'changes_requested') {
+                await removeLabel()
+                await waiting()
+              }
+              return
+            }
+
+            if (action === 'labeled' && context.payload.label?.name === label && context.payload.sender.login !== owner) {
+              await removeLabel()
+              await github.rest.issues.createComment({ ...issue, body: `Only @${owner} can set \`${label}\`, so it was removed.` })
+              await waiting()
+              return
+            }
+
+            if (action === 'synchronize') {
+              await removeLabel()
+              await waiting(`New commits: waiting for @${owner}'s approval`)
+              return
+            }
+
+            if (await hasLabel()) await approved()
+            else await waiting()
