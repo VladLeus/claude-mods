@@ -1,0 +1,4 @@
+# Written by Claude Code on every load of a mod; machine- and version-specific.
+*/.claude-plugin/types/
+*/tsconfig.json
+.DS_Store

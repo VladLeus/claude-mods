@@ -1,0 +1,6 @@
+{
+  "name": "agent-fleet",
+  "version": "0.3.0",
+  "description": "Dashboard of running Claude sessions: context, active/idle, subagents, workflows and who messages whom",
+  "types": "./types/index.d.ts"
+}
