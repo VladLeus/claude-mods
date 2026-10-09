@@ -1,0 +1,32 @@
+name: signed-commits
+
+# Fails when any commit in the PR is not verified by GitHub (GPG/SSH signature
+# matching a verified email of its author). Reads the API only; never checks
+# out or runs PR code.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  signed-commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            })
+            const unverified = commits.filter(c => !c.commit.verification?.verified)
+            for (const c of unverified) {
+              core.error(`${c.sha.slice(0, 7)} is not verified (${c.commit.verification?.reason ?? 'unknown'})`)
+            }
+            if (unverified.length) core.setFailed(`${unverified.length} of ${commits.length} commits are not verified`)
+            else core.info(`all ${commits.length} commits are verified`)

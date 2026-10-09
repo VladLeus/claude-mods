@@ -1,0 +1,53 @@
+name: specs
+
+# Runs every mod's tests and validation on each PR and on main.
+# `pull_request` (not `pull_request_target`): PR code runs with a read-only
+# token and no secrets. Actions are pinned to commit SHAs.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: specs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  specs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        mod: [autopilot, agent-fleet]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install Claude Code (pinned)
+        run: npm install -g --ignore-scripts=false @anthropic-ai/claude-code@2.1.295
+      - name: Validate
+        run: claude plugin validate "${{ matrix.mod }}"
+      - name: Test
+        run: claude plugin test "${{ matrix.mod }}"
+
+  marketplace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install Claude Code (pinned)
+        run: npm install -g --ignore-scripts=false @anthropic-ai/claude-code@2.1.295
+      - name: Validate marketplace
+        run: claude plugin validate .

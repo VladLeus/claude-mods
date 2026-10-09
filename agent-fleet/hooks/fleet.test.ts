@@ -6,11 +6,16 @@ import {
   agentRows,
   autopilotLine,
   bar,
+  basename,
+  beatFile,
+  clean,
+  identityFromRows,
   liveness,
   messageLines,
-  pickIdentity,
   shortModel,
   upsertLink,
+  validBadge,
+  validBeat,
   visible,
 } from './fleet'
 
@@ -81,18 +86,123 @@ describe('liveness', () => {
 
 describe('identity', () => {
   test('the last /rename wins over the auto-title, and the color is read', async () => {
-    const grepped = [
-      '"type":"ai-title","aiTitle":"Auto title"',
-      '"type":"custom-title","customTitle":"Logistics"',
-      '"type":"agent-color","agentColor":"blue"',
-      '"type":"custom-title","customTitle":"Logistics 2"',
-    ].join('\n')
-    expect(pickIdentity(grepped)).toEqual({ name: 'Logistics 2', color: 'blue' })
+    const rows = [
+      '{"type":"ai-title","aiTitle":"Auto title"}',
+      '{"type":"custom-title","customTitle":"Logistics","sessionId":"x"}',
+      '{"type":"agent-color","agentColor":"blue"}',
+      '{"type":"custom-title","customTitle":"Logistics 2"}',
+    ]
+    expect(identityFromRows(rows)).toEqual({ name: 'Logistics 2', color: 'blue' })
   })
 
   test('falls back to the auto-title, and to nothing', async () => {
-    expect(pickIdentity('"type":"ai-title","aiTitle":"Auto title"')).toEqual({ name: 'Auto title', color: null })
-    expect(pickIdentity('')).toEqual({ name: null, color: null })
+    expect(identityFromRows(['{"type":"ai-title","aiTitle":"Auto title"}'])).toEqual({ name: 'Auto title', color: null })
+    expect(identityFromRows([''])).toEqual({ name: null, color: null })
+  })
+
+  test('nested identity objects, unanchored text and malformed rows are ignored', async () => {
+    const rows = [
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","input":{"type":"custom-title","customTitle":"Evil"}}]}}',
+      'note: {"type":"custom-title","customTitle":"Evil text"}',
+      '{"type":"custom-title","customTitle":"Broken',
+      '{"type":"custom-title","customTitle":"Real"}',
+    ]
+    expect(identityFromRows(rows)).toEqual({ name: 'Real', color: null })
+  })
+
+  test('only named colors are accepted', async () => {
+    expect(identityFromRows(['{"type":"agent-color","agentColor":"constructor"}']).color).toBe(null)
+    expect(identityFromRows(['{"type":"agent-color","agentColor":"__proto__"}']).color).toBe(null)
+    expect(identityFromRows(['{"type":"agent-color","agentColor":"red"}']).color).toBe('red')
+  })
+})
+
+describe('validBeat', () => {
+  const now = Date.now()
+  const good = () => beat({ startedAt: now - 1000, beatAt: now })
+  const file = 'aaaaaaaa-1111.json'
+
+  test('accepts a valid beat with agents and links', async () => {
+    const value = good()
+    value.agents = [agent({ startedAt: now })]
+    value.links = [{ from: 'a', to: 'b', count: 2 }]
+    expect(validBeat(value, file, now)?.id).toBe('aaaaaaaa-1111')
+  })
+
+  test('rejects malformed fields', async () => {
+    const bad = (over: Record<string, unknown>) => validBeat({ ...good(), ...over }, file, now)
+    expect(bad({ context: undefined })).toBe(null)
+    expect(bad({ agents: [agent({ status: 'exploded' as never, startedAt: now })] })).toBe(null)
+    expect(bad({ links: [{ from: 'a', to: 5, count: 1 }] })).toBe(null)
+    expect(bad({ costUsd: '3' })).toBe(null)
+    expect(bad({ turnStartedAt: 1e300 })).toBe(null)
+  })
+
+  test('oversized agents and links are truncated on read', async () => {
+    const agents = Array.from({ length: 60 }, (_, i) =>
+      agent({ id: `a${i}`, status: i < 3 ? 'running' : 'done', startedAt: now }),
+    )
+    const links = Array.from({ length: 150 }, (_, i) => ({ from: `f${i}`, to: 't', count: 1 }))
+    const result = validBeat({ ...good(), agents, links }, file, now)
+    const ids = result?.agents.map(a => a.id) ?? []
+    expect(ids).toHaveLength(50)
+    expect(ids.slice(0, 3)).toEqual(['a0', 'a1', 'a2'])
+    expect(ids.slice(3)).toEqual(Array.from({ length: 47 }, (_, i) => `a${i + 13}`))
+    expect(result?.links).toHaveLength(100)
+    expect(result?.links[0]?.from).toBe('f50')
+    expect(result?.links[99]?.from).toBe('f149')
+    expect(validBeat({ ...good(), agents: [...agents, { id: 1 }] }, file, now)).toBe(null)
+  })
+
+  test('a legacy beat without endedAt and endReason is accepted as null', async () => {
+    const legacy: Record<string, unknown> = { ...good() }
+    delete legacy.endedAt
+    delete legacy.endReason
+    const result = validBeat(legacy, file, now)
+    expect(result?.endedAt).toBe(null)
+    expect(result?.endReason).toBe(null)
+  })
+
+  test('the file name helper matches the old inline form', async () => {
+    expect(beatFile('aaaaaaaa-1111')).toBe('aaaaaaaa-1111.json')
+    expect(beatFile('a/b c')).toBe('a_b_c.json')
+  })
+
+  test('the id is bound to the file name', async () => {
+    expect(validBeat(good(), 'other.json', now)).toBe(null)
+    expect(validBeat({ ...good(), id: '../../tmp/evil' }, '.._.._tmp_evil.json', now)).toBe(null)
+    expect(validBeat({ ...good(), id: '../../tmp/evil' }, file, now)).toBe(null)
+  })
+
+  test('the autopilot badge is type-checked', async () => {
+    expect(validBadge({ isOn: true, phase: 'running', until: now + 1000, restarts: 1, maxRestarts: null }, now)?.phase).toBe('running')
+    expect(validBadge({ isOn: true, waitUntil: 1e300 }, now)).toBe(null)
+    expect(validBadge({ isOn: true, restarts: 'x' }, now)).toBe(null)
+    expect(validBadge({ isOn: false }, now)).toBe(null)
+  })
+})
+
+describe('clean', () => {
+  test('strips escapes, bidi marks and newlines, and caps the length', async () => {
+    expect(clean('a\u001b[31mred‮x\ny')).toBe('a[31mredxy')
+    expect(clean(42)).toBe('')
+    expect(clean('a b c؜d⁠e⁤f\u{E0041}g\u009bh')).toBe('abcdefgh')
+    const emoji = clean('😀'.repeat(300))
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(emoji)).toBe(false)
+    expect(Array.from(emoji)).toHaveLength(120)
+    expect(emoji.endsWith('…')).toBe(true)
+    expect(clean('x'.repeat(300))).toHaveLength(120)
+    expect(clean('x'.repeat(300)).endsWith('…')).toBe(true)
+  })
+})
+
+describe('basename', () => {
+  test('trailing slashes are trimmed in linear time', async () => {
+    const started = Date.now()
+    expect(basename(`${'/'.repeat(100_000)}x`)).toBe('x')
+    expect(Date.now() - started).toBeLessThan(50)
+    expect(basename('/a/b/')).toBe('b')
+    expect(basename('/')).toBe('/')
   })
 })
 
@@ -149,5 +259,25 @@ describe('format', () => {
     expect(bar(null, 4)).toBe('····  ?%')
     expect(shortModel('claude-opus-5-5')).toBe('opus 5.5')
     expect(shortModel('claude-haiku-5-5-20261001')).toBe('haiku 5.5')
+  })
+})
+
+describe('clean, invisible characters', () => {
+  test('removes tag-encoded text and other format characters, keeps normal text and emoji', async () => {
+    expect(clean('a\u{E0049}\u{E0047}\u{E004E}b')).toBe('ab')
+    expect(clean('x؜y​z﻿w­v')).toBe('xyzwv')
+    expect(clean('Привіт, світе 😀')).toBe('Привіт, світе 😀')
+  })
+})
+
+describe('validBeat, future stamps', () => {
+  const now = 1_800_000_000_000
+  const file = 'aaaaaaaa-1111.json'
+  const at = (beatAt: number) => validBeat({ ...beat({ startedAt: now - 1000, beatAt }) }, file, now)
+
+  test('a beat more than 5 minutes ahead is rejected; up to 5 minutes and the past are kept', async () => {
+    expect(at(now + 300_000)?.id).toBe('aaaaaaaa-1111')
+    expect(at(now + 300_001)).toBe(null)
+    expect(at(now - 60_000)?.id).toBe('aaaaaaaa-1111')
   })
 })

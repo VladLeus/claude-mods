@@ -13,16 +13,19 @@ Function-hook mods are early access: you need a recent Claude Code (built and te
 
 ### Just use them
 
-In a Claude Code terminal session:
+Install a signed release tag, not `main`: pick the latest tag from the [releases](https://github.com/VladLeus/claude-mods/releases) and put it after `#`.
 
+```bash
+claude plugin marketplace add VladLeus/claude-mods#v0.2.0
+claude plugin install autopilot@local-mods
+claude plugin install agent-fleet@local-mods
 ```
-/plugin install autopilot --marketplace VladLeus/claude-mods
-/plugin install agent-fleet --marketplace VladLeus/claude-mods
-```
 
-Answer `y` to add the marketplace, pick the user scope. Restart Claude Code.
+Restart Claude Code. The marketplace stays on that tag, and third-party marketplaces do not auto-update unless you turn it on in `/plugin` → Marketplaces. To move to a newer release, check its notes and diff first, then remove the marketplace and add it again with the new tag.
 
-### Use and change them (recommended)
+### Develop them (clone + local marketplace)
+
+This mode is for developing the mods, not for everyday use. The marketplace is read live from your clone, so **any commit you pull or check out runs with full access to your machine on the next reload**. Review untrusted PRs in a separate worktree or clone that no marketplace points at. Never run `claude plugin test` (or reload plugins) on an untrusted PR checkout locally: spec files and hooks are code that runs with your full user access, so let the `specs` CI run them.
 
 ```bash
 git clone https://github.com/VladLeus/claude-mods.git ~/code/claude-mods
@@ -54,7 +57,7 @@ Handoffs are written to `thoughts/shared/handoffs/` of the project.
 Example, a night run:
 
 ```
-/autopilot 10h 65 "You are the Mil-tech scout, responsible for … Use /explore for the map." --goal "all briefs of D-001 have status: collected" --5h 95 --week 80
+/autopilot 10h 65 "You are the docs writer, responsible for … Use /explore for the map." --goal "issue #42 is closed and its docs are merged" --5h 95 --week 80
 ```
 
 - **time**: `90m`, `2h`, `1h30m`, or minutes.
@@ -81,9 +84,11 @@ While it runs:
 `main` takes changes through pull requests only, and a PR merges after the owner (@VladLeus) approves it:
 
 - Work on a branch, open a PR against `main`.
-- The owner's approval is required (CODEOWNERS + the branch ruleset); new commits dismiss it.
-- On approval the PR gets the `owner-approved` label and the `owner-approval` status turns green. Only the owner can set that label; anyone else's is removed automatically.
-- Force-pushing or deleting `main` is blocked.
+- A PR is required, with 1 code-owner approval (CODEOWNERS + the branch ruleset); new commits dismiss it.
+- Required checks: `owner-approval`, `specs` (each mod and the marketplace) and `signed-commits`. Commits must be signed.
+- `protected-paths` is a warning, not a requirement: it turns red when a PR touches `.github/`, CODEOWNERS or removes or shrinks tests, so the owner reviews those changes with extra care.
+- The `owner-approval` status is success only when the owner's latest review is an approval of the PR's current head; the `owner-approved` label mirrors it and a label set by hand is overwritten.
+- No direct pushes and no force pushes to `main`, not even for admins: an admin can bypass the rules only by merging a PR.
 
 Collaborators push branches to this repository. A PR from a fork works too, but its label and status are then set by the owner by hand (a fork's workflow token cannot write to this repository).
 
