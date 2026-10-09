@@ -122,18 +122,29 @@ describe('command', () => {
   })
 
   test('a 200k-character quoted role is split in linear time', async () => {
+    // Compares the time for 10x more input instead of a wall-clock budget, so a slow runner
+    // cannot fail it: linear grows ~10x, quadratic ~100x.
     const inputs = [
-      `2h 60 '${"a'".repeat(100_000)}`,
-      `2h 60 "${' --goal x"'.repeat(20_000)} X`,
-      `2h 60 "${' --goal “"'.repeat(20_000)}”`,
-      `2h 60 "${' --goal “"'.repeat(20_000)} X`,
-      `2h 60 "role" --goal ${'x'.repeat(200_000)} !`,
-      `2h 60 "${' '.repeat(200_000)}`,
+      (n: number) => `2h 60 '${"a'".repeat(n / 2)}`,
+      (n: number) => `2h 60 "${' --goal x"'.repeat(n / 10)} X`,
+      (n: number) => `2h 60 "${' --goal “"'.repeat(n / 10)}”`,
+      (n: number) => `2h 60 "${' --goal “"'.repeat(n / 10)} X`,
+      (n: number) => `2h 60 "role" --goal ${'x'.repeat(n)} !`,
+      (n: number) => `2h 60 "${' '.repeat(n)}`,
     ]
+    const fastest = (input: string) => {
+      let best = Infinity
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now()
+        parseCommand(input)
+        best = Math.min(best, performance.now() - started)
+      }
+      return best
+    }
     for (const input of inputs) {
-      const started = Date.now()
-      parseCommand(input)
-      expect(Date.now() - started).toBeLessThan(200)
+      const small = fastest(input(20_000))
+      const large = fastest(input(200_000))
+      expect(large).toBeLessThan(30 * Math.max(small, 1))
     }
   })
 
