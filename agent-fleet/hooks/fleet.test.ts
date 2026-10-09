@@ -261,3 +261,23 @@ describe('format', () => {
     expect(shortModel('claude-haiku-5-5-20261001')).toBe('haiku 5.5')
   })
 })
+
+describe('clean, invisible characters', () => {
+  test('removes tag-encoded text and other format characters, keeps normal text and emoji', async () => {
+    expect(clean('a\u{E0049}\u{E0047}\u{E004E}b')).toBe('ab')
+    expect(clean('x؜y​z﻿w­v')).toBe('xyzwv')
+    expect(clean('Привіт, світе 😀')).toBe('Привіт, світе 😀')
+  })
+})
+
+describe('validBeat, future stamps', () => {
+  const now = 1_800_000_000_000
+  const file = 'aaaaaaaa-1111.json'
+  const at = (beatAt: number) => validBeat({ ...beat({ startedAt: now - 1000, beatAt }) }, file, now)
+
+  test('a beat more than 5 minutes ahead is rejected; up to 5 minutes and the past are kept', async () => {
+    expect(at(now + 300_000)?.id).toBe('aaaaaaaa-1111')
+    expect(at(now + 300_001)).toBe(null)
+    expect(at(now - 60_000)?.id).toBe('aaaaaaaa-1111')
+  })
+})

@@ -363,6 +363,23 @@ const IDENTITY_KEYS: Record<string, string> = {
   'agent-color': 'agentColor',
 }
 
+/** The color names a session can carry (the same keys as agent-fleet's SESSION_COLORS; not imported across mods). */
+const SESSION_COLOR_NAMES: Record<string, true> = {
+  red: true,
+  blue: true,
+  green: true,
+  yellow: true,
+  purple: true,
+  orange: true,
+  pink: true,
+  cyan: true,
+}
+
+/** Whether a phase is the one where the run follows the session to its new id: only its own /clear restart. */
+export function followsNewSessionId(phase: Phase): boolean {
+  return phase === 'restarting'
+}
+
 /**
  * The session's name and color from whole transcript lines, only from
  * top-level identity rows, the last of each kind winning: /rename's title,
@@ -376,7 +393,9 @@ export function identityFromRows(lines: readonly string[]): { name: string | nul
     const key = IDENTITY_KEYS[kind]
     if (!row || !key) continue
     const value = row[key]
-    if (typeof value === 'string' && value) last[kind] = value
+    if (typeof value !== 'string' || !value) continue
+    if (kind === 'agent-color' && !Object.hasOwn(SESSION_COLOR_NAMES, value)) continue
+    last[kind] = value
   }
 
   return { name: last['custom-title'] ?? last['agent-name'] ?? null, color: last['agent-color'] ?? null }
@@ -385,11 +404,20 @@ export function identityFromRows(lines: readonly string[]): { name: string | nul
 const MAX_SHOWN_VALUE = 80
 
 /**
- * Control and invisible characters: C0, DEL, C1, the line and paragraph
- * separators, and the bidi marks, embeddings, overrides and isolates.
+ * Control and invisible characters: every control (Cc), format (Cf: bidi
+ * marks, zero-width, soft hyphen, tag characters) and the line and paragraph
+ * separators (Zl, Zp).
  */
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u{2028}\u{2029}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/u
-const INVISIBLE_ALL = new RegExp(INVISIBLE.source, 'gu')
+const INVISIBLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
+const INVISIBLE_ALL = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu
+
+/** Trailing slashes off a path, in one linear pass (a regex backtracks on a long run). */
+function trimTrailingSlashes(path: string): string {
+  let end = path.length
+  while (end > 0 && path[end - 1] === '/') end--
+
+  return path.slice(0, end)
+}
 
 /** A transcript value shown to the model as data: control and invisible characters out, capped, JSON-quoted. */
 function quoteValue(value: string): string {
@@ -405,7 +433,7 @@ export function isValidHandoffPath(root: string, path: string): boolean {
   if (!path || INVISIBLE.test(path)) return false
   if (path.split('/').includes('..')) return false
   if (!path.endsWith('.md')) return false
-  const handoffs = `${root.replace(/\/+$/, '')}/thoughts/shared/handoffs/`
+  const handoffs = `${trimTrailingSlashes(root)}/thoughts/shared/handoffs/`
   const absolute = resolveHandoffPath(root, path)
 
   return absolute.startsWith(handoffs) && absolute.length > handoffs.length
@@ -415,7 +443,7 @@ export function isValidHandoffPath(root: string, path: string): boolean {
 export function resolveHandoffPath(root: string, path: string): string {
   if (path.startsWith('/')) return path
 
-  return `${root.replace(/\/+$/, '')}/${path}`
+  return `${trimTrailingSlashes(root)}/${path}`
 }
 
 export function formatLeft(ms: number): string {

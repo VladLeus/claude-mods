@@ -12,6 +12,7 @@ import {
   autoAnswersQuestions,
   effectiveTrigger,
   finalPrompt,
+  followsNewSessionId,
   formatLeft,
   goalState,
   goalVerdictsFromRows,
@@ -100,10 +101,10 @@ async function log($: EngineInterface, line: string): Promise<void> {
   if (!home) return
   const path = `${autopilotDir()}/${sessionId}.log`
   // Free text may carry line breaks; flattened, it cannot forge a log line.
-  // Invisible characters (C1, bidi marks, embeddings, overrides, isolates) go too.
+  // Every other control, format and separator character goes too (same class as autopilot.ts).
   const flat = line
     .replace(/[\r\n\u{85}\u{2028}\u{2029}]/gu, ' ')
-    .replace(/[\u{80}-\u{9f}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/gu, '')
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
   const stamp = new Date(await $.clock.now()).toISOString()
   let before = ''
   try {
@@ -164,7 +165,7 @@ async function grepTranscript($: EngineInterface, pattern: string): Promise<stri
   if (!home) return []
   let out = ''
   try {
-    const grep = $.process.spawn({ argv: ['grep', '-E', '-e', pattern, await transcriptOf($, sessionId)] })
+    const grep = $.process.spawn({ argv: ['/usr/bin/grep', '-E', '-e', pattern, '--', await transcriptOf($, sessionId)] })
     for await (const chunk of grep) if (chunk.stream === 'stdout') out += chunk.text
   } catch {
     return []
@@ -215,7 +216,7 @@ async function syncId($: EngineInterface): Promise<void> {
   if (id === sessionId) return
   const previous = sessionId
   sessionId = id
-  if (run?.phase === 'restarting') {
+  if (run && followsNewSessionId(run.phase)) {
     if (previous) await $.store.delete(storeKey(previous))
     await save($)
     return
@@ -324,7 +325,8 @@ function statusText(now: number): string {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    home = (await $.env.get('HOME')) ?? ''
+    const rawHome = (await $.env.get('HOME')) ?? ''
+    home = rawHome.startsWith('/') ? rawHome : ''
     // State and logs are the person's alone: the folder is closed to other users.
     if (home) {
       await $.process.run(['/bin/mkdir', '-p', autopilotDir()]).catch(() => undefined)

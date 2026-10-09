@@ -91,7 +91,7 @@ export function identityFromRows(lines: string[]): { name: string | null; color:
  */
 export function clean(s: unknown, max = 120): string {
   if (typeof s !== 'string') return ''
-  const stripped = s.replace(/[\u{0}-\u{1f}\u{7f}-\u{9f}\u{61c}\u{200b}-\u{200f}\u{2028}-\u{202e}\u{2060}-\u{2064}\u{2066}-\u{2069}\u{feff}\u{e0000}-\u{e007f}]/gu, '')
+  const stripped = s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
   const points = Array.from(stripped)
   if (points.length <= max) return stripped
 
@@ -102,6 +102,7 @@ export const MAX_BEAT_BYTES = 64 * 1024
 const MAX_AGENTS = 50
 const MAX_LINKS = 100
 const TEN_YEARS_MS = 10 * 365 * 24 * 60 * 60_000
+const BEAT_FUTURE_SKEW_MS = 5 * 60_000
 const AGENT_STATES: readonly string[] = ['running', 'waiting', 'done', 'failed']
 
 /** The heartbeat file name of a session id (the id itself is validated, so this is the id plus .json). */
@@ -165,6 +166,7 @@ export function validBeat(value: unknown, fileName: string, now = Date.now()): B
   if (!isStrOrNull(name) || !isStrOrNull(color)) return null
   if (typeof label !== 'string' || typeof cwd !== 'string' || typeof model !== 'string') return null
   if (!isStamp(value.startedAt, now) || !isStamp(value.beatAt, now)) return null
+  if (value.beatAt > now + BEAT_FUTURE_SKEW_MS) return null
   if (typeof value.isActive !== 'boolean' || typeof value.isEnded !== 'boolean') return null
   if (!isStampOrNull(value.turnStartedAt, now) || !isStampOrNull(value.idleSince, now)) return null
   const endedAt = value.endedAt ?? null
