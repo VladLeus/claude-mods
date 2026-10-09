@@ -229,10 +229,24 @@ export function validBeat(value: unknown, fileName: string, now = Date.now()): B
   }
 }
 
+/** The reasons autopilot's wait_for takes (the same list as autopilot's WAIT_REASONS; not imported across mods). */
+const WAIT_REASONS: readonly string[] = [
+  'user-input',
+  'user-answer',
+  'session-answer',
+  'session-ping',
+  'workflow-end',
+  'subagent-result',
+  'background-task',
+  'other',
+]
+const MAX_WAITING_FROM = 64
+
 /** The autopilot badge as the autopilot mod wrote it, or null when it is off or malformed. */
 export function validBadge(value: unknown, now = Date.now()): AutopilotBadge | null {
   if (!isObject(value) || value.isOn !== true) return null
   const { phase, until, threshold, restarts, maxRestarts, waitUntil, hasGoal } = value
+  const { waitingFor, waitingFrom, waitingSince } = value
   if (phase !== undefined && typeof phase !== 'string') return null
   if (until !== undefined && !isStamp(until, now)) return null
   if (threshold !== undefined && !isNum(threshold)) return null
@@ -240,8 +254,24 @@ export function validBadge(value: unknown, now = Date.now()): AutopilotBadge | n
   if (maxRestarts !== undefined && !isNumOrNull(maxRestarts)) return null
   if (waitUntil !== undefined && !isStampOrNull(waitUntil, now)) return null
   if (hasGoal !== undefined && typeof hasGoal !== 'boolean') return null
+  if (waitingFor !== undefined && waitingFor !== null && !WAIT_REASONS.includes(waitingFor as string)) return null
+  if (waitingFrom !== undefined && !isStrOrNull(waitingFrom)) return null
+  if (typeof waitingFrom === 'string' && waitingFrom.length > MAX_WAITING_FROM) return null
+  if (waitingSince !== undefined && !isStampOrNull(waitingSince, now)) return null
 
-  return { isOn: true, phase, until, threshold, restarts, maxRestarts, waitUntil, hasGoal }
+  return {
+    isOn: true,
+    phase,
+    until,
+    threshold,
+    restarts,
+    maxRestarts,
+    waitUntil,
+    hasGoal,
+    waitingFor: waitingFor as string | null | undefined,
+    waitingFrom,
+    waitingSince,
+  }
 }
 
 /** "claude-opus-5-5" → "opus 5.5"; anything else as is. */
@@ -314,10 +344,16 @@ export function bar(percent: number | null, width = 12): string {
 
 /**
  * The autopilot badge: phase, time left, trigger and restarts, the goal flag;
- * on a 5-hour wait, when it resumes instead of the time left.
+ * on a 5-hour wait, when it resumes instead of the time left; on a declared
+ * wait, what for, from whom and for how long instead of the phase.
  */
 export function autopilotLine(badge: AutopilotBadge, now: number): string {
   const parts = [`⚙ autopilot · ${clean(badge.phase ?? 'on', 32)}`]
+  if (badge.phase === 'awaiting' && badge.waitingFor) {
+    const from = badge.waitingFrom ? ` ← ${clean(badge.waitingFrom, 32)}` : ''
+    const since = typeof badge.waitingSince === 'number' ? ` · ${ago(now - badge.waitingSince)}` : ''
+    parts[0] = `⚙ autopilot · ⏸ ${clean(badge.waitingFor, 32)}${from}${since}`
+  }
   if (badge.phase === 'waiting' && badge.waitUntil) {
     parts.push(`resumes ${new Date(badge.waitUntil).toISOString().slice(11, 16)} UTC`)
   } else if (badge.until) {

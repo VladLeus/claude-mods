@@ -1,6 +1,21 @@
-import type { Command, FinalReason, Phase, Run, TokenWindow } from '../types'
+import type { Awaiting, Command, FinalReason, Phase, Run, TokenWindow, WaitReason } from '../types'
 
 export const RESTART_TOOL = 'restart_session'
+export const WAIT_TOOL = 'wait_for'
+/** The wait tool as the engine names it in a tool call. */
+export const FULL_WAIT_TOOL = `mcp__autopilot__${WAIT_TOOL}`
+export const WAIT_REASONS: readonly WaitReason[] = [
+  'user-input',
+  'user-answer',
+  'session-answer',
+  'session-ping',
+  'workflow-end',
+  'subagent-result',
+  'background-task',
+  'other',
+]
+const MAX_WAIT_FROM = 64
+const MAX_WAIT_NOTE = 200
 export const MAX_IDLE_TURNS = 2
 /**
  * A threshold below this sits close to what a resume alone loads, so every
@@ -62,6 +77,14 @@ function takeFlag(text: string, name: string): { value: string | null; rest: str
   return { value, rest: ` ${text}`.replace(match[0], '').trim() }
 }
 
+/** Takes every `--name` switch (no value) out of the arguments; whether there was one. */
+function takeSwitch(text: string, name: string): { isOn: boolean; rest: string } {
+  const pattern = new RegExp(`\\s--${name}(?=\\s|$)`, 'g')
+  const rest = ` ${text}`.replace(pattern, '')
+
+  return { isOn: rest.length !== text.length + 1, rest: rest.trim() }
+}
+
 function percentFlag(value: string | null, fallback: number, label: string): number | string {
   if (value === null) return fallback
   const number = Number(value)
@@ -73,11 +96,13 @@ function percentFlag(value: string | null, fallback: number, label: string): num
 const ROLE_QUOTES: Record<string, string> = { '"': '"', '“': '”', '«': '»', "'": "'" }
 
 const FLAG_NAMES = ['--goal', '--5h', '--week']
+/** Flags that take no value. */
+const SWITCH_NAMES = ['--ask-user']
 const isSpace = (char: string | undefined): boolean => char !== undefined && /\s/.test(char)
 
 /**
  * For each position, whether the text from there to the end is only flag
- * syntax, the same as `^(\s+--(goal|5h|week)\s+(<quoted value>|\S+))*\s*$`
+ * syntax, the same as `^(\s+--(goal|5h|week)\s+(<quoted value>|\S+)|\s+--ask-user(?=\s|$))*\s*$`
  * with the value quoted in any supported style. Read in one pass from the end,
  * each position's answer from one further on, so it stays linear: a regex
  * tried at every closing quote would rescan the tail for each of them.
@@ -104,6 +129,13 @@ function flagsOnlyFrom(text: string): Uint8Array {
     const flagAt = nextNonSpace[at] ?? size
     if (flagAt === size) {
       isFlagsOnly[at] = 1
+      continue
+    }
+    // A switch ends at the next space or the end; what follows it decides.
+    const switchName = SWITCH_NAMES.find(flag => text.startsWith(flag, flagAt))
+    const switchEnd = flagAt + (switchName?.length ?? 0)
+    if (switchName && (switchEnd === size || isSpace(text[switchEnd]))) {
+      isFlagsOnly[at] = isFlagsOnly[switchEnd] ?? 0
       continue
     }
     const name = FLAG_NAMES.find(flag => text.startsWith(flag, flagAt))
@@ -146,12 +178,12 @@ function splitQuotedRole(text: string): { head: string; rest: string } | null {
 }
 
 const USAGE =
-  'Usage: /autopilot <time> <threshold%> [max restarts] "<role>" [--goal "<condition>"] [--5h 95] [--week 80]  ·  /autopilot 0 0 stop'
+  'Usage: /autopilot <time> <threshold%> [max restarts] "<role>" [--goal "<condition>"] [--5h 95] [--week 80] [--ask-user]  ·  /autopilot 0 0 stop'
 
 /**
  * `/autopilot` arguments: nothing (status), `stop` or `0 0 stop`, or
  * `<duration> <threshold%> [max restarts] "<role>"` with optional flags
- * `--goal "<condition>"`, `--5h <%>`, `--week <%>`. No max means as many
+ * `--goal "<condition>"`, `--5h <%>`, `--week <%>`, `--ask-user`. No max means as many
  * restarts as the time allows.
  */
 export function parseCommand(args: string): Command {
@@ -168,6 +200,9 @@ export function parseCommand(args: string): Command {
   flagText = fiveHourFlag.rest
   const weekFlag = takeFlag(flagText, 'week')
   flagText = weekFlag.rest
+  // After the valued flags, so a quoted --goal holding the word keeps it.
+  const askUserFlag = takeSwitch(flagText, 'ask-user')
+  flagText = askUserFlag.rest
   text = quoted ? `${quoted.head}${flagText}`.trim() : flagText
 
   const fiveHourStop = percentFlag(fiveHourFlag.value, DEFAULT_FIVE_HOUR_STOP, '--5h')
@@ -200,6 +235,7 @@ export function parseCommand(args: string): Command {
     goal,
     fiveHourStop,
     weekStop,
+    askUser: askUserFlag.isOn,
   }
 }
 
@@ -274,6 +310,9 @@ export function afterTurn(
   // The turn that called the restart tool ends before /clear runs: queue nothing,
   // or a prompt could reach the fresh conversation ahead of the resume.
   if (run.phase === 'paused' || run.phase === 'restarting' || run.phase === 'waiting') return 'none'
+  // The session declared a wait: no nudge; the next turn that starts wakes it.
+  // The context trigger and the limits are checked again on that turn; time is the 30 s clock's.
+  if (run.phase === 'awaiting') return 'none'
   // The turn /resume-handoff-doc started: the resume ran; back to work.
   if (run.phase === 'resuming') return 'resume-done'
   // A wrap-up turn ended; the model either called the restart tool or not.
@@ -304,15 +343,107 @@ export function wrapMidTurn(
 
 /** Phases in which the session must be able to end its turn: a goal's Stop hook may not hold it. */
 export function shouldDropStopBlock(phase: Phase): boolean {
-  return phase === 'wrapping' || phase === 'restarting' || phase === 'final'
+  return phase === 'wrapping' || phase === 'restarting' || phase === 'final' || phase === 'awaiting'
 }
 
 /**
  * Whether autopilot answers AskUserQuestion and marks refused actions as
  * deferred: not while paused or waiting, when the person is in control.
+ * A declared wait (awaiting) still counts as away.
  */
 export function autoAnswersQuestions(phase: Phase): boolean {
   return phase !== 'paused' && phase !== 'waiting'
+}
+
+/** A free-text wait field: invisible characters out, trimmed, capped; empty is null. */
+function waitField(value: unknown, name: string, max: number): { value: string | null } | { error: string } {
+  if (value === undefined) return { value: null }
+  if (typeof value !== 'string') return { error: `${name} must be a string.` }
+  const text = value.replace(INVISIBLE_ALL, '').trim().slice(0, max)
+
+  return { value: text || null }
+}
+
+/**
+ * The wait_for tool's input as a wait starting now: a known reason, optional
+ * `from` and `note`, and an optional `timeout` ("30m", "1h") after which
+ * autopilot checks once, never later than the run's end.
+ */
+export function parseWaitInput(
+  input: unknown,
+  now: number,
+  until: number,
+): { kind: 'ok'; awaiting: Awaiting } | { kind: 'error'; message: string } {
+  if (!input || typeof input !== 'object') return { kind: 'error', message: 'wait_for needs an input object.' }
+  const fields = input as Record<string, unknown>
+  const reason = WAIT_REASONS.find(known => known === fields.reason)
+  if (!reason) return { kind: 'error', message: `reason must be one of: ${WAIT_REASONS.join(', ')}.` }
+  const from = waitField(fields.from, 'from', MAX_WAIT_FROM)
+  if ('error' in from) return { kind: 'error', message: from.error }
+  const note = waitField(fields.note, 'note', MAX_WAIT_NOTE)
+  if ('error' in note) return { kind: 'error', message: note.error }
+
+  let timeoutAt: number | null = null
+  if (fields.timeout !== undefined) {
+    if (typeof fields.timeout !== 'string') return { kind: 'error', message: 'timeout must be a string such as "30m" or "1h".' }
+    const ms = parseDuration(fields.timeout.trim())
+    if (ms === null || ms <= 0) return { kind: 'error', message: `Cannot read the timeout ${quoteValue(fields.timeout)} (try 30m, 1h, 1h30m).` }
+    timeoutAt = Math.min(now + ms, until)
+  }
+
+  return { kind: 'ok', awaiting: { reason, from: from.value, note: note.value, since: now, timeoutAt, pinged: false } }
+}
+
+/** Whether a main-loop tool call ends a declared wait: any tool but the wait tool itself means the session went on working. */
+export function endsWait(phase: Phase, tool: string): boolean {
+  return phase === 'awaiting' && tool !== FULL_WAIT_TOOL
+}
+
+/**
+ * Why wait_for is refused in this phase, or null when allowed: while running,
+ * and again while awaiting (a repeat replaces the wait).
+ */
+export function waitPhaseRefusal(phase: Phase): string | null {
+  if (phase === 'running' || phase === 'awaiting') return null
+  if (phase === 'resuming') {
+    return `Autopilot is finishing the resume from the handoff: end this turn normally; you can call ${WAIT_TOOL} in the next turn.`
+  }
+
+  return 'Autopilot is not driving right now: no wait needed.'
+}
+
+const PERSON_REASONS: readonly WaitReason[] = ['user-answer', 'user-input']
+
+/**
+ * Why a wait is refused, or null when allowed. Waiting for the person needs
+ * --ask-user, and then the question or action as its note.
+ */
+export function waitRefusal(awaiting: Awaiting, askUser: boolean): string | null {
+  if (!PERSON_REASONS.includes(awaiting.reason)) return null
+  if (!askUser) {
+    return 'This run does not wait for the person (no --ask-user): decide yourself, or send one PushNotification and continue with other work.'
+  }
+  if (!awaiting.note) return `A wait for ${awaiting.reason} needs the question or the action for the person as its note.`
+
+  return null
+}
+
+/** The wait as one short line: reason, who from, how long, the note. */
+export function waitText(awaiting: Awaiting, now: number): string {
+  return [
+    awaiting.reason,
+    ...(awaiting.from ? [` ← ${quoteValue(awaiting.from)}`] : []),
+    ` · ${formatLeft(now - awaiting.since)}`,
+    ...(awaiting.note ? [` — ${quoteValue(awaiting.note)}`] : []),
+  ].join('')
+}
+
+/** The one check autopilot sends when a declared wait runs past its timeout. */
+export function waitTimeoutPrompt(awaiting: Awaiting, now: number): string {
+  const from = awaiting.from ? ` from ${quoteValue(awaiting.from)}` : ''
+  const note = awaiting.note ? ` (${quoteValue(awaiting.note)})` : ''
+
+  return `Autopilot: you have waited ${formatLeft(now - awaiting.since)} for ${awaiting.reason}${from}${note}. Check whether it arrived or is stuck; escalate within your role if needed (PushNotification for the person), then continue or call ${WAIT_TOOL} again.`
 }
 
 function parseRow(line: string): Record<string, unknown> | null {
@@ -494,7 +625,15 @@ export function roleSection(run: Run, now: number): string {
     'Rules while the person is away:',
     '- Ordinary questions: decide yourself within your role, prefer the reversible option, and record the decision (question, options, choice, why) for your handoff.',
     '- Permissions stay exactly as they are. If an action is denied or needs the person (a push, a commit, anything the permission mode blocks), never retry it another way to get around the denial: note it as deferred until the person returns, and continue with other work.',
-    '- Only when a question truly cannot wait for the person and blocks all useful work, call the PushNotification tool with a one-line question (under 200 characters), then continue with whatever else you can do.',
+    ...(run.askUser === true
+      ? [
+          `- Only when the person is truly required — an irreversible or outward-facing action, missing access or credentials, a decision outside your role, or something that blocks all useful work and that autopilot cannot decide — call PushNotification with the one-line question, then call ${WAIT_TOOL} with reason user-answer (or user-input for an action the person must take) and the question as note, and end your turn. Everything else you decide yourself.`,
+        ]
+      : [
+          '- Only when a question truly cannot wait for the person and blocks all useful work, call the PushNotification tool with a one-line question (under 200 characters), then continue with whatever else you can do.',
+        ]),
+    `- When you hand work to another session, a subagent, a workflow or a background task${run.askUser === true ? ', or need the person' : ''}, and nothing else useful is left for you: call the ${WAIT_TOOL} tool with the reason (and who from), then end your turn. Do not invent work while waiting and do not poll; any incoming message wakes you. Autopilot will not nudge you meanwhile.`,
+    ...(run.phase === 'awaiting' && run.awaiting ? [`- Right now you are waiting: ${waitText(run.awaiting, now)}.`] : []),
     '- You may refine the goal of the next stage. You may never change your purpose, role or responsibilities.',
     '- Ending this session is autopilot\'s call, not yours: never write a handoff or wind down on your own. Autopilot tells you when (context threshold, time, limits) and how. A previous handoff saying a session ended means that session, not this one: keep working.',
   ].join('\n')
@@ -513,7 +652,7 @@ export function kickoffPrompt(run: Run, now: number): string {
 /** The line a session answers with when everything its role covers is done. */
 export const DONE_MARKER = 'AUTOPILOT_DONE'
 
-export const CONTINUE_PROMPT = `Autopilot: keep going toward your goal within your role. If the current stage is done, pick the next most valuable step within your role and do it. Deferred actions wait for the person. If everything your role covers is complete and no valuable step is left, do not invent work: answer with the line ${DONE_MARKER} and a one-line reason.`
+export const CONTINUE_PROMPT = `Autopilot: keep going toward your goal within your role. If the current stage is done, pick the next most valuable step within your role and do it. Deferred actions wait for the person. If everything your role covers is complete and no valuable step is left, do not invent work: answer with the line ${DONE_MARKER} and a one-line reason. If you are waiting for another session, a subagent, a workflow or the person, call ${WAIT_TOOL} instead of working around it.`
 
 /** Whether a turn's answer declares the role's work complete: the marker opens a line, never mid-sentence. */
 export function isDoneAnswer(answer: string): boolean {
@@ -571,6 +710,13 @@ export const RESUME_AFTER_WAIT_PROMPT =
 /** The answer an AskUserQuestion gets while the person is away. */
 export const ASK_ANSWER =
   'The person is away (autopilot). Decide this yourself within your role, prefer the reversible option, record the decision for the handoff, and continue. If it truly cannot wait and blocks all useful work, send one PushNotification with the question and continue with other work.'
+
+/** The AskUserQuestion answer for this run: with --ask-user it points to the critical-only wait. */
+export function askAnswer(askUser: boolean): string {
+  if (!askUser) return ASK_ANSWER
+
+  return `${ASK_ANSWER} If the person is truly required (see your rules), use PushNotification and ${WAIT_TOOL} user-answer instead of asking here.`
+}
 
 /** What the model reads after an action the permission mode refused. */
 export const DEFERRED_NOTE =

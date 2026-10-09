@@ -55,6 +55,10 @@ export type AutopilotBadge = {
   maxRestarts?: number | null
   waitUntil?: number | null
   hasGoal?: boolean
+  /** While the session declared a wait (phase awaiting): what for, from whom, since when. */
+  waitingFor?: string | null
+  waitingFrom?: string | null
+  waitingSince?: number | null
 }
 
 export type Liveness = 'active' | 'idle' | 'stale' | 'ended'

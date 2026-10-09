@@ -49,7 +49,7 @@ Handoffs are written to `thoughts/shared/handoffs/` of the project.
 ## autopilot
 
 ```
-/autopilot <time> <threshold%> [max restarts] "<role>" [--goal "<condition>"] [--5h 95] [--week 80]
+/autopilot <time> <threshold%> [max restarts] "<role>" [--goal "<condition>"] [--5h 95] [--week 80] [--ask-user]
 /autopilot                 # status
 /autopilot 0 0 stop        # hand the wheel back (also clears the goal)
 ```
@@ -67,12 +67,17 @@ Example, a night run:
 - **--goal**: a `/goal` completion condition, set again after every `/clear`. When the evaluator marks it met, autopilot asks for a final handoff and stops. Phrase it in terms of files or repo state, not "in the chat": after `/clear` the chat is empty.
 - **--5h**: at this % of the 5-hour token window it parks and resumes 2 minutes after the window resets.
 - **--week**: at this % of the weekly window it stops for good: final handoff, summary, a phone notification from the session, autopilot off.
+- **--ask-user**: lets the session wait for you, for critical things only (an irreversible or outward-facing action, missing access, a decision outside its role): it sends a phone notification with the question, waits with `wait_for`, and is not nudged until you answer. Everything else it still decides itself. Without the flag it never waits for you.
 
 While it runs:
 
 - Ordinary questions (`AskUserQuestion`) are answered with "decide yourself within your role"; the decision goes into the handoff. Only a question that truly cannot wait is sent to your phone (`PushNotification`).
 - Permissions stay as they are. Run the session in auto mode or with allow rules. An action the permission mode refuses (a push, a commit) is never retried another way: it is logged as deferred and left for you.
 - The session never ends or hands off on its own; autopilot decides. If the work is done it answers `AUTOPILOT_DONE` and autopilot wraps up.
+- Waiting: when the session hands work to someone else and has nothing useful left, it calls the `wait_for` tool and ends its turn. While it waits, autopilot does not nudge it, does not count idle turns and drops the goal's re-prompt. Any new turn (a message from another session, a subagent or workflow finishing, you) wakes it.
+  - Reasons: `session-answer`, `session-ping`, `subagent-result`, `workflow-end`, `background-task`, `other`, and with `--ask-user` also `user-answer` and `user-input` (these need the question as `note`). `from` names who it waits for.
+  - `timeout` (`30m`, `1h`): past it, autopilot asks the session once to check whether the answer is stuck. It never runs past the run's time.
+  - The status and the fleet badge show what it waits for, from whom and for how long: `/autopilot` prints `Waiting: session-answer ← "BE-expert" · 12m`, the fleet badge `⏸ session-answer ← BE-expert · 12m00s`.
 - Log: `~/.claude/autopilot/<session id>.log` (decisions, deferrals, restarts, limits).
 
 ## agent-fleet

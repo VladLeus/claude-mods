@@ -7,8 +7,33 @@
  * - waiting: the 5-hour token window is nearly used up; parked until it resets
  * - final: time, restarts, the weekly limit or the goal: a last handoff, no restart
  * - paused: stalled twice in a row; waits for the person
+ * - awaiting: the session declared it waits for something (wait_for); not nudged until a new turn starts
  */
-export type Phase = 'running' | 'wrapping' | 'restarting' | 'resuming' | 'waiting' | 'final' | 'paused'
+export type Phase = 'running' | 'wrapping' | 'restarting' | 'resuming' | 'waiting' | 'final' | 'paused' | 'awaiting'
+
+/** What a session waits for when it calls wait_for. */
+export type WaitReason =
+  | 'user-input'
+  | 'user-answer'
+  | 'session-answer'
+  | 'session-ping'
+  | 'workflow-end'
+  | 'subagent-result'
+  | 'background-task'
+  | 'other'
+
+/** A wait the session declared: what for, from whom, since when, and when autopilot checks on it. */
+export type Awaiting = {
+  reason: WaitReason
+  /** Who the answer comes from (a session name, a subagent); null when not given. */
+  from: string | null
+  note: string | null
+  since: number
+  /** When autopilot asks once whether the wait is stuck; null for never. */
+  timeoutAt: number | null
+  /** Whether that check was already sent. */
+  pinged: boolean
+}
 
 export type FinalReason = 'time' | 'restarts' | 'week' | 'goal' | 'done'
 
@@ -41,6 +66,10 @@ export type Run = {
   waitUntil: number | null
   /** Why the run is in its final phase. */
   finalReason: FinalReason | null
+  /** The wait the session declared; null when not waiting. Missing in runs stored by older versions. */
+  awaiting: Awaiting | null
+  /** Whether questions go to the person (--ask-user) instead of being answered by autopilot. Missing in older runs. */
+  askUser: boolean
 }
 
 export type StartCommand = {
@@ -52,6 +81,7 @@ export type StartCommand = {
   goal: string | null
   fiveHourStop: number
   weekStop: number
+  askUser: boolean
 }
 
 export type Command =
