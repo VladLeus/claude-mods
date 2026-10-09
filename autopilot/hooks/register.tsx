@@ -9,18 +9,23 @@ import {
   RESTART_TOOL,
   RESUME_AFTER_WAIT_PROMPT,
   afterTurn,
+  autoAnswersQuestions,
   effectiveTrigger,
   finalPrompt,
   formatLeft,
   goalState,
+  goalVerdictsFromRows,
+  identityFromRows,
   isDoneAnswer,
+  isValidHandoffPath,
   kickoffPrompt,
   limitAction,
   namedSkills,
   parseCommand,
-  pickIdentity,
+  resolveHandoffPath,
   restartsText,
   roleSection,
+  shouldDropStopBlock,
   triggerCeiling,
   waitPrompt,
   wrapMidTurn,
@@ -33,7 +38,8 @@ const GOAL_IDLE_MS = 20_000
 
 let run: Run | null = null
 let sessionId = ''
-let home = '.'
+// Empty when HOME is unset: then no state or log file is written at all.
+let home = ''
 let isTurnRunning = false
 let toolsThisTurn = 0
 // Counts main turns, so a delayed check can tell whether a new turn started meanwhile.
@@ -68,10 +74,11 @@ async function save($: EngineInterface): Promise<void> {
   if (!sessionId) return
   if (!run) {
     await $.store.delete(storeKey(sessionId))
-    await $.fs.write(`${autopilotDir()}/${sessionId}.json`, JSON.stringify({ isOn: false }))
+    if (home) await $.fs.write(`${autopilotDir()}/${sessionId}.json`, JSON.stringify({ isOn: false }))
     return
   }
   await $.store.set(storeKey(sessionId), run)
+  if (!home) return
   // Read by the fleet dashboard for its badge.
   await $.fs.write(
     `${autopilotDir()}/${sessionId}.json`,
@@ -90,7 +97,13 @@ async function save($: EngineInterface): Promise<void> {
 
 /** Appends one line to this session's autopilot log: decisions, deferrals, restarts. */
 async function log($: EngineInterface, line: string): Promise<void> {
+  if (!home) return
   const path = `${autopilotDir()}/${sessionId}.log`
+  // Free text may carry line breaks; flattened, it cannot forge a log line.
+  // Invisible characters (C1, bidi marks, embeddings, overrides, isolates) go too.
+  const flat = line
+    .replace(/[\r\n\u{85}\u{2028}\u{2029}]/gu, ' ')
+    .replace(/[\u{80}-\u{9f}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/gu, '')
   const stamp = new Date(await $.clock.now()).toISOString()
   let before = ''
   try {
@@ -98,7 +111,7 @@ async function log($: EngineInterface, line: string): Promise<void> {
   } catch {
     before = ''
   }
-  await $.fs.write(path, `${before}${stamp}  ${line}\n`).catch(() => undefined)
+  await $.fs.write(path, `${before}${stamp}  ${flat}\n`).catch(() => undefined)
 }
 
 /**
@@ -114,9 +127,6 @@ function queue($: EngineInterface, text: string): void {
   })
 }
 
-/** Phases in which the session must be able to end its turn: a goal may not hold it. */
-const MUST_END_TURN: ReadonlySet<string> = new Set(['wrapping', 'restarting', 'final', 'waiting', 'paused'])
-
 async function setGoal($: EngineInterface): Promise<void> {
   if (!run?.goal) return
   const goal = run.goal
@@ -131,7 +141,9 @@ async function setGoal($: EngineInterface): Promise<void> {
 async function clearGoal($: EngineInterface): Promise<void> {
   if (!isGoalSet) return
   isGoalSet = false
-  await $.command.run({ command: 'goal', args: 'clear' }).catch(() => undefined)
+  await $.command
+    .run({ command: 'goal', args: 'clear' })
+    .catch(async error => log($, `could not clear the goal: ${String(error)}`).catch(() => undefined))
 }
 
 /**
@@ -144,39 +156,37 @@ async function transcriptOf($: EngineInterface, id: string): Promise<string> {
   return `${home}/.claude/projects/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${id}.jsonl`
 }
 
-/** Prints what grep matches in the session's transcript; empty when nothing or on failure. */
-async function grepTranscript($: EngineInterface, pattern: string): Promise<string> {
+/**
+ * The whole transcript lines grep matches; empty when nothing or on failure.
+ * Whole lines, so each is parsed as a row and judged by where a value sits.
+ */
+async function grepTranscript($: EngineInterface, pattern: string): Promise<string[]> {
+  if (!home) return []
   let out = ''
   try {
-    const grep = $.process.spawn({ argv: ['grep', '-o', '-E', pattern, await transcriptOf($, sessionId)] })
+    const grep = $.process.spawn({ argv: ['grep', '-E', '-e', pattern, await transcriptOf($, sessionId)] })
     for await (const chunk of grep) if (chunk.stream === 'stdout') out += chunk.text
   } catch {
-    return ''
+    return []
   }
 
-  return out
+  return out.split('\n').filter(Boolean)
 }
 
-/** Reads the session's /rename name and /color from its own transcript. */
+/** Reads the session's /rename name and /color from its own transcript's top-level identity rows. */
 async function readIdentity($: EngineInterface): Promise<{ name: string | null; color: string | null }> {
-  return pickIdentity(await grepTranscript($, '"type":"(custom-title|agent-name|agent-color)","[a-zA-Z]+":"[^"]*"'))
+  return identityFromRows(await grepTranscript($, '^\\{"type":"(custom-title|agent-name|agent-color)"'))
 }
 
 /**
  * Whether the goal evaluator has judged this run's goal met, from the
- * `goal_status` verdicts the transcript keeps (cut before `reason`, whose
- * text could hold anything, and closed again as JSON).
+ * `goal_status` verdicts the engine keeps as top-level attachment rows.
  */
 async function isGoalMet($: EngineInterface): Promise<boolean> {
   if (!run?.goal) return false
-  const verdicts = await grepTranscript($, '"type":"goal_status","met":(true|false)(,"sentinel":true)?,"condition":"[^"]*"')
-  const lines = verdicts
-    .split('\n')
-    .filter(Boolean)
-    .map(line => `{${line}}`)
-    .join('\n')
+  const rows = await grepTranscript($, '"goal_status"')
 
-  return goalState(lines, run.goal) === 'achieved'
+  return goalState(goalVerdictsFromRows(rows), run.goal) === 'achieved'
 }
 
 /**
@@ -195,15 +205,17 @@ async function refreshIdentity($: EngineInterface): Promise<void> {
 }
 
 /**
- * /clear and /resume change the session id under a running module: a run
- * follows the conversation, so it moves to the new id.
+ * /clear and /resume change the session id under a running module. Only the
+ * run's own /clear (phase restarting) moves it to the new id; any other new
+ * id is another conversation, which the run does not drive: it stays stored
+ * under its old id, and the new id's own run, if any, is loaded.
  */
 async function syncId($: EngineInterface): Promise<void> {
   const id = await $.session.id()
   if (id === sessionId) return
   const previous = sessionId
   sessionId = id
-  if (run) {
+  if (run?.phase === 'restarting') {
     if (previous) await $.store.delete(storeKey(previous))
     await save($)
     return
@@ -306,13 +318,18 @@ function statusText(now: number): string {
     `Role: ${run.role}`,
     ...(run.skills.length ? [`Skills recognised in the role: ${run.skills.map(name => `/${name}`).join(', ')}`] : []),
     ...(run.goal ? [`Goal: ${run.goal}${isGoalSet ? '' : ' (not set right now)'}`] : []),
-    `Log: ${autopilotDir()}/${sessionId}.log`,
+    home ? `Log: ${autopilotDir()}/${sessionId}.log` : 'Log: none (HOME is not set)',
   ].join('\n')
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    home = (await $.env.get('HOME')) ?? '.'
+    home = (await $.env.get('HOME')) ?? ''
+    // State and logs are the person's alone: the folder is closed to other users.
+    if (home) {
+      await $.process.run(['/bin/mkdir', '-p', autopilotDir()]).catch(() => undefined)
+      await $.process.run(['/bin/chmod', '700', autopilotDir()]).catch(() => undefined)
+    }
     sessionId = await $.session.id()
     run = ((await $.store.get(storeKey(sessionId))) as Run | undefined) ?? null
     await readCeiling($)
@@ -328,7 +345,12 @@ export const register: Register = on => {
         'Autopilot only: after writing a handoff with /create-handoff-doc at the context threshold, call this with the handoff path. It clears the session and resumes from the handoff. Refused when autopilot is not wrapping up.',
       inputSchema: {
         type: 'object',
-        properties: { handoffPath: { type: 'string', description: 'Absolute path of the handoff document' } },
+        properties: {
+          handoffPath: {
+            type: 'string',
+            description: 'Path to the handoff .md under thoughts/shared/handoffs/ (absolute or relative to the project root)',
+          },
+        },
         required: ['handoffPath'],
       },
     })
@@ -435,7 +457,7 @@ export const register: Register = on => {
   // or wait is under way, its block is dropped; the other Stop hooks still run.
   on('classic.Stop', async ($, e, next) => {
     const result = await next(e)
-    if (!run || !MUST_END_TURN.has(run.phase) || result.block === undefined) return result
+    if (!run || !shouldDropStopBlock(run.phase) || result.block === undefined) return result
     await log($, `let the turn end during ${run.phase} (a Stop hook asked to continue: ${result.block.slice(0, 120)})`)
 
     return { ...result, block: undefined }
@@ -461,13 +483,26 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: FULL_RESTART_TOOL }, async ($, e) => {
+    // Only the main loop restarts the session; a subagent never does.
+    if (e.agentId) {
+      await log($, `restart refused: called by a subagent (${e.agentId})`)
+      return { deny: 'Only the main session may restart under autopilot; a subagent may not.' }
+    }
     await syncId($)
     if (!run || run.phase !== 'wrapping') {
       return { deny: 'Autopilot is not wrapping up: no restart. Continue your work.' }
     }
-    const handoffPath = String((e as unknown as { handoffPath?: unknown }).handoffPath ?? '')
-    if (!handoffPath || !(await $.fs.exists(handoffPath))) {
-      return { deny: `No handoff document at "${handoffPath}". Write it with /create-handoff-doc first, then call ${RESTART_TOOL} with its absolute path.` }
+    const givenPath = String((e as unknown as { handoffPath?: unknown }).handoffPath ?? '')
+    const root = await $.session.root()
+    if (!isValidHandoffPath(root, givenPath)) {
+      await log($, `restart refused: handoff path ${JSON.stringify(givenPath.slice(0, 300))} is not a .md file under thoughts/shared/handoffs/`)
+      return {
+        deny: `Refused: the handoff must be a .md file under ${root}/thoughts/shared/handoffs/ (no "..", no control characters). Write it there with /create-handoff-doc, then call ${RESTART_TOOL} with its path.`,
+      }
+    }
+    const handoffPath = resolveHandoffPath(root, givenPath)
+    if (!(await $.fs.exists(handoffPath))) {
+      return { deny: `No handoff document at "${handoffPath}". Write it with /create-handoff-doc first, then call ${RESTART_TOOL} with the path to the handoff .md under thoughts/shared/handoffs/ (absolute or relative to the project root).` }
     }
 
     run.restarts += 1
@@ -509,13 +544,16 @@ export const register: Register = on => {
     if (e.agentId || !run || run.phase === 'paused') return next(e)
     toolsThisTurn += 1
 
-    if (e.tool === 'AskUserQuestion') {
+    // While waiting the person is in control: their questions and refusals are theirs.
+    const isAway = autoAnswersQuestions(run.phase)
+    if (isAway && e.tool === 'AskUserQuestion') {
       await log($, `question answered by autopilot (decide yourself): ${JSON.stringify(e).slice(0, 400)}`)
       return { deny: ASK_ANSWER }
     }
 
     const ran = await next(e)
     if (ran.deny !== undefined) {
+      if (!isAway) return ran
       await log($, `deferred (refused by the permission mode): ${e.tool}: ${ran.deny.slice(0, 300)}`)
       return { deny: `${ran.deny}\n\n${DEFERRED_NOTE}` }
     }

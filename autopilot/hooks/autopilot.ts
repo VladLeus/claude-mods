@@ -1,4 +1,4 @@
-import type { Command, FinalReason, Run, TokenWindow } from '../types'
+import type { Command, FinalReason, Phase, Run, TokenWindow } from '../types'
 
 export const RESTART_TOOL = 'restart_session'
 export const MAX_IDLE_TURNS = 2
@@ -70,6 +70,81 @@ function percentFlag(value: string | null, fallback: number, label: string): num
   return number
 }
 
+const ROLE_QUOTES: Record<string, string> = { '"': '"', '“': '”', '«': '»', "'": "'" }
+
+const FLAG_NAMES = ['--goal', '--5h', '--week']
+const isSpace = (char: string | undefined): boolean => char !== undefined && /\s/.test(char)
+
+/**
+ * For each position, whether the text from there to the end is only flag
+ * syntax, the same as `^(\s+--(goal|5h|week)\s+(<quoted value>|\S+))*\s*$`
+ * with the value quoted in any supported style. Read in one pass from the end,
+ * each position's answer from one further on, so it stays linear: a regex
+ * tried at every closing quote would rescan the tail for each of them.
+ */
+function flagsOnlyFrom(text: string): Uint8Array {
+  const size = text.length
+  const isFlagsOnly = new Uint8Array(size + 1)
+  const nextSpace = new Int32Array(size + 1)
+  const nextNonSpace = new Int32Array(size + 1)
+  const nextCloser: Record<string, Int32Array> = {}
+  for (const closer of Object.values(ROLE_QUOTES)) nextCloser[closer] = new Int32Array(size + 1).fill(-1)
+  isFlagsOnly[size] = 1
+  nextSpace[size] = size
+  nextNonSpace[size] = size
+
+  for (let at = size - 1; at >= 0; at -= 1) {
+    const char = text.charAt(at)
+    const isWhitespace = isSpace(char)
+    nextSpace[at] = isWhitespace ? at : (nextSpace[at + 1] ?? size)
+    nextNonSpace[at] = isWhitespace ? (nextNonSpace[at + 1] ?? size) : at
+    for (const [closer, next] of Object.entries(nextCloser)) next[at] = char === closer ? at : (next[at + 1] ?? -1)
+    if (!isWhitespace) continue
+
+    const flagAt = nextNonSpace[at] ?? size
+    if (flagAt === size) {
+      isFlagsOnly[at] = 1
+      continue
+    }
+    const name = FLAG_NAMES.find(flag => text.startsWith(flag, flagAt))
+    if (!name || !isSpace(text[flagAt + name.length])) continue
+    const valueAt = nextNonSpace[flagAt + name.length] ?? size
+    if (valueAt === size) continue
+
+    // A bare word runs to the next space; a quoted value to its closing quote.
+    if (isFlagsOnly[nextSpace[valueAt] ?? size]) {
+      isFlagsOnly[at] = 1
+      continue
+    }
+    const closer = ROLE_QUOTES[text.charAt(valueAt)]
+    const closeAt = closer ? (nextCloser[closer]?.[valueAt + 1] ?? -1) : -1
+    if (closeAt !== -1 && isFlagsOnly[closeAt + 1]) isFlagsOnly[at] = 1
+  }
+
+  return isFlagsOnly
+}
+
+/**
+ * Splits a quoted role off the arguments: `head` runs through the role's
+ * closing quote, `rest` is what follows, the only place flags are read from.
+ * The role closes at the first closing quote after which only flags follow,
+ * so a quote or apostrophe inside the role stays in it. null when the role
+ * is not quoted.
+ */
+function splitQuotedRole(text: string): { head: string; rest: string } | null {
+  const match = /^\S+\s+\d{1,3}%?\s+(?:\d{1,2}\s+)?(["“«'])/.exec(text)
+  if (!match) return null
+  const opener = match[1] ?? ''
+  const closer = ROLE_QUOTES[opener] ?? opener
+  const isFlagsOnly = flagsOnlyFrom(text)
+  for (let closeAt = text.indexOf(closer, match[0].length); closeAt !== -1; closeAt = text.indexOf(closer, closeAt + 1)) {
+    if (isFlagsOnly[closeAt + 1]) return { head: text.slice(0, closeAt + 1), rest: text.slice(closeAt + 1) }
+  }
+
+  // Unclosed, or no closing quote is followed by flags alone: everything after the opening quote is the role.
+  return { head: text, rest: '' }
+}
+
 const USAGE =
   'Usage: /autopilot <time> <threshold%> [max restarts] "<role>" [--goal "<condition>"] [--5h 95] [--week 80]  ·  /autopilot 0 0 stop'
 
@@ -84,12 +159,16 @@ export function parseCommand(args: string): Command {
   if (!text) return { kind: 'status' }
   if (/^(0\s+0\s+)?stop$/i.test(text)) return { kind: 'stop' }
 
-  const goalFlag = takeFlag(text, 'goal')
-  text = goalFlag.rest
-  const fiveHourFlag = takeFlag(text, '5h')
-  text = fiveHourFlag.rest
-  const weekFlag = takeFlag(text, 'week')
-  text = weekFlag.rest
+  // Flags are read only outside a quoted role: a role may not carry its own --goal.
+  const quoted = splitQuotedRole(text)
+  let flagText = quoted ? quoted.rest : text
+  const goalFlag = takeFlag(flagText, 'goal')
+  flagText = goalFlag.rest
+  const fiveHourFlag = takeFlag(flagText, '5h')
+  flagText = fiveHourFlag.rest
+  const weekFlag = takeFlag(flagText, 'week')
+  flagText = weekFlag.rest
+  text = quoted ? `${quoted.head}${flagText}`.trim() : flagText
 
   const fiveHourStop = percentFlag(fiveHourFlag.value, DEFAULT_FIVE_HOUR_STOP, '--5h')
   if (typeof fiveHourStop === 'string') return { kind: 'error', message: fiveHourStop }
@@ -132,11 +211,21 @@ export function namedSkills(role: string, skillNames: readonly string[]): string
   const known = new Set(skillNames)
   const found: string[] = []
   for (const match of role.matchAll(/(?:^|[\s("'“«`])\/([a-z0-9][\w:.-]*)/gi)) {
-    const name = match[1]?.replace(/[.,;:!?)]+$/, '')
+    const name = trimTrailingPunctuation(match[1] ?? '')
     if (name && known.has(name) && !found.includes(name)) found.push(name)
   }
 
   return found
+}
+
+const TRAILING_PUNCTUATION = '.,;:!?)'
+
+/** Drops trailing `.,;:!?)` in one linear pass (a regex here backtracks on long runs). */
+function trimTrailingPunctuation(text: string): string {
+  let end = text.length
+  while (end > 0 && TRAILING_PUNCTUATION.includes(text.charAt(end - 1))) end -= 1
+
+  return text.slice(0, end)
 }
 
 /** Whether another handoff restart is allowed; time alone limits a run with no max. */
@@ -213,38 +302,120 @@ export function wrapMidTurn(
   return null
 }
 
+/** Phases in which the session must be able to end its turn: a goal's Stop hook may not hold it. */
+export function shouldDropStopBlock(phase: Phase): boolean {
+  return phase === 'wrapping' || phase === 'restarting' || phase === 'final'
+}
+
 /**
- * Reads the goal evaluator's verdicts the transcript keeps, as grep printed
- * them (`{"type":"goal_status","met":…,"condition":…}`): the last one for
- * this condition decides. None yet, or not met, is still active.
+ * Whether autopilot answers AskUserQuestion and marks refused actions as
+ * deferred: not while paused or waiting, when the person is in control.
  */
-export function goalState(grepped: string, condition: string): 'achieved' | 'active' {
-  let last: { met?: unknown; condition?: unknown } | null = null
-  for (const line of grepped.split('\n')) {
-    if (!line.trim()) continue
-    try {
-      const status = JSON.parse(line) as { met?: unknown; condition?: unknown }
-      if (status.condition === condition) last = status
-    } catch {
-      // A verdict cut by grep's pattern: skip it.
-    }
+export function autoAnswersQuestions(phase: Phase): boolean {
+  return phase !== 'paused' && phase !== 'waiting'
+}
+
+function parseRow(line: string): Record<string, unknown> | null {
+  try {
+    const row: unknown = JSON.parse(line)
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return null
+
+    return row as Record<string, unknown>
+  } catch {
+    // A malformed line: skip it.
+    return null
   }
+}
+
+export type GoalVerdict = { met: boolean; condition: string }
+
+/**
+ * The goal evaluator's verdicts from whole transcript lines. The engine writes
+ * each as a top-level attachment row (`{"type":"attachment","attachment":
+ * {"type":"goal_status","met":…,"condition":…}}`); a verdict anywhere else (a
+ * tool input, message text) is not the engine's and is ignored.
+ */
+export function goalVerdictsFromRows(lines: readonly string[]): GoalVerdict[] {
+  const verdicts: GoalVerdict[] = []
+  for (const line of lines) {
+    const row = parseRow(line)
+    if (!row || row.type !== 'attachment') continue
+    const attachment = row.attachment as Record<string, unknown> | null | undefined
+    if (!attachment || typeof attachment !== 'object' || attachment.type !== 'goal_status') continue
+    if (typeof attachment.met !== 'boolean' || typeof attachment.condition !== 'string') continue
+    verdicts.push({ met: attachment.met, condition: attachment.condition })
+  }
+
+  return verdicts
+}
+
+/** The last verdict for this condition decides. None yet, or not met, is still active. */
+export function goalState(verdicts: readonly GoalVerdict[], condition: string): 'achieved' | 'active' {
+  const matching = verdicts.filter(verdict => verdict.condition === condition)
+  const last = matching[matching.length - 1]
 
   return last?.met === true ? 'achieved' : 'active'
 }
 
+const IDENTITY_KEYS: Record<string, string> = {
+  'custom-title': 'customTitle',
+  'agent-name': 'agentName',
+  'agent-color': 'agentColor',
+}
+
 /**
- * The session's name and color from transcript rows grep printed, the last of
- * each kind winning: /rename's title, else the agent name.
+ * The session's name and color from whole transcript lines, only from
+ * top-level identity rows, the last of each kind winning: /rename's title,
+ * else the agent name.
  */
-export function pickIdentity(grepped: string): { name: string | null; color: string | null } {
+export function identityFromRows(lines: readonly string[]): { name: string | null; color: string | null } {
   const last: Record<string, string> = {}
-  for (const match of grepped.matchAll(/"type":"([a-z-]+)","[a-zA-Z]+":"([^"]*)"/g)) {
-    const [, kind, value] = match
-    if (kind && value) last[kind] = value
+  for (const line of lines) {
+    const row = parseRow(line)
+    const kind = typeof row?.type === 'string' ? row.type : ''
+    const key = IDENTITY_KEYS[kind]
+    if (!row || !key) continue
+    const value = row[key]
+    if (typeof value === 'string' && value) last[kind] = value
   }
 
   return { name: last['custom-title'] ?? last['agent-name'] ?? null, color: last['agent-color'] ?? null }
+}
+
+const MAX_SHOWN_VALUE = 80
+
+/**
+ * Control and invisible characters: C0, DEL, C1, the line and paragraph
+ * separators, and the bidi marks, embeddings, overrides and isolates.
+ */
+const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u{2028}\u{2029}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/u
+const INVISIBLE_ALL = new RegExp(INVISIBLE.source, 'gu')
+
+/** A transcript value shown to the model as data: control and invisible characters out, capped, JSON-quoted. */
+function quoteValue(value: string): string {
+  return JSON.stringify(value.replace(INVISIBLE_ALL, '').slice(0, MAX_SHOWN_VALUE))
+}
+
+/**
+ * Whether a handoff path the model gave is one autopilot may resume from: a
+ * `.md` file under `<root>/thoughts/shared/handoffs/`, relative paths taken
+ * against the root, no control characters, no `..` segment.
+ */
+export function isValidHandoffPath(root: string, path: string): boolean {
+  if (!path || INVISIBLE.test(path)) return false
+  if (path.split('/').includes('..')) return false
+  if (!path.endsWith('.md')) return false
+  const handoffs = `${root.replace(/\/+$/, '')}/thoughts/shared/handoffs/`
+  const absolute = resolveHandoffPath(root, path)
+
+  return absolute.startsWith(handoffs) && absolute.length > handoffs.length
+}
+
+/** A handoff path as an absolute one: relative paths are taken against the root. */
+export function resolveHandoffPath(root: string, path: string): string {
+  if (path.startsWith('/')) return path
+
+  return `${root.replace(/\/+$/, '')}/${path}`
 }
 
 export function formatLeft(ms: number): string {
@@ -267,20 +438,30 @@ function identityLines(run: Run): string {
     `- Role and responsibilities: ${run.role}`,
     ...skillsLine(run),
     ...(run.goal ? [`- Goal (completion condition): ${run.goal}`] : []),
-    `- Session name: ${run.name ?? '(none set)'}`,
-    `- Session color: ${run.color ?? '(none set)'}`,
+    `- Session name: ${run.name ? quoteValue(run.name) : '(none set)'}`,
+    `- Session color: ${run.color ? quoteValue(run.color) : '(none set)'}`,
   ].join('\n')
 }
 
+const PAUSED_SECTION =
+  '# Autopilot is paused\nThe person is in control. Follow their messages as usual; the autopilot rules do not apply until it resumes.'
+
+const WAITING_SECTION =
+  '# Autopilot is waiting\nAutopilot is parked until the 5-hour token window resets, and the person is in control meanwhile. Follow their messages as usual; the autopilot rules do not apply until it resumes.'
+
 /** The system prompt section pinned while a run is on; survives /clear. */
 export function roleSection(run: Run, now: number): string {
+  // Parked or stalled: the person may be back, and the away rules must not override them.
+  if (run.phase === 'paused') return PAUSED_SECTION
+  if (run.phase === 'waiting') return WAITING_SECTION
+
   return [
     '# Autopilot: you are working while the person is away',
     'The person started this run with /autopilot. These lines are their instructions about who you are.',
     identityLines(run),
     `- Time left: ${formatLeft(run.until - now)}; context threshold ${run.threshold}%; restarts used ${restartsText(run)}.`,
     ...(run.handoffPath
-      ? [`- Latest handoff: ${run.handoffPath}. If you do not know where you are, read it and continue from there; never start the work over.`]
+      ? [`- Latest handoff: ${JSON.stringify(run.handoffPath)}. If you do not know where you are, read it and continue from there; never start the work over.`]
       : []),
     'Rules while the person is away:',
     '- Ordinary questions: decide yourself within your role, prefer the reversible option, and record the decision (question, options, choice, why) for your handoff.',
@@ -306,9 +487,10 @@ export const DONE_MARKER = 'AUTOPILOT_DONE'
 
 export const CONTINUE_PROMPT = `Autopilot: keep going toward your goal within your role. If the current stage is done, pick the next most valuable step within your role and do it. Deferred actions wait for the person. If everything your role covers is complete and no valuable step is left, do not invent work: answer with the line ${DONE_MARKER} and a one-line reason.`
 
-/** Whether a turn's answer declares the role's work complete. */
+/** Whether a turn's answer declares the role's work complete: the marker opens a line, never mid-sentence. */
 export function isDoneAnswer(answer: string): boolean {
-  return answer.includes(DONE_MARKER)
+  // Spaces and tabs only: `\s` would match line breaks too and backtrack quadratically on blank lines.
+  return /^[ \t]*AUTOPILOT_DONE\b/m.test(answer)
 }
 
 export function wrapupPrompt(run: Run, percent: number | null): string {
