@@ -1,0 +1,57 @@
+# Flags pull requests that touch paths only the owner should change consciously:
+# workflows and CODEOWNERS, and test files that are deleted, renamed away or shrunk.
+#
+# This runs on `pull_request_target`, so GitHub runs the copy of this workflow
+# from the BASE branch: a PR cannot edit it to pass its own check. It never
+# checks out PR code and never runs it; it only reads the list of changed files
+# through the API. A red result is expected for legitimate workflow or test
+# changes. The owner overrides it by merging consciously.
+name: protected-paths
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: protected-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  protected-paths:
+    name: protected-paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const repo = context.repo
+            const number = context.payload.pull_request.number
+            const testFile = /\.test\.tsx?$/
+
+            const files = await github.paginate(github.rest.pulls.listFiles, { ...repo, pull_number: number, per_page: 100 })
+
+            const violations = []
+            for (const file of files) {
+              const name = file.filename
+              if (name.startsWith('.github/')) violations.push([name, 'workflows, CODEOWNERS and actions are protected'])
+              if (name === 'CODEOWNERS' || name === 'docs/CODEOWNERS') violations.push([name, 'CODEOWNERS is protected'])
+
+              const removed = file.status === 'removed' && testFile.test(name)
+              const renamedAway = file.status === 'renamed' && testFile.test(file.previous_filename ?? '') && !testFile.test(name)
+              const shrunk = testFile.test(name) && file.deletions > file.additions
+              if (removed) violations.push([name, 'test file removed'])
+              if (renamedAway) violations.push([name, `test file renamed away from ${file.previous_filename}`])
+              if (shrunk) violations.push([name, `test file lost coverage (${file.deletions} deletions > ${file.additions} additions)`])
+            }
+
+            for (const [name, reason] of violations) core.error(`${name}: ${reason}`)
+            if (violations.length) {
+              core.setFailed(`${violations.length} protected path change(s): owner must review and merge consciously`)
+            } else {
+              core.info('no protected paths touched')
+            }
