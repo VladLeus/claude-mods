@@ -3,9 +3,10 @@ import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE }
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is
- * used when no framework is chosen (D-17). Its evidence is a fixed string, so the facts are not read.
+ * used when no framework is chosen (D-17). Its evidence is a fixed string, so the facts are taken only to fit the
+ * adapter contract and are never read.
  */
-export function detectBuiltin(facts: Facts): Detection {
+export function detectBuiltin(_facts: Facts): Detection {
   return { id: 'none', name: 'built-in', status: 'installed', version: null, evidence: ['built into cadre'] }
 }
 
@@ -38,8 +39,9 @@ export const BUILTIN_GATES: readonly Gate[] = [
 
 /**
  * The role folder under `.cadre/`: the role name lowercased, cleaned and capped, or `unnamed` when nothing is left once
- * cleaned and trimmed, so the folder is never an empty path segment. A slash in a role name is not checked here; role
- * ids are validated where the role template is built (D-15).
+ * cleaned and trimmed, so the folder is never an empty path segment. The folder is the cleaned, lowercased role as
+ * given, with its spaces and any capped ellipsis kept, because role ids are validated by the Phase 2 role template
+ * (D-15); a slash in a role name is not checked here either.
  */
 function roleFolder(role: string): string {
   return cleanKickoffTextOr(role.toLowerCase(), MAX_ROLE_CHARS, UNNAMED_ROLE)

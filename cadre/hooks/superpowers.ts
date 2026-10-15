@@ -14,8 +14,8 @@ import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE }
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the
  * repo root means superpowers is in use, and in use beats installed (D-01). An install is an `enabledPlugins` key that
  * starts with `superpowers@` and is set to true. The match is by prefix, never one exact key, so a malformed key still
- * counts. The version comes from the installed_plugins entry for the first enabled key. The keys are already cleaned
- * and capped by facts.ts, and the evidence is built from fixed templates.
+ * counts. The version comes from the first enabled key, in order, that has an installed_plugins entry. The keys are
+ * already cleaned and capped by facts.ts, and the evidence is built from fixed templates.
  */
 export function detectSuperpowers(facts: Facts): Detection {
   const inUseLines = [
@@ -24,7 +24,7 @@ export function detectSuperpowers(facts: Facts): Detection {
   ]
   const enabled = facts.enabledPlugins.filter(isEnabledSuperpowers)
   const installedLines = enabled.map(installedEvidence)
-  const version = enabled.length > 0 ? versionOf(enabled[0].key, facts.superpowersVersions) : null
+  const version = enabled.map(flag => versionOf(flag.key, facts.superpowersVersions)).find(v => v !== null) ?? null
 
   if (inUseLines.length > 0) {
     return {
