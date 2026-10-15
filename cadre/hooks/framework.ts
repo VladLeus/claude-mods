@@ -10,6 +10,7 @@ import type {
   RepoEntry,
   UnsupportedMarker,
 } from '../types'
+import { clean, isObject } from './facts'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this
@@ -78,7 +79,8 @@ export const SUPPORTED_IDS: readonly FrameworkId[] = ['gsd', 'superpowers']
 
 /**
  * The adapter choice for a repo, decided from the detections alone. Only `chosen` picks an adapter. A user pick is
- * honoured when it is in use, or when nothing is in use and it is installed; `none` is always honoured. Two or more
+ * honoured when it is in use, or when nothing is in use and it is installed; `none` is always honoured. A pick of a
+ * supported id that is neither in use nor installed is ignored. Two or more
  * frameworks in use is `ambiguous`, so nothing is preselected (D-07). Installed-only never chooses (D-29).
  */
 export function chooseFramework(detections: Detection[], userPick: FrameworkId | null): Choice {
@@ -129,11 +131,6 @@ function isFilledString(value: unknown): boolean {
   return typeof value === 'string' && value.trim() !== ''
 }
 
-/** A plain object: not null and not an array. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 /** An array with at least one entry. */
 function isFilledArray(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0
@@ -141,12 +138,12 @@ function isFilledArray(value: unknown): boolean {
 
 /** `locations` has a non-empty spec list and a non-empty plan list. */
 function hasLocations(value: unknown): boolean {
-  return isRecord(value) && isFilledArray(value.spec) && isFilledArray(value.plan)
+  return isObject(value) && isFilledArray(value.spec) && isFilledArray(value.plan)
 }
 
 /** `doneSignal` has a non-empty artifact and a non-empty check. */
 function hasDoneSignal(value: unknown): boolean {
-  return isRecord(value) && isFilledString(value.artifact) && isFilledString(value.check)
+  return isObject(value) && isFilledString(value.artifact) && isFilledString(value.check)
 }
 
 /** `autonomy` is non-empty, or empty with a note that says why the framework needs no autonomy settings. */
@@ -174,12 +171,19 @@ const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<strin
   kickoffText: adapter => typeof adapter.kickoffText === 'function',
 }
 
-/** Whether one required field of an adapter passes its rule. A field with no rule never passes. */
+/**
+ * Whether one required field of an adapter passes its rule. A field with no rule never passes, and a rule that
+ * throws (a hostile getter, say) counts as a failed rule.
+ */
 function fieldPasses(field: keyof FrameworkAdapter, adapter: Record<string, unknown>): boolean {
   const rule = FIELD_RULES[field]
   if (rule === undefined) return false
 
-  return rule(adapter)
+  try {
+    return rule(adapter)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -187,8 +191,8 @@ function fieldPasses(field: keyof FrameworkAdapter, adapter: Record<string, unkn
  * wrong-shaped field counts as missing, and a value that is not an object has no fields at all. The input is
  * untrusted, so nothing here throws.
  */
-export function missingFields(adapter: Partial<FrameworkAdapter>): string[] {
-  const record: Record<string, unknown> = isRecord(adapter) ? adapter : {}
+export function missingFields(adapter: unknown): string[] {
+  const record: Record<string, unknown> = isObject(adapter) ? adapter : {}
 
   return REQUIRED_FIELDS.filter(field => !fieldPasses(field, record))
 }
@@ -211,9 +215,16 @@ function decisionTypeProblem(gate: Record<string, unknown>): string | null {
   return null
 }
 
+/** A gate id as message text: a string is cleaned and capped, anything else is a fixed token. Never stringifies. */
+function idLabel(id: unknown): string {
+  if (typeof id !== 'string') return '<non-string id>'
+
+  return clean(id, 40)
+}
+
 /** The problems with one gate's own fields: its decision type against its kind, and its kickoff. */
 function gateFieldProblems(gate: Record<string, unknown>): string[] {
-  const label = `gate ${String(gate.id)}`
+  const label = `gate ${idLabel(gate.id)}`
   const problems: string[] = []
   const decisionProblem = decisionTypeProblem(gate)
   if (decisionProblem !== null) problems.push(`${label}: ${decisionProblem}`)
@@ -222,28 +233,40 @@ function gateFieldProblems(gate: Record<string, unknown>): string[] {
   return problems
 }
 
+/** The most problems gateProblems returns; when there are more, one extra line says so. */
+export const MAX_GATE_PROBLEMS = 50
+
 /**
- * The contract problems in a framework's gate table, one message per problem, in gate order. A gate id that repeats
- * is reported once. Gates that share a decision type are separate rows, so they are never compared with each other.
+ * The contract problems in a framework's gate table, one message per problem, in gate order, capped at
+ * MAX_GATE_PROBLEMS. A gate id that repeats is reported once, and a gate with no id is not tracked for repeats. Gates
+ * that share a decision type are separate rows, so they are never compared with each other. A gate's kind and
+ * handling are not checked here because the Gate type and the adapters own them.
  */
-export function gateProblems(gates: Gate[]): string[] {
+export function gateProblems(gates: unknown): string[] {
   if (!Array.isArray(gates)) return ['gates is not an array']
 
   const problems: string[] = []
-  const seen = new Set<unknown>()
-  const repeated = new Set<unknown>()
+  const seen = new Set<string>()
+  const repeated = new Set<string>()
   for (const gate of gates) {
-    if (!isRecord(gate)) {
+    if (problems.length > MAX_GATE_PROBLEMS) break
+    if (!isObject(gate)) {
       problems.push('gate is not an object')
       continue
     }
-    if (seen.has(gate.id) && !repeated.has(gate.id)) {
-      repeated.add(gate.id)
-      problems.push(`duplicate gate id ${String(gate.id)}`)
+    if (!isFilledString(gate.id)) {
+      problems.push('gate has no id')
+    } else {
+      const id = gate.id as string
+      if (seen.has(id) && !repeated.has(id)) {
+        repeated.add(id)
+        problems.push(`duplicate gate id ${idLabel(id)}`)
+      }
+      seen.add(id)
     }
-    seen.add(gate.id)
     problems.push(...gateFieldProblems(gate))
   }
+  if (problems.length <= MAX_GATE_PROBLEMS) return problems
 
-  return problems
+  return [...problems.slice(0, MAX_GATE_PROBLEMS), 'more gate problems not shown']
 }

@@ -16,6 +16,7 @@ import {
   detectUnsupported,
   gateProblems,
   isDecisionType,
+  MAX_GATE_PROBLEMS,
   missingFields,
   REQUIRED_FIELDS,
   SUPPORTED_IDS,
@@ -150,6 +151,26 @@ describe('detectUnsupported', () => {
     ])
   })
 
+  test('a file-kind symlink named aidlc counts as present', () => {
+    const repoEntries = [entry('aidlc', 'file', true)]
+
+    expect(detectUnsupported(facts({ repoEntries })).map(row => row.status)).toEqual([
+      'unsupported',
+      'not-found',
+      'not-found',
+    ])
+  })
+
+  test('entries named aidlc-old and _bmad2 do not match', () => {
+    const repoEntries = [entry('aidlc-old', 'dir', false), entry('_bmad2', 'dir', false)]
+
+    expect(detectUnsupported(facts({ repoEntries })).map(row => row.status)).toEqual([
+      'not-found',
+      'not-found',
+      'not-found',
+    ])
+  })
+
   test('a marker is matched by its exact name, so AIDLC does not match aidlc', () => {
     const repoEntries = [entry('AIDLC', 'dir', false)]
 
@@ -222,10 +243,25 @@ describe('chooseFramework', () => {
     })
   })
 
-  test('a pick that is not a supported framework is ignored', () => {
-    const detections = [detection({ id: 'aidlc', name: 'AI-DLC', status: 'unsupported' })]
+  test('a pick that is not a supported framework is ignored while gsd is in use', () => {
+    const detections = [detected('gsd', 'in-use')]
 
-    expect(chooseFramework(detections, 'aidlc' as never)).toEqual({ kind: 'unsupported', ids: ['aidlc'] })
+    expect(chooseFramework(detections, 'aidlc' as never)).toEqual(chooseFramework(detections, null))
+  })
+
+  test('a pick of a supported framework that is neither in use nor installed is ignored', () => {
+    expect(chooseFramework([], 'gsd')).toEqual({ kind: 'none' })
+  })
+
+  test('duplicate detections of one id, in use and not-found, count as in use', () => {
+    const detections = [detected('gsd', 'in-use'), detected('gsd', 'not-found')]
+
+    expect(chooseFramework(detections, null)).toEqual({
+      kind: 'chosen',
+      id: 'gsd',
+      pickedBy: 'only-one-in-use',
+      reason: 'only gsd is in use in this repo',
+    })
   })
 
   test('a pick of none is honoured even when frameworks are in use', () => {
@@ -279,15 +315,31 @@ describe('missingFields', () => {
   })
 
   test('a value that is not an adapter object reports every required field and does not throw', () => {
-    expect(missingFields(null as never)).toEqual(ALL_FIELDS)
-    expect(missingFields([] as never)).toEqual(ALL_FIELDS)
+    expect(missingFields(null)).toEqual(ALL_FIELDS)
+    expect(missingFields([])).toEqual(ALL_FIELDS)
   })
 
   test('removing any one required field reports exactly that field', () => {
-    expect(REQUIRED_FIELDS).toEqual(ALL_FIELDS)
     for (const field of REQUIRED_FIELDS) {
       expect(missingFields({ ...adapter({}), [field]: undefined })).toEqual([field])
     }
+  })
+
+  test('wrong-typed startWork, humanGates and locations each count as missing', () => {
+    const wrong = { ...adapter({}), startWork: 'x', humanGates: {}, locations: [] }
+
+    expect(missingFields(wrong)).toEqual(['startWork', 'locations', 'humanGates'])
+  })
+
+  test('an adapter whose id getter throws does not throw and reports id', () => {
+    const hostile = { ...adapter({}) }
+    Object.defineProperty(hostile, 'id', {
+      get() {
+        throw new Error('boom')
+      },
+    })
+
+    expect(missingFields(hostile)).toEqual(['id'])
   })
 
   test('a blank name counts as missing', () => {
@@ -382,13 +434,53 @@ describe('gateProblems', () => {
   })
 
   test('a gate that is not an object is reported, and the gates after it are still checked', () => {
-    expect(gateProblems([null as never, gate({ id: 'x', kickoff: '' })])).toEqual([
+    expect(gateProblems([null, gate({ id: 'x', kickoff: '' })])).toEqual([
       'gate is not an object',
       'gate x: empty kickoff',
     ])
   })
 
+  test('an array inside the gates array is reported as not an object', () => {
+    expect(gateProblems([[]])).toEqual(['gate is not an object'])
+  })
+
+  test('a gate with no id is reported, and two id-less gates are not duplicates', () => {
+    expect(gateProblems([gate({ id: undefined as never })])).toContain('gate has no id')
+    expect(gateProblems([gate({ id: '' }), gate({ id: '  ' })]).some(text => text.includes('duplicate'))).toBe(false)
+  })
+
+  test('a gate whose id is a null-prototype object does not throw and gets the fixed token', () => {
+    const hostile = gate({ id: Object.create(null) as never, kickoff: '' })
+
+    expect(gateProblems([hostile])).toEqual(['gate has no id', 'gate <non-string id>: empty kickoff'])
+  })
+
+  test('a long gate id is capped at 40 characters in the message', () => {
+    const problems = gateProblems([gate({ id: 'a'.repeat(60), kickoff: '' })])
+
+    expect(problems).toEqual([`gate ${'a'.repeat(39)}\u2026: empty kickoff`])
+  })
+
+  test('a gate id with a bidi override character is cleaned in the message', () => {
+    expect(gateProblems([gate({ id: 'a\u202Eb', kickoff: '' })])).toEqual(['gate ab: empty kickoff'])
+  })
+
+  test('60 bad gates give MAX_GATE_PROBLEMS problems and one line saying more were not shown', () => {
+    const bad = Array.from({ length: 60 }, (_, index) => gate({ id: `g${index}`, kickoff: '' }))
+    const problems = gateProblems(bad)
+
+    expect(MAX_GATE_PROBLEMS).toBe(50)
+    expect(problems.length).toBe(51)
+    expect(problems[50]).toBe('more gate problems not shown')
+  })
+
+  test('exactly MAX_GATE_PROBLEMS problems get no extra line', () => {
+    const bad = Array.from({ length: 50 }, (_, index) => gate({ id: `g${index}`, kickoff: '' }))
+
+    expect(gateProblems(bad).length).toBe(50)
+  })
+
   test('a gate table that is not an array is reported', () => {
-    expect(gateProblems(null as never)).toEqual(['gates is not an array'])
+    expect(gateProblems(null)).toEqual(['gates is not an array'])
   })
 })
