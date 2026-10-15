@@ -254,6 +254,7 @@ describe('register with a faked host', () => {
     expect(log.runs[0].some(arg => arg.startsWith('/repo'))).toBe(false)
     expect(out.text).toContain('Warning: could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
     expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+    expect(rowOf(out.text, 'GSD')).not.toContain('installed')
     expect(out.text).not.toContain('/home/u')
   })
 
@@ -498,6 +499,7 @@ describe('register with a faked host', () => {
     await $.command.run({ command: 'cadre', args: 'detect' })
     expect(log.ops.filter(op => op.startsWith('fs.stat ')).some(op => op.includes('rel/cfg'))).toBe(false)
     expect(log.ops.some(op => op.includes('rel/cfg'))).toBe(false)
+    expect(log.runs.some(run => JSON.stringify(run).includes('rel/cfg'))).toBe(false)
   })
 
   test('a runtime identity call that exits non-zero leaves the install unproven, with the warning', async ($, on) => {
@@ -511,5 +513,6 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(log.runs.length).toBe(1)
     expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+    expect(rowOf(out.text, 'GSD')).not.toContain('installed')
   })
 })
