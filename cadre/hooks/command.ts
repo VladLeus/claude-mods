@@ -1,8 +1,12 @@
 import type { CadreCommand } from '../types'
 
+/** The most code points a reply echoes back, the ellipsis included. */
 const MAX_ECHOED = 40
-/** Characters a reply must not echo: control, format, line and paragraph separators (bidi overrides are format characters). */
-const INVISIBLE_ALL = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu
+/** Format characters (bidi overrides, zero-width space) a reply must not echo; removed outright. */
+const INVISIBLE_CHARS = /\p{Cf}/gu
+/** Control characters and line or paragraph separators; each becomes a space so separate words stay separate. */
+const BREAK_CHARS = /[\p{Cc}\p{Zl}\p{Zp}]/gu
+/** Width, in characters, the command column is padded to in the usage lines. */
 const COMMAND_COLUMN = 27
 
 /**
@@ -15,20 +19,25 @@ export const USAGE_LINES: readonly string[] = [
   `  ${'/cadre detect --adapters'.padEnd(COMMAND_COLUMN)}also show the contract cadre would drive each framework with`,
 ]
 
-/** Takes every `--name` switch (no value) out of the arguments; whether there was one. */
+/** Takes every `--name` switch (no value) out of the arguments, ignoring case; whether there was one. */
 function takeSwitch(text: string, name: string): { isOn: boolean; rest: string } {
-  const pattern = new RegExp(`\\s--${name}(?=\\s|$)`, 'g')
+  const pattern = new RegExp(`\\s--${name}(?=\\s|$)`, 'gi')
   const rest = ` ${text}`.replace(pattern, '')
 
   return { isOn: rest.length !== text.length + 1, rest: rest.trim() }
 }
 
-/** The person's input as a reply shows it: invisible characters out, at most 40 code points, the last one an ellipsis when cut. */
-function echoed(raw: string): string {
-  const visible = Array.from(raw.replace(INVISIBLE_ALL, ''))
-  if (visible.length <= MAX_ECHOED) return visible.join('')
+/** Removes INVISIBLE_CHARS, turns BREAK_CHARS into spaces, collapses runs of whitespace to one space, trims. */
+function visibleText(raw: string): string {
+  return raw.replace(INVISIBLE_CHARS, '').replace(BREAK_CHARS, ' ').replace(/\s+/g, ' ').trim()
+}
 
-  return `${visible.slice(0, MAX_ECHOED - 1).join('')}…`
+/** The already-visible input as a reply shows it: at most 40 code points, the last one an ellipsis when cut. */
+function echoed(raw: string): string {
+  const points = Array.from(raw)
+  if (points.length <= MAX_ECHOED) return raw
+
+  return `${points.slice(0, MAX_ECHOED - 1).join('')}…`
 }
 
 /**
@@ -36,16 +45,16 @@ function echoed(raw: string): string {
  * detection; anything else is help with the input echoed back as unknown.
  */
 export function parseCommand(args: string): CadreCommand {
-  const text = args.trim()
+  const text = visibleText(args)
   if (text === '' || text.toLowerCase() === 'help') return { kind: 'help', unknown: null }
 
-  const word = /^detect(?=\s|$)/i.exec(text)
-  if (!word) return { kind: 'help', unknown: echoed(text) }
+  const head = /^detect(?=\s|$)/i.exec(text)
+  if (!head) return { kind: 'help', unknown: echoed(text) }
 
-  const switched = takeSwitch(text.slice(word[0].length), 'adapters')
-  if (switched.rest !== '') return { kind: 'help', unknown: echoed(text) }
+  const adapters = takeSwitch(text.slice(head[0].length), 'adapters')
+  if (adapters.rest !== '') return { kind: 'help', unknown: echoed(text) }
 
-  return { kind: 'detect', adapters: switched.isOn }
+  return { kind: 'detect', adapters: adapters.isOn }
 }
 
 /**
