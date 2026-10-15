@@ -40,8 +40,8 @@ describe('parseCommand', () => {
     expect(parseCommand('\u200B')).toEqual({ kind: 'help', unknown: null })
   })
 
-  test('a line break inside the input becomes a space', () => {
-    expect(parseCommand('foo\nbar')).toEqual({ kind: 'help', unknown: 'foo bar' })
+  test('a control character inside the input becomes a space', () => {
+    expect(parseCommand('foo\u0007bar')).toEqual({ kind: 'help', unknown: 'foo bar' })
   })
 
   test('bidi characters are stripped and the echo is capped at 40 code points', () => {
