@@ -1,5 +1,5 @@
-import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter } from '../types'
-import { detectAll } from './adapters'
+import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter, Gate } from '../types'
+import { ADAPTERS, detectAll } from './adapters'
 import { clean } from './facts'
 import { chooseFramework } from './framework'
 import { GSD_ADAPTER } from './gsd'
@@ -8,6 +8,11 @@ import { GSD_ADAPTER } from './gsd'
 const NAME_WIDTH = 14
 const STATUS_WIDTH = 13
 const VERSION_WIDTH = 9
+
+/** Column widths of the gate table in the contract view, in code points: the gate id, the type and the human column. */
+const GATE_ID_WIDTH = 28
+const GATE_TYPE_WIDTH = 15
+const GATE_HUMAN_WIDTH = 8
 
 /**
  * The most code points one report cell keeps, the ellipsis included. It is the same cap facts.ts gives a host warning,
@@ -110,12 +115,84 @@ export function detectReportLines(facts: Facts): string[] {
   return [...lines, choiceLine(choice)]
 }
 
-/** RED placeholder for plan 01-08 Task 3: no contract view is rendered yet, so its tests fail on assertions. */
-export function adaptersReportLines(_adapters: readonly FrameworkAdapter[]): string[] {
-  return []
+/**
+ * One gate row of the contract view: the id, the decision type or standing rule, whether a human is needed, and the
+ * kickoff that answers the gate.
+ */
+function gateRow(gate: Gate): string {
+  const id = pad(gate.id, GATE_ID_WIDTH)
+  const type = pad(gate.decisionType ?? 'standing rule', GATE_TYPE_WIDTH)
+  const human = pad(gate.needsHuman ? 'yes' : 'no', GATE_HUMAN_WIDTH)
+
+  return `    ${id}${type}${human}${gate.kickoff}`
 }
 
-/** RED placeholder: an empty text, so the detectText tests fail on their assertions. */
-export function detectText(_facts: Facts, _isAdapters: boolean): string {
-  return ''
+/** The gate table of one adapter: its header, then one row per gate in the order the adapter lists them. */
+function gateRows(gates: readonly Gate[]): string[] {
+  const header = `    ${pad('gate', GATE_ID_WIDTH)}${pad('type', GATE_TYPE_WIDTH)}${pad('human?', GATE_HUMAN_WIDTH)}`
+
+  return [`${header}how the kickoff handles it`, ...gates.map(gateRow)]
+}
+
+/** The autonomy lines of one adapter: one per setting proposal, or the note that says why it needs no settings. */
+function autonomyLines(adapter: FrameworkAdapter): string[] {
+  if (adapter.autonomy.length === 0) return [`    ${adapter.autonomyNote ?? 'no autonomy settings'}`]
+
+  return adapter.autonomy.map(proposal => {
+    const requirement = proposal.isRequired ? 'required' : 'optional'
+
+    return `    ${proposal.key} -> ${proposal.to} (${requirement}): ${proposal.why}`
+  })
+}
+
+/**
+ * The contract block of one adapter, with the same labelled fields for every adapter (D-09). Each kickoff line is
+ * indented six spaces, so it reads as one example block.
+ */
+function adapterBlock(adapter: FrameworkAdapter): string[] {
+  const kickoff = adapter.kickoffText({ role: 'BE', specPath: null }).split('\n')
+  const { artifact, check } = adapter.doneSignal
+  const done = `${artifact}: ${check}; then a line that starts with AUTOPILOT_DONE`
+
+  return [
+    `${adapter.name} (${adapter.id})`,
+    `  detect:       ${adapter.detectRule}`,
+    `  start work:   ${adapter.startWork.join('; ')}`,
+    `  spec files:   ${adapter.locations.spec.join('; ')}`,
+    `  plan files:   ${adapter.locations.plan.join('; ')}`,
+    `  verify:       ${adapter.verify.join('; ')}`,
+    `  done signal:  ${done}`,
+    '  autonomy:',
+    ...autonomyLines(adapter),
+    '  kickoff (example for role BE):',
+    ...kickoff.map(line => `      ${line}`),
+    '  human gates:',
+    ...gateRows(adapter.humanGates),
+  ]
+}
+
+/**
+ * The contract view of the given adapters: one block per adapter, with a blank line between blocks. It is rendered from
+ * the adapter objects themselves, so the view cannot drift from the code (D-09, T-01-28).
+ */
+export function adaptersReportLines(adapters: readonly FrameworkAdapter[]): string[] {
+  const lines: string[] = []
+  for (const adapter of adapters) {
+    if (lines.length > 0) lines.push('')
+    lines.push(...adapterBlock(adapter))
+  }
+
+  return lines
+}
+
+/**
+ * The text the detect command prints: the report alone, or, with the --adapters flag, the report followed by the
+ * contract view after a blank line and a heading.
+ */
+export function detectText(facts: Facts, isAdapters: boolean): string {
+  const report = detectReportLines(facts)
+  if (!isAdapters) return report.join('\n')
+  const contract = ['', 'Adapter contract (the same fields for every adapter):', ...adaptersReportLines(ADAPTERS)]
+
+  return [...report, ...contract].join('\n')
 }
