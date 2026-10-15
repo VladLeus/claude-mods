@@ -3,6 +3,7 @@
   "owner": { "name": "VladLeus" },
   "plugins": [
     { "name": "agent-fleet", "source": "./agent-fleet" },
-    { "name": "autopilot", "source": "./autopilot" }
+    { "name": "autopilot", "source": "./autopilot" },
+    { "name": "cadre", "source": "./cadre" }
   ]
 }

@@ -1,11 +1,12 @@
 # claude-mods
 
-Two Claude Code mods (plugins of function hooks) in one local marketplace, `local-mods`:
+Three Claude Code mods (plugins of function hooks) in one local marketplace, `local-mods`:
 
 | Mod | Command | What it does |
 |---|---|---|
 | `agent-fleet` | `/fleet` | A pane with every running session that has the mod: context fill, working/idle, subagents and workflow agents, who messages whom, cost, and an autopilot badge. `/fleet` toggles it. |
 | `autopilot` | `/autopilot`, `/away`, `/back`, `/ask-user` | Runs a session on its own for a set time with a fixed role. At a context threshold it writes a handoff, clears itself and resumes from the handoff, instead of auto-compacting. Respects the permission mode, defers blocked actions, watches token limits, works with `/goal`. With asking on (`--ask-user` or `/ask-user on`), while you are away it queues its critical questions and asks them one by one when you are back. |
+| `cadre` | `/cadre detect` | Read-only: shows which dev framework this repo uses (GSD, superpowers, none, or detected but unsupported such as AI-DLC), with the evidence, and with `--adapters` the contract cadre would drive each framework with. First step of cadre, which will split a repo into narrow-scope role sessions. |
 
 Function-hook mods are early access: you need a recent Claude Code (built and tested on 2.1.295).
 
@@ -32,6 +33,7 @@ git clone https://github.com/VladLeus/claude-mods.git ~/code/claude-mods
 claude plugin marketplace add ~/code/claude-mods
 claude plugin install autopilot@local-mods --scope user
 claude plugin install agent-fleet@local-mods --scope user
+claude plugin install cadre@local-mods --scope user
 ```
 
 A marketplace added from a folder is read from that folder: edit the files, then run `/reload-plugins` in a session.
@@ -116,6 +118,15 @@ These tell the session whether it may ask you now. They only work when you type 
 ## agent-fleet
 
 `/fleet` toggles the pane (`/fleet open`, `/fleet close`). Every session with the mod writes a heartbeat to `~/.claude/fleet/<session id>.json` every 15 s and on every turn, spawn and message; the pane reads that folder. Ended and cleared sessions are hidden at once (a resume brings them back), a silent one shows "no signal" after 3 minutes and is dropped after an hour, and files older than a day are deleted.
+
+## cadre
+
+```bash
+/cadre detect             # which dev framework this repo uses, with the evidence
+/cadre detect --adapters  # also the contract cadre would drive each framework with
+```
+
+`detect` is read-only and writes nothing. A framework is in use when the repo has its artifacts: `.planning/` for GSD, `docs/superpowers/` or `.superpowers/` for superpowers. It is installed when a user-level install is found, not found when neither is present, and unsupported when `aidlc/`, `_bmad/` or `.specify/` is there. With more than one framework in use it says "ambiguous", and `/cadre init` (coming later) asks which one to use. It never runs code from the repo it inspects. cadre is installable from a release tag once one contains it; until then, install it from a clone as in Develop them above. cadre's `register.tsx` is tested against a faked host in `claude plugin test cadre`.
 
 ## Contributing
 
