@@ -1,4 +1,13 @@
-import type { Choice, DecisionType, Detection, Facts, FrameworkId, RepoEntry, UnsupportedMarker } from '../types'
+import type {
+  Choice,
+  DecisionType,
+  Detection,
+  DetectStatus,
+  Facts,
+  FrameworkId,
+  RepoEntry,
+  UnsupportedMarker,
+} from '../types'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this
@@ -59,10 +68,44 @@ function hasDirOrLink(entries: RepoEntry[], name: string): boolean {
   return entries.some(entry => entry.name === name && (entry.kind === 'dir' || entry.isLink))
 }
 
-/** RED placeholder for Task 2: empty on purpose. Replaced in the GREEN commit. */
-export const SUPPORTED_IDS: readonly FrameworkId[] = []
+/**
+ * The supported adapter ids, in the order every ambiguous and installed-only list is shown. `none` is the built-in
+ * fallback, not a framework found in the repo, so it is never ranked here.
+ */
+export const SUPPORTED_IDS: readonly FrameworkId[] = ['gsd', 'superpowers']
 
-/** RED placeholder for Task 2: returns a wrong choice on purpose. Replaced in the GREEN commit. */
+/**
+ * The adapter choice for a repo, decided from the detections alone. Only `chosen` picks an adapter. A user pick is
+ * honoured when it is in use, or when nothing is in use and it is installed; `none` is always honoured. Two or more
+ * frameworks in use is `ambiguous`, so nothing is preselected (D-07). Installed-only never chooses (D-29).
+ */
 export function chooseFramework(detections: Detection[], userPick: FrameworkId | null): Choice {
-  return { kind: 'STUB' } as unknown as Choice
+  const inUse = SUPPORTED_IDS.filter(id => hasStatus(detections, id, 'in-use'))
+  const installed = SUPPORTED_IDS.filter(id => hasStatus(detections, id, 'installed'))
+  const unsupported = UNSUPPORTED_MARKERS.map(row => row.id).filter(id => hasStatus(detections, id, 'unsupported'))
+
+  if (userPick === 'none') return pickedByUser('none')
+  if (userPick !== null && inUse.includes(userPick)) return pickedByUser(userPick)
+  if (inUse.length === 0 && userPick !== null && installed.includes(userPick)) return pickedByUser(userPick)
+  if (inUse.length >= 2) return { kind: 'ambiguous', ids: inUse }
+  if (inUse.length === 1) return onlyInUse(inUse[0])
+  if (installed.length > 0) return { kind: 'installed-only', ids: installed }
+  if (unsupported.length > 0) return { kind: 'unsupported', ids: unsupported }
+
+  return { kind: 'none' }
+}
+
+/** Whether some detection has this id with this status. */
+function hasStatus(detections: Detection[], id: string, status: DetectStatus): boolean {
+  return detections.some(detection => detection.id === id && detection.status === status)
+}
+
+/** A choice the person made, with the reason the report shows for it. */
+function pickedByUser(id: FrameworkId): Choice {
+  return { kind: 'chosen', id, pickedBy: 'user', reason: 'picked by the user' }
+}
+
+/** The choice when exactly one supported framework is in use. */
+function onlyInUse(id: FrameworkId): Choice {
+  return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: `only ${id} is in use in this repo` }
 }
