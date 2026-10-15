@@ -2,6 +2,7 @@ import type { Choice, Detection, DetectStatus, Facts } from '../types'
 import { detectAll } from './adapters'
 import { clean } from './facts'
 import { chooseFramework } from './framework'
+import { GSD_ADAPTER } from './gsd'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
 const NAME_WIDTH = 14
@@ -68,15 +69,43 @@ function detectionRow(detection: Detection): string {
 }
 
 /**
- * The detect report for a repo's facts: a title, a table with one row per framework, and the adapter choice as the
- * last line (D-04). Each untrusted value is cleaned and capped on the way out, so a hostile value cannot add a line or
- * hide text.
+ * The note that names unsupported markers found beside a chosen framework (D-02). When the choice is itself
+ * unsupported, the choice line already names them, so no note is added.
+ */
+function unsupportedNoteLines(detections: readonly Detection[], choice: Choice): string[] {
+  if (choice.kind === 'unsupported') return []
+  const names = detections.filter(detection => detection.status === 'unsupported').map(detection => detection.name)
+  if (names.length === 0) return []
+
+  return [`Warning: also detected but unsupported: ${names.join(', ')}`]
+}
+
+/** The one line that lists the GSD hooks settings register, each with what it does to a role (D-05). */
+function gsdHookLines(facts: Facts): string[] {
+  const hooks = GSD_ADAPTER.roleFacts?.(facts) ?? []
+  if (hooks.length === 0) return []
+  const items = hooks.map(hook => `${hook.name} (${hook.note})`).join(', ')
+
+  return [`GSD hooks registered (activation depends on GSD config): ${items}`]
+}
+
+/** One line per host warning, with the text cleaned and capped as every report cell is. */
+function warningLines(facts: Facts): string[] {
+  return facts.warnings.map(warning => `Warning: ${reportText(warning)}`)
+}
+
+/**
+ * The detect report for a repo's facts: a title, a table with one row per framework, the unsupported note, the GSD
+ * hooks, the host warnings, and the adapter choice as the last line (D-04). Each untrusted value is cleaned and capped
+ * on the way out, so a hostile value cannot add a line or hide text.
  */
 export function detectReportLines(facts: Facts): string[] {
   const detections = detectAll(facts)
   const choice = chooseFramework(detections, null)
   const header = `${pad('Framework', NAME_WIDTH)}${pad('Status', STATUS_WIDTH)}${pad('Version', VERSION_WIDTH)}Evidence`
   const lines = [TITLE, '', header, ...detections.map(detectionRow), '']
+  const notes = [...unsupportedNoteLines(detections, choice), ...gsdHookLines(facts), ...warningLines(facts)]
+  if (notes.length > 0) lines.push(...notes, '')
 
   return [...lines, choiceLine(choice)]
 }

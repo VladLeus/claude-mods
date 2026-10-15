@@ -6,9 +6,15 @@ import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 /**
  * The adapters cadre drives, in report order: GSD, superpowers, then the built-in fallback (D-17). The built-in
- * fallback is listed for the contract view, but it never gives a detection row.
+ * fallback is listed for the contract view, but it never gives a detection row. The list and each adapter are frozen,
+ * so no caller can change the contract at runtime (T-01-27). The freeze is shallow: the gate and autonomy tables
+ * inside an adapter are readonly by type only.
  */
-export const ADAPTERS: readonly FrameworkAdapter[] = [GSD_ADAPTER, SUPERPOWERS_ADAPTER, BUILTIN_ADAPTER]
+export const ADAPTERS: readonly FrameworkAdapter[] = Object.freeze([
+  Object.freeze(GSD_ADAPTER),
+  Object.freeze(SUPERPOWERS_ADAPTER),
+  Object.freeze(BUILTIN_ADAPTER),
+])
 
 /**
  * One detection per adapter except the built-in fallback, in ADAPTERS order, then one detection per unsupported marker
