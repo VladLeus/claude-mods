@@ -1,10 +1,12 @@
 import type {
   EntryKind,
   Facts,
+  GsdReadTarget,
   HookScript,
   PluginFlag,
   PluginVersion,
   RawFacts,
+  ReadPlan,
   RepoEntry,
   SettingsSource,
 } from '../types'
@@ -192,4 +194,48 @@ export function normalizeFacts(raw: RawFacts): Facts {
     gsd: [],
     warnings: cleanWarnings(raw.warnings),
   }
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function isSafeConfigDir(value: unknown): boolean {
+  return true
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function displayPath(path: string, home: string | null, root: string): string {
+  return 'STUB'
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function factReadPlan(env: { root: string; home: string | null; configDir: string | null }): ReadPlan {
+  return { installedPluginsPath: 'STUB', gsd: [], warnings: [] }
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function isGsdIdentitySource(text: string | null): boolean {
+  return true
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseRuntimeIdentity(stdout: string | null): { version: string } | null {
+  return { version: 'STUB' }
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseVersionText(text: unknown): string | null {
+  return 'STUB'
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseGsdManifest(value: unknown): { version: string } | null {
+  return { version: 'STUB' }
+}
+
+/** RED placeholder (plan 01-04, task 3): a deliberately wrong value, so the tests fail on their assertions. */
+export function runtimeIdentityArgv(
+  target: GsdReadTarget,
+  identityText: string | null,
+  isPresent: boolean,
+): string[] | null {
+  return ['STUB']
 }

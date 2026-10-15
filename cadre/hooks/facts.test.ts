@@ -1,18 +1,59 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Facts, RawFacts } from '../types'
+import type { Facts, GsdReadTarget, RawFacts, RawGsdCandidate } from '../types'
 import {
   clean,
+  displayPath,
+  factReadPlan,
   foldEnabledPlugins,
+  isGsdIdentitySource,
+  isSafeConfigDir,
   normalizeFacts,
   parseEnabledPlugins,
+  parseGsdManifest,
   parseHookScripts,
   parseInstalledPlugins,
   parseRepoEntries,
+  parseRuntimeIdentity,
+  parseVersionText,
+  runtimeIdentityArgv,
 } from './facts'
 
 /** A value planted in settings env and in a hook command; it must never reach Facts. */
 const SENTINEL = 'SENTINEL_SECRET_123'
+
+/** The user-level GSD install under /home/u, as the host reads it. */
+const USER_TARGET: GsdReadTarget = {
+  location: 'user',
+  dir: '/home/u/.claude/gsd-core',
+  versionPath: '/home/u/.claude/gsd-core/VERSION',
+  identityPath: '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs',
+  manifestPath: '/home/u/.claude/gsd-file-manifest.json',
+}
+
+/** The repo-local GSD copy under /repo, as the host reads it. */
+const PROJECT_TARGET: GsdReadTarget = {
+  location: 'project',
+  dir: '/repo/.claude/gsd-core',
+  versionPath: '/repo/.claude/gsd-core/VERSION',
+  identityPath: '/repo/.claude/gsd-core/bin/lib/package-identity.cjs',
+  manifestPath: '/repo/.claude/gsd-file-manifest.json',
+}
+
+/** A GSD candidate as the host read it: present, with nothing else read, unless overridden. */
+function candidate(over: Partial<RawGsdCandidate>): RawGsdCandidate {
+  return {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: null,
+    runtimeTried: false,
+    ...over,
+  }
+}
 
 /** A raw host read with every list empty, the repo at /repo and the home folder at /home/u. */
 function raw(over: Partial<RawFacts>): RawFacts {
@@ -308,5 +349,246 @@ describe('normalizeFacts with settings and plugins', () => {
     expect(serialized).not.toContain(SENTINEL)
     expect(serialized).not.toContain('/Users/someone')
     expect(serialized).not.toContain('installPath')
+  })
+})
+
+describe('isSafeConfigDir', () => {
+  test('an absolute path with no .. segment is safe', () => {
+    expect(isSafeConfigDir('/opt/claude')).toBe(true)
+  })
+
+  test('a relative path, a path with a .. segment, an empty value and a missing value are not', () => {
+    expect(isSafeConfigDir('relative')).toBe(false)
+    expect(isSafeConfigDir('/a/../b')).toBe(false)
+    expect(isSafeConfigDir('')).toBe(false)
+    expect(isSafeConfigDir(null)).toBe(false)
+  })
+})
+
+describe('factReadPlan', () => {
+  test('without CLAUDE_CONFIG_DIR the user install is under home, and the repo has its own copy', () => {
+    expect(factReadPlan({ root: '/repo', home: '/home/u', configDir: null })).toEqual({
+      installedPluginsPath: '/home/u/.claude/plugins/installed_plugins.json',
+      gsd: [USER_TARGET, PROJECT_TARGET],
+      warnings: [],
+    })
+  })
+
+  test('CLAUDE_CONFIG_DIR replaces the home .claude folder for the plugins file and the user install', () => {
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: '/opt/claude' })
+    expect(plan.installedPluginsPath).toBe('/opt/claude/plugins/installed_plugins.json')
+    expect(plan.gsd[0]?.dir).toBe('/opt/claude/gsd-core')
+    expect(plan.gsd[0]?.manifestPath).toBe('/opt/claude/gsd-file-manifest.json')
+    expect(plan.gsd[1]).toEqual(PROJECT_TARGET)
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('an unsafe CLAUDE_CONFIG_DIR is ignored, with a warning that names it, and home is used', () => {
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: 'rel/../x' })
+    expect(plan.installedPluginsPath).toBe('/home/u/.claude/plugins/installed_plugins.json')
+    expect(plan.gsd[0]).toEqual(USER_TARGET)
+    expect(plan.warnings.join(' ')).toContain('CLAUDE_CONFIG_DIR')
+  })
+
+  test('a CLAUDE_CONFIG_DIR inside the repo is ignored, so the repo cannot host the user install', () => {
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: '/repo/.claude-config' })
+    expect(plan.gsd[0]).toEqual(USER_TARGET)
+    expect(plan.warnings.join(' ')).toContain('CLAUDE_CONFIG_DIR')
+  })
+
+  test('with no home folder, a safe CLAUDE_CONFIG_DIR alone gives the user install', () => {
+    const plan = factReadPlan({ root: '/repo', home: null, configDir: '/opt/claude' })
+    expect(plan.installedPluginsPath).toBe('/opt/claude/plugins/installed_plugins.json')
+    expect(plan.gsd[0]?.dir).toBe('/opt/claude/gsd-core')
+    expect(plan.gsd[0]?.manifestPath).toBe('/opt/claude/gsd-file-manifest.json')
+  })
+
+  test('with neither home nor CLAUDE_CONFIG_DIR only the repo copy is read, and a warning says so', () => {
+    const plan = factReadPlan({ root: '/repo', home: null, configDir: null })
+    expect(plan.installedPluginsPath).toBeNull()
+    expect(plan.gsd).toEqual([PROJECT_TARGET])
+    expect(plan.warnings.join(' ')).toContain('user-level installs were not checked')
+  })
+
+  test('a home folder that lies inside the repo is not read as the user install', () => {
+    const plan = factReadPlan({ root: '/home/u', home: '/home/u', configDir: null })
+    expect(plan.gsd.map(target => target.location)).toEqual(['project'])
+    expect(plan.warnings.join(' ')).toContain('user-level installs were not checked')
+  })
+})
+
+describe('isGsdIdentitySource', () => {
+  test('the identity line that declares the GSD package name proves the install', () => {
+    expect(isGsdIdentitySource('const packageName = "@opengsd/gsd-core";')).toBe(true)
+  })
+
+  test('a bare mention of gsd-core, or no text at all, does not prove it', () => {
+    expect(isGsdIdentitySource('gsd-core')).toBe(false)
+    expect(isGsdIdentitySource(null)).toBe(false)
+  })
+})
+
+describe('parseRuntimeIdentity', () => {
+  test('stdout that opens with the GSD identity object gives its version', () => {
+    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","version":"1.16.0"}')).toEqual({ version: '1.16.0' })
+  })
+
+  test('a decoy that names another package and only mentions GSD later is refused', () => {
+    expect(parseRuntimeIdentity('{"packageName":"get-shit-done-cc","note":"@opengsd/gsd-core"}')).toBeNull()
+  })
+
+  test('a package name that merely starts with the GSD name is refused', () => {
+    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core-evil","version":"1.0.0"}')).toBeNull()
+  })
+
+  test('output that is not complete JSON, and no output at all, are refused', () => {
+    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core"')).toBeNull()
+    expect(parseRuntimeIdentity(null)).toBeNull()
+  })
+})
+
+describe('parseVersionText', () => {
+  test('the text is trimmed and a version is kept', () => {
+    expect(parseVersionText(' 1.16.0\n')).toBe('1.16.0')
+  })
+
+  test('text that is not a version, or a version longer than 40 characters, gives null', () => {
+    expect(parseVersionText('latest')).toBeNull()
+    expect(parseVersionText(`1.0.0-${'a'.repeat(40)}`)).toBeNull()
+  })
+})
+
+describe('parseGsdManifest', () => {
+  test('a manifest with a numeric manifestVersion and a valid version gives that version', () => {
+    expect(parseGsdManifest({ manifestVersion: 2, version: '1.16.0', files: {} })).toEqual({ version: '1.16.0' })
+  })
+
+  test('a manifest without a numeric manifestVersion gives null', () => {
+    expect(parseGsdManifest({ version: '1.16.0', files: {} })).toBeNull()
+  })
+})
+
+describe('runtimeIdentityArgv', () => {
+  test('a present user install with no proven identity gets the runtime identity call', () => {
+    expect(runtimeIdentityArgv(USER_TARGET, null, true)).toEqual([
+      'node',
+      '/home/u/.claude/gsd-core/bin/gsd-tools.cjs',
+      'runtime-identity',
+      '--raw',
+    ])
+  })
+
+  test('a repo-local install never gets a runtime call, even when present and unproven (D-28)', () => {
+    expect(runtimeIdentityArgv(PROJECT_TARGET, null, true)).toBeNull()
+  })
+
+  test('a user install that its identity module already proves gets no runtime call', () => {
+    expect(runtimeIdentityArgv(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true)).toBeNull()
+  })
+
+  test('an absent user install gets no runtime call', () => {
+    expect(runtimeIdentityArgv(USER_TARGET, null, false)).toBeNull()
+  })
+})
+
+describe('displayPath', () => {
+  test('a path under home reads as ~, and a path under the repo root reads as <repo>', () => {
+    expect(displayPath('/home/u/.claude/gsd-core', '/home/u', '/repo')).toBe('~/.claude/gsd-core')
+    expect(displayPath('/repo/.claude/gsd-core', '/home/u', '/repo')).toBe('<repo>/.claude/gsd-core')
+  })
+
+  test('a sibling that only shares a text prefix with the root is not under the root', () => {
+    expect(displayPath('/repository/x', '/home/u', '/repo')).toBe('/repository/x')
+  })
+
+  test('the repo root is checked before home, so a repo inside home reads as <repo>', () => {
+    expect(displayPath('/home/u/work/repo/.claude', '/home/u', '/home/u/work/repo')).toBe('<repo>/.claude')
+  })
+})
+
+describe('normalizeFacts with GSD candidates', () => {
+  test('a user install that its identity module proves is listed by display path, with its VERSION', () => {
+    const facts = normalizeFacts(
+      raw({
+        gsd: [candidate({ identityText: 'const packageName = "@opengsd/gsd-core";', versionText: ' 1.16.0\n' })],
+      }),
+    )
+    expect(facts.gsd).toEqual([
+      { location: 'user', dir: '~/.claude/gsd-core', version: '1.16.0', identity: 'proven', runtimeIdentityTried: false },
+    ])
+    expect(facts.warnings).toEqual([])
+  })
+
+  test('a present install that nothing proves is unknown with a warning, never absent', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'project', dir: '/repo/.claude/gsd-core' })] }))
+    expect(facts.gsd).toEqual([
+      { location: 'project', dir: '<repo>/.claude/gsd-core', version: null, identity: 'unknown', runtimeIdentityTried: false },
+    ])
+    expect(facts.warnings).toEqual(['could not prove the GSD install at <repo>/.claude/gsd-core (treated as unknown)'])
+  })
+
+  test('an install that is not present is absent, with no warning', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ isPresent: false })] }))
+    expect(facts.gsd).toEqual([
+      { location: 'user', dir: '~/.claude/gsd-core', version: null, identity: 'absent', runtimeIdentityTried: false },
+    ])
+    expect(facts.warnings).toEqual([])
+  })
+
+  test('the VERSION text is the version when there is one, ahead of the manifest', () => {
+    const facts = normalizeFacts(
+      raw({
+        gsd: [
+          candidate({
+            location: 'project',
+            dir: '/repo/.claude/gsd-core',
+            versionText: '1.16.0',
+            manifest: { manifestVersion: 2, version: '1.15.0', files: {} },
+          }),
+        ],
+      }),
+    )
+    expect(facts.gsd.map(install => install.version)).toEqual(['1.16.0'])
+  })
+
+  test('the manifest is the version ahead of the runtime identity, and the runtime identity proves a user install', () => {
+    const facts = normalizeFacts(
+      raw({
+        gsd: [
+          candidate({
+            manifest: { manifestVersion: 2, version: '1.15.0', files: {} },
+            runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.14.0"}',
+            runtimeTried: true,
+          }),
+        ],
+      }),
+    )
+    expect(facts.gsd).toEqual([
+      { location: 'user', dir: '~/.claude/gsd-core', version: '1.15.0', identity: 'proven', runtimeIdentityTried: true },
+    ])
+  })
+
+  test('with no VERSION and no manifest, the runtime identity supplies the version', () => {
+    const facts = normalizeFacts(
+      raw({
+        gsd: [candidate({ runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.14.0"}', runtimeTried: true })],
+      }),
+    )
+    expect(facts.gsd.map(install => install.version)).toEqual(['1.14.0'])
+  })
+
+  test('a host warning that names the home folder or the repo root shows the display form instead', () => {
+    const facts = normalizeFacts(
+      raw({ warnings: ['could not read /home/u/.claude/settings.json', 'could not list /repo/docs'] }),
+    )
+    expect(facts.warnings).toEqual(['could not read ~/.claude/settings.json', 'could not list <repo>/docs'])
+  })
+
+  test('the serialized Facts never carry the home folder or the repo root', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({})], warnings: ['read failed at /repo/.claude/x'] }))
+    const serialized = JSON.stringify(facts)
+    expect(serialized).toContain('~/.claude/gsd-core')
+    expect(serialized).not.toContain('/home/u')
+    expect(serialized).not.toContain('/repo/')
   })
 })
