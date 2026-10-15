@@ -1,10 +1,23 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, DetectStatus, Facts, FrameworkId, RepoEntry } from '../types'
+import type {
+  Detection,
+  DetectStatus,
+  Facts,
+  FrameworkAdapter,
+  FrameworkId,
+  Gate,
+  RepoEntry,
+  SettingProposal,
+} from '../types'
 import {
   chooseFramework,
   DECISION_TYPES,
   detectUnsupported,
+  gateProblems,
+  isDecisionType,
+  missingFields,
+  REQUIRED_FIELDS,
   SUPPORTED_IDS,
   UNSUPPORTED_MARKERS,
 } from './framework'
@@ -37,6 +50,56 @@ function detection(over: Partial<Detection>): Detection {
 function detected(id: FrameworkId, status: DetectStatus): Detection {
   return detection({ id, name: id, status })
 }
+
+/** A valid gate: a chat gate owned by Arch with a kickoff. A test overrides the field it is about. */
+function gate(over: Partial<Gate>): Gate {
+  return {
+    id: 'g',
+    where: 'w',
+    kind: 'chat',
+    decisionType: 'Arch',
+    needsHuman: false,
+    handling: 'preapprove',
+    kickoff: 'k',
+    ...over,
+  }
+}
+
+/** A complete valid adapter. A test overrides or removes the field it is about. */
+function adapter(over: Partial<FrameworkAdapter>): FrameworkAdapter {
+  return {
+    id: 'gsd',
+    name: 'X',
+    detectRule: 'r',
+    detect: () => detection({ id: 'gsd', status: 'not-found' }),
+    startWork: ['s'],
+    locations: { spec: ['a'], plan: ['b'] },
+    verify: ['v'],
+    doneSignal: { artifact: 'f', check: 'c' },
+    humanGates: [gate({ id: 'g1' })],
+    autonomy: [],
+    autonomyNote: 'none needed',
+    kickoffText: () => 'k',
+    ...over,
+  }
+}
+
+/** One setting change an adapter proposes for autonomy, used to make a non-empty autonomy list. */
+const SETTING: SettingProposal = {
+  kind: 'command',
+  key: 'mode',
+  read: ['get'],
+  write: ['set'],
+  to: 'yolo',
+  why: 'autonomy needs it',
+  isRequired: true,
+}
+
+/** Every required field, in the order missingFields must report them. */
+const ALL_FIELDS = [
+  'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
+  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText',
+]
 
 describe('DECISION_TYPES and UNSUPPORTED_MARKERS', () => {
   test('the decision types are Product, Arch, Security and QA', () => {
@@ -202,5 +265,130 @@ describe('chooseFramework', () => {
 
   test('SUPPORTED_IDS lists gsd before superpowers and never lists none', () => {
     expect(SUPPORTED_IDS).toEqual(['gsd', 'superpowers'])
+  })
+})
+
+describe('missingFields', () => {
+  test('a complete adapter has no missing fields', () => {
+    expect(missingFields(adapter({}))).toEqual([])
+  })
+
+  test('an empty object reports every required field, in declared order', () => {
+    expect(REQUIRED_FIELDS).toEqual(ALL_FIELDS)
+    expect(missingFields({})).toEqual(ALL_FIELDS)
+  })
+
+  test('a value that is not an adapter object reports every required field and does not throw', () => {
+    expect(missingFields(null as never)).toEqual(ALL_FIELDS)
+    expect(missingFields([] as never)).toEqual(ALL_FIELDS)
+  })
+
+  test('removing any one required field reports exactly that field', () => {
+    expect(REQUIRED_FIELDS).toEqual(ALL_FIELDS)
+    for (const field of REQUIRED_FIELDS) {
+      expect(missingFields({ ...adapter({}), [field]: undefined })).toEqual([field])
+    }
+  })
+
+  test('a blank name counts as missing', () => {
+    expect(missingFields(adapter({ name: '   ' }))).toEqual(['name'])
+  })
+
+  test('an empty startWork list counts as missing', () => {
+    expect(missingFields(adapter({ startWork: [] }))).toEqual(['startWork'])
+  })
+
+  test('an id outside gsd, superpowers and none counts as missing', () => {
+    expect(missingFields(adapter({ id: 'other' as never }))).toEqual(['id'])
+  })
+
+  test('a locations object with an empty spec list counts as missing', () => {
+    expect(missingFields(adapter({ locations: { spec: [], plan: ['b'] } }))).toEqual(['locations'])
+  })
+
+  test('a doneSignal with an empty check counts as missing', () => {
+    expect(missingFields(adapter({ doneSignal: { artifact: 'f', check: '' } }))).toEqual(['doneSignal'])
+  })
+
+  test('a detect that is not a function counts as missing', () => {
+    expect(missingFields(adapter({ detect: 'x' as never }))).toEqual(['detect'])
+  })
+
+  test('an empty autonomy list with no note is missing', () => {
+    expect(missingFields(adapter({ autonomy: [], autonomyNote: null }))).toEqual(['autonomy'])
+  })
+
+  test('an empty autonomy list with a note stating why it needs no settings is complete', () => {
+    expect(missingFields(adapter({ autonomy: [], autonomyNote: 'none' }))).toEqual([])
+  })
+
+  test('a whitespace-only autonomy note does not count as a note', () => {
+    expect(missingFields(adapter({ autonomy: [], autonomyNote: '   ' }))).toEqual(['autonomy'])
+  })
+
+  test('a non-empty autonomy list is complete without a note', () => {
+    expect(missingFields(adapter({ autonomy: [SETTING], autonomyNote: null }))).toEqual([])
+  })
+})
+
+describe('isDecisionType', () => {
+  test('accepts a decision type with its exact name', () => {
+    expect(isDecisionType('Arch')).toBe(true)
+  })
+
+  test('rejects a decision type name in a different case', () => {
+    expect(isDecisionType('arch')).toBe(false)
+  })
+
+  test('rejects a value that is not a string', () => {
+    expect(isDecisionType(42)).toBe(false)
+    expect(isDecisionType(null)).toBe(false)
+  })
+})
+
+describe('gateProblems', () => {
+  test('two valid gates of the same decision type with different ids have no problems', () => {
+    expect(gateProblems([gate({ id: 'a' }), gate({ id: 'b' })])).toEqual([])
+  })
+
+  test('a standing-rule gate with no decision type is valid', () => {
+    expect(gateProblems([gate({ id: 'x', kind: 'standing-rule', decisionType: null })])).toEqual([])
+  })
+
+  test('a gate id that repeats is reported once, however many times it repeats', () => {
+    const repeated = [gate({ id: 'x' }), gate({ id: 'x' }), gate({ id: 'x' })]
+
+    expect(gateProblems(repeated)).toEqual(['duplicate gate id x'])
+  })
+
+  test('a chat gate with no decision type needs kind standing-rule', () => {
+    expect(gateProblems([gate({ id: 'x', kind: 'chat', decisionType: null })])).toEqual([
+      'gate x: decisionType null needs kind standing-rule',
+    ])
+  })
+
+  test('a standing-rule gate that names a decision type is reported', () => {
+    expect(gateProblems([gate({ id: 'x', kind: 'standing-rule', decisionType: 'Arch' })])).toEqual([
+      'gate x: standing-rule gate must have decisionType null',
+    ])
+  })
+
+  test('a decision type outside DECISION_TYPES is reported as unknown', () => {
+    expect(gateProblems([gate({ id: 'x', decisionType: 'Ops' as never })])).toEqual(['gate x: unknown decisionType'])
+  })
+
+  test('a blank kickoff is reported as an empty kickoff', () => {
+    expect(gateProblems([gate({ id: 'x', kickoff: '   ' })])).toEqual(['gate x: empty kickoff'])
+  })
+
+  test('a gate that is not an object is reported, and the gates after it are still checked', () => {
+    expect(gateProblems([null as never, gate({ id: 'x', kickoff: '' })])).toEqual([
+      'gate is not an object',
+      'gate x: empty kickoff',
+    ])
+  })
+
+  test('a gate table that is not an array is reported', () => {
+    expect(gateProblems(null as never)).toEqual(['gates is not an array'])
   })
 })

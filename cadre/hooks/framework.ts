@@ -4,7 +4,9 @@ import type {
   Detection,
   DetectStatus,
   Facts,
+  FrameworkAdapter,
   FrameworkId,
+  Gate,
   RepoEntry,
   UnsupportedMarker,
 } from '../types'
@@ -108,4 +110,22 @@ function pickedByUser(id: FrameworkId): Choice {
 /** The choice when exactly one supported framework is in use. */
 function onlyInUse(id: FrameworkId): Choice {
   return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: `only ${id} is in use in this repo` }
+}
+
+/** RED placeholder for Task 3: empty on purpose. Replaced in the GREEN commit. */
+export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = []
+
+/** RED placeholder for Task 3: reports a wrong field on purpose. Replaced in the GREEN commit. */
+export function missingFields(adapter: Partial<FrameworkAdapter>): string[] {
+  return ['STUB']
+}
+
+/** RED placeholder for Task 3: answers with a non-boolean on purpose. Replaced in the GREEN commit. */
+export function isDecisionType(value: unknown): value is DecisionType {
+  return 'STUB' as unknown as boolean
+}
+
+/** RED placeholder for Task 3: reports a wrong problem on purpose. Replaced in the GREEN commit. */
+export function gateProblems(gates: Gate[]): string[] {
+  return ['STUB']
 }
