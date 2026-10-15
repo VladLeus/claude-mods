@@ -125,7 +125,7 @@ function maskPath(text: string, needle: string | null, replacement: string): str
   if (trimmed.length < 2) return text
   const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-  return text.replace(new RegExp(`(?<![\\w.~-])${escaped}(?=/|$|[^\\w.-])`, 'g'), () => replacement)
+  return text.replace(new RegExp(`(?<![\\w.~-])${escaped}(?=$|/|[^\\w.-]|\\.(?=$|[^\\w.-]))`, 'g'), () => replacement)
 }
 
 /**
@@ -272,7 +272,10 @@ export function displayPath(path: string, home: string | null, root: string): st
   return clean(path)
 }
 
-/** CLAUDE_CONFIG_DIR when it is set, safe and outside the repo; null when unset, and null with a warning when unusable. */
+/**
+ * CLAUDE_CONFIG_DIR when it is set, safe and outside the repo; null when unset,
+ * and null with a warning when unusable.
+ */
 function usableConfigDir(env: ReadEnv, warnings: string[]): string | null {
   const { root, configDir } = env
   if (configDir === null) return null
@@ -309,14 +312,24 @@ function gsdTarget(location: GsdLocation, dir: string, manifestPath: string): Gs
   }
 }
 
+/** A path without its trailing slashes; null stays null. */
+function trimSlash(path: string | null): string | null {
+  return path === null ? null : path.replace(/\/+$/, '')
+}
+
 /**
  * The reads the host performs before detection, and nothing else. The user-level GSD folder is CLAUDE_CONFIG_DIR
  * when that is usable, else `<home>/.claude`; the repo's own copy is always listed. Building the plan reads nothing.
- * A trailing `/` on the root is dropped. The host must realpath the root, the home folder and CLAUDE_CONFIG_DIR
+ * Trailing slashes on the root, the home folder and CLAUDE_CONFIG_DIR are dropped.
+ * The host must realpath the root, the home folder and CLAUDE_CONFIG_DIR
  * first: symlinks and case-insensitive paths cannot be resolved here.
  */
 export function factReadPlan(input: ReadEnv): ReadPlan {
-  const env = { ...input, root: input.root.replace(/\/+$/, '') }
+  const env = {
+    root: trimSlash(input.root) ?? '',
+    home: trimSlash(input.home),
+    configDir: trimSlash(input.configDir),
+  }
   const warnings: string[] = []
   const userFolder = userFolderOf(env, warnings)
   const gsd: GsdReadTarget[] = []
@@ -353,8 +366,8 @@ export function parseVersionText(text: unknown): string | null {
  * The version from the runtime identity command's stdout. Only output that opens with the exact identity object
  * counts; anything else, including text that names the package later on, is refused.
  */
-export function parseRuntimeIdentity(stdout: string | null): { version: string } | null {
-  if (stdout === null) return null
+export function parseRuntimeIdentity(stdout: unknown): { version: string } | null {
+  if (typeof stdout !== 'string') return null
   const text = stdout.trim()
   if (!text.startsWith(RUNTIME_IDENTITY_PREFIX)) return null
   let parsed: unknown
@@ -413,7 +426,9 @@ function versionOf(candidate: RawGsdCandidate, runtime: { version: string } | nu
 /** Whether a host-sent candidate has a string `dir` and a known location; any other candidate is skipped. */
 function isUsableCandidate(candidate: unknown): candidate is RawGsdCandidate {
   return (
-    isObject(candidate) && typeof candidate.dir === 'string' && GSD_LOCATIONS.some(place => place === candidate.location)
+    isObject(candidate) &&
+    typeof candidate.dir === 'string' &&
+    GSD_LOCATIONS.some(place => place === candidate.location)
   )
 }
 

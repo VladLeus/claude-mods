@@ -281,7 +281,11 @@ describe('parseHookScripts', () => {
   test('a basename with an 80-character stem is reported and one with an 81-character stem is not', () => {
     const value = {
       hooks: {
-        Stop: [{ hooks: [{ command: `node /x/gsd-${'a'.repeat(80)}.js` }, { command: `node /x/gsd-${'b'.repeat(81)}.js` }] }],
+        Stop: [
+          {
+            hooks: [{ command: `node /x/gsd-${'a'.repeat(80)}.js` }, { command: `node /x/gsd-${'b'.repeat(81)}.js` }],
+          },
+        ],
       },
     }
     expect(parseHookScripts(value, 'user').map(hook => hook.script)).toEqual([`gsd-${'a'.repeat(80)}.js`])
@@ -438,7 +442,7 @@ describe('factReadPlan', () => {
     expect(plan.warnings).toEqual([])
   })
 
-  test('an unsafe CLAUDE_CONFIG_DIR is ignored, with a warning that does not repeat the value, and home is used', () => {
+  test('an unsafe CLAUDE_CONFIG_DIR is ignored, with a warning that repeats nothing, and home is used', () => {
     const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: 'rel/../x' })
     expect(plan.installedPluginsPath).toBe('/home/u/.claude/plugins/installed_plugins.json')
     expect(plan.gsd[0]).toEqual(USER_TARGET)
@@ -477,6 +481,13 @@ describe('factReadPlan', () => {
       factReadPlan({ root: '/repo', home: '/home/u', configDir: '/repo-cfg' }),
     )
     expect(factReadPlan({ root: '/repo/', home: '/home/u', configDir: '/repo/cfg' }).gsd[0]).toEqual(USER_TARGET)
+  })
+
+  test('a home folder and a CLAUDE_CONFIG_DIR with a trailing slash behave like the ones without it', () => {
+    expect(factReadPlan({ root: '/repo', home: '/home/u/', configDir: null }).gsd[0]).toEqual(USER_TARGET)
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: '/opt/claude/' })
+    expect(plan.gsd[0]?.dir).toBe('/opt/claude/gsd-core')
+    expect(plan.warnings).toEqual([])
   })
 
   test('a CLAUDE_CONFIG_DIR equal to the root is ignored, with the warning', () => {
@@ -546,12 +557,14 @@ describe('parseRuntimeIdentity', () => {
   })
 
   test('a duplicate packageName key whose last value is another package is refused', () => {
-    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","packageName":"evil","version":"1.0.0"}')).toBeNull()
+    const stdout = '{"packageName":"@opengsd/gsd-core","packageName":"evil","version":"1.0.0"}'
+    expect(parseRuntimeIdentity(stdout)).toBeNull()
   })
 
   test('output that is not complete JSON, and no output at all, are refused', () => {
     expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core"')).toBeNull()
     expect(parseRuntimeIdentity(null)).toBeNull()
+    expect(parseRuntimeIdentity(42)).toBeNull()
   })
 })
 
@@ -726,6 +739,13 @@ describe('normalizeFacts with GSD candidates', () => {
   test('the home folder inside a longer path is not masked as the repo root, and the repo path keeps its form', () => {
     const facts = normalizeFacts(raw({ warnings: ['bad /home/u/repo/file', 'bad /repo-other/x'] }))
     expect(facts.warnings).toEqual(['bad ~/repo/file', 'bad /repo-other/x'])
+  })
+
+  test('a path before a full stop is masked, while a longer name after the dot is not', () => {
+    const facts = normalizeFacts(
+      raw({ warnings: ['could not list /repo.', 'at /repo. Next', 'at /home/u.', '/repo.bak /repo..x'] }),
+    )
+    expect(facts.warnings).toEqual(['could not list <repo>.', 'at <repo>. Next', 'at ~.', '/repo.bak /repo..x'])
   })
 
   test('a root given with a trailing slash still masks paths under it', () => {
