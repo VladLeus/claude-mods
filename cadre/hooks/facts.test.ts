@@ -6,6 +6,8 @@ import {
   displayPath,
   factReadPlan,
   foldEnabledPlugins,
+  HOME_ROOT_REPLY,
+  homeRootRefusal,
   isGsdIdentitySource,
   isSafeConfigDir,
   normalizeFacts,
@@ -96,6 +98,18 @@ describe('clean', () => {
   test('a longer value is cut to the cap, with an ellipsis as the last character', () => {
     expect(clean('x'.repeat(200), 10)).toBe(`${'x'.repeat(9)}\u2026`)
   })
+
+  test('a value exactly at the cap is returned unchanged', () => {
+    expect(clean('x'.repeat(10), 10)).toBe('x'.repeat(10))
+  })
+
+  test('a cap below 1 gives the empty string', () => {
+    expect(clean('abc', 0)).toBe('')
+  })
+
+  test('lone surrogates and private-use characters are stripped', () => {
+    expect(clean('a\uD800b\uE000c')).toBe('abc')
+  })
 })
 
 describe('parseRepoEntries', () => {
@@ -127,6 +141,16 @@ describe('parseRepoEntries', () => {
     ).toEqual([{ name: 'docs', kind: 'file', isLink: false }])
   })
 
+  test('a name longer than 255 code points is cut to 255 with an ellipsis', () => {
+    const [entry] = parseRepoEntries([{ name: 'n'.repeat(256), kind: 'file', isLink: false }])
+    expect(Array.from(entry?.name ?? '')).toHaveLength(255)
+    expect(entry?.name.endsWith('\u2026')).toBe(true)
+  })
+
+  test('a name of exactly 255 code points is kept whole', () => {
+    expect(parseRepoEntries([{ name: 'n'.repeat(255), kind: 'file', isLink: false }])[0]?.name).toBe('n'.repeat(255))
+  })
+
   test('a value that is not an array gives no entries', () => {
     expect(parseRepoEntries(null)).toEqual([])
     expect(parseRepoEntries('x')).toEqual([])
@@ -155,12 +179,10 @@ describe('normalizeFacts', () => {
     )
   })
 
-  test('the same raw read gives the same Facts twice, and the raw read is not changed', () => {
+  test('the raw read is not changed by normalisation', () => {
     const input = raw({ repoEntries: [{ name: 'src', kind: 'dir', size: 4, mtimeMs: 1, isLink: false }] })
     const before = JSON.stringify(input)
-    const expected = emptyFacts({ repoEntries: [{ name: 'src', kind: 'dir', isLink: false }] })
-    expect(normalizeFacts(input)).toEqual(expected)
-    expect(normalizeFacts(input)).toEqual(expected)
+    expect(normalizeFacts(input)).toEqual(emptyFacts({ repoEntries: [{ name: 'src', kind: 'dir', isLink: false }] }))
     expect(JSON.stringify(input)).toBe(before)
   })
 })
@@ -182,6 +204,13 @@ describe('parseEnabledPlugins', () => {
       { key: 'superpowers@x.', source: 'project', value: true },
       { key: 'tool@ab', source: 'project', value: false },
     ])
+  })
+
+  test('a key longer than 120 code points is cut to 120, and a key of exactly 120 is kept', () => {
+    const value = { enabledPlugins: { [`${'k'.repeat(121)}`]: true, [`${'j'.repeat(120)}`]: true } }
+    const keys = parseEnabledPlugins(value, 'user').map(flag => flag.key)
+    expect(keys[0]).toBe(`${'k'.repeat(119)}\u2026`)
+    expect(keys[1]).toBe('j'.repeat(120))
   })
 
   test('gives no flags for null, for an array, or for an object without enabledPlugins', () => {
@@ -249,6 +278,20 @@ describe('parseHookScripts', () => {
     expect(parseHookScripts(value, 'user')).toEqual([])
   })
 
+  test('a basename with an 80-character stem is reported and one with an 81-character stem is not', () => {
+    const value = {
+      hooks: {
+        Stop: [{ hooks: [{ command: `node /x/gsd-${'a'.repeat(80)}.js` }, { command: `node /x/gsd-${'b'.repeat(81)}.js` }] }],
+      },
+    }
+    expect(parseHookScripts(value, 'user').map(hook => hook.script)).toEqual([`gsd-${'a'.repeat(80)}.js`])
+  })
+
+  test('an event name longer than 60 code points is cut to 60 with an ellipsis', () => {
+    const value = { hooks: { [`${'e'.repeat(61)}`]: [{ hooks: [{ command: 'node /x/gsd-x.js' }] }] } }
+    expect(parseHookScripts(value, 'user')[0]?.event).toBe(`${'e'.repeat(59)}\u2026`)
+  })
+
   test('a script named twice for the same event and source appears once', () => {
     const value = {
       hooks: {
@@ -263,6 +306,11 @@ describe('parseHookScripts', () => {
 })
 
 describe('parseInstalledPlugins', () => {
+  test('a key longer than 120 code points is cut to 120 with an ellipsis', () => {
+    const installed = parseInstalledPlugins({ plugins: { [`${'k'.repeat(121)}`]: [{ version: '1.0.0' }] } })
+    expect(installed).toEqual([{ key: `${'k'.repeat(119)}\u2026`, version: '1.0.0' }])
+  })
+
   test('gives the key and the version only, and the install path is never returned', () => {
     const installed = parseInstalledPlugins({
       version: 2,
@@ -363,6 +411,13 @@ describe('isSafeConfigDir', () => {
     expect(isSafeConfigDir('')).toBe(false)
     expect(isSafeConfigDir(null)).toBe(false)
   })
+
+  test('an empty or . segment is not safe', () => {
+    expect(isSafeConfigDir('/./repo/x')).toBe(false)
+    expect(isSafeConfigDir('//repo/x')).toBe(false)
+    expect(isSafeConfigDir('/opt/claude/')).toBe(false)
+    expect(isSafeConfigDir('/')).toBe(false)
+  })
 })
 
 describe('factReadPlan', () => {
@@ -383,11 +438,12 @@ describe('factReadPlan', () => {
     expect(plan.warnings).toEqual([])
   })
 
-  test('an unsafe CLAUDE_CONFIG_DIR is ignored, with a warning that names it, and home is used', () => {
+  test('an unsafe CLAUDE_CONFIG_DIR is ignored, with a warning that does not repeat the value, and home is used', () => {
     const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: 'rel/../x' })
     expect(plan.installedPluginsPath).toBe('/home/u/.claude/plugins/installed_plugins.json')
     expect(plan.gsd[0]).toEqual(USER_TARGET)
     expect(plan.warnings.join(' ')).toContain('CLAUDE_CONFIG_DIR')
+    expect(plan.warnings.join(' ')).not.toContain('rel/../x')
   })
 
   test('a CLAUDE_CONFIG_DIR inside the repo is ignored, so the repo cannot host the user install', () => {
@@ -410,6 +466,42 @@ describe('factReadPlan', () => {
     expect(plan.warnings.join(' ')).toContain('user-level installs were not checked')
   })
 
+  test('a CLAUDE_CONFIG_DIR that only shares a text prefix with the root is accepted', () => {
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: '/repo-cfg' })
+    expect(plan.gsd[0]?.dir).toBe('/repo-cfg/gsd-core')
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('a root with a trailing slash behaves like the root without it', () => {
+    expect(factReadPlan({ root: '/repo/', home: '/home/u', configDir: '/repo-cfg' })).toEqual(
+      factReadPlan({ root: '/repo', home: '/home/u', configDir: '/repo-cfg' }),
+    )
+    expect(factReadPlan({ root: '/repo/', home: '/home/u', configDir: '/repo/cfg' }).gsd[0]).toEqual(USER_TARGET)
+  })
+
+  test('a CLAUDE_CONFIG_DIR equal to the root is ignored, with the warning', () => {
+    const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir: '/repo' })
+    expect(plan.gsd[0]).toEqual(USER_TARGET)
+    expect(plan.warnings.join(' ')).toContain('CLAUDE_CONFIG_DIR')
+  })
+
+  test('a CLAUDE_CONFIG_DIR with an empty or . segment is ignored, with the warning', () => {
+    for (const configDir of ['/./repo/x', '//repo/x']) {
+      const plan = factReadPlan({ root: '/repo', home: '/home/u', configDir })
+      expect(plan.gsd[0]).toEqual(USER_TARGET)
+      expect(plan.warnings.join(' ')).toContain('CLAUDE_CONFIG_DIR')
+    }
+  })
+
+  test('a home folder with a .. segment, a relative home and a root home give no user folder', () => {
+    for (const home of ['/a/../repo', 'foo', '/']) {
+      const plan = factReadPlan({ root: '/repo', home, configDir: null })
+      expect(plan.installedPluginsPath).toBeNull()
+      expect(plan.gsd.map(target => target.location)).toEqual(['project'])
+      expect(plan.warnings.join(' ')).toContain('user-level installs were not checked')
+    }
+  })
+
   test('a home folder that lies inside the repo is not read as the user install', () => {
     const plan = factReadPlan({ root: '/home/u', home: '/home/u', configDir: null })
     expect(plan.gsd.map(target => target.location)).toEqual(['project'])
@@ -420,6 +512,16 @@ describe('factReadPlan', () => {
 describe('isGsdIdentitySource', () => {
   test('the identity line that declares the GSD package name proves the install', () => {
     expect(isGsdIdentitySource('const packageName = "@opengsd/gsd-core";')).toBe(true)
+  })
+
+  test('the identity line with leading spaces or a trailing carriage return proves the install', () => {
+    expect(isGsdIdentitySource('x\n  const packageName = "@opengsd/gsd-core";\r\ny')).toBe(true)
+  })
+
+  test('the identity line inside a comment or a longer line does not prove the install', () => {
+    expect(isGsdIdentitySource('// const packageName = "@opengsd/gsd-core";')).toBe(false)
+    expect(isGsdIdentitySource('x; const packageName = "@opengsd/gsd-core";')).toBe(false)
+    expect(isGsdIdentitySource('const packageName = "@opengsd/gsd-core"; evil()')).toBe(false)
   })
 
   test('a bare mention of gsd-core, or no text at all, does not prove it', () => {
@@ -443,6 +545,10 @@ describe('parseRuntimeIdentity', () => {
     expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core-evil","version":"1.0.0"}')).toBeNull()
   })
 
+  test('a duplicate packageName key whose last value is another package is refused', () => {
+    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","packageName":"evil","version":"1.0.0"}')).toBeNull()
+  })
+
   test('output that is not complete JSON, and no output at all, are refused', () => {
     expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core"')).toBeNull()
     expect(parseRuntimeIdentity(null)).toBeNull()
@@ -457,6 +563,11 @@ describe('parseVersionText', () => {
   test('text that is not a version, or a version longer than 40 characters, gives null', () => {
     expect(parseVersionText('latest')).toBeNull()
     expect(parseVersionText(`1.0.0-${'a'.repeat(40)}`)).toBeNull()
+  })
+
+  test('a version of exactly 40 characters is kept and one of 41 is not', () => {
+    expect(parseVersionText(`1.0.0-${'a'.repeat(34)}`)).toBe(`1.0.0-${'a'.repeat(34)}`)
+    expect(parseVersionText(`1.0.0-${'a'.repeat(35)}`)).toBeNull()
   })
 })
 
@@ -606,11 +717,70 @@ describe('normalizeFacts with GSD candidates', () => {
     expect(facts.warnings).toEqual(['could not read ~/.claude/settings.json', 'could not list <repo>/docs'])
   })
 
+  test('a host warning longer than 240 code points is cut to 240, the ellipsis counted', () => {
+    const facts = normalizeFacts(raw({ warnings: ['w'.repeat(300)] }))
+    expect(Array.from(facts.warnings[0] ?? '')).toHaveLength(240)
+    expect(facts.warnings[0]?.endsWith('\u2026')).toBe(true)
+  })
+
+  test('the home folder inside a longer path is not masked as the repo root, and the repo path keeps its form', () => {
+    const facts = normalizeFacts(raw({ warnings: ['bad /home/u/repo/file', 'bad /repo-other/x'] }))
+    expect(facts.warnings).toEqual(['bad ~/repo/file', 'bad /repo-other/x'])
+  })
+
+  test('a root given with a trailing slash still masks paths under it', () => {
+    const facts = normalizeFacts(raw({ root: '/repo/', warnings: ['bad /repo/a'] }))
+    expect(facts.warnings).toEqual(['bad <repo>/a'])
+  })
+
+  test('a display path is cleaned, so a bidi character in a candidate dir does not reach Facts', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ dir: '/home/u/.claude/gsd\u202E-core' })] }))
+    expect(facts.gsd[0]?.dir).toBe('~/.claude/gsd-core')
+    expect(facts.warnings.join(' ')).not.toContain('\u202E')
+    expect(facts.warnings).toEqual(['could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'])
+  })
+
+  test('a candidate with a non-string dir is skipped without throwing', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ dir: 42 as never }), candidate({ isPresent: false })] }))
+    expect(facts.gsd.map(install => install.identity)).toEqual(['absent'])
+  })
+
+  test('a candidate with an unknown location is skipped', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'elsewhere' as never })] }))
+    expect(facts.gsd).toEqual([])
+  })
+
   test('the serialized Facts never carry the home folder or the repo root', () => {
     const facts = normalizeFacts(raw({ gsd: [candidate({})], warnings: ['read failed at /repo/.claude/x'] }))
     const serialized = JSON.stringify(facts)
     expect(serialized).toContain('~/.claude/gsd-core')
     expect(serialized).not.toContain('/home/u')
     expect(serialized).not.toContain('/repo/')
+  })
+})
+
+describe('homeRootRefusal', () => {
+  test('a root equal to the home folder gets the reply', () => {
+    expect(homeRootRefusal('/Users/u', '/Users/u')).toBe(HOME_ROOT_REPLY)
+  })
+
+  test('a root that contains the home folder gets the reply', () => {
+    expect(homeRootRefusal('/Users', '/Users/u')).toBe(HOME_ROOT_REPLY)
+  })
+
+  test('a root inside the home folder, or one that only shares a prefix, gets none', () => {
+    expect(homeRootRefusal('/Users/u/repo', '/Users/u')).toBeNull()
+    expect(homeRootRefusal('/Users/u2', '/Users/u')).toBeNull()
+  })
+
+  test('no home folder, or an empty one, gets none', () => {
+    expect(homeRootRefusal('/Users/u', null)).toBeNull()
+    expect(homeRootRefusal('/Users/u', '')).toBeNull()
+  })
+
+  test('trailing slashes on either path are ignored', () => {
+    expect(homeRootRefusal('/Users/u/', '/Users/u')).toBe(HOME_ROOT_REPLY)
+    expect(homeRootRefusal('/Users', '/Users/u/')).toBe(HOME_ROOT_REPLY)
+    expect(homeRootRefusal('/Users/u/repo/', '/Users/u/')).toBeNull()
   })
 })

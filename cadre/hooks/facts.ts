@@ -14,7 +14,10 @@ import type {
   SettingsSource,
 } from '../types'
 
-/** The most bytes of one file register.tsx reads; a larger file is skipped and a warning is recorded. */
+/**
+ * The most bytes of one file register.tsx reads; a larger file is skipped and a warning is recorded. This is the
+ * only bound on how many entries, hooks and plugins a parser sees.
+ */
 export const MAX_READ_BYTES = 256 * 1024
 /** Code points a repo or docs entry name keeps; a longer name is cut with an ellipsis. */
 const MAX_NAME_CHARS = 255
@@ -33,19 +36,30 @@ const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
 /** Settings sources in override order: a later source wins over an earlier one for the same key. */
 const SOURCE_ORDER: readonly SettingsSource[] = ['user', 'project', 'local']
 /**
- * A GSD hook script basename: `gsd-` then letters, digits and hyphens, then `.js`, `.sh` or `.cjs`. The
- * lookarounds require a whole basename, so `mygsd-x.js` and `gsd-x.js.bak` do not match.
+ * A GSD hook script basename: `gsd-` then 1 to 80 letters, digits and hyphens, then `.js`, `.sh` or `.cjs`. The
+ * lookarounds require a whole basename, so `mygsd-x.js` and `gsd-x.js.bak` do not match, and a longer name is not
+ * reported.
  */
-const GSD_SCRIPT_PATTERN = /(?<![\w.-])gsd-[a-z0-9-]+\.(?:js|sh|cjs)(?![\w.-])/g
+const GSD_SCRIPT_PATTERN = /(?<![\w.-])gsd-[a-z0-9-]{1,80}\.(?:js|sh|cjs)(?![\w.-])/g
 /** A version as GSD and Claude Code print it: `major.minor.patch` with an optional suffix. */
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+.][0-9A-Za-z.-]+)?$/
-/** The line the GSD identity module declares its package name on; finding it proves a GSD install. */
-const IDENTITY_SOURCE_PATTERN = /const packageName = "@opengsd\/gsd-core";/
+/** The package name GSD declares in its identity module and prints in its runtime identity. */
+const GSD_PACKAGE_NAME = '@opengsd/gsd-core'
+/**
+ * The line the GSD identity module declares its package name on; finding it proves a GSD install. The whole line
+ * must match (leading whitespace and a trailing carriage return allowed), so a comment or a longer line does not.
+ */
+const IDENTITY_SOURCE_PATTERN = /^\s*const packageName = "@opengsd\/gsd-core";\r?$/m
 /**
  * The exact opening of the runtime identity output. The closing quote is part of it, so a longer package name
  * such as `@opengsd/gsd-core-evil` is not a match.
  */
-const RUNTIME_IDENTITY_PREFIX = '{"packageName":"@opengsd/gsd-core"'
+const RUNTIME_IDENTITY_PREFIX = `{"packageName":"${GSD_PACKAGE_NAME}"`
+/** The locations a GSD candidate may carry; a candidate with any other location is skipped. */
+const GSD_LOCATIONS: readonly GsdLocation[] = ['user', 'project']
+/** Reply when the session root is the home folder or contains it; detection would read the whole home. */
+export const HOME_ROOT_REPLY =
+  'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
 /** Warning when CLAUDE_CONFIG_DIR is set but cannot be used; the value itself is never shown. */
 const CONFIG_DIR_WARNING =
   'CLAUDE_CONFIG_DIR is ignored: it must be an absolute path with no .. segment, outside the repo'
@@ -61,12 +75,13 @@ type ReadEnv = {
 }
 
 /**
- * Strips control, bidi and format characters from a foreign string and caps its length with an ellipsis;
- * anything that is not a string becomes ''. The length counts code points, not UTF-16 units.
+ * Strips control, bidi, format, surrogate and private-use characters from a foreign string and caps its length
+ * with an ellipsis; anything that is not a string becomes ''. The length counts code points, not UTF-16 units.
+ * `maxChars` must be at least 1; a smaller cap gives ''.
  */
 export function clean(value: unknown, maxChars = 120): string {
-  if (typeof value !== 'string') return ''
-  const stripped = value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
+  if (typeof value !== 'string' || maxChars < 1) return ''
+  const stripped = value.replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu, '')
   const points = Array.from(stripped)
   if (points.length <= maxChars) return stripped
 
@@ -100,13 +115,17 @@ export function parseRepoEntries(value: unknown): RepoEntry[] {
 }
 
 /**
- * Replaces each occurrence of an absolute path with its display form. A needle too short to be a path is left
- * alone, so an empty or root-only value never rewrites the whole text.
+ * Replaces each occurrence of an absolute path with its display form, at path boundaries only: the match may not
+ * sit inside a longer path or name (`/repo` is not in `/home/u/repo` or `/repo-other`). A trailing `/` on the path
+ * is ignored, and a path too short to be one is left alone, so an empty or root-only value never rewrites the text.
  */
-function replaceAll(text: string, needle: string | null, replacement: string): string {
-  if (needle === null || needle.length < 2) return text
+function maskPath(text: string, needle: string | null, replacement: string): string {
+  if (needle === null) return text
+  const trimmed = needle.replace(/\/+$/, '')
+  if (trimmed.length < 2) return text
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-  return text.split(needle).join(replacement)
+  return text.replace(new RegExp(`(?<![\\w.~-])${escaped}(?=/|$|[^\\w.-])`, 'g'), () => replacement)
 }
 
 /**
@@ -115,8 +134,8 @@ function replaceAll(text: string, needle: string | null, replacement: string): s
  */
 function safeWarning(warning: unknown, raw: RawFacts): string {
   if (typeof warning !== 'string') return ''
-  const withoutRoot = replaceAll(warning, raw.root, '<repo>')
-  const withoutHome = replaceAll(withoutRoot, raw.home, '~')
+  const withoutRoot = maskPath(warning, raw.root, '<repo>')
+  const withoutHome = maskPath(withoutRoot, raw.home, '~')
 
   return clean(withoutHome, MAX_WARNING_CHARS)
 }
@@ -183,7 +202,8 @@ export function parseHookScripts(value: unknown, source: SettingsSource): HookSc
       if (!isObject(matcher) || !Array.isArray(matcher.hooks)) continue
       for (const hook of matcher.hooks) {
         if (!isObject(hook) || typeof hook.command !== 'string') continue
-        for (const script of hook.command.match(GSD_SCRIPT_PATTERN) ?? []) {
+        for (const match of hook.command.match(GSD_SCRIPT_PATTERN) ?? []) {
+          const script = clean(match)
           found.set(JSON.stringify([event, script]), { script, event, source })
         }
       }
@@ -216,12 +236,14 @@ export function parseInstalledPlugins(value: unknown): PluginVersion[] {
 }
 
 /**
- * Whether a config dir value is usable: an absolute POSIX path with no `..` segment. Any other value is ignored.
+ * Whether a config dir value is usable: an absolute POSIX path with no empty, `.` or `..` segment. Any other value
+ * is ignored. Symlinks and case-insensitive paths cannot be resolved here, so the host must realpath the repo root,
+ * the home folder and CLAUDE_CONFIG_DIR before calling.
  */
 export function isSafeConfigDir(value: unknown): boolean {
   if (typeof value !== 'string' || !value.startsWith('/')) return false
 
-  return !value.split('/').includes('..')
+  return !value.split('/').slice(1).some(segment => segment === '' || segment === '.' || segment === '..')
 }
 
 /**
@@ -243,23 +265,33 @@ function relativeTo(path: string, base: string | null): string | null {
  */
 export function displayPath(path: string, home: string | null, root: string): string {
   const underRoot = relativeTo(path, root)
-  if (underRoot !== null) return `<repo>${underRoot}`
+  if (underRoot !== null) return clean(`<repo>${underRoot}`)
   const underHome = relativeTo(path, home)
-  if (underHome !== null) return `~${underHome}`
+  if (underHome !== null) return clean(`~${underHome}`)
 
   return clean(path)
 }
 
+/** CLAUDE_CONFIG_DIR when it is set, safe and outside the repo; null when unset, and null with a warning when unusable. */
+function usableConfigDir(env: ReadEnv, warnings: string[]): string | null {
+  const { root, configDir } = env
+  if (configDir === null) return null
+  if (isSafeConfigDir(configDir) && relativeTo(configDir, root) === null) return configDir
+  warnings.push(CONFIG_DIR_WARNING)
+
+  return null
+}
+
 /**
  * The user-level folder to read, or null when there is none outside the repo. A folder inside the repo is never
- * used, because a repo must not be able to host the user-level install. Warns when CLAUDE_CONFIG_DIR is set but
- * cannot be used, and when no user-level folder is left at all.
+ * used, because a repo must not be able to host the user-level install. An unsafe home folder counts as no home.
+ * Warns when CLAUDE_CONFIG_DIR is set but cannot be used, and when no user-level folder is left at all.
  */
 function userFolderOf(env: ReadEnv, warnings: string[]): string | null {
-  const { root, home, configDir } = env
-  if (configDir !== null && isSafeConfigDir(configDir) && relativeTo(configDir, root) === null) return configDir
-  if (configDir !== null) warnings.push(CONFIG_DIR_WARNING)
-  const homeFolder = home ? `${home}/.claude` : null
+  const { root, home } = env
+  const configDir = usableConfigDir(env, warnings)
+  if (configDir !== null) return configDir
+  const homeFolder = home !== null && home !== '' && isSafeConfigDir(home) ? `${home}/.claude` : null
   if (homeFolder !== null && relativeTo(homeFolder, root) === null) return homeFolder
   warnings.push(NO_USER_FOLDER_WARNING)
 
@@ -280,8 +312,11 @@ function gsdTarget(location: GsdLocation, dir: string, manifestPath: string): Gs
 /**
  * The reads the host performs before detection, and nothing else. The user-level GSD folder is CLAUDE_CONFIG_DIR
  * when that is usable, else `<home>/.claude`; the repo's own copy is always listed. Building the plan reads nothing.
+ * A trailing `/` on the root is dropped. The host must realpath the root, the home folder and CLAUDE_CONFIG_DIR
+ * first: symlinks and case-insensitive paths cannot be resolved here.
  */
-export function factReadPlan(env: ReadEnv): ReadPlan {
+export function factReadPlan(input: ReadEnv): ReadPlan {
+  const env = { ...input, root: input.root.replace(/\/+$/, '') }
   const warnings: string[] = []
   const userFolder = userFolderOf(env, warnings)
   const gsd: GsdReadTarget[] = []
@@ -328,7 +363,8 @@ export function parseRuntimeIdentity(stdout: string | null): { version: string }
   } catch {
     return null
   }
-  const version = isObject(parsed) ? parseVersionText(parsed.version) : null
+  if (!isObject(parsed) || parsed.packageName !== GSD_PACKAGE_NAME) return null
+  const version = parseVersionText(parsed.version)
 
   return version === null ? null : { version }
 }
@@ -367,17 +403,32 @@ function identityOf(candidate: RawGsdCandidate, runtimeProves: boolean): GsdFact
   return 'unknown'
 }
 
+/** The version of a candidate: the VERSION text, else the manifest, else the runtime identity. */
+function versionOf(candidate: RawGsdCandidate, runtime: { version: string } | null): string | null {
+  return (
+    parseVersionText(candidate.versionText) ?? parseGsdManifest(candidate.manifest)?.version ?? runtime?.version ?? null
+  )
+}
+
+/** Whether a host-sent candidate has a string `dir` and a known location; any other candidate is skipped. */
+function isUsableCandidate(candidate: unknown): candidate is RawGsdCandidate {
+  return (
+    isObject(candidate) && typeof candidate.dir === 'string' && GSD_LOCATIONS.some(place => place === candidate.location)
+  )
+}
+
 /**
  * One GSD candidate as a fact. The version is the VERSION text, else the manifest, else the runtime identity.
- * A present install that nothing proves adds a warning, which names the install by its display path.
+ * A present install that nothing proves adds a warning, which names the install by its cleaned display path.
  */
 function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, warnings: string[]): GsdFact {
   const dir = displayPath(candidate.dir, raw.home, raw.root)
   const runtime = parseRuntimeIdentity(candidate.runtimeStdout)
   const identity = identityOf(candidate, runtime !== null)
-  if (identity === 'unknown') warnings.push(`could not prove the GSD install at ${dir} (treated as unknown)`)
-  const version =
-    parseVersionText(candidate.versionText) ?? parseGsdManifest(candidate.manifest)?.version ?? runtime?.version ?? null
+  if (identity === 'unknown') {
+    warnings.push(clean(`could not prove the GSD install at ${dir} (treated as unknown)`, MAX_WARNING_CHARS))
+  }
+  const version = versionOf(candidate, runtime)
 
   return {
     location: candidate.location,
@@ -398,7 +449,7 @@ export function normalizeFacts(raw: RawFacts): Facts {
   const plugins = parseInstalledPlugins(raw.installedPlugins)
   const gsdWarnings: string[] = []
   const candidates = Array.isArray(raw.gsd) ? raw.gsd : []
-  const gsd = candidates.map(candidate => gsdFactOf(candidate, raw, gsdWarnings))
+  const gsd = candidates.filter(isUsableCandidate).map(candidate => gsdFactOf(candidate, raw, gsdWarnings))
 
   return {
     repoEntries: parseRepoEntries(raw.repoEntries),
@@ -409,4 +460,17 @@ export function normalizeFacts(raw: RawFacts): Facts {
     gsd,
     warnings: [...safeWarnings(raw.warnings, raw), ...gsdWarnings],
   }
+}
+
+/**
+ * The reply when the session root is the home folder or contains it, else null. Both paths are compared after
+ * trimming a trailing `/`, and the rule applies only when `home` is non-empty. Pure: it reads nothing.
+ */
+export function homeRootRefusal(root: string, home: string | null): string | null {
+  if (home === null || home === '') return null
+  const trimmedHome = home.replace(/\/+$/, '')
+  const trimmedRoot = root.replace(/\/+$/, '')
+  if (trimmedRoot === trimmedHome || trimmedHome.startsWith(`${trimmedRoot}/`)) return HOME_ROOT_REPLY
+
+  return null
 }
