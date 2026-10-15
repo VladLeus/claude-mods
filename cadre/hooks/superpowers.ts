@@ -1,4 +1,4 @@
-import type { Detection, Facts, PluginFlag, PluginVersion, RepoEntry } from '../types'
+import type { Detection, Facts, Gate, KickoffContext, PluginFlag, PluginVersion, RepoEntry } from '../types'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the
@@ -59,3 +59,30 @@ function versionOf(key: string, versions: PluginVersion[]): string | null {
 
   return match === undefined ? null : match.version
 }
+
+/**
+ * RED placeholder for plan 01-07 task 2: a gate row no expectation matches, so every gate test fails on an assertion.
+ * The GREEN commit replaces it with the full gate table.
+ */
+export const SUPERPOWERS_GATES: readonly Gate[] = [
+  {
+    id: 'STUB',
+    where: 'STUB',
+    kind: 'chat',
+    decisionType: null,
+    needsHuman: false,
+    handling: 'escalate',
+    kickoff: 'STUB',
+  },
+]
+
+/** RED placeholder for plan 01-07 task 2: a kickoff no expectation matches. */
+export function superpowersKickoffText(ctx: KickoffContext): string {
+  return 'STUB'
+}
+
+/**
+ * RED placeholder for plan 01-07 task 2: an adapter that declares none of the real fields, so every adapter test fails
+ * on an assertion. The GREEN commit replaces it with the complete adapter.
+ */
+export const SUPERPOWERS_ADAPTER = { id: 'STUB' }

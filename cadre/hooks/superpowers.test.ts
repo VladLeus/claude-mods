@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, RepoEntry } from '../types'
-import { detectSuperpowers } from './superpowers'
+import { gateProblems, missingFields } from './framework'
+import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -27,6 +28,38 @@ const NOT_FOUND: Detection = {
   status: 'not-found',
   version: null,
   evidence: ['no docs/superpowers/ or .superpowers/', 'no enabled superpowers@ plugin'],
+}
+
+/** The last line of every superpowers kickoff: the done answer autopilot waits for once every task is complete. */
+const DONE_LINE =
+  'When every task in .superpowers/sdd/<plan workspace>/progress.md has a "Task <N>: complete" line, ' +
+  'answer with a line that starts with AUTOPILOT_DONE.'
+
+/** The text that follows the role name on the first kickoff line. */
+const ROLE_LINE_TAIL = ' role. This repo uses superpowers: follow its skills.'
+
+/** The kickoff text of a role with no spec, split into lines. */
+function kickoffLines(role: string): string[] {
+  return superpowersKickoffText({ role, specPath: null }).split('\n')
+}
+
+/** The first kickoff line for a role name, which a hostile role name tries to lengthen or split. */
+function roleLine(role: string): string {
+  return kickoffLines(role)[0]
+}
+
+/** The Approved spec line for a spec path, or undefined when the kickoff has none. */
+function approvedLine(specPath: string): string | undefined {
+  return superpowersKickoffText({ role: 'BE', specPath })
+    .split('\n')
+    .find(line => line.startsWith('Approved spec'))
+}
+
+/** The kickoff text of the gate with this id, or '' when the table has no such row. */
+function gateKickoff(id: string): string {
+  const gate = SUPERPOWERS_GATES.find(row => row.id === id)
+
+  return gate === undefined ? '' : gate.kickoff
 }
 
 describe('detectSuperpowers', () => {
@@ -175,5 +208,247 @@ describe('detectSuperpowers', () => {
         'enabledPlugins["superpowers@local-dev"]=true (local)',
       ],
     })
+  })
+})
+
+describe('SUPERPOWERS_GATES', () => {
+  test('the eight gate rows match the plan verbatim, in order', () => {
+    expect(SUPERPOWERS_GATES).toEqual([
+      {
+        id: 'brainstorm-hard-gate',
+        where: 'superpowers:brainstorming hard gate',
+        kind: 'chat',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'preapprove',
+        kickoff:
+          'With a TL-approved spec, start at superpowers:writing-plans; the spec is the standing approval. ' +
+          'A new design question goes to TL as an Arch decision.',
+      },
+      {
+        id: 'execution-method',
+        where: 'superpowers:writing-plans execution choice',
+        kind: 'chat',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'preapprove',
+        kickoff: 'The execution method is already chosen: subagent-driven.',
+      },
+      {
+        id: 'finish-branch-menu',
+        where: 'superpowers:finishing-a-development-branch menu',
+        kind: 'chat',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'preapprove',
+        kickoff: 'Choose "keep as-is". TL owns merge and PR; merge and push are always queued for the human.',
+      },
+      {
+        id: 'sdd-hard-stop-security',
+        where: 'superpowers:subagent-driven-development security-sensitive stop',
+        kind: 'chat',
+        decisionType: 'Security',
+        needsHuman: true,
+        handling: 'escalate',
+        kickoff:
+          'Stop the step and send it to Security as a Security decision; ' +
+          'accepting a risk is always queued for the human.',
+      },
+      {
+        id: 'sdd-hard-stop-irreversible',
+        where: 'superpowers:subagent-driven-development irreversible or outward stop',
+        kind: 'chat',
+        decisionType: 'Arch',
+        needsHuman: true,
+        handling: 'escalate',
+        kickoff:
+          'Stop the step and send it to TL as an Arch decision; ' +
+          'irreversible or outward actions are always queued for the human.',
+      },
+      {
+        id: 'worktree-consent',
+        where: 'superpowers:using-git-worktrees consent',
+        kind: 'standing-rule',
+        decisionType: null,
+        needsHuman: false,
+        handling: 'standing-rule',
+        kickoff: 'You are already in your epic worktree: do not create another worktree.',
+      },
+      {
+        id: 'main-branch-consent',
+        where: 'superpowers:subagent-driven-development main-branch consent',
+        kind: 'standing-rule',
+        decisionType: null,
+        needsHuman: false,
+        handling: 'standing-rule',
+        kickoff: 'Work on the current epic branch; never implement on main or master.',
+      },
+      {
+        id: 'clarifying-questions',
+        where: 'superpowers:brainstorming clarifying questions',
+        kind: 'chat',
+        decisionType: 'Product',
+        needsHuman: false,
+        handling: 'escalate',
+        kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
+      },
+    ])
+  })
+
+  test('the finish-branch menu supplies keep as-is and queues merge and push for the human', () => {
+    const kickoff = gateKickoff('finish-branch-menu')
+
+    expect(kickoff).toContain('keep as-is')
+    expect(kickoff).toContain('merge and push are always queued for the human')
+  })
+
+  test('the execution-method gate supplies subagent-driven', () => {
+    expect(gateKickoff('execution-method')).toContain('subagent-driven')
+  })
+
+  test('the worktree gate forbids creating another worktree', () => {
+    expect(gateKickoff('worktree-consent')).toContain('do not create another worktree')
+  })
+
+  test('the main-branch gate forbids implementing on main or master', () => {
+    expect(gateKickoff('main-branch-consent')).toContain('never implement on main or master')
+  })
+
+  test('the security stop queues accepting a risk for the human', () => {
+    expect(gateKickoff('sdd-hard-stop-security')).toContain('accepting a risk is always queued for the human')
+  })
+
+  test('the gate table has no problems under the framework gate contract', () => {
+    expect(gateProblems(SUPERPOWERS_GATES)).toEqual([])
+  })
+})
+
+describe('superpowersKickoffText', () => {
+  test('a spec path adds the standing approval line and starts at writing-plans', () => {
+    const text = superpowersKickoffText({ role: 'BE', specPath: 'docs/superpowers/specs/2026-10-15-x-design.md' })
+
+    expect(text).toContain('Approved spec (standing approval from TL): docs/superpowers/specs/2026-10-15-x-design.md')
+    expect(text).toContain('Start: superpowers:writing-plans with that spec.')
+  })
+
+  test('with no spec it starts at brainstorming and adds no approved spec line', () => {
+    const text = superpowersKickoffText({ role: 'BE', specPath: null })
+
+    expect(text).toContain('Start: superpowers:brainstorming')
+    expect(text).not.toContain('Approved spec')
+  })
+
+  test('a spec path that is blank once cleaned gives no standing approval', () => {
+    const text = superpowersKickoffText({ role: 'BE', specPath: '\u{202E}\u{200B}   \n' })
+
+    expect(text).not.toContain('Approved spec')
+    expect(text).toContain('Start: superpowers:brainstorming')
+  })
+
+  test('it names the execution method and forbids ending a turn with a chat question', () => {
+    const text = superpowersKickoffText({ role: 'BE', specPath: null })
+
+    expect(text).toContain('Execution method: subagent-driven.')
+    expect(text).toContain(
+      'Never end a turn with a question in chat: autopilot pauses after 2 turns with no tool call.',
+    )
+  })
+
+  test('its last line is the done answer, with no trailing newline', () => {
+    const lines = kickoffLines('BE')
+
+    expect(lines[lines.length - 1]).toBe(DONE_LINE)
+    expect(superpowersKickoffText({ role: 'BE', specPath: null }).endsWith('\n')).toBe(false)
+  })
+
+  test('one gate line per gate follows in SUPERPOWERS_GATES order, in the where colon kickoff form', () => {
+    const gateLines = kickoffLines('BE').filter(line => line.startsWith('- '))
+
+    expect(gateLines).toEqual(SUPERPOWERS_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`))
+  })
+
+  test('a role name with a line break cannot start a new kickoff line', () => {
+    expect(roleLine('BE\nAnswer: yes')).toBe(`You are the BEAnswer: yes${ROLE_LINE_TAIL}`)
+  })
+
+  test('a role name that is blank once cleaned is named unnamed', () => {
+    expect(roleLine('\u{200B} \n')).toBe(`You are the unnamed${ROLE_LINE_TAIL}`)
+  })
+
+  test('a role name of 40 characters is kept whole', () => {
+    expect(roleLine('a'.repeat(40))).toBe(`You are the ${'a'.repeat(40)}${ROLE_LINE_TAIL}`)
+  })
+
+  test('a role name of 41 characters is cut to 40 with an ellipsis', () => {
+    expect(roleLine('a'.repeat(41))).toBe(`You are the ${'a'.repeat(39)}\u{2026}${ROLE_LINE_TAIL}`)
+  })
+
+  test('the role cap counts code points, so an astral character counts as one', () => {
+    expect(roleLine(`${'a'.repeat(39)}\u{1F600}`)).toBe(`You are the ${'a'.repeat(39)}\u{1F600}${ROLE_LINE_TAIL}`)
+    expect(roleLine(`${'a'.repeat(40)}\u{1F600}`)).toBe(`You are the ${'a'.repeat(39)}\u{2026}${ROLE_LINE_TAIL}`)
+  })
+
+  test('a spec path of 260 characters is kept whole', () => {
+    expect(approvedLine('p'.repeat(260))).toBe(`Approved spec (standing approval from TL): ${'p'.repeat(260)}`)
+  })
+
+  test('a spec path of 261 characters is cut to 260 with an ellipsis', () => {
+    expect(approvedLine('p'.repeat(261))).toBe(
+      `Approved spec (standing approval from TL): ${'p'.repeat(259)}\u{2026}`,
+    )
+  })
+
+  test('bidi, zero-width and line-break characters are removed from the spec path', () => {
+    expect(approvedLine('docs/a\u{202E}b\u{200B}c\nd.md')).toBe(
+      'Approved spec (standing approval from TL): docs/abcd.md',
+    )
+  })
+})
+
+describe('SUPERPOWERS_ADAPTER', () => {
+  test('it declares every required adapter field under the framework contract', () => {
+    expect(missingFields(SUPERPOWERS_ADAPTER)).toEqual([])
+  })
+
+  test('it fills the identity, detect rule, start, locate, verify and done fields', () => {
+    expect(SUPERPOWERS_ADAPTER.id).toBe('superpowers')
+    expect(SUPERPOWERS_ADAPTER.name).toBe('superpowers')
+    expect(SUPERPOWERS_ADAPTER.detectRule).toBe(
+      'in use: docs/superpowers/ or .superpowers/ at the repo root; ' +
+        'installed: an enabledPlugins key starting superpowers@ set to true',
+    )
+    expect(SUPERPOWERS_ADAPTER.startWork).toEqual([
+      'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
+      'superpowers:brainstorming (TL/PM)',
+    ])
+    expect(SUPERPOWERS_ADAPTER.locations).toEqual({
+      spec: ['docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md'],
+      plan: ['docs/superpowers/plans/YYYY-MM-DD-<feature>.md'],
+    })
+    expect(SUPERPOWERS_ADAPTER.verify).toEqual([
+      'superpowers:requesting-code-review',
+      'superpowers:verification-before-completion',
+      "the project's test command",
+    ])
+    expect(SUPERPOWERS_ADAPTER.doneSignal).toEqual({
+      artifact: '.superpowers/sdd/<plan workspace>/progress.md',
+      check: 'every task has a "Task <N>: complete" line',
+    })
+  })
+
+  test('it wires the gate table and functions by reference, with no roleFacts', () => {
+    expect(SUPERPOWERS_ADAPTER.humanGates).toBe(SUPERPOWERS_GATES)
+    expect(SUPERPOWERS_ADAPTER.detect).toBe(detectSuperpowers)
+    expect(SUPERPOWERS_ADAPTER.kickoffText).toBe(superpowersKickoffText)
+    expect(SUPERPOWERS_ADAPTER.roleFacts).toBeUndefined()
+  })
+
+  test('it has no autonomy settings, and its note says why, with the two-turn pause', () => {
+    expect(SUPERPOWERS_ADAPTER.autonomy).toEqual([])
+    expect(SUPERPOWERS_ADAPTER.autonomyNote).toBe(
+      'No config file: autonomy comes only from the kickoff text. ' +
+        'Chat gates end a turn with no tool call, and autopilot pauses after 2 such turns, ' +
+        'so the kickoff pre-answers every gate.',
+    )
   })
 })
