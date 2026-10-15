@@ -282,8 +282,9 @@ type ResolvedPath = { readonly path: string; readonly warning: string | null }
  * no home path can reach the report through it. Pure: the host's answer is an argument.
  */
 export function resolvedPath(given: string, realPath: string | undefined, label: string): ResolvedPath {
-  // RED placeholder (D-39a): the path is used as given and nothing is warned, which is what the reads do today.
-  return { path: given, warning: null }
+  if (realPath !== undefined && realPath !== '') return { path: realPath, warning: null }
+
+  return { path: given, warning: `could not resolve ${label} (used as given)` }
 }
 
 /**

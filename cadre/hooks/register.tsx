@@ -9,6 +9,7 @@ import {
   MAX_READ_BYTES,
   normalizeFacts,
   parseRepoEntries,
+  resolvedPath,
   runtimeIdentityArgv,
 } from './facts'
 import { detectText } from './render'
@@ -25,6 +26,14 @@ type ReadContext = {
   readonly warnings: string[]
 }
 
+/** The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolved them, with their warnings. */
+type Locations = {
+  readonly root: string
+  readonly home: string | null
+  readonly configDir: string | null
+  readonly warnings: readonly string[]
+}
+
 /** The home folder from HOME, kept only when it is an absolute path; any other value counts as no home. */
 async function homeFolder($: EngineInterface): Promise<string | null> {
   const home = await $.env.get('HOME').catch(() => undefined)
@@ -37,6 +46,37 @@ async function configDirOf($: EngineInterface): Promise<string | null> {
   const configDir = await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)
 
   return typeof configDir === 'string' ? configDir : null
+}
+
+/**
+ * One path as the host resolves it (D-39): where it lands when the host answers a realPath, else the path as given,
+ * with the warning that it was used as given. A stat the host refuses counts as no realPath.
+ */
+async function resolvedOf($: EngineInterface, given: string, label: string, warnings: string[]): Promise<string> {
+  const stat = await $.fs.stat(given, { resolve: true }).catch(() => undefined)
+  const resolved = resolvedPath(given, stat?.realPath, label)
+  if (resolved.warning !== null) warnings.push(resolved.warning)
+
+  return resolved.path
+}
+
+/**
+ * The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolves them, before the home-folder check and
+ * factReadPlan (D-39). HOME and CLAUDE_CONFIG_DIR are resolved only when they are absolute, so a relative value is
+ * never stat'd against the working directory; factReadPlan rejects it with its own warning.
+ */
+async function locationsOf($: EngineInterface, sessionRoot: string): Promise<Locations> {
+  const warnings: string[] = []
+  const root = await resolvedOf($, sessionRoot, 'the repo root', warnings)
+  const home = await homeFolder($)
+  const resolvedHome = home === null ? null : await resolvedOf($, home, 'the home folder', warnings)
+  const configDir = await configDirOf($)
+  if (configDir === null || !configDir.startsWith('/')) {
+    return { root, home: resolvedHome, configDir, warnings }
+  }
+  const resolvedConfigDir = await resolvedOf($, configDir, 'CLAUDE_CONFIG_DIR', warnings)
+
+  return { root, home: resolvedHome, configDir: resolvedConfigDir, warnings }
 }
 
 /**
@@ -133,13 +173,13 @@ async function gsdCandidateOf($: EngineInterface, read: ReadContext, target: Gsd
 }
 
 /**
- * The host reads for one repo root, in the order factReadPlan names them, and nothing else. The root and the home
- * folder arrive already checked. A read that fails is recorded as a warning, never thrown.
+ * The host reads for one repo root, in the order factReadPlan names them, and nothing else. The locations arrive
+ * resolved and already past the home-folder refusal. A read that fails is recorded as a warning, never thrown.
  */
-async function collectFacts($: EngineInterface, root: string, home: string | null): Promise<RawFacts> {
-  const configDir = await configDirOf($)
-  const plan = factReadPlan({ root, home, configDir })
-  const read: ReadContext = { root, home, warnings: [...plan.warnings] }
+async function collectFacts($: EngineInterface, locations: Locations): Promise<RawFacts> {
+  const { root, home } = locations
+  const plan = factReadPlan({ root, home, configDir: locations.configDir })
+  const read: ReadContext = { root, home, warnings: [...locations.warnings, ...plan.warnings] }
   const repoEntries = await listFolder($, read, root, 'could not list the repo root (treated as unknown)')
   const docsEntries = hasDocsFolder(repoEntries)
     ? await listFolder($, read, `${root}/docs`, 'could not list docs/ (treated as unknown)')
@@ -169,15 +209,18 @@ function rootUnknownFacts(): RawFacts {
   }
 }
 
-/** The `/cadre detect` reply. The home-folder refusal comes first, before any read or process call (D-36). */
+/**
+ * The `/cadre detect` reply. The locations are resolved first (D-39), then the home-folder refusal runs before any
+ * listing, read, settings or process call (D-36).
+ */
 async function detectReply($: EngineInterface, isAdapters: boolean): Promise<string> {
-  const root = await $.session.root().catch(() => null)
-  if (root === null) return detectText(normalizeFacts(rootUnknownFacts()), isAdapters)
-  const home = await homeFolder($)
-  const refusal = homeRootRefusal(root, home)
+  const sessionRoot = await $.session.root().catch(() => null)
+  if (sessionRoot === null) return detectText(normalizeFacts(rootUnknownFacts()), isAdapters)
+  const locations = await locationsOf($, sessionRoot)
+  const refusal = homeRootRefusal(locations.root, locations.home)
   if (refusal !== null) return refusal
 
-  return detectText(normalizeFacts(await collectFacts($, root, home)), isAdapters)
+  return detectText(normalizeFacts(await collectFacts($, locations)), isAdapters)
 }
 
 export const register: Register = on => {
