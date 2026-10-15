@@ -86,7 +86,7 @@ function emptyFacts(over: Partial<Facts>): Facts {
 
 describe('clean', () => {
   test('removes bidi and line-break characters, joining the text around them', () => {
-    expect(clean('a‮b\nc')).toBe('abc')
+    expect(clean('a\u202Eb\nc')).toBe('abc')
   })
 
   test('a value that is not a string becomes the empty string', () => {
@@ -94,7 +94,7 @@ describe('clean', () => {
   })
 
   test('a longer value is cut to the cap, with an ellipsis as the last character', () => {
-    expect(clean('x'.repeat(200), 10)).toBe(`${'x'.repeat(9)}…`)
+    expect(clean('x'.repeat(200), 10)).toBe(`${'x'.repeat(9)}\u2026`)
   })
 })
 
@@ -143,7 +143,7 @@ describe('normalizeFacts', () => {
       raw({
         repoEntries: [{ name: '.planning', kind: 'other', size: 0, mtimeMs: 0, isLink: true }],
         docsEntries: [{ name: 'guide.md', kind: 'file', isLink: false }],
-        warnings: ['could not list docs‮'],
+        warnings: ['could not list docs\u202E'],
       }),
     )
     expect(facts).toEqual(
@@ -177,7 +177,7 @@ describe('parseEnabledPlugins', () => {
   })
 
   test('keeps a malformed key as written, and strips bidi and line-break characters from keys', () => {
-    const value = { enabledPlugins: { 'superpowers@x.': true, 'tool‮@a\nb': false } }
+    const value = { enabledPlugins: { 'superpowers@x.': true, 'tool\u202E@a\nb': false } }
     expect(parseEnabledPlugins(value, 'project')).toEqual([
       { key: 'superpowers@x.', source: 'project', value: true },
       { key: 'tool@ab', source: 'project', value: false },
