@@ -36,8 +36,8 @@ describe('parseCommand', () => {
   })
 
   test('input of only invisible characters is the help text with no unknown input', () => {
-    expect(parseCommand('‮')).toEqual({ kind: 'help', unknown: null })
-    expect(parseCommand('​')).toEqual({ kind: 'help', unknown: null })
+    expect(parseCommand('\u202E')).toEqual({ kind: 'help', unknown: null })
+    expect(parseCommand('\u200B')).toEqual({ kind: 'help', unknown: null })
   })
 
   test('a line break inside the input becomes a space', () => {
@@ -45,7 +45,7 @@ describe('parseCommand', () => {
   })
 
   test('bidi characters are stripped and the echo is capped at 40 code points', () => {
-    const command = parseCommand(`${'a'.repeat(30)}‮${'b'.repeat(29)}`)
+    const command = parseCommand(`${'a'.repeat(30)}\u202E${'b'.repeat(29)}`)
     expect(command).toEqual({ kind: 'help', unknown: `${'a'.repeat(30)}${'b'.repeat(9)}…` })
   })
 
