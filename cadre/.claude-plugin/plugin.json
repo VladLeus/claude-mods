@@ -1,6 +1,6 @@
 {
   "name": "cadre",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Split a repo into narrow-scope role sessions; Phase 1: read-only framework detection",
   "types": "./types/index.d.ts"
 }
