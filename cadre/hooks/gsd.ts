@@ -213,13 +213,97 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
   },
 ]
 
+/** The last line of every GSD kickoff: the done answer autopilot waits for once the phase verifies. */
+const DONE_LINE =
+  'When the phase VERIFICATION.md has status: passed, ' + 'answer with a line that starts with AUTOPILOT_DONE.'
+
+/** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
+const MAX_ROLE_CHARS = 40
+
 /**
- * RED placeholder for gsdKickoffText: a value no test expects, so every Task 3 test fails on its assertion.
- * Replaced in the GREEN commit.
+ * The spec path cap, counted in code points. It is about the Windows MAX_PATH limit, beyond which a legacy Windows
+ * path cannot be opened.
  */
-export function gsdKickoffText(ctx: KickoffContext): string {
-  return 'STUB'
+const MAX_SPEC_PATH_CHARS = 260
+
+/** Marks text that was cut to its cap. */
+const ELLIPSIS = '\u{2026}'
+
+/**
+ * Characters that can split a kickoff line or hide text: control, format, surrogate, private-use, and line and
+ * paragraph separators. They are removed from any text that comes from outside the adapter.
+ */
+const UNSAFE_KICKOFF_TEXT = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu
+
+/**
+ * Text from outside the adapter, such as a role name or a repo path, as it may appear in a kickoff. Unsafe characters
+ * are removed, so the text cannot start a new kickoff line or hide itself. The rest is cut to maxChars code points, and
+ * a cut ends in an ellipsis.
+ */
+function cleanKickoffText(value: string, maxChars: number): string {
+  const stripped = value.replace(UNSAFE_KICKOFF_TEXT, '')
+  const points = Array.from(stripped)
+  if (points.length <= maxChars) return stripped
+
+  return `${points.slice(0, maxChars - 1).join('')}${ELLIPSIS}`
 }
 
-/** RED placeholder for GSD_ADAPTER: an id no test expects, so every Task 3 test fails on its assertion. */
-export const GSD_ADAPTER = { id: 'STUB' } as unknown as FrameworkAdapter
+/** The Approved spec line when the role has a spec; no line at all when it has no spec yet. */
+function approvedSpecLines(specPath: string | null): string[] {
+  if (specPath === null) return []
+
+  return [`Approved spec: ${cleanKickoffText(specPath, MAX_SPEC_PATH_CHARS)}`]
+}
+
+/**
+ * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work, one
+ * line per human gate, and the done answer. Lines are joined with newlines and the text has no trailing newline. The
+ * role and the spec path come from outside the adapter, so they are cleaned before they can add a line.
+ */
+export function gsdKickoffText(ctx: KickoffContext): string {
+  const role = cleanKickoffText(ctx.role, MAX_ROLE_CHARS)
+
+  return [
+    `You are the ${role} role. This repo uses GSD: drive the work with its own commands.`,
+    ...approvedSpecLines(ctx.specPath),
+    'Start: /gsd-autonomous --only N for the phase you own, or step by step ' +
+      '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N.',
+    'Specs and plans live under .planning/phases/<NN-slug>/.',
+    'Verify with /gsd-validate-phase N and /gsd-code-review N.',
+    'Human gates:',
+    ...GSD_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`),
+    DONE_LINE,
+  ].join('\n')
+}
+
+/**
+ * The GSD adapter: the contract every framework implements, filled for GSD. Its start, locate, verify and done entries
+ * are the ones the role kickoff names, so the two stay in step.
+ */
+export const GSD_ADAPTER: FrameworkAdapter = {
+  id: 'gsd',
+  name: 'GSD',
+  detectRule:
+    'in use: .planning/ at the repo root (dir or symlink); ' +
+    'installed: gsd-core identity proven at ~/.claude/gsd-core or <repo>/.claude/gsd-core',
+  detect: detectGsd,
+  startWork: [
+    '/gsd-autonomous --only N',
+    '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
+    '/gsd-new-project (no .planning/ yet)',
+  ],
+  locations: {
+    spec: ['.planning/REQUIREMENTS.md', '.planning/ROADMAP.md', '.planning/phases/<NN-slug>/*-CONTEXT.md'],
+    plan: ['.planning/phases/<NN-slug>/*-PLAN.md'],
+  },
+  verify: ['/gsd-validate-phase N', '/gsd-code-review N', 'the verifier inside /gsd-execute-phase'],
+  doneSignal: {
+    artifact: '.planning/phases/<NN-slug>/*-VERIFICATION.md',
+    check: 'frontmatter status: passed',
+  },
+  humanGates: GSD_GATES,
+  autonomy: GSD_AUTONOMY,
+  autonomyNote: null,
+  kickoffText: gsdKickoffText,
+  roleFacts: gsdHookFacts,
+}
