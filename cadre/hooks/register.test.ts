@@ -126,6 +126,13 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   }
 }
 
+/** The report row of one framework: the line that starts with its name, padded to the name column; '' if none. */
+function rowOf(text: string, name: string): string {
+  const row = new RegExp(`^${name} {2,}`)
+
+  return text.split('\n').find(line => row.test(line)) ?? ''
+}
+
 describe('register with a faked host', () => {
   test('bare /cadre answers with help that lists both detect commands', async $ => {
     const out = await $.command.run({ command: 'cadre', args: '' })
@@ -173,5 +180,126 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).not.toBe(HOME_ROOT_REPLY)
     expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+  })
+
+  test('a repo-local GSD folder alone is never run: the runtime identity call is not made', async ($, on) => {
+    const log = newLog()
+    const repoOnly = {
+      ...ambiguousWorld(),
+      files: {
+        '/repo/.claude/gsd-core/VERSION': '1.16.0\n',
+        '/repo/.claude/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
+      },
+      dirs: ['/repo/.claude/gsd-core'],
+      denyPaths: ['/repo/.claude/gsd-core/VERSION', '/repo/.claude/gsd-core/bin/lib/package-identity.cjs'],
+    }
+    fakeHost(on, repoOnly, log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs).toEqual([])
+  })
+
+  test('a user-level GSD folder that cannot be proven is run once, under the user folder only', async ($, on) => {
+    const log = newLog()
+    const userDenied = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+    }
+    fakeHost(on, userDenied, log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs.length).toBe(1)
+    expect(log.runs[0][1].startsWith('/home/u/.claude/gsd-core/')).toBe(true)
+    expect(log.runs[0].some(arg => arg.startsWith('/repo'))).toBe(false)
+  })
+
+  test('a runtime identity answer for another package never makes the GSD row installed', async ($, on) => {
+    const log = newLog()
+    const decoy = {
+      ...ambiguousWorld(),
+      listings: { '/repo': [entry('docs', 'dir')], '/repo/docs': [entry('superpowers', 'dir')] },
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 0, stdout: '{"packageName":"get-shit-done-cc","note":"@opengsd/gsd-core"}' },
+    }
+    fakeHost(on, decoy, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs.length).toBe(1)
+    expect(rowOf(out.text, 'GSD')).toContain('not found')
+    expect(rowOf(out.text, 'GSD')).not.toContain('installed')
+  })
+
+  test('no mutating host op is called by a detect run or a detect --adapters run', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    await $.command.run({ command: 'cadre', args: 'detect --adapters' })
+    expect(log.ops.filter(op => op.startsWith('write '))).toEqual([])
+  })
+
+  test('settings values, hook commands and the home path never reach the output', async ($, on) => {
+    const secrets = {
+      ...ambiguousWorld(),
+      settings: {
+        user: {
+          env: { TOKEN: 'SENTINEL_SECRET_123' },
+          enabledPlugins: { 'superpowers@claude-plugins-official': true },
+          hooks: {
+            PostToolUse: [
+              { matcher: '', hooks: [{ type: 'command', command: '"/home/u/secret/hooks/gsd-prompt-guard.js"' }] },
+            ],
+          },
+        },
+        project: {},
+        local: {},
+      },
+    }
+    fakeHost(on, secrets, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
+    expect(out.text).not.toContain('SENTINEL_SECRET_123')
+    expect(out.text).not.toContain('/home/u')
+    expect(out.text).not.toContain('/repo/')
+  })
+
+  test('a root listing that fails gives a warning and still the five framework rows', async ($, on) => {
+    fakeHost(on, { ...ambiguousWorld(), denyPaths: ['/repo'] }, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not list the repo root (treated as unknown)')
+    for (const name of ['GSD', 'superpowers', 'AI-DLC', 'BMAD', 'spec-kit']) {
+      expect(rowOf(out.text, name)).not.toBe('')
+    }
+  })
+
+  test('a project settings read that fails gives a warning and the report still renders', async ($, on) => {
+    fakeHost(on, { ...ambiguousWorld(), denySettings: ['project'] }, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not read project settings (treated as unknown)')
+    expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+  })
+
+  test('two detect runs on the same host give identical text', async ($, on) => {
+    fakeHost(on, ambiguousWorld(), newLog())
+    const first = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
+    const second = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
+    expect(second.text).toBe(first.text)
+  })
+
+  test('a symlinked docs/ is listed like a docs/ folder, so superpowers behind it is in use', async ($, on) => {
+    const linked = {
+      ...ambiguousWorld(),
+      listings: {
+        '/repo': [entry('.planning', 'dir'), entry('docs', 'other', true)],
+        '/repo/docs': [entry('superpowers', 'dir')],
+      },
+    }
+    fakeHost(on, linked, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('docs/superpowers/')
+    expect(rowOf(out.text, 'superpowers')).toContain('in use')
+  })
+
+  test('a plain file named docs is never listed as a folder', async ($, on) => {
+    const log = newLog()
+    const plainDocs = { ...ambiguousWorld(), listings: { '/repo': [entry('.planning', 'dir'), entry('docs', 'file')] } }
+    fakeHost(on, plainDocs, log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).not.toContain('fs.list /repo/docs')
   })
 })
