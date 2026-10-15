@@ -343,7 +343,7 @@ describe('normalizeFacts with settings and plugins', () => {
     )
   })
 
-  test('the serialized Facts keep the hook basename and never carry the secret, the home path or the install path', () => {
+  test('the serialized Facts keep the hook basename and none of the secret, home path or install path', () => {
     const serialized = JSON.stringify(normalizeFacts(raw({ settings, installedPlugins })))
     expect(serialized).toContain('gsd-context-monitor.js')
     expect(serialized).not.toContain(SENTINEL)
@@ -430,7 +430,9 @@ describe('isGsdIdentitySource', () => {
 
 describe('parseRuntimeIdentity', () => {
   test('stdout that opens with the GSD identity object gives its version', () => {
-    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","version":"1.16.0"}')).toEqual({ version: '1.16.0' })
+    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","version":"1.16.0"}')).toEqual({
+      version: '1.16.0',
+    })
   })
 
   test('a decoy that names another package and only mentions GSD later is refused', () => {
@@ -514,7 +516,13 @@ describe('normalizeFacts with GSD candidates', () => {
       }),
     )
     expect(facts.gsd).toEqual([
-      { location: 'user', dir: '~/.claude/gsd-core', version: '1.16.0', identity: 'proven', runtimeIdentityTried: false },
+      {
+        location: 'user',
+        dir: '~/.claude/gsd-core',
+        version: '1.16.0',
+        identity: 'proven',
+        runtimeIdentityTried: false,
+      },
     ])
     expect(facts.warnings).toEqual([])
   })
@@ -522,7 +530,13 @@ describe('normalizeFacts with GSD candidates', () => {
   test('a present install that nothing proves is unknown with a warning, never absent', () => {
     const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'project', dir: '/repo/.claude/gsd-core' })] }))
     expect(facts.gsd).toEqual([
-      { location: 'project', dir: '<repo>/.claude/gsd-core', version: null, identity: 'unknown', runtimeIdentityTried: false },
+      {
+        location: 'project',
+        dir: '<repo>/.claude/gsd-core',
+        version: null,
+        identity: 'unknown',
+        runtimeIdentityTried: false,
+      },
     ])
     expect(facts.warnings).toEqual(['could not prove the GSD install at <repo>/.claude/gsd-core (treated as unknown)'])
   })
@@ -551,7 +565,7 @@ describe('normalizeFacts with GSD candidates', () => {
     expect(facts.gsd.map(install => install.version)).toEqual(['1.16.0'])
   })
 
-  test('the manifest is the version ahead of the runtime identity, and the runtime identity proves a user install', () => {
+  test('the manifest outranks the runtime identity, which still proves a user install', () => {
     const facts = normalizeFacts(
       raw({
         gsd: [
@@ -564,14 +578,22 @@ describe('normalizeFacts with GSD candidates', () => {
       }),
     )
     expect(facts.gsd).toEqual([
-      { location: 'user', dir: '~/.claude/gsd-core', version: '1.15.0', identity: 'proven', runtimeIdentityTried: true },
+      {
+        location: 'user',
+        dir: '~/.claude/gsd-core',
+        version: '1.15.0',
+        identity: 'proven',
+        runtimeIdentityTried: true,
+      },
     ])
   })
 
   test('with no VERSION and no manifest, the runtime identity supplies the version', () => {
     const facts = normalizeFacts(
       raw({
-        gsd: [candidate({ runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.14.0"}', runtimeTried: true })],
+        gsd: [
+          candidate({ runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.14.0"}', runtimeTried: true }),
+        ],
       }),
     )
     expect(facts.gsd.map(install => install.version)).toEqual(['1.14.0'])

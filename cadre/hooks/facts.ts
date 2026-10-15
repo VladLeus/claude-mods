@@ -27,7 +27,7 @@ const MAX_VERSION_CHARS = 40
 /** Code points a host warning keeps, the ellipsis included. */
 const MAX_WARNING_CHARS = 240
 /** The character a cut value ends with. */
-const ELLIPSIS = '…'
+const ELLIPSIS = '\u2026'
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
 const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
 /** Settings sources in override order: a later source wins over an earlier one for the same key. */
@@ -99,7 +99,10 @@ export function parseRepoEntries(value: unknown): RepoEntry[] {
   return entries
 }
 
-/** Replaces each occurrence of an absolute path with its display form; a needle too short to be a path is left alone. */
+/**
+ * Replaces each occurrence of an absolute path with its display form. A needle too short to be a path is left
+ * alone, so an empty or root-only value never rewrites the whole text.
+ */
 function replaceAll(text: string, needle: string | null, replacement: string): string {
   if (needle === null || needle.length < 2) return text
 
