@@ -112,20 +112,138 @@ function onlyInUse(id: FrameworkId): Choice {
   return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: `only ${id} is in use in this repo` }
 }
 
-/** RED placeholder for Task 3: empty on purpose. Replaced in the GREEN commit. */
-export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = []
+/**
+ * The fields every adapter must declare, in the order missingFields reports them. Nothing type-checks in CI, so
+ * this list and missingFields are the runtime contract (DET-04).
+ */
+export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = [
+  'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
+  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText',
+]
 
-/** RED placeholder for Task 3: reports a wrong field on purpose. Replaced in the GREEN commit. */
+/** The adapter ids a framework may declare: the supported ones and the built-in fallback. */
+const ADAPTER_IDS: readonly string[] = [...SUPPORTED_IDS, 'none']
+
+/** A string with some text once trimmed. */
+function isFilledString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+/** A plain object: not null and not an array. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** An array with at least one entry. */
+function isFilledArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0
+}
+
+/** `locations` has a non-empty spec list and a non-empty plan list. */
+function hasLocations(value: unknown): boolean {
+  return isRecord(value) && isFilledArray(value.spec) && isFilledArray(value.plan)
+}
+
+/** `doneSignal` has a non-empty artifact and a non-empty check. */
+function hasDoneSignal(value: unknown): boolean {
+  return isRecord(value) && isFilledString(value.artifact) && isFilledString(value.check)
+}
+
+/** `autonomy` is non-empty, or empty with a note that says why the framework needs no autonomy settings. */
+function hasAutonomy(adapter: Record<string, unknown>): boolean {
+  if (!Array.isArray(adapter.autonomy)) return false
+
+  return adapter.autonomy.length > 0 || isFilledString(adapter.autonomyNote)
+}
+
+/**
+ * The rule each required field must pass, read from the adapter as a record. A value of the wrong shape fails its
+ * rule instead of throwing, and a field with no rule is always missing.
+ */
+const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<string, unknown>) => boolean>> = {
+  id: adapter => ADAPTER_IDS.includes(adapter.id as string),
+  name: adapter => isFilledString(adapter.name),
+  detectRule: adapter => isFilledString(adapter.detectRule),
+  detect: adapter => typeof adapter.detect === 'function',
+  startWork: adapter => isFilledArray(adapter.startWork),
+  locations: adapter => hasLocations(adapter.locations),
+  verify: adapter => isFilledArray(adapter.verify),
+  doneSignal: adapter => hasDoneSignal(adapter.doneSignal),
+  humanGates: adapter => isFilledArray(adapter.humanGates),
+  autonomy: hasAutonomy,
+  kickoffText: adapter => typeof adapter.kickoffText === 'function',
+}
+
+/** Whether one required field of an adapter passes its rule. A field with no rule never passes. */
+function fieldPasses(field: keyof FrameworkAdapter, adapter: Record<string, unknown>): boolean {
+  const rule = FIELD_RULES[field]
+  if (rule === undefined) return false
+
+  return rule(adapter)
+}
+
+/**
+ * The required fields an adapter does not declare, in REQUIRED_FIELDS order; [] when it is complete. An empty or
+ * wrong-shaped field counts as missing, and a value that is not an object has no fields at all. The input is
+ * untrusted, so nothing here throws.
+ */
 export function missingFields(adapter: Partial<FrameworkAdapter>): string[] {
-  return ['STUB']
+  const record: Record<string, unknown> = isRecord(adapter) ? adapter : {}
+
+  return REQUIRED_FIELDS.filter(field => !fieldPasses(field, record))
 }
 
-/** RED placeholder for Task 3: answers with a non-boolean on purpose. Replaced in the GREEN commit. */
+/** Whether a value is one of DECISION_TYPES. A value that is not a string is never a decision type. */
 export function isDecisionType(value: unknown): value is DecisionType {
-  return 'STUB' as unknown as boolean
+  if (typeof value !== 'string') return false
+
+  return DECISION_TYPES.includes(value as DecisionType)
 }
 
-/** RED placeholder for Task 3: reports a wrong problem on purpose. Replaced in the GREEN commit. */
+/** The problem with a gate's decision type, or null when its kind and decision type agree. */
+function decisionTypeProblem(gate: Record<string, unknown>): string | null {
+  if (gate.kind === 'standing-rule') {
+    return gate.decisionType === null ? null : 'standing-rule gate must have decisionType null'
+  }
+  if (gate.decisionType === null) return 'decisionType null needs kind standing-rule'
+  if (!isDecisionType(gate.decisionType)) return 'unknown decisionType'
+
+  return null
+}
+
+/** The problems with one gate's own fields: its decision type against its kind, and its kickoff. */
+function gateFieldProblems(gate: Record<string, unknown>): string[] {
+  const label = `gate ${String(gate.id)}`
+  const problems: string[] = []
+  const decisionProblem = decisionTypeProblem(gate)
+  if (decisionProblem !== null) problems.push(`${label}: ${decisionProblem}`)
+  if (!isFilledString(gate.kickoff)) problems.push(`${label}: empty kickoff`)
+
+  return problems
+}
+
+/**
+ * The contract problems in a framework's gate table, one message per problem, in gate order. A gate id that repeats
+ * is reported once. Gates that share a decision type are separate rows, so they are never compared with each other.
+ */
 export function gateProblems(gates: Gate[]): string[] {
-  return ['STUB']
+  if (!Array.isArray(gates)) return ['gates is not an array']
+
+  const problems: string[] = []
+  const seen = new Set<unknown>()
+  const repeated = new Set<unknown>()
+  for (const gate of gates) {
+    if (!isRecord(gate)) {
+      problems.push('gate is not an object')
+      continue
+    }
+    if (seen.has(gate.id) && !repeated.has(gate.id)) {
+      repeated.add(gate.id)
+      problems.push(`duplicate gate id ${String(gate.id)}`)
+    }
+    seen.add(gate.id)
+    problems.push(...gateFieldProblems(gate))
+  }
+
+  return problems
 }
