@@ -27,6 +27,10 @@ type World = {
   readonly settings: Readonly<Partial<Record<'user' | 'project' | 'local', Readonly<Record<string, unknown>>>>>
   /** Paths whose list and read ops refuse, although the path exists. */
   readonly denyPaths: readonly string[]
+  /** Where a path lands when its stat is asked with `resolve`; a listed path with no entry answers no realPath. */
+  readonly realPaths: Readonly<Record<string, string>>
+  /** Paths whose stat refuses, although the path exists. */
+  readonly denyStat: readonly string[]
   readonly denySettings: readonly string[]
   /** What `process.run` answers; null makes the call refuse. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
@@ -69,6 +73,8 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     dirs: ['/home/u/.claude/gsd-core'],
     settings: { user: { enabledPlugins: { 'superpowers@claude-plugins-official': true } }, project: {}, local: {} },
     denyPaths: [],
+    realPaths: { '/repo': '/repo', '/home/u': '/home/u' },
+    denyStat: [],
     denySettings: [],
     runtime: null,
     ...over,
@@ -103,6 +109,14 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     if (world.denyPaths.includes(e.path) || !Object.hasOwn(world.files, e.path)) return { deny: 'missing' }
 
     return { value: world.files[e.path] }
+  })
+  on('fs.stat', async (_$, e) => {
+    log.ops.push(`fs.stat ${e.path} resolve=${String(e.resolve)}`)
+    if (world.denyStat.includes(e.path)) return { deny: 'stat refused' }
+    if (!Object.hasOwn(world.realPaths, e.path) && !hasPath(world, e.path)) return { deny: 'missing' }
+    const realPath = Object.hasOwn(world.realPaths, e.path) ? world.realPaths[e.path] : undefined
+
+    return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath } : {}) } }
   })
   on('settings.read', async (_$, e) => {
     log.ops.push(`settings.read ${e.source}`)
@@ -159,12 +173,13 @@ describe('register with a faked host', () => {
     expect(out.text).toContain('built-in (none)')
   })
 
-  test('a session at the home folder is refused before any read or process call', async ($, on) => {
+  test('a session at the home folder is refused before any listing, read, settings or process call', async ($, on) => {
     const log = newLog()
     fakeHost(on, ambiguousWorld({ root: '/home/u' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toBe(HOME_ROOT_REPLY)
-    expect(log.ops).toEqual([])
+    expect(log.ops).toContain('fs.stat /home/u resolve=true')
+    expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
   })
 
   test('a session in a folder that contains the home folder is refused the same way', async ($, on) => {
@@ -172,7 +187,7 @@ describe('register with a faked host', () => {
     fakeHost(on, ambiguousWorld({ root: '/home' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toBe(HOME_ROOT_REPLY)
-    expect(log.ops).toEqual([])
+    expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
   })
 
   test('a normal repo root beside the home folder is detected', async ($, on) => {
@@ -301,5 +316,96 @@ describe('register with a faked host', () => {
     fakeHost(on, plainDocs, log)
     await $.command.run({ command: 'cadre', args: 'detect' })
     expect(log.ops).not.toContain('fs.list /repo/docs')
+  })
+
+  test('a symlinked repo root that lands in the home folder is refused like the home folder', async ($, on) => {
+    const log = newLog()
+    const linked = ambiguousWorld({ root: '/link/repo', realPaths: { '/link/repo': '/home/u', '/home/u': '/home/u' } })
+    fakeHost(on, linked, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.stat /link/repo resolve=true')
+    expect(out.text).toBe(HOME_ROOT_REPLY)
+    expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
+  })
+
+  test('a symlinked repo root is read through the place it lands', async ($, on) => {
+    const log = newLog()
+    const linked = ambiguousWorld({ root: '/link/repo', realPaths: { '/link/repo': '/repo', '/home/u': '/home/u' } })
+    fakeHost(on, linked, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.list /repo')
+    expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+  })
+
+  test('a CLAUDE_CONFIG_DIR that lands inside the repo is ignored with its warning', async ($, on) => {
+    const log = newLog()
+    const inRepo = ambiguousWorld({
+      env: { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/cfg-link' },
+      realPaths: { '/repo': '/repo', '/home/u': '/home/u', '/cfg-link': '/repo/.cfg' },
+    })
+    fakeHost(on, inRepo, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.stat /cfg-link resolve=true')
+    expect(out.text).toContain('Warning: CLAUDE_CONFIG_DIR is ignored')
+    expect(out.text).toContain('gsd-core 1.16.0 at ~/.claude/gsd-core')
+    expect(log.ops.filter(op => !op.startsWith('fs.stat ')).some(op => op.includes('/repo/.cfg'))).toBe(false)
+  })
+
+  test('a CLAUDE_CONFIG_DIR that lands outside the repo is read at the place it lands', async ($, on) => {
+    const log = newLog()
+    const base = ambiguousWorld()
+    const outside = {
+      ...base,
+      env: { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/cfg-link' },
+      realPaths: { '/repo': '/repo', '/home/u': '/home/u', '/cfg-link': '/opt/cfg' },
+      files: {
+        ...base.files,
+        '/opt/cfg/gsd-core/VERSION': '1.16.0\n',
+        '/opt/cfg/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
+      },
+      dirs: ['/opt/cfg/gsd-core'],
+    }
+    fakeHost(on, outside, log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.read /opt/cfg/gsd-core/VERSION')
+    expect(log.ops.filter(op => !op.startsWith('fs.stat ')).some(op => op.includes('/cfg-link'))).toBe(false)
+  })
+
+  test('a repo root whose stat is refused is used as given, with a warning', async ($, on) => {
+    fakeHost(on, ambiguousWorld({ denyStat: ['/repo'] }), newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not resolve the repo root (used as given)')
+    expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+  })
+
+  test('a home folder whose stat answers no realPath is used as given, with a warning', async ($, on) => {
+    const noRealPath = ambiguousWorld({
+      realPaths: { '/repo': '/repo' },
+      dirs: ['/home/u/.claude/gsd-core', '/home/u'],
+    })
+    fakeHost(on, noRealPath, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not resolve the home folder (used as given)')
+    expect(out.text).toContain('gsd-core 1.16.0 at ~/.claude/gsd-core')
+  })
+
+  test('a CLAUDE_CONFIG_DIR whose stat is refused is used as given, with a warning', async ($, on) => {
+    const refused = ambiguousWorld({
+      env: { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/cfg-link' },
+      denyStat: ['/cfg-link'],
+    })
+    fakeHost(on, refused, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not resolve CLAUDE_CONFIG_DIR (used as given)')
+  })
+
+  test('resolving the paths adds no write and no process call', async ($, on) => {
+    const log = newLog()
+    const linked = ambiguousWorld({ root: '/link/repo', realPaths: { '/link/repo': '/repo', '/home/u': '/home/u' } })
+    fakeHost(on, linked, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
+    expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+    expect(log.ops.filter(op => op.startsWith('write '))).toEqual([])
+    expect(log.runs).toEqual([])
   })
 })

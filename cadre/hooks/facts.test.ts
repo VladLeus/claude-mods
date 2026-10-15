@@ -18,6 +18,7 @@ import {
   parseRepoEntries,
   parseRuntimeIdentity,
   parseVersionText,
+  resolvedPath,
   runtimeIdentityArgv,
 } from './facts'
 
@@ -802,5 +803,30 @@ describe('homeRootRefusal', () => {
     expect(homeRootRefusal('/Users/u/', '/Users/u')).toBe(HOME_ROOT_REPLY)
     expect(homeRootRefusal('/Users', '/Users/u/')).toBe(HOME_ROOT_REPLY)
     expect(homeRootRefusal('/Users/u/repo/', '/Users/u/')).toBeNull()
+  })
+})
+
+describe('resolvedPath', () => {
+  test('uses the place a path lands when the host answered it', () => {
+    expect(resolvedPath('/link/repo', '/repo', 'the repo root')).toEqual({ path: '/repo', warning: null })
+  })
+
+  test('uses the path as given, with a warning, when the host gave no realPath', () => {
+    expect(resolvedPath('/link/repo', undefined, 'the repo root')).toEqual({
+      path: '/link/repo',
+      warning: 'could not resolve the repo root (used as given)',
+    })
+  })
+
+  test('treats an empty realPath as no answer', () => {
+    const resolved = resolvedPath('/home/u', '', 'the home folder')
+    expect(resolved.path).toBe('/home/u')
+    expect(resolved.warning).toBe('could not resolve the home folder (used as given)')
+  })
+
+  test('the warning names the role of the path and never the path itself', () => {
+    const resolved = resolvedPath('/Users/someone/repo', undefined, 'the repo root')
+    expect(String(resolved.warning)).toContain('could not resolve the repo root')
+    expect(String(resolved.warning)).not.toContain('/Users/someone')
   })
 })

@@ -273,6 +273,19 @@ export function displayPath(path: string, home: string | null, root: string): st
   return clean(path)
 }
 
+/** One path after the host's realpath answer: the path to use, and the warning when it was used as given. */
+type ResolvedPath = { readonly path: string; readonly warning: string | null }
+
+/**
+ * One path after the host's realpath answer (D-39): where it lands when the host gave a realPath, else the path as
+ * given, with a warning that it was used as given. The warning names the role of the path, never the path itself, so
+ * no home path can reach the report through it. Pure: the host's answer is an argument.
+ */
+export function resolvedPath(given: string, realPath: string | undefined, label: string): ResolvedPath {
+  // RED placeholder (D-39a): the path is used as given and nothing is warned, which is what the reads do today.
+  return { path: given, warning: null }
+}
+
 /**
  * CLAUDE_CONFIG_DIR when it is set, safe and outside the repo; null when unset,
  * and null with a warning when unusable.
