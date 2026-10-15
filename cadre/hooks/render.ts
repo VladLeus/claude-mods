@@ -2,7 +2,6 @@ import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter, Gate } f
 import { ADAPTERS, detectAll } from './adapters'
 import { clean } from './facts'
 import { chooseFramework } from './framework'
-import { GSD_ADAPTER } from './gsd'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
 const NAME_WIDTH = 14
@@ -87,7 +86,9 @@ function unsupportedNoteLines(detections: readonly Detection[], choice: Choice):
 
 /** The one line that lists the GSD hooks settings register, each with what it does to a role (D-05). */
 function gsdHookLines(facts: Facts): string[] {
-  const hooks = GSD_ADAPTER.roleFacts?.(facts) ?? []
+  const gsd = ADAPTERS.find(adapter => adapter.id === 'gsd')
+  if (gsd === undefined) return []
+  const hooks = gsd.roleFacts?.(facts) ?? []
   if (hooks.length === 0) return []
   const items = hooks.map(hook => `${hook.name} (${hook.note})`).join(', ')
 
@@ -147,7 +148,9 @@ function autonomyLines(adapter: FrameworkAdapter): string[] {
 
 /**
  * The contract block of one adapter, with the same labelled fields for every adapter (D-09). Each kickoff line is
- * indented six spaces, so it reads as one example block.
+ * indented six spaces, so it reads as one example block; an empty kickoff line stays empty. Text that comes from the
+ * adapter (detectRule, startWork, gate and autonomy text, hook notes) is static and printed as is, while values derived
+ * from Facts are cleaned and capped by reportText.
  */
 function adapterBlock(adapter: FrameworkAdapter): string[] {
   const kickoff = adapter.kickoffText({ role: 'BE', specPath: null }).split('\n')
@@ -165,7 +168,7 @@ function adapterBlock(adapter: FrameworkAdapter): string[] {
     '  autonomy:',
     ...autonomyLines(adapter),
     '  kickoff (example for role BE):',
-    ...kickoff.map(line => `      ${line}`),
+    ...kickoff.map(line => (line === '' ? '' : `      ${line}`)),
     '  human gates:',
     ...gateRows(adapter.humanGates),
   ]

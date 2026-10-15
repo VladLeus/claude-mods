@@ -24,6 +24,10 @@ describe('kickoff constants', () => {
 })
 
 describe('cleanKickoffText', () => {
+  test('a cap below 1 gives an empty string', () => {
+    expect(cleanKickoffText('abc', 0)).toBe('')
+  })
+
   test('each unsafe character is removed, whatever its class', () => {
     const unsafe = [
       '\u0085',

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, GsdFact, HookScript, RepoEntry } from '../types'
+import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import { GSD_GATES } from './gsd'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText, pad, STATUS_LABEL } from './render'
@@ -77,6 +77,28 @@ describe('detectReportLines', () => {
       '',
       'Adapter: ambiguous: gsd, superpowers; init will ask',
     ])
+  })
+
+  test('a version of 240 code points is kept whole, and one of 241 is cut to 240 with an ellipsis', () => {
+    const kept = 'v'.repeat(240)
+    const cut = `${'v'.repeat(239)}\u{2026}`
+    const keptRow = detectReportLines(facts({ gsd: [{ ...provenGsd('d'), version: kept }] })).join('\n')
+    const cutRow = detectReportLines(facts({ gsd: [{ ...provenGsd('d'), version: `${kept}v` }] })).join('\n')
+
+    expect(keptRow).toContain(`installed    ${kept} `)
+    expect(cutRow).toContain(`installed    ${cut} `)
+  })
+
+  test('an evidence string of 240 code points is kept whole, and one of 241 is cut to 240 with an ellipsis', () => {
+    const prefix = 'gsd-core 1.16.0 at '
+    const kept = `${prefix}${'a'.repeat(221)}`
+    const cut = `${prefix}${'a'.repeat(220)}\u{2026}`
+    const keptLines = detectReportLines(facts({ gsd: [provenGsd('a'.repeat(221))] }))
+    const cutLines = detectReportLines(facts({ gsd: [provenGsd('a'.repeat(222))] }))
+
+    expect(Array.from(kept).length).toBe(240)
+    expect(keptLines.some(line => line.endsWith(kept))).toBe(true)
+    expect(cutLines.some(line => line.endsWith(cut))).toBe(true)
   })
 
   test('a bidi override and a control character in a detection value are removed before display', () => {
@@ -297,15 +319,15 @@ const BLOCK_LABELS = [
 ]
 
 /**
- * The lines of one adapter block, from its header line to the blank line that ends it. The last block runs to the end
- * of the report, and a header that is not in the report gives no lines.
+ * The lines of one adapter block, from its header line to the line before the next adapter header. The last block runs
+ * to the end of the report, and a header that is not in the report gives no lines.
  */
 function blockOf(lines: readonly string[], header: string): string[] {
   const start = lines.indexOf(header)
   if (start === -1) return []
-  const end = lines.indexOf('', start)
+  const next = lines.findIndex((line, index) => index > start && ADAPTER_HEADERS.includes(line))
 
-  return lines.slice(start, end === -1 ? lines.length : end)
+  return lines.slice(start, next === -1 ? lines.length : next)
 }
 
 describe('adaptersReportLines', () => {
@@ -320,10 +342,33 @@ describe('adaptersReportLines', () => {
 
     for (const header of ADAPTER_HEADERS) {
       const block = blockOf(lines, header)
+      expect(block[0]).toBe(header)
       for (const label of BLOCK_LABELS) {
         expect(block.filter(line => line.startsWith(label)).length).toBe(1)
       }
     }
+  })
+
+  test('the labels run in contract order inside each block', () => {
+    const lines = adaptersReportLines(ADAPTERS)
+
+    for (const header of ADAPTER_HEADERS) {
+      const block = blockOf(lines, header)
+      const positions = BLOCK_LABELS.map(label => block.findIndex(line => line.startsWith(label)))
+      expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    }
+  })
+
+  test('an empty kickoff example line renders as an empty line, and other lines keep the six-space indent', () => {
+    const adapter: FrameworkAdapter = { ...ADAPTERS[2], kickoffText: () => 'first\n\nsecond' }
+    const lines = adaptersReportLines([adapter])
+    const start = lines.indexOf('  kickoff (example for role BE):')
+
+    expect(lines.slice(start + 1, start + 4)).toEqual(['      first', '', '      second'])
+  })
+
+  test('an empty adapter list gives no lines', () => {
+    expect(adaptersReportLines([])).toEqual([])
   })
 
   test('the GSD gate table has its header, and the accept-risk gate is a Security gate that needs a human', () => {
