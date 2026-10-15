@@ -67,7 +67,7 @@ export function detectUnsupported(facts: Facts): Detection[] {
 }
 
 /** Whether the repo root has an entry with exactly this name that is a directory or a symlink to anything. */
-function hasDirOrLink(entries: RepoEntry[], name: string): boolean {
+function hasDirOrLink(entries: readonly RepoEntry[], name: string): boolean {
   return entries.some(entry => entry.name === name && (entry.kind === 'dir' || entry.isLink))
 }
 
@@ -83,7 +83,7 @@ export const SUPPORTED_IDS: readonly FrameworkId[] = ['gsd', 'superpowers']
  * supported id that is neither in use nor installed is ignored. Two or more
  * frameworks in use is `ambiguous`, so nothing is preselected (D-07). Installed-only never chooses (D-29).
  */
-export function chooseFramework(detections: Detection[], userPick: FrameworkId | null): Choice {
+export function chooseFramework(detections: readonly Detection[], userPick: FrameworkId | null): Choice {
   const inUse = SUPPORTED_IDS.filter(id => hasStatus(detections, id, 'in-use'))
   const installed = SUPPORTED_IDS.filter(id => hasStatus(detections, id, 'installed'))
   const unsupported = UNSUPPORTED_MARKERS.map(row => row.id).filter(id => hasStatus(detections, id, 'unsupported'))
@@ -100,7 +100,7 @@ export function chooseFramework(detections: Detection[], userPick: FrameworkId |
 }
 
 /** Whether some detection has this id with this status. */
-function hasStatus(detections: Detection[], id: string, status: DetectStatus): boolean {
+function hasStatus(detections: readonly Detection[], id: string, status: DetectStatus): boolean {
   return detections.some(detection => detection.id === id && detection.status === status)
 }
 

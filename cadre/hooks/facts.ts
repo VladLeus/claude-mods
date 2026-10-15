@@ -180,7 +180,7 @@ export function parseEnabledPlugins(value: unknown, source: SettingsSource): Plu
  * One flag per key, from flags in override order (user, project, local). A later flag replaces the value and
  * the source of an earlier one for the same key, and each key keeps the place it first appeared in.
  */
-export function foldEnabledPlugins(flags: PluginFlag[]): PluginFlag[] {
+export function foldEnabledPlugins(flags: readonly PluginFlag[]): PluginFlag[] {
   const folded = new Map<string, PluginFlag>()
   for (const flag of flags) {
     folded.set(flag.key, flag)

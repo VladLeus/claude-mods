@@ -49,7 +49,7 @@ export function detectSuperpowers(facts: Facts): Detection {
 }
 
 /** Whether the entries hold a directory or a symlink with exactly this name. A plain file never counts. */
-function hasDirOrLink(entries: RepoEntry[], name: string): boolean {
+function hasDirOrLink(entries: readonly RepoEntry[], name: string): boolean {
   return entries.some(entry => entry.name === name && (entry.kind === 'dir' || entry.isLink))
 }
 
@@ -64,7 +64,7 @@ function installedEvidence(flag: PluginFlag): string {
 }
 
 /** The installed version recorded for one key, or null when installed_plugins has no entry for that key. */
-function versionOf(key: string, versions: PluginVersion[]): string | null {
+function versionOf(key: string, versions: readonly PluginVersion[]): string | null {
   const match = versions.find(entry => entry.key === key)
 
   return match === undefined ? null : match.version
