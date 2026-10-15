@@ -233,6 +233,25 @@ function gateFieldProblems(gate: Record<string, unknown>): string[] {
   return problems
 }
 
+/**
+ * The problems with one gate: not an object, no id, an id seen before (reported once), then its own fields. The id
+ * is read once, so a getter cannot answer differently between the check and the use.
+ */
+function oneGateProblems(gate: unknown, seen: Set<string>, repeated: Set<string>): string[] {
+  if (!isObject(gate)) return ['gate is not an object']
+
+  const id = gate.id
+  const fieldProblems = gateFieldProblems(gate)
+  if (typeof id !== 'string' || id.trim() === '') return ['gate has no id', ...fieldProblems]
+
+  const isFirstRepeat = seen.has(id) && !repeated.has(id)
+  seen.add(id)
+  if (!isFirstRepeat) return fieldProblems
+  repeated.add(id)
+
+  return [`duplicate gate id ${idLabel(id)}`, ...fieldProblems]
+}
+
 /** The most problems gateProblems returns; when there are more, one extra line says so. */
 export const MAX_GATE_PROBLEMS = 50
 
@@ -248,23 +267,14 @@ export function gateProblems(gates: unknown): string[] {
   const problems: string[] = []
   const seen = new Set<string>()
   const repeated = new Set<string>()
-  for (const gate of gates) {
+  for (let index = 0; index < gates.length; index++) {
     if (problems.length > MAX_GATE_PROBLEMS) break
-    if (!isObject(gate)) {
-      problems.push('gate is not an object')
-      continue
+    try {
+      problems.push(...oneGateProblems(gates[index], seen, repeated))
+    } catch {
+      // A gate whose fields throw when read (a getter or a proxy) is reported, never rethrown.
+      problems.push('gate could not be read')
     }
-    if (!isFilledString(gate.id)) {
-      problems.push('gate has no id')
-    } else {
-      const id = gate.id as string
-      if (seen.has(id) && !repeated.has(id)) {
-        repeated.add(id)
-        problems.push(`duplicate gate id ${idLabel(id)}`)
-      }
-      seen.add(id)
-    }
-    problems.push(...gateFieldProblems(gate))
   }
   if (problems.length <= MAX_GATE_PROBLEMS) return problems
 

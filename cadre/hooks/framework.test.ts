@@ -444,6 +444,21 @@ describe('gateProblems', () => {
     expect(gateProblems([[]])).toEqual(['gate is not an object'])
   })
 
+  test('a gate whose field throws when read is reported and the next gate is still checked', () => {
+    const hostile = Object.defineProperty({}, 'id', {
+      get() {
+        throw new Error('boom')
+      },
+    })
+    expect(gateProblems([hostile, [], {}])).toEqual([
+      'gate could not be read',
+      'gate is not an object',
+      'gate has no id',
+      'gate <non-string id>: unknown decisionType',
+      'gate <non-string id>: empty kickoff',
+    ])
+  })
+
   test('a gate with no id is reported, and two id-less gates are not duplicates', () => {
     expect(gateProblems([gate({ id: undefined as never })])).toContain('gate has no id')
     expect(gateProblems([gate({ id: '' }), gate({ id: '  ' })]).some(text => text.includes('duplicate'))).toBe(false)
