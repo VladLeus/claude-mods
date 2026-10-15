@@ -1,4 +1,14 @@
-import type { AdapterFact, Detection, Facts, Gate, GsdFact, RepoEntry, SettingProposal } from '../types'
+import type {
+  AdapterFact,
+  Detection,
+  Facts,
+  FrameworkAdapter,
+  Gate,
+  GsdFact,
+  KickoffContext,
+  RepoEntry,
+  SettingProposal,
+} from '../types'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
@@ -202,3 +212,14 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
     isRequired: false,
   },
 ]
+
+/**
+ * RED placeholder for gsdKickoffText: a value no test expects, so every Task 3 test fails on its assertion.
+ * Replaced in the GREEN commit.
+ */
+export function gsdKickoffText(ctx: KickoffContext): string {
+  return 'STUB'
+}
+
+/** RED placeholder for GSD_ADAPTER: an id no test expects, so every Task 3 test fails on its assertion. */
+export const GSD_ADAPTER = { id: 'STUB' } as unknown as FrameworkAdapter

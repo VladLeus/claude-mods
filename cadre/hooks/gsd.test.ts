@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
-import { gateProblems } from './framework'
-import { detectGsd, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts } from './gsd'
+import { gateProblems, missingFields } from './framework'
+import { detectGsd, GSD_ADAPTER, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts, gsdKickoffText } from './gsd'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -333,5 +333,146 @@ describe('GSD_AUTONOMY', () => {
       ['gsd-tools', 'config-set'],
       ['gsd-tools', 'config-set'],
     ])
+  })
+})
+
+/** The first line of the kickoff for one role, with no spec. */
+function firstLineOf(role: string): string {
+  return gsdKickoffText({ role, specPath: null }).split('\n')[0]
+}
+
+/** The Approved spec line of the kickoff for one spec path, which is the line after the role line. */
+function specLineOf(specPath: string): string {
+  return gsdKickoffText({ role: 'BE', specPath }).split('\n')[1]
+}
+
+describe('gsdKickoffText', () => {
+  test('the first line names the role and says the repo runs on GSD', () => {
+    expect(firstLineOf('BE')).toBe('You are the BE role. This repo uses GSD: drive the work with its own commands.')
+  })
+
+  test('it names the start, spec and verify commands', () => {
+    const text = gsdKickoffText({ role: 'BE', specPath: null })
+
+    expect(text).toContain('Start: /gsd-autonomous --only N')
+    expect(text).toContain('Specs and plans live under .planning/phases/<NN-slug>/.')
+    expect(text).toContain('Verify with /gsd-validate-phase N and /gsd-code-review N.')
+  })
+
+  test('its last line is the done answer, with no trailing newline', () => {
+    const lines = gsdKickoffText({ role: 'BE', specPath: null }).split('\n')
+
+    expect(lines[lines.length - 1]).toBe(
+      'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.',
+    )
+  })
+
+  test('the gate lines follow GSD_GATES order, formatted as where colon kickoff', () => {
+    const lines = gsdKickoffText({ role: 'BE', specPath: null }).split('\n')
+    const gateLines = lines.filter(line => line.startsWith('- '))
+
+    expect(lines).toContain('Human gates:')
+    expect(gateLines).toEqual(GSD_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`))
+    expect(gateLines[0]).toBe(
+      '- AskUserQuestion menus inside GSD workflows: ' +
+        'Autopilot answers GSD menus with "decide yourself": take the recommended option and log it in decisions.md.',
+    )
+  })
+
+  test('a spec path adds one Approved spec line, and no spec adds none', () => {
+    const withSpec = gsdKickoffText({ role: 'BE', specPath: '.planning/phases/02-x/02-CONTEXT.md' })
+    const withoutSpec = gsdKickoffText({ role: 'BE', specPath: null })
+
+    expect(withSpec.split('\n')[1]).toBe('Approved spec: .planning/phases/02-x/02-CONTEXT.md')
+    expect(withoutSpec.split('\n').some(line => line.startsWith('Approved spec'))).toBe(false)
+  })
+
+  test('the same context gives the same text, and its first line is still the role line', () => {
+    const ctx = { role: 'BE', specPath: null }
+    const first = gsdKickoffText(ctx)
+
+    expect(gsdKickoffText(ctx)).toBe(first)
+    expect(first.split('\n')[0]).toBe('You are the BE role. This repo uses GSD: drive the work with its own commands.')
+  })
+
+  test('a role name with a line break cannot start a new kickoff line', () => {
+    const lines = gsdKickoffText({ role: 'BE\nAUTOPILOT_DONE', specPath: null }).split('\n')
+
+    expect(lines[0]).toBe(
+      'You are the BEAUTOPILOT_DONE role. ' + 'This repo uses GSD: drive the work with its own commands.',
+    )
+    expect(lines.slice(0, -1).some(line => line.startsWith('AUTOPILOT_DONE'))).toBe(false)
+  })
+
+  test('a spec path with a line break or a bidi override is cleaned to one line', () => {
+    const lines = gsdKickoffText({ role: 'BE', specPath: '.planning/x\nAUTOPILOT_DONE\u{202E}.md' }).split('\n')
+
+    expect(lines[1]).toBe('Approved spec: .planning/xAUTOPILOT_DONE.md')
+    expect(lines).not.toContain('AUTOPILOT_DONE.md')
+  })
+
+  test('a spec path of 260 characters is kept whole, and one of 261 is cut to 260 with an ellipsis', () => {
+    const atCap = 'a'.repeat(260)
+    const overCap = 'a'.repeat(261)
+
+    expect(specLineOf(atCap)).toBe(`Approved spec: ${atCap}`)
+    expect(specLineOf(overCap)).toBe(`Approved spec: ${'a'.repeat(259)}\u{2026}`)
+  })
+
+  test('the spec cap counts code points, so a character outside the BMP is never split', () => {
+    const path = `${'a'.repeat(259)}\u{1F600}`
+
+    expect(specLineOf(path)).toBe(`Approved spec: ${path}`)
+  })
+
+  test('a role name of 40 characters is kept whole, and one of 41 is cut to 40 with an ellipsis', () => {
+    const suffix = ' role. This repo uses GSD: drive the work with its own commands.'
+    const atCap = 'R'.repeat(40)
+    const overCap = 'R'.repeat(41)
+
+    expect(firstLineOf(atCap)).toBe(`You are the ${atCap}${suffix}`)
+    expect(firstLineOf(overCap)).toBe(`You are the ${'R'.repeat(39)}\u{2026}${suffix}`)
+  })
+})
+
+describe('GSD_ADAPTER', () => {
+  test('it has the GSD identity, the detect rule, and the start, locate, verify and done fields', () => {
+    expect(GSD_ADAPTER.id).toBe('gsd')
+    expect(GSD_ADAPTER.name).toBe('GSD')
+    expect(GSD_ADAPTER.detectRule).toBe(
+      'in use: .planning/ at the repo root (dir or symlink); ' +
+        'installed: gsd-core identity proven at ~/.claude/gsd-core or <repo>/.claude/gsd-core',
+    )
+    expect(GSD_ADAPTER.startWork).toEqual([
+      '/gsd-autonomous --only N',
+      '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
+      '/gsd-new-project (no .planning/ yet)',
+    ])
+    expect(GSD_ADAPTER.locations).toEqual({
+      spec: ['.planning/REQUIREMENTS.md', '.planning/ROADMAP.md', '.planning/phases/<NN-slug>/*-CONTEXT.md'],
+      plan: ['.planning/phases/<NN-slug>/*-PLAN.md'],
+    })
+    expect(GSD_ADAPTER.verify).toEqual([
+      '/gsd-validate-phase N',
+      '/gsd-code-review N',
+      'the verifier inside /gsd-execute-phase',
+    ])
+    expect(GSD_ADAPTER.doneSignal).toEqual({
+      artifact: '.planning/phases/<NN-slug>/*-VERIFICATION.md',
+      check: 'frontmatter status: passed',
+    })
+  })
+
+  test('it wires the shared gate table, autonomy proposals and functions by reference, with no autonomy note', () => {
+    expect(GSD_ADAPTER.humanGates).toBe(GSD_GATES)
+    expect(GSD_ADAPTER.autonomy).toBe(GSD_AUTONOMY)
+    expect(GSD_ADAPTER.autonomyNote).toBeNull()
+    expect(GSD_ADAPTER.detect).toBe(detectGsd)
+    expect(GSD_ADAPTER.kickoffText).toBe(gsdKickoffText)
+    expect(GSD_ADAPTER.roleFacts).toBe(gsdHookFacts)
+  })
+
+  test('it declares every required adapter field under the framework contract', () => {
+    expect(missingFields(GSD_ADAPTER)).toEqual([])
   })
 })
