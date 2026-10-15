@@ -15,8 +15,8 @@ import type {
 } from '../types'
 
 /**
- * The most bytes of one file register.tsx reads; a larger file is skipped and a warning is recorded. This is the
- * only bound on how many entries, hooks and plugins a parser sees.
+ * The most bytes of one file a parser sees. register.tsx applies it after the host's own read cap; a larger file is
+ * skipped and a warning is recorded. `fs.list` results are not bounded by it.
  */
 export const MAX_READ_BYTES = 256 * 1024
 /** Code points a repo or docs entry name keeps; a longer name is cut with an ellipsis. */

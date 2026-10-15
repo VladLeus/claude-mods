@@ -81,13 +81,14 @@ async function locationsOf($: EngineInterface, sessionRoot: string): Promise<Loc
 
 /**
  * A text file's contents, or null. A missing file gives null quietly. A probe that fails counts as present, so the
- * read is still tried. A read that fails, or a file over MAX_READ_BYTES, adds a warning and gives null.
+ * read is still tried. A read that fails or answers a non-string, or a file over MAX_READ_BYTES, adds a warning and
+ * gives null.
  */
 async function readText($: EngineInterface, read: ReadContext, path: string): Promise<string | null> {
   const isThere = await $.fs.exists(path).catch(() => true)
   if (!isThere) return null
   const text = await $.fs.read(path).catch(() => null)
-  if (text === null || new TextEncoder().encode(text).byteLength > MAX_READ_BYTES) {
+  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > MAX_READ_BYTES) {
     read.warnings.push(`could not read ${displayPath(path, read.home, read.root)} (treated as unknown)`)
 
     return null

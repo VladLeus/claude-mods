@@ -34,13 +34,29 @@ type World = {
   readonly denySettings: readonly string[]
   /** What `process.run` answers; null makes the call refuse. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
+  /** Makes `session.root` refuse, as a host that cannot say where the session is. */
+  readonly denyRoot: boolean
+  /** Files whose read answers no value at all, instead of a text or a refusal. */
+  readonly undefinedReads: readonly string[]
 }
 
 /** What the fake host saw: every fs, process and settings op in order, and the argv of each process call. */
 type HostLog = { readonly ops: string[]; readonly runs: string[][] }
 
-/** Host ops that would change something; `/cadre detect` must never reach one. */
-const WRITE_OPS: readonly string[] = ['fs.write', 'store.set', 'store.delete', 'env.set', 'state.set']
+/**
+ * Host ops that would change something or reach beyond the read-only reads (a second process call, the network, an
+ * MCP tool); `/cadre detect` must never reach one. `process.spawn` is forbidden too, but streams, so fakeHost hooks it
+ * with a generator. `process.run` is not here: it is logged, and only the user-level identity call may use it.
+ */
+const FORBIDDEN_OPS: readonly string[] = [
+  'fs.write',
+  'store.set',
+  'store.delete',
+  'env.set',
+  'state.set',
+  'http.fetch',
+  'mcp.call',
+]
 
 /** A listing entry: a file unless told otherwise, and not a link unless told so. */
 function entry(name: string, kind: FakeEntry['kind'] = 'file', isLink = false): FakeEntry {
@@ -77,6 +93,8 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     denyStat: [],
     denySettings: [],
     runtime: null,
+    denyRoot: false,
+    undefinedReads: [],
     ...over,
   }
 }
@@ -88,10 +106,10 @@ function hasPath(world: World, path: string): boolean {
 
 /**
  * Answers the host ops `/cadre detect` may use from `world` and logs each fs, process and settings op into `log`.
- * Every write op is answered with a refusal, so a write would show up in the log and fail its call.
+ * Every forbidden op is answered with a refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
-  on('session.root', async () => ({ value: world.root }))
+  on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
   on('env.get', async (_$, e) => ({ value: world.env[e.name] }))
   on('fs.exists', async (_$, e) => {
     log.ops.push(`fs.exists ${e.path}`)
@@ -107,6 +125,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('fs.read', async (_$, e) => {
     log.ops.push(`fs.read ${e.path}`)
     if (world.denyPaths.includes(e.path) || !Object.hasOwn(world.files, e.path)) return { deny: 'missing' }
+    if (world.undefinedReads.includes(e.path)) return { value: undefined }
 
     return { value: world.files[e.path] }
   })
@@ -131,11 +150,16 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: { ...world.runtime, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  for (const op of WRITE_OPS) {
-    on(op, async () => {
-      log.ops.push(`write ${op}`)
+  on('process.spawn', async function* () {
+    log.ops.push('forbidden process.spawn')
 
-      return { deny: 'detect writes nothing' }
+    return { deny: 'detect uses no such op' }
+  })
+  for (const op of FORBIDDEN_OPS) {
+    on(op, async () => {
+      log.ops.push(`forbidden ${op}`)
+
+      return { deny: 'detect uses no such op' }
     })
   }
 }
@@ -200,6 +224,7 @@ describe('register with a faked host', () => {
   test('a repo-local GSD folder alone is never run: the runtime identity call is not made', async ($, on) => {
     const log = newLog()
     const repoOnly = {
+      // No user-level GSD files or folder: the repo-local folder is the only GSD candidate.
       ...ambiguousWorld(),
       files: {
         '/repo/.claude/gsd-core/VERSION': '1.16.0\n',
@@ -210,7 +235,10 @@ describe('register with a faked host', () => {
     }
     fakeHost(on, repoOnly, log)
     await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.exists /repo/.claude/gsd-core')
+    expect(log.ops.some(op => op.includes('/home/u/.claude/gsd-core') && op.startsWith('fs.read'))).toBe(false)
     expect(log.runs).toEqual([])
+    expect(log.ops).not.toContain('process.run')
   })
 
   test('a user-level GSD folder that cannot be proven is run once, under the user folder only', async ($, on) => {
@@ -220,10 +248,13 @@ describe('register with a faked host', () => {
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
     }
     fakeHost(on, userDenied, log)
-    await $.command.run({ command: 'cadre', args: 'detect' })
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(log.runs.length).toBe(1)
     expect(log.runs[0][1].startsWith('/home/u/.claude/gsd-core/')).toBe(true)
     expect(log.runs[0].some(arg => arg.startsWith('/repo'))).toBe(false)
+    expect(out.text).toContain('Warning: could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
+    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+    expect(out.text).not.toContain('/home/u')
   })
 
   test('a runtime identity answer for another package never makes the GSD row installed', async ($, on) => {
@@ -246,7 +277,7 @@ describe('register with a faked host', () => {
     fakeHost(on, ambiguousWorld(), log)
     await $.command.run({ command: 'cadre', args: 'detect' })
     await $.command.run({ command: 'cadre', args: 'detect --adapters' })
-    expect(log.ops.filter(op => op.startsWith('write '))).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
   test('settings values, hook commands and the home path never reach the output', async ($, on) => {
@@ -405,7 +436,80 @@ describe('register with a faked host', () => {
     fakeHost(on, linked, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect --adapters' })
     expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
-    expect(log.ops.filter(op => op.startsWith('write '))).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
+  })
+
+  test('a session root the host refuses gives the unknown-root report with no read at all', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld({ denyRoot: true }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not read the session root (treated as unknown)')
+    for (const name of ['GSD', 'superpowers', 'AI-DLC', 'BMAD', 'spec-kit']) {
+      expect(rowOf(out.text, name)).not.toBe('')
+    }
+    expect(log.ops).toEqual([])
+    expect(log.runs).toEqual([])
+  })
+
+  test('an installed_plugins.json over the read cap gives the could-not-read warning', async ($, on) => {
+    const base = ambiguousWorld()
+    const big = {
+      ...base,
+      files: { ...base.files, '/home/u/.claude/plugins/installed_plugins.json': 'x'.repeat(300 * 1024) },
+    }
+    fakeHost(on, big, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not read ~/.claude/plugins/installed_plugins.json (treated as unknown)')
+  })
+
+  test('a file that is not JSON gives the could-not-parse warning', async ($, on) => {
+    const base = ambiguousWorld()
+    const broken = {
+      ...base,
+      files: { ...base.files, '/home/u/.claude/plugins/installed_plugins.json': '{"plugins": [' },
+    }
+    fakeHost(on, broken, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain(
+      'Warning: could not parse ~/.claude/plugins/installed_plugins.json as JSON (treated as unknown)',
+    )
+  })
+
+  test('a read that answers no text gives the could-not-read warning', async ($, on) => {
+    const unreadable = ambiguousWorld({ undefinedReads: ['/home/u/.claude/plugins/installed_plugins.json'] })
+    fakeHost(on, unreadable, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: could not read ~/.claude/plugins/installed_plugins.json (treated as unknown)')
+  })
+
+  test('a relative HOME is never stat-ed or read', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld({ env: { HOME: 'rel/home' } }), log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops.filter(op => op.startsWith('fs.stat ')).some(op => op.includes('rel/home'))).toBe(false)
+    expect(log.ops.some(op => op.includes('rel/home'))).toBe(false)
+    expect(log.runs).toEqual([])
+  })
+
+  test('a relative CLAUDE_CONFIG_DIR is never stat-ed or read', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld({ env: { HOME: '/home/u', CLAUDE_CONFIG_DIR: 'rel/cfg' } }), log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops.filter(op => op.startsWith('fs.stat ')).some(op => op.includes('rel/cfg'))).toBe(false)
+    expect(log.ops.some(op => op.includes('rel/cfg'))).toBe(false)
+  })
+
+  test('a runtime identity call that exits non-zero leaves the install unproven, with the warning', async ($, on) => {
+    const log = newLog()
+    const failed = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 1, stdout: '' },
+    }
+    fakeHost(on, failed, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs.length).toBe(1)
+    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
   })
 })
