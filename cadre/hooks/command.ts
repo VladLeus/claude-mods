@@ -37,7 +37,7 @@ function echoed(raw: string): string {
   const points = Array.from(raw)
   if (points.length <= MAX_ECHOED) return raw
 
-  return `${points.slice(0, MAX_ECHOED - 1).join('')}…`
+  return `${points.slice(0, MAX_ECHOED - 1).join('')}\u2026`
 }
 
 /**

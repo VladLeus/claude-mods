@@ -46,12 +46,12 @@ describe('parseCommand', () => {
 
   test('bidi characters are stripped and the echo is capped at 40 code points', () => {
     const command = parseCommand(`${'a'.repeat(30)}\u202E${'b'.repeat(29)}`)
-    expect(command).toEqual({ kind: 'help', unknown: `${'a'.repeat(30)}${'b'.repeat(9)}…` })
+    expect(command).toEqual({ kind: 'help', unknown: `${'a'.repeat(30)}${'b'.repeat(9)}\u2026` })
   })
 
   test('the cap counts code points, not UTF-16 units', () => {
     const command = parseCommand('😀'.repeat(50))
-    expect(command).toEqual({ kind: 'help', unknown: `${'😀'.repeat(39)}…` })
+    expect(command).toEqual({ kind: 'help', unknown: `${'😀'.repeat(39)}\u2026` })
     const unknown = command.kind === 'help' ? (command.unknown ?? '') : ''
     expect(Array.from(unknown).length).toBe(40)
   })
