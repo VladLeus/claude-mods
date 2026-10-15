@@ -229,6 +229,11 @@ describe('gsdHookFacts', () => {
     expect(GSD_HOOK_NOTES[0].note).toBe('conflicts with the autopilot handoff')
   })
 
+  test('GSD_HOOK_NOTES and every row in it are frozen', () => {
+    expect(Object.isFrozen(GSD_HOOK_NOTES)).toBe(true)
+    expect(GSD_HOOK_NOTES.every(row => Object.isFrozen(row))).toBe(true)
+  })
+
   test('GSD_HOOK_NOTES lists the four role hooks in order, with their notes', () => {
     expect(GSD_HOOK_NOTES).toEqual([
       { name: 'gsd-context-monitor', note: 'conflicts with the autopilot handoff' },

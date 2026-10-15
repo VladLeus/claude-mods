@@ -1,4 +1,5 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
+import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**
@@ -8,11 +9,6 @@ import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE }
  */
 export function detectBuiltin(_facts: Facts): Detection {
   return { id: 'none', name: 'built-in', status: 'installed', version: null, evidence: ['built into cadre'] }
-}
-
-/** Freezes a table and every row in it, so no caller can change the contract at runtime (T-01-27). */
-function freezeRows<T extends object>(rows: readonly T[]): readonly T[] {
-  return Object.freeze(rows.map(row => Object.freeze(row)))
 }
 
 /**

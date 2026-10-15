@@ -8,6 +8,7 @@ import type {
   PluginVersion,
   RepoEntry,
 } from '../types'
+import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**
@@ -68,11 +69,6 @@ function versionOf(key: string, versions: readonly PluginVersion[]): string | nu
   const match = versions.find(entry => entry.key === key)
 
   return match === undefined ? null : match.version
-}
-
-/** Freezes a table and every row in it, so no caller can change the contract at runtime (T-01-27). */
-function freezeRows<T extends object>(rows: readonly T[]): readonly T[] {
-  return Object.freeze(rows.map(row => Object.freeze(row)))
 }
 
 /**

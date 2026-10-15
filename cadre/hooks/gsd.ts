@@ -9,12 +9,8 @@ import type {
   RepoEntry,
   SettingProposal,
 } from '../types'
+import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
-
-/** Freezes a table and every row in it, so no caller can change the contract at runtime (T-01-27). */
-function freezeRows<T extends object>(rows: readonly T[]): readonly T[] {
-  return Object.freeze(rows.map(row => Object.freeze(row)))
-}
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
