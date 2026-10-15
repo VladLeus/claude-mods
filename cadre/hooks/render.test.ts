@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, GsdFact, RepoEntry } from '../types'
+import type { Choice, Facts, GsdFact, HookScript, RepoEntry } from '../types'
 import { detectAll } from './adapters'
 import { choiceLine, detectReportLines, pad, STATUS_LABEL } from './render'
 
@@ -32,6 +32,11 @@ function entry(name: string, kind: RepoEntry['kind'] = 'dir', isLink = false): R
 /** A user-level GSD install whose identity is proven, at the given display path. */
 function provenGsd(dir: string): GsdFact {
   return { location: 'user', dir, version: '1.16.0', identity: 'proven', runtimeIdentityTried: false }
+}
+
+/** A hook script registered in user settings, as normalised Facts keep it: its basename, its event and its source. */
+function hook(script: string): HookScript {
+  return { script, event: 'PostToolUse', source: 'user' }
 }
 
 /**
@@ -141,5 +146,134 @@ describe('STATUS_LABEL', () => {
       'not-found': 'not found',
       unsupported: 'unsupported',
     })
+  })
+})
+
+describe('unsupported markers beside a chosen framework', () => {
+  test('a marker found beside a chosen framework is named just before the choice line', () => {
+    const lines = detectReportLines(facts({ repoEntries: [entry('.planning'), entry('aidlc')] }))
+
+    expect(lines.slice(-4)).toEqual([
+      '',
+      'Warning: also detected but unsupported: AI-DLC',
+      '',
+      'Adapter: gsd (only gsd is in use in this repo)',
+    ])
+  })
+
+  test('a marker is also named when the choice is ambiguous', () => {
+    const repo = facts({
+      repoEntries: [entry('.planning'), entry('docs'), entry('aidlc')],
+      docsEntries: [entry('superpowers')],
+    })
+
+    expect(detectReportLines(repo).slice(-4)).toEqual([
+      '',
+      'Warning: also detected but unsupported: AI-DLC',
+      '',
+      'Adapter: ambiguous: gsd, superpowers; init will ask',
+    ])
+  })
+
+  test('a marker is also named when only an install is found', () => {
+    const repo = facts({ repoEntries: [entry('_bmad')], gsd: [provenGsd('~/.claude/gsd-core')] })
+
+    expect(detectReportLines(repo).slice(-4)).toEqual([
+      '',
+      'Warning: also detected but unsupported: BMAD',
+      '',
+      'Adapter: installed-only: gsd; init will ask',
+    ])
+  })
+
+  test('a repo with only an unsupported marker gets no warning, since the choice line already names it', () => {
+    const lines = detectReportLines(facts({ repoEntries: [entry('aidlc')] }))
+
+    expect(lines.some(line => line.startsWith('Warning: also detected'))).toBe(false)
+    expect(lines.slice(-2)).toEqual(['', 'Adapter: none usable: aidlc detected but unsupported; init will ask'])
+  })
+})
+
+describe('GSD hooks and host warnings', () => {
+  test('registered GSD hooks are named with what each does to a role, before the choice line', () => {
+    const repo = facts({
+      hookScripts: [hook('gsd-context-monitor.js'), hook('gsd-secret-read-guard.js')],
+    })
+
+    expect(detectReportLines(repo).slice(-4)).toEqual([
+      '',
+      'GSD hooks registered (activation depends on GSD config): ' +
+        'gsd-context-monitor (conflicts with the autopilot handoff), gsd-secret-read-guard (useful for Security)',
+      '',
+      'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
+    ])
+  })
+
+  test('each host warning is its own line before the choice line', () => {
+    const lines = detectReportLines(facts({ warnings: ['could not read project settings'] }))
+
+    expect(lines.slice(-4)).toEqual([
+      '',
+      'Warning: could not read project settings',
+      '',
+      'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
+    ])
+  })
+
+  test('a host warning of 240 code points is kept whole, and one of 241 is cut to 240 with an ellipsis', () => {
+    const kept = 'a'.repeat(240)
+    const cut = `${'a'.repeat(239)}\u{2026}`
+    const lines = detectReportLines(facts({ warnings: [kept, `${kept}b`] }))
+
+    expect(lines).toContain(`Warning: ${kept}`)
+    expect(lines).toContain(`Warning: ${cut}`)
+  })
+
+  test('a warning with a bidi override and a line break is cleaned to one line', () => {
+    const lines = detectReportLines(facts({ warnings: ['could not read\u{202E} settings\nfile'] }))
+
+    expect(lines).toContain('Warning: could not read settingsfile')
+    expect(lines.join('\n')).not.toMatch(CONTROL_OR_FORMAT)
+  })
+})
+
+describe('report invariants', () => {
+  test('rendering the same facts twice gives the same text', () => {
+    const repo = thisRepo()
+
+    expect(detectReportLines(repo).join('\n')).toBe(detectReportLines(repo).join('\n'))
+  })
+
+  test('for every fixture the choice line is the only Adapter line, and it is the last line', () => {
+    const fixtures = [
+      thisRepo(),
+      facts({}),
+      facts({ repoEntries: [entry('_bmad')], gsd: [provenGsd('~/.claude/gsd-core')] }),
+      facts({ repoEntries: [entry('aidlc')] }),
+      facts({ warnings: ['could not read project settings'] }),
+      facts({ hookScripts: [hook('gsd-context-monitor.js')] }),
+    ]
+    for (const fixture of fixtures) {
+      const lines = detectReportLines(fixture)
+      const adapterLines = lines.filter(line => line.startsWith('Adapter:'))
+
+      expect(adapterLines.length).toBe(1)
+      expect(lines.slice(-1)).toEqual(adapterLines)
+    }
+  })
+
+  test('an empty repo shows every framework row as not found and the built-in choice line', () => {
+    const lines = detectReportLines(facts({}))
+
+    expect(lines.slice(3, 8).map(line => line.slice(14, 27).trim())).toEqual([
+      'not found',
+      'not found',
+      'not found',
+      'not found',
+      'not found',
+    ])
+    expect(lines.slice(-1)).toEqual([
+      'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
+    ])
   })
 })
