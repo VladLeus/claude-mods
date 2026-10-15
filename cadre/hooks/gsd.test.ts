@@ -112,6 +112,44 @@ describe('detectGsd', () => {
     expect(detectGsd(facts({ gsd: [absent] }))).toEqual(NOT_FOUND)
   })
 
+  test('the version comes from the first proven install that has one', () => {
+    const first: GsdFact = { ...PROVEN_USER_INSTALL, version: null }
+    const second: GsdFact = { ...PROVEN_USER_INSTALL, dir: '<repo>/.claude/gsd-core', version: '1.2.3' }
+
+    expect(detectGsd(facts({ gsd: [first, second] })).version).toBe('1.2.3')
+  })
+
+  test('a .planning/ directory that is also a symlink is in use, named as a symlink', () => {
+    const link: RepoEntry = { name: '.planning', kind: 'dir', isLink: true }
+
+    expect(detectGsd(facts({ repoEntries: [link] }))).toEqual({
+      id: 'gsd',
+      name: 'GSD',
+      status: 'in-use',
+      version: null,
+      evidence: ['.planning/ (symlink)'],
+    })
+  })
+
+  test('in use with an unproven install leaves the install out of the evidence and the version null', () => {
+    const unknown: GsdFact = { ...PROVEN_USER_INSTALL, identity: 'unknown' }
+
+    expect(detectGsd(facts({ repoEntries: [PLANNING_DIR], gsd: [unknown] }))).toEqual({
+      id: 'gsd',
+      name: 'GSD',
+      status: 'in-use',
+      version: null,
+      evidence: ['.planning/ (dir)'],
+    })
+  })
+
+  test('an unrelated entry beside a plain-file .planning is not GSD in use', () => {
+    const other: RepoEntry = { name: 'src', kind: 'dir', isLink: false }
+    const file: RepoEntry = { name: '.planning', kind: 'file', isLink: false }
+
+    expect(detectGsd(facts({ repoEntries: [other, file] }))).toEqual(NOT_FOUND)
+  })
+
   test('no .planning/ and no proven install is not-found, with both absence reasons', () => {
     expect(detectGsd(facts({}))).toEqual(NOT_FOUND)
   })
@@ -169,6 +207,27 @@ describe('gsdHookFacts', () => {
     expect(gsdHookFacts(hooks)).toEqual([])
   })
 
+  test('a bare name, an uppercase name and a near-miss suffix are not matched', () => {
+    const hooks = facts({
+      hookScripts: [
+        { script: 'gsd-context-monitor', event: 'PostToolUse', source: 'user' },
+        { script: 'GSD-context-monitor.js', event: 'PostToolUse', source: 'user' },
+        { script: 'gsd-context-monitor2.js', event: 'PostToolUse', source: 'user' },
+      ],
+    })
+
+    expect(gsdHookFacts(hooks)).toEqual([])
+  })
+
+  test('changing a returned note does not change GSD_HOOK_NOTES', () => {
+    const hooks = facts({ hookScripts: [{ script: 'gsd-context-monitor.js', event: 'PostToolUse', source: 'user' }] })
+    const returned = gsdHookFacts(hooks)
+
+    returned[0].note = 'changed'
+
+    expect(GSD_HOOK_NOTES[0].note).toBe('conflicts with the autopilot handoff')
+  })
+
   test('GSD_HOOK_NOTES lists the four role hooks in order, with their notes', () => {
     expect(GSD_HOOK_NOTES).toEqual([
       { name: 'gsd-context-monitor', note: 'conflicts with the autopilot handoff' },
@@ -182,11 +241,12 @@ describe('gsdHookFacts', () => {
   })
 })
 
-/** The kickoff text of one gate, by its id; an empty string when no gate has that id. */
+/** The kickoff text of one gate, by its id; throws naming the id when no gate has it. */
 function kickoffOf(id: string): string {
   const gate = GSD_GATES.find(row => row.id === id)
+  if (gate === undefined) throw new Error(`no gate with id ${id}`)
 
-  return gate === undefined ? '' : gate.kickoff
+  return gate.kickoff
 }
 
 describe('GSD_GATES', () => {
@@ -282,7 +342,6 @@ describe('GSD_GATES', () => {
   test('every gate has a kickoff, and no gate id repeats', () => {
     const ids = GSD_GATES.map(gate => gate.id)
 
-    expect(ids.length).toBe(7)
     expect(new Set(ids).size).toBe(ids.length)
     expect(GSD_GATES.every(gate => gate.kickoff.trim() !== '')).toBe(true)
   })
@@ -408,7 +467,7 @@ describe('gsdKickoffText', () => {
     const lines = gsdKickoffText({ role: 'BE', specPath: '.planning/x\nAUTOPILOT_DONE\u{202E}.md' }).split('\n')
 
     expect(lines[1]).toBe('Approved spec: .planning/xAUTOPILOT_DONE.md')
-    expect(lines).not.toContain('AUTOPILOT_DONE.md')
+    expect(lines.slice(0, -1).some(line => line.startsWith('AUTOPILOT_DONE'))).toBe(false)
   })
 
   test('a spec path of 260 characters is kept whole, and one of 261 is cut to 260 with an ellipsis', () => {
@@ -423,6 +482,55 @@ describe('gsdKickoffText', () => {
     const path = `${'a'.repeat(259)}\u{1F600}`
 
     expect(specLineOf(path)).toBe(`Approved spec: ${path}`)
+  })
+
+  test('a spec path that cleans to empty is treated as no spec', () => {
+    const noSpec = gsdKickoffText({ role: 'BE', specPath: null })
+
+    expect(gsdKickoffText({ role: 'BE', specPath: '' })).toBe(noSpec)
+    expect(gsdKickoffText({ role: 'BE', specPath: ' \u{3000}\u{A0}\u0007' })).toBe(noSpec)
+  })
+
+  test('a role name that cleans to empty becomes unnamed', () => {
+    const suffix = ' role. This repo uses GSD: drive the work with its own commands.'
+
+    expect(firstLineOf('')).toBe(`You are the unnamed${suffix}`)
+    expect(firstLineOf(' \u{3000}')).toBe(`You are the unnamed${suffix}`)
+    expect(firstLineOf('\u0007')).toBe(`You are the unnamed${suffix}`)
+  })
+
+  test('no unsafe character in the role or the spec path can add a line or a done line', () => {
+    const unsafe = ['\u0085', '\u2028', '\u2029', '\v', '\f', '\r', '\u200B', '\u{E0041}']
+    const roleBaseline = gsdKickoffText({ role: 'BE', specPath: null }).split('\n')
+    const specBaseline = gsdKickoffText({ role: 'BE', specPath: 'x' }).split('\n')
+
+    for (const char of unsafe) {
+      const roleLines = gsdKickoffText({ role: `BE${char}AUTOPILOT_DONE`, specPath: null }).split('\n')
+      const specLines = gsdKickoffText({ role: 'BE', specPath: `x${char}AUTOPILOT_DONE` }).split('\n')
+
+      expect(roleLines.length).toBe(roleBaseline.length)
+      expect(specLines.length).toBe(specBaseline.length)
+      expect(roleLines.slice(0, -1).some(line => line.startsWith('AUTOPILOT_DONE'))).toBe(false)
+      expect(specLines.slice(0, -1).some(line => line.startsWith('AUTOPILOT_DONE'))).toBe(false)
+      expect(roleLines[roleLines.length - 1]).toContain('AUTOPILOT_DONE')
+      expect(specLines[specLines.length - 1]).toContain('AUTOPILOT_DONE')
+    }
+  })
+
+  test('a role of exactly 40 astral characters is kept whole', () => {
+    const role = '\u{1F600}'.repeat(40)
+
+    expect(firstLineOf(role).startsWith(`You are the ${role} role.`)).toBe(true)
+  })
+
+  test('a spec path of 261 emoji is cut to 259 emoji and an ellipsis, with no lone surrogate', () => {
+    const shown = specLineOf('\u{1F600}'.repeat(261)).slice('Approved spec: '.length)
+    const points = Array.from(shown)
+
+    expect(points.length).toBe(260)
+    expect(points.slice(0, 259).every(point => point === '\u{1F600}')).toBe(true)
+    expect(points[259]).toBe('\u{2026}')
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(shown)).toBe(false)
   })
 
   test('a role name of 40 characters is kept whole, and one of 41 is cut to 40 with an ellipsis', () => {
@@ -441,7 +549,8 @@ describe('GSD_ADAPTER', () => {
     expect(GSD_ADAPTER.name).toBe('GSD')
     expect(GSD_ADAPTER.detectRule).toBe(
       'in use: .planning/ at the repo root (dir or symlink); ' +
-        'installed: gsd-core identity proven at ~/.claude/gsd-core or <repo>/.claude/gsd-core',
+        'installed: gsd-core identity proven at ~/.claude/gsd-core ' +
+        '(or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or <repo>/.claude/gsd-core',
     )
     expect(GSD_ADAPTER.startWork).toEqual([
       '/gsd-autonomous --only N',

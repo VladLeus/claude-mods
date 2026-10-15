@@ -25,19 +25,20 @@ export const GSD_HOOK_NOTES: readonly AdapterFact[] = [
 ]
 
 /** The script extensions a GSD hook file may carry. A hook is matched by its name without one of them. */
+// Keep in step with the hook script pattern in facts.ts.
 const HOOK_EXTENSIONS: readonly string[] = ['.js', '.sh', '.cjs']
 
 /**
  * GSD's detection from the normalised Facts. A `.planning/` directory or symlink at the repo root means GSD is in use,
  * and in use beats installed. An install counts only when its identity is `proven`; `unknown` and `absent` never make
- * GSD installed (T-01-22). The version comes from the first proven install. The evidence is built from fixed templates,
- * and the version and dir are values that normalizeFacts has already validated.
+ * GSD installed (T-01-22). The version comes from the first proven install that has one. The evidence is built from
+ * fixed templates, and the version and dir are values that normalizeFacts has already validated.
  */
 export function detectGsd(facts: Facts): Detection {
   const planning = facts.repoEntries.find(isPlanningEntry)
   const proven = facts.gsd.filter(fact => fact.identity === 'proven')
   const installEvidenceLines = proven.map(installEvidence)
-  const version = proven.length > 0 ? proven[0].version : null
+  const version = proven.find(fact => fact.version !== null)?.version ?? null
 
   if (planning !== undefined) {
     return {
@@ -215,7 +216,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
 
 /** The last line of every GSD kickoff: the done answer autopilot waits for once the phase verifies. */
 const DONE_LINE =
-  'When the phase VERIFICATION.md has status: passed, ' + 'answer with a line that starts with AUTOPILOT_DONE.'
+  'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.'
 
 /** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
 const MAX_ROLE_CHARS = 40
@@ -225,6 +226,9 @@ const MAX_ROLE_CHARS = 40
  * path cannot be opened.
  */
 const MAX_SPEC_PATH_CHARS = 260
+
+/** The role word used when a role name has nothing left after cleaning and trimming. */
+const UNNAMED_ROLE = 'unnamed'
 
 /** Marks text that was cut to its cap. */
 const ELLIPSIS = '\u{2026}'
@@ -248,11 +252,13 @@ function cleanKickoffText(value: string, maxChars: number): string {
   return `${points.slice(0, maxChars - 1).join('')}${ELLIPSIS}`
 }
 
-/** The Approved spec line when the role has a spec; no line at all when it has no spec yet. */
+/** The Approved spec line when the role has a spec; no line when it has none yet or the path cleans to empty. */
 function approvedSpecLines(specPath: string | null): string[] {
   if (specPath === null) return []
+  const cleaned = cleanKickoffText(specPath, MAX_SPEC_PATH_CHARS)
+  if (cleaned.trim() === '') return []
 
-  return [`Approved spec: ${cleanKickoffText(specPath, MAX_SPEC_PATH_CHARS)}`]
+  return [`Approved spec: ${cleaned}`]
 }
 
 /**
@@ -261,7 +267,8 @@ function approvedSpecLines(specPath: string | null): string[] {
  * role and the spec path come from outside the adapter, so they are cleaned before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
-  const role = cleanKickoffText(ctx.role, MAX_ROLE_CHARS)
+  const cleanedRole = cleanKickoffText(ctx.role, MAX_ROLE_CHARS)
+  const role = cleanedRole.trim() === '' ? UNNAMED_ROLE : cleanedRole
 
   return [
     `You are the ${role} role. This repo uses GSD: drive the work with its own commands.`,
@@ -285,7 +292,8 @@ export const GSD_ADAPTER: FrameworkAdapter = {
   name: 'GSD',
   detectRule:
     'in use: .planning/ at the repo root (dir or symlink); ' +
-    'installed: gsd-core identity proven at ~/.claude/gsd-core or <repo>/.claude/gsd-core',
+    'installed: gsd-core identity proven at ~/.claude/gsd-core ' +
+    '(or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or <repo>/.claude/gsd-core',
   detect: detectGsd,
   startWork: [
     '/gsd-autonomous --only N',
