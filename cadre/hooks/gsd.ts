@@ -1,4 +1,4 @@
-import type { AdapterFact, Detection, Facts, GsdFact, RepoEntry } from '../types'
+import type { AdapterFact, Detection, Facts, Gate, GsdFact, RepoEntry, SettingProposal } from '../types'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
@@ -85,3 +85,22 @@ export function gsdHookFacts(facts: Facts): AdapterFact[] {
 
   return GSD_HOOK_NOTES.filter(hook => registered.has(hook.name)).map(hook => ({ ...hook }))
 }
+
+/**
+ * RED placeholder for GSD_GATES. One row that no test expects, so every Task 2 test fails on its assertion.
+ * Replaced in the GREEN commit.
+ */
+export const GSD_GATES: readonly Gate[] = [
+  {
+    id: 'STUB',
+    where: 'STUB',
+    kind: 'standing-rule',
+    decisionType: null,
+    needsHuman: false,
+    handling: 'standing-rule',
+    kickoff: '',
+  },
+]
+
+/** RED placeholder for GSD_AUTONOMY. */
+export const GSD_AUTONOMY: readonly SettingProposal[] = []

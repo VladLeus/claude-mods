@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
-import { detectGsd, GSD_HOOK_NOTES, gsdHookFacts } from './gsd'
+import { gateProblems } from './framework'
+import { detectGsd, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts } from './gsd'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -177,6 +178,160 @@ describe('gsdHookFacts', () => {
         note: 'rejects non-Conventional commit messages when enabled (this repo uses (type): Subject)',
       },
       { name: 'gsd-workflow-guard', note: 'advisory nag when enabled' },
+    ])
+  })
+})
+
+/** The kickoff text of one gate, by its id; an empty string when no gate has that id. */
+function kickoffOf(id: string): string {
+  const gate = GSD_GATES.find(row => row.id === id)
+
+  return gate === undefined ? '' : gate.kickoff
+}
+
+describe('GSD_GATES', () => {
+  test('the seven gate rows match D-14 verbatim, in order', () => {
+    expect(GSD_GATES).toEqual([
+      {
+        id: 'auq-menus',
+        where: 'AskUserQuestion menus inside GSD workflows',
+        kind: 'auq',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'autopilot-denies',
+        kickoff:
+          'Autopilot answers GSD menus with "decide yourself": ' +
+          'take the recommended option and log it in decisions.md.',
+      },
+      {
+        id: 'text-mode',
+        where: '.planning/config.json workflow.text_mode',
+        kind: 'plaintext',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'config-required',
+        kickoff: 'Needs workflow.text_mode false (an autonomy setting); with it true the role is attended.',
+      },
+      {
+        id: 'verify-work-uat',
+        where: '/gsd-verify-work',
+        kind: 'uat',
+        decisionType: 'QA',
+        needsHuman: true,
+        handling: 'escalate',
+        kickoff:
+          'Do not run /gsd-verify-work. Send human UAT as a QA decision to TL, ' +
+          'which queues it for the human.',
+      },
+      {
+        id: 'secure-phase-accept-risk',
+        where: '/gsd-secure-phase',
+        kind: 'auq',
+        decisionType: 'Security',
+        needsHuman: true,
+        handling: 'preapprove',
+        kickoff:
+          'Answer "Verify all open threats"; never accept a risk: ' +
+          'accepting risk is always queued for the human.',
+      },
+      {
+        id: 'needs-human-blocker',
+        where: 'STATE.md "Needs Human" blocker',
+        kind: 'plaintext',
+        decisionType: 'Arch',
+        needsHuman: false,
+        handling: 'escalate',
+        kickoff:
+          'Route the blocker by its content, by default as an Arch decision to TL; ' +
+          'TL decides reversible calls and queues the rest for the human.',
+      },
+      {
+        id: 'ship-merge-pr',
+        where: '/gsd-ship, branch finish, merge or PR',
+        kind: 'auq',
+        decisionType: 'Arch',
+        needsHuman: true,
+        handling: 'escalate',
+        kickoff:
+          'Never merge, push or release. Hand the finished branch to TL as an Arch decision; ' +
+          'merge, push and release are always queued for the human.',
+      },
+      {
+        id: 'scope-acceptance',
+        where: 'scope or acceptance questions in discuss and plan',
+        kind: 'chat',
+        decisionType: 'Product',
+        needsHuman: false,
+        handling: 'escalate',
+        kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
+      },
+    ])
+  })
+
+  test('the secure-phase-accept-risk kickoff pre-supplies only Verify all open threats', () => {
+    const kickoff = kickoffOf('secure-phase-accept-risk')
+
+    expect(kickoff).toContain('Verify all open threats')
+    expect(kickoff).toContain('never accept a risk')
+  })
+
+  test('the ship-merge-pr kickoff forbids merge, push and release', () => {
+    expect(kickoffOf('ship-merge-pr')).toContain('Never merge, push or release')
+  })
+
+  test('every gate has a kickoff, and no gate id repeats', () => {
+    const ids = GSD_GATES.map(gate => gate.id)
+
+    expect(ids.length).toBe(7)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(GSD_GATES.every(gate => gate.kickoff.trim() !== '')).toBe(true)
+  })
+
+  test('the gate table has no problems under the framework gate contract', () => {
+    expect(gateProblems([...GSD_GATES])).toEqual([])
+  })
+})
+
+describe('GSD_AUTONOMY', () => {
+  test('the three setting proposals are data only, in order, with their reads, writes and reasons', () => {
+    expect(GSD_AUTONOMY).toEqual([
+      {
+        kind: 'command',
+        key: 'mode',
+        read: ['gsd-tools', 'config-get', 'mode'],
+        write: ['gsd-tools', 'config-set', 'mode', 'yolo'],
+        to: 'yolo',
+        why: 'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
+        isRequired: true,
+      },
+      {
+        kind: 'command',
+        key: 'workflow.text_mode',
+        read: ['gsd-tools', 'config-get', 'workflow.text_mode'],
+        write: ['gsd-tools', 'config-set', 'workflow.text_mode', 'false'],
+        to: 'false',
+        why: 'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
+        isRequired: true,
+      },
+      {
+        kind: 'command',
+        key: 'hooks.context_warnings',
+        read: ['gsd-tools', 'config-get', 'hooks.context_warnings'],
+        write: ['gsd-tools', 'config-set', 'hooks.context_warnings', 'false'],
+        to: 'false',
+        why:
+          'only when gsd-statusline is the statusline: ' +
+          'gsd-context-monitor warnings conflict with the autopilot handoff',
+        isRequired: false,
+      },
+    ])
+  })
+
+  test('every proposed write goes through the GSD writer, gsd-tools config-set', () => {
+    expect(GSD_AUTONOMY.map(setting => setting.write.slice(0, 2))).toEqual([
+      ['gsd-tools', 'config-set'],
+      ['gsd-tools', 'config-set'],
+      ['gsd-tools', 'config-set'],
     ])
   })
 })
