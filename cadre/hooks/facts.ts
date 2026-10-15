@@ -1,4 +1,4 @@
-import type { EntryKind, Facts, RawFacts, RepoEntry } from '../types'
+import type { EntryKind, Facts, HookScript, PluginFlag, PluginVersion, RawFacts, RepoEntry, SettingsSource } from '../types'
 
 /** Code points a repo or docs entry name keeps; a longer name is cut with an ellipsis. */
 const MAX_NAME_CHARS = 255
@@ -69,4 +69,24 @@ export function normalizeFacts(raw: RawFacts): Facts {
     gsd: [],
     warnings: cleanWarnings(raw.warnings),
   }
+}
+
+/** RED placeholder (plan 01-04, task 2): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseEnabledPlugins(value: unknown, source: SettingsSource): PluginFlag[] {
+  return [{ key: 'STUB', source: 'local', value: false }]
+}
+
+/** RED placeholder (plan 01-04, task 2): a deliberately wrong value, so the tests fail on their assertions. */
+export function foldEnabledPlugins(flags: PluginFlag[]): PluginFlag[] {
+  return [{ key: 'STUB', source: 'local', value: false }]
+}
+
+/** RED placeholder (plan 01-04, task 2): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseHookScripts(value: unknown, source: SettingsSource): HookScript[] {
+  return [{ script: 'STUB', event: 'STUB', source: 'local' }]
+}
+
+/** RED placeholder (plan 01-04, task 2): a deliberately wrong value, so the tests fail on their assertions. */
+export function parseInstalledPlugins(value: unknown): PluginVersion[] {
+  return [{ key: 'STUB', version: 'STUB' }]
 }
