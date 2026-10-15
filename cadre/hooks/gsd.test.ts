@@ -224,7 +224,7 @@ describe('gsdHookFacts', () => {
     const hooks = facts({ hookScripts: [{ script: 'gsd-context-monitor.js', event: 'PostToolUse', source: 'user' }] })
     const returned = gsdHookFacts(hooks)
 
-    returned[0].note = 'changed'
+    Object.assign(returned[0], { note: 'changed' })
 
     expect(GSD_HOOK_NOTES[0].note).toBe('conflicts with the autopilot handoff')
   })

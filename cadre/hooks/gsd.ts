@@ -92,7 +92,7 @@ function hookNameOf(script: string): string | null {
  * The GSD_HOOK_NOTES entries whose hook settings register, in GSD_HOOK_NOTES order and once each, however many events
  * or settings sources register the same hook (D-05).
  */
-export function gsdHookFacts(facts: Facts): AdapterFact[] {
+export function gsdHookFacts(facts: Facts): readonly AdapterFact[] {
   const registered = new Set(facts.hookScripts.map(hook => hookNameOf(hook.script)))
 
   return GSD_HOOK_NOTES.filter(hook => registered.has(hook.name)).map(hook => ({ ...hook }))
