@@ -1,4 +1,4 @@
-import type { DecisionType, Detection, Facts, RepoEntry, UnsupportedMarker } from '../types'
+import type { Choice, DecisionType, Detection, Facts, FrameworkId, RepoEntry, UnsupportedMarker } from '../types'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this
@@ -57,4 +57,12 @@ export function detectUnsupported(facts: Facts): Detection[] {
 /** Whether the repo root has an entry with exactly this name that is a directory or a symlink to anything. */
 function hasDirOrLink(entries: RepoEntry[], name: string): boolean {
   return entries.some(entry => entry.name === name && (entry.kind === 'dir' || entry.isLink))
+}
+
+/** RED placeholder for Task 2: empty on purpose. Replaced in the GREEN commit. */
+export const SUPPORTED_IDS: readonly FrameworkId[] = []
+
+/** RED placeholder for Task 2: returns a wrong choice on purpose. Replaced in the GREEN commit. */
+export function chooseFramework(detections: Detection[], userPick: FrameworkId | null): Choice {
+  return { kind: 'STUB' } as unknown as Choice
 }
