@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Choice, Facts, GsdFact, HookScript, RepoEntry } from '../types'
-import { detectAll } from './adapters'
-import { choiceLine, detectReportLines, pad, STATUS_LABEL } from './render'
+import { ADAPTERS, detectAll } from './adapters'
+import { GSD_GATES } from './gsd'
+import { adaptersReportLines, choiceLine, detectReportLines, detectText, pad, STATUS_LABEL } from './render'
+import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 /** The superpowers plugin key this repo enables. */
 const SUPERPOWERS_KEY = 'superpowers@claude-plugins-official'
@@ -275,5 +277,109 @@ describe('report invariants', () => {
     expect(lines.slice(-1)).toEqual([
       'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
     ])
+  })
+})
+
+/** The three adapter headers, in the order the contract view shows them. */
+const ADAPTER_HEADERS = ['GSD (gsd)', 'superpowers (superpowers)', 'built-in (none)']
+
+/** The labels every adapter block shows exactly once, one per contract field (D-09). */
+const BLOCK_LABELS = [
+  '  detect:',
+  '  start work:',
+  '  spec files:',
+  '  plan files:',
+  '  verify:',
+  '  done signal:',
+  '  autonomy:',
+  '  kickoff (example for role BE):',
+  '  human gates:',
+]
+
+/**
+ * The lines of one adapter block, from its header line to the blank line that ends it. The last block runs to the end
+ * of the report, and a header that is not in the report gives no lines.
+ */
+function blockOf(lines: readonly string[], header: string): string[] {
+  const start = lines.indexOf(header)
+  if (start === -1) return []
+  const end = lines.indexOf('', start)
+
+  return lines.slice(start, end === -1 ? lines.length : end)
+}
+
+describe('adaptersReportLines', () => {
+  test('the three adapters appear in order: GSD, then superpowers, then the built-in fallback', () => {
+    const lines = adaptersReportLines(ADAPTERS)
+
+    expect(lines.filter(line => ADAPTER_HEADERS.includes(line))).toEqual(ADAPTER_HEADERS)
+  })
+
+  test('each adapter block shows every contract label exactly once', () => {
+    const lines = adaptersReportLines(ADAPTERS)
+
+    for (const header of ADAPTER_HEADERS) {
+      const block = blockOf(lines, header)
+      for (const label of BLOCK_LABELS) {
+        expect(block.filter(line => line.startsWith(label)).length).toBe(1)
+      }
+    }
+  })
+
+  test('the GSD gate table has its header, and the accept-risk gate is a Security gate that needs a human', () => {
+    const block = blockOf(adaptersReportLines(ADAPTERS), 'GSD (gsd)')
+    const row = block.find(line => line.startsWith('    secure-phase-accept-risk'))
+    const gate = GSD_GATES.find(entry => entry.id === 'secure-phase-accept-risk')
+
+    expect(block).toContain(`    ${pad('gate', 28)}${pad('type', 15)}${pad('human?', 8)}how the kickoff handles it`)
+    expect(row?.slice(32, 47).trim()).toBe('Security')
+    expect(row?.slice(47, 55).trim()).toBe('yes')
+    expect(row?.slice(55)).toBe(gate?.kickoff)
+  })
+
+  test('a standing-rule gate shows the type standing rule and no human', () => {
+    const block = blockOf(adaptersReportLines(ADAPTERS), 'superpowers (superpowers)')
+    const row = block.find(line => line.startsWith('    worktree-consent'))
+
+    expect(row?.slice(32, 47).trim()).toBe('standing rule')
+    expect(row?.slice(47, 55).trim()).toBe('no')
+  })
+
+  test('the GSD autonomy lines include mode -> yolo as required', () => {
+    const block = blockOf(adaptersReportLines(ADAPTERS), 'GSD (gsd)')
+
+    expect(block.some(line => line.includes('mode -> yolo (required)'))).toBe(true)
+  })
+
+  test('the superpowers autonomy line shows its autonomy note, since it declares no settings', () => {
+    const block = blockOf(adaptersReportLines(ADAPTERS), 'superpowers (superpowers)')
+
+    expect(block).toContain(`    ${SUPERPOWERS_ADAPTER.autonomyNote}`)
+  })
+
+  test('every line of an adapter kickoff appears in its block, indented by six spaces', () => {
+    const lines = adaptersReportLines(ADAPTERS)
+
+    for (const adapter of ADAPTERS) {
+      const block = blockOf(lines, `${adapter.name} (${adapter.id})`)
+      for (const line of adapter.kickoffText({ role: 'BE', specPath: null }).split('\n')) {
+        expect(block).toContain(`      ${line}`)
+      }
+    }
+  })
+})
+
+describe('detectText', () => {
+  test('without the flag it is the report alone, and with it the contract follows after a blank line', () => {
+    const repo = thisRepo()
+    const withContract = [
+      ...detectReportLines(repo),
+      '',
+      'Adapter contract (the same fields for every adapter):',
+      ...adaptersReportLines(ADAPTERS),
+    ]
+
+    expect(detectText(repo, false)).toBe(detectReportLines(repo).join('\n'))
+    expect(detectText(repo, true)).toBe(withContract.join('\n'))
   })
 })

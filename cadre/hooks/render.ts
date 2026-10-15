@@ -1,4 +1,4 @@
-import type { Choice, Detection, DetectStatus, Facts } from '../types'
+import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter } from '../types'
 import { detectAll } from './adapters'
 import { clean } from './facts'
 import { chooseFramework } from './framework'
@@ -108,4 +108,14 @@ export function detectReportLines(facts: Facts): string[] {
   if (notes.length > 0) lines.push(...notes, '')
 
   return [...lines, choiceLine(choice)]
+}
+
+/** RED placeholder for plan 01-08 Task 3: no contract view is rendered yet, so its tests fail on assertions. */
+export function adaptersReportLines(_adapters: readonly FrameworkAdapter[]): string[] {
+  return []
+}
+
+/** RED placeholder: an empty text, so the detectText tests fail on their assertions. */
+export function detectText(_facts: Facts, _isAdapters: boolean): string {
+  return ''
 }
