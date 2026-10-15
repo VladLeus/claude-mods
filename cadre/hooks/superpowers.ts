@@ -70,12 +70,17 @@ function versionOf(key: string, versions: readonly PluginVersion[]): string | nu
   return match === undefined ? null : match.version
 }
 
+/** Freezes a table and every row in it, so no caller can change the contract at runtime (T-01-27). */
+function freezeRows<T extends object>(rows: readonly T[]): readonly T[] {
+  return Object.freeze(rows.map(row => Object.freeze(row)))
+}
+
 /**
  * The places a superpowers role stops for a decision. Each kickoff says how the role answers the gate, or sends it on,
  * so the kickoff text can state it up front. Chat gates end a turn with no tool call, so each one is pre-answered or
  * owned (D-14, D-16). Merge, push, release and accepting a risk are always queued for the human (D-13, T-01-23).
  */
-export const SUPERPOWERS_GATES: readonly Gate[] = [
+export const SUPERPOWERS_GATES: readonly Gate[] = freezeRows([
   {
     id: 'brainstorm-hard-gate',
     where: 'superpowers:brainstorming hard gate',
@@ -154,7 +159,7 @@ export const SUPERPOWERS_GATES: readonly Gate[] = [
     handling: 'escalate',
     kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
   },
-]
+])
 
 /** The last line of every superpowers kickoff: the done answer autopilot waits for once every task is complete. */
 const DONE_LINE =
@@ -213,32 +218,35 @@ export function superpowersKickoffText(ctx: KickoffContext): string {
  * are the ones the role kickoff names, so the two stay in step. It declares no autonomy settings, and its note says
  * why.
  */
-export const SUPERPOWERS_ADAPTER: FrameworkAdapter = {
+export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   id: 'superpowers',
   name: 'superpowers',
   detectRule:
     'in use: docs/superpowers/ or .superpowers/ at the repo root; ' +
     'installed: an enabledPlugins key starting superpowers@ set to true',
   detect: detectSuperpowers,
-  startWork: ['superpowers:writing-plans <spec path> (BE/FE with a TL spec)', 'superpowers:brainstorming (TL/PM)'],
-  locations: {
-    spec: ['docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md'],
-    plan: ['docs/superpowers/plans/YYYY-MM-DD-<feature>.md'],
-  },
-  verify: [
+  startWork: Object.freeze([
+    'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
+    'superpowers:brainstorming (TL/PM)',
+  ]),
+  locations: Object.freeze({
+    spec: Object.freeze(['docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md']),
+    plan: Object.freeze(['docs/superpowers/plans/YYYY-MM-DD-<feature>.md']),
+  }),
+  verify: Object.freeze([
     'superpowers:requesting-code-review',
     'superpowers:verification-before-completion',
     "the project's test command",
-  ],
-  doneSignal: {
+  ]),
+  doneSignal: Object.freeze({
     artifact: '.superpowers/sdd/<plan workspace>/progress.md',
     check: 'every task has a "Task <N>: complete" line',
-  },
+  }),
   humanGates: SUPERPOWERS_GATES,
-  autonomy: [],
+  autonomy: Object.freeze([]),
   autonomyNote:
     'No config file: autonomy comes only from the kickoff text. ' +
     'Chat gates end a turn with no tool call, and autopilot pauses after 2 such turns, ' +
     'so the kickoff pre-answers every gate.',
   kickoffText: superpowersKickoffText,
-}
+})

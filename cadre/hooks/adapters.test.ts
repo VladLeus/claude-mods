@@ -8,10 +8,29 @@ describe('ADAPTERS', () => {
     expect(ADAPTERS.map(adapter => adapter.id)).toEqual(['gsd', 'superpowers', 'none'])
   })
 
-  test('the list and each adapter in it are frozen, so repeated or concurrent detect runs share one contract', () => {
+  test('the list is frozen, so repeated or concurrent detect runs share one contract', () => {
     expect(Object.isFrozen(ADAPTERS)).toBe(true)
+  })
+
+  test('each adapter is deep-frozen: its object, its tables and every row in them', () => {
     for (const adapter of ADAPTERS) {
       expect(Object.isFrozen(adapter)).toBe(true)
+      expect(Object.isFrozen(adapter.humanGates)).toBe(true)
+      for (const gate of adapter.humanGates) {
+        expect(Object.isFrozen(gate)).toBe(true)
+      }
+      expect(Object.isFrozen(adapter.autonomy)).toBe(true)
+      for (const proposal of adapter.autonomy) {
+        expect(Object.isFrozen(proposal)).toBe(true)
+        expect(Object.isFrozen(proposal.read)).toBe(true)
+        expect(Object.isFrozen(proposal.write)).toBe(true)
+      }
+      expect(Object.isFrozen(adapter.startWork)).toBe(true)
+      expect(Object.isFrozen(adapter.verify)).toBe(true)
+      expect(Object.isFrozen(adapter.locations)).toBe(true)
+      expect(Object.isFrozen(adapter.locations.spec)).toBe(true)
+      expect(Object.isFrozen(adapter.locations.plan)).toBe(true)
+      expect(Object.isFrozen(adapter.doneSignal)).toBe(true)
     }
   })
 })

@@ -11,11 +11,16 @@ import type {
 } from '../types'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
+/** Freezes a table and every row in it, so no caller can change the contract at runtime (T-01-27). */
+function freezeRows<T extends object>(rows: readonly T[]): readonly T[] {
+  return Object.freeze(rows.map(row => Object.freeze(row)))
+}
+
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
  * the role. A hook is listed only when settings register it (D-05).
  */
-export const GSD_HOOK_NOTES: readonly AdapterFact[] = [
+export const GSD_HOOK_NOTES: readonly AdapterFact[] = freezeRows([
   { name: 'gsd-context-monitor', note: 'conflicts with the autopilot handoff' },
   { name: 'gsd-secret-read-guard', note: 'useful for Security' },
   {
@@ -23,7 +28,7 @@ export const GSD_HOOK_NOTES: readonly AdapterFact[] = [
     note: 'rejects non-Conventional commit messages when enabled (this repo uses (type): Subject)',
   },
   { name: 'gsd-workflow-guard', note: 'advisory nag when enabled' },
-]
+])
 
 /** The script extensions a GSD hook file may carry. A hook is matched by its name without one of them. */
 // Keep in step with the hook script pattern in facts.ts.
@@ -102,7 +107,7 @@ export function gsdHookFacts(facts: Facts): readonly AdapterFact[] {
  * The places a GSD role stops for a decision (D-14). `needsHuman` is true when no pre-supplied answer can replace the
  * person. Each kickoff says how the role answers the gate, or sends it on, so the kickoff text can state it up front.
  */
-export const GSD_GATES: readonly Gate[] = [
+export const GSD_GATES: readonly Gate[] = freezeRows([
   {
     id: 'auq-menus',
     where: 'AskUserQuestion menus inside GSD workflows',
@@ -176,19 +181,19 @@ export const GSD_GATES: readonly Gate[] = [
     handling: 'escalate',
     kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
   },
-]
+])
 
 /**
  * The GSD settings an autonomous role needs, as proposals only: Phase 1 describes them and nothing runs them. Each
  * write goes through GSD's own writer, `gsd-tools config-set`, and `isRequired` is true when autonomy cannot work
  * without the change (T-01-21).
  */
-export const GSD_AUTONOMY: readonly SettingProposal[] = [
+export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'mode',
-    read: ['gsd-tools', 'config-get', 'mode'],
-    write: ['gsd-tools', 'config-set', 'mode', 'yolo'],
+    read: Object.freeze(['gsd-tools', 'config-get', 'mode']),
+    write: Object.freeze(['gsd-tools', 'config-set', 'mode', 'yolo']),
     to: 'yolo',
     why: 'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
     isRequired: true,
@@ -196,8 +201,8 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
   {
     kind: 'command',
     key: 'workflow.text_mode',
-    read: ['gsd-tools', 'config-get', 'workflow.text_mode'],
-    write: ['gsd-tools', 'config-set', 'workflow.text_mode', 'false'],
+    read: Object.freeze(['gsd-tools', 'config-get', 'workflow.text_mode']),
+    write: Object.freeze(['gsd-tools', 'config-set', 'workflow.text_mode', 'false']),
     to: 'false',
     why: 'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
     isRequired: true,
@@ -205,15 +210,15 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
   {
     kind: 'command',
     key: 'hooks.context_warnings',
-    read: ['gsd-tools', 'config-get', 'hooks.context_warnings'],
-    write: ['gsd-tools', 'config-set', 'hooks.context_warnings', 'false'],
+    read: Object.freeze(['gsd-tools', 'config-get', 'hooks.context_warnings']),
+    write: Object.freeze(['gsd-tools', 'config-set', 'hooks.context_warnings', 'false']),
     to: 'false',
     why:
       'only when gsd-statusline is the statusline: ' +
       'gsd-context-monitor warnings conflict with the autopilot handoff',
     isRequired: false,
   },
-]
+])
 
 /** The last line of every GSD kickoff: the done answer autopilot waits for once the phase verifies. */
 const DONE_LINE =
@@ -253,7 +258,7 @@ export function gsdKickoffText(ctx: KickoffContext): string {
  * The GSD adapter: the contract every framework implements, filled for GSD. Its start, locate, verify and done entries
  * are the ones the role kickoff names, so the two stay in step.
  */
-export const GSD_ADAPTER: FrameworkAdapter = {
+export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   id: 'gsd',
   name: 'GSD',
   detectRule:
@@ -261,23 +266,27 @@ export const GSD_ADAPTER: FrameworkAdapter = {
     'installed: gsd-core identity proven at ~/.claude/gsd-core ' +
     '(or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or <repo>/.claude/gsd-core',
   detect: detectGsd,
-  startWork: [
+  startWork: Object.freeze([
     '/gsd-autonomous --only N',
     '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
     '/gsd-new-project (no .planning/ yet)',
-  ],
-  locations: {
-    spec: ['.planning/REQUIREMENTS.md', '.planning/ROADMAP.md', '.planning/phases/<NN-slug>/*-CONTEXT.md'],
-    plan: ['.planning/phases/<NN-slug>/*-PLAN.md'],
-  },
-  verify: ['/gsd-validate-phase N', '/gsd-code-review N', 'the verifier inside /gsd-execute-phase'],
-  doneSignal: {
+  ]),
+  locations: Object.freeze({
+    spec: Object.freeze([
+      '.planning/REQUIREMENTS.md',
+      '.planning/ROADMAP.md',
+      '.planning/phases/<NN-slug>/*-CONTEXT.md',
+    ]),
+    plan: Object.freeze(['.planning/phases/<NN-slug>/*-PLAN.md']),
+  }),
+  verify: Object.freeze(['/gsd-validate-phase N', '/gsd-code-review N', 'the verifier inside /gsd-execute-phase']),
+  doneSignal: Object.freeze({
     artifact: '.planning/phases/<NN-slug>/*-VERIFICATION.md',
     check: 'frontmatter status: passed',
-  },
+  }),
   humanGates: GSD_GATES,
   autonomy: GSD_AUTONOMY,
   autonomyNote: null,
   kickoffText: gsdKickoffText,
   roleFacts: gsdHookFacts,
-}
+})
