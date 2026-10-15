@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
 import { detectGsd, GSD_ADAPTER, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts, gsdKickoffText } from './gsd'
+import { DONE_MARKER_LINE } from './kickoff'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -404,9 +405,6 @@ function firstLineOf(role: string): string {
 function specLineOf(specPath: string): string {
   return gsdKickoffText({ role: 'BE', specPath }).split('\n')[1]
 }
-
-/** The rule autopilot uses to spot its done marker (autopilot.ts isDoneAnswer): the marker at a line start. */
-const DONE_MARKER_LINE = /^[ \t]*AUTOPILOT_DONE\b/m
 
 /** Whether any of the lines would read to autopilot as its done marker. */
 function hasDoneLine(lines: string[]): boolean {

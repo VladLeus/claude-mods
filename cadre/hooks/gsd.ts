@@ -9,6 +9,7 @@ import type {
   RepoEntry,
   SettingProposal,
 } from '../types'
+import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
@@ -218,45 +219,11 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = [
 const DONE_LINE =
   'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.'
 
-/** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
-const MAX_ROLE_CHARS = 40
-
-/**
- * The spec path cap, counted in code points. It is about the Windows MAX_PATH limit, beyond which a legacy Windows
- * path cannot be opened.
- */
-const MAX_SPEC_PATH_CHARS = 260
-
-/** The role word used when a role name has nothing left after cleaning and trimming. */
-const UNNAMED_ROLE = 'unnamed'
-
-/** Marks text that was cut to its cap. */
-const ELLIPSIS = '\u{2026}'
-
-/**
- * Characters that can split a kickoff line or hide text: control, format, surrogate, private-use, and line and
- * paragraph separators. They are removed from any text that comes from outside the adapter.
- */
-const UNSAFE_KICKOFF_TEXT = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu
-
-/**
- * Text from outside the adapter, such as a role name or a repo path, as it may appear in a kickoff. Unsafe characters
- * are removed, so the text cannot start a new kickoff line or hide itself. The rest is cut to maxChars code points, and
- * a cut ends in an ellipsis.
- */
-function cleanKickoffText(value: string, maxChars: number): string {
-  const stripped = value.replace(UNSAFE_KICKOFF_TEXT, '')
-  const points = Array.from(stripped)
-  if (points.length <= maxChars) return stripped
-
-  return `${points.slice(0, maxChars - 1).join('')}${ELLIPSIS}`
-}
-
 /** The Approved spec line when the role has a spec; no line when it has none yet or the path cleans to empty. */
 function approvedSpecLines(specPath: string | null): string[] {
   if (specPath === null) return []
-  const cleaned = cleanKickoffText(specPath, MAX_SPEC_PATH_CHARS)
-  if (cleaned.trim() === '') return []
+  const cleaned = cleanKickoffTextOr(specPath, MAX_SPEC_PATH_CHARS, null)
+  if (cleaned === null) return []
 
   return [`Approved spec: ${cleaned}`]
 }
@@ -267,8 +234,7 @@ function approvedSpecLines(specPath: string | null): string[] {
  * role and the spec path come from outside the adapter, so they are cleaned before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
-  const cleanedRole = cleanKickoffText(ctx.role, MAX_ROLE_CHARS)
-  const role = cleanedRole.trim() === '' ? UNNAMED_ROLE : cleanedRole
+  const role = cleanKickoffTextOr(ctx.role, MAX_ROLE_CHARS, UNNAMED_ROLE)
 
   return [
     `You are the ${role} role. This repo uses GSD: drive the work with its own commands.`,

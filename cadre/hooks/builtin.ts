@@ -1,4 +1,5 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
+import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is
@@ -35,56 +36,20 @@ export const BUILTIN_GATES: readonly Gate[] = [
   },
 ]
 
-/** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
-const MAX_ROLE_CHARS = 40
-
-/**
- * The spec path cap, counted in code points. It is about the Windows MAX_PATH limit, beyond which a legacy Windows
- * path cannot be opened.
- */
-const MAX_SPEC_PATH_CHARS = 260
-
-/** The role word used when a role name has nothing left after cleaning and trimming. */
-const UNNAMED_ROLE = 'unnamed'
-
-/** Marks text that was cut to its cap. */
-const ELLIPSIS = '\u{2026}'
-
-/**
- * Characters that can split a kickoff line or hide text: control, format, surrogate, private-use, and line and
- * paragraph separators. They are removed from any text that comes from outside the adapter.
- */
-const UNSAFE_KICKOFF_TEXT = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu
-
-/**
- * Text from outside the adapter, such as a role name or a repo path, as it may appear in a kickoff. Unsafe characters
- * are removed, so the text cannot start a new kickoff line or hide itself. The rest is cut to maxChars code points, and
- * a cut ends in an ellipsis.
- */
-function cleanKickoffText(value: string, maxChars: number): string {
-  const stripped = value.replace(UNSAFE_KICKOFF_TEXT, '')
-  const points = Array.from(stripped)
-  if (points.length <= maxChars) return stripped
-
-  return `${points.slice(0, maxChars - 1).join('')}${ELLIPSIS}`
-}
-
 /**
  * The role folder under `.cadre/`: the role name lowercased, cleaned and capped, or `unnamed` when nothing is left once
  * cleaned and trimmed, so the folder is never an empty path segment. A slash in a role name is not checked here; role
  * ids are validated where the role template is built (D-15).
  */
 function roleFolder(role: string): string {
-  const cleaned = cleanKickoffText(role.toLowerCase(), MAX_ROLE_CHARS)
-
-  return cleaned.trim() === '' ? UNNAMED_ROLE : cleaned
+  return cleanKickoffTextOr(role.toLowerCase(), MAX_ROLE_CHARS, UNNAMED_ROLE)
 }
 
 /** The Spec line when the role has a spec path that cleans to something; no line when it has none. */
 function specLines(specPath: string | null): string[] {
   if (specPath === null) return []
-  const cleaned = cleanKickoffText(specPath, MAX_SPEC_PATH_CHARS)
-  if (cleaned.trim() === '') return []
+  const cleaned = cleanKickoffTextOr(specPath, MAX_SPEC_PATH_CHARS, null)
+  if (cleaned === null) return []
 
   return [`Spec: ${cleaned}`]
 }
