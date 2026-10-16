@@ -622,7 +622,8 @@ describe('register with a faked host', () => {
       files: {
         ...base.files,
         '/home/u/.claude/plugins/installed_plugins.json':
-          '{"version":2,"plugins":{"superpowers@x":[{"scope":"project","projectPath":"/link/repo","version":"4.0.0"}]}}',
+          '{"version":2,"plugins":{"superpowers@x":' +
+          '[{"scope":"project","projectPath":"/link/repo","version":"4.0.0"}]}}',
       },
       settings: { user: { enabledPlugins: { 'superpowers@x': true } }, project: {}, local: {} },
     }
