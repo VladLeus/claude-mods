@@ -670,12 +670,12 @@ describe('register with a faked host', () => {
   })
 
   test('a .planning entry with a hidden character never makes GSD in use (WR-03)', async ($, on) => {
-    const faked = { ...ambiguousWorld(), listings: { '/repo': [entry('.planning​', 'dir')] }, files: {}, dirs: [] }
+    const faked = { ...ambiguousWorld(), listings: { '/repo': [entry('.planning\u200B', 'dir')] }, files: {}, dirs: [] }
     fakeHost(on, faked, newLog())
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(rowOf(out.text, 'GSD')).toContain('not found')
     expect(out.text).toContain('Warning: ignored repo entry ".planning": its name has hidden characters or is too long')
-    expect(out.text).not.toContain('​')
+    expect(out.text).not.toContain('\u200B')
   })
 
   test('a CLAUDE_CONFIG_DIR outside home is shown as $CLAUDE_CONFIG_DIR, never as its path (IN-03)', async ($, on) => {

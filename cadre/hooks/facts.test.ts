@@ -181,8 +181,8 @@ describe('parseRepoEntries', () => {
 
 describe('names that clean would change (WR-03)', () => {
   test('a name with a zero-width, bidi or line-break character is changed by clean', () => {
-    expect(isChangedByClean('.planning​', 255)).toBe(true)
-    expect(isChangedByClean('_bmad⁠', 255)).toBe(true)
+    expect(isChangedByClean('.planning\u200B', 255)).toBe(true)
+    expect(isChangedByClean('_bmad\u2060', 255)).toBe(true)
     expect(isChangedByClean('a\nb', 255)).toBe(true)
   })
 
@@ -195,7 +195,7 @@ describe('names that clean would change (WR-03)', () => {
   test('a listing entry whose name has hidden characters is dropped, so it can never be a marker', () => {
     expect(
       parseRepoEntries([
-        { name: '.planning​', kind: 'dir', isLink: false },
+        { name: '.planning\u200B', kind: 'dir', isLink: false },
         { name: 'src', kind: 'dir', isLink: false },
       ]),
     ).toEqual([{ name: 'src', kind: 'dir', isLink: false }])
@@ -205,11 +205,11 @@ describe('names that clean would change (WR-03)', () => {
     const facts = normalizeFacts(
       raw({
         repoEntries: [
-          { name: '.planning​', kind: 'dir', isLink: false },
-          { name: '_bmad⁠', kind: 'dir', isLink: false },
+          { name: '.planning\u200B', kind: 'dir', isLink: false },
+          { name: '_bmad\u2060', kind: 'dir', isLink: false },
         ],
-        docsEntries: [{ name: 'super‍powers', kind: 'dir', isLink: false }],
-        settings: [{ source: 'user', value: { enabledPlugins: { 'super​powers@evil': true } } }],
+        docsEntries: [{ name: 'super\u200Dpowers', kind: 'dir', isLink: false }],
+        settings: [{ source: 'user', value: { enabledPlugins: { 'super\u200Bpowers@evil': true } } }],
       }),
     )
     expect(facts.repoEntries).toEqual([])
@@ -227,21 +227,21 @@ describe('names that clean would change (WR-03)', () => {
     const facts = normalizeFacts(raw({ repoEntries: [{ name: 'n'.repeat(256), kind: 'dir', isLink: false }] }))
     expect(facts.repoEntries).toEqual([])
     expect(facts.warnings).toEqual([
-      `ignored repo entry "${'n'.repeat(59)}…": its name has hidden characters or is too long`,
+      `ignored repo entry "${'n'.repeat(59)}\u2026": its name has hidden characters or is too long`,
     ])
   })
 
   test('at most five changed names are named per kind, and the rest are counted', () => {
-    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}​`)
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}\u200B`)
     const warnings = hiddenNameWarnings(names, 'repo entry', 255)
     expect(warnings).toHaveLength(6)
     expect(warnings[5]).toBe('ignored 2 more repo entry names with hidden characters or too long')
   })
 
   test('a changed name in a warning is cleaned and capped at 60 code points', () => {
-    const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}​`], 'repo entry', 255)
-    expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}…": its name has hidden characters or is too long`)
-    expect(String(warning)).not.toContain('​')
+    const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}\u200B`], 'repo entry', 255)
+    expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}\u2026": its name has hidden characters or is too long`)
+    expect(String(warning)).not.toContain('\u200B')
   })
 })
 
@@ -476,7 +476,7 @@ describe('parseInstalledPlugins', () => {
 
   test('a key with hidden characters is dropped (WR-03)', () => {
     const installed = parseInstalledPlugins(
-      { plugins: { 'superpowers@x​': [{ scope: 'user', version: '1.0.0' }] } },
+      { plugins: { 'superpowers@x\u200B': [{ scope: 'user', version: '1.0.0' }] } },
       '/repo',
     )
     expect(installed).toEqual([])
