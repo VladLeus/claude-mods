@@ -57,6 +57,20 @@ const IDENTITY_SOURCE_PATTERN = /^\s*const packageName = "@opengsd\/gsd-core";\r
 const RUNTIME_IDENTITY_PREFIX = `{"packageName":"${GSD_PACKAGE_NAME}"`
 /** The locations a GSD candidate may carry; a candidate with any other location is skipped. */
 const GSD_LOCATIONS: readonly GsdLocation[] = ['user', 'project']
+
+/**
+ * Why the runtime identity check gave no answer, when cadre knows: `not-built` when the compiled runtime
+ * (`bin/lib/cli-exit.cjs`) is missing, so the call was not made (WR-01); `could-not-run` when the call threw, which
+ * covers node missing from PATH and a timeout alike (IN-05). It is local to the detect modules, so the shared types
+ * file stays as it is.
+ */
+export type RuntimeProblem = 'not-built' | 'could-not-run'
+
+/** A GSD candidate as register.tsx reads it: the shared raw shape plus the runtime problem, when one is known. */
+export type ProbedGsdCandidate = RawGsdCandidate & { readonly runtimeProblem: RuntimeProblem | null }
+
+/** The runtime problems a candidate may carry; any other value counts as no known problem. */
+const RUNTIME_PROBLEMS: readonly RuntimeProblem[] = ['not-built', 'could-not-run']
 /** Reply when the session root is the home folder or contains it; detection would read the whole home. */
 export const HOME_ROOT_REPLY =
   'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
@@ -406,18 +420,43 @@ export function parseGsdManifest(value: unknown): { version: string } | null {
 }
 
 /**
+ * The compiled runtime file of a GSD install. When it is missing, gsd-tools would build its runtime and write files on
+ * start, so the runtime identity call is not made (WR-01). register.tsx checks it with `$.fs.exists`.
+ */
+export function runtimeBuiltPath(target: GsdReadTarget): string {
+  return `${target.dir}/bin/lib/cli-exit.cjs`
+}
+
+/**
  * The argv that asks a user-level GSD install for its runtime identity, or null. Only the user-level candidate is
- * ever run, and only when it is present and its identity module does not already prove it. A repo-local candidate
- * is never run: a repo must not get code execution from its own files (D-28).
+ * ever run, and only when it is present, its compiled runtime is built (WR-01), and its identity module does not
+ * already prove it. A repo-local candidate is never run: a repo must not get code execution from its own files (D-28).
+ * register.tsx runs it with the GSD folder as the working folder, never the repo.
  */
 export function runtimeIdentityArgv(
   target: GsdReadTarget,
   identityText: string | null,
   isPresent: boolean,
+  isBuilt: boolean,
 ): string[] | null {
-  if (target.location !== 'user' || !isPresent || isGsdIdentitySource(identityText)) return null
+  if (target.location !== 'user' || !isPresent || !isBuilt || isGsdIdentitySource(identityText)) return null
 
   return ['node', `${target.dir}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+}
+
+/**
+ * `not-built` when the runtime identity call would be made but the compiled runtime is missing, so it is skipped
+ * (WR-01); null otherwise.
+ */
+export function runtimeSkipProblem(
+  target: GsdReadTarget,
+  identityText: string | null,
+  isPresent: boolean,
+  isBuilt: boolean,
+): RuntimeProblem | null {
+  if (isBuilt || runtimeIdentityArgv(target, identityText, isPresent, true) === null) return null
+
+  return 'not-built'
 }
 
 /**
@@ -448,16 +487,37 @@ function isUsableCandidate(candidate: unknown): candidate is RawGsdCandidate {
 }
 
 /**
+ * The runtime problem a candidate carries, read without trusting it: a known RuntimeProblem, else null. A candidate in
+ * the shared raw shape has no such field and gives null.
+ */
+function runtimeProblemOf(candidate: unknown): RuntimeProblem | null {
+  if (!isObject(candidate)) return null
+  const value = candidate.runtimeProblem
+
+  return RUNTIME_PROBLEMS.find(problem => problem === value) ?? null
+}
+
+/** The warning for a candidate nothing proves, with the known runtime problem when there is one (WR-01, IN-05). */
+function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
+  const prefix = `could not prove the GSD install at ${dir}`
+  if (problem === 'not-built') return `${prefix}: runtime not built (treated as unknown)`
+  if (problem === 'could-not-run') {
+    return `${prefix}: the identity call could not run (node missing, or it timed out) (treated as unknown)`
+  }
+
+  return `${prefix} (treated as unknown)`
+}
+
+/**
  * One GSD candidate as a fact. The version is the VERSION text, else the manifest, else the runtime identity.
- * A present install that nothing proves adds a warning, which names the install by its cleaned display path.
+ * A present install that nothing proves adds a warning, which names the install by its cleaned display path and the
+ * runtime problem when one is known.
  */
 function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, warnings: string[]): GsdFact {
   const dir = displayPath(candidate.dir, raw.home, raw.root)
   const runtime = parseRuntimeIdentity(candidate.runtimeStdout)
   const identity = identityOf(candidate, runtime !== null)
-  if (identity === 'unknown') {
-    warnings.push(clean(`could not prove the GSD install at ${dir} (treated as unknown)`, MAX_WARNING_CHARS))
-  }
+  if (identity === 'unknown') warnings.push(clean(unprovenWarning(dir, runtimeProblemOf(candidate)), MAX_WARNING_CHARS))
   const version = versionOf(candidate, runtime)
 
   return {

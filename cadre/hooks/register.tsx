@@ -10,8 +10,11 @@ import {
   normalizeFacts,
   parseRepoEntries,
   resolvedPath,
+  runtimeBuiltPath,
   runtimeIdentityArgv,
+  runtimeSkipProblem,
 } from './facts'
+import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { detectText } from './render'
 
 /** How long the user-level runtime identity call may run before it is given up. */
@@ -25,6 +28,15 @@ type ReadContext = {
   readonly home: string | null
   readonly warnings: string[]
 }
+
+/** What the runtime identity call gave: its stdout when it exited 0, and `could-not-run` when it threw. */
+type IdentityRun = {
+  readonly stdout: string | null
+  readonly problem: RuntimeProblem | null
+}
+
+/** The identity run of a call that was not made. */
+const NO_RUN: IdentityRun = { stdout: null, problem: null }
 
 /** The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolved them, with their warnings. */
 type Locations = {
@@ -141,25 +153,37 @@ async function settingsOf($: EngineInterface, read: ReadContext): Promise<RawFac
   return found
 }
 
-/** The stdout of the runtime identity call, or null when it was refused, failed or exited non-zero. */
-async function identityStdout($: EngineInterface, argv: readonly string[]): Promise<string | null> {
-  const result = await $.process.run(argv, { timeoutMs: IDENTITY_TIMEOUT_MS }).catch(() => null)
-  if (result === null || result.exitCode !== 0) return null
+/**
+ * The runtime identity call, run with the GSD folder as its working folder so it never runs in the repo (WR-01). A
+ * non-zero exit gives no stdout and no problem. Any throw (node missing, a timeout, a refusal) gives `could-not-run`;
+ * the error itself is never read (IN-05).
+ */
+async function identityRun($: EngineInterface, argv: readonly string[], cwd: string): Promise<IdentityRun> {
+  try {
+    const result = await $.process.run(argv, { cwd, timeoutMs: IDENTITY_TIMEOUT_MS })
 
-  return result.stdout
+    return { stdout: result.exitCode === 0 ? result.stdout : null, problem: null }
+  } catch {
+    return { stdout: null, problem: 'could-not-run' }
+  }
 }
 
 /**
  * One GSD candidate as the host reads it: its folder, its three static files, and the runtime identity stdout when
- * runtimeIdentityArgv allows the call, which is the user-level install only (D-28).
+ * runtimeIdentityArgv allows the call, which is the user-level install with a built runtime only (D-28, WR-01).
  */
-async function gsdCandidateOf($: EngineInterface, read: ReadContext, target: GsdReadTarget): Promise<RawGsdCandidate> {
+async function gsdCandidateOf(
+  $: EngineInterface,
+  read: ReadContext,
+  target: GsdReadTarget,
+): Promise<ProbedGsdCandidate> {
   const isPresent = await $.fs.exists(target.dir).catch(() => true)
   const versionText = await readText($, read, target.versionPath)
   const identityText = await readText($, read, target.identityPath)
   const manifest = await readJson($, read, target.manifestPath)
-  const argv = runtimeIdentityArgv(target, identityText, isPresent)
-  const runtimeStdout = argv === null ? null : await identityStdout($, argv)
+  const isBuilt = await $.fs.exists(runtimeBuiltPath(target)).catch(() => false)
+  const argv = runtimeIdentityArgv(target, identityText, isPresent, isBuilt)
+  const run = argv === null ? NO_RUN : await identityRun($, argv, target.dir)
 
   return {
     location: target.location,
@@ -168,8 +192,9 @@ async function gsdCandidateOf($: EngineInterface, read: ReadContext, target: Gsd
     versionText,
     identityText,
     manifest,
-    runtimeStdout,
+    runtimeStdout: run.stdout,
     runtimeTried: argv !== null,
+    runtimeProblem: runtimeSkipProblem(target, identityText, isPresent, isBuilt) ?? run.problem,
   }
 }
 
