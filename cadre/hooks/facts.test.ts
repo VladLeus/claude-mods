@@ -3,11 +3,14 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Facts, GsdReadTarget, RawFacts, RawGsdCandidate } from '../types'
 import {
   clean,
+  detectRefusal,
   displayPath,
   factReadPlan,
+  FILE_SYSTEM_ROOT_REPLY,
   foldEnabledPlugins,
   HOME_ROOT_REPLY,
   homeRootRefusal,
+  isFileInsideRoot,
   isGsdIdentitySource,
   isSafeConfigDir,
   normalizeFacts,
@@ -871,5 +874,48 @@ describe('resolvedPath', () => {
     const resolved = resolvedPath('/Users/someone/repo', undefined, 'the repo root')
     expect(String(resolved.warning)).toContain('could not resolve the repo root')
     expect(String(resolved.warning)).not.toContain('/Users/someone')
+  })
+})
+
+describe('detectRefusal (WR-06)', () => {
+  test('a root of / or one that trims to empty is refused, whatever HOME is', () => {
+    expect(detectRefusal(['/'], [null])).toBe(FILE_SYSTEM_ROOT_REPLY)
+    expect(detectRefusal(['/repo', '//'], ['/home/u'])).toBe(FILE_SYSTEM_ROOT_REPLY)
+    expect(detectRefusal([''], [])).toBe(FILE_SYSTEM_ROOT_REPLY)
+  })
+
+  test('a root used as given still meets a home that was resolved', () => {
+    expect(detectRefusal(['/home/u/', '/home/u/'], ['/home/u', '/data/u'])).toBe(HOME_ROOT_REPLY)
+  })
+
+  test('a resolved root that lands on the resolved home is refused', () => {
+    expect(detectRefusal(['/link/repo', '/data/u'], ['/home/u', '/data/u'])).toBe(HOME_ROOT_REPLY)
+  })
+
+  test('a repo beside the home folder, or no usable home at all, is not refused', () => {
+    expect(detectRefusal(['/repo', '/repo'], ['/home/u', '/home/u'])).toBeNull()
+    expect(detectRefusal(['/repo', '/repo'], [null, null])).toBeNull()
+  })
+})
+
+describe('isFileInsideRoot (WR-02)', () => {
+  test('a regular file whose real path is inside the root counts', () => {
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(true)
+  })
+
+  test('a file whose real path is outside the root does not, nor one beside it that shares a prefix', () => {
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/home/u/.ssh/id_ed25519' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo-other/VERSION' }, '/repo')).toBe(false)
+  })
+
+  test('a device, a FIFO or a folder (any kind but file) does not count', () => {
+    expect(isFileInsideRoot({ kind: 'other', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'dir', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(false)
+  })
+
+  test('a stat with no realPath, one on the root itself, or no stat at all does not count', () => {
+    expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
   })
 })

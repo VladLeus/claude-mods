@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { HOME_ROOT_REPLY } from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -31,6 +31,8 @@ type World = {
   readonly realPaths: Readonly<Record<string, string>>
   /** Paths whose stat refuses, although the path exists. */
   readonly denyStat: readonly string[]
+  /** The kind a path's stat answers when it is not the default: `file` for a file in `files`, else `dir`. */
+  readonly statKinds: Readonly<Record<string, FakeEntry['kind']>>
   readonly denySettings: readonly string[]
   /** What `process.run` answers; null makes the call refuse with `runtimeDeny`. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
@@ -97,6 +99,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     denyPaths: [],
     realPaths: { '/repo': '/repo', '/home/u': '/home/u' },
     denyStat: [],
+    statKinds: {},
     denySettings: [],
     runtime: null,
     runtimeDeny: 'no runtime in this world',
@@ -140,9 +143,14 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.ops.push(`fs.stat ${e.path} resolve=${String(e.resolve)}`)
     if (world.denyStat.includes(e.path)) return { deny: 'stat refused' }
     if (!Object.hasOwn(world.realPaths, e.path) && !hasPath(world, e.path)) return { deny: 'missing' }
-    const realPath = Object.hasOwn(world.realPaths, e.path) ? world.realPaths[e.path] : undefined
+    const isFile = Object.hasOwn(world.files, e.path)
+    // A file lands on itself unless realPaths says otherwise; a folder with no realPaths entry answers none.
+    const fileRealPath = isFile ? e.path : undefined
+    const realPath = Object.hasOwn(world.realPaths, e.path) ? world.realPaths[e.path] : fileRealPath
+    const defaultKind: FakeEntry['kind'] = isFile ? 'file' : 'dir'
+    const kind = Object.hasOwn(world.statKinds, e.path) ? world.statKinds[e.path] : defaultKind
 
-    return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath } : {}) } }
+    return { value: { kind, size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath } : {}) } }
   })
   on('settings.read', async (_$, e) => {
     log.ops.push(`settings.read ${e.source}`)
@@ -582,5 +590,82 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).not.toContain('the identity call could not run')
     expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+  })
+
+  test('a repo-local GSD file that links out of the repo is never read (WR-02)', async ($, on) => {
+    const log = newLog()
+    const base = ambiguousWorld()
+    const linkedOut = {
+      ...base,
+      files: { ...base.files, '/repo/.claude/gsd-core/VERSION': 'SENTINEL_KEY_MATERIAL' },
+      dirs: [...base.dirs, '/repo/.claude/gsd-core'],
+      realPaths: { ...base.realPaths, '/repo/.claude/gsd-core/VERSION': '/home/u/.ssh/id_ed25519' },
+    }
+    fakeHost(on, linkedOut, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.stat /repo/.claude/gsd-core/VERSION resolve=true')
+    expect(log.ops).not.toContain('fs.read /repo/.claude/gsd-core/VERSION')
+    expect(out.text).toContain(
+      'Warning: skipped <repo>/.claude/gsd-core/VERSION: not a regular file inside the repo (treated as unknown)',
+    )
+    expect(out.text).not.toContain('SENTINEL_KEY_MATERIAL')
+  })
+
+  test('a repo-local GSD file that is a device or a FIFO is never read (WR-02)', async ($, on) => {
+    const log = newLog()
+    const base = ambiguousWorld()
+    const statKinds: World['statKinds'] = { '/repo/.claude/gsd-file-manifest.json': 'other' }
+    const device = { ...base, files: { ...base.files, '/repo/.claude/gsd-file-manifest.json': '{}' }, statKinds }
+    fakeHost(on, device, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).not.toContain('fs.read /repo/.claude/gsd-file-manifest.json')
+    expect(out.text).toContain('Warning: skipped <repo>/.claude/gsd-file-manifest.json: not a regular file')
+  })
+
+  // Guard: passes before the fix by design; it proves the WR-02 check does not block a regular file inside the repo.
+  test('a regular repo-local GSD file inside the repo is still read (WR-02)', async ($, on) => {
+    const log = newLog()
+    const base = ambiguousWorld()
+    const inside = {
+      ...base,
+      files: { ...base.files, '/repo/.claude/gsd-core/VERSION': '1.16.0\n' },
+      dirs: [...base.dirs, '/repo/.claude/gsd-core'],
+    }
+    fakeHost(on, inside, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).toContain('fs.read /repo/.claude/gsd-core/VERSION')
+    expect(out.text).not.toContain('not a regular file inside the repo')
+  })
+
+  test('a root as given that equals HOME as resolved is refused (WR-06)', async ($, on) => {
+    const log = newLog()
+    const mixed = ambiguousWorld({
+      root: '/home/u',
+      env: { HOME: '/data/u' },
+      realPaths: { '/home/u': '/srv/u', '/data/u': '/home/u' },
+    })
+    fakeHost(on, mixed, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toBe(HOME_ROOT_REPLY)
+    expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
+  })
+
+  test('a session at the file system root is refused even with no HOME (WR-06)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld({ root: '/', env: {}, realPaths: { '/': '/' } }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toBe(FILE_SYSTEM_ROOT_REPLY)
+    expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
+  })
+
+  test('with HOME unset, detect still runs and warns that the home-folder check was skipped (WR-06)', async ($, on) => {
+    const noHome = ambiguousWorld({
+      env: { CLAUDE_CONFIG_DIR: '/opt/cfg' },
+      realPaths: { '/repo': '/repo', '/opt/cfg': '/opt/cfg' },
+    })
+    fakeHost(on, noHome, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('Warning: HOME is unset or not an absolute path: the home-folder check was skipped')
+    expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
   })
 })
