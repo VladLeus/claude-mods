@@ -289,7 +289,7 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
-  return detectText(normalizeFacts(await collectFacts($, locations), locations.configDir), isAdapters)
+  return detectText(normalizeFacts(await collectFacts($, locations), locations.configDir, locations.givenRoot), isAdapters)
 }
 
 export const register: Register = on => {

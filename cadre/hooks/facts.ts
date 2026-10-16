@@ -122,10 +122,11 @@ export function isChangedByClean(value: string, maxChars: number): boolean {
 
 /**
  * One warning per name that clean would change at `maxChars`, naming its cleaned form capped at MAX_HIDDEN_NAME_CHARS,
- * at most MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest. `kind` says what the names are.
+ * at most MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest. A name given twice, such as the same
+ * key in two settings files, counts once. `kind` says what the names are.
  */
 export function hiddenNameWarnings(names: readonly string[], kind: string, maxChars: number): string[] {
-  const changed = names.filter(name => isChangedByClean(name, maxChars))
+  const changed = Array.from(new Set(names.filter(name => isChangedByClean(name, maxChars))))
   const named = changed.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(name => {
     const shown = clean(name, MAX_HIDDEN_NAME_CHARS)
 
@@ -269,25 +270,33 @@ export function parseHookScripts(value: unknown, source: SettingsSource): HookSc
 
 /**
  * Whether an installed_plugins entry belongs to this repo: a `user` entry always does, a `project` or `local` entry
- * only when its projectPath is the repo root (trailing slashes ignored), and an entry with any other scope never does.
+ * only when its projectPath equals one of the root forms, as given or as resolved (trailing slashes ignored), and an
+ * entry with any other scope never does. A root form that trims to nothing matches nothing.
  */
-function isEntryForRoot(entry: Record<string, unknown>, root: string): boolean {
+function isEntryForRoot(entry: Record<string, unknown>, roots: readonly string[]): boolean {
   if (entry.scope === 'user') return true
   if (entry.scope !== 'project' && entry.scope !== 'local') return false
   const projectPath = entry.projectPath
   if (typeof projectPath !== 'string') return false
 
-  return trimSlash(projectPath) === trimSlash(root) && trimSlash(root) !== ''
+  return roots.some(root => {
+    const trimmed = trimSlash(root)
+    if (trimmed === null || trimmed === '') return false
+
+    return trimmed === trimSlash(projectPath)
+  })
 }
 
 /**
  * The usable version of a key's entries for this repo: the first `user` entry with a valid version, else the first
  * `project` or `local` entry for the repo root with one, else null. Another project's entry is never used (WR-04).
  */
-function installedVersionOf(entries: readonly unknown[], root: string): string | null {
-  const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, root))
-  const ordered = [...usable.filter(entry => entry.scope === 'user'), ...usable.filter(entry => entry.scope !== 'user')]
-  for (const entry of ordered) {
+function installedVersionOf(entries: readonly unknown[], roots: readonly string[]): string | null {
+  const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, roots))
+  // Stable order: every user entry first, then the project and local entries, each group in file order.
+  const userEntries = usable.filter(entry => entry.scope === 'user')
+  const repoEntries = usable.filter(entry => entry.scope !== 'user')
+  for (const entry of [...userEntries, ...repoEntries]) {
     const version = parseVersionText(entry.version)
     if (version !== null) return version
   }
@@ -297,15 +306,16 @@ function installedVersionOf(entries: readonly unknown[], root: string): string |
 
 /**
  * The version installed for this repo for each installed plugin key: user scope first, then a project or local entry
- * whose projectPath is the repo root (WR-04). A key that clean would change at 120 code points is dropped (WR-03).
- * Only the key and the version are kept: install paths, scopes and the rest of each entry are never read into Facts.
+ * whose projectPath is the repo root as resolved or as given (WR-04). A key that clean would change at 120 code points
+ * is dropped (WR-03). Only the key and the version are kept: install paths, scopes and the rest of each entry are never
+ * read into Facts.
  */
-export function parseInstalledPlugins(value: unknown, root: string): PluginVersion[] {
+export function parseInstalledPlugins(value: unknown, root: string, givenRoot: string = root): PluginVersion[] {
   if (!isObject(value) || !isObject(value.plugins)) return []
   const installed: PluginVersion[] = []
   for (const [key, entries] of Object.entries(value.plugins)) {
     if (key === '' || isChangedByClean(key, MAX_KEY_CHARS) || !Array.isArray(entries)) continue
-    const version = installedVersionOf(entries, root)
+    const version = installedVersionOf(entries, [root, givenRoot])
     if (version !== null) installed.push({ key, version })
   }
 
@@ -645,12 +655,13 @@ function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, configDir: string 
  * The only input detection reads: the host's raw reads turned into typed, cleaned Facts. Pure, so the same raw
  * read always gives the same Facts. No settings value other than enabled plugins and hook basenames is kept.
  * `configDir` is CLAUDE_CONFIG_DIR as the host resolved it, used only to show paths under it as
- * `$CLAUDE_CONFIG_DIR/...` (IN-03); it is a parameter so the shared RawFacts type stays as it is.
+ * `$CLAUDE_CONFIG_DIR/...` (IN-03); `givenRoot` is the session root before the host resolved it, which an installed
+ * plugin entry may name too (WR-04). Both are parameters so the shared RawFacts type stays as it is.
  */
-export function normalizeFacts(raw: RawFacts, configDir: string | null = null): Facts {
+export function normalizeFacts(raw: RawFacts, configDir: string | null = null, givenRoot: string = raw.root): Facts {
   const settings = orderedSettings(raw.settings)
   const flags = settings.flatMap(entry => parseEnabledPlugins(entry.value, entry.source))
-  const plugins = parseInstalledPlugins(raw.installedPlugins, raw.root)
+  const plugins = parseInstalledPlugins(raw.installedPlugins, raw.root, givenRoot)
   const gsdWarnings: string[] = []
   const gsd = usableCandidates(raw.gsd).map(candidate => gsdFactOf(candidate, raw, configDir, gsdWarnings))
   const hiddenWarnings = [
