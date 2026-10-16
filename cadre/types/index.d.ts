@@ -77,7 +77,10 @@ export type GsdLocation = 'user' | 'project'
 /** One GSD candidate install as the detection reports it. */
 export type GsdFact = {
   readonly location: GsdLocation
-  /** Display form only: `~/...` or `<repo>/...`. The absolute path is never stored. */
+  /**
+   * Display form only: `<repo>/...`, `~/...`, or `$CLAUDE_CONFIG_DIR/...` for a CLAUDE_CONFIG_DIR outside the home
+   * folder. Any other path would show cleaned as given, but detection reads no path outside those three folders.
+   */
   readonly dir: string
   /** The trimmed VERSION text; null when it could not be read. */
   readonly version: string | null
@@ -173,9 +176,12 @@ export type Gate = {
 export type SettingProposal = {
   readonly kind: 'command'
   readonly key: string
-  /** Commands that read the current value. */
+  /**
+   * The argv that reads the current value. `argv[0]` is a logical tool name such as `gsd-tools`, not an executable on
+   * PATH: the executor resolves it (for GSD, to `node <gsd dir>/bin/gsd-tools.cjs`).
+   */
   readonly read: readonly string[]
-  /** Commands that write the proposed value. */
+  /** The argv that writes the proposed value; `argv[0]` is a logical tool name, resolved the same way as for `read`. */
   readonly write: readonly string[]
   readonly to: string
   readonly why: string
