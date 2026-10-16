@@ -8,9 +8,11 @@ import {
   factReadPlan,
   FILE_SYSTEM_ROOT_REPLY,
   foldEnabledPlugins,
+  hiddenNameWarnings,
   HOME_ROOT_REPLY,
   homeRootRefusal,
   isFileInsideRoot,
+  isChangedByClean,
   isGsdIdentitySource,
   isSafeConfigDir,
   normalizeFacts,
@@ -63,6 +65,16 @@ function candidate(over: Partial<ProbedGsdCandidate>): ProbedGsdCandidate {
     runtimeProblem: null,
     ...over,
   }
+}
+
+/**
+ * Candidates as a host could send them, parsed from JSON: no field is trusted until normalizeFacts checks it (WR-05).
+ * Array.isArray narrows the parsed value, so no cast is needed to hand it over.
+ */
+function hostileCandidates(json: string): RawGsdCandidate[] {
+  const parsed: unknown = JSON.parse(json)
+
+  return Array.isArray(parsed) ? parsed : []
 }
 
 /** A raw host read with every list empty, the repo at /repo and the home folder at /home/u. */
@@ -149,10 +161,12 @@ describe('parseRepoEntries', () => {
     ).toEqual([{ name: 'docs', kind: 'file', isLink: false }])
   })
 
-  test('a name longer than 255 code points is cut to 255 with an ellipsis', () => {
-    const [entry] = parseRepoEntries([{ name: 'n'.repeat(256), kind: 'file', isLink: false }])
-    expect(Array.from(entry?.name ?? '')).toHaveLength(255)
-    expect(entry?.name.endsWith('\u2026')).toBe(true)
+  test('a name longer than 255 code points is dropped, because clean would cut it (WR-03 decision)', () => {
+    const entries = parseRepoEntries([
+      { name: 'n'.repeat(256), kind: 'file', isLink: false },
+      { name: 'src', kind: 'dir', isLink: false },
+    ])
+    expect(entries).toEqual([{ name: 'src', kind: 'dir', isLink: false }])
   })
 
   test('a name of exactly 255 code points is kept whole', () => {
@@ -162,6 +176,72 @@ describe('parseRepoEntries', () => {
   test('a value that is not an array gives no entries', () => {
     expect(parseRepoEntries(null)).toEqual([])
     expect(parseRepoEntries('x')).toEqual([])
+  })
+})
+
+describe('names that clean would change (WR-03)', () => {
+  test('a name with a zero-width, bidi or line-break character is changed by clean', () => {
+    expect(isChangedByClean('.planning​', 255)).toBe(true)
+    expect(isChangedByClean('_bmad⁠', 255)).toBe(true)
+    expect(isChangedByClean('a\nb', 255)).toBe(true)
+  })
+
+  test('a name over the cap is changed by clean, and a plain name at the cap is not', () => {
+    expect(isChangedByClean('n'.repeat(256), 255)).toBe(true)
+    expect(isChangedByClean('n'.repeat(255), 255)).toBe(false)
+    expect(isChangedByClean('.planning', 255)).toBe(false)
+  })
+
+  test('a listing entry whose name has hidden characters is dropped, so it can never be a marker', () => {
+    expect(
+      parseRepoEntries([
+        { name: '.planning​', kind: 'dir', isLink: false },
+        { name: 'src', kind: 'dir', isLink: false },
+      ]),
+    ).toEqual([{ name: 'src', kind: 'dir', isLink: false }])
+  })
+
+  test('normalizeFacts drops faked markers and plugin keys and warns with their cleaned names', () => {
+    const facts = normalizeFacts(
+      raw({
+        repoEntries: [
+          { name: '.planning​', kind: 'dir', isLink: false },
+          { name: '_bmad⁠', kind: 'dir', isLink: false },
+        ],
+        docsEntries: [{ name: 'super‍powers', kind: 'dir', isLink: false }],
+        settings: [{ source: 'user', value: { enabledPlugins: { 'super​powers@evil': true } } }],
+      }),
+    )
+    expect(facts.repoEntries).toEqual([])
+    expect(facts.docsEntries).toEqual([])
+    expect(facts.enabledPlugins).toEqual([])
+    expect(facts.warnings).toEqual([
+      'ignored repo entry ".planning": its name has hidden characters or is too long',
+      'ignored repo entry "_bmad": its name has hidden characters or is too long',
+      'ignored docs/ entry "superpowers": its name has hidden characters or is too long',
+      'ignored enabledPlugins key "superpowers@evil": its name has hidden characters or is too long',
+    ])
+  })
+
+  test('a repo entry over 255 code points is dropped with the same warning, its name capped at 60', () => {
+    const facts = normalizeFacts(raw({ repoEntries: [{ name: 'n'.repeat(256), kind: 'dir', isLink: false }] }))
+    expect(facts.repoEntries).toEqual([])
+    expect(facts.warnings).toEqual([
+      `ignored repo entry "${'n'.repeat(59)}…": its name has hidden characters or is too long`,
+    ])
+  })
+
+  test('at most five changed names are named per kind, and the rest are counted', () => {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}​`)
+    const warnings = hiddenNameWarnings(names, 'repo entry', 255)
+    expect(warnings).toHaveLength(6)
+    expect(warnings[5]).toBe('ignored 2 more repo entry names with hidden characters or too long')
+  })
+
+  test('a changed name in a warning is cleaned and capped at 60 code points', () => {
+    const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}​`], 'repo entry', 255)
+    expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}…": its name has hidden characters or is too long`)
+    expect(String(warning)).not.toContain('​')
   })
 })
 
@@ -206,19 +286,17 @@ describe('parseEnabledPlugins', () => {
     ])
   })
 
-  test('keeps a malformed key as written, and strips bidi and line-break characters from keys', () => {
+  test('keeps a malformed key as written, and drops a key with bidi or line-break characters (WR-03)', () => {
     const value = { enabledPlugins: { 'superpowers@x.': true, 'tool\u202E@a\nb': false } }
     expect(parseEnabledPlugins(value, 'project')).toEqual([
       { key: 'superpowers@x.', source: 'project', value: true },
-      { key: 'tool@ab', source: 'project', value: false },
     ])
   })
 
-  test('a key longer than 120 code points is cut to 120, and a key of exactly 120 is kept', () => {
+  test('a key longer than 120 code points is dropped, and a key of exactly 120 is kept (WR-03 decision)', () => {
     const value = { enabledPlugins: { [`${'k'.repeat(121)}`]: true, [`${'j'.repeat(120)}`]: true } }
     const keys = parseEnabledPlugins(value, 'user').map(flag => flag.key)
-    expect(keys[0]).toBe(`${'k'.repeat(119)}\u2026`)
-    expect(keys[1]).toBe('j'.repeat(120))
+    expect(keys).toEqual(['j'.repeat(120)])
   })
 
   test('gives no flags for null, for an array, or for an object without enabledPlugins', () => {
@@ -318,33 +396,90 @@ describe('parseHookScripts', () => {
 })
 
 describe('parseInstalledPlugins', () => {
-  test('a key longer than 120 code points is cut to 120 with an ellipsis', () => {
-    const installed = parseInstalledPlugins({ plugins: { [`${'k'.repeat(121)}`]: [{ version: '1.0.0' }] } })
-    expect(installed).toEqual([{ key: `${'k'.repeat(119)}\u2026`, version: '1.0.0' }])
+  test('a key longer than 120 code points is dropped (WR-03 decision)', () => {
+    const installed = parseInstalledPlugins(
+      { plugins: { [`${'k'.repeat(121)}`]: [{ scope: 'user', version: '1.0.0' }] } },
+      '/repo',
+    )
+    expect(installed).toEqual([])
   })
 
   test('gives the key and the version only, and the install path is never returned', () => {
-    const installed = parseInstalledPlugins({
-      version: 2,
-      plugins: {
-        'superpowers@claude-plugins-official': [{ scope: 'user', version: '6.4.1', installPath: '/Users/x' }],
+    const installed = parseInstalledPlugins(
+      {
+        version: 2,
+        plugins: {
+          'superpowers@claude-plugins-official': [{ scope: 'user', version: '6.4.1', installPath: '/Users/x' }],
+        },
       },
-    })
+      '/repo',
+    )
     expect(installed).toEqual([{ key: 'superpowers@claude-plugins-official', version: '6.4.1' }])
     expect(JSON.stringify(installed)).not.toContain('installPath')
   })
 
   test('the first entry with a usable version wins, and an entry without one is skipped', () => {
-    const installed = parseInstalledPlugins({
-      version: 2,
-      plugins: {
-        'superpowers@claude-plugins-official': [
-          { scope: 'user', version: 'latest' },
-          { scope: 'project', version: '6.4.1' },
-        ],
+    const installed = parseInstalledPlugins(
+      {
+        version: 2,
+        plugins: {
+          'superpowers@claude-plugins-official': [
+            { scope: 'user', version: 'latest' },
+            { scope: 'project', projectPath: '/repo', version: '6.4.1' },
+          ],
+        },
       },
-    })
+      '/repo',
+    )
     expect(installed).toEqual([{ key: 'superpowers@claude-plugins-official', version: '6.4.1' }])
+  })
+
+  test('a user entry wins over an earlier project entry for the same repo (WR-04)', () => {
+    const installed = parseInstalledPlugins(
+      {
+        plugins: {
+          'superpowers@x': [
+            { scope: 'project', projectPath: '/repo', version: '1.0.0' },
+            { scope: 'user', version: '2.0.0' },
+          ],
+        },
+      },
+      '/repo',
+    )
+    expect(installed).toEqual([{ key: 'superpowers@x', version: '2.0.0' }])
+  })
+
+  test("another project's entry is ignored, so its version never shows for this repo (WR-04)", () => {
+    const installed = parseInstalledPlugins(
+      { plugins: { 'superpowers@x': [{ scope: 'project', projectPath: '/other', version: '9.9.9' }] } },
+      '/repo',
+    )
+    expect(installed).toEqual([])
+  })
+
+  // Guard: passes before the fix by design; it proves the WR-04 scoping keeps this repo's local entry.
+  test('a local entry whose projectPath is the repo root counts, trailing slashes ignored (WR-04)', () => {
+    const installed = parseInstalledPlugins(
+      { plugins: { 'superpowers@x': [{ scope: 'local', projectPath: '/repo/', version: '3.0.0' }] } },
+      '/repo',
+    )
+    expect(installed).toEqual([{ key: 'superpowers@x', version: '3.0.0' }])
+  })
+
+  test('an entry with no scope or an unknown scope is ignored (WR-04)', () => {
+    const installed = parseInstalledPlugins(
+      { plugins: { 'a@b': [{ version: '1.0.0' }], 'c@d': [{ scope: 'managed', version: '1.0.0' }] } },
+      '/repo',
+    )
+    expect(installed).toEqual([])
+  })
+
+  test('a key with hidden characters is dropped (WR-03)', () => {
+    const installed = parseInstalledPlugins(
+      { plugins: { 'superpowers@x​': [{ scope: 'user', version: '1.0.0' }] } },
+      '/repo',
+    )
+    expect(installed).toEqual([])
   })
 })
 
@@ -409,6 +544,22 @@ describe('normalizeFacts with settings and plugins', () => {
     expect(serialized).not.toContain(SENTINEL)
     expect(serialized).not.toContain('/Users/someone')
     expect(serialized).not.toContain('installPath')
+  })
+
+  test("the installed version is picked for this repo's root, never another project's (WR-04)", () => {
+    const facts = normalizeFacts(
+      raw({
+        installedPlugins: {
+          plugins: {
+            'superpowers@x': [
+              { scope: 'project', projectPath: '/other', version: '9.9.9' },
+              { scope: 'local', projectPath: '/repo', version: '6.4.1' },
+            ],
+          },
+        },
+      }),
+    )
+    expect(facts.superpowersVersions).toEqual([{ key: 'superpowers@x', version: '6.4.1' }])
   })
 })
 
@@ -661,6 +812,15 @@ describe('displayPath', () => {
   test('the repo root is checked before home, so a repo inside home reads as <repo>', () => {
     expect(displayPath('/home/u/work/repo/.claude', '/home/u', '/home/u/work/repo')).toBe('<repo>/.claude')
   })
+
+  test('a path under a CLAUDE_CONFIG_DIR outside home reads as $CLAUDE_CONFIG_DIR (IN-03)', () => {
+    expect(displayPath('/opt/claude/gsd-core', '/home/u', '/repo', '/opt/claude/')).toBe('$CLAUDE_CONFIG_DIR/gsd-core')
+  })
+
+  test('home is checked before the config dir, and an unsafe config dir is never used', () => {
+    expect(displayPath('/home/u/.alt/gsd-core', '/home/u', '/repo', '/home/u/.alt')).toBe('~/.alt/gsd-core')
+    expect(displayPath('/opt/../x/gsd-core', '/home/u', '/repo', '/opt/../x')).toBe('/opt/../x/gsd-core')
+  })
 })
 
 describe('normalizeFacts with GSD candidates', () => {
@@ -815,6 +975,48 @@ describe('normalizeFacts with GSD candidates', () => {
       'could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
         '(node missing, or it timed out) (treated as unknown)',
     ])
+  })
+
+  test('a candidate isPresent that is not exactly true counts as absent (WR-05)', () => {
+    const gsd = hostileCandidates('[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":"no"}]')
+    const facts = normalizeFacts(raw({ gsd }))
+    expect(facts.gsd[0]?.identity).toBe('absent')
+    expect(facts.warnings).toEqual([])
+  })
+
+  test('an identityText that is not a string never proves an install (WR-05)', () => {
+    const json =
+      '[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":true,' +
+      '"identityText":["const packageName = \\"@opengsd/gsd-core\\";"]}]'
+    const facts = normalizeFacts(raw({ gsd: hostileCandidates(json) }))
+    expect(facts.gsd[0]?.identity).toBe('unknown')
+  })
+
+  test('runtimeTried, versionText, runtimeStdout and runtimeProblem of the wrong type are dropped (WR-05)', () => {
+    const json =
+      '[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":true,"runtimeTried":"yes",' +
+      '"versionText":1.16,"runtimeStdout":{"packageName":"@opengsd/gsd-core"},"runtimeProblem":"bogus"}]'
+    const facts = normalizeFacts(raw({ gsd: hostileCandidates(json) }))
+    expect(facts.gsd).toEqual([
+      { location: 'user', dir: '~/.claude/gsd-core', version: null, identity: 'unknown', runtimeIdentityTried: false },
+    ])
+    expect(facts.warnings).toEqual(['could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'])
+  })
+
+  test('a candidate under a CLAUDE_CONFIG_DIR outside home shows as $CLAUDE_CONFIG_DIR, never the path (IN-03)', () => {
+    const facts = normalizeFacts(
+      raw({
+        gsd: [candidate({ dir: '/opt/claude/gsd-core' })],
+        warnings: ['could not read /opt/claude/gsd-core/VERSION (treated as unknown)'],
+      }),
+      '/opt/claude',
+    )
+    expect(facts.gsd[0]?.dir).toBe('$CLAUDE_CONFIG_DIR/gsd-core')
+    expect(facts.warnings).toEqual([
+      'could not read $CLAUDE_CONFIG_DIR/gsd-core/VERSION (treated as unknown)',
+      'could not prove the GSD install at $CLAUDE_CONFIG_DIR/gsd-core (treated as unknown)',
+    ])
+    expect(JSON.stringify(facts)).not.toContain('/opt/claude')
   })
 
   test('the serialized Facts never carry the home folder or the repo root', () => {

@@ -92,7 +92,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
       '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
       '/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs': '',
       '/home/u/.claude/plugins/installed_plugins.json':
-        '{"plugins":{"superpowers@claude-plugins-official":[{"version":"6.4.1"}]}}',
+        '{"plugins":{"superpowers@claude-plugins-official":[{"scope":"user","version":"6.4.1"}]}}',
     },
     dirs: ['/home/u/.claude/gsd-core'],
     settings: { user: { enabledPlugins: { 'superpowers@claude-plugins-official': true } }, project: {}, local: {} },
@@ -667,5 +667,31 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toContain('Warning: HOME is unset or not an absolute path: the home-folder check was skipped')
     expect(out.text).toContain('Adapter: ambiguous: gsd, superpowers; init will ask')
+  })
+
+  test('a .planning entry with a hidden character never makes GSD in use (WR-03)', async ($, on) => {
+    const faked = { ...ambiguousWorld(), listings: { '/repo': [entry('.planning​', 'dir')] }, files: {}, dirs: [] }
+    fakeHost(on, faked, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(rowOf(out.text, 'GSD')).toContain('not found')
+    expect(out.text).toContain('Warning: ignored repo entry ".planning": its name has hidden characters or is too long')
+    expect(out.text).not.toContain('​')
+  })
+
+  test('a CLAUDE_CONFIG_DIR outside home is shown as $CLAUDE_CONFIG_DIR, never as its path (IN-03)', async ($, on) => {
+    const outside = {
+      ...ambiguousWorld(),
+      env: { HOME: '/home/u', CLAUDE_CONFIG_DIR: '/opt/cfg' },
+      realPaths: { '/repo': '/repo', '/home/u': '/home/u', '/opt/cfg': '/opt/cfg' },
+      files: {
+        '/opt/cfg/gsd-core/VERSION': '1.16.0\n',
+        '/opt/cfg/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
+      },
+      dirs: ['/opt/cfg/gsd-core'],
+    }
+    fakeHost(on, outside, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain('gsd-core 1.16.0 at $CLAUDE_CONFIG_DIR/gsd-core')
+    expect(out.text).not.toContain('/opt/cfg')
   })
 })
