@@ -148,6 +148,7 @@ Collaborators push branches to this repository. A PR from a fork works too, but 
   claude plugin validate autopilot
   claude plugin test autopilot
   ```
+- Type-check cadre with `npm ci --ignore-scripts && npm run typecheck:cadre`: strict tsc over the pure modules, tests and types (CI job `typecheck`). `claude plugin validate` does not type-check.
 - **Bump `version` in `.claude-plugin/plugin.json` and run `claude plugin update <mod>@local-mods` after a change.** `/reload-plugins` reads the folder, but a restarted Claude Code (the desktop app especially) loads the copy cached at the last install or update.
 - The engine writes the API's types beside each mod at `.claude-plugin/types/` (git-ignored); grep `claude-code/index.d.ts` there for events and `$` methods.
 - Logic worth testing lives in a plain module (`fleet.ts`, `autopilot.ts`); `register.tsx` holds the hooks.
