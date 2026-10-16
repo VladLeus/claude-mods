@@ -3,9 +3,11 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { GsdReadTarget, RawFacts, RawGsdCandidate, SettingsSource } from '../types'
 import { helpText, parseCommand } from './command'
 import {
+  detectRefusal,
   displayPath,
   factReadPlan,
-  homeRootRefusal,
+  HOME_UNUSABLE_WARNING,
+  isFileInsideRoot,
   MAX_READ_BYTES,
   normalizeFacts,
   parseRepoEntries,
@@ -38,11 +40,16 @@ type IdentityRun = {
 /** The identity run of a call that was not made. */
 const NO_RUN: IdentityRun = { stdout: null, problem: null }
 
-/** The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolved them, with their warnings. */
+/**
+ * The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolved them, with their warnings, plus the
+ * root and home as given, which the refusal checks too (WR-06).
+ */
 type Locations = {
   readonly root: string
   readonly home: string | null
   readonly configDir: string | null
+  readonly givenRoot: string
+  readonly givenHome: string | null
   readonly warnings: readonly string[]
 }
 
@@ -81,24 +88,49 @@ async function locationsOf($: EngineInterface, sessionRoot: string): Promise<Loc
   const warnings: string[] = []
   const root = await resolvedOf($, sessionRoot, 'the repo root', warnings)
   const home = await homeFolder($)
+  if (home === null) warnings.push(HOME_UNUSABLE_WARNING)
   const resolvedHome = home === null ? null : await resolvedOf($, home, 'the home folder', warnings)
+  const given = { givenRoot: sessionRoot, givenHome: home }
   const configDir = await configDirOf($)
   if (configDir === null || !configDir.startsWith('/')) {
-    return { root, home: resolvedHome, configDir, warnings }
+    return { root, home: resolvedHome, configDir, ...given, warnings }
   }
   const resolvedConfigDir = await resolvedOf($, configDir, 'CLAUDE_CONFIG_DIR', warnings)
 
-  return { root, home: resolvedHome, configDir: resolvedConfigDir, warnings }
+  return { root, home: resolvedHome, configDir: resolvedConfigDir, ...given, warnings }
+}
+
+/**
+ * Whether a repo file may be read: its stat, asked with `resolve`, shows a regular file whose real path is inside the
+ * resolved root (WR-02). A stat the host refuses counts as no.
+ */
+async function isSafeRepoFile($: EngineInterface, read: ReadContext, path: string): Promise<boolean> {
+  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined)
+
+  return isFileInsideRoot(stat, read.root)
 }
 
 /**
  * A text file's contents, or null. A missing file gives null quietly. A probe that fails counts as present, so the
- * read is still tried. A read that fails or answers a non-string, or a file over MAX_READ_BYTES, adds a warning and
+ * read is still tried. A repo file (`isRepoFile`) that is not a regular file inside the repo is skipped with a warning
+ * and never read (WR-02). A read that fails or answers a non-string, or a file over MAX_READ_BYTES, adds a warning and
  * gives null.
  */
-async function readText($: EngineInterface, read: ReadContext, path: string): Promise<string | null> {
+async function readText(
+  $: EngineInterface,
+  read: ReadContext,
+  path: string,
+  isRepoFile: boolean,
+): Promise<string | null> {
   const isThere = await $.fs.exists(path).catch(() => true)
   if (!isThere) return null
+  if (isRepoFile && !(await isSafeRepoFile($, read, path))) {
+    read.warnings.push(
+      `skipped ${displayPath(path, read.home, read.root)}: not a regular file inside the repo (treated as unknown)`,
+    )
+
+    return null
+  }
   const text = await $.fs.read(path).catch(() => null)
   if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > MAX_READ_BYTES) {
     read.warnings.push(`could not read ${displayPath(path, read.home, read.root)} (treated as unknown)`)
@@ -111,9 +143,10 @@ async function readText($: EngineInterface, read: ReadContext, path: string): Pr
 
 /**
  * A JSON file's parsed value, or null. A missing file gives null quietly; a file that does not parse adds a warning.
+ * A repo file follows the readText rule (WR-02).
  */
-async function readJson($: EngineInterface, read: ReadContext, path: string): Promise<unknown> {
-  const text = await readText($, read, path)
+async function readJson($: EngineInterface, read: ReadContext, path: string, isRepoFile: boolean): Promise<unknown> {
+  const text = await readText($, read, path, isRepoFile)
   if (text === null) return null
   try {
     return JSON.parse(text)
@@ -170,17 +203,19 @@ async function identityRun($: EngineInterface, argv: readonly string[], cwd: str
 
 /**
  * One GSD candidate as the host reads it: its folder, its three static files, and the runtime identity stdout when
- * runtimeIdentityArgv allows the call, which is the user-level install with a built runtime only (D-28, WR-01).
+ * runtimeIdentityArgv allows the call, which is the user-level install with a built runtime only (D-28, WR-01). The
+ * repo-local candidate's files are read only as regular files inside the repo (WR-02).
  */
 async function gsdCandidateOf(
   $: EngineInterface,
   read: ReadContext,
   target: GsdReadTarget,
 ): Promise<ProbedGsdCandidate> {
+  const isRepoFile = target.location === 'project'
   const isPresent = await $.fs.exists(target.dir).catch(() => true)
-  const versionText = await readText($, read, target.versionPath)
-  const identityText = await readText($, read, target.identityPath)
-  const manifest = await readJson($, read, target.manifestPath)
+  const versionText = await readText($, read, target.versionPath, isRepoFile)
+  const identityText = await readText($, read, target.identityPath, isRepoFile)
+  const manifest = await readJson($, read, target.manifestPath, isRepoFile)
   const isBuilt = await $.fs.exists(runtimeBuiltPath(target)).catch(() => false)
   const argv = runtimeIdentityArgv(target, identityText, isPresent, isBuilt)
   const run = argv === null ? NO_RUN : await identityRun($, argv, target.dir)
@@ -212,7 +247,7 @@ async function collectFacts($: EngineInterface, locations: Locations): Promise<R
     : []
   const settings = await settingsOf($, read)
   const installedPlugins =
-    plan.installedPluginsPath === null ? null : await readJson($, read, plan.installedPluginsPath)
+    plan.installedPluginsPath === null ? null : await readJson($, read, plan.installedPluginsPath, false)
   const gsd: RawGsdCandidate[] = []
   for (const target of plan.gsd) {
     gsd.push(await gsdCandidateOf($, read, target))
@@ -236,14 +271,15 @@ function rootUnknownFacts(): RawFacts {
 }
 
 /**
- * The `/cadre detect` reply. The locations are resolved first (D-39), then the home-folder refusal runs before any
- * listing, read, settings or process call (D-36).
+ * The `/cadre detect` reply. The locations are resolved first (D-39), then the refusal runs before any listing, read,
+ * settings or process call (D-36): the file system root is always refused, and every root form, as given and as
+ * resolved, is checked against every home form (WR-06).
  */
 async function detectReply($: EngineInterface, isAdapters: boolean): Promise<string> {
   const sessionRoot = await $.session.root().catch(() => null)
   if (sessionRoot === null) return detectText(normalizeFacts(rootUnknownFacts()), isAdapters)
   const locations = await locationsOf($, sessionRoot)
-  const refusal = homeRootRefusal(locations.root, locations.home)
+  const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
   return detectText(normalizeFacts(await collectFacts($, locations)), isAdapters)
