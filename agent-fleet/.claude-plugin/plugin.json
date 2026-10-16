@@ -1,6 +1,7 @@
 {
   "name": "agent-fleet",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Dashboard of running Claude sessions: context, active/idle, subagents, workflows and who messages whom",
+  "author": { "name": "VladLeus", "url": "https://github.com/VladLeus" },
   "types": "./types/index.d.ts"
 }

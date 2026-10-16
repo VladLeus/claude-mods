@@ -1,6 +1,7 @@
 {
   "name": "local-mods",
   "owner": { "name": "VladLeus" },
+  "description": "Engine mods for Claude Code: autopilot, agent-fleet and cadre",
   "plugins": [
     { "name": "agent-fleet", "source": "./agent-fleet" },
     { "name": "autopilot", "source": "./autopilot" },
