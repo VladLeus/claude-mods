@@ -259,6 +259,7 @@ describe('register with a faked host', () => {
     expect(log.ops.some(op => op.includes('/home/u/.claude/gsd-core') && op.startsWith('fs.read'))).toBe(false)
     expect(log.runs).toEqual([])
     expect(log.ops).not.toContain('process.run')
+    expect(log.ops).not.toContain('fs.exists /repo/.claude/gsd-core/bin/lib/cli-exit.cjs')
   })
 
   test('a user-level GSD folder that cannot be proven is run once, under the user folder only', async ($, on) => {
@@ -579,11 +580,12 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toContain(
       'Warning: could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
-        '(node missing, or it timed out) (treated as unknown)',
+        '(node missing or timed out); treated as unknown',
     )
     expect(out.text).not.toContain('SENTINEL_HOST_TEXT')
   })
 
+  // Guard: passes before the fix by design; it proves a non-zero exit is not mistaken for a call that could not run.
   test('an identity call that exits non-zero is not reported as could-not-run (IN-05)', async ($, on) => {
     const failed = {
       ...ambiguousWorld(),

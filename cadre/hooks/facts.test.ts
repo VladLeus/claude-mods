@@ -12,6 +12,7 @@ import {
   HOME_ROOT_REPLY,
   homeRootRefusal,
   isFileInsideRoot,
+  isRuntimeCallAllowed,
   isChangedByClean,
   isGsdIdentitySource,
   isSafeConfigDir,
@@ -73,8 +74,14 @@ function candidate(over: Partial<ProbedGsdCandidate>): ProbedGsdCandidate {
  */
 function hostileCandidates(json: string): RawGsdCandidate[] {
   const parsed: unknown = JSON.parse(json)
+  const items: unknown[] = Array.isArray(parsed) ? parsed : []
 
-  return Array.isArray(parsed) ? parsed : []
+  return items.filter(isAnyHostItem)
+}
+
+/** Lets every parsed item through, so wrongly typed fields reach normalizeFacts. */
+function isAnyHostItem(item: unknown): item is RawGsdCandidate {
+  return item !== undefined
 }
 
 /** A raw host read with every list empty, the repo at /repo and the home folder at /home/u. */
@@ -235,7 +242,7 @@ describe('names that clean would change (WR-03)', () => {
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}\u200B`)
     const warnings = hiddenNameWarnings(names, 'repo entry', 255)
     expect(warnings).toHaveLength(6)
-    expect(warnings[5]).toBe('ignored 2 more repo entry names with hidden characters or too long')
+    expect(warnings[5]).toBe('ignored 2 more repo entry names that have hidden characters or are too long')
   })
 
   test('the same changed name given twice is warned about once', () => {
@@ -814,6 +821,15 @@ describe('runtimeBuiltPath', () => {
   })
 })
 
+describe('isRuntimeCallAllowed', () => {
+  test('only a present, unproven user-level install is allowed', () => {
+    expect(isRuntimeCallAllowed(USER_TARGET, null, true)).toBe(true)
+    expect(isRuntimeCallAllowed(PROJECT_TARGET, null, true)).toBe(false)
+    expect(isRuntimeCallAllowed(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true)).toBe(false)
+    expect(isRuntimeCallAllowed(USER_TARGET, null, false)).toBe(false)
+  })
+})
+
 describe('runtimeSkipProblem', () => {
   test('a present, unproven user install with no built runtime is not-built (WR-01)', () => {
     expect(runtimeSkipProblem(USER_TARGET, null, true, false)).toBe('not-built')
@@ -1001,7 +1017,7 @@ describe('normalizeFacts with GSD candidates', () => {
     const facts = normalizeFacts(raw({ gsd: [candidate({ runtimeProblem: 'could-not-run', runtimeTried: true })] }))
     expect(facts.warnings).toEqual([
       'could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
-        '(node missing, or it timed out) (treated as unknown)',
+        '(node missing or timed out); treated as unknown',
     ])
   })
 
@@ -1122,6 +1138,7 @@ describe('detectRefusal (WR-06)', () => {
     expect(detectRefusal(['/link/repo', '/data/u'], ['/home/u', '/data/u'])).toBe(HOME_ROOT_REPLY)
   })
 
+  // Guard: passes before the fix by design; it proves the WR-06 check does not refuse a repo beside the home folder.
   test('a repo beside the home folder, or no usable home at all, is not refused', () => {
     expect(detectRefusal(['/repo', '/repo'], ['/home/u', '/home/u'])).toBeNull()
     expect(detectRefusal(['/repo', '/repo'], [null, null])).toBeNull()
@@ -1143,6 +1160,7 @@ describe('isFileInsideRoot (WR-02)', () => {
     expect(isFileInsideRoot({ kind: 'dir', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(false)
   })
 
+  // Guard: passes before the fix by design; it proves a stat that shows no file inside the root is refused.
   test('a stat with no realPath, one on the root itself, or no stat at all does not count', () => {
     expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
     expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)

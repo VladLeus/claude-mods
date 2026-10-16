@@ -29,6 +29,10 @@ const MAX_EVENT_CHARS = 60
 const MAX_VERSION_CHARS = 40
 /** Code points a host warning keeps, the ellipsis included. */
 const MAX_WARNING_CHARS = 240
+/** At most this many changed names are named per kind; the rest are counted in one more warning. */
+const MAX_HIDDEN_NAME_WARNINGS = 5
+/** Code points a changed name keeps in its warning, once cleaned. */
+const MAX_HIDDEN_NAME_CHARS = 60
 /** The character a cut value ends with. */
 const ELLIPSIS = '\u2026'
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
@@ -58,23 +62,6 @@ const RUNTIME_IDENTITY_PREFIX = `{"packageName":"${GSD_PACKAGE_NAME}"`
 /** The locations a GSD candidate may carry; a candidate with any other location is skipped. */
 const GSD_LOCATIONS: readonly GsdLocation[] = ['user', 'project']
 
-/**
- * Why the runtime identity check gave no answer, when cadre knows: `not-built` when the compiled runtime
- * (`bin/lib/cli-exit.cjs`) is missing, so the call was not made (WR-01); `could-not-run` when the call threw, which
- * covers node missing from PATH and a timeout alike (IN-05). It is local to the detect modules, so the shared types
- * file stays as it is.
- */
-export type RuntimeProblem = 'not-built' | 'could-not-run'
-
-/** A GSD candidate as register.tsx reads it: the shared raw shape plus the runtime problem, when one is known. */
-export type ProbedGsdCandidate = RawGsdCandidate & { readonly runtimeProblem: RuntimeProblem | null }
-
-/** The runtime problems a candidate may carry; any other value counts as no known problem. */
-const RUNTIME_PROBLEMS: readonly RuntimeProblem[] = ['not-built', 'could-not-run']
-/** At most this many changed names are named per kind; the rest are counted in one more warning. */
-const MAX_HIDDEN_NAME_WARNINGS = 5
-/** Code points a changed name keeps in its warning, once cleaned. */
-const MAX_HIDDEN_NAME_CHARS = 60
 /** Reply when the session root is the home folder or contains it; detection would read the whole home. */
 export const HOME_ROOT_REPLY =
   'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
@@ -130,12 +117,12 @@ export function hiddenNameWarnings(names: readonly string[], kind: string, maxCh
   const named = changed.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(name => {
     const shown = clean(name, MAX_HIDDEN_NAME_CHARS)
 
-    return `ignored ${kind} "${shown}": its name has hidden characters or is too long`
+    return clean(`ignored ${kind} "${shown}": its name has hidden characters or is too long`, MAX_WARNING_CHARS)
   })
   const rest = changed.length - named.length
   if (rest === 0) return named
 
-  return [...named, `ignored ${rest} more ${kind} names with hidden characters or too long`]
+  return [...named, `ignored ${rest} more ${kind} names that have hidden characters or are too long`]
 }
 
 /** A plain object: not null and not an array. */
@@ -351,7 +338,12 @@ function relativeTo(path: string, base: string | null): string | null {
  * safe CLAUDE_CONFIG_DIR as `$CLAUDE_CONFIG_DIR/...` (IN-03), and anything else as the cleaned path. The repo root is
  * checked first, so a repo inside home reads as `<repo>`, and home before the config dir, so `~/x` stays `~/x`.
  */
-export function displayPath(path: string, home: string | null, root: string, configDir: string | null = null): string {
+export function displayPath(
+  path: string,
+  home: string | null,
+  root: string,
+  configDir: string | null = null,
+): string {
   const underRoot = relativeTo(path, root)
   if (underRoot !== null) return clean(`<repo>${underRoot}`)
   const underHome = relativeTo(path, home)
@@ -516,6 +508,20 @@ export function parseGsdManifest(value: unknown): { version: string } | null {
 }
 
 /**
+ * Why the runtime identity check gave no answer, when cadre knows: `not-built` when the compiled runtime
+ * (`bin/lib/cli-exit.cjs`) is missing, so the call was not made (WR-01); `could-not-run` when the call threw, which
+ * covers node missing from PATH and a timeout alike (IN-05). It is local to the detect modules, so the shared types
+ * file stays as it is.
+ */
+export type RuntimeProblem = 'not-built' | 'could-not-run'
+
+/** A GSD candidate as register.tsx reads it: the shared raw shape plus the runtime problem, when one is known. */
+export type ProbedGsdCandidate = RawGsdCandidate & { readonly runtimeProblem: RuntimeProblem | null }
+
+/** The runtime problems a candidate may carry; any other value counts as no known problem. */
+const RUNTIME_PROBLEMS: readonly RuntimeProblem[] = ['not-built', 'could-not-run']
+
+/**
  * The compiled runtime file of a GSD install. When it is missing, gsd-tools would build its runtime and write files on
  * start, so the runtime identity call is not made (WR-01). register.tsx checks it with `$.fs.exists`.
  */
@@ -535,9 +541,17 @@ export function runtimeIdentityArgv(
   isPresent: boolean,
   isBuilt: boolean,
 ): string[] | null {
-  if (target.location !== 'user' || !isPresent || !isBuilt || isGsdIdentitySource(identityText)) return null
+  if (!isRuntimeCallAllowed(target, identityText, isPresent) || !isBuilt) return null
 
   return ['node', `${target.dir}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+}
+
+/**
+ * Whether the runtime identity call is allowed before the built check: the candidate is the user-level install, it is
+ * present, and its identity module does not already prove it. A repo-local candidate is never allowed (D-28).
+ */
+export function isRuntimeCallAllowed(target: GsdReadTarget, identityText: string | null, isPresent: boolean): boolean {
+  return target.location === 'user' && isPresent && !isGsdIdentitySource(identityText)
 }
 
 /**
@@ -550,7 +564,7 @@ export function runtimeSkipProblem(
   isPresent: boolean,
   isBuilt: boolean,
 ): RuntimeProblem | null {
-  if (isBuilt || runtimeIdentityArgv(target, identityText, isPresent, true) === null) return null
+  if (isBuilt || !isRuntimeCallAllowed(target, identityText, isPresent)) return null
 
   return 'not-built'
 }
@@ -608,23 +622,12 @@ function usableCandidates(value: unknown): ProbedGsdCandidate[] {
   })
 }
 
-/**
- * The runtime problem a candidate carries, read without trusting it: a known RuntimeProblem, else null. A candidate in
- * the shared raw shape has no such field and gives null.
- */
-function runtimeProblemOf(candidate: unknown): RuntimeProblem | null {
-  if (!isObject(candidate)) return null
-  const value = candidate.runtimeProblem
-
-  return RUNTIME_PROBLEMS.find(problem => problem === value) ?? null
-}
-
 /** The warning for a candidate nothing proves, with the known runtime problem when there is one (WR-01, IN-05). */
 function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
   const prefix = `could not prove the GSD install at ${dir}`
   if (problem === 'not-built') return `${prefix}: runtime not built (treated as unknown)`
   if (problem === 'could-not-run') {
-    return `${prefix}: the identity call could not run (node missing, or it timed out) (treated as unknown)`
+    return `${prefix}: the identity call could not run (node missing or timed out); treated as unknown`
   }
 
   return `${prefix} (treated as unknown)`
@@ -635,11 +638,18 @@ function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
  * A present install that nothing proves adds a warning, which names the install by its cleaned display path and the
  * runtime problem when one is known.
  */
-function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, configDir: string | null, warnings: string[]): GsdFact {
+function gsdFactOf(
+  candidate: ProbedGsdCandidate,
+  raw: RawFacts,
+  configDir: string | null,
+  warnings: string[],
+): GsdFact {
   const dir = displayPath(candidate.dir, raw.home, raw.root, configDir)
   const runtime = parseRuntimeIdentity(candidate.runtimeStdout)
   const identity = identityOf(candidate, runtime !== null)
-  if (identity === 'unknown') warnings.push(clean(unprovenWarning(dir, runtimeProblemOf(candidate)), MAX_WARNING_CHARS))
+  if (identity === 'unknown') {
+    warnings.push(clean(unprovenWarning(dir, candidate.runtimeProblem), MAX_WARNING_CHARS))
+  }
   const version = versionOf(candidate, runtime)
 
   return {
@@ -721,7 +731,7 @@ export function homeRootRefusal(root: string, home: string | null): string | nul
  * form, so a root used as given still meets a home that was resolved, and the other way round.
  */
 export function detectRefusal(roots: readonly string[], homes: readonly (string | null)[]): string | null {
-  if (roots.some(root => root.replace(/\/+$/, '') === '')) return FILE_SYSTEM_ROOT_REPLY
+  if (roots.some(root => trimSlash(root) === '')) return FILE_SYSTEM_ROOT_REPLY
   for (const root of roots) {
     for (const home of homes) {
       const refusal = homeRootRefusal(root, home)

@@ -219,11 +219,13 @@ async function gsdCandidateOf(
   target: GsdReadTarget,
 ): Promise<ProbedGsdCandidate> {
   const isRepoFile = target.location === 'project'
+  const isUser = target.location === 'user'
   const isPresent = await $.fs.exists(target.dir).catch(() => true)
   const versionText = await readText($, read, target.versionPath, isRepoFile)
   const identityText = await readText($, read, target.identityPath, isRepoFile)
   const manifest = await readJson($, read, target.manifestPath, isRepoFile)
-  const isBuilt = await $.fs.exists(runtimeBuiltPath(target)).catch(() => false)
+  // The built probe fails closed (a refusal means not built), the present probe above fails open; both on purpose.
+  const isBuilt = isUser && (await $.fs.exists(runtimeBuiltPath(target)).catch(() => false))
   const argv = runtimeIdentityArgv(target, identityText, isPresent, isBuilt)
   const run = argv === null ? NO_RUN : await identityRun($, argv, target.dir)
 
@@ -289,7 +291,9 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
-  return detectText(normalizeFacts(await collectFacts($, locations), locations.configDir, locations.givenRoot), isAdapters)
+  const raw = await collectFacts($, locations)
+
+  return detectText(normalizeFacts(raw, locations.configDir, locations.givenRoot), isAdapters)
 }
 
 export const register: Register = on => {
