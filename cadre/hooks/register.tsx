@@ -24,10 +24,14 @@ const IDENTITY_TIMEOUT_MS = 10_000
 /** The settings sources, read one at a time so each value keeps the source it came from. */
 const SETTINGS_SOURCES: readonly SettingsSource[] = ['user', 'project', 'local']
 
-/** The root, the home folder and the warnings one detect run shares. The host is passed beside it, never inside it. */
+/**
+ * The root, the home folder, CLAUDE_CONFIG_DIR and the warnings one detect run shares. The host is passed beside it,
+ * never inside it.
+ */
 type ReadContext = {
   readonly root: string
   readonly home: string | null
+  readonly configDir: string | null
   readonly warnings: string[]
 }
 
@@ -100,6 +104,11 @@ async function locationsOf($: EngineInterface, sessionRoot: string): Promise<Loc
   return { root, home: resolvedHome, configDir: resolvedConfigDir, ...given, warnings }
 }
 
+/** A path as the report shows it, for the warnings of this detect run (IN-03). */
+function shown(read: ReadContext, path: string): string {
+  return displayPath(path, read.home, read.root, read.configDir)
+}
+
 /**
  * Whether a repo file may be read: its stat, asked with `resolve`, shows a regular file whose real path is inside the
  * resolved root (WR-02). A stat the host refuses counts as no.
@@ -125,15 +134,13 @@ async function readText(
   const isThere = await $.fs.exists(path).catch(() => true)
   if (!isThere) return null
   if (isRepoFile && !(await isSafeRepoFile($, read, path))) {
-    read.warnings.push(
-      `skipped ${displayPath(path, read.home, read.root)}: not a regular file inside the repo (treated as unknown)`,
-    )
+    read.warnings.push(`skipped ${shown(read, path)}: not a regular file inside the repo (treated as unknown)`)
 
     return null
   }
   const text = await $.fs.read(path).catch(() => null)
   if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > MAX_READ_BYTES) {
-    read.warnings.push(`could not read ${displayPath(path, read.home, read.root)} (treated as unknown)`)
+    read.warnings.push(`could not read ${shown(read, path)} (treated as unknown)`)
 
     return null
   }
@@ -151,7 +158,7 @@ async function readJson($: EngineInterface, read: ReadContext, path: string, isR
   try {
     return JSON.parse(text)
   } catch {
-    read.warnings.push(`could not parse ${displayPath(path, read.home, read.root)} as JSON (treated as unknown)`)
+    read.warnings.push(`could not parse ${shown(read, path)} as JSON (treated as unknown)`)
 
     return null
   }
@@ -238,9 +245,9 @@ async function gsdCandidateOf(
  * resolved and already past the home-folder refusal. A read that fails is recorded as a warning, never thrown.
  */
 async function collectFacts($: EngineInterface, locations: Locations): Promise<RawFacts> {
-  const { root, home } = locations
-  const plan = factReadPlan({ root, home, configDir: locations.configDir })
-  const read: ReadContext = { root, home, warnings: [...locations.warnings, ...plan.warnings] }
+  const { root, home, configDir } = locations
+  const plan = factReadPlan({ root, home, configDir })
+  const read: ReadContext = { root, home, configDir, warnings: [...locations.warnings, ...plan.warnings] }
   const repoEntries = await listFolder($, read, root, 'could not list the repo root (treated as unknown)')
   const docsEntries = hasDocsFolder(repoEntries)
     ? await listFolder($, read, `${root}/docs`, 'could not list docs/ (treated as unknown)')
@@ -282,7 +289,7 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
-  return detectText(normalizeFacts(await collectFacts($, locations)), isAdapters)
+  return detectText(normalizeFacts(await collectFacts($, locations), locations.configDir), isAdapters)
 }
 
 export const register: Register = on => {

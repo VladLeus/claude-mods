@@ -71,6 +71,10 @@ export type ProbedGsdCandidate = RawGsdCandidate & { readonly runtimeProblem: Ru
 
 /** The runtime problems a candidate may carry; any other value counts as no known problem. */
 const RUNTIME_PROBLEMS: readonly RuntimeProblem[] = ['not-built', 'could-not-run']
+/** At most this many changed names are named per kind; the rest are counted in one more warning. */
+const MAX_HIDDEN_NAME_WARNINGS = 5
+/** Code points a changed name keeps in its warning, once cleaned. */
+const MAX_HIDDEN_NAME_CHARS = 60
 /** Reply when the session root is the home folder or contains it; detection would read the whole home. */
 export const HOME_ROOT_REPLY =
   'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
@@ -108,6 +112,31 @@ export function clean(value: unknown, maxChars = 120): string {
   return `${points.slice(0, Math.max(0, maxChars - 1)).join('')}${ELLIPSIS}`
 }
 
+/**
+ * Whether `clean` would change a foreign name at this cap: a stripped character, or a cut to the cap. Such a name is
+ * never matched as a marker or a plugin key, because its cleaned form could pass for a real one (WR-03).
+ */
+export function isChangedByClean(value: string, maxChars: number): boolean {
+  return clean(value, maxChars) !== value
+}
+
+/**
+ * One warning per name that clean would change at `maxChars`, naming its cleaned form capped at MAX_HIDDEN_NAME_CHARS,
+ * at most MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest. `kind` says what the names are.
+ */
+export function hiddenNameWarnings(names: readonly string[], kind: string, maxChars: number): string[] {
+  const changed = names.filter(name => isChangedByClean(name, maxChars))
+  const named = changed.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(name => {
+    const shown = clean(name, MAX_HIDDEN_NAME_CHARS)
+
+    return `ignored ${kind} "${shown}": its name has hidden characters or is too long`
+  })
+  const rest = changed.length - named.length
+  if (rest === 0) return named
+
+  return [...named, `ignored ${rest} more ${kind} names with hidden characters or too long`]
+}
+
 /** A plain object: not null and not an array. */
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -118,15 +147,17 @@ function isEntryKind(value: unknown): value is EntryKind {
 }
 
 /**
- * A repo or docs listing as typed entries. An entry needs a name that survives cleaning and a known kind.
- * Size and mtime are dropped, and `isLink` is true only when the host sent exactly `true`.
+ * A repo or docs listing as typed entries. An entry needs a non-empty string name that clean leaves unchanged (WR-03)
+ * and a known kind. Size and mtime are dropped, and `isLink` is true only when the host sent exactly `true`.
  */
 export function parseRepoEntries(value: unknown): RepoEntry[] {
   if (!Array.isArray(value)) return []
   const entries: RepoEntry[] = []
   for (const item of value) {
     if (!isObject(item)) continue
-    const name = clean(item.name, MAX_NAME_CHARS)
+    const rawName = item.name
+    if (typeof rawName !== 'string' || isChangedByClean(rawName, MAX_NAME_CHARS)) continue
+    const name = rawName
     const kind = item.kind
     if (name === '' || !isEntryKind(kind)) continue
     entries.push({ name, kind, isLink: item.isLink === true })
@@ -150,22 +181,23 @@ function maskPath(text: string, needle: string | null, replacement: string): str
 }
 
 /**
- * A host warning with the repo root and the home folder replaced by `<repo>` and `~`, then cleaned and capped.
- * A warning that is not a string becomes ''.
+ * A host warning with the repo root, the home folder and a safe CLAUDE_CONFIG_DIR replaced by `<repo>`, `~` and
+ * `$CLAUDE_CONFIG_DIR`, then cleaned and capped. A warning that is not a string becomes ''.
  */
-function safeWarning(warning: unknown, raw: RawFacts): string {
+function safeWarning(warning: unknown, raw: RawFacts, configDir: string | null): string {
   if (typeof warning !== 'string') return ''
   const withoutRoot = maskPath(warning, raw.root, '<repo>')
   const withoutHome = maskPath(withoutRoot, raw.home, '~')
+  const withoutConfig = maskPath(withoutHome, safeConfigDir(configDir), '$CLAUDE_CONFIG_DIR')
 
-  return clean(withoutHome, MAX_WARNING_CHARS)
+  return clean(withoutConfig, MAX_WARNING_CHARS)
 }
 
 /** The host's warnings as display-safe text; a warning that cleans to nothing is dropped. */
-function safeWarnings(warnings: unknown, raw: RawFacts): string[] {
+function safeWarnings(warnings: unknown, raw: RawFacts, configDir: string | null): string[] {
   if (!Array.isArray(warnings)) return []
 
-  return warnings.map(warning => safeWarning(warning, raw)).filter(text => text !== '')
+  return warnings.map(warning => safeWarning(warning, raw, configDir)).filter(text => text !== '')
 }
 
 function isSettingsEntry(entry: unknown): entry is RawFacts['settings'][number] {
@@ -181,14 +213,15 @@ function orderedSettings(settings: unknown): RawFacts['settings'] {
 }
 
 /**
- * The `enabledPlugins` flags of one settings file: boolean values only, with keys cleaned and capped.
- * Nothing else in the file is read.
+ * The `enabledPlugins` flags of one settings file: boolean values only. A key that clean would change at 120 code
+ * points is dropped (WR-03). Nothing else in the file is read.
  */
 export function parseEnabledPlugins(value: unknown, source: SettingsSource): PluginFlag[] {
   if (!isObject(value) || !isObject(value.enabledPlugins)) return []
   const flags: PluginFlag[] = []
   for (const [rawKey, flagValue] of Object.entries(value.enabledPlugins)) {
-    const key = clean(rawKey, MAX_KEY_CHARS)
+    if (isChangedByClean(rawKey, MAX_KEY_CHARS)) continue
+    const key = rawKey
     if (key === '' || typeof flagValue !== 'boolean') continue
     flags.push({ key, source, value: flagValue })
   }
@@ -235,22 +268,45 @@ export function parseHookScripts(value: unknown, source: SettingsSource): HookSc
 }
 
 /**
- * The first usable version recorded for each installed plugin key. Only the key and the version are kept:
- * install paths, scopes and the rest of each entry are never read into Facts.
+ * Whether an installed_plugins entry belongs to this repo: a `user` entry always does, a `project` or `local` entry
+ * only when its projectPath is the repo root (trailing slashes ignored), and an entry with any other scope never does.
  */
-export function parseInstalledPlugins(value: unknown): PluginVersion[] {
+function isEntryForRoot(entry: Record<string, unknown>, root: string): boolean {
+  if (entry.scope === 'user') return true
+  if (entry.scope !== 'project' && entry.scope !== 'local') return false
+  const projectPath = entry.projectPath
+  if (typeof projectPath !== 'string') return false
+
+  return trimSlash(projectPath) === trimSlash(root) && trimSlash(root) !== ''
+}
+
+/**
+ * The usable version of a key's entries for this repo: the first `user` entry with a valid version, else the first
+ * `project` or `local` entry for the repo root with one, else null. Another project's entry is never used (WR-04).
+ */
+function installedVersionOf(entries: readonly unknown[], root: string): string | null {
+  const usable = entries.filter(isObject).filter(entry => isEntryForRoot(entry, root))
+  const ordered = [...usable.filter(entry => entry.scope === 'user'), ...usable.filter(entry => entry.scope !== 'user')]
+  for (const entry of ordered) {
+    const version = parseVersionText(entry.version)
+    if (version !== null) return version
+  }
+
+  return null
+}
+
+/**
+ * The version installed for this repo for each installed plugin key: user scope first, then a project or local entry
+ * whose projectPath is the repo root (WR-04). A key that clean would change at 120 code points is dropped (WR-03).
+ * Only the key and the version are kept: install paths, scopes and the rest of each entry are never read into Facts.
+ */
+export function parseInstalledPlugins(value: unknown, root: string): PluginVersion[] {
   if (!isObject(value) || !isObject(value.plugins)) return []
   const installed: PluginVersion[] = []
-  for (const [rawKey, entries] of Object.entries(value.plugins)) {
-    const key = clean(rawKey, MAX_KEY_CHARS)
-    if (key === '' || !Array.isArray(entries)) continue
-    for (const entry of entries) {
-      const version = isObject(entry) ? parseVersionText(entry.version) : null
-      if (version !== null) {
-        installed.push({ key, version })
-        break
-      }
-    }
+  for (const [key, entries] of Object.entries(value.plugins)) {
+    if (key === '' || isChangedByClean(key, MAX_KEY_CHARS) || !Array.isArray(entries)) continue
+    const version = installedVersionOf(entries, root)
+    if (version !== null) installed.push({ key, version })
   }
 
   return installed
@@ -281,16 +337,26 @@ function relativeTo(path: string, base: string | null): string | null {
 }
 
 /**
- * A path as the report may show it: under the repo root as `<repo>/...`, under the home folder as `~/...`, and
- * anything else as the cleaned path. The repo root is checked first, so a repo inside home reads as `<repo>`.
+ * A path as the report may show it: under the repo root as `<repo>/...`, under the home folder as `~/...`, under a
+ * safe CLAUDE_CONFIG_DIR as `$CLAUDE_CONFIG_DIR/...` (IN-03), and anything else as the cleaned path. The repo root is
+ * checked first, so a repo inside home reads as `<repo>`, and home before the config dir, so `~/x` stays `~/x`.
  */
-export function displayPath(path: string, home: string | null, root: string): string {
+export function displayPath(path: string, home: string | null, root: string, configDir: string | null = null): string {
   const underRoot = relativeTo(path, root)
   if (underRoot !== null) return clean(`<repo>${underRoot}`)
   const underHome = relativeTo(path, home)
   if (underHome !== null) return clean(`~${underHome}`)
+  const underConfig = relativeTo(path, safeConfigDir(configDir))
+  if (underConfig !== null) return clean(`$CLAUDE_CONFIG_DIR${underConfig}`)
 
   return clean(path)
+}
+
+/** CLAUDE_CONFIG_DIR without trailing slashes when it is safe, else null. */
+function safeConfigDir(configDir: string | null): string | null {
+  const trimmed = trimSlash(configDir)
+
+  return isSafeConfigDir(trimmed) ? trimmed : null
 }
 
 /**
@@ -497,13 +563,39 @@ function versionOf(candidate: RawGsdCandidate, runtime: { version: string } | nu
   )
 }
 
-/** Whether a host-sent candidate has a string `dir` and a known location; any other candidate is skipped. */
-function isUsableCandidate(candidate: unknown): candidate is RawGsdCandidate {
-  return (
-    isObject(candidate) &&
-    typeof candidate.dir === 'string' &&
-    GSD_LOCATIONS.some(place => place === candidate.location)
-  )
+/**
+ * A host-sent candidate rebuilt field by field, or null when it has no string `dir` or no known location (WR-05).
+ * Every other field is checked: `isPresent` and `runtimeTried` count only when exactly true, a text that is not a
+ * string is null, and an unknown runtime problem is null. The manifest stays unvalidated; parseGsdManifest checks it.
+ */
+function usableCandidate(value: unknown): ProbedGsdCandidate | null {
+  if (!isObject(value)) return null
+  const dir = value.dir
+  const location = GSD_LOCATIONS.find(place => place === value.location)
+  if (typeof dir !== 'string' || location === undefined) return null
+
+  return {
+    location,
+    dir,
+    isPresent: value.isPresent === true,
+    versionText: typeof value.versionText === 'string' ? value.versionText : null,
+    identityText: typeof value.identityText === 'string' ? value.identityText : null,
+    manifest: value.manifest,
+    runtimeStdout: typeof value.runtimeStdout === 'string' ? value.runtimeStdout : null,
+    runtimeTried: value.runtimeTried === true,
+    runtimeProblem: RUNTIME_PROBLEMS.find(problem => problem === value.runtimeProblem) ?? null,
+  }
+}
+
+/** The usable candidates of a host-sent list, each rebuilt by usableCandidate; anything else is skipped. */
+function usableCandidates(value: unknown): ProbedGsdCandidate[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap(item => {
+    const candidate = usableCandidate(item)
+
+    return candidate === null ? [] : [candidate]
+  })
 }
 
 /**
@@ -533,8 +625,8 @@ function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
  * A present install that nothing proves adds a warning, which names the install by its cleaned display path and the
  * runtime problem when one is known.
  */
-function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, warnings: string[]): GsdFact {
-  const dir = displayPath(candidate.dir, raw.home, raw.root)
+function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, configDir: string | null, warnings: string[]): GsdFact {
+  const dir = displayPath(candidate.dir, raw.home, raw.root, configDir)
   const runtime = parseRuntimeIdentity(candidate.runtimeStdout)
   const identity = identityOf(candidate, runtime !== null)
   if (identity === 'unknown') warnings.push(clean(unprovenWarning(dir, runtimeProblemOf(candidate)), MAX_WARNING_CHARS))
@@ -552,14 +644,25 @@ function gsdFactOf(candidate: RawGsdCandidate, raw: RawFacts, warnings: string[]
 /**
  * The only input detection reads: the host's raw reads turned into typed, cleaned Facts. Pure, so the same raw
  * read always gives the same Facts. No settings value other than enabled plugins and hook basenames is kept.
+ * `configDir` is CLAUDE_CONFIG_DIR as the host resolved it, used only to show paths under it as
+ * `$CLAUDE_CONFIG_DIR/...` (IN-03); it is a parameter so the shared RawFacts type stays as it is.
  */
-export function normalizeFacts(raw: RawFacts): Facts {
+export function normalizeFacts(raw: RawFacts, configDir: string | null = null): Facts {
   const settings = orderedSettings(raw.settings)
   const flags = settings.flatMap(entry => parseEnabledPlugins(entry.value, entry.source))
-  const plugins = parseInstalledPlugins(raw.installedPlugins)
+  const plugins = parseInstalledPlugins(raw.installedPlugins, raw.root)
   const gsdWarnings: string[] = []
-  const candidates = Array.isArray(raw.gsd) ? raw.gsd : []
-  const gsd = candidates.filter(isUsableCandidate).map(candidate => gsdFactOf(candidate, raw, gsdWarnings))
+  const gsd = usableCandidates(raw.gsd).map(candidate => gsdFactOf(candidate, raw, configDir, gsdWarnings))
+  const hiddenWarnings = [
+    ...hiddenNameWarnings(entryNames(raw.repoEntries), 'repo entry', MAX_NAME_CHARS),
+    ...hiddenNameWarnings(entryNames(raw.docsEntries), 'docs/ entry', MAX_NAME_CHARS),
+    ...hiddenNameWarnings(
+      settings.flatMap(entry => keysOf(entry.value, 'enabledPlugins')),
+      'enabledPlugins key',
+      MAX_KEY_CHARS,
+    ),
+    ...hiddenNameWarnings(keysOf(raw.installedPlugins, 'plugins'), 'installed plugin key', MAX_KEY_CHARS),
+  ]
 
   return {
     repoEntries: parseRepoEntries(raw.repoEntries),
@@ -568,8 +671,23 @@ export function normalizeFacts(raw: RawFacts): Facts {
     hookScripts: settings.flatMap(entry => parseHookScripts(entry.value, entry.source)),
     superpowersVersions: plugins.filter(plugin => plugin.key.startsWith('superpowers@')),
     gsd,
-    warnings: [...safeWarnings(raw.warnings, raw), ...gsdWarnings],
+    warnings: [...safeWarnings(raw.warnings, raw, configDir), ...hiddenWarnings, ...gsdWarnings],
   }
+}
+
+/** The string names of a host listing, unchecked, so hiddenNameWarnings can name the ones parseRepoEntries drops. */
+function entryNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap(item => (isObject(item) && typeof item.name === 'string' ? [item.name] : []))
+}
+
+/** The keys of one object field of a host value, such as `enabledPlugins`; [] when the field is not an object. */
+function keysOf(value: unknown, field: string): string[] {
+  if (!isObject(value)) return []
+  const inner = value[field]
+
+  return isObject(inner) ? Object.keys(inner) : []
 }
 
 /**
