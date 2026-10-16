@@ -32,16 +32,21 @@ type World = {
   /** Paths whose stat refuses, although the path exists. */
   readonly denyStat: readonly string[]
   readonly denySettings: readonly string[]
-  /** What `process.run` answers; null makes the call refuse. */
+  /** What `process.run` answers; null makes the call refuse with `runtimeDeny`. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
+  /** The reason a refused `process.run` gives; detect must never show it. */
+  readonly runtimeDeny: string
   /** Makes `session.root` refuse, as a host that cannot say where the session is. */
   readonly denyRoot: boolean
   /** Files whose read answers no value at all, instead of a text or a refusal. */
   readonly undefinedReads: readonly string[]
 }
 
-/** What the fake host saw: every fs, process and settings op in order, and the argv of each process call. */
-type HostLog = { readonly ops: string[]; readonly runs: string[][] }
+/**
+ * What the fake host saw: every fs, process and settings op in order, the argv of each process call, and the working
+ * folder each process call asked for ('' when it asked for none).
+ */
+type HostLog = { readonly ops: string[]; readonly runs: string[][]; readonly cwds: string[] }
 
 /**
  * Host ops that would change something or reach beyond the read-only reads (a second process call, the network, an
@@ -65,7 +70,7 @@ function entry(name: string, kind: FakeEntry['kind'] = 'file', isLink = false): 
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
-  return { ops: [], runs: [] }
+  return { ops: [], runs: [], cwds: [] }
 }
 
 /**
@@ -83,6 +88,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     files: {
       '/home/u/.claude/gsd-core/VERSION': '1.16.0\n',
       '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs': 'const packageName = "@opengsd/gsd-core";\n',
+      '/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs': '',
       '/home/u/.claude/plugins/installed_plugins.json':
         '{"plugins":{"superpowers@claude-plugins-official":[{"version":"6.4.1"}]}}',
     },
@@ -93,6 +99,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     denyStat: [],
     denySettings: [],
     runtime: null,
+    runtimeDeny: 'no runtime in this world',
     denyRoot: false,
     undefinedReads: [],
     ...over,
@@ -146,7 +153,8 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('process.run', async (_$, e) => {
     log.ops.push('process.run')
     log.runs.push([...e.argv])
-    if (world.runtime === null) return { deny: 'no runtime in this world' }
+    log.cwds.push(e.init?.cwd ?? '')
+    if (world.runtime === null) return { deny: world.runtimeDeny }
 
     return { value: { ...world.runtime, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -253,7 +261,10 @@ describe('register with a faked host', () => {
     expect(log.runs[0][1].startsWith('/home/u/.claude/gsd-core/')).toBe(true)
     expect(log.runs[0].some(arg => arg.startsWith('/repo'))).toBe(false)
     expect(out.text).toContain('Warning: could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
-    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+    // IN-05 (user decision 2026-10-16): a refused identity call gives the one generic could-not-run reason.
+    expect(out.text).toContain(
+      'Warning: could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run',
+    )
     expect(rowOf(out.text, 'GSD')).not.toContain('installed')
     expect(out.text).not.toContain('/home/u')
   })
@@ -514,5 +525,62 @@ describe('register with a faked host', () => {
     expect(log.runs.length).toBe(1)
     expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
     expect(rowOf(out.text, 'GSD')).not.toContain('installed')
+  })
+
+  test('a user-level GSD folder with no built runtime is never run, and the warning says so (WR-01)', async ($, on) => {
+    const log = newLog()
+    const notBuilt = {
+      ...ambiguousWorld(),
+      files: {
+        '/home/u/.claude/gsd-core/VERSION': '1.16.0\n',
+        '/home/u/.claude/plugins/installed_plugins.json': '{"plugins":{}}',
+      },
+    }
+    fakeHost(on, notBuilt, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs).toEqual([])
+    expect(out.text).toContain(
+      'Warning: could not prove the GSD install at ~/.claude/gsd-core: runtime not built (treated as unknown)',
+    )
+  })
+
+  test('the runtime identity call runs in the user GSD folder, never in the repo (WR-01)', async ($, on) => {
+    const log = newLog()
+    const userDenied = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+    }
+    fakeHost(on, userDenied, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.cwds).toEqual(['/home/u/.claude/gsd-core'])
+    expect(out.text).toContain('gsd-core 1.16.0 at ~/.claude/gsd-core')
+  })
+
+  test('an identity call the host refuses gives the generic warning and never the host text (IN-05)', async ($, on) => {
+    const refused = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtimeDeny: 'SENTINEL_HOST_TEXT',
+    }
+    fakeHost(on, refused, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).toContain(
+      'Warning: could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
+        '(node missing, or it timed out) (treated as unknown)',
+    )
+    expect(out.text).not.toContain('SENTINEL_HOST_TEXT')
+  })
+
+  test('an identity call that exits non-zero is not reported as could-not-run (IN-05)', async ($, on) => {
+    const failed = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 1, stdout: '' },
+    }
+    fakeHost(on, failed, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(out.text).not.toContain('the identity call could not run')
+    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
   })
 })

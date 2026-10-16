@@ -19,8 +19,11 @@ import {
   parseRuntimeIdentity,
   parseVersionText,
   resolvedPath,
+  runtimeBuiltPath,
   runtimeIdentityArgv,
+  runtimeSkipProblem,
 } from './facts'
+import type { ProbedGsdCandidate } from './facts'
 
 /** A value planted in settings env and in a hook command; it must never reach Facts. */
 const SENTINEL = 'SENTINEL_SECRET_123'
@@ -43,8 +46,8 @@ const PROJECT_TARGET: GsdReadTarget = {
   manifestPath: '/repo/.claude/gsd-file-manifest.json',
 }
 
-/** A GSD candidate as the host read it: present, with nothing else read, unless overridden. */
-function candidate(over: Partial<RawGsdCandidate>): RawGsdCandidate {
+/** A GSD candidate as register.tsx reads it: present, nothing else read, no runtime problem, unless overridden. */
+function candidate(over: Partial<ProbedGsdCandidate>): ProbedGsdCandidate {
   return {
     location: 'user',
     dir: '/home/u/.claude/gsd-core',
@@ -54,6 +57,7 @@ function candidate(over: Partial<RawGsdCandidate>): RawGsdCandidate {
     manifest: null,
     runtimeStdout: null,
     runtimeTried: false,
+    runtimeProblem: null,
     ...over,
   }
 }
@@ -597,7 +601,7 @@ describe('parseGsdManifest', () => {
 
 describe('runtimeIdentityArgv', () => {
   test('a present user install with no proven identity gets the runtime identity call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, null, true)).toEqual([
+    expect(runtimeIdentityArgv(USER_TARGET, null, true, true)).toEqual([
       'node',
       '/home/u/.claude/gsd-core/bin/gsd-tools.cjs',
       'runtime-identity',
@@ -606,15 +610,38 @@ describe('runtimeIdentityArgv', () => {
   })
 
   test('a repo-local install never gets a runtime call, even when present and unproven (D-28)', () => {
-    expect(runtimeIdentityArgv(PROJECT_TARGET, null, true)).toBeNull()
+    expect(runtimeIdentityArgv(PROJECT_TARGET, null, true, true)).toBeNull()
   })
 
   test('a user install that its identity module already proves gets no runtime call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true)).toBeNull()
+    expect(runtimeIdentityArgv(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true, true)).toBeNull()
   })
 
   test('an absent user install gets no runtime call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, null, false)).toBeNull()
+    expect(runtimeIdentityArgv(USER_TARGET, null, false, true)).toBeNull()
+  })
+
+  test('a present, unproven user install whose runtime is not built gets no runtime call (WR-01)', () => {
+    expect(runtimeIdentityArgv(USER_TARGET, null, true, false)).toBeNull()
+  })
+})
+
+describe('runtimeBuiltPath', () => {
+  test('is the compiled cli-exit.cjs under the install bin/lib folder', () => {
+    expect(runtimeBuiltPath(USER_TARGET)).toBe('/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs')
+  })
+})
+
+describe('runtimeSkipProblem', () => {
+  test('a present, unproven user install with no built runtime is not-built (WR-01)', () => {
+    expect(runtimeSkipProblem(USER_TARGET, null, true, false)).toBe('not-built')
+  })
+
+  test('a built runtime, a repo-local install, a proven identity or an absent install is no problem', () => {
+    expect(runtimeSkipProblem(USER_TARGET, null, true, true)).toBeNull()
+    expect(runtimeSkipProblem(PROJECT_TARGET, null, true, false)).toBeNull()
+    expect(runtimeSkipProblem(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true, false)).toBeNull()
+    expect(runtimeSkipProblem(USER_TARGET, null, false, false)).toBeNull()
   })
 })
 
@@ -769,6 +796,22 @@ describe('normalizeFacts with GSD candidates', () => {
   test('a candidate with an unknown location is skipped', () => {
     const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'elsewhere' as never })] }))
     expect(facts.gsd).toEqual([])
+  })
+
+  test('a user install whose runtime is not built says so in its warning (WR-01)', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ runtimeProblem: 'not-built' })] }))
+    expect(facts.gsd[0]?.identity).toBe('unknown')
+    expect(facts.warnings).toEqual([
+      'could not prove the GSD install at ~/.claude/gsd-core: runtime not built (treated as unknown)',
+    ])
+  })
+
+  test('a user install whose identity call could not run says so in one generic warning (IN-05)', () => {
+    const facts = normalizeFacts(raw({ gsd: [candidate({ runtimeProblem: 'could-not-run', runtimeTried: true })] }))
+    expect(facts.warnings).toEqual([
+      'could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
+        '(node missing, or it timed out) (treated as unknown)',
+    ])
   })
 
   test('the serialized Facts never carry the home folder or the repo root', () => {
