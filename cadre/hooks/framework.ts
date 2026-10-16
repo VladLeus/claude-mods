@@ -116,8 +116,9 @@ function onlyInUse(id: FrameworkId): Choice {
 }
 
 /**
- * The fields every adapter must declare, in the order missingFields reports them. Nothing type-checks in CI, so
- * this list and missingFields are the runtime contract (DET-04).
+ * The fields every adapter must declare, in the order missingFields reports them. `claude plugin validate` does not
+ * type-check, and an adapter may be untrusted at runtime, so this list and missingFields are the runtime contract
+ * (DET-04).
  */
 export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = [
   'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
@@ -159,7 +160,7 @@ function hasAutonomy(adapter: Record<string, unknown>): boolean {
  * rule instead of throwing, and a field with no rule is always missing.
  */
 const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<string, unknown>) => boolean>> = {
-  id: adapter => ADAPTER_IDS.includes(adapter.id as string),
+  id: adapter => ADAPTER_IDS.some(id => id === adapter.id),
   name: adapter => isFilledString(adapter.name),
   detectRule: adapter => isFilledString(adapter.detectRule),
   detect: adapter => typeof adapter.detect === 'function',
@@ -202,7 +203,7 @@ export function missingFields(adapter: unknown): string[] {
 export function isDecisionType(value: unknown): value is DecisionType {
   if (typeof value !== 'string') return false
 
-  return DECISION_TYPES.includes(value as DecisionType)
+  return DECISION_TYPES.some(type => type === value)
 }
 
 /** The problem with a gate's decision type, or null when its kind and decision type agree. */
