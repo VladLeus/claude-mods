@@ -613,6 +613,24 @@ describe('register with a faked host', () => {
     expect(out.text).toContain('could not prove the GSD install at ~/.claude/gsd-core: runtime not built')
   })
 
+  test('a plugin entry that names the root as given counts when the root resolves elsewhere (WR-04)', async ($, on) => {
+    const base = ambiguousWorld()
+    const linked = {
+      ...base,
+      root: '/link/repo',
+      realPaths: { '/link/repo': '/repo', '/home/u': '/home/u' },
+      files: {
+        ...base.files,
+        '/home/u/.claude/plugins/installed_plugins.json':
+          '{"version":2,"plugins":{"superpowers@x":[{"scope":"project","projectPath":"/link/repo","version":"4.0.0"}]}}',
+      },
+      settings: { user: { enabledPlugins: { 'superpowers@x': true } }, project: {}, local: {} },
+    }
+    fakeHost(on, linked, newLog())
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(rowOf(out.text, 'superpowers')).toContain('4.0.0')
+  })
+
   // Guard: passes before the fix by design; it pins today's behaviour for a root used as given (D-39).
   test('a root whose realpath failed skips its repo-local files with the warning, though they exist', async ($, on) => {
     const log = newLog()
