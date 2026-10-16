@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["hooks/*.ts", "types/*.d.ts"],
+  // register.test.ts drives register.tsx through the engine host API, so it only type-checks against the engine's
+  // generated types. Its behaviour stays covered by `claude plugin test cadre`.
+  "exclude": ["hooks/register.test.ts"]
+}

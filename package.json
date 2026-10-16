@@ -1,0 +1,10 @@
+{
+  "name": "claude-mods",
+  "private": true,
+  "scripts": {
+    "typecheck:cadre": "tsc -p cadre/tsconfig.strict.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

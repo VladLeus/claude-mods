@@ -6,3 +6,5 @@ thoughts/
 .env*
 *.log
 .idea/
+# npm devDependencies for the cadre type check
+node_modules/
