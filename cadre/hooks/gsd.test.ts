@@ -224,9 +224,10 @@ describe('gsdHookFacts', () => {
     const hooks = facts({ hookScripts: [{ script: 'gsd-context-monitor.js', event: 'PostToolUse', source: 'user' }] })
     const returned = gsdHookFacts(hooks)
 
-    Object.assign(returned[0], { note: 'changed' })
+    expect(returned).toHaveLength(1)
+    Object.assign(returned[0] ?? {}, { note: 'changed' })
 
-    expect(GSD_HOOK_NOTES[0].note).toBe('conflicts with the autopilot handoff')
+    expect(GSD_HOOK_NOTES[0]?.note).toBe('conflicts with the autopilot handoff')
   })
 
   test('GSD_HOOK_NOTES and every row in it are frozen', () => {
@@ -403,12 +404,12 @@ describe('GSD_AUTONOMY', () => {
 
 /** The first line of the kickoff for one role, with no spec. */
 function firstLineOf(role: string): string {
-  return gsdKickoffText({ role, specPath: null }).split('\n')[0]
+  return gsdKickoffText({ role, specPath: null }).split('\n')[0] ?? ''
 }
 
 /** The Approved spec line of the kickoff for one spec path, which is the line after the role line. */
 function specLineOf(specPath: string): string {
-  return gsdKickoffText({ role: 'BE', specPath }).split('\n')[1]
+  return gsdKickoffText({ role: 'BE', specPath }).split('\n')[1] ?? ''
 }
 
 /** Whether any of the lines would read to autopilot as its done marker. */

@@ -6,6 +6,10 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
     "types": []
   },
   "include": ["hooks/*.ts", "types/*.d.ts"],

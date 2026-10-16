@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
+import { BUILTIN_ADAPTER } from './builtin'
 import { GSD_GATES } from './gsd'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText, pad, STATUS_LABEL } from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
@@ -360,7 +361,7 @@ describe('adaptersReportLines', () => {
   })
 
   test('an empty kickoff example line renders as an empty line, and other lines keep the six-space indent', () => {
-    const adapter: FrameworkAdapter = { ...ADAPTERS[2], kickoffText: () => 'first\n\nsecond' }
+    const adapter: FrameworkAdapter = { ...BUILTIN_ADAPTER, kickoffText: () => 'first\n\nsecond' }
     const lines = adaptersReportLines([adapter])
     const start = lines.indexOf('  kickoff (example for role BE):')
 

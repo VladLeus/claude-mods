@@ -43,7 +43,7 @@ function kickoffLines(role: string, specPath: string | null = null): string[] {
 
 /** The first kickoff line for a role name, which a hostile role name tries to lengthen or split. */
 function roleLine(role: string): string {
-  return kickoffLines(role)[0]
+  return kickoffLines(role)[0] ?? ''
 }
 
 /** The Spec line for a spec path, or undefined when the kickoff has none. */
@@ -188,7 +188,7 @@ describe('builtinKickoffText', () => {
 
     expect(lines[0]).toBe(`You are the bex${ROLE_LINE_TAIL}`)
     expect(lines).toContain('Write your plan to .cadre/bex/.runtime/plan.md, then execute it with subagents.')
-    expect(lines[lines.length - 1].startsWith('Write .cadre/bex/.runtime/DONE.md ')).toBe(true)
+    expect(lines.at(-1)?.startsWith('Write .cadre/bex/.runtime/DONE.md ')).toBe(true)
   })
 
   test('a role folder keeps the role as given, lowercased, spaces included', () => {
@@ -198,7 +198,7 @@ describe('builtinKickoffText', () => {
     expect(lines).toContain(
       'Write your plan to .cadre/backend dev/.runtime/plan.md, then execute it with subagents.',
     )
-    expect(lines[lines.length - 1].startsWith('Write .cadre/backend dev/.runtime/DONE.md ')).toBe(true)
+    expect(lines.at(-1)?.startsWith('Write .cadre/backend dev/.runtime/DONE.md ')).toBe(true)
   })
 
   test('a role name with a line break cannot add a line that reads as the done marker', () => {

@@ -46,7 +46,7 @@ function kickoffLines(role: string): string[] {
 
 /** The first kickoff line for a role name, which a hostile role name tries to lengthen or split. */
 function roleLine(role: string): string {
-  return kickoffLines(role)[0]
+  return kickoffLines(role)[0] ?? ''
 }
 
 /** The Approved spec line for a spec path, or undefined when the kickoff has none. */

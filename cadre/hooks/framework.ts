@@ -92,7 +92,8 @@ export function chooseFramework(detections: readonly Detection[], userPick: Fram
   if (userPick !== null && inUse.includes(userPick)) return pickedByUser(userPick)
   if (inUse.length === 0 && userPick !== null && installed.includes(userPick)) return pickedByUser(userPick)
   if (inUse.length >= 2) return { kind: 'ambiguous', ids: inUse }
-  if (inUse.length === 1) return onlyInUse(inUse[0])
+  const [onlyId] = inUse
+  if (inUse.length === 1 && onlyId !== undefined) return onlyInUse(onlyId)
   if (installed.length > 0) return { kind: 'installed-only', ids: installed }
   if (unsupported.length > 0) return { kind: 'unsupported', ids: unsupported }
 
