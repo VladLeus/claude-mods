@@ -297,7 +297,7 @@ function installedVersionOf(entries: readonly unknown[], roots: readonly string[
  * is dropped (WR-03). Only the key and the version are kept: install paths, scopes and the rest of each entry are never
  * read into Facts.
  */
-export function parseInstalledPlugins(value: unknown, root: string, givenRoot: string = root): PluginVersion[] {
+export function parseInstalledPlugins(value: unknown, root: string, givenRoot: string): PluginVersion[] {
   if (!isObject(value) || !isObject(value.plugins)) return []
   const installed: PluginVersion[] = []
   for (const [key, entries] of Object.entries(value.plugins)) {
@@ -668,7 +668,7 @@ function gsdFactOf(
  * `$CLAUDE_CONFIG_DIR/...` (IN-03); `givenRoot` is the session root before the host resolved it, which an installed
  * plugin entry may name too (WR-04). Both are parameters so the shared RawFacts type stays as it is.
  */
-export function normalizeFacts(raw: RawFacts, configDir: string | null = null, givenRoot: string = raw.root): Facts {
+export function normalizeFacts(raw: RawFacts, configDir: string | null, givenRoot: string): Facts {
   const settings = orderedSettings(raw.settings)
   const flags = settings.flatMap(entry => parseEnabledPlugins(entry.value, entry.source))
   const plugins = parseInstalledPlugins(raw.installedPlugins, raw.root, givenRoot)

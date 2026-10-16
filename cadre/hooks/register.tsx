@@ -286,7 +286,11 @@ function rootUnknownFacts(): RawFacts {
  */
 async function detectReply($: EngineInterface, isAdapters: boolean): Promise<string> {
   const sessionRoot = await $.session.root().catch(() => null)
-  if (sessionRoot === null) return detectText(normalizeFacts(rootUnknownFacts()), isAdapters)
+  if (sessionRoot === null) {
+    const unknown = rootUnknownFacts()
+
+    return detectText(normalizeFacts(unknown, null, unknown.root), isAdapters)
+  }
   const locations = await locationsOf($, sessionRoot)
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal

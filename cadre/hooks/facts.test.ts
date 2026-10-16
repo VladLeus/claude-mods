@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Facts, GsdReadTarget, RawFacts, RawGsdCandidate } from '../types'
+import type { Facts, GsdReadTarget, PluginVersion, RawFacts, RawGsdCandidate } from '../types'
 import {
   clean,
   detectRefusal,
@@ -76,12 +76,25 @@ function hostileCandidates(json: string): RawGsdCandidate[] {
   const parsed: unknown = JSON.parse(json)
   const items: unknown[] = Array.isArray(parsed) ? parsed : []
 
-  return items.filter(isAnyHostItem)
+  return items.filter(isUncheckedHostItem)
 }
 
-/** Lets every parsed item through, so wrongly typed fields reach normalizeFacts. */
-function isAnyHostItem(item: unknown): item is RawGsdCandidate {
+/**
+ * Deliberately unsound: claims every parsed item is a RawGsdCandidate so hostile shapes reach normalizeFacts;
+ * usableCandidate is what checks them.
+ */
+function isUncheckedHostItem(item: unknown): item is RawGsdCandidate {
   return item !== undefined
+}
+
+/** normalizeFacts with the config dir unset and the root as given equal to the resolved root, unless told otherwise. */
+function normalizeWith(input: RawFacts, configDir: string | null = null, givenRoot: string = input.root): Facts {
+  return normalizeFacts(input, configDir, givenRoot)
+}
+
+/** parseInstalledPlugins with the root as given equal to the resolved root, unless told otherwise. */
+function installedPluginsOf(value: unknown, root: string, givenRoot: string = root): PluginVersion[] {
+  return parseInstalledPlugins(value, root, givenRoot)
 }
 
 /** A raw host read with every list empty, the repo at /repo and the home folder at /home/u. */
@@ -209,7 +222,7 @@ describe('names that clean would change (WR-03)', () => {
   })
 
   test('normalizeFacts drops faked markers and plugin keys and warns with their cleaned names', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         repoEntries: [
           { name: '.planning\u200B', kind: 'dir', isLink: false },
@@ -231,7 +244,7 @@ describe('names that clean would change (WR-03)', () => {
   })
 
   test('a repo entry over 255 code points is dropped with the same warning, its name capped at 60', () => {
-    const facts = normalizeFacts(raw({ repoEntries: [{ name: 'n'.repeat(256), kind: 'dir', isLink: false }] }))
+    const facts = normalizeWith(raw({ repoEntries: [{ name: 'n'.repeat(256), kind: 'dir', isLink: false }] }))
     expect(facts.repoEntries).toEqual([])
     expect(facts.warnings).toEqual([
       `ignored repo entry "${'n'.repeat(59)}\u2026": its name has hidden characters or is too long`,
@@ -252,7 +265,7 @@ describe('names that clean would change (WR-03)', () => {
 
   test('the same changed enabledPlugins key in user and project settings warns once', () => {
     const value = { enabledPlugins: { 'super\u200Bpowers@evil': true } }
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({ settings: [{ source: 'user', value }, { source: 'project', value }] }),
     )
     expect(facts.warnings).toEqual([
@@ -269,11 +282,11 @@ describe('names that clean would change (WR-03)', () => {
 
 describe('normalizeFacts', () => {
   test('an empty raw read gives Facts with every list empty and no warnings', () => {
-    expect(normalizeFacts(raw({}))).toEqual(emptyFacts({}))
+    expect(normalizeWith(raw({}))).toEqual(emptyFacts({}))
   })
 
   test('repo and docs listings become typed entries, and warnings are cleaned', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         repoEntries: [{ name: '.planning', kind: 'other', size: 0, mtimeMs: 0, isLink: true }],
         docsEntries: [{ name: 'guide.md', kind: 'file', isLink: false }],
@@ -292,7 +305,7 @@ describe('normalizeFacts', () => {
   test('the raw read is not changed by normalisation', () => {
     const input = raw({ repoEntries: [{ name: 'src', kind: 'dir', size: 4, mtimeMs: 1, isLink: false }] })
     const before = JSON.stringify(input)
-    expect(normalizeFacts(input)).toEqual(emptyFacts({ repoEntries: [{ name: 'src', kind: 'dir', isLink: false }] }))
+    expect(normalizeWith(input)).toEqual(emptyFacts({ repoEntries: [{ name: 'src', kind: 'dir', isLink: false }] }))
     expect(JSON.stringify(input)).toBe(before)
   })
 })
@@ -419,7 +432,7 @@ describe('parseHookScripts', () => {
 
 describe('parseInstalledPlugins', () => {
   test('a key longer than 120 code points is dropped (WR-03 decision)', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       { plugins: { [`${'k'.repeat(121)}`]: [{ scope: 'user', version: '1.0.0' }] } },
       '/repo',
     )
@@ -427,7 +440,7 @@ describe('parseInstalledPlugins', () => {
   })
 
   test('gives the key and the version only, and the install path is never returned', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       {
         version: 2,
         plugins: {
@@ -441,7 +454,7 @@ describe('parseInstalledPlugins', () => {
   })
 
   test('the first entry with a usable version wins, and an entry without one is skipped', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       {
         version: 2,
         plugins: {
@@ -457,7 +470,7 @@ describe('parseInstalledPlugins', () => {
   })
 
   test('a user entry wins over an earlier project entry for the same repo (WR-04)', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       {
         plugins: {
           'superpowers@x': [
@@ -472,7 +485,7 @@ describe('parseInstalledPlugins', () => {
   })
 
   test("another project's entry is ignored, so its version never shows for this repo (WR-04)", () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       { plugins: { 'superpowers@x': [{ scope: 'project', projectPath: '/other', version: '9.9.9' }] } },
       '/repo',
     )
@@ -481,7 +494,7 @@ describe('parseInstalledPlugins', () => {
 
   // Guard: passes before the fix by design; it proves the WR-04 scoping keeps this repo's local entry.
   test('a local entry whose projectPath is the repo root counts, trailing slashes ignored (WR-04)', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       { plugins: { 'superpowers@x': [{ scope: 'local', projectPath: '/repo/', version: '3.0.0' }] } },
       '/repo',
     )
@@ -490,19 +503,20 @@ describe('parseInstalledPlugins', () => {
 
   test('a project entry whose projectPath is the root as given counts when the resolved root differs', () => {
     const value = { plugins: { 'superpowers@x': [{ scope: 'project', projectPath: '/tmp/repo', version: '4.0.0' }] } }
-    expect(parseInstalledPlugins(value, '/private/tmp/repo', '/tmp/repo')).toEqual([
+    expect(installedPluginsOf(value, '/private/tmp/repo', '/tmp/repo')).toEqual([
       { key: 'superpowers@x', version: '4.0.0' },
     ])
-    expect(parseInstalledPlugins(value, '/private/tmp/repo')).toEqual([])
+    expect(installedPluginsOf(value, '/private/tmp/repo')).toEqual([])
   })
 
+  // Guard: passes before the fix by design; it pins that an empty root form matches no entry.
   test('a root that trims to nothing never matches an entry, as given or as resolved', () => {
     const value = { plugins: { 'a@b': [{ scope: 'project', projectPath: '/', version: '1.0.0' }] } }
-    expect(parseInstalledPlugins(value, '/', '//')).toEqual([])
+    expect(installedPluginsOf(value, '/', '//')).toEqual([])
   })
 
   test('an entry with no scope or an unknown scope is ignored (WR-04)', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       { plugins: { 'a@b': [{ version: '1.0.0' }], 'c@d': [{ scope: 'managed', version: '1.0.0' }] } },
       '/repo',
     )
@@ -510,7 +524,7 @@ describe('parseInstalledPlugins', () => {
   })
 
   test('a key with hidden characters is dropped (WR-03)', () => {
-    const installed = parseInstalledPlugins(
+    const installed = installedPluginsOf(
       { plugins: { 'superpowers@x\u200B': [{ scope: 'user', version: '1.0.0' }] } },
       '/repo',
     )
@@ -557,7 +571,7 @@ describe('normalizeFacts with settings and plugins', () => {
   }
 
   test('folds flags in user, project, local order and keeps only superpowers versions', () => {
-    expect(normalizeFacts(raw({ settings, installedPlugins }))).toEqual(
+    expect(normalizeWith(raw({ settings, installedPlugins }))).toEqual(
       emptyFacts({
         enabledPlugins: [
           { key: 'superpowers@claude-plugins-official', source: 'user', value: true },
@@ -574,7 +588,7 @@ describe('normalizeFacts with settings and plugins', () => {
   })
 
   test('the serialized Facts keep the hook basename and none of the secret, home path or install path', () => {
-    const serialized = JSON.stringify(normalizeFacts(raw({ settings, installedPlugins })))
+    const serialized = JSON.stringify(normalizeWith(raw({ settings, installedPlugins })))
     expect(serialized).toContain('gsd-context-monitor.js')
     expect(serialized).not.toContain(SENTINEL)
     expect(serialized).not.toContain('/Users/someone')
@@ -582,7 +596,7 @@ describe('normalizeFacts with settings and plugins', () => {
   })
 
   test("the installed version is picked for this repo's root, never another project's (WR-04)", () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         installedPlugins: {
           plugins: {
@@ -869,7 +883,7 @@ describe('displayPath', () => {
 
 describe('normalizeFacts with GSD candidates', () => {
   test('a user install that its identity module proves is listed by display path, with its VERSION', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         gsd: [candidate({ identityText: 'const packageName = "@opengsd/gsd-core";', versionText: ' 1.16.0\n' })],
       }),
@@ -887,7 +901,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('a present install that nothing proves is unknown with a warning, never absent', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'project', dir: '/repo/.claude/gsd-core' })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ location: 'project', dir: '/repo/.claude/gsd-core' })] }))
     expect(facts.gsd).toEqual([
       {
         location: 'project',
@@ -901,7 +915,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('an install that is not present is absent, with no warning', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ isPresent: false })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ isPresent: false })] }))
     expect(facts.gsd).toEqual([
       { location: 'user', dir: '~/.claude/gsd-core', version: null, identity: 'absent', runtimeIdentityTried: false },
     ])
@@ -909,7 +923,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('the VERSION text is the version when there is one, ahead of the manifest', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         gsd: [
           candidate({
@@ -925,7 +939,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('the manifest outranks the runtime identity, which still proves a user install', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         gsd: [
           candidate({
@@ -948,7 +962,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('with no VERSION and no manifest, the runtime identity supplies the version', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         gsd: [
           candidate({ runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.14.0"}', runtimeTried: true }),
@@ -959,54 +973,54 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('a host warning that names the home folder or the repo root shows the display form instead', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({ warnings: ['could not read /home/u/.claude/settings.json', 'could not list /repo/docs'] }),
     )
     expect(facts.warnings).toEqual(['could not read ~/.claude/settings.json', 'could not list <repo>/docs'])
   })
 
   test('a host warning longer than 240 code points is cut to 240, the ellipsis counted', () => {
-    const facts = normalizeFacts(raw({ warnings: ['w'.repeat(300)] }))
+    const facts = normalizeWith(raw({ warnings: ['w'.repeat(300)] }))
     expect(Array.from(facts.warnings[0] ?? '')).toHaveLength(240)
     expect(facts.warnings[0]?.endsWith('\u2026')).toBe(true)
   })
 
   test('the home folder inside a longer path is not masked as the repo root, and the repo path keeps its form', () => {
-    const facts = normalizeFacts(raw({ warnings: ['bad /home/u/repo/file', 'bad /repo-other/x'] }))
+    const facts = normalizeWith(raw({ warnings: ['bad /home/u/repo/file', 'bad /repo-other/x'] }))
     expect(facts.warnings).toEqual(['bad ~/repo/file', 'bad /repo-other/x'])
   })
 
   test('a path before a full stop is masked, while a longer name after the dot is not', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({ warnings: ['could not list /repo.', 'at /repo. Next', 'at /home/u.', '/repo.bak /repo..x'] }),
     )
     expect(facts.warnings).toEqual(['could not list <repo>.', 'at <repo>. Next', 'at ~.', '/repo.bak /repo..x'])
   })
 
   test('a root given with a trailing slash still masks paths under it', () => {
-    const facts = normalizeFacts(raw({ root: '/repo/', warnings: ['bad /repo/a'] }))
+    const facts = normalizeWith(raw({ root: '/repo/', warnings: ['bad /repo/a'] }))
     expect(facts.warnings).toEqual(['bad <repo>/a'])
   })
 
   test('a display path is cleaned, so a bidi character in a candidate dir does not reach Facts', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ dir: '/home/u/.claude/gsd\u202E-core' })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ dir: '/home/u/.claude/gsd\u202E-core' })] }))
     expect(facts.gsd[0]?.dir).toBe('~/.claude/gsd-core')
     expect(facts.warnings.join(' ')).not.toContain('\u202E')
     expect(facts.warnings).toEqual(['could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'])
   })
 
   test('a candidate with a non-string dir is skipped without throwing', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ dir: 42 as never }), candidate({ isPresent: false })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ dir: 42 as never }), candidate({ isPresent: false })] }))
     expect(facts.gsd.map(install => install.identity)).toEqual(['absent'])
   })
 
   test('a candidate with an unknown location is skipped', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ location: 'elsewhere' as never })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ location: 'elsewhere' as never })] }))
     expect(facts.gsd).toEqual([])
   })
 
   test('a user install whose runtime is not built says so in its warning (WR-01)', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ runtimeProblem: 'not-built' })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ runtimeProblem: 'not-built' })] }))
     expect(facts.gsd[0]?.identity).toBe('unknown')
     expect(facts.warnings).toEqual([
       'could not prove the GSD install at ~/.claude/gsd-core: runtime not built (treated as unknown)',
@@ -1014,7 +1028,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('a user install whose identity call could not run says so in one generic warning (IN-05)', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({ runtimeProblem: 'could-not-run', runtimeTried: true })] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({ runtimeProblem: 'could-not-run', runtimeTried: true })] }))
     expect(facts.warnings).toEqual([
       'could not prove the GSD install at ~/.claude/gsd-core: the identity call could not run ' +
         '(node missing or timed out); treated as unknown',
@@ -1023,7 +1037,7 @@ describe('normalizeFacts with GSD candidates', () => {
 
   test('a candidate isPresent that is not exactly true counts as absent (WR-05)', () => {
     const gsd = hostileCandidates('[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":"no"}]')
-    const facts = normalizeFacts(raw({ gsd }))
+    const facts = normalizeWith(raw({ gsd }))
     expect(facts.gsd[0]?.identity).toBe('absent')
     expect(facts.warnings).toEqual([])
   })
@@ -1032,7 +1046,7 @@ describe('normalizeFacts with GSD candidates', () => {
     const json =
       '[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":true,' +
       '"identityText":["const packageName = \\"@opengsd/gsd-core\\";"]}]'
-    const facts = normalizeFacts(raw({ gsd: hostileCandidates(json) }))
+    const facts = normalizeWith(raw({ gsd: hostileCandidates(json) }))
     expect(facts.gsd[0]?.identity).toBe('unknown')
   })
 
@@ -1040,7 +1054,7 @@ describe('normalizeFacts with GSD candidates', () => {
     const json =
       '[{"location":"user","dir":"/home/u/.claude/gsd-core","isPresent":true,"runtimeTried":"yes",' +
       '"versionText":1.16,"runtimeStdout":{"packageName":"@opengsd/gsd-core"},"runtimeProblem":"bogus"}]'
-    const facts = normalizeFacts(raw({ gsd: hostileCandidates(json) }))
+    const facts = normalizeWith(raw({ gsd: hostileCandidates(json) }))
     expect(facts.gsd).toEqual([
       { location: 'user', dir: '~/.claude/gsd-core', version: null, identity: 'unknown', runtimeIdentityTried: false },
     ])
@@ -1048,7 +1062,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('a candidate under a CLAUDE_CONFIG_DIR outside home shows as $CLAUDE_CONFIG_DIR, never the path (IN-03)', () => {
-    const facts = normalizeFacts(
+    const facts = normalizeWith(
       raw({
         gsd: [candidate({ dir: '/opt/claude/gsd-core' })],
         warnings: ['could not read /opt/claude/gsd-core/VERSION (treated as unknown)'],
@@ -1064,7 +1078,7 @@ describe('normalizeFacts with GSD candidates', () => {
   })
 
   test('the serialized Facts never carry the home folder or the repo root', () => {
-    const facts = normalizeFacts(raw({ gsd: [candidate({})], warnings: ['read failed at /repo/.claude/x'] }))
+    const facts = normalizeWith(raw({ gsd: [candidate({})], warnings: ['read failed at /repo/.claude/x'] }))
     const serialized = JSON.stringify(facts)
     expect(serialized).toContain('~/.claude/gsd-core')
     expect(serialized).not.toContain('/home/u')
