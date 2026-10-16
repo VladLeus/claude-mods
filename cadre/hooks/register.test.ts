@@ -34,6 +34,8 @@ type World = {
   /** The kind a path's stat answers when it is not the default: `file` for a file in `files`, else `dir`. */
   readonly statKinds: Readonly<Record<string, FakeEntry['kind']>>
   readonly denySettings: readonly string[]
+  /** Paths whose exists probe refuses, although the path exists. */
+  readonly denyExists: readonly string[]
   /** What `process.run` answers; null makes the call refuse with `runtimeDeny`. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
   /** The reason a refused `process.run` gives; detect must never show it. */
@@ -101,6 +103,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     denyStat: [],
     statKinds: {},
     denySettings: [],
+    denyExists: [],
     runtime: null,
     runtimeDeny: 'no runtime in this world',
     denyRoot: false,
@@ -123,6 +126,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('env.get', async (_$, e) => ({ value: world.env[e.name] }))
   on('fs.exists', async (_$, e) => {
     log.ops.push(`fs.exists ${e.path}`)
+    if (world.denyExists.includes(e.path)) return { deny: 'exists refused' }
 
     return { value: hasPath(world, e.path) }
   })
@@ -590,6 +594,41 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).not.toContain('the identity call could not run')
     expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+  })
+
+  // Guard: passes before the fix by design; it pins that a refused built-probe fails closed (no process call).
+  test('a built-probe the host refuses is reported as not built and the identity call is not made', async ($, on) => {
+    const log = newLog()
+    const probeRefused = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      denyExists: ['/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs'],
+      runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+    }
+    fakeHost(on, probeRefused, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.runs).toEqual([])
+    expect(out.text).toContain('could not prove the GSD install at ~/.claude/gsd-core: runtime not built')
+  })
+
+  // Guard: passes before the fix by design; it pins today's behaviour for a root used as given (D-39).
+  test('a root whose realpath failed skips its repo-local files with the warning, though they exist', async ($, on) => {
+    const log = newLog()
+    const versionPath = '/tmp/repo/.claude/gsd-core/VERSION'
+    const unresolved = {
+      ...ambiguousWorld(),
+      root: '/tmp/repo',
+      listings: { '/tmp/repo': [entry('.claude', 'dir')] },
+      files: { ...ambiguousWorld().files, [versionPath]: '1.2.3\n' },
+      dirs: [...ambiguousWorld().dirs, '/tmp/repo/.claude/gsd-core'],
+      denyStat: ['/tmp/repo'],
+      realPaths: { '/home/u': '/home/u', [versionPath]: `/private${versionPath}` },
+    }
+    fakeHost(on, unresolved, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.ops).not.toContain(`fs.read ${versionPath}`)
+    expect(out.text).toContain('Warning: could not resolve the repo root (used as given)')
+    expect(out.text).toContain('Warning: skipped <repo>/.claude/gsd-core/VERSION: not a regular file inside the repo')
   })
 
   test('a repo-local GSD file that links out of the repo is never read (WR-02)', async ($, on) => {

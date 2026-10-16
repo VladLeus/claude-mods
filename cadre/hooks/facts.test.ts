@@ -238,6 +238,21 @@ describe('names that clean would change (WR-03)', () => {
     expect(warnings[5]).toBe('ignored 2 more repo entry names with hidden characters or too long')
   })
 
+  test('the same changed name given twice is warned about once', () => {
+    const warnings = hiddenNameWarnings(['a\u200B', 'a\u200B', 'b\u200B'], 'repo entry', 255)
+    expect(warnings).toHaveLength(2)
+  })
+
+  test('the same changed enabledPlugins key in user and project settings warns once', () => {
+    const value = { enabledPlugins: { 'super\u200Bpowers@evil': true } }
+    const facts = normalizeFacts(
+      raw({ settings: [{ source: 'user', value }, { source: 'project', value }] }),
+    )
+    expect(facts.warnings).toEqual([
+      'ignored enabledPlugins key "superpowers@evil": its name has hidden characters or is too long',
+    ])
+  })
+
   test('a changed name in a warning is cleaned and capped at 60 code points', () => {
     const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}\u200B`], 'repo entry', 255)
     expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}\u2026": its name has hidden characters or is too long`)
@@ -464,6 +479,19 @@ describe('parseInstalledPlugins', () => {
       '/repo',
     )
     expect(installed).toEqual([{ key: 'superpowers@x', version: '3.0.0' }])
+  })
+
+  test('a project entry whose projectPath is the root as given counts when the resolved root differs', () => {
+    const value = { plugins: { 'superpowers@x': [{ scope: 'project', projectPath: '/tmp/repo', version: '4.0.0' }] } }
+    expect(parseInstalledPlugins(value, '/private/tmp/repo', '/tmp/repo')).toEqual([
+      { key: 'superpowers@x', version: '4.0.0' },
+    ])
+    expect(parseInstalledPlugins(value, '/private/tmp/repo')).toEqual([])
+  })
+
+  test('a root that trims to nothing never matches an entry, as given or as resolved', () => {
+    const value = { plugins: { 'a@b': [{ scope: 'project', projectPath: '/', version: '1.0.0' }] } }
+    expect(parseInstalledPlugins(value, '/', '//')).toEqual([])
   })
 
   test('an entry with no scope or an unknown scope is ignored (WR-04)', () => {
