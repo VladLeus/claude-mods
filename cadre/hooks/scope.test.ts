@@ -106,6 +106,11 @@ const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them
 const PARTIAL_MCP_RULE =
   'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
 
+/** The rule that names the code dirs that are the role's own folders, which no deny ever covers (B7). */
+function ownRule(dirs: string): string {
+  return `Reads and edits under ${dirs} are never denied (own folders)`
+}
+
 /** The rule that names the code dirs the committed template leaves alone because their names match the role's own. */
 function skippedRule(dirs: string): string {
   return (
@@ -775,19 +780,33 @@ describe('scope rules', () => {
     const dirs = ['thoughts', 'cadre', '.cadre', 'pm', 'handoffs', '.planning', 'shared', 'src']
     const skipped = compileScope(templateRole('pm'), context({ codeDirs: dirs }))
     const none = compileScope(templateRole('pm'), context({ codeDirs: ['cadre', 'src'] }))
-    const text = skippedRule('.cadre, .planning, handoffs, pm, shared, thoughts')
+    const text = skippedRule('handoffs, pm, shared')
     const isSkipRule = (candidate: ScopeRule): boolean => candidate.text.includes('not denied in the committed')
 
     expect(ruleOf(skipped, text)).toEqual({ text, enforcement: 'best-effort' })
+    expect(ruleOf(skipped, ownRule('.cadre, .planning, thoughts'))?.enforcement).toBe('none')
     expect(skipped.card.rules.filter(isSkipRule)).toHaveLength(1)
     expect(none.card.rules.filter(isSkipRule)).toEqual([])
+    expect(none.card.rules.filter(candidate => candidate.text.endsWith('(own folders)'))).toEqual([])
   })
 
   test('a code dir whose name differs only in case from a folder of the role is skipped too', () => {
     const scope = compileScope(templateRole('pm'), context({ codeDirs: ['PM', 'Thoughts', 'src'] }))
 
     expect(codeDirDenies(scope.settings.permissions.deny)).toEqual(['Edit(./src/**)', 'Read(./src/**)'])
-    expect(ruleOf(scope, skippedRule('PM, Thoughts'))?.enforcement).toBe('best-effort')
+    expect(ruleOf(scope, skippedRule('PM'))?.enforcement).toBe('best-effort')
+    expect(ruleOf(scope, ownRule('Thoughts'))?.enforcement).toBe('none')
+  })
+
+  test('own folders are never denied and say so, and only the other skipped dirs wait for the launch render', () => {
+    const scope = compileScope(templateRole('pm'), context({ codeDirs: ['thoughts', '.planning', 'shared'] }))
+    const own = ownRule('.planning, thoughts')
+    const launch = skippedRule('shared')
+    const texts = scope.card.rules.map(candidate => candidate.text)
+
+    expect(ruleOf(scope, own)).toEqual({ text: own, enforcement: 'none' })
+    expect(ruleOf(scope, launch)).toEqual({ text: launch, enforcement: 'best-effort' })
+    expect(texts.indexOf(own) + 1).toBe(texts.indexOf(launch))
   })
 
   test('a code dir with an unusual name is not denied and the card says so', () => {
