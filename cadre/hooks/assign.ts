@@ -61,8 +61,8 @@ export const FRAMEWORK_START_SKILLS: Readonly<Record<FrameworkId, readonly strin
 
 /**
  * Whether a skill belongs to a framework, and so comes through its adapter instead of a question. A GSD skill is named
- * `gsd-...`. A superpowers skill comes from the superpowers plugin, so it is named `superpowers:...` or lists that
- * plugin. The built-in fallback owns no skill.
+ * `gsd-...`. A superpowers skill is named `superpowers:...` or is added by the superpowers plugin. The built-in
+ * fallback owns no skill.
  */
 export function isFrameworkSkill(skill: SkillRef, framework: FrameworkId): boolean {
   if (framework === 'gsd') return skill.name.startsWith('gsd-')
@@ -262,16 +262,18 @@ export function skillGroupQuestion(group: SkillGroup): string {
   return `Which roles get ${clean(group.label, MAX_NAME_CHARS)} skills (${group.names.length})? ${ROLE_ANSWER_HINT}`
 }
 
+/** Records a role id under the lowercase form of a name, unless the name is blank or an earlier role holds it. */
+function addRoleName(names: Map<string, string>, name: string, id: string): void {
+  const key = name.trim().toLowerCase()
+  if (key === '' || names.has(key)) return
+  names.set(key, id)
+}
+
 /** Lowercase role id or title to role id. Every id comes before every title, so an id beats another role's title. */
 function roleNames(roles: readonly RoleSpec[]): ReadonlyMap<string, string> {
   const names = new Map<string, string>()
-  const add = (name: string, id: string): void => {
-    const key = name.trim().toLowerCase()
-    if (key === '' || names.has(key)) return
-    names.set(key, id)
-  }
-  for (const role of roles) add(role.id, role.id)
-  for (const role of roles) add(role.title, role.id)
+  for (const role of roles) addRoleName(names, role.id, role.id)
+  for (const role of roles) addRoleName(names, role.title, role.id)
 
   return names
 }
@@ -437,8 +439,9 @@ function shownNames(names: readonly string[]): string {
 
   const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_NAME_CHARS))
   const rest = names.length - shown.length
+  const items = rest > 0 ? [...shown, `+${rest} more`] : shown
 
-  return ` (${(rest > 0 ? [...shown, `+${rest} more`] : shown).join(', ')})`
+  return ` (${items.join(', ')})`
 }
 
 /**
