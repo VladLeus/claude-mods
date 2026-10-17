@@ -180,16 +180,20 @@ export const GSD_GATES: readonly Gate[] = freezeRows([
 ])
 
 /**
- * The GSD settings an autonomous role needs, as proposals only: Phase 1 describes them and nothing runs them. Each
- * write goes through GSD's own writer, `gsd-tools config-set`, and `isRequired` is true when autonomy cannot work
- * without the change (T-01-21).
+ * The GSD settings an autonomous role needs, as proposals only: Phase 2 shows each as a hunk and nothing runs it. Every
+ * key lives in `.planning/config.json`, where its before value is read statically (D-70). Each write goes through GSD's
+ * own writer, `gsd-tools config-set`, as a logical `{ tool, args }` that cadre resolves to a real argv from facts
+ * (D-71); the args are fixed constants. `isRequired` is true when autonomy cannot work without the change (T-01-21).
  */
 export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'mode',
-    read: Object.freeze(['gsd-tools', 'config-get', 'mode']),
-    write: Object.freeze(['gsd-tools', 'config-set', 'mode', 'yolo']),
+    file: '.planning/config.json',
+    write: Object.freeze({
+      tool: 'gsd-tools',
+      args: Object.freeze(['config-set', 'mode', 'yolo']),
+    }),
     to: 'yolo',
     why: 'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
     isRequired: true,
@@ -197,8 +201,11 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'workflow.text_mode',
-    read: Object.freeze(['gsd-tools', 'config-get', 'workflow.text_mode']),
-    write: Object.freeze(['gsd-tools', 'config-set', 'workflow.text_mode', 'false']),
+    file: '.planning/config.json',
+    write: Object.freeze({
+      tool: 'gsd-tools',
+      args: Object.freeze(['config-set', 'workflow.text_mode', 'false']),
+    }),
     to: 'false',
     why: 'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
     isRequired: true,
@@ -206,8 +213,11 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'hooks.context_warnings',
-    read: Object.freeze(['gsd-tools', 'config-get', 'hooks.context_warnings']),
-    write: Object.freeze(['gsd-tools', 'config-set', 'hooks.context_warnings', 'false']),
+    file: '.planning/config.json',
+    write: Object.freeze({
+      tool: 'gsd-tools',
+      args: Object.freeze(['config-set', 'hooks.context_warnings', 'false']),
+    }),
     to: 'false',
     why:
       'only when gsd-statusline is the statusline: ' +

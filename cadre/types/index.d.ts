@@ -185,17 +185,19 @@ export type Gate = {
   readonly kickoff: string
 }
 
-/** A setting change an adapter proposes for autonomy. Phase 1 only describes it; nothing applies it. */
+/** A logical tool call: cadre resolves `tool` to a real argv from facts (D-71). Args are fixed constants. */
+export type ToolCommand = {
+  readonly tool: 'gsd-tools'
+  readonly args: readonly string[]
+}
+
+/** A setting change an adapter proposes for autonomy. Phase 2 shows it as a hunk; nothing runs it. */
 export type SettingProposal = {
   readonly kind: 'command'
   readonly key: string
-  /**
-   * The argv that reads the current value. `argv[0]` is a logical tool name such as `gsd-tools`, not an executable on
-   * PATH: the executor resolves it (for GSD, to `node <gsd dir>/bin/gsd-tools.cjs`).
-   */
-  readonly read: readonly string[]
-  /** The argv that writes the proposed value; `argv[0]` is a logical tool name, resolved the same way as for `read`. */
-  readonly write: readonly string[]
+  /** The repo-relative config file the key lives in; its current value is read statically (D-70). */
+  readonly file: string
+  readonly write: ToolCommand
   readonly to: string
   readonly why: string
   /** True when autonomy needs this change; false when the change only helps. */
