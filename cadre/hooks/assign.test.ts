@@ -16,6 +16,7 @@ import {
   INFRA_TOOLS,
   INSTRUCTION_LABELS,
   isFrameworkSkill,
+  isSecurityReviewSkill,
   MCP_ROLE_ROWS,
   mcpQuestion,
   memoryQuestion,
@@ -569,6 +570,21 @@ describe('skill assignment', () => {
     expect(classifySkills([skill('Security-Review')], TEAM).assigned).toEqual([
       { name: 'Security-Review', roleIds: ['security'] },
     ])
+  })
+
+  test('isSecurityReviewSkill takes security-review as the whole last word, after a plugin or a dash', () => {
+    const matching = ['security-review', 'SECURITY-REVIEW', 'acme:security-review', 'my-security-review']
+    const other = ['security-reviewer', 'notsecurity-review', 'security-review-x', 'review', '']
+
+    expect(matching.filter(name => !isSecurityReviewSkill(name))).toEqual([])
+    expect(other.filter(isSecurityReviewSkill)).toEqual([])
+  })
+
+  test('the security-review row of the table follows isSecurityReviewSkill', () => {
+    const names = ['security-review', 'Acme:Security-Review', 'my-security-review', 'security-reviewer', 'x-review']
+    const row = SKILL_ROLE_ROWS[0]
+
+    expect(names.map(name => row?.pattern.test(name))).toEqual(names.map(isSecurityReviewSkill))
   })
 
   test('with no skills there is nothing to assign or ask', () => {

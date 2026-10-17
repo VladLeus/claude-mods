@@ -796,12 +796,20 @@ describe('recommend', () => {
     }
   })
 
-  test('only the name security-review or a plugin name ending in :security-review counts as the skill', () => {
-    const setup = setupScan({ skills: [skill('my-security-review'), skill('security-review-extra'), skill('review')] })
+  test('security-review counts only as the whole last word of a skill name, so security-reviewer does not', () => {
+    const setup = setupScan({ skills: [skill('security-reviewer'), skill('security-review-extra'), skill('review')] })
 
     expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
       securityReviewFor('security'),
     ])
+  })
+
+  test('a security-review skill after a dash or a plugin, in any case, means no security-review line', () => {
+    for (const name of ['my-security-review', 'Acme:Security-Review', 'SECURITY-REVIEW']) {
+      const setup = setupScan({ skills: [skill(name)] })
+
+      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
+    }
   })
 
   test('a full team with nothing found gets the five lines in rule order', () => {
