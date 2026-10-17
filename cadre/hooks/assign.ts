@@ -1,4 +1,4 @@
-import type { FrameworkId, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
+import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { clean } from './facts'
 import { freezeRows } from './freeze'
 
@@ -337,4 +337,115 @@ export function assignToRoles(
 
     return withNames(role, field, sortedUnique([...role[field], ...added]))
   })
+}
+
+/**
+ * The buttons of the "Model and effort for <role>?" question (D-52): a model family alias and an effort joined by
+ * ` + `. Any other pair is typed as free text and read by parseModelEffort.
+ */
+export const MODEL_EFFORT_OPTIONS: readonly string[] = Object.freeze([
+  'opus + medium',
+  'sonnet + medium',
+  'sonnet + high',
+])
+
+/** The button that asks a question once and applies the answer to every role (D-86). */
+export const SAME_FOR_ALL = 'Same for all roles'
+
+/** The button that asks the question for each role in turn (D-86). */
+export const PER_ROLE = 'Per role'
+
+/** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18). */
+export const EFFORTS: readonly Effort[] = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max'])
+
+/** A model family alias such as `opus`: lowercase letters and hyphens, 24 characters at most, and no digit (OQ 8). */
+const MODEL_ALIAS = /^[a-z][a-z-]{0,23}$/
+
+/** What separates a model from its effort in a typed answer: a plus with or without spaces, or spaces alone. */
+const MODEL_EFFORT_SEPARATOR = /\s*\+\s*|\s+/
+
+/** Whether the text is one of the five effort levels. */
+function isEffort(text: string): text is Effort {
+  return EFFORTS.some(effort => effort === text)
+}
+
+/**
+ * Reads a typed answer such as `opus + medium`, `sonnet high` or `haiku+low` into a model family alias and an effort,
+ * in any case (D-52). The model must look like a family alias, so a pinned model id such as `claude-opus-5-5`, which
+ * has digits, is refused and a role keeps following the latest model of its family (OQ 8). The effort must be one of
+ * EFFORTS. Anything else, a model alone included, gives null so the question is asked again (T-02-19).
+ */
+export function parseModelEffort(answer: string): { readonly model: string; readonly effort: Effort } | null {
+  const [model, effort, ...rest] = answer.trim().toLowerCase().split(MODEL_EFFORT_SEPARATOR)
+  if (model === undefined || effort === undefined || rest.length > 0) return null
+  if (!MODEL_ALIAS.test(model) || !isEffort(effort)) return null
+
+  return { model, effort }
+}
+
+/** The button that carries every scanned env variable name. A typed answer of the same words, or `all`, counts too. */
+export const ALL_ENV_OPTION = 'All of them'
+
+/**
+ * Reads a typed answer to "which env variables do roles carry?" into names (D-60). Only names from the scanned list
+ * come out, as names and sorted: `none` gives no names, and `all` or the All of them button gives every scanned name.
+ * Otherwise every word, split on commas and spaces, must be a scanned name in its exact case. Any other word, which
+ * includes a `NAME=value` pair, gives null so the question is asked again; no value is ever read (PLAN-05, T-02-19).
+ */
+export function parseEnvNames(answer: string, available: readonly string[]): readonly string[] | null {
+  const text = answer.trim()
+  if (text === '') return null
+
+  const lower = text.toLowerCase()
+  if (lower === NONE_OPTION.toLowerCase()) return []
+
+  const scanned = sortedUnique(available)
+  if (lower === 'all' || lower === ALL_ENV_OPTION.toLowerCase()) return scanned
+
+  const words = text.split(/[\s,]+/).filter(word => word !== '')
+  if (words.length === 0 || !words.every(word => scanned.includes(word))) return null
+
+  return sortedUnique(words)
+}
+
+/**
+ * The question for the env variable names roles carry (D-60). The scanned names are cleaned and cut to 60 code points
+ * each; values are never read, so none can be shown.
+ */
+export function envQuestion(names: readonly string[]): string {
+  const shown = names.map(name => clean(name, MAX_NAME_CHARS)).join(', ')
+
+  return `Which env variables do roles carry? Names: ${shown} (values are never stored; e.g. API_KEY, or none)`
+}
+
+/** What each instruction group is called in a question (D-63). Only the group is named; no content is ever shown. */
+export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Object.freeze({
+  'global-claude-md': 'your global ~/.claude/CLAUDE.md and the files it imports',
+  'auto-memory': 'the auto-memories for this repo',
+  'project-claude-md': 'the project CLAUDE.md',
+})
+
+/** The most names a memory question shows before it counts the rest. */
+const MAX_SHOWN_NAMES = 5
+
+/** The hint that ends a memory question. */
+const MEMORY_ANSWER_HINT = '(e.g. PM, TL, or none)'
+
+/** The names a memory question shows, in brackets: the first five cleaned, then how many more. Empty with no name. */
+function shownNames(names: readonly string[]): string {
+  if (names.length === 0) return ''
+
+  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_NAME_CHARS))
+  const rest = names.length - shown.length
+
+  return ` (${(rest > 0 ? [...shown, `+${rest} more`] : shown).join(', ')})`
+}
+
+/**
+ * The question for an instruction group (D-63): which roles get the global CLAUDE.md files, the auto-memories or the
+ * project CLAUDE.md. It shows the group and the names found, the first five cleaned and cut to 60 code points each and
+ * the rest counted; the content is never shown.
+ */
+export function memoryQuestion(group: InstructionGroup, names: readonly string[]): string {
+  return `Which roles get ${INSTRUCTION_LABELS[group]}${shownNames(names)}? ${MEMORY_ANSWER_HINT}`
 }
