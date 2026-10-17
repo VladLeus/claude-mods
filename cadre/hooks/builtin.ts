@@ -1,4 +1,5 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
+import { ROLE_ID_PATTERN } from './command'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
@@ -39,13 +40,14 @@ export const BUILTIN_GATES: readonly Gate[] = freezeRows([
 ])
 
 /**
- * The role folder under `.cadre/`: the role name lowercased, cleaned and capped, or `unnamed` when nothing is left once
- * cleaned and trimmed, so the folder is never an empty path segment. The folder is the cleaned, lowercased role as
- * given, with its spaces and any capped ellipsis kept, because role ids are validated by the Phase 2 role template
- * (D-15); a slash in a role name is not checked here either.
+ * The role folder under `.cadre/`: the role id when it is a slug (ROLE_ID_PATTERN, D-48), else `unnamed`. The id is
+ * checked here, not trusted, so a separator, a dot segment, an uppercase or blank id, a line break or an id over 24
+ * characters can never put a path segment into a kickoff path (D-38). The folder is the id itself, never the title.
  */
-function roleFolder(role: string): string {
-  return cleanKickoffTextOr(role.toLowerCase(), MAX_ROLE_CHARS, UNNAMED_ROLE)
+function roleFolder(roleId: string): string {
+  if (!ROLE_ID_PATTERN.test(roleId)) return UNNAMED_ROLE
+
+  return roleId
 }
 
 /** The Spec line when the role has a spec path that cleans to something; no line when it has none. */
@@ -68,14 +70,16 @@ function doneLine(folder: string): string {
 /**
  * The kickoff text a built-in role starts from: who the role is, its spec when it has one, the plan it writes before it
  * executes, how it verifies, one line per gate in BUILTIN_GATES order, and the DONE answer last. Lines are joined with
- * newlines and the text has no trailing newline. The role and spec path come from outside the adapter, so they are
- * cleaned before they can add a line.
+ * newlines and the text has no trailing newline. The sentence names the role by its display title, as given, cleaned
+ * and capped; every path uses the role id, which is the folder only when it is a slug (D-48). The title and spec path
+ * come from outside the adapter, so they are cleaned before they can add a line.
  */
 export function builtinKickoffText(ctx: KickoffContext): string {
-  const folder = roleFolder(ctx.role)
+  const title = cleanKickoffTextOr(ctx.role, MAX_ROLE_CHARS, UNNAMED_ROLE)
+  const folder = roleFolder(ctx.roleId)
 
   return [
-    `You are the ${folder} role. This repo has no dev framework: work in plan, execute, verify steps.`,
+    `You are the ${title} role. This repo has no dev framework: work in plan, execute, verify steps.`,
     ...specLines(ctx.specPath),
     `Write your plan to .cadre/${folder}/.runtime/plan.md, then execute it with subagents.`,
     "Verify with the project's own test and lint commands and a reviewer subagent.",
