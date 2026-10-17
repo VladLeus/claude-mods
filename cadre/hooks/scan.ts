@@ -59,15 +59,15 @@ const VERSION_TEXT = /^\d+\.\d+\.\d+$/
 const SAFE_SEGMENT = /^[A-Za-z0-9._@-]+$/
 
 /**
- * The path of a session's autopilot status file, `<home>/.claude/autopilot/<id>.json`. Null when the home folder is not
- * an absolute path or the id is not a plain session id, so a caller treats the run state as unknown and never reads
- * some other file in its place (D-42).
+ * The path of a session's autopilot status file, `<home>/.claude/autopilot/<id>.json`, with trailing slashes on the
+ * home folder dropped so `/` never gives `//`. Null when the home folder is not an absolute path or the id is not a
+ * plain session id, so a caller treats the run state as unknown and never reads some other file in its place (D-42).
  */
 export function autopilotStatusPath(home: string, sessionId: string): string | null {
   if (!home.startsWith('/')) return null
   if (!SESSION_ID_PATTERN.test(sessionId)) return null
 
-  return `${home}/.claude/autopilot/${sessionId}.json`
+  return `${trimSlash(home)}/.claude/autopilot/${sessionId}.json`
 }
 
 /**
@@ -113,7 +113,7 @@ export function autopilotReply(state: RunState, command: 'init' | 'regen'): stri
 
 /**
  * How deep the walk goes: a file path has at most 3 segments, so folders at depth 0 (the root) to 2 are listed and a
- * folder at depth 3 is not (D-55).
+ * folder at depth 3 is not (D-55). The depth limit is part of the scan's design, so it never marks a scan truncated.
  */
 export const MAX_SCAN_DEPTH = 3
 
@@ -234,15 +234,45 @@ function shown(path: string): string {
 }
 
 /**
+ * Whether a path the port could not stat or list is missing (`absent`) or there but out of reach (`unknown`). The
+ * port's read answers `absent` only for a path that is not there, so a read capped at 0 bytes tells the two apart and
+ * never returns any of the file's text. The setup scan uses the same probe, so both scans tell a missing path from a
+ * failed one the same way.
+ */
+export async function missingState(io: InitIo, path: string): Promise<'absent' | 'unknown'> {
+  const probe = await io.read(path, 0)
+
+  return probe.state === 'absent' ? 'absent' : 'unknown'
+}
+
+/** A folder as listingState sees it: present with its entries, or absent, or unknown when it cannot be listed. */
+export type Listing =
+  | { readonly state: 'present'; readonly entries: readonly PortEntry[] }
+  | { readonly state: 'absent' }
+  | { readonly state: 'unknown' }
+
+/**
+ * A folder's listing through the port. The port's list answers null both for a folder that is not there and for one
+ * it cannot list, so a null listing is told apart by missingState: a missing path is `absent`, anything else (a file,
+ * a failed stat or listing) is `unknown`, because unknown is never the same as absent.
+ */
+export async function listingState(io: InitIo, path: string): Promise<Listing> {
+  const entries = await io.list(path)
+  if (entries !== null) return { state: 'present', entries }
+
+  return { state: await missingState(io, path) }
+}
+
+/**
  * Reads a repo file through the port, only when its resolved stat is a regular file whose real path is inside the
  * root (WR-02), so a link that leaves the repo, a folder, a device or a FIFO is `unknown` and never read. A path with
- * no stat goes to the port read, which tells a missing file (`absent`) from one it could not read (`unknown`). A file
- * over `maxBytes` UTF-8 bytes comes back `too-large`.
+ * no stat is never read either: missingState tells a missing file (`absent`) from one the port could not stat
+ * (`unknown`). A file over `maxBytes` UTF-8 bytes comes back `too-large`.
  */
 export async function readRepoFile(io: InitIo, root: string, relPath: string, maxBytes: number): Promise<PortRead> {
   const path = `${trimSlash(root)}/${relPath}`
   const stat = await io.stat(path)
-  if (stat === null) return io.read(path, maxBytes)
+  if (stat === null) return { state: await missingState(io, path) }
   if (!isFileInsideRoot(stat, root)) return { state: 'unknown' }
 
   return io.read(path, maxBytes)
@@ -362,15 +392,12 @@ async function readCadreFile<T>(
 }
 
 /**
- * Whether `.cadre/` is there: a listing means present, no listing and no stat means absent, and a path that stats but
- * cannot be listed is unknown, because something is there that the scan cannot see into.
+ * Whether `.cadre/` is there, by listingState: a listing means present, a missing path absent, and anything else
+ * unknown (a file in its place, or a stat and listing that fail), because something may be there that the scan cannot
+ * see into.
  */
 async function cadreDirState(io: InitIo, root: string): Promise<ReadState> {
-  const path = `${trimSlash(root)}/.cadre`
-  if ((await io.list(path)) !== null) return 'present'
-  if ((await io.stat(path)) === null) return 'absent'
-
-  return 'unknown'
+  return (await listingState(io, `${trimSlash(root)}/.cadre`)).state
 }
 
 /**
@@ -403,7 +430,7 @@ type Seen = {
   readonly depth: number
 }
 
-/** What the walk saw in breadth-first order, the names it skipped, its warnings, and whether it stopped at a cap. */
+/** What the walk saw in breadth-first order, the names it skipped, its warnings, and whether it hit the entry cap. */
 type Walk = {
   readonly seen: readonly Seen[]
   readonly hidden: readonly string[]
@@ -442,16 +469,15 @@ function listWarning(path: string): string {
 
 /**
  * Lists the repo breadth-first, each listing sorted by name: folders at depth 0 to MAX_SCAN_DEPTH - 1, never a link or
- * one of SKIP_DIRS, and at most MAX_SCAN_ENTRIES entries over all of them. It is truncated when it hits the entry cap
- * or leaves a folder unlisted for depth. A listing that fails is a warning, not an empty folder. An entry name that
- * `clean` would change is skipped and reported.
+ * one of SKIP_DIRS, and at most MAX_SCAN_ENTRIES entries over all of them. It is truncated only when it hits the entry
+ * cap; a folder left unlisted for depth is by design and is not a truncation. A listing that fails is a warning, not an
+ * empty folder. An entry name that `clean` would change is skipped and reported.
  */
 async function walk(io: InitIo, base: string): Promise<Walk> {
   const seen: Seen[] = []
   const hidden: string[] = []
   const warnings: string[] = []
   const queue: Folder[] = [{ path: '', depth: 0 }]
-  let isTruncated = false
   let count = 0
   // The queue grows while it is walked, which is what makes the walk breadth-first.
   for (const folder of queue) {
@@ -471,16 +497,12 @@ async function walk(io: InitIo, base: string): Promise<Walk> {
 
       const path = folder.path === '' ? entry.name : `${folder.path}/${entry.name}`
       seen.push({ path, name: entry.name, kind: entry.kind, isLink: entry.isLink, depth: folder.depth })
-      if (!isWalkable(entry)) continue
-      if (folder.depth + 1 >= MAX_SCAN_DEPTH) {
-        isTruncated = true
-        continue
-      }
+      if (!isWalkable(entry) || folder.depth + 1 >= MAX_SCAN_DEPTH) continue
       queue.push({ path, depth: folder.depth + 1 })
     }
   }
 
-  return { seen, hidden, warnings, isTruncated }
+  return { seen, hidden, warnings, isTruncated: false }
 }
 
 /** The findings so far, one per kind and label. */
