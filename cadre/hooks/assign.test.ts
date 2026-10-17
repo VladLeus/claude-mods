@@ -327,6 +327,23 @@ describe('parseRoleList', () => {
     expect(parseRoleList('team', TEAM)).toBeNull()
   })
 
+  test('each comma part may be a whole multi-word title, and a part that is not falls back to its words', () => {
+    expect(parseRoleList('Team Lead, QA', TEAM)).toEqual(['tl', 'qa'])
+    expect(parseRoleList('qa,team lead', TEAM)).toEqual(['tl', 'qa'])
+    expect(parseRoleList('tl be', TEAM)).toEqual(['tl', 'be'])
+    expect(parseRoleList('Team Lead, be qa', TEAM)).toEqual(['tl', 'be', 'qa'])
+    expect(parseRoleList('Team Lead QA', TEAM)).toBeNull()
+  })
+
+  test('all and none keep their meaning inside a list, even when a role is titled so', () => {
+    const roles = [role('x', null, { title: 'None' }), role('y', null, { title: 'All' }), BE]
+
+    expect(parseRoleList('be, none', roles)).toBeNull()
+    expect(parseRoleList('be all', roles)).toBeNull()
+    expect(parseRoleList('be, all roles', roles)).toBeNull()
+    expect(parseRoleList('none', roles)).toEqual([])
+  })
+
   test('none and the None button are no roles', () => {
     expect(parseRoleList('none', TEAM)).toEqual([])
     expect(parseRoleList('None', TEAM)).toEqual([])
@@ -530,6 +547,28 @@ describe('skill assignment', () => {
       assigned: [{ name: 'security-review', roleIds: ['security'] }],
       groups: [{ label: 'your own', plugin: null, names: ['a-skill', 'b-skill'] }],
     })
+  })
+
+  test('a skill of the same name from two plugins is asked in both groups, and each group counts it', () => {
+    const skills = [skill('lint', 'alpha'), skill('lint', 'beta'), skill('lint', 'alpha'), skill('lint')]
+
+    expect(classifySkills(skills, TEAM).groups).toEqual([
+      { label: 'alpha', plugin: 'alpha', names: ['lint'] },
+      { label: 'beta', plugin: 'beta', names: ['lint'] },
+      { label: 'your own', plugin: null, names: ['lint'] },
+    ])
+  })
+
+  test('a table skill from two plugins is assigned once by name', () => {
+    const skills = [skill('security-review', 'alpha'), skill('security-review', 'beta')]
+
+    expect(classifySkills(skills, TEAM).assigned).toEqual([{ name: 'security-review', roleIds: ['security'] }])
+  })
+
+  test('the security-review row ignores case like the other rows', () => {
+    expect(classifySkills([skill('Security-Review')], TEAM).assigned).toEqual([
+      { name: 'Security-Review', roleIds: ['security'] },
+    ])
   })
 
   test('with no skills there is nothing to assign or ask', () => {
