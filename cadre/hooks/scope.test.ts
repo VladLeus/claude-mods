@@ -15,7 +15,7 @@ import type {
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { compileScope, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
+import { compileScope, infraViolations, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
 import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
 
 /** The template role with this id, as init builds it: nothing assigned, every other field a default. */
@@ -926,5 +926,288 @@ describe('scopeCardLines', () => {
 
     expect(lines.slice(decisions + 1, decisions + 1 + card.chain.length)).toEqual(card.chain.map(line => `    ${line}`))
     expect(lines[lines.length - 1]).toBe('  memory: ~/.claude/cadre/<repo>-<hash8>/api/ (rendered at launch)')
+  })
+})
+
+/** The three frameworks the ISO-04 matrix runs. */
+const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+
+/** What the matrix scans: the superpowers and codex plugins, user and plugin skills, five MCP servers (one infra). */
+const MATRIX_SETUP: SetupScan = setup({
+  plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
+  skills: [
+    skill('my-skill'),
+    skill('gsd-health'),
+    skill('gsd-plan-phase'),
+    skill('create-handoff-doc'),
+    skill('resume-handoff-doc'),
+    skill('codex:rescue', 'codex'),
+    skill('superpowers:brainstorming', 'superpowers'),
+    skill('autopilot', 'autopilot'),
+  ],
+  mcp: [session('jira'), session('playwright'), session('github'), session('autopilot'), session('sentry')],
+  agents: ['gsd-planner', 'gsd-executor', 'my-agent'],
+  hooks: [hook('gsd-secret-read-guard.js'), hook('gsd-context-monitor.js')],
+})
+
+/** The six template roles, a custom role with no base, and a custom role with no base and no Bash. */
+const MATRIX_ROLES: readonly RoleSpec[] = [
+  ...ROLE_TEMPLATE.map(row => roleFromTemplate(row)),
+  templateRole('tl', { id: 'ops', title: 'Ops', basedOn: null }),
+  templateRole('pm', { id: 'auditor', title: 'Auditor', basedOn: null }),
+]
+
+/** The ways a role may be assigned names: nothing; every scanned MCP server and skill; one plugin skill only. */
+const ASSIGNMENTS: readonly (readonly [string, (role: RoleSpec) => RoleSpec])[] = [
+  ['nothing', role => role],
+  [
+    'everything',
+    role => ({
+      ...role,
+      mcp: MATRIX_SETUP.mcp.map(ref => ref.name),
+      skills: MATRIX_SETUP.skills.map(item => item.name),
+    }),
+  ],
+  ['a plugin skill', role => ({ ...role, skills: ['codex:rescue'] })],
+]
+
+/** The scope of a role in a framework, with the matrix setup and the overlapping code dirs. */
+function matrixScope(role: RoleSpec, framework: FrameworkId): CompiledScope {
+  const roleIds = MATRIX_ROLES.map(member => member.id)
+
+  return compileScope(role, context({ framework, setup: MATRIX_SETUP, codeDirs: OVERLAPPING_DIRS, roleIds }))
+}
+
+/** The scope with one more deny entry; the compiled value is never changed. */
+function withDeny(scope: CompiledScope, entry: string): CompiledScope {
+  const permissions = { ...scope.settings.permissions, deny: [...scope.settings.permissions.deny, entry] }
+
+  return { ...scope, settings: { ...scope.settings, permissions } }
+}
+
+/** The scope with its deny entries in this order. */
+function withDenyOrder(scope: CompiledScope, deny: readonly string[]): CompiledScope {
+  return { ...scope, settings: { ...scope.settings, permissions: { ...scope.settings.permissions, deny } } }
+}
+
+/** The scope with one plugin key set to a value. */
+function withPlugin(scope: CompiledScope, key: string, value: boolean): CompiledScope {
+  const enabledPlugins = { ...scope.settings.enabledPlugins, [key]: value }
+
+  return { ...scope, settings: { ...scope.settings, enabledPlugins } }
+}
+
+/** The scope without one plugin key. */
+function withoutPlugin(scope: CompiledScope, key: string): CompiledScope {
+  const kept = Object.entries(scope.settings.enabledPlugins).filter(([name]) => name !== key)
+
+  return { ...scope, settings: { ...scope.settings, enabledPlugins: Object.fromEntries(kept) } }
+}
+
+/** The scope with one skill taken out of the overlay. */
+function withoutOverlaySkill(scope: CompiledScope, name: string): CompiledScope {
+  const skills = scope.overlay.skills.filter(candidate => candidate !== name)
+
+  return { ...scope, overlay: { ...scope.overlay, skills } }
+}
+
+/** The scope with one more launcher flag. */
+function withFlag(scope: CompiledScope, flag: string): CompiledScope {
+  return { ...scope, flags: [...scope.flags, flag] }
+}
+
+/** The only keys the committed settings template may hold (D-84). */
+const SETTINGS_KEYS: readonly string[] = ['enabledPlugins', 'permissions', 'sandbox']
+
+/** The problems of one scope: an infra violation, a lint failure, a stray settings key, or an own folder hidden. */
+function scopeProblems(role: RoleSpec, framework: FrameworkId, scope: CompiledScope): string[] {
+  const deny = scope.settings.permissions.deny
+  const own = ownSegments(role.id)
+  const ownFiles = [`.cadre/${role.id}/ROLE.md`, `thoughts/shared/handoffs/${role.id}/x.md`, '.planning/STATE.md']
+
+  return [
+    ...infraViolations(scope, framework),
+    ...deny.filter(entry => lintDenyPattern(entry) !== null).map(entry => `${entry} fails the lint`),
+    ...Object.keys(scope.settings)
+      .filter(key => !SETTINGS_KEYS.includes(key))
+      .map(key => `settings key ${key} is not in the template`),
+    ...deny
+      .flatMap(entry => denySegments(entry))
+      .filter(segment => own.includes(segment))
+      .map(segment => `deny segment ${segment} is one of the role's own folders`),
+    ...ownFiles.flatMap(path =>
+      deny.filter(entry => matchesAtAnyDepth(entry, path)).map(entry => `${entry} matches ${path}`),
+    ),
+  ]
+}
+
+/** Every problem the ISO-04 properties find in the matrix, each with the combination that has it. */
+function matrixProblems(): string[] {
+  const problems: string[] = []
+  for (const framework of FRAMEWORKS) {
+    for (const base of MATRIX_ROLES) {
+      for (const [label, assign] of ASSIGNMENTS) {
+        const role = assign(base)
+        const where = `${framework} / ${role.id} / ${label}`
+        const found = scopeProblems(role, framework, matrixScope(role, framework))
+        problems.push(...found.map(problem => `${where}: ${problem}`))
+      }
+    }
+  }
+
+  return problems
+}
+
+describe('ISO-04', () => {
+  test('no generated scope blocks autopilot, fleet or the handoff skills over the whole matrix', () => {
+    expect(matrixProblems()).toEqual([])
+  })
+
+  test('the matrix is not empty: eight roles, three frameworks and three assignment sets', () => {
+    expect(MATRIX_ROLES).toHaveLength(8)
+    expect(MATRIX_ROLES.filter(role => !role.hasBash).map(role => role.id)).toEqual(['pm', 'auditor'])
+    expect(MATRIX_ROLES.filter(role => role.basedOn === null).map(role => role.id)).toEqual(['ops', 'auditor'])
+    expect(FRAMEWORKS).toHaveLength(3)
+    expect(ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing', 'everything', 'a plugin skill'])
+  })
+
+  test('a role with zero assignments passes the checker in every framework', () => {
+    const failing = FRAMEWORKS.filter(framework => {
+      const scope = matrixScope(templateRole('pm'), framework)
+
+      return infraViolations(scope, framework).length > 0
+    })
+
+    expect(failing).toEqual([])
+  })
+
+  test('the checker result does not depend on the order of the deny list', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const broken = withDeny(withDeny(withDeny(base, 'mcp__autopilot'), 'Skill'), 'Skill(resume-handoff-doc)')
+    const deny = broken.settings.permissions.deny
+    const reversed = withDenyOrder(broken, [...deny].reverse())
+
+    expect(infraViolations(base, 'gsd')).toEqual([])
+    expect(infraViolations(withDenyOrder(base, [...base.settings.permissions.deny].reverse()), 'gsd')).toEqual([])
+    expect(infraViolations(broken, 'gsd')).not.toHaveLength(0)
+    expect(infraViolations(reversed, 'gsd')).toEqual(infraViolations(broken, 'gsd'))
+  })
+
+  test('a deny that blocks nothing of the infra is not reported', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+
+    expect(infraViolations(withDeny(base, 'mcp__jira'), 'gsd')).toEqual([])
+    expect(infraViolations(withDeny(base, 'Read(./secret/**)'), 'gsd')).toEqual([])
+    expect(infraViolations(withDeny(base, 'Skill(my-skill)'), 'gsd')).toEqual([])
+  })
+
+  test('mutation: a deny of the autopilot server is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+
+    expect(infraViolations(base, 'gsd')).toEqual([])
+    expect(infraViolations(withDeny(base, 'mcp__autopilot'), 'gsd').join('\n')).toContain('mcp__autopilot')
+    expect(infraViolations(base, 'gsd')).toEqual([])
+  })
+
+  test('mutation: a deny of the Skill tool is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+
+    expect(infraViolations(withDeny(base, 'Skill'), 'gsd').join('\n')).toContain('Skill')
+  })
+
+  test('mutation: a deny that is a prefix of an infra tool is caught, and so are the other infra denies', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const entries = [
+      'mcp__autopilot__wait',
+      'mcp__autopilot__wait_for',
+      'mcp__autopilot__restart_session',
+      'mcp__autopilot__queue_question',
+      'mcp__*',
+      'mcp__',
+      'PushNotification',
+      'Skill(create-handoff-doc)',
+      'Skill(resume-*)',
+    ]
+
+    expect(entries.filter(entry => infraViolations(withDeny(base, entry), 'gsd').length === 0)).toEqual([])
+  })
+
+  test('mutation: a deny that names an infra plugin is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+
+    expect(infraViolations(withDeny(base, 'Skill(autopilot@local-mods)'), 'gsd').join('\n')).toContain(
+      'autopilot@local-mods',
+    )
+  })
+
+  test('mutation: an infra plugin switched off, or missing, is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const off = infraViolations(withPlugin(base, 'autopilot@local-mods', false), 'gsd')
+    const missing = infraViolations(withoutPlugin(base, 'agent-fleet@local-mods'), 'gsd')
+
+    expect(off.join('\n')).toContain('autopilot@local-mods')
+    expect(missing.join('\n')).toContain('agent-fleet@local-mods')
+    expect(infraViolations(withoutPlugin(base, 'cadre@local-mods'), 'gsd').join('\n')).toContain('cadre@local-mods')
+  })
+
+  test('mutation: a handoff skill missing from the overlay is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+
+    expect(infraViolations(withoutOverlaySkill(base, 'create-handoff-doc'), 'gsd').join('\n')).toContain(
+      'create-handoff-doc',
+    )
+    expect(infraViolations(withoutOverlaySkill(base, 'resume-handoff-doc'), 'gsd').join('\n')).toContain(
+      'resume-handoff-doc',
+    )
+  })
+
+  test('mutation: a GSD start skill missing from the overlay of a GSD role is caught and named', () => {
+    const base = matrixScope(templateRole('be'), 'gsd')
+
+    expect(infraViolations(withoutOverlaySkill(base, 'gsd-autonomous'), 'gsd').join('\n')).toContain('gsd-autonomous')
+    expect(infraViolations(withoutOverlaySkill(base, 'gsd-autonomous'), 'none')).toEqual([])
+  })
+
+  test('mutation: the superpowers plugin switched off for a superpowers role is caught and named', () => {
+    const base = matrixScope(templateRole('be'), 'superpowers')
+    const key = 'superpowers@claude-plugins-official'
+    const problems = infraViolations(withPlugin(base, key, false), 'superpowers').join('\n')
+
+    expect(infraViolations(base, 'superpowers')).toEqual([])
+    expect(problems).toContain('superpowers:brainstorming')
+    expect(infraViolations(withoutPlugin(base, key), 'superpowers').join('\n')).toContain('superpowers:writing-plans')
+    expect(infraViolations(withPlugin(base, key, false), 'none')).toEqual([])
+  })
+
+  test('mutation: the flag that turns off slash commands is caught and named', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const problems = infraViolations(withFlag(base, '--disable-slash-commands'), 'gsd').join('\n')
+
+    expect(problems).toContain('--disable-slash-commands')
+    expect(infraViolations(withFlag(base, '--verbose'), 'gsd')).toEqual([])
+  })
+
+  test('mutation: several broken parts are all reported, so none hides another', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const noPlugin = withPlugin(withDeny(base, 'Skill'), 'cadre@local-mods', false)
+    const broken = withFlag(withoutOverlaySkill(noPlugin, 'create-handoff-doc'), '--disable-slash-commands')
+    const problems = infraViolations(broken, 'gsd')
+
+    expect(problems).toHaveLength(4)
+    expect(problems.join('\n')).toContain('Skill')
+    expect(problems.join('\n')).toContain('cadre@local-mods')
+    expect(problems.join('\n')).toContain('create-handoff-doc')
+    expect(problems.join('\n')).toContain('--disable-slash-commands')
+  })
+
+  test('the lint and the checker both reject a deny that is a prefix of an infra tool name', () => {
+    const base = matrixScope(templateRole('pm'), 'gsd')
+    const prefixes = ['mcp__autopilot', 'mcp__autopilot__wait']
+
+    expect(prefixes.map(prefix => lintDenyPattern(prefix))).toEqual([
+      'would block an infra tool (ISO-04)',
+      'would block an infra tool (ISO-04)',
+    ])
+    expect(prefixes.filter(prefix => infraViolations(withDeny(base, prefix), 'gsd').length === 0)).toEqual([])
   })
 })
