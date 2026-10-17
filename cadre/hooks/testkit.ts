@@ -9,6 +9,7 @@ import type {
   PortStat,
   SettingsSource,
 } from '../types'
+import { utf8Bytes } from './facts'
 
 /**
  * Support for the Phase 2 tests, not a test itself: it is deliberately not named `*.test.ts`, so `claude plugin test`
@@ -109,7 +110,7 @@ function isScript(answers: readonly string[] | Readonly<Record<string, string>>)
 }
 
 /** The value of the longest key the question starts with; undefined when no key matches. */
-function answerFor(answers: Readonly<Record<string, string>>, question: string): string | undefined {
+export function answerFor(answers: Readonly<Record<string, string>>, question: string): string | undefined {
   let longest: string | undefined
   for (const key of Object.keys(answers)) {
     if (!question.startsWith(key)) continue
@@ -131,23 +132,29 @@ function listOf(world: MemWorld, path: string): readonly PortEntry[] | null {
   return own(world.dirs, path) ?? null
 }
 
-/** A path's stat: a file with its length as size, a listed folder, else null. Text length stands in for bytes. */
+/** A path's stat: a file with its UTF-8 byte length as size, a listed folder, else null. A moved real path is a link. */
 function statOf(world: MemWorld, path: string): PortStat | null {
   if (world.unknownPaths.includes(path)) return null
   const realPath = own(world.realPaths, path) ?? path
   const text = own(world.files, path)
-  if (text !== undefined) return { kind: 'file', size: text.length, isLink: false, realPath }
-  if (own(world.dirs, path) !== undefined) return { kind: 'dir', size: 0, isLink: false, realPath }
+  const isLink = realPath !== path
+  if (text !== undefined) return { kind: 'file', size: utf8Bytes(text), isLink, realPath }
+  if (own(world.dirs, path) !== undefined) return { kind: 'dir', size: 0, isLink, realPath }
 
   return null
 }
 
-/** A path read: unknown first, then absent, then too-large over `maxBytes`, else the text. Text length is bytes. */
+/**
+ * A path read: unknown first (a listed folder too, since the real port never reads a non-file), then absent, then
+ * too-large over `maxBytes` UTF-8 bytes, else the text.
+ */
 function readOf(world: MemWorld, path: string, maxBytes: number): PortRead {
   if (world.unknownPaths.includes(path)) return { state: 'unknown' }
+  if (own(world.dirs, path) !== undefined) return { state: 'unknown' }
   const text = own(world.files, path)
   if (text === undefined) return { state: 'absent' }
-  if (text.length > maxBytes) return { state: 'too-large', bytes: text.length }
+  const bytes = utf8Bytes(text)
+  if (bytes > maxBytes) return { state: 'too-large', bytes }
 
   return { state: 'text', text }
 }
@@ -155,8 +162,7 @@ function readOf(world: MemWorld, path: string, maxBytes: number): PortRead {
 /**
  * A port over `world` that records what it is asked. With an array of `answers`, `ask` answers in order and rejects
  * with `dismissed` when they run out. With a record, `ask` answers with the value of the longest key the question
- * starts with and rejects with `dismissed` when no key does, so a flow test survives a new question. Text length
- * stands in for bytes, because the tests use ASCII.
+ * starts with and rejects with `dismissed` when no key does, so a flow test survives a new question.
  */
 export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Record<string, string>>): MemRun {
   const asked: string[] = []
@@ -172,7 +178,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
       asked.push(question)
       specs.push(spec)
       const answer = isScript(answers) ? answers[nextAnswer] : answerFor(answers, question)
-      nextAnswer += 1
+      if (isScript(answers)) nextAnswer += 1
       if (answer === undefined) throw new Error('dismissed')
 
       return answer
@@ -217,8 +223,8 @@ export const SECRET_FIXTURES: readonly string[] = Object.freeze([
   'SENTINEL_SECRET_VALUE',
 ])
 
-/** Absolute-path markers no generated file may contain, the fixture home `/home/u` included (PLAN-05). */
-export const ABSOLUTE_PATH_MARKERS: readonly string[] = Object.freeze(['/Users/', '/home/', '/private/', '/home/u'])
+/** Absolute-path markers no generated file may contain, the fixture home `/home/u` is covered by `/home/` (PLAN-05). */
+export const ABSOLUTE_PATH_MARKERS: readonly string[] = Object.freeze(['/Users/', '/home/', '/private/'])
 
 /** The needles found in the text, in needle order; empty when the text is clean. */
 export function leaks(text: string, needles: readonly string[]): string[] {

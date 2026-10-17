@@ -1190,5 +1190,6 @@ describe('utf8Bytes', () => {
     expect(utf8Bytes('é')).toBe(2)
     expect(utf8Bytes('€')).toBe(3)
     expect(utf8Bytes('😀')).toBe(4)
+    expect(utf8Bytes('\ud800')).toBe(3)
   })
 })
