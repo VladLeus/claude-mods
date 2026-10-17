@@ -97,6 +97,9 @@ const BYPASS_RULE = 'WARNING: bypassPermissions is set in role.json: permission 
 /** The rule the card of an attended role carries. */
 const ATTENDED_RULE = 'Attended: this role needs a person for framework steps that cannot run unattended'
 
+/** The rule the card of a role without Bash carries on GSD: GSD workflows need Bash, so a person runs them (A1). */
+const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them through a person'
+
 /** The rule that names the code dirs the committed template leaves alone because their names match the role's own. */
 function skippedRule(dirs: string): string {
   return (
@@ -577,6 +580,37 @@ describe('scope rules', () => {
     expect(ruleOf(unattended, ATTENDED_RULE)).toBeUndefined()
   })
 
+  test('a role without Bash on GSD is attended and says a person runs its GSD workflows', () => {
+    const scope = compileScope(templateRole('pm'), context({ framework: 'gsd', isAttended: false }))
+
+    expect(scope.card.isAttended).toBe(true)
+    expect(ruleOf(scope, GSD_NO_BASH_RULE)).toEqual({ text: GSD_NO_BASH_RULE, enforcement: 'none' })
+    expect(ruleOf(scope, ATTENDED_RULE)).toBeUndefined()
+    expect(scope.settings.permissions.deny).toContain('Bash')
+    expect(scope.overlay.skills).toContain('gsd-autonomous')
+  })
+
+  test('a role without Bash on superpowers or the built-in loop, or one with Bash on GSD, is not attended', () => {
+    const others: readonly FrameworkId[] = ['superpowers', 'none']
+    const scopes = [
+      ...others.map(framework => compileScope(templateRole('pm'), context({ framework }))),
+      compileScope(templateRole('be'), context({ framework: 'gsd' })),
+    ]
+
+    expect(scopes.map(scope => scope.card.isAttended)).toEqual([false, false, false])
+    expect(scopes.filter(scope => ruleOf(scope, GSD_NO_BASH_RULE) !== undefined)).toEqual([])
+  })
+
+  test('an attended role without Bash on GSD has the attended rule first, then the GSD rule', () => {
+    const rules = compileScope(templateRole('pm'), context({ isAttended: true })).card.rules
+    const attended = rules.filter(candidate => candidate.text.startsWith('Attended:'))
+
+    expect(attended).toEqual([
+      { text: ATTENDED_RULE, enforcement: 'none' },
+      { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+    ])
+  })
+
   test('an MCP server with an unusual name is not denied and the card says so', () => {
     const scanned = setup({ mcp: [session('my.server'), session(`ev${BIDI_OVERRIDE}il`), session('good-one_2')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
@@ -730,6 +764,7 @@ describe('scope rules', () => {
       { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
       { text: 'Permission mode: bypassPermissions', enforcement: 'hard' },
       { text: ATTENDED_RULE, enforcement: 'none' },
+      { text: GSD_NO_BASH_RULE, enforcement: 'none' },
       { text: 'MCP route: strict (provisional; Phase 3 decides)', enforcement: 'none' },
     ])
   })
@@ -849,6 +884,7 @@ describe('scopeCardLines', () => {
       '    [best-effort] Skills: only the listed skills are linked',
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
       '    [hard] Permission mode: auto',
+      `    [none] ${GSD_NO_BASH_RULE}`,
       '    [none] MCP route: merged (provisional; Phase 3 decides)',
       '  decisions:',
       ...chainLines(['pm', 'tl']).map(line => `    ${line}`),
