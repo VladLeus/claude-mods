@@ -207,6 +207,11 @@ function walkedFolders(listed: readonly string[]): string[] {
   return listed.filter(path => path !== '/repo/.cadre')
 }
 
+/** The files read: the zero-byte probe of a `/repo/.cadre` that cannot be listed reads nothing, so it is left out. */
+function fileReads(reads: readonly string[]): string[] {
+  return reads.filter(path => path !== '/repo/.cadre')
+}
+
 /** The finding of a kind and label, or undefined. */
 function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
   return scan.findings.find(finding => finding.kind === kind && finding.label === label)
@@ -295,7 +300,7 @@ describe('scanRepo', () => {
     expect(scan.warnings).toEqual([])
   })
 
-  test('folders at depth 0 to 2 are listed and one at depth 3 is not, and the depth limit is no truncation', async () => {
+  test('folders at depth 0 to 2 are listed and one at depth 3 is not, which is no truncation', async () => {
     const run = memIo(
       memWorld({
         dirs: {
@@ -409,7 +414,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.reads).toEqual([])
+    expect(fileReads(run.reads)).toEqual([])
     expect(scan.warnings).toEqual(['could not read package.json (treated as unknown)'])
     expect(scan.findings).toEqual([])
   })
@@ -426,7 +431,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.reads).toEqual([])
+    expect(fileReads(run.reads)).toEqual([])
     expect(scan.warnings).toEqual(['could not read package.json (treated as unknown)'])
     expect(findingOf(scan, 'fe', 'react')).toBeUndefined()
   })
@@ -494,7 +499,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.reads).toEqual(['/repo/package.json', '/repo/web/package.json'])
+    expect(fileReads(run.reads)).toEqual(['/repo/package.json', '/repo/web/package.json'])
     expect(findingOf(scan, 'fe', 'vue')).toEqual({ kind: 'fe', label: 'vue', evidence: 'web/package.json' })
     expect(findingOf(scan, 'fe', 'react')).toBeUndefined()
   })
@@ -1266,7 +1271,7 @@ describe('existing .cadre', () => {
     })
   }
 
-  test('no .cadre folder gives an absent state and reads no .cadre file', async () => {
+  test('no .cadre folder gives an absent state and reads no .cadre file, only the zero-byte probe', async () => {
     const run = memIo(memWorld({ dirs: { '/repo': [entry('a.ts')] } }), [])
     const scan = await scanRepo(run.io, '/repo')
 
@@ -1277,7 +1282,7 @@ describe('existing .cadre', () => {
       state: null,
       stateState: 'absent',
     })
-    expect(run.reads).toEqual([])
+    expect(run.reads).toEqual(['/repo/.cadre'])
     expect(scan.warnings).toEqual([])
   })
 

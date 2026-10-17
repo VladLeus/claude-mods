@@ -508,7 +508,7 @@ export type RepoScan = {
   /** Top-level repo-relative folders that hold source files, sorted (PM's best-effort Read deny). */
   readonly codeDirs: readonly string[]
   readonly hasSource: boolean
-  /** True when the walk stopped at the depth or entry cap. */
+  /** True when the walk stopped at the 2000-entry cap; the depth limit alone never sets it. */
   readonly isTruncated: boolean
   readonly cadre: {
     readonly dir: ReadState
