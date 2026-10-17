@@ -430,7 +430,21 @@ function safeConfigDir(configDir: string | null): string | null {
  * without a realPath, or one that lands on the root itself, does not count.
  */
 export function isFileInsideRoot(stat: unknown, root: string): boolean {
-  if (!isObject(stat) || stat.kind !== 'file') return false
+  return isKindInsideRoot(stat, root, 'file')
+}
+
+/**
+ * Whether a host stat answer shows a folder whose real path lies inside the root, by the rule isFileInsideRoot uses
+ * for a file: a folder link that leaves the repo, or a stat without a realPath or on the root itself, does not count.
+ * The setup scan lists a repo folder only then.
+ */
+export function isDirInsideRoot(stat: unknown, root: string): boolean {
+  return isKindInsideRoot(stat, root, 'dir')
+}
+
+/** Whether a stat answer is of this kind and its real path lies strictly below the root. */
+function isKindInsideRoot(stat: unknown, root: string, kind: EntryKind): boolean {
+  if (!isObject(stat) || stat.kind !== kind) return false
   const realPath = stat.realPath
   if (typeof realPath !== 'string') return false
   const below = relativeTo(realPath, root)
