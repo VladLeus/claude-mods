@@ -67,7 +67,7 @@ describe('adapter contract (DET-04)', () => {
 
   test('every kickoff names the AUTOPILOT_DONE answer', () => {
     for (const adapter of ADAPTERS) {
-      expect(adapter.kickoffText({ role: 'BE', specPath: null })).toContain('AUTOPILOT_DONE')
+      expect(adapter.kickoffText({ role: 'BE', roleId: 'be', specPath: null })).toContain('AUTOPILOT_DONE')
     }
   })
 })

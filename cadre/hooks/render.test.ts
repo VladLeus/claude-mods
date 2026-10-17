@@ -408,10 +408,19 @@ describe('adaptersReportLines', () => {
 
     for (const adapter of ADAPTERS) {
       const block = blockOf(lines, `${adapter.name} (${adapter.id})`)
-      for (const line of adapter.kickoffText({ role: 'BE', specPath: null }).split('\n')) {
+      for (const line of adapter.kickoffText({ role: 'BE', roleId: 'be', specPath: null }).split('\n')) {
         expect(block).toContain(`      ${line}`)
       }
     }
+  })
+
+  test('the built-in kickoff example names the role by its title, BE, and its paths by the id, be', () => {
+    const block = blockOf(adaptersReportLines(ADAPTERS), 'built-in (none)')
+
+    expect(block).toContain(
+      '      You are the BE role. This repo has no dev framework: work in plan, execute, verify steps.',
+    )
+    expect(block).toContain('      Write your plan to .cadre/be/.runtime/plan.md, then execute it with subagents.')
   })
 })
 
