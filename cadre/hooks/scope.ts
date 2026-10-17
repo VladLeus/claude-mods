@@ -67,6 +67,9 @@ const INFRA_DENY_TARGETS: readonly string[] = Object.freeze([
   ...INFRA_SKILLS.map(name => `Skill(${name})`),
 ])
 
+/** The launcher flag that turns off slash commands, and with them the handoff skills and the start skills (S1, S4). */
+const DISABLE_SLASH_FLAG = '--disable-slash-commands'
+
 /** The framework names a card shows. */
 const FRAMEWORK_NAMES: Readonly<Record<FrameworkId, string>> = Object.freeze({
   gsd: 'GSD',
@@ -295,6 +298,7 @@ function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay']
  * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token
  * (D-50, D-78, S1, S4). The paths are repo-relative: the launcher starts in the git top level. The MCP route is a
  * parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff skills.
+ * The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
  */
 function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
   const runtime = `.cadre/${role.id}/.runtime`
@@ -456,9 +460,6 @@ export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
     card: cardFor(role, ctx, Object.keys(enabledPlugins), deny),
   }
 }
-
-/** The launcher flag that turns off slash commands, and with them the handoff skills and the start skills (S1, S4). */
-const DISABLE_SLASH_FLAG = '--disable-slash-commands'
 
 /** Whether the plugin key is on in the plugin record: it is an entry of the record itself, with the value true. */
 function isEnabled(plugins: Readonly<Record<string, boolean>>, key: string): boolean {
