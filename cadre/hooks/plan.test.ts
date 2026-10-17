@@ -1264,7 +1264,10 @@ describe('plan conflicts and limits', () => {
   })
 })
 
-/** A disk map that records every path a plan looks up in it, in order. */
+/**
+ * A disk map that records every path a plan looks up in it, in order. The lookup is defined on the map itself: under
+ * the test host a plain assignment to `get` throws, because the method it would shadow is read-only.
+ */
 function recordingDisk(reads: Readonly<Record<string, PortRead>>): {
   readonly disk: ReadonlyMap<string, PortRead>
   readonly asked: readonly string[]
@@ -1272,13 +1275,13 @@ function recordingDisk(reads: Readonly<Record<string, PortRead>>): {
   const asked: string[] = []
   const map = new Map(Object.entries(reads))
   const read = map.get.bind(map)
-  map.get = (path: string): PortRead | undefined => {
+  const get = (path: string): PortRead | undefined => {
     asked.push(path)
 
     return read(path)
   }
 
-  return { disk: map, asked }
+  return { disk: Object.defineProperty(map, 'get', { value: get }), asked }
 }
 
 describe('planReadPaths', () => {
