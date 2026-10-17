@@ -363,7 +363,7 @@ function bashRule(role: RoleSpec): ScopeRule {
 /** The rule for the code dirs that are denied; none when no dir is. */
 function deniedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.dirs.length === 0) return []
-  const text = `Reads and edits under ${deny.dirs.join(', ')} are denied; the patterns match at any depth`
+  const text = `Reads and edits under ${cardList(deny.dirs.map(shown))} are denied; the patterns match at any depth`
 
   return [rule(text, 'best-effort')]
 }
@@ -372,7 +372,7 @@ function deniedDirRules(deny: DenyPlan): ScopeRule[] {
 function skippedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.skippedDirs.length === 0) return []
   const text =
-    `Reads and edits under ${deny.skippedDirs.join(', ')} are not denied in the committed template: ` +
+    `Reads and edits under ${cardList(deny.skippedDirs.map(shown))} are not denied in the committed template: ` +
     "those names match the role's own folders at any depth (exact denies are rendered at launch)"
 
   return [rule(text, 'best-effort')]
@@ -393,7 +393,7 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const denied =
     deny.mcp.length === 0
       ? rule('No other scanned MCP servers to deny', enforcement)
-      : rule(`Scanned MCP servers not given are denied: ${deny.mcp.join(', ')}`, enforcement)
+      : rule(`Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`, enforcement)
 
   return [
     denied,
@@ -447,7 +447,7 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   return [
     ...bypassRules(role),
-    rule(`Plugins: only ${plugins.map(shown).join(', ')} load (--setting-sources project whitelist)`, 'hard'),
+    rule(`Plugins: only ${cardList(plugins.map(shown))} load (--setting-sources project whitelist)`, 'hard'),
     bashRule(role),
     ...deniedDirRules(deny),
     ...skippedDirRules(deny),
@@ -575,7 +575,11 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
   ]
 }
 
-/** A list as a card line shows it: `none` when empty, else the names, past 12 of them the first 12 and `+N more`. */
+/**
+ * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
+ * `+N more`. A rule passes each scanned name through `shown` first, so a long name or list never runs past the 240 code
+ * points a card line keeps and loses the fixed text after it (B6).
+ */
 function cardList(names: readonly string[]): string {
   if (names.length === 0) return 'none'
   const rest = names.length - MAX_CARD_LIST
