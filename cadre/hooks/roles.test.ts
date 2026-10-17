@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RepoScan, ScanFinding, ScanKind, TemplateRoleId } from '../types'
+import type { RepoScan, RoleSpec, ScanFinding, ScanKind, TemplateRoleId } from '../types'
 import { BUILTIN_GATES } from './builtin'
 import { DECISION_TYPES } from './framework'
 import { GSD_GATES } from './gsd'
 import {
+  applyAdjust,
   AUTOPILOT_THRESHOLD,
   chainLines,
   DECISION_OWNERS,
@@ -15,11 +16,14 @@ import {
   DEFAULT_PERMISSION_MODE,
   EMPTY_CARRY,
   HUMAN_FALLBACK,
+  isAutopilotDuration,
   MAX_DESCRIPTION_CHARS,
   MAX_PROPOSAL_ERRORS,
   MAX_PURPOSE_CHARS,
   MAX_ROLES,
+  parseAdjust,
   parseProposal,
+  parseRoleJson,
   PROPOSE_SYSTEM,
   proposePrompt,
   proposeRoles,
@@ -30,7 +34,7 @@ import {
   validateRoleId,
   validateRoles,
 } from './roles'
-import type { TemplateRole } from './roles'
+import type { AdjustOp, TemplateRole } from './roles'
 import { SUPERPOWERS_GATES } from './superpowers'
 
 /** A repo scan with nothing found and source present. A test sets only what it reads. */
@@ -921,5 +925,532 @@ describe('rolesFromProposal', () => {
 
     expect(role?.hasBash).toBe(false)
     expect(role?.permissionMode).toBe('auto')
+  })
+})
+
+/** The team init starts from: every template role. */
+const TEAM: readonly RoleSpec[] = ROLE_TEMPLATE.map(roleFromTemplate)
+
+/** The purpose a role added by the Adjust grammar gets, because the grammar gives no purpose. */
+const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
+
+/** The roles frozen, so an adjustment that changes its input throws. */
+function frozen(roles: readonly RoleSpec[]): readonly RoleSpec[] {
+  return Object.freeze(roles.map(role => Object.freeze({ ...role })))
+}
+
+/** The roles an adjustment gives; a test that expected an error fails here. */
+function adjusted(roles: readonly RoleSpec[], op: AdjustOp): readonly RoleSpec[] {
+  const result = applyAdjust(frozen(roles), op)
+  if (result.kind === 'error') throw new Error(`the adjustment was expected to work: ${result.message}`)
+
+  return result.roles
+}
+
+/** The message of a refused adjustment; a test that expected a refusal fails here. */
+function refused(roles: readonly RoleSpec[], op: AdjustOp): string {
+  const result = applyAdjust(frozen(roles), op)
+  if (result.kind === 'ok') throw new Error('the adjustment was expected to be refused')
+
+  return result.message
+}
+
+/** The ids of these roles, in order. */
+function idsIn(roles: readonly RoleSpec[]): string[] {
+  return roles.map(role => role.id)
+}
+
+describe('parseAdjust', () => {
+  test('add takes an id and the rest of the line as the title', () => {
+    expect(parseAdjust('add docs Docs writer')).toEqual({ kind: 'add', id: 'docs', title: 'Docs writer' })
+  })
+
+  test('add strips the quotes around a title', () => {
+    expect(parseAdjust('add docs "Docs writer"')).toEqual({ kind: 'add', id: 'docs', title: 'Docs writer' })
+  })
+
+  test('drop takes one id', () => {
+    expect(parseAdjust('drop fe')).toEqual({ kind: 'drop', id: 'fe' })
+  })
+
+  test('rename takes the id, the new id and the rest of the line as an optional title', () => {
+    const titled = { kind: 'rename', id: 'be', newId: 'api', title: 'API team' }
+
+    expect(parseAdjust('rename be api API team')).toEqual(titled)
+    expect(parseAdjust('rename be api "API team"')).toEqual(titled)
+    expect(parseAdjust('rename be api')).toEqual({ kind: 'rename', id: 'be', newId: 'api', title: null })
+  })
+
+  test('framework takes an id and gsd, superpowers or none', () => {
+    expect(parseAdjust('framework qa gsd')).toEqual({ kind: 'framework', id: 'qa', framework: 'gsd' })
+    expect(parseAdjust('framework qa superpowers')).toEqual({ kind: 'framework', id: 'qa', framework: 'superpowers' })
+    expect(parseAdjust('framework qa none')).toEqual({ kind: 'framework', id: 'qa', framework: 'none' })
+  })
+
+  test('keywords and the framework word ignore case, and ids are taken as typed', () => {
+    expect(parseAdjust('ADD docs Docs')).toEqual({ kind: 'add', id: 'docs', title: 'Docs' })
+    expect(parseAdjust('Drop fe')).toEqual({ kind: 'drop', id: 'fe' })
+    expect(parseAdjust('RENAME be api')).toEqual({ kind: 'rename', id: 'be', newId: 'api', title: null })
+    expect(parseAdjust('Framework qa GSD')).toEqual({ kind: 'framework', id: 'qa', framework: 'gsd' })
+    expect(parseAdjust('drop FE')).toEqual({ kind: 'drop', id: 'FE' })
+  })
+
+  test('spaces around and between the words do not matter', () => {
+    expect(parseAdjust('  add   docs   Docs writer  ')).toEqual({ kind: 'add', id: 'docs', title: 'Docs writer' })
+    expect(parseAdjust('\tdrop\t fe \n')).toEqual({ kind: 'drop', id: 'fe' })
+  })
+
+  test('anything else is null', () => {
+    const lines = [
+      '',
+      '   ',
+      'add',
+      'add docs',
+      'add docs ""',
+      'add docs "  "',
+      'delete fe',
+      'drop',
+      'drop fe now',
+      'rename',
+      'rename be',
+      'rename be api ""',
+      'framework',
+      'framework qa',
+      'framework qa bmad',
+      'framework qa gsd now',
+      'adddocs x',
+      'drop-fe',
+      'help',
+    ]
+
+    for (const line of lines) {
+      expect([line, parseAdjust(line)]).toEqual([line, null])
+    }
+  })
+})
+
+describe('applyAdjust', () => {
+  test('add appends a custom role that starts TL-like', () => {
+    const roles = adjusted(TEAM, { kind: 'add', id: 'docs', title: 'Docs writer' })
+
+    expect(idsIn(roles)).toEqual([...TEMPLATE_ORDER, 'docs'])
+    expect(roles.slice(0, 6)).toEqual(TEAM)
+    expect(roles.at(-1)).toEqual({
+      id: 'docs',
+      title: 'Docs writer',
+      purpose: CUSTOM_PURPOSE,
+      basedOn: null,
+      model: 'opus',
+      effort: 'medium',
+      permissionMode: 'auto',
+      autopilot: { duration: '4h', threshold: 65, askUser: false },
+      hasBash: true,
+      mcp: [],
+      skills: [],
+      instructions: [],
+      carry: { autoCompactWindow: false, statusLine: false, env: [], hooks: [] },
+    })
+  })
+
+  test('add cleans and caps the title like any role title', () => {
+    const cleaned = adjusted(TEAM, { kind: 'add', id: 'docs', title: `Dev${BIDI_OVERRIDE}Ops` })
+    const capped = adjusted(TEAM, { kind: 'add', id: 'docs', title: 'T'.repeat(41) })
+
+    expect(cleaned.at(-1)?.title).toBe('DevOps')
+    expect(capped.at(-1)?.title).toBe(`${'T'.repeat(39)}…`)
+  })
+
+  test('add refuses an id that is already used', () => {
+    expect(refused(TEAM, { kind: 'add', id: 'be', title: 'Again' })).toBe('role id "be" is already used')
+  })
+
+  test('add refuses the reserved id bin, and an id that is not a slug', () => {
+    expect(refused(TEAM, { kind: 'add', id: 'bin', title: 'Bin' })).toBe(
+      'role id "bin" is reserved: it is the launcher folder .cadre/bin/',
+    )
+    expect(refused(TEAM, { kind: 'add', id: 'Docs', title: 'Docs' })).toBe(slugMessage('Docs'))
+    expect(refused(TEAM, { kind: 'add', id: '../x', title: 'X' })).toBe(slugMessage('../x'))
+  })
+
+  test('add refuses a title that cleans to nothing', () => {
+    expect(refused(TEAM, { kind: 'add', id: 'docs', title: BIDI_OVERRIDE })).toBe('role "docs" has no title')
+  })
+
+  test('add refuses a 13th role, and accepts a 12th', () => {
+    const be = roleFromTemplate(row('be'))
+    const eleven = Array.from({ length: 11 }, (_, index) => ({ ...be, id: `r${index}` }))
+    const twelve = Array.from({ length: 12 }, (_, index) => ({ ...be, id: `r${index}` }))
+
+    expect(adjusted(eleven, { kind: 'add', id: 'docs', title: 'Docs' })).toHaveLength(12)
+    expect(refused(twelve, { kind: 'add', id: 'docs', title: 'Docs' })).toBe('at most 12 roles')
+  })
+
+  test('drop removes the role and keeps the order of the others', () => {
+    expect(idsIn(adjusted(TEAM, { kind: 'drop', id: 'fe' }))).toEqual(['pm', 'tl', 'be', 'qa', 'security'])
+  })
+
+  test('drop of an unknown id says there is no such role, with the id cleaned', () => {
+    expect(refused(TEAM, { kind: 'drop', id: 'x' })).toBe('no role "x"')
+    expect(refused(TEAM, { kind: 'drop', id: `x${BIDI_OVERRIDE}y` })).toBe('no role "xy"')
+  })
+
+  test('drop of the last remaining role is refused', () => {
+    const one = [roleFromTemplate(row('pm'))]
+
+    expect(refused(one, { kind: 'drop', id: 'pm' })).toBe('keep at least one role')
+    expect(refused(one, { kind: 'drop', id: 'x' })).toBe('no role "x"')
+    expect(idsIn(adjusted(TEAM.slice(0, 2), { kind: 'drop', id: 'pm' }))).toEqual(['tl'])
+  })
+
+  test('rename changes the id and the title in place, and keeps everything else', () => {
+    const roles = adjusted(TEAM, { kind: 'rename', id: 'be', newId: 'api', title: 'API team' })
+
+    expect(idsIn(roles)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
+    expect(roles[2]).toEqual({ ...roleFromTemplate(row('be')), id: 'api', title: 'API team' })
+  })
+
+  test('rename without a title keeps the title', () => {
+    const roles = adjusted(TEAM, { kind: 'rename', id: 'be', newId: 'api', title: null })
+
+    expect(roles[2]?.id).toBe('api')
+    expect(roles[2]?.title).toBe('BE')
+  })
+
+  test('rename to its own id with a new title only changes the title', () => {
+    const roles = adjusted(TEAM, { kind: 'rename', id: 'be', newId: 'be', title: 'Backend' })
+
+    expect(idsIn(roles)).toEqual(TEMPLATE_ORDER)
+    expect(roles[2]).toEqual({ ...roleFromTemplate(row('be')), title: 'Backend' })
+  })
+
+  test('rename to the id of another role is refused', () => {
+    expect(refused(TEAM, { kind: 'rename', id: 'be', newId: 'fe', title: null })).toBe('role id "fe" is already used')
+  })
+
+  test('rename refuses a new id that is reserved or not a slug', () => {
+    expect(refused(TEAM, { kind: 'rename', id: 'be', newId: 'bin', title: null })).toBe(
+      'role id "bin" is reserved: it is the launcher folder .cadre/bin/',
+    )
+    expect(refused(TEAM, { kind: 'rename', id: 'be', newId: 'Api', title: null })).toBe(slugMessage('Api'))
+  })
+
+  test('rename of an unknown id says there is no such role', () => {
+    expect(refused(TEAM, { kind: 'rename', id: 'x', newId: 'api', title: null })).toBe('no role "x"')
+  })
+
+  test('rename refuses a title that cleans to nothing', () => {
+    expect(refused(TEAM, { kind: 'rename', id: 'be', newId: 'api', title: BIDI_OVERRIDE })).toBe(
+      'role "api" has no title',
+    )
+  })
+
+  test('a rename keeps the base of the role, so a renamed PM still has no Bash', () => {
+    const roles = adjusted(TEAM, { kind: 'rename', id: 'pm', newId: 'product', title: 'Product' })
+
+    expect(roles[0]?.basedOn).toBe('pm')
+    expect(roles[0]?.hasBash).toBe(false)
+  })
+
+  test('framework sets the framework of that role only', () => {
+    const roles = adjusted(TEAM, { kind: 'framework', id: 'qa', framework: 'gsd' })
+
+    expect(roles.map(role => role.framework)).toEqual([undefined, undefined, undefined, undefined, 'gsd', undefined])
+    expect(roles.map(role => role.id)).toEqual(TEMPLATE_ORDER)
+  })
+
+  test('framework none is a framework too', () => {
+    const roles = adjusted(TEAM, { kind: 'framework', id: 'be', framework: 'none' })
+
+    expect(roles[2]?.framework).toBe('none')
+  })
+
+  test('framework of an unknown id says there is no such role', () => {
+    expect(refused(TEAM, { kind: 'framework', id: 'x', framework: 'gsd' })).toBe('no role "x"')
+  })
+
+  test('an adjustment never changes its input', () => {
+    const input = frozen(TEAM)
+    const before = JSON.stringify(input)
+    const ops: readonly AdjustOp[] = [
+      { kind: 'add', id: 'docs', title: 'Docs' },
+      { kind: 'drop', id: 'fe' },
+      { kind: 'rename', id: 'be', newId: 'api', title: 'API' },
+      { kind: 'framework', id: 'qa', framework: 'gsd' },
+    ]
+
+    for (const op of ops) {
+      expect(applyAdjust(input, op).kind).toBe('ok')
+    }
+
+    expect(JSON.stringify(input)).toBe(before)
+  })
+})
+
+/** The role.json object of the BE template role, with its schema; a test overrides only the fields it checks. */
+const BE_JSON = { schema: 1, ...roleFromTemplate(row('be')) }
+
+/** The role.json text of the BE role with these fields replaced. */
+function jsonWith(over: Record<string, unknown>): string {
+  return JSON.stringify({ ...BE_JSON, ...over })
+}
+
+/** The role.json text of the BE role without this key. */
+function jsonWithout(key: string): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(BE_JSON).filter(([name]) => name !== key)))
+}
+
+/** The autopilot object of the BE role with these fields replaced. */
+function autopilotWith(over: Record<string, unknown>): Record<string, unknown> {
+  return { ...BE_JSON.autopilot, ...over }
+}
+
+/** The carry object of the BE role with these fields replaced. */
+function carryWith(over: Record<string, unknown>): Record<string, unknown> {
+  return { ...BE_JSON.carry, ...over }
+}
+
+/** A role that sets every optional part: a framework, MCP, skills, instructions and what it carries. */
+const FULL_ROLE: RoleSpec = {
+  id: 'docs-writer',
+  title: 'Docs writer',
+  purpose: 'Writes the docs.',
+  basedOn: null,
+  framework: 'superpowers',
+  model: 'sonnet',
+  effort: 'high',
+  permissionMode: 'plan',
+  autopilot: { duration: '1h30m', threshold: 80, askUser: true },
+  hasBash: true,
+  mcp: ['jira', 'plugin:foo:bar'],
+  skills: ['security-review', 'gsd:plan-phase'],
+  instructions: ['global-claude-md', 'auto-memory', 'project-claude-md'],
+  carry: {
+    autoCompactWindow: true,
+    statusLine: true,
+    env: ['PATH', 'MY_TOKEN_NAME'],
+    hooks: ['gsd-secret-read-guard.js'],
+  },
+}
+
+/** Each case is a field that must reject the whole file, with a name that shows in a failing diff. */
+const BAD_FIELDS: readonly (readonly [string, Record<string, unknown>])[] = [
+  ['an id that is not a slug', { id: 'Be' }],
+  ['the reserved id', { id: 'bin' }],
+  ['an empty id', { id: '' }],
+  ['an id that is not text', { id: 5 }],
+  ['a title that is not text', { title: 5 }],
+  ['a title that cleans to nothing', { title: BIDI_OVERRIDE }],
+  ['a purpose that is not text', { purpose: 5 }],
+  ['a purpose that cleans to nothing', { purpose: '\n' }],
+  ['a basedOn outside the template', { basedOn: 'cto' }],
+  ['a basedOn in capitals', { basedOn: 'PM' }],
+  ['a framework outside the three', { framework: 'bmad' }],
+  ['a framework in capitals', { framework: 'GSD' }],
+  ['a null framework', { framework: null }],
+  ['a model with a digit', { model: 'opus4' }],
+  ['a model in capitals', { model: 'Opus' }],
+  ['a pinned model id', { model: 'claude-opus-4-5' }],
+  ['a model of 25 letters', { model: 'a'.repeat(25) }],
+  ['a model that is not text', { model: 5 }],
+  ['an unknown effort', { effort: 'ultra' }],
+  ['an effort in capitals', { effort: 'LOW' }],
+  ['a permission mode outside the six', { permissionMode: 'yolo' }],
+  ['a permission mode in capitals', { permissionMode: 'Auto' }],
+  ['no autopilot object', { autopilot: null }],
+  ['an autopilot list', { autopilot: [] }],
+  ['no duration', { autopilot: { threshold: 65, askUser: false } }],
+  ['a duration with a space', { autopilot: autopilotWith({ duration: '4 h' }) }],
+  ['a duration that is not text', { autopilot: autopilotWith({ duration: 4 }) }],
+  ['a duration of zero', { autopilot: autopilotWith({ duration: '0' }) }],
+  ['a duration over 168 hours', { autopilot: autopilotWith({ duration: '169h' }) }],
+  ['a threshold of 0', { autopilot: autopilotWith({ threshold: 0 }) }],
+  ['a threshold of 96', { autopilot: autopilotWith({ threshold: 96 }) }],
+  ['a fractional threshold', { autopilot: autopilotWith({ threshold: 65.5 }) }],
+  ['a threshold as text', { autopilot: autopilotWith({ threshold: '65' }) }],
+  ['an autopilot askUser that is not a boolean', { autopilot: autopilotWith({ askUser: 'yes' }) }],
+  ['a hasBash that is not a boolean', { hasBash: 'true' }],
+  ['mcp that is not a list', { mcp: 'jira' }],
+  ['mcp with a non-string', { mcp: ['jira', 5] }],
+  ['mcp with a space', { mcp: ['my server'] }],
+  ['mcp with an empty name', { mcp: [''] }],
+  ['mcp starting with a dash', { mcp: ['-x'] }],
+  ['mcp with a name of 101 characters', { mcp: ['a'.repeat(101)] }],
+  ['skills that are null', { skills: null }],
+  ['skills with a slash', { skills: ['a/b'] }],
+  ['instructions that are not a list', { instructions: 'auto-memory' }],
+  ['an unknown instruction group', { instructions: ['auto-memory', 'nope'] }],
+  ['carry that is a list', { carry: [] }],
+  ['carry with nothing in it', { carry: {} }],
+  ['an autoCompactWindow that is not a boolean', { carry: carryWith({ autoCompactWindow: 1 }) }],
+  ['a statusLine that is not a boolean', { carry: carryWith({ statusLine: 'no' }) }],
+  ['an env name in lowercase', { carry: carryWith({ env: ['path'] }) }],
+  ['an env name of 65 characters', { carry: carryWith({ env: ['A'.repeat(65)] }) }],
+  ['an env that is not a list', { carry: carryWith({ env: 'PATH' }) }],
+  ['a hook name with a slash', { carry: carryWith({ hooks: ['a/b.js'] }) }],
+  ['a hook name of 81 characters', { carry: carryWith({ hooks: ['a'.repeat(81)] }) }],
+  ['a hook name with a space', { carry: carryWith({ hooks: ['a b.js'] }) }],
+  ['a schema other than 1', { schema: 2 }],
+  ['a schema as text', { schema: '1' }],
+]
+
+describe('parseRoleJson', () => {
+  test('every template role reads back as itself from its role.json text', () => {
+    for (const role of ROLE_TEMPLATE.map(roleFromTemplate)) {
+      expect(parseRoleJson(JSON.stringify({ schema: 1, ...role }))).toEqual(role)
+    }
+  })
+
+  test('a role that sets every part reads back as itself', () => {
+    expect(parseRoleJson(JSON.stringify({ schema: 1, ...FULL_ROLE }))).toEqual(FULL_ROLE)
+  })
+
+  test('every effort and every permission mode reads back', () => {
+    const efforts = ['low', 'medium', 'high', 'xhigh', 'max']
+    const modes = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan']
+
+    for (const effort of efforts) {
+      expect(parseRoleJson(jsonWith({ effort }))?.effort).toBe(effort)
+    }
+    for (const permissionMode of modes) {
+      expect(parseRoleJson(jsonWith({ permissionMode }))?.permissionMode).toBe(permissionMode)
+    }
+  })
+
+  test('the schema key is dropped, and keys that are not part of a role are ignored', () => {
+    const parsed = parseRoleJson(jsonWith({ notes: 'by hand', extra: { a: 1 } }))
+
+    expect(parsed).toEqual(roleFromTemplate(row('be')))
+    expect(Object.hasOwn(parsed ?? {}, 'schema')).toBe(false)
+    expect(Object.hasOwn(parsed ?? {}, 'notes')).toBe(false)
+  })
+
+  test('the order of the keys does not matter', () => {
+    const reversed = JSON.stringify(Object.fromEntries(Object.entries(BE_JSON).reverse()))
+
+    expect(parseRoleJson(reversed)).toEqual(roleFromTemplate(row('be')))
+  })
+
+  test('without a framework key the role has none, and with one it keeps it', () => {
+    expect(Object.hasOwn(parseRoleJson(jsonWithout('framework')) ?? {}, 'framework')).toBe(false)
+    expect(parseRoleJson(jsonWith({ framework: 'none' }))?.framework).toBe('none')
+  })
+
+  test('a title and a purpose are cleaned and capped, not refused', () => {
+    const parsed = parseRoleJson(
+      jsonWith({ title: `Dev${BIDI_OVERRIDE}Ops`, purpose: `${'p'.repeat(250)}${BIDI_OVERRIDE}` }),
+    )
+    const longTitle = parseRoleJson(jsonWith({ title: 'T'.repeat(41) }))
+
+    expect(parsed?.title).toBe('DevOps')
+    expect(parsed?.purpose).toBe(`${'p'.repeat(199)}…`)
+    expect(longTitle?.title).toBe(`${'T'.repeat(39)}…`)
+  })
+
+  test('values at the edge of each rule are accepted', () => {
+    const edges: Record<string, unknown>[] = [
+      { model: 'haiku' },
+      { model: 'a' },
+      { model: 'a-b' },
+      { model: 'a'.repeat(24) },
+      { autopilot: autopilotWith({ threshold: 1 }) },
+      { autopilot: autopilotWith({ threshold: 95 }) },
+      { autopilot: autopilotWith({ duration: '4H' }) },
+      { autopilot: autopilotWith({ duration: '45' }) },
+      { autopilot: autopilotWith({ duration: '168h' }) },
+      { mcp: ['a.b@c-d_e:f', 'a'.repeat(100), 'A'] },
+      { skills: ['gsd:plan-phase', 'x'] },
+      { instructions: ['auto-memory'] },
+      { carry: carryWith({ env: ['A', '_', 'A'.repeat(64)] }) },
+      { carry: carryWith({ hooks: ['a', 'a'.repeat(80), 'gsd-secret-read-guard.js'] }) },
+    ]
+
+    for (const over of edges) {
+      expect([JSON.stringify(over), parseRoleJson(jsonWith(over)) === null]).toEqual([JSON.stringify(over), false])
+    }
+  })
+
+  test('text that is not a role.json object is null', () => {
+    for (const text of ['not json', '', '[]', 'null', '5', '"role"', '{', '{}']) {
+      expect([text, parseRoleJson(text)]).toEqual([text, null])
+    }
+  })
+
+  test('a missing field gives null', () => {
+    const keys = [
+      'schema',
+      'id',
+      'title',
+      'purpose',
+      'basedOn',
+      'model',
+      'effort',
+      'permissionMode',
+      'autopilot',
+      'hasBash',
+      'mcp',
+      'skills',
+      'instructions',
+      'carry',
+    ]
+
+    for (const key of keys) {
+      expect([key, parseRoleJson(jsonWithout(key))]).toEqual([key, null])
+    }
+  })
+
+  test('a field that is not valid gives null for the whole file', () => {
+    for (const [name, over] of BAD_FIELDS) {
+      expect([name, parseRoleJson(jsonWith(over))]).toEqual([name, null])
+    }
+  })
+
+  test('PM never has Bash: a role based on pm with hasBash true gives null', () => {
+    const pm = { schema: 1, ...roleFromTemplate(row('pm')) }
+    const product = { ...pm, id: 'product' }
+
+    expect(parseRoleJson(JSON.stringify(pm))?.hasBash).toBe(false)
+    expect(parseRoleJson(JSON.stringify({ ...pm, hasBash: true }))).toBeNull()
+    expect(parseRoleJson(JSON.stringify({ ...product, hasBash: true }))).toBeNull()
+    expect(parseRoleJson(JSON.stringify({ ...BE_JSON, hasBash: false }))?.hasBash).toBe(false)
+  })
+})
+
+describe('isAutopilotDuration', () => {
+  test('autopilot durations are accepted: minutes as digits, or hours and minutes', () => {
+    const accepted = ['4h', '2h', '8h', '90m', '1h30m', '45', '1H', '30M', '1h0m', '0h1m', '00045', '168h', '10080']
+
+    for (const text of accepted) {
+      expect([text, isAutopilotDuration(text)]).toEqual([text, true])
+    }
+  })
+
+  test('zero, text outside the grammar and more than 168 hours are refused', () => {
+    const refusals = [
+      '',
+      '0',
+      '0h',
+      '0m',
+      '0h0m',
+      'h',
+      'm',
+      '169h',
+      '168h1m',
+      '10081',
+      '4 h',
+      ' 4h',
+      '4h ',
+      '4h\n',
+      '4hh',
+      '1.5h',
+      '-1h',
+      '4h30',
+      '1m30h',
+      '9'.repeat(400),
+      'abc',
+    ]
+
+    for (const text of refusals) {
+      expect([text, isAutopilotDuration(text)]).toEqual([text, false])
+    }
   })
 })
