@@ -1159,6 +1159,20 @@ describe('plan conflicts and limits', () => {
       ])
     })
 
+    test('the manifest named in another letter case is still planned by cadre itself (B10)', async () => {
+      const plan = await buildPlan(input({ desired: [file('.cadre/Manifest.json', 'x')] }))
+
+      expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual(['refused to plan .cadre/Manifest.json: cadre plans it itself'])
+    })
+
+    test('a path named again in another letter case is planned once: the first wins, the second is not', async () => {
+      const plan = await buildPlan(input({ desired: [file('.cadre/pm/ROLE.md', 'a'), file('.cadre/pm/role.md', 'b')] }))
+
+      expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`, 'create .cadre/pm/ROLE.md'])
+      expect(plan.warnings).toEqual(['refused to plan .cadre/pm/role.md twice: only the first is kept'])
+    })
+
     test('nothing is planned under the root CLAUDE.md, .claude/ or .planning/', async () => {
       const hostile = [
         file('CLAUDE.md', 'x'),
