@@ -11,6 +11,7 @@ import type {
   TemplateRoleId,
   ToolCommand,
 } from '../types'
+import { isSecurityReviewSkill } from './assign'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { reportText } from './render'
 
@@ -342,9 +343,6 @@ const PLAYWRIGHT_NAME = /playwright/i
 /** An MCP server name that already lets the FE role inspect the running page, in any case (D-74). */
 const DEVTOOLS_NAME = /devtools/i
 
-/** The skill the Security role needs: named exactly this, or a plugin skill whose name ends in `:security-review`. */
-const SECURITY_REVIEW_SKILL = 'security-review'
-
 /** The GSD and superpowers lines: only for a team with roles where none of them uses a framework (D-17, D-74). */
 function frameworkRecommendations(frameworks: readonly FrameworkId[]): Recommendation[] {
   if (frameworks.length === 0 || frameworks.some(framework => framework !== 'none')) return []
@@ -382,11 +380,6 @@ function hasMcp(setup: SetupScan, pattern: RegExp): boolean {
   return setup.mcp.some(server => pattern.test(server.name))
 }
 
-/** Whether the user has the skill: named exactly `name`, or a plugin skill whose name ends in `:name`. */
-function hasSkill(setup: SetupScan, name: string): boolean {
-  return setup.skills.some(skill => skill.name === name || skill.name.endsWith(`:${name}`))
-}
-
 /**
  * The tools to recommend for a team (ROLE-03, D-74), in this order: GSD and superpowers when no role uses a framework;
  * Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP server exists; DevTools MCP
@@ -414,7 +407,7 @@ export function recommend(input: {
       why: 'the FE role cannot inspect the running page',
       install: INSTALL_COMMANDS.devtools,
     }),
-    ...forTemplateRole(roles, 'security', !hasSkill(setup, SECURITY_REVIEW_SKILL), {
+    ...forTemplateRole(roles, 'security', !setup.skills.some(skill => isSecurityReviewSkill(skill.name)), {
       tool: 'security-review',
       why: 'the Security role has no security-review skill',
       install: INSTALL_COMMANDS.securityReview,

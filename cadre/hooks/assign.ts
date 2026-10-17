@@ -104,12 +104,26 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
 ])
 
 /**
+ * A security-review skill name, in any case: `security-review` as the whole last word, alone or after `-` or `:`, so
+ * `acme:security-review` and `my-security-review` count and `security-reviewer` does not (D-53, D-74).
+ */
+const SECURITY_REVIEW_PATTERN = /(^|[-:])security-review$/i
+
+/**
+ * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table and the recommendations
+ * share this one rule.
+ */
+export function isSecurityReviewSkill(name: string): boolean {
+  return SECURITY_REVIEW_PATTERN.test(name)
+}
+
+/**
  * Which roles a skill goes to, by its name in any case (D-53), tried in order like MCP_ROLE_ROWS: `security-review`
  * goes to Security, and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the
  * ends of the name), so `redesign` is not a design skill.
  */
 export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
-  { pattern: /(^|[-:])security-review$/i, roles: frozenRoles('security'), label: 'security-review' },
+  { pattern: SECURITY_REVIEW_PATTERN, roles: frozenRoles('security'), label: 'security-review' },
   {
     pattern: /(^|[-:])(frontend-design|frontend|design|ui-ux|ui-design)([-:]|$)/i,
     roles: frozenRoles('fe'),
