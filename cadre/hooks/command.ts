@@ -6,7 +6,7 @@ const MAX_ECHOED = 40
 const INVISIBLE_CHARS = /\p{Cf}/gu
 /** Control characters and line or paragraph separators; each becomes a space so separate words stay separate. */
 const BREAK_CHARS = /[\p{Cc}\p{Zl}\p{Zp}]/gu
-/** Width, in characters, the command column is padded to in the usage lines; the usage rows and their tests share it. */
+/** Width, in characters, the command column is padded to in the usage lines; the tests share it. */
 export const COMMAND_COLUMN = 30
 
 /** A role id (D-48): a lowercase slug of 1 to 24 characters, so `/`, `..` and spaces are impossible. */
