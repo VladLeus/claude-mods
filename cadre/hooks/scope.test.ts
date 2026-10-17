@@ -15,6 +15,7 @@ import type {
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import type { ChainRole } from './roles'
 import { compileScope, infraViolations, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
 import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
 
@@ -286,6 +287,14 @@ describe('compileScope', () => {
 
     expect(card.memoryPattern).toBe('~/.claude/cadre/<repo>-<hash8>/pm/')
     expect(card.chain).toEqual(chainLines(['pm', 'tl']))
+  })
+
+  test('the card chain follows basedOn through the roles of the team', () => {
+    const roles: readonly ChainRole[] = ['pm', { id: 'lead', basedOn: 'tl' }]
+    const card = compileScope(templateRole('pm'), context({ roles })).card
+
+    expect(card.chain).toEqual(chainLines(roles))
+    expect(card.chain.some(line => line.includes('lead -> human'))).toBe(true)
   })
 
   test('the card carries the role, its framework and settings, and the MCP route', () => {
