@@ -4,7 +4,6 @@ import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } 
 import { ADAPTERS, detectAll } from './adapters'
 import { BUILTIN_ADAPTER } from './builtin'
 import { GSD_GATES } from './gsd'
-import { chunkLines as planChunkLines } from './plan'
 import {
   adaptersReportLines,
   choiceLine,
@@ -458,8 +457,9 @@ describe('chunkLines', () => {
     expect(chunkLines(['aaa', 'bbb', 'ccc'], 11)).toEqual(['aaa\nbbb\nccc'])
   })
 
-  test('plan.ts gives the same function, so the old import keeps working', () => {
-    expect(planChunkLines).toBe(chunkLines)
+  test('a line longer than the cap stays whole in a chunk of its own, and no lines give no chunks', () => {
+    expect(chunkLines(['a', 'x'.repeat(10), 'b'], 5)).toEqual(['a', 'x'.repeat(10), 'b'])
+    expect(chunkLines([], 2000)).toEqual([])
   })
 })
 
