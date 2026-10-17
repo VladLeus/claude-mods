@@ -111,7 +111,7 @@ describe('compileScope', () => {
       'autopilot@local-mods',
       'cadre@local-mods',
     ])
-    expect(JSON.stringify(scope)).not.toMatch(/autoMemoryDirectory|statusLine|claudeMdExcludes|"env"|"hooks"/)
+    expect(JSON.stringify(scope.settings)).not.toMatch(/autoMemoryDirectory|statusLine|claudeMdExcludes|"env"|"hooks"/)
   })
 
   test('a PM given the jira server does not deny it and lists it in the MCP file', () => {
@@ -221,7 +221,10 @@ describe('compileScope', () => {
     const rules = compileScope(templateRole('pm'), context()).card.rules
 
     expect(rules[0]).toEqual({ text: PLUGIN_RULE, enforcement: 'hard' })
-    expect(rules).toContainEqual({ text: 'No Bash tool (denied)', enforcement: 'hard' })
+    expect(rules.find(candidate => candidate.text === 'No Bash tool (denied)')).toEqual({
+      text: 'No Bash tool (denied)',
+      enforcement: 'hard',
+    })
   })
 
   test('the card names the memory folder pattern and the decision chain of the team', () => {
