@@ -7,6 +7,7 @@ import type {
   ScopeCard,
   ScopeContext,
   ScopeRule,
+  SetupScan,
   SkillRef,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from './assign'
@@ -389,6 +390,18 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
 }
 
 /**
+ * The note when the setup scan could not see every MCP server (A4): it dropped a name a role.json cannot hold, or it
+ * did not read `~/.claude.json`. A server it did not see is not on the deny list, so the role can still use it.
+ */
+function partialMcpRules(setup: SetupScan): ScopeRule[] {
+  if (!setup.isMcpPartial) return []
+  const text =
+    'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
+
+  return [rule(text, 'none')]
+}
+
+/**
  * Whether the role runs GSD without Bash. GSD workflows need Bash, so such a role keeps its start skills and runs them
  * through a person, which makes it attended (A1).
  */
@@ -426,6 +439,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...unusualDirRules(deny),
     rule('Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', 'best-effort'),
     ...mcpRules(deny, ctx.mcpRoute),
+    ...partialMcpRules(ctx.setup),
     rule('Skills: only the listed skills are linked', 'best-effort'),
     rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
     rule(`Permission mode: ${role.permissionMode}`, 'hard'),

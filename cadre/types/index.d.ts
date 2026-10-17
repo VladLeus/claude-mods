@@ -549,6 +549,12 @@ export type SetupScan = {
   readonly plugins: readonly string[]
   readonly skills: readonly SkillRef[]
   readonly mcp: readonly McpRef[]
+  /**
+   * True when the scan could not see every MCP server (A4): it dropped a name a role.json cannot hold, or it did not
+   * read `~/.claude.json` (no consent, no user folder, or a file it could not read or parse). Such a server is not
+   * denied.
+   */
+  readonly isMcpPartial: boolean
   readonly agents: readonly string[]
   /** CLAUDE.md files in the chain, in display form (`<repo>/CLAUDE.md`, `~/...`), never their content. */
   readonly claudeMd: readonly string[]
