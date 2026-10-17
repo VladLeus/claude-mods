@@ -229,8 +229,11 @@ type DenyPlan = {
   readonly refused: readonly Refusal[]
 }
 
-/** Whether a top-level code folder name is safe to write into a path rule: `*`, spaces and `..` are not. */
-function isSafeDir(name: string): boolean {
+/**
+ * Whether a top-level code folder name is safe to write into a path rule: `*`, spaces and `..` are not. Plan 02-16
+ * checks every `user.codeDirs` entry with it before it builds a `Read(//<root>/<d>/**)` rule (B2).
+ */
+export function isSafeDir(name: string): boolean {
   return SAFE_DIR_PATTERN.test(name) && name !== '.' && name !== '..'
 }
 
