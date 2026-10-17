@@ -56,10 +56,19 @@ const MAX_KEY_CHARS = 120
 const MAX_EVENT_CHARS = 60
 /** At most this many key names are kept per settings source. */
 const MAX_SETTINGS_KEYS = 100
+/**
+ * The most bytes of `~/.claude.json` a scan reads: the host's own 4 MiB read cap, not the 256 KiB cap of the detect
+ * files, because this file holds the account data and every project of the user and is far larger (P15).
+ */
+export const CLAUDE_JSON_MAX_BYTES = 4 * 1024 * 1024
 /** Code points a command, MCP server or agent name keeps; a longer name is dropped, with a warning. */
 const MAX_NAME_CHARS = 100
-/** The extension of an agent file. */
-const AGENT_EXTENSION = '.md'
+/** Code points a memory file name keeps; the longest name a file system allows. */
+const MAX_FILE_NAME_CHARS = 255
+/** The extension of an agent file and of a memory file. */
+const MARKDOWN_EXTENSION = '.md'
+/** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
+const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
 const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
 /** A command or skill name, or the plugin that adds it: a letter or digit, then up to 99 more safe characters. */
@@ -70,6 +79,8 @@ const MCP_TOOL_PATTERN = /^mcp__(.+?)__.+$/
 const COMMANDS_WARNING = 'could not list commands and skills (treated as unknown)'
 /** The warning when the host cannot list the session tools. */
 const TOOLS_WARNING = 'could not list session tools (treated as unknown)'
+/** The warning when the host cannot list the CLAUDE.md files above the repo. */
+const CHAIN_WARNING = 'could not read the CLAUDE.md chain (treated as unknown)'
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
 const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
 /**
@@ -294,6 +305,59 @@ export function projectMcpJson(value: unknown): McpRef[] {
   return mcpRefsOf(mcpServerNames(value), 'project')
 }
 
+/** A path without its trailing slashes. */
+function withoutTrailingSlashes(path: string): string {
+  return path.replace(/\/+$/, '')
+}
+
+/** The server names of a `~/.claude.json` value: its top-level `mcpServers`, and those of the projects at `roots`. */
+function claudeJsonNames(value: unknown, roots: readonly string[]): string[] {
+  if (!isObject(value)) return []
+  const wanted = roots.map(withoutTrailingSlashes).filter(root => root !== '')
+  const projects = isObject(value.projects) ? Object.entries(value.projects) : []
+  const ofThisRepo = projects.filter(([path]) => wanted.includes(withoutTrailingSlashes(path)))
+
+  return [...mcpServerNames(value), ...ofThisRepo.flatMap(([, project]) => fieldKeysOf(project, 'mcpServers'))]
+}
+
+/**
+ * The MCP servers named in `~/.claude.json` (SCAN-02, D-58), which a scan reads only after the person consented: the
+ * keys of the top-level `mcpServers` and of the `mcpServers` of the project at any of `roots` (the repo root as given
+ * and as resolved, trailing slashes ignored), sorted, with source `user-config`. Nothing else in the file is kept: not
+ * the server entries, which hold tokens, not the account block and not another project. An empty root form matches no
+ * project. Anything but a plain object gives [].
+ */
+export function projectClaudeJson(value: unknown, roots: readonly string[]): McpRef[] {
+  return mcpRefsOf(claudeJsonNames(value, roots), 'user-config')
+}
+
+/**
+ * The CLAUDE.md files of a `$.fs.ancestors` answer, in the order the host gave them (the file system root first), each
+ * as its display form: `<repo>/CLAUDE.md`, `~/work/CLAUDE.md`, or the cleaned path outside both. Only the folder and
+ * the name an entry carries are read, so the text of the files cannot be kept; a name that was not asked for, such as
+ * AGENTS.md, is dropped, and a file is listed once. Anything but a list gives [].
+ */
+export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
+  if (!Array.isArray(value)) return []
+  const shown = value.flatMap(item => {
+    if (!isObject(item) || typeof item.dir !== 'string' || typeof item.name !== 'string') return []
+    if (!CLAUDE_MD_NAMES.includes(item.name)) return []
+    const path = `${withoutTrailingSlashes(item.dir)}/${item.name}`
+
+    return [displayPath(path, ctx.home, ctx.root, ctx.configDir)]
+  })
+
+  return Array.from(new Set(shown))
+}
+
+/**
+ * The folder name Claude Code gives a project's data under `projects/`: every character of the path that is not an
+ * ASCII letter or digit becomes `-`, one for each UTF-16 unit.
+ */
+export function mangledProjectDir(path: string): string {
+  return path.replace(/[^A-Za-z0-9]/g, '-')
+}
+
 /**
  * The folder the user-level sources live in: CLAUDE_CONFIG_DIR when it is set, else `<home>/.claude`; null when there
  * is neither.
@@ -451,11 +515,74 @@ async function agentNames(
   const names: string[] = []
   for (const folder of [...folders, `${ctx.root}/.claude/agents`]) {
     const entries = await listFolder(io, ctx, folder, warnings)
-    names.push(...fileNames(entries, AGENT_EXTENSION).map(name => name.slice(0, -AGENT_EXTENSION.length)))
+    names.push(...fileNames(entries, MARKDOWN_EXTENSION).map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
   }
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_NAME_CHARS))
 
   return sorted(stableNames(names, MAX_NAME_CHARS))
+}
+
+/** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
+function claudeJsonPathOf(ctx: SetupContext): string | null {
+  if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
+
+  return ctx.home === null ? null : `${ctx.home}/.claude.json`
+}
+
+/**
+ * The MCP servers named in `~/.claude.json`. The file is looked for only when the person consented (D-58): without
+ * consent nothing is read, stat'ed or warned about. A file that is not there is quiet, one that cannot be read, is over
+ * the 4 MiB cap or does not parse adds a warning.
+ */
+async function userConfigMcpRefs(
+  io: InitIo,
+  ctx: SetupContext,
+  isAllowed: boolean,
+  warnings: string[],
+): Promise<McpRef[]> {
+  if (!isAllowed) return []
+  const path = claudeJsonPathOf(ctx)
+  if (path === null) return []
+  const value = await readJson(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
+  const roots = [ctx.root, ctx.givenRoot]
+  warnings.push(...hiddenNameWarnings(claudeJsonNames(value, roots), 'MCP server name', MAX_NAME_CHARS))
+
+  return projectClaudeJson(value, roots)
+}
+
+/** The CLAUDE.md files above and in the repo, as display forms; a chain the host cannot give adds a warning. */
+async function claudeMdChain(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<string[]> {
+  const value = await io.ancestors(CLAUDE_MD_NAMES)
+  if (!Array.isArray(value)) {
+    warnings.push(CHAIN_WARNING)
+
+    return []
+  }
+
+  return projectAncestors(value, ctx)
+}
+
+/** Whether the user folder holds a CLAUDE.md file. Its stat answers; its text is never read. */
+async function isGlobalClaudeMdThere(io: InitIo, userDir: string | null): Promise<boolean> {
+  if (userDir === null) return false
+  const stat = await io.stat(`${userDir}/CLAUDE.md`)
+
+  return stat !== null && stat.kind === 'file'
+}
+
+/** The `.md` file names in the auto-memory folder of this repo, with their extension; their text is never read. */
+async function memoryFileNames(
+  io: InitIo,
+  ctx: SetupContext,
+  userDir: string | null,
+  warnings: string[],
+): Promise<string[]> {
+  if (userDir === null) return []
+  const folder = `${userDir}/projects/${mangledProjectDir(ctx.root)}/memory`
+  const names = fileNames(await listFolder(io, ctx, folder, warnings), MARKDOWN_EXTENSION)
+  warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
+
+  return sorted(stableNames(names, MAX_FILE_NAME_CHARS))
 }
 
 /** The servers once each by name, keeping the first source in the order the lists are given, sorted by name. */
@@ -471,10 +598,11 @@ function mergeMcp(lists: readonly (readonly McpRef[])[]): McpRef[] {
 /**
  * The user-setup scan (SCAN-02, D-57): every source is read through the port and projected at once to names, counts and
  * booleans, so no value, command, token or file content can reach a later module. The sources are the three settings
- * files, the installed and enabled plugins, the commands and skills, the MCP servers of the repo's `.mcp.json` and of
- * the session, and the agent files. A source the port cannot read adds a warning and is treated as unknown, never as
- * empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder, the user-level sources are
- * skipped.
+ * files, the installed and enabled plugins, the commands and skills, the MCP servers of the repo's `.mcp.json`, of the
+ * session and, only when `isClaudeJsonAllowed` is true, of `~/.claude.json` (D-58), the agent files, the CLAUDE.md
+ * chain, the global CLAUDE.md and the auto-memory file names. A source the port cannot read adds a warning and is
+ * treated as unknown, never as empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder,
+ * the user-level sources are skipped.
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
@@ -487,16 +615,20 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   const skills = await commandRefs(io, warnings)
   const projectServers = await projectMcpRefs(io, ctx, warnings)
   const sessionServers = await sessionMcpRefs(io, warnings)
+  const userServers = await userConfigMcpRefs(io, ctx, isClaudeJsonAllowed, warnings)
   const agents = await agentNames(io, ctx, userDir, warnings)
+  const claudeMd = await claudeMdChain(io, ctx, warnings)
+  const hasGlobalClaudeMd = await isGlobalClaudeMdThere(io, userDir)
+  const memoryFiles = await memoryFileNames(io, ctx, userDir, warnings)
 
   return {
     plugins: sorted(Array.from(new Set([...settings.enabled, ...installed]))),
     skills,
-    mcp: mergeMcp([projectServers, sessionServers]),
+    mcp: mergeMcp([projectServers, sessionServers, userServers]),
     agents,
-    claudeMd: [],
-    hasGlobalClaudeMd: false,
-    memoryFiles: [],
+    claudeMd,
+    hasGlobalClaudeMd,
+    memoryFiles,
     settingsKeys: settings.settingsKeys,
     hooks: settings.hooks,
     carry: settings.carry,
