@@ -382,11 +382,28 @@ function mcpRules(deny: DenyPlan): ScopeRule[] {
   ]
 }
 
-/** The rule of an attended role: it needs a person for framework steps that cannot run unattended (ROLE-04). */
-function attendedRules(ctx: ScopeContext): ScopeRule[] {
-  if (!ctx.isAttended) return []
+/**
+ * Whether the role runs GSD without Bash. GSD workflows need Bash, so such a role keeps its start skills and runs them
+ * through a person, which makes it attended (A1).
+ */
+function isGsdWithoutBash(role: RoleSpec, ctx: ScopeContext): boolean {
+  return ctx.framework === 'gsd' && !role.hasBash
+}
 
-  return [rule('Attended: this role needs a person for framework steps that cannot run unattended', 'none')]
+/**
+ * The rules of an attended role (ROLE-04), in this order: the one for framework steps that cannot run unattended, when
+ * the context says so, then the one for GSD workflows that need Bash, for a role without Bash on GSD (A1).
+ */
+function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
+  const rules: ScopeRule[] = []
+  if (ctx.isAttended) {
+    rules.push(rule('Attended: this role needs a person for framework steps that cannot run unattended', 'none'))
+  }
+  if (isGsdWithoutBash(role, ctx)) {
+    rules.push(rule('Attended: GSD workflows need Bash; this role runs them through a person', 'none'))
+  }
+
+  return rules
 }
 
 /**
@@ -406,12 +423,15 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule('Skills: only the listed skills are linked', 'best-effort'),
     rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
     rule(`Permission mode: ${role.permissionMode}`, 'hard'),
-    ...attendedRules(ctx),
+    ...attendedRules(role, ctx),
     rule(`MCP route: ${ctx.mcpRoute} (provisional; Phase 3 decides)`, 'none'),
   ]
 }
 
-/** The scope card of a role, from the same inputs as the settings, so the two cannot drift (D-80). */
+/**
+ * The scope card of a role, from the same inputs as the settings, so the two cannot drift (D-80). The role is attended
+ * when the context says so, and also when it runs GSD without Bash (A1).
+ */
 function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
   const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(script => !loaded.includes(script))
@@ -424,7 +444,7 @@ function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], 
     effort: role.effort,
     permissionMode: role.permissionMode,
     isBypass: isBypass(role),
-    isAttended: ctx.isAttended,
+    isAttended: ctx.isAttended || isGsdWithoutBash(role, ctx),
     skills: sortedUnique(role.skills),
     mcp: sortedUnique(role.mcp),
     notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },
