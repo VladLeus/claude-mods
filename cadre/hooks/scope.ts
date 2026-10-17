@@ -2,6 +2,7 @@ import type {
   CompiledScope,
   Enforcement,
   FrameworkId,
+  McpRoute,
   RoleSpec,
   ScopeCard,
   ScopeContext,
@@ -368,12 +369,17 @@ function unusualDirRules(deny: DenyPlan): ScopeRule[] {
   return deny.unusualDirs.map(dir => rule(`Code dir ${shown(dir)} has an unusual name and is not denied`, 'none'))
 }
 
-/** The MCP rules: the servers denied, or that there are none, then the unusual names and the refused patterns. */
-function mcpRules(deny: DenyPlan): ScopeRule[] {
+/**
+ * The MCP rules: the scanned servers denied, or that there are none, then the unusual names and the refused patterns.
+ * The first rule is hard only on the strict route; on the merged route a server the scan did not see still loads, so it
+ * is best effort (A4).
+ */
+function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
+  const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
   const denied =
     deny.mcp.length === 0
-      ? rule('No other MCP servers to deny', 'hard')
-      : rule(`MCP servers not given are denied: ${deny.mcp.join(', ')}`, 'hard')
+      ? rule('No other scanned MCP servers to deny', enforcement)
+      : rule(`Scanned MCP servers not given are denied: ${deny.mcp.join(', ')}`, enforcement)
 
   return [
     denied,
@@ -419,7 +425,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...skippedDirRules(deny),
     ...unusualDirRules(deny),
     rule('Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', 'best-effort'),
-    ...mcpRules(deny),
+    ...mcpRules(deny, ctx.mcpRoute),
     rule('Skills: only the listed skills are linked', 'best-effort'),
     rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
     rule(`Permission mode: ${role.permissionMode}`, 'hard'),
