@@ -386,6 +386,8 @@ export const ALL_ENV_OPTION = 'All of them'
  * come out, as names and sorted: `none` gives no names, and `all` or the All of them button gives every scanned name.
  * Otherwise every word, split on commas and spaces, must be a scanned name in its exact case. Any other word, which
  * includes a `NAME=value` pair, gives null so the question is asked again; no value is ever read (PLAN-05, T-02-19).
+ * The keywords win: an answer that is only `ALL` or only `NONE`, in any case, is read as the keyword, even when a
+ * scanned variable has that name, so such a variable can be picked only together with another name.
  */
 export function parseEnvNames(answer: string, available: readonly string[]): readonly string[] | null {
   const text = answer.trim()

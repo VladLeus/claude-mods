@@ -202,7 +202,7 @@ function dropped(roleId: TemplateRoleId, reason: string): RoleChange {
 
 /**
  * BE is dropped only when the scan found no source code at all (D-85). With source but no backend framework it is kept,
- * with the reason that says which framework is missing and the language evidence (D-97).
+ * with the reason that says which framework is missing and the language evidence (D-97a).
  */
 function backendChange(scan: RepoScan): RoleChange | null {
   if (!scan.hasSource) return dropped('be', NO_SOURCE_REASON)
@@ -244,7 +244,7 @@ export function proposeRoles(scan: RepoScan): RoleProposal {
   for (const row of ROLE_TEMPLATE) {
     const change = scanChange(row.id, scan)
     if (change !== null) changes.push(change)
-    if (change !== null && change.change === 'dropped') continue
+    if (change?.change === 'dropped') continue
     roles.push(roleFromTemplate(row))
   }
 
@@ -430,7 +430,9 @@ function capped(errors: readonly string[]): string[] {
 /**
  * The model's reply as validated roles (ROLE-02, D-46, D-83). The reply is untrusted: one code fence around it is
  * stripped, and only id, title, purpose and basedOn survive, so a reply cannot set Bash, MCP or skills. Every problem
- * is listed at once, field errors in role order and then the list errors, capped at MAX_PROPOSAL_ERRORS.
+ * is listed at once: first each entry's own errors in role order (no id, a bad basedOn, no purpose), then the list
+ * errors of validateRoles (no roles, too many, each bad or repeated id, and each title missing or blank once cleaned),
+ * capped at MAX_PROPOSAL_ERRORS.
  */
 export function parseProposal(text: string): ProposalReply {
   const json = parseJsonValue(unfenced(text))
