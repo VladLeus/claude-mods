@@ -5,6 +5,7 @@ import type {
   FrameworkId,
   HookScript,
   McpRef,
+  McpRoute,
   PermissionMode,
   RoleSpec,
   ScopeContext,
@@ -620,7 +621,7 @@ describe('scope rules', () => {
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__good-one_2'])
     expect(ruleOf(scope, dotted)).toEqual({ text: dotted, enforcement: 'none' })
     expect(ruleOf(scope, hidden)).toEqual({ text: hidden, enforcement: 'none' })
-    expect(ruleOf(scope, 'MCP servers not given are denied: good-one_2')?.enforcement).toBe('hard')
+    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: good-one_2')?.enforcement).toBe('best-effort')
   })
 
   test('a deny the lint refuses is dropped and the card names it, so a bug cannot ship a broken deny', () => {
@@ -633,7 +634,7 @@ describe('scope rules', () => {
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(scope, wait)).toEqual({ text: wait, enforcement: 'none' })
     expect(ruleOf(scope, short)).toEqual({ text: short, enforcement: 'none' })
-    expect(ruleOf(scope, 'MCP servers not given are denied: jira')?.enforcement).toBe('hard')
+    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: jira')?.enforcement).toBe('best-effort')
   })
 
   test('every MCP server given leaves nothing to deny, and the rule says so', () => {
@@ -641,10 +642,23 @@ describe('scope rules', () => {
     const scope = compileScope(templateRole('pm', { mcp: ['jira'] }), context({ setup: scanned }))
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([])
-    expect(ruleOf(scope, 'No other MCP servers to deny')).toEqual({
-      text: 'No other MCP servers to deny',
-      enforcement: 'hard',
+    expect(ruleOf(scope, 'No other scanned MCP servers to deny')).toEqual({
+      text: 'No other scanned MCP servers to deny',
+      enforcement: 'best-effort',
     })
+  })
+
+  test('the MCP deny rule is hard on the strict route and best effort on the merged one, with or without names', () => {
+    const scanned = setup({ mcp: [session('jira')] })
+    const denied = 'Scanned MCP servers not given are denied: jira'
+    const nothing = 'No other scanned MCP servers to deny'
+    const labelOf = (role: RoleSpec, mcpRoute: McpRoute, text: string): string | undefined =>
+      ruleOf(compileScope(role, context({ setup: scanned, mcpRoute })), text)?.enforcement
+
+    expect(labelOf(templateRole('pm'), 'strict', denied)).toBe('hard')
+    expect(labelOf(templateRole('pm'), 'merged', denied)).toBe('best-effort')
+    expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'strict', nothing)).toBe('hard')
+    expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'merged', nothing)).toBe('best-effort')
   })
 
   test('roleOwnPaths gives the role folder, .planning and the handoff folder, sorted, as a fresh array', () => {
@@ -754,7 +768,7 @@ describe('scope rules', () => {
       { text: skippedRule('pm'), enforcement: 'best-effort' },
       { text: 'Code dir * has an unusual name and is not denied', enforcement: 'none' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: 'MCP servers not given are denied: jira', enforcement: 'hard' },
+      { text: 'Scanned MCP servers not given are denied: jira', enforcement: 'hard' },
       { text: 'MCP server my.server has an unusual name and is not denied', enforcement: 'none' },
       {
         text: 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)',
@@ -777,7 +791,7 @@ describe('scope rules', () => {
       { text: PLUGIN_RULE, enforcement: 'hard' },
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: 'MCP servers not given are denied: jira', enforcement: 'hard' },
+      { text: 'Scanned MCP servers not given are denied: jira', enforcement: 'best-effort' },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
       { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
       { text: 'Permission mode: auto', enforcement: 'hard' },
@@ -880,7 +894,7 @@ describe('scopeCardLines', () => {
       '    [hard] No Bash tool (denied)',
       '    [best-effort] Reads and edits under cadre are denied; the patterns match at any depth',
       '    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied',
-      '    [hard] MCP servers not given are denied: jira',
+      '    [best-effort] Scanned MCP servers not given are denied: jira',
       '    [best-effort] Skills: only the listed skills are linked',
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
       '    [hard] Permission mode: auto',
