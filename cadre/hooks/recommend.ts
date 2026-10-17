@@ -1,5 +1,5 @@
-import type { AskSpec, HunkOp, PortRead, SettingProposal } from '../types'
-import { clean, isObject, parseJsonValue } from './facts'
+import type { AskSpec, HunkOp, PortRead, SettingProposal, ToolCommand } from '../types'
+import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { reportText } from './render'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */
@@ -182,4 +182,92 @@ export function hunkOp(
     isRunnable: resolved.argv !== null,
     command: resolved.display,
   }
+}
+
+/** What resolveToolCommand needs: the raw user-level GSD dir, and the folders a path is shown relative to. */
+export type GsdToolContext = {
+  /** The absolute user-level GSD dir, used raw for the argv and never printed; null when there is none (D-72). */
+  readonly userDir: string | null
+  readonly home: string | null
+  readonly root: string
+  readonly configDir: string | null
+}
+
+/** The script of each logical tool, relative to its GSD dir (D-71): the one table that turns a tool into a path. */
+export const TOOL_SCRIPTS: Readonly<Record<ToolCommand['tool'], string>> = Object.freeze({
+  'gsd-tools': 'bin/gsd-tools.cjs',
+})
+
+/** Where the repo's own GSD copy lives. The command for it is printed for the person and never run (D-28, D-72). */
+const REPO_GSD_DIR = '.claude/gsd-core'
+
+/** An argument cadre hands to a tool: letters, digits, dot, underscore and hyphen only, so no shell text gets in. */
+const PLAIN_WORD = /^[A-Za-z0-9._-]+$/
+
+/** The display of a command that was refused because an argument is not a plain word. */
+const REFUSED_DISPLAY = 'refused: an argument is not a plain word'
+
+/**
+ * The real command for a logical tool call (D-71). Only a user-level GSD dir becomes an argv, `node <dir>/<script>
+ * <args>` with the raw dir, and its display form shows the dir as `~/...` (or `$CLAUDE_CONFIG_DIR/...`). Without one,
+ * or with a dir that is not an absolute path free of empty, `.` and `..` segments, the result has no argv and the
+ * display is the repo-local command for the person to run from the repo root: cadre never runs the repo's own GSD copy
+ * (T-02-21, D-28, D-72). An argument that is not a plain word refuses the command. Nothing here runs anything.
+ */
+export function resolveToolCommand(
+  command: ToolCommand,
+  gsd: GsdToolContext,
+): { readonly argv: readonly string[] | null; readonly display: string } {
+  if (!command.args.every(arg => PLAIN_WORD.test(arg))) return { argv: null, display: REFUSED_DISPLAY }
+  const script = TOOL_SCRIPTS[command.tool]
+  const userDir = trimSlash(gsd.userDir)
+  if (userDir === null || !isSafeConfigDir(userDir)) {
+    return { argv: null, display: ['node', `${REPO_GSD_DIR}/${script}`, ...command.args].join(' ') }
+  }
+  const path = `${userDir}/${script}`
+  const shown = displayPath(path, gsd.home, gsd.root, gsd.configDir)
+
+  return { argv: ['node', path, ...command.args], display: ['node', shown, ...command.args].join(' ') }
+}
+
+/**
+ * Whether the answered hunks leave the GSD roles attended (ROLE-04): a required hunk that was declined, or that cadre
+ * cannot run (repo-local GSD only), means a person is still needed. An optional hunk never does, and no hunks do not.
+ */
+export function isGsdAttended(hunks: readonly HunkOp[]): boolean {
+  return hunks.some(hunk => hunk.isRequired && (!hunk.isAccepted || !hunk.isRunnable))
+}
+
+/**
+ * Whether the GSD roles are attended by the current config alone, without asking (regen, D-70, D-72): a required
+ * proposal is still offered, that is, not yet at its target. A config that cannot be read never equals a target, so it
+ * attends the roles too (fail closed). With no required proposal, as for superpowers and the built-in fallback, nothing
+ * is attended.
+ */
+export function isGsdAttendedFromConfig(
+  proposals: readonly SettingProposal[],
+  config: PortRead,
+  isGsdStatusline: boolean,
+): boolean {
+  return hunkCandidates(proposals, config, isGsdStatusline).some(candidate => candidate.proposal.isRequired)
+}
+
+/** Names joined for a sentence: `a`, `a and b`, `a, b and c`. */
+function listText(names: readonly string[]): string {
+  const head = names.slice(0, -1)
+  const last = names.slice(-1).join('')
+  if (head.length === 0) return last
+
+  return `${head.join(', ')} and ${last}`
+}
+
+/**
+ * The line that says why GSD roles are attended and what ends it: the settings that must be set as proposed. The keys
+ * are cleaned like any report cell. With no key the line names no setting.
+ */
+export function attendedNote(keys: readonly string[]): string {
+  const shown = keys.map(reportText)
+  const what = shown.length === 0 ? 'its settings' : listText(shown)
+
+  return `attended: GSD needs a person until ${what} ${shown.length === 1 ? 'is' : 'are'} set as proposed`
 }
