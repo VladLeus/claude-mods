@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { helpText, parseCommand, ROLE_ID_PATTERN, USAGE_LINES } from './command'
+import { COMMAND_COLUMN, helpText, parseCommand, ROLE_ID_PATTERN, USAGE_LINES } from './command'
 
 describe('ROLE_ID_PATTERN', () => {
   test('a lowercase slug of 1 to 24 characters is a role id', () => {
@@ -114,9 +114,8 @@ describe('parseCommand', () => {
   })
 })
 
-/** Each usage row is indented this many spaces, then the command is padded to COMMAND_WIDTH before its description. */
+/** Each usage row is indented this many spaces, then the command is padded to COMMAND_COLUMN before its description. */
 const ROW_INDENT = 2
-const COMMAND_WIDTH = 30
 
 describe('helpText', () => {
   test('without unknown input it lists the detect and init commands and no unknown line', () => {
@@ -131,9 +130,9 @@ describe('helpText', () => {
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
     expect(rows).toHaveLength(4)
-    const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_WIDTH).trimEnd())
+    const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
     expect(commands).toEqual(['/cadre detect', '/cadre detect --adapters', '/cadre init', '/cadre init --dry-run'])
-    const descriptionColumn = ROW_INDENT + COMMAND_WIDTH
+    const descriptionColumn = ROW_INDENT + COMMAND_COLUMN
     for (const row of rows) {
       expect(row.slice(descriptionColumn - 1, descriptionColumn)).toBe(' ')
       expect(row.slice(descriptionColumn, descriptionColumn + 1)).not.toBe(' ')

@@ -927,6 +927,10 @@ describe('init helpers', () => {
       expect(portProbeOf(true, { kind: 'other', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
     })
 
+    test('portProbeOf reads a link to a regular file', () => {
+      expect(portProbeOf(true, { kind: 'file', size: 1, isLink: true, realPath: '/repo/real' }, MAX)).toBeNull()
+    })
+
     test('portProbeOf is too-large by the stat size and null (go on and read) at the limit', () => {
       expect(portProbeOf(true, file(MAX + 1), MAX)).toEqual({ state: 'too-large', bytes: MAX + 1 })
       expect(portProbeOf(true, file(MAX), MAX)).toBeNull()

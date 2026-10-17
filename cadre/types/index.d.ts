@@ -357,7 +357,7 @@ export type InitIo = {
   readonly cadreVersion: () => Promise<string | null>
   readonly list: (path: string) => Promise<readonly PortEntry[] | null>
   readonly stat: (path: string) => Promise<PortStat | null>
-  /** `maxBytes` counts UTF-8 bytes. A path that is not a regular file reads as `unknown`. */
+  /** `maxBytes` counts UTF-8 bytes. A path that does not lead to a regular file (after links) reads as `unknown`. */
   readonly read: (path: string, maxBytes: number) => Promise<PortRead>
   /** `$.fs.ancestors({ names })` unvalidated. It carries file content, which only setup.ts may project away. */
   readonly ancestors: (names: readonly string[]) => Promise<unknown>

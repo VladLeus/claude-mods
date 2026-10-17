@@ -317,14 +317,14 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
 }
 
 /**
- * A file as the init port reads it (Pitfall 6). A file is read only when the host says the path is there and its stat,
- * asked with `resolve`, shows a regular file within `maxBytes`: a failed probe, a failed stat or a folder, FIFO or
+ * A file as the init port reads it (Pitfall 6). A file is read only when the host says the path is there and its stat
+ * shows a regular file within `maxBytes`: a failed probe, a failed stat or a folder, FIFO or
  * device is `unknown` and never read. A read that fails is `unknown`; the text is checked again by its UTF-8 bytes.
  * The decisions are portProbeOf and portTextOf; this only asks the host.
  */
 async function portRead($: EngineInterface, path: string, maxBytes: number): Promise<PortRead> {
   const isThere = await $.fs.exists(path).catch(() => null)
-  const stat = isThere === true ? await $.fs.stat(path, { resolve: true }).catch(() => null) : null
+  const stat = isThere === true ? await $.fs.stat(path).catch(() => null) : null
   const before = portProbeOf(isThere, stat, maxBytes)
   if (before !== null) return before
 
@@ -411,6 +411,10 @@ export const register: Register = on => {
       case 'regen':
         // Plan 02-13 adds regen's grammar and its route; until then the parser never gives this kind.
         return { text: helpText(null) }
+      default: {
+        const unreachable: never = command
+        return unreachable
+      }
     }
   })
 }
