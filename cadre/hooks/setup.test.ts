@@ -249,11 +249,23 @@ describe('setup settings', () => {
     expect(found).toEqual([])
   })
 
-  test('projectHooks takes a basename of 80 characters before the extension and not one of 81', () => {
-    expect(projectHooks(hookSettings(`${'a'.repeat(80)}.js`), 'user').map(hook => hook.script)).toEqual([
-      `${'a'.repeat(80)}.js`,
+  test('projectHooks takes a basename of 80 characters, the role.json cap, and not one of 81', () => {
+    expect(projectHooks(hookSettings(`${'a'.repeat(77)}.js`), 'user').map(hook => hook.script)).toEqual([
+      `${'a'.repeat(77)}.js`,
     ])
+    expect(projectHooks(hookSettings(`${'a'.repeat(78)}.js`), 'user')).toEqual([])
     expect(projectHooks(hookSettings(`${'a'.repeat(81)}.js`), 'user')).toEqual([])
+  })
+
+  test('a hook script name over the role.json cap is dropped with a warning that names its source only', async () => {
+    const long = `${'a'.repeat(78)}.js`
+    const scan = await scanOf(settingsWorld(hookSettings(`node ${long}`), hookSettings(`${long} && ok.sh`)))
+    expect(scan.hooks).toEqual([{ script: 'ok.sh', event: 'PreToolUse', source: 'project' }])
+    expect(scan.warnings).toEqual([
+      'ignored 1 hook script name from the user settings that a role.json cannot hold',
+      'ignored 1 hook script name from the project settings that a role.json cannot hold',
+    ])
+    expect(scan.warnings.join('\n')).not.toContain(long)
   })
 
   test('projectHooks lists a script once per event and again for another event', () => {
@@ -545,6 +557,39 @@ describe('setup sources', () => {
     expect(leaks(JSON.stringify(found), SECRETS)).toEqual([])
   })
 
+  test('an MCP server name outside the role.json name rule is dropped from every projection', () => {
+    const servers = { ok: {}, 'has space': {}, 'a/b': {}, '-dash': {} }
+    expect(projectMcpJson({ mcpServers: servers })).toEqual([{ name: 'ok', source: 'project' }])
+    expect(projectToolServers([{ name: 'mcp__has space__x' }, { name: 'mcp__ok__x' }])).toEqual([
+      { name: 'ok', source: 'session' },
+    ])
+    expect(projectClaudeJson({ mcpServers: servers }, ['/repo'])).toEqual([{ name: 'ok', source: 'user-config' }])
+  })
+
+  test('a scan warns once per source for the MCP server names it drops, and never shows a name', async () => {
+    const world = memWorld({
+      files: {
+        [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { ok: {}, 'has space': {}, 'a/b': {} } }),
+        [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { 'x y': {} } }),
+      },
+      tools: [{ name: 'mcp__bad server__x' }, { name: 'mcp__jira__x' }],
+    })
+    const scan = await scanOf(world, true)
+    expect(scan.mcp.map(server => server.name)).toEqual(['jira', 'ok'])
+    expect(scan.warnings).toEqual([
+      'ignored 2 MCP server names from <repo>/.mcp.json that a role.json cannot hold',
+      'ignored 1 MCP server name from the session tools that a role.json cannot hold',
+      'ignored 1 MCP server name from ~/.claude.json that a role.json cannot hold',
+    ])
+    expect(leaks(scan.warnings.join('\n'), ['has space', 'a/b', 'x y', 'bad server'])).toEqual([])
+  })
+
+  test('a .mcp.json whose stat fails is unknown with a warning, never quietly absent', async () => {
+    const scan = await scanOf(memWorld({ unknownPaths: [MCP_JSON_PATH] }))
+    expect(scan.mcp).toEqual([])
+    expect(scan.warnings).toEqual(['could not read <repo>/.mcp.json (treated as unknown)'])
+  })
+
   test('projectMcpJson of a value without an mcpServers object is empty', () => {
     const values: readonly unknown[] = [
       null,
@@ -588,7 +633,7 @@ describe('setup sources', () => {
 
   test('a missing .mcp.json is quiet, and a broken or oversized one warns without keeping a server', async () => {
     const missing = await runOf(memWorld({}))
-    expect(missing.reads).not.toContain(MCP_JSON_PATH)
+    expect(missing.scan.mcp).toEqual([])
     expect(missing.scan.warnings).toEqual([])
     for (const text of ['{ not json', ' '.repeat(MAX_READ_BYTES + 1)]) {
       const scan = await scanOf(memWorld({ files: { [MCP_JSON_PATH]: text } }))
@@ -701,6 +746,30 @@ describe('setup sources', () => {
       'could not read <repo>/.claude/agents (treated as unknown)',
     ])
     expect((await scanOf(memWorld({}))).warnings).toEqual([])
+  })
+
+  test('a repo agents folder that links out of the repo is never listed, and the scan says so', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: { [REPO_AGENTS]: [entry('evil.md')], '/elsewhere/agents': [entry('evil.md')] },
+        realPaths: { [REPO_AGENTS]: '/elsewhere/agents' },
+      }),
+      [],
+    )
+    const scan = await scanSetup(run.io, CTX, false)
+    expect(run.listed).not.toContain(REPO_AGENTS)
+    expect(scan.agents).toEqual([])
+    expect(scan.warnings).toEqual(['could not read <repo>/.claude/agents (treated as unknown)'])
+  })
+
+  test('a repo agents folder that links to a folder inside the repo is listed', async () => {
+    const world = memWorld({
+      dirs: { [REPO_AGENTS]: [entry('lead.md')] },
+      realPaths: { [REPO_AGENTS]: '/repo/shared/agents' },
+    })
+    const scan = await scanOf(world)
+    expect(scan.agents).toEqual(['lead'])
+    expect(scan.warnings).toEqual([])
   })
 
   test('an agent name with a hidden character is dropped and named in a warning', async () => {
@@ -1019,6 +1088,12 @@ describe('setup consent and instructions', () => {
     expect((await scanOf(memWorld({}))).hasGlobalClaudeMd).toBe(false)
   })
 
+  test('a global CLAUDE.md whose stat fails is unknown with a warning, never quietly absent', async () => {
+    const scan = await scanOf(memWorld({ unknownPaths: ['/home/u/.claude/CLAUDE.md'] }))
+    expect(scan.hasGlobalClaudeMd).toBe(false)
+    expect(scan.warnings).toEqual(['could not read ~/.claude/CLAUDE.md (treated as unknown)'])
+  })
+
   test('hasGlobalClaudeMd looks in CLAUDE_CONFIG_DIR when it is set, and in no folder when there is none', async () => {
     const ctx: SetupContext = { ...CTX, configDir: '/cfg' }
     const home = memWorld({ files: { '/home/u/.claude/CLAUDE.md': 'x' } })
@@ -1057,7 +1132,21 @@ describe('setup consent and instructions', () => {
     const files = { [`${MEMORY_DIR}/mine.md`]: 'SENTINEL_SECRET_VALUE' }
     const { scan, reads } = await runOf(memWorld({ dirs, files }))
     expect(scan.memoryFiles).toEqual(['mine.md'])
-    expect(reads.filter(path => path.endsWith('.md'))).toEqual([])
+    expect(reads.filter(path => path.startsWith(MEMORY_DIR))).toEqual([])
+  })
+
+  test('the memory folders of the root as resolved and as given are both listed, once each', async () => {
+    const ctx: SetupContext = { ...CTX, root: '/real/repo' }
+    const dirs = {
+      '/home/u/.claude/projects/-real-repo/memory': [entry('resolved.md'), entry('both.md')],
+      [MEMORY_DIR]: [entry('given.md'), entry('both.md')],
+    }
+    const run = memIo(memWorld({ dirs }), [])
+    const scan = await scanSetup(run.io, ctx, false)
+    expect(scan.memoryFiles).toEqual(['both.md', 'given.md', 'resolved.md'])
+    const same = memIo(memWorld({ dirs }), [])
+    await scanSetup(same.io, CTX, false)
+    expect(same.listed.filter(path => path === MEMORY_DIR)).toEqual([MEMORY_DIR])
   })
 
   test('a memory folder that cannot be listed warns, and one that is not there does not', async () => {
