@@ -4,6 +4,7 @@ import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
 import { detectGsd, GSD_ADAPTER, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts, gsdKickoffText } from './gsd'
 import { DONE_MARKER_LINE } from './kickoff'
+import { adaptersReportLines } from './render'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -359,13 +360,13 @@ describe('GSD_GATES', () => {
 })
 
 describe('GSD_AUTONOMY', () => {
-  test('the three setting proposals are data only, in order, with their reads, writes and reasons', () => {
+  test('the three setting proposals are data only, in order, with their config file, tool writes and reasons', () => {
     expect(GSD_AUTONOMY).toEqual([
       {
         kind: 'command',
         key: 'mode',
-        read: ['gsd-tools', 'config-get', 'mode'],
-        write: ['gsd-tools', 'config-set', 'mode', 'yolo'],
+        file: '.planning/config.json',
+        write: { tool: 'gsd-tools', args: ['config-set', 'mode', 'yolo'] },
         to: 'yolo',
         why: 'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
         isRequired: true,
@@ -373,8 +374,8 @@ describe('GSD_AUTONOMY', () => {
       {
         kind: 'command',
         key: 'workflow.text_mode',
-        read: ['gsd-tools', 'config-get', 'workflow.text_mode'],
-        write: ['gsd-tools', 'config-set', 'workflow.text_mode', 'false'],
+        file: '.planning/config.json',
+        write: { tool: 'gsd-tools', args: ['config-set', 'workflow.text_mode', 'false'] },
         to: 'false',
         why: 'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
         isRequired: true,
@@ -382,8 +383,8 @@ describe('GSD_AUTONOMY', () => {
       {
         kind: 'command',
         key: 'hooks.context_warnings',
-        read: ['gsd-tools', 'config-get', 'hooks.context_warnings'],
-        write: ['gsd-tools', 'config-set', 'hooks.context_warnings', 'false'],
+        file: '.planning/config.json',
+        write: { tool: 'gsd-tools', args: ['config-set', 'hooks.context_warnings', 'false'] },
         to: 'false',
         why:
           'only when gsd-statusline is the statusline: ' +
@@ -393,12 +394,43 @@ describe('GSD_AUTONOMY', () => {
     ])
   })
 
-  test('every proposed write goes through the GSD writer, gsd-tools config-set', () => {
-    expect(GSD_AUTONOMY.map(setting => setting.write.slice(0, 2))).toEqual([
-      ['gsd-tools', 'config-set'],
-      ['gsd-tools', 'config-set'],
-      ['gsd-tools', 'config-set'],
-    ])
+  test('every write is the logical tool gsd-tools asked to config-set its own key to its own value', () => {
+    expect(GSD_AUTONOMY.map(setting => setting.write.tool)).toEqual(['gsd-tools', 'gsd-tools', 'gsd-tools'])
+    expect(GSD_AUTONOMY.map(setting => setting.write.args)).toEqual(
+      GSD_AUTONOMY.map(setting => ['config-set', setting.key, setting.to]),
+    )
+  })
+
+  test('no proposal has a read command, since the before value is read from the config file (D-70)', () => {
+    expect(GSD_AUTONOMY.map(setting => Object.hasOwn(setting, 'read'))).toEqual([false, false, false])
+  })
+
+  test('each row, its write object and its args array are frozen', () => {
+    for (const setting of GSD_AUTONOMY) {
+      // Object.isFrozen is true for a missing value, so the args must first be a real array.
+      expect(Array.isArray(setting.write.args)).toBe(true)
+      expect(Object.isFrozen(setting)).toBe(true)
+      expect(Object.isFrozen(setting.write)).toBe(true)
+      expect(Object.isFrozen(setting.write.args)).toBe(true)
+    }
+  })
+
+  test('the contract view still prints each proposal as key -> value (required or optional) with its reason', () => {
+    const lines = adaptersReportLines([GSD_ADAPTER])
+
+    expect(lines).toContain(
+      '    mode -> yolo (required): ' +
+        'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
+    )
+    expect(lines).toContain(
+      '    workflow.text_mode -> false (required): ' +
+        'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
+    )
+    expect(lines).toContain(
+      '    hooks.context_warnings -> false (optional): ' +
+        'only when gsd-statusline is the statusline: ' +
+        'gsd-context-monitor warnings conflict with the autopilot handoff',
+    )
   })
 })
 

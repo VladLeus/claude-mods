@@ -22,8 +22,8 @@ describe('ADAPTERS', () => {
       expect(Object.isFrozen(adapter.autonomy)).toBe(true)
       for (const proposal of adapter.autonomy) {
         expect(Object.isFrozen(proposal)).toBe(true)
-        expect(Object.isFrozen(proposal.read)).toBe(true)
         expect(Object.isFrozen(proposal.write)).toBe(true)
+        expect(Object.isFrozen(proposal.write.args)).toBe(true)
       }
       expect(Object.isFrozen(adapter.startWork)).toBe(true)
       expect(Object.isFrozen(adapter.verify)).toBe(true)

@@ -89,8 +89,8 @@ function adapter(over: Partial<FrameworkAdapter>): FrameworkAdapter {
 const SETTING: SettingProposal = {
   kind: 'command',
   key: 'mode',
-  read: ['get'],
-  write: ['set'],
+  file: '.planning/config.json',
+  write: { tool: 'gsd-tools', args: ['config-set', 'mode', 'yolo'] },
   to: 'yolo',
   why: 'autonomy needs it',
   isRequired: true,
