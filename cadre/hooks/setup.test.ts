@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortEntry, SettingsSource, SetupScan } from '../types'
+import type { SettingsSource, SetupScan } from '../types'
 import { MAX_READ_BYTES } from './facts'
 import {
   CLAUDE_JSON_MAX_BYTES,
@@ -15,7 +15,7 @@ import {
   scanSetup,
 } from './setup'
 import type { SetupContext } from './setup'
-import { ABSOLUTE_PATH_MARKERS, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
+import { ABSOLUTE_PATH_MARKERS, entry, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
 import type { MemWorld } from './testkit'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
@@ -73,11 +73,6 @@ async function runOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupCon
 /** A scan of `world` as the person at `ctx` gets it. */
 async function scanOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<SetupScan> {
   return (await runOf(world, isClaudeJsonAllowed, ctx)).scan
-}
-
-/** A listing entry: a file unless told otherwise. */
-function entry(name: string, kind: PortEntry['kind'] = 'file', isLink = false): PortEntry {
-  return { name, kind, size: 0, mtimeMs: 0, isLink }
 }
 
 /** The projection of user settings alone. */

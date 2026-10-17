@@ -138,7 +138,7 @@ describe('takeSwitch', () => {
 
 describe('visibleText', () => {
   test('invisible characters go, control characters become spaces and whitespace runs collapse to one space', () => {
-    expect(visibleText('a\u0007b  ​c')).toBe('a b c')
+    expect(visibleText('a\u0007b  \u200Bc')).toBe('a b c')
   })
 })
 

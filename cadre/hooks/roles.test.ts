@@ -8,6 +8,7 @@ import {
   applyAdjust,
   AUTOPILOT_THRESHOLD,
   chainLines,
+  CUSTOM_PURPOSE,
   DECISION_OWNERS,
   decisionChain,
   DEFAULT_DURATION,
@@ -21,6 +22,9 @@ import {
   MAX_PROPOSAL_ERRORS,
   MAX_PURPOSE_CHARS,
   MAX_ROLES,
+  NO_FRONTEND_REASON,
+  NO_SOURCE_REASON,
+  NO_TESTS_REASON,
   parseAdjust,
   parseProposal,
   parseRoleJson,
@@ -36,6 +40,7 @@ import {
 } from './roles'
 import type { AdjustOp, TemplateRole } from './roles'
 import { SUPERPOWERS_GATES } from './superpowers'
+import { BIDI_OVERRIDE, ZERO_WIDTH_SPACE } from './testkit'
 
 /** A repo scan with nothing found and source present. A test sets only what it reads. */
 function scan(over: Partial<RepoScan>): RepoScan {
@@ -74,9 +79,6 @@ const GO_LANG = finding('lang', 'Go (go.mod)', 'go.mod')
 
 /** The template ids in template order, which every proposal and its change list must keep. */
 const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']
-
-const FE_REASON = 'no frontend framework found (react, vue, next, svelte, angular)'
-const QA_REASON = 'no tests or E2E setup found'
 
 /** The ids of a proposal's roles. */
 function idsOf(over: Partial<RepoScan>): string[] {
@@ -198,14 +200,14 @@ describe('proposeRoles', () => {
     const proposal = proposeRoles(scan({ findings: [EXPRESS, JS_TESTS] }))
 
     expect(proposal.roles.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security'])
-    expect(proposal.changes).toEqual([{ roleId: 'fe', change: 'dropped', reason: FE_REASON, evidence: [] }])
+    expect(proposal.changes).toEqual([{ roleId: 'fe', change: 'dropped', reason: NO_FRONTEND_REASON, evidence: [] }])
   })
 
   test('no test and no e2e finding drops QA with its reason and no evidence', () => {
     const proposal = proposeRoles(scan({ findings: [EXPRESS, REACT] }))
 
     expect(proposal.roles.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'fe', 'security'])
-    expect(proposal.changes).toEqual([{ roleId: 'qa', change: 'dropped', reason: QA_REASON, evidence: [] }])
+    expect(proposal.changes).toEqual([{ roleId: 'qa', change: 'dropped', reason: NO_TESTS_REASON, evidence: [] }])
   })
 
   test('a test finding alone keeps QA, and so does an e2e finding alone', () => {
@@ -238,7 +240,7 @@ describe('proposeRoles', () => {
 
     expect(proposal.roles.map(role => role.id)).toEqual(['pm', 'tl', 'fe', 'qa', 'security'])
     expect(proposal.changes).toEqual([
-      { roleId: 'be', change: 'dropped', reason: 'no source code found', evidence: [] },
+      { roleId: 'be', change: 'dropped', reason: NO_SOURCE_REASON, evidence: [] },
     ])
   })
 
@@ -253,7 +255,7 @@ describe('proposeRoles', () => {
         reason: 'source code found (TypeScript), no UI framework',
         evidence: ['package.json'],
       },
-      { roleId: 'fe', change: 'dropped', reason: FE_REASON, evidence: [] },
+      { roleId: 'fe', change: 'dropped', reason: NO_FRONTEND_REASON, evidence: [] },
     ])
   })
 
@@ -337,9 +339,9 @@ describe('proposeRoles', () => {
 
     expect(proposal.roles.map(role => role.id)).toEqual(['pm', 'tl', 'security'])
     expect(proposal.changes).toEqual([
-      { roleId: 'be', change: 'dropped', reason: 'no source code found', evidence: [] },
-      { roleId: 'fe', change: 'dropped', reason: FE_REASON, evidence: [] },
-      { roleId: 'qa', change: 'dropped', reason: QA_REASON, evidence: [] },
+      { roleId: 'be', change: 'dropped', reason: NO_SOURCE_REASON, evidence: [] },
+      { roleId: 'fe', change: 'dropped', reason: NO_FRONTEND_REASON, evidence: [] },
+      { roleId: 'qa', change: 'dropped', reason: NO_TESTS_REASON, evidence: [] },
     ])
   })
 
@@ -472,10 +474,6 @@ describe('decision owners', () => {
     ])
   })
 })
-
-/** Hostile characters are built here, never written as literal invisible characters in this file. */
-const BIDI_OVERRIDE = String.fromCodePoint(0x202e)
-const ZERO_WIDTH_SPACE = String.fromCodePoint(0x200b)
 
 /** The rule every slug message ends with. */
 const SLUG_RULE = 'must be a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
@@ -930,9 +928,6 @@ describe('rolesFromProposal', () => {
 
 /** The team init starts from: every template role. */
 const TEAM: readonly RoleSpec[] = ROLE_TEMPLATE.map(roleFromTemplate)
-
-/** The purpose a role added by the Adjust grammar gets, because the grammar gives no purpose. */
-const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
 
 /** The roles frozen, so an adjustment that changes its input throws. */
 function frozen(roles: readonly RoleSpec[]): readonly RoleSpec[] {

@@ -102,13 +102,13 @@ export const DECISION_OWNERS: Readonly<Record<DecisionType, TemplateRoleId>> = O
 const FALLBACK_OWNER: TemplateRoleId = 'tl'
 
 /** Why FE is dropped (D-49): the scan found none of the frameworks it looks for. */
-const NO_FRONTEND_REASON = 'no frontend framework found (react, vue, next, svelte, angular)'
+export const NO_FRONTEND_REASON = 'no frontend framework found (react, vue, next, svelte, angular)'
 
 /** Why QA is dropped (D-49): the scan found neither a test nor an E2E marker. */
-const NO_TESTS_REASON = 'no tests or E2E setup found'
+export const NO_TESTS_REASON = 'no tests or E2E setup found'
 
 /** Why BE is dropped (D-85): no source file at all. */
-const NO_SOURCE_REASON = 'no source code found'
+export const NO_SOURCE_REASON = 'no source code found'
 
 /** The most evidence paths one change lists. */
 const MAX_EVIDENCE_PATHS = 3
@@ -466,7 +466,7 @@ export function rolesFromProposal(proposed: readonly ProposedRole[]): RoleSpec[]
 }
 
 /** The purpose of a role added by the Adjust grammar, which gives no purpose. */
-const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
+export const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
 
 /**
  * One change to the proposed roles that the person typed (D-47). The grammar is `add <id> <title>`, `drop <id>`,
@@ -678,7 +678,7 @@ export const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/
 /** The most characters of a hook script basename a role carries (D-62); the setup scan drops a longer one. */
 export const MAX_HOOK_NAME_CHARS = 80
 
-/** A hook script basename a role carries (D-62): 1 to MAX_HOOK_NAME_CHARS letters, digits, dots, dashes, underscores. */
+/** A hook script basename a role carries (D-62): 1 to MAX_HOOK_NAME_CHARS letters, digits, `.`, `_` and `-`. */
 const HOOK_NAME_PATTERN = new RegExp(`^[A-Za-z0-9._-]{1,${MAX_HOOK_NAME_CHARS}}$`)
 
 /** The highest context threshold a role.json may set, in percent. */

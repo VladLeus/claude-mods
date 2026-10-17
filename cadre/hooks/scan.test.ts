@@ -22,7 +22,7 @@ import {
   SOURCE_EXTENSIONS,
 } from './scan'
 import type { MarkerRow } from './scan'
-import { leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
+import { BIDI_OVERRIDE, entry, leaks, link, memIo, memWorld, SECRET_FIXTURES } from './testkit'
 import type { MemWorld } from './testkit'
 
 const NOW = 1_000_000
@@ -185,16 +185,6 @@ describe('autopilot guard', () => {
   })
 })
 
-/** A listing entry: a file unless told otherwise. */
-function entry(name: string, kind: PortEntry['kind'] = 'file'): PortEntry {
-  return { name, kind, size: 0, mtimeMs: 0, isLink: false }
-}
-
-/** A symbolic link as the host lists it: kind other, isLink true. */
-function link(name: string): PortEntry {
-  return { name, kind: 'other', size: 0, mtimeMs: 0, isLink: true }
-}
-
 /** `count` plain files named f0000.txt, f0001.txt and so on; none is a marker or a source file. */
 function plainFiles(count: number): PortEntry[] {
   return Array.from({ length: count }, (_, index) => entry(`f${String(index).padStart(4, '0')}.txt`))
@@ -203,22 +193,6 @@ function plainFiles(count: number): PortEntry[] {
 /** The scan of the repo /repo whose folders, files and links are in memory. */
 async function scanOf(over: Partial<MemWorld>): Promise<RepoScan> {
   return scanRepo(memIo(memWorld(over), []).io, '/repo')
-}
-
-/** A port over the world that also records every folder listed; `reads` is every path read. */
-function spiedIo(world: MemWorld): { readonly io: InitIo; readonly listed: string[]; readonly reads: string[] } {
-  const run = memIo(world, [])
-  const listed: string[] = []
-  const io: InitIo = {
-    ...run.io,
-    list: async path => {
-      listed.push(path)
-
-      return run.io.list(path)
-    },
-  }
-
-  return { io, listed, reads: run.reads }
 }
 
 /** The folders the walk listed: `/repo/.cadre` is listed by the `.cadre` read, not by the walk, so it is left out. */
@@ -315,7 +289,7 @@ describe('scanRepo', () => {
   })
 
   test('folders at depth 0 to 2 are listed and one at depth 3 is not, so a file has at most 3 segments', async () => {
-    const run = spiedIo(
+    const run = memIo(
       memWorld({
         dirs: {
           '/repo': [entry('a', 'dir')],
@@ -324,6 +298,7 @@ describe('scanRepo', () => {
           '/repo/a/b/c': [entry('four.spec.ts')],
         },
       }),
+      [],
     )
     const scan = await scanRepo(run.io, '/repo')
 
@@ -345,7 +320,7 @@ describe('scanRepo', () => {
       dirs[`/repo/${name}`] = [entry('x.test.ts'), entry('playwright.config.ts')]
       dirs[`/repo/src/${name}`] = [entry('y.test.ts')]
     }
-    const run = spiedIo(memWorld({ dirs }))
+    const run = memIo(memWorld({ dirs }), [])
     const scan = await scanRepo(run.io, '/repo')
 
     expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/src'])
@@ -355,7 +330,7 @@ describe('scanRepo', () => {
 
   test('a link is never walked into, whether the host calls it other or dir', async () => {
     const alias: PortEntry = { ...entry('alias', 'dir'), isLink: true }
-    const run = spiedIo(
+    const run = memIo(
       memWorld({
         dirs: {
           '/repo': [alias, link('linked'), entry('real', 'dir')],
@@ -364,6 +339,7 @@ describe('scanRepo', () => {
           '/repo/real': [entry('c.ts')],
         },
       }),
+      [],
     )
     const scan = await scanRepo(run.io, '/repo')
 
@@ -493,7 +469,7 @@ describe('scanRepo', () => {
   })
 
   test('a package.json in the root or one folder down is read and one two folders down is not', async () => {
-    const run = spiedIo(
+    const run = memIo(
       memWorld({
         dirs: {
           '/repo': [entry('package.json'), entry('packages', 'dir'), entry('web', 'dir')],
@@ -507,6 +483,7 @@ describe('scanRepo', () => {
           '/repo/web/package.json': packageOf({ vue: '3' }),
         },
       }),
+      [],
     )
     const scan = await scanRepo(run.io, '/repo')
 
@@ -570,7 +547,7 @@ describe('scanRepo', () => {
   })
 
   test('an entry name that clean would change is skipped with a warning and gives no finding', async () => {
-    const hostile = `a${String.fromCharCode(0x202e)}b.test.ts`
+    const hostile = `a${BIDI_OVERRIDE}b.test.ts`
     const tooLong = `${'a'.repeat(256)}.test.ts`
     const scan = await scanOf({ dirs: { '/repo': [entry(hostile), entry(tooLong), entry('ok.spec.ts')] } })
 
@@ -585,7 +562,7 @@ describe('scanRepo', () => {
   })
 
   test('an empty name, dot and dot-dot are never walked', async () => {
-    const run = spiedIo(
+    const run = memIo(
       memWorld({
         dirs: {
           '/repo': [entry('', 'dir'), entry('.', 'dir'), entry('..', 'dir'), entry('real', 'dir')],
@@ -595,6 +572,7 @@ describe('scanRepo', () => {
           '/repo/real': [],
         },
       }),
+      [],
     )
     const scan = await scanRepo(run.io, '/repo')
 
@@ -1005,7 +983,6 @@ const SHA_B = '0123456789abcdef'.repeat(4)
 const BE_FILE = { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' }
 const BE_LAUNCHER = { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' }
 const BACKSLASH = String.fromCharCode(92)
-const BIDI = String.fromCharCode(0x202e)
 const ELLIPSIS = String.fromCharCode(0x2026)
 
 /** A manifest as JSON text with these file entries; `over` replaces or adds top-level fields. */
@@ -1041,7 +1018,7 @@ describe('isSafeRelativePath', () => {
       'a b',
       'a\nb',
       `a${String.fromCharCode(0)}b`,
-      `a${BIDI}b`,
+      `a${BIDI_OVERRIDE}b`,
       `caf${String.fromCharCode(0xe9)}/x`,
       '~/x',
       '$HOME/x',
@@ -1380,7 +1357,7 @@ describe('existing .cadre', () => {
   })
 
   test('only .cadre itself is listed, and what is inside it adds no finding', async () => {
-    const run = spiedIo(
+    const run = memIo(
       memWorld({
         dirs: {
           '/repo': [entry('.cadre', 'dir')],
@@ -1388,6 +1365,7 @@ describe('existing .cadre', () => {
           '/repo/.cadre/be': [entry('role.test.ts')],
         },
       }),
+      [],
     )
     const scan = await scanRepo(run.io, '/repo')
 
@@ -1513,7 +1491,7 @@ describe('git top level', () => {
   })
 
   test('the top level is shown cleaned and capped at 240 code points', () => {
-    const hidden = gitRootRefusal('/x/sub', `/re${BIDI}po`, 'init')
+    const hidden = gitRootRefusal('/x/sub', `/re${BIDI_OVERRIDE}po`, 'init')
     const long = gitRootRefusal('/x/sub', `/${'a'.repeat(300)}`, 'init')
     const prefix = 'run /cadre init from the repo root: '
 
