@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { COMMAND_COLUMN, helpText, parseCommand, ROLE_ID_PATTERN, USAGE_LINES } from './command'
+import {
+  COMMAND_COLUMN,
+  helpText,
+  parseCommand,
+  ROLE_ID_PATTERN,
+  takeSwitch,
+  USAGE_LINES,
+  visibleText,
+} from './command'
 
 describe('ROLE_ID_PATTERN', () => {
   test('a lowercase slug of 1 to 24 characters is a role id', () => {
@@ -111,6 +119,26 @@ describe('parseCommand', () => {
     expect(command).toEqual({ kind: 'help', unknown: `${'😀'.repeat(39)}\u2026` })
     const unknown = command.kind === 'help' ? (command.unknown ?? '') : ''
     expect(Array.from(unknown).length).toBe(40)
+  })
+})
+
+describe('takeSwitch', () => {
+  test('a switch is taken out of the text and reported on, whatever the spacing around it', () => {
+    expect(takeSwitch(' a --dry-run', 'dry-run')).toEqual({ isOn: true, rest: 'a' })
+  })
+
+  test('text without the switch is returned trimmed and off', () => {
+    expect(takeSwitch('a', 'dry-run')).toEqual({ isOn: false, rest: 'a' })
+  })
+
+  test('a switch is a whole word, so a longer word that starts with it is left in the text', () => {
+    expect(takeSwitch('a --dry-runner', 'dry-run')).toEqual({ isOn: false, rest: 'a --dry-runner' })
+  })
+})
+
+describe('visibleText', () => {
+  test('invisible characters go, control characters become spaces and whitespace runs collapse to one space', () => {
+    expect(visibleText('a\u0007b  ​c')).toBe('a b c')
   })
 })
 

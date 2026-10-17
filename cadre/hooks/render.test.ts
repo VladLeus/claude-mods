@@ -4,7 +4,15 @@ import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } 
 import { ADAPTERS, detectAll } from './adapters'
 import { BUILTIN_ADAPTER } from './builtin'
 import { GSD_GATES } from './gsd'
-import { adaptersReportLines, choiceLine, detectReportLines, detectText, pad, STATUS_LABEL } from './render'
+import {
+  adaptersReportLines,
+  choiceLine,
+  detectReportLines,
+  detectText,
+  pad,
+  reportText,
+  STATUS_LABEL,
+} from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 /** The superpowers plugin key this repo enables. */
@@ -160,6 +168,24 @@ describe('pad', () => {
     const astral = '\u{1F600}'
 
     expect(pad(astral, 3)).toBe(`${astral}  `)
+  })
+})
+
+describe('reportText', () => {
+  test('a text over 240 code points is cut to 240, the last one an ellipsis', () => {
+    const shown = reportText('a'.repeat(300))
+
+    expect(Array.from(shown).length).toBe(240)
+    expect(shown.endsWith('…')).toBe(true)
+    expect(shown).toBe(`${'a'.repeat(239)}…`)
+  })
+
+  test('a text of exactly 240 code points is kept whole', () => {
+    expect(reportText('a'.repeat(240))).toBe('a'.repeat(240))
+  })
+
+  test('unsafe characters are removed before the text is shown', () => {
+    expect(reportText('x‮y')).toBe('xy')
   })
 })
 
