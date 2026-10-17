@@ -1,4 +1,19 @@
-import type { EntryKind, InitIo, PortEntry, PortRead, RepoScan, ScanFinding, ScanKind } from '../types'
+import type {
+  CadreState,
+  EntryKind,
+  FrameworkId,
+  GitPolicy,
+  InitIo,
+  Manifest,
+  ManifestEntry,
+  PortEntry,
+  PortRead,
+  ReadState,
+  RepoScan,
+  ScanFinding,
+  ScanKind,
+} from '../types'
+import { ROLE_ID_PATTERN } from './command'
 import { clean, hiddenNameWarnings, isChangedByClean, isFileInsideRoot, isObject, MAX_READ_BYTES } from './facts'
 import { freezeRows } from './freeze'
 
@@ -19,6 +34,18 @@ const MAX_NAME_CHARS = 255
 
 /** Code points of a repo path a warning shows. */
 const MAX_WARNING_PATH_CHARS = 120
+
+/** Code points of the git top level a refusal shows. */
+const MAX_TOP_CHARS = 240
+
+/** A lowercase hex SHA-256: exactly 64 characters, 0 to 9 and a to f. */
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/** A cadre version as the manifest and the state file record it: three numbers joined by dots. */
+const VERSION_TEXT = /^\d+\.\d+\.\d+$/
+
+/** One path segment of a repo-relative path: letters, digits, dot, underscore, at sign and dash. */
+const SAFE_SEGMENT = /^[A-Za-z0-9._@-]+$/
 
 /** The value of a JSON text; undefined when the text is not JSON. */
 function parseJson(text: string): unknown {
@@ -207,18 +234,6 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   dirRow('e2e', 'Cypress folder', 'cypress'),
 ])
 
-/**
- * What a repo with no `.cadre/` shows in the scan. Frozen, so no caller can change the one object every such scan
- * shares.
- */
-const NO_CADRE: RepoScan['cadre'] = Object.freeze({
-  dir: 'absent',
-  manifest: null,
-  manifestState: 'absent',
-  state: null,
-  stateState: 'absent',
-})
-
 /** The root without trailing slashes, so a path below it is `${base}/${name}`; empty for the root `/`. */
 function baseOf(root: string): string {
   return root.replace(/\/+$/, '')
@@ -242,6 +257,150 @@ export async function readRepoFile(io: InitIo, root: string, relPath: string, ma
   if (!isFileInsideRoot(stat, root)) return { state: 'unknown' }
 
   return io.read(path, maxBytes)
+}
+
+/**
+ * Whether a path is a plain repo-relative path: segments of letters, digits, `.`, `_`, `@` and `-`, none of them `.` or
+ * `..`, joined by single slashes, with no leading or trailing slash. Such a path cannot leave the folder it is joined
+ * to, and a shell character, a space or a backslash cannot be in it.
+ */
+export function isSafeRelativePath(path: string): boolean {
+  if (path === '') return false
+
+  return path.split('/').every(segment => segment !== '.' && segment !== '..' && SAFE_SEGMENT.test(segment))
+}
+
+/** Whether a value is a cadre version text: x.y.z, or `unknown` when cadre could not read its own version. */
+function isVersionText(value: unknown): value is string {
+  return typeof value === 'string' && (value === 'unknown' || VERSION_TEXT.test(value))
+}
+
+/** Whether a value is a framework id cadre stores. */
+function isFramework(value: unknown): value is FrameworkId {
+  return value === 'gsd' || value === 'superpowers' || value === 'none'
+}
+
+/** Whether a value is a git policy cadre stores. */
+function isGitPolicy(value: unknown): value is GitPolicy {
+  return value === 'all' || value === 'definitions' || value === 'ignore'
+}
+
+/** One manifest entry, field by field: a safe path, a lowercase hex SHA-256 and a mode of file or exec; else null. */
+function manifestEntryOf(value: unknown): ManifestEntry | null {
+  if (!isObject(value)) return null
+  const { path, sha256, mode } = value
+  if (typeof path !== 'string' || !isSafeRelativePath(path)) return null
+  if (typeof sha256 !== 'string' || !SHA256_HEX.test(sha256)) return null
+  if (mode !== 'file' && mode !== 'exec') return null
+
+  return { path, sha256, mode }
+}
+
+/**
+ * The text of `.cadre/manifest.json` as a manifest, or null when it is not one (T-02-12): JSON with schema 1, a cadre
+ * version, and a list of entries, each with a safe repo-relative path, a lowercase hex SHA-256 and a mode. A path
+ * listed twice makes the whole manifest invalid, and a field the contract does not name is dropped.
+ */
+export function parseManifest(text: string): Manifest | null {
+  const value = parseJson(text)
+  if (!isObject(value) || value.schema !== 1 || !isVersionText(value.cadreVersion)) return null
+  if (!Array.isArray(value.files)) return null
+
+  const files: ManifestEntry[] = []
+  const paths = new Set<string>()
+  for (const item of value.files) {
+    const file = manifestEntryOf(item)
+    if (file === null || paths.has(file.path)) return null
+    paths.add(file.path)
+    files.push(file)
+  }
+
+  return { schema: 1, cadreVersion: value.cadreVersion, files }
+}
+
+/**
+ * The text of `.cadre/cadre.json` as the repo state, or null when it is not one (T-02-12): JSON with schema 1, a cadre
+ * version, a framework that is gsd, superpowers, none or null, a git policy, and a list of role ids that each match the
+ * role id pattern and are not listed twice. A field the contract does not name is dropped.
+ */
+export function parseCadreState(text: string): CadreState | null {
+  const value = parseJson(text)
+  if (!isObject(value) || value.schema !== 1 || !isVersionText(value.cadreVersion)) return null
+  const { framework, gitPolicy, roles } = value
+  if (framework !== null && !isFramework(framework)) return null
+  if (!isGitPolicy(gitPolicy) || !Array.isArray(roles)) return null
+
+  const ids: string[] = []
+  for (const role of roles) {
+    if (typeof role !== 'string' || !ROLE_ID_PATTERN.test(role) || ids.includes(role)) return null
+    ids.push(role)
+  }
+
+  return { schema: 1, cadreVersion: value.cadreVersion, framework, gitPolicy, roles: ids }
+}
+
+/** One `.cadre/` file as the scan reports it: its state, and its parsed value when it is present. */
+type CadreFile<T> = {
+  readonly state: ReadState
+  readonly value: T | null
+}
+
+/**
+ * Reads and parses one file of `.cadre/` through readRepoFile. Absent stays absent. A file that cannot be read, or
+ * that `parse` refuses, is unknown with a warning, so a re-run never takes it for a file that is not there (D-67).
+ */
+async function readCadreFile<T>(
+  io: InitIo,
+  root: string,
+  name: string,
+  parse: (text: string) => T | null,
+  noun: string,
+  warnings: string[],
+): Promise<CadreFile<T>> {
+  const path = `.cadre/${name}`
+  const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
+  if (read.state === 'absent') return { state: 'absent', value: null }
+  if (read.state !== 'text') {
+    warnings.push(`could not read ${path} (treated as unknown)`)
+
+    return { state: 'unknown', value: null }
+  }
+
+  const value = parse(read.text)
+  if (value === null) {
+    warnings.push(`ignored ${path}: not a valid cadre ${noun} (treated as unknown)`)
+
+    return { state: 'unknown', value: null }
+  }
+
+  return { state: 'present', value }
+}
+
+/**
+ * Whether `.cadre/` is there: a listing means present, no listing and no stat means absent, and a path that stats but
+ * cannot be listed is unknown, because something is there that the scan cannot see into.
+ */
+async function cadreDirState(io: InitIo, root: string): Promise<ReadState> {
+  const path = `${baseOf(root)}/.cadre`
+  if ((await io.list(path)) !== null) return 'present'
+  if ((await io.stat(path)) === null) return 'absent'
+
+  return 'unknown'
+}
+
+/**
+ * What an earlier run left in `.cadre/` (D-67): whether the folder is there, and its manifest.json and cadre.json,
+ * each present with its parsed value, absent, or unknown with a warning. With no folder, nothing else is read.
+ */
+async function readCadre(io: InitIo, root: string, warnings: string[]): Promise<RepoScan['cadre']> {
+  const dir = await cadreDirState(io, root)
+  if (dir === 'absent') return { dir, manifest: null, manifestState: 'absent', state: null, stateState: 'absent' }
+  if (dir === 'unknown') warnings.push('could not list .cadre (treated as unknown)')
+
+  const manifest = await readCadreFile(io, root, 'manifest.json', parseManifest, 'manifest', warnings)
+  const state = await readCadreFile(io, root, 'cadre.json', parseCadreState, 'state', warnings)
+
+  return { dir, manifest: manifest.value, manifestState: manifest.state, state: state.value, stateState: state.state }
 }
 
 /** A folder waiting to be listed: its path below the root with `/` separators (empty for the root), and its depth. */
@@ -444,10 +603,11 @@ function sortedFindings(found: Findings): ScanFinding[] {
 
 /**
  * The read-only repo scan (SCAN-01, D-55): the stack, the backend and frontend frameworks, tests and E2E, each finding
- * with the repo-relative path that proves it, plus the source languages and the top-level code folders. It walks
- * through the port with bounded depth and entries (MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES), never follows a link, and reads
- * only the dependency names of the package.json files in the root and one folder down, through readRepoFile. A listing
- * or read that fails is a warning, never an absence. It writes nothing and runs nothing.
+ * with the repo-relative path that proves it, plus the source languages and the top-level code folders, and what an
+ * earlier run left in `.cadre/` (D-67). It walks through the port with bounded depth and entries (MAX_SCAN_DEPTH,
+ * MAX_SCAN_ENTRIES), never follows a link, and reads only the dependency names of the package.json files in the root
+ * and one folder down, and the two state files of `.cadre/`, all through readRepoFile. A listing or read that fails
+ * is a warning, never an absence. It writes nothing and runs nothing.
  */
 export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, baseOf(root))
@@ -459,6 +619,7 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
     const problem = await readDependencies(found, io, root, path)
     if (problem !== null) warnings.push(problem)
   }
+  const cadre = await readCadre(io, root, warnings)
   const languages = languagesOf(walked.seen)
 
   return {
@@ -467,7 +628,55 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
     codeDirs: codeDirsOf(walked.seen),
     hasSource: languages.length > 0,
     isTruncated: walked.isTruncated,
-    cadre: NO_CADRE,
+    cadre,
     warnings,
   }
+}
+
+/** The root and each folder above it, nearest first, then the file system root as the empty string. */
+function folderChain(root: string): string[] {
+  const chain: string[] = []
+  let folder = baseOf(root)
+  while (folder !== '') {
+    chain.push(folder)
+    folder = folder.slice(0, folder.lastIndexOf('/'))
+  }
+  chain.push('')
+
+  return chain
+}
+
+/**
+ * The git top level above the session root (D-56): the nearest folder, the root itself included, that has a `.git` file
+ * or folder (a linked worktree has a file), found by statting `<folder>/.git` up to `/`, with no process call. A
+ * `.git` that cannot be statted is passed over; if none is found, or the root is not an absolute path, the answer is
+ * `none`, and the caller refuses.
+ */
+export async function findGitTop(
+  io: InitIo,
+  root: string,
+): Promise<{ readonly state: 'found'; readonly top: string } | { readonly state: 'none' }> {
+  if (!root.startsWith('/')) return { state: 'none' }
+  for (const folder of folderChain(root)) {
+    const stat = await io.stat(`${folder}/.git`)
+    if (stat === null) continue
+    if (stat.kind === 'file' || stat.kind === 'dir') return { state: 'found', top: folder === '' ? '/' : folder }
+  }
+
+  return { state: 'none' }
+}
+
+/**
+ * The refusal when the session root is not the git top level, naming the top level, else null (D-56). Trailing
+ * slashes are ignored when the two are compared, and the top level is shown cleaned and capped at 240 code points.
+ */
+export function gitRootRefusal(root: string, top: string, command: 'init' | 'regen'): string | null {
+  if (baseOf(root) === baseOf(top)) return null
+
+  return `run /cadre ${command} from the repo root: ${clean(top, MAX_TOP_CHARS)}`
+}
+
+/** The refusal when no git repo is above the session root, with the wording D-97 fixes. */
+export function notGitRepoReply(command: 'init' | 'regen'): string {
+  return `cadre ${command} needs a git repo: run git init first`
 }
