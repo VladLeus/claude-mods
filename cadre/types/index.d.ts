@@ -1,7 +1,8 @@
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
- * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role. Any other input is help
- * with the input echoed back as unknown. Phase 2 writes nothing on any path.
+ * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role, but its grammar arrives in plan
+ * 02-13 and the parser does not give it before then. Any other input is help with the input echoed back as unknown.
+ * Phase 2 writes nothing on any path.
  */
 export type CadreCommand =
   | {
@@ -333,7 +334,9 @@ export type InitFacts = {
 
 /**
  * The host port init and regen run through. register.tsx builds it from closures over `$`, so pure modules never see
- * `$` (P8). Every member except `ask` maps a host failure to null or `unknown`, never to absent.
+ * `$` (P8). Every member except `ask` maps a host failure to null or `unknown`, never to absent. `list`, `stat`, `read`
+ * and `ancestors` take any absolute path, so a caller that reads a repo file must first check that `stat(path).realPath`
+ * is inside `locations.root` (the WR-02 containment rule).
  */
 export type InitIo = {
   /** Rejects when the person dismisses the dialog; the rejection text is never shown (D-45). */
@@ -354,6 +357,7 @@ export type InitIo = {
   readonly cadreVersion: () => Promise<string | null>
   readonly list: (path: string) => Promise<readonly PortEntry[] | null>
   readonly stat: (path: string) => Promise<PortStat | null>
+  /** `maxBytes` counts UTF-8 bytes. A path that is not a regular file reads as `unknown`. */
   readonly read: (path: string, maxBytes: number) => Promise<PortRead>
   /** `$.fs.ancestors({ names })` unvalidated. It carries file content, which only setup.ts may project away. */
   readonly ancestors: (names: readonly string[]) => Promise<unknown>
@@ -629,6 +633,7 @@ export type DesiredFile = {
 /** What the plan does to one file (D-67): create, change, leave, or conflict (a user-edited file). */
 export type FileOpKind = 'create' | 'change' | 'leave' | 'conflict'
 
+/** One planned file operation: what happens to one path, with its mode and an optional note. */
 export type FileOp = {
   readonly kind: FileOpKind
   readonly path: string
@@ -652,6 +657,7 @@ export type HunkOp = {
   readonly command: string
 }
 
+/** One entry of the file plan: a file operation or a framework config hunk. */
 export type Op = FileOp | HunkOp
 
 /** The file plan (PLAN-01). */

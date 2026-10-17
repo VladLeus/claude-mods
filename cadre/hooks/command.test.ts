@@ -114,6 +114,10 @@ describe('parseCommand', () => {
   })
 })
 
+/** Each usage row is indented this many spaces, then the command is padded to COMMAND_WIDTH before its description. */
+const ROW_INDENT = 2
+const COMMAND_WIDTH = 30
+
 describe('helpText', () => {
   test('without unknown input it lists the detect and init commands and no unknown line', () => {
     const text = helpText(null)
@@ -127,11 +131,12 @@ describe('helpText', () => {
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
     expect(rows).toHaveLength(4)
-    const commands = rows.map(row => row.slice(2, 32).trimEnd())
+    const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_WIDTH).trimEnd())
     expect(commands).toEqual(['/cadre detect', '/cadre detect --adapters', '/cadre init', '/cadre init --dry-run'])
+    const descriptionColumn = ROW_INDENT + COMMAND_WIDTH
     for (const row of rows) {
-      expect(row.slice(31, 32)).toBe(' ')
-      expect(row.slice(32, 33)).not.toBe(' ')
+      expect(row.slice(descriptionColumn - 1, descriptionColumn)).toBe(' ')
+      expect(row.slice(descriptionColumn, descriptionColumn + 1)).not.toBe(' ')
     }
   })
 
