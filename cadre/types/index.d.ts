@@ -283,12 +283,6 @@ export type Choice =
       readonly kind: 'none'
     }
 
-/** One role of the team. `framework` overrides the repo's adapter for this role; absent means the repo's default. */
-export type RoleSpec = {
-  readonly id: string
-  readonly framework?: FrameworkId
-}
-
 /** One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select. */
 export type AskSpec = {
   readonly options: readonly string[]
@@ -373,3 +367,305 @@ export type InitIo = {
 
 /** The git policy for `.cadre/` (D-65, D-90): commit all, commit definitions (the default), or ignore all of it. */
 export type GitPolicy = 'all' | 'definitions' | 'ignore'
+
+/** A role of the template (D-54). A custom role names one as `basedOn`, or none (D-92). */
+export type TemplateRoleId = 'pm' | 'tl' | 'be' | 'fe' | 'qa' | 'security'
+
+/** The effort levels `claude --effort` takes on 2.1.295 (P18). */
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** The modes `claude --permission-mode` takes on 2.1.295 (P18). Init sets `auto` for every role (D-61). */
+export type PermissionMode = 'acceptEdits' | 'auto' | 'bypassPermissions' | 'manual' | 'dontAsk' | 'plan'
+
+/** A role's autopilot kickoff values (D-51, D-79, D-87). */
+export type RoleAutopilot = {
+  /** Autopilot's duration grammar: minutes as digits, or `<h>h<m>m` such as `4h` or `90m`. */
+  readonly duration: string
+  /** The context threshold in percent; init writes 65 (D-87). */
+  readonly threshold: number
+  /** `--ask-user`: on for PM, TL and Security (D-10). */
+  readonly askUser: boolean
+}
+
+/** An instruction or memory group a role may be given at launch (D-63). Only the group is stored, never content. */
+export type InstructionGroup = 'global-claude-md' | 'auto-memory' | 'project-claude-md'
+
+/** What a role carries from the init user's settings, as names only; values are rendered at launch (D-60, D-84). */
+export type RoleCarry = {
+  readonly autoCompactWindow: boolean
+  readonly statusLine: boolean
+  /** Env variable names the user picked; values are never stored. */
+  readonly env: readonly string[]
+  /** Hook script basenames re-added at launch, such as `gsd-secret-read-guard.js` (D-62). */
+  readonly hooks: readonly string[]
+}
+
+/**
+ * One role of the team, as `.cadre/<id>/role.json` stores it. `id` is the slug used in paths, launcher names and
+ * memory dirs (D-48); `title` is the cleaned display name used in sentences. `framework` absent means the repo default
+ * in `.cadre/cadre.json` (D-73).
+ */
+export type RoleSpec = {
+  readonly id: string
+  readonly title: string
+  readonly purpose: string
+  readonly basedOn: TemplateRoleId | null
+  readonly framework?: FrameworkId
+  /** A model family alias such as `opus`, never a pinned model id (D-52). */
+  readonly model: string
+  readonly effort: Effort
+  readonly permissionMode: PermissionMode
+  readonly autopilot: RoleAutopilot
+  /** False for PM: Bash is denied, hard-enforced (ROLE-05). */
+  readonly hasBash: boolean
+  /** MCP server names the role is given (D-53). */
+  readonly mcp: readonly string[]
+  /** Skill names the role is given, beyond the infra and framework skills every role has (D-53, ISO-04). */
+  readonly skills: readonly string[]
+  readonly instructions: readonly InstructionGroup[]
+  readonly carry: RoleCarry
+}
+
+/** One scan-driven change to the template proposal, with its reason and evidence (ROLE-01, D-49, D-85). */
+export type RoleChange = {
+  readonly roleId: TemplateRoleId
+  readonly change: 'dropped' | 'kept'
+  readonly reason: string
+  /** Repo-relative paths that justify the change; empty when the reason is an absence. */
+  readonly evidence: readonly string[]
+}
+
+/** The roles init proposes and the scan-driven changes behind them. */
+export type RoleProposal = {
+  readonly roles: readonly RoleSpec[]
+  readonly changes: readonly RoleChange[]
+}
+
+/** A role the model proposed from the user's free text, after validation (D-83, D-92). */
+export type ProposedRole = {
+  readonly id: string
+  readonly title: string
+  readonly purpose: string
+  readonly basedOn: TemplateRoleId | null
+}
+
+/** Present, absent, or unknown (a read that failed). Unknown is never treated as absent (Pitfall 6). */
+export type ReadState = 'present' | 'absent' | 'unknown'
+
+/** What a repo-scan finding is evidence of (D-55). */
+export type ScanKind = 'fe' | 'be' | 'lang' | 'test' | 'e2e'
+
+/** One repo-scan finding with the repo-relative path that proves it. */
+export type ScanFinding = {
+  readonly kind: ScanKind
+  readonly label: string
+  readonly evidence: string
+}
+
+/** How a generated file is written: a plain file, or an executable launcher. */
+export type FileMode = 'file' | 'exec'
+
+/** One file cadre generated, as `.cadre/manifest.json` records it (PLAN-04). */
+export type ManifestEntry = {
+  /** Repo-relative, normalised, no `..` and no leading `/`. */
+  readonly path: string
+  /** Lowercase hex SHA-256 of the content cadre generated. */
+  readonly sha256: string
+  readonly mode: FileMode
+}
+
+/** `.cadre/manifest.json`: every generated file with its hash. No timestamps, so a re-run hashes stably. */
+export type Manifest = {
+  readonly schema: 1
+  readonly cadreVersion: string
+  readonly files: readonly ManifestEntry[]
+}
+
+/** `.cadre/cadre.json`: the repo-level answers regen and the ignore block need (D-89). */
+export type CadreState = {
+  readonly schema: 1
+  readonly cadreVersion: string
+  /** The repo default framework; null when every role stores its own (ambiguous or installed-only, D-73). */
+  readonly framework: FrameworkId | null
+  readonly gitPolicy: GitPolicy
+  readonly roles: readonly string[]
+}
+
+/** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */
+export type RepoScan = {
+  readonly findings: readonly ScanFinding[]
+  /** Source languages by display name (`TypeScript`), sorted. */
+  readonly languages: readonly string[]
+  /** Top-level repo-relative folders that hold source files, sorted (PM's best-effort Read deny). */
+  readonly codeDirs: readonly string[]
+  readonly hasSource: boolean
+  /** True when the walk stopped at the depth or entry cap. */
+  readonly isTruncated: boolean
+  readonly cadre: {
+    readonly dir: ReadState
+    readonly manifest: Manifest | null
+    readonly manifestState: ReadState
+    readonly state: CadreState | null
+    readonly stateState: ReadState
+  }
+  readonly warnings: readonly string[]
+}
+
+/** A skill or plugin command by name, with the plugin that adds it; null for user and project skills. */
+export type SkillRef = {
+  readonly name: string
+  readonly plugin: string | null
+}
+
+/** Where an MCP server name was seen (D-57, D-58). */
+export type McpSource = 'project' | 'session' | 'user-config'
+
+/** One MCP server by name only. */
+export type McpRef = {
+  readonly name: string
+  readonly source: McpSource
+}
+
+/** The carried settings facts, as a number, booleans and names only (D-60). */
+export type CarryFacts = {
+  readonly autoCompactWindow: number | null
+  readonly hasStatusLine: boolean
+  readonly isGsdStatusline: boolean
+  /** Names from the user settings `env`; values are never read into the scan. */
+  readonly envNames: readonly string[]
+}
+
+/** What the user-setup scan kept: names, counts and booleans only (SCAN-02, D-57). */
+export type SetupScan = {
+  readonly plugins: readonly string[]
+  readonly skills: readonly SkillRef[]
+  readonly mcp: readonly McpRef[]
+  readonly agents: readonly string[]
+  /** CLAUDE.md files in the chain, in display form (`<repo>/CLAUDE.md`, `~/...`), never their content. */
+  readonly claudeMd: readonly string[]
+  readonly hasGlobalClaudeMd: boolean
+  readonly memoryFiles: readonly string[]
+  readonly settingsKeys: readonly { readonly source: SettingsSource; readonly keys: readonly string[] }[]
+  readonly hooks: readonly HookScript[]
+  readonly carry: CarryFacts
+  readonly warnings: readonly string[]
+}
+
+/** How a scope rule holds: enforced by the engine, best effort, or not enforced at all (a warning). */
+export type Enforcement = 'hard' | 'best-effort' | 'none'
+
+/** One line of a scope card. */
+export type ScopeRule = {
+  readonly text: string
+  readonly enforcement: Enforcement
+}
+
+/** The MCP isolation route, an open parameter until Phase 3 (D-26, D-78). */
+export type McpRoute = 'merged' | 'strict'
+
+/** What compileScope needs beside the role. */
+export type ScopeContext = {
+  /** The role's framework: its own `framework`, else the repo default. */
+  readonly framework: FrameworkId
+  readonly setup: SetupScan
+  readonly codeDirs: readonly string[]
+  readonly isAttended: boolean
+  readonly mcpRoute: McpRoute
+  /** Every role id of the team, for the decision chain (D-12, D-54). */
+  readonly roleIds: readonly string[]
+}
+
+/** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */
+export type SettingsTemplate = {
+  readonly enabledPlugins: Readonly<Record<string, boolean>>
+  readonly permissions: { readonly defaultMode: PermissionMode; readonly deny: readonly string[] }
+  readonly sandbox: { readonly enabled: boolean }
+}
+
+/** The committed MCP file: the server names this role is given (D-93). Phase 3 renders the real --mcp-config at launch. */
+export type McpConfig = {
+  readonly schema: 1
+  readonly servers: readonly string[]
+}
+
+/** What a role can see and what holds it there (ROLE-06). */
+export type ScopeCard = {
+  readonly roleId: string
+  readonly title: string
+  readonly framework: FrameworkId
+  readonly model: string
+  readonly effort: Effort
+  readonly permissionMode: PermissionMode
+  /** True when role.json sets bypassPermissions by hand; the card leads with a warning (D-61, D-95). */
+  readonly isBypass: boolean
+  readonly isAttended: boolean
+  readonly skills: readonly string[]
+  readonly mcp: readonly string[]
+  readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
+  readonly hooks: { readonly loaded: readonly string[]; readonly notLoaded: readonly string[] }
+  readonly rules: readonly ScopeRule[]
+  readonly chain: readonly string[]
+  /** The memory dir pattern shown on the card; Phase 3 renders it (D-91). */
+  readonly memoryPattern: string
+  readonly mcpRoute: McpRoute
+}
+
+/** compileScope's one result: settings, MCP file, launcher flags, overlay and card cannot drift (D-80). */
+export type CompiledScope = {
+  readonly settings: SettingsTemplate
+  readonly mcp: McpConfig
+  readonly flags: readonly string[]
+  readonly overlay: { readonly skills: readonly string[]; readonly agents: readonly string[] }
+  readonly card: ScopeCard
+}
+
+/** One file the plan wants on disk. */
+export type DesiredFile = {
+  readonly path: string
+  readonly content: string
+  readonly mode: FileMode
+}
+
+/** What the plan does to one file (D-67): create, change, leave, or conflict (a user-edited file). */
+export type FileOpKind = 'create' | 'change' | 'leave' | 'conflict'
+
+export type FileOp = {
+  readonly kind: FileOpKind
+  readonly path: string
+  readonly mode: FileMode
+  readonly note: string | null
+}
+
+/** One framework autonomy change shown as before/after and accepted one by one (ROLE-04, D-70). */
+export type HunkOp = {
+  readonly kind: 'hunk'
+  /** Repo-relative config file, such as `.planning/config.json`. */
+  readonly file: string
+  readonly key: string
+  readonly before: string
+  readonly after: string
+  readonly isRequired: boolean
+  readonly isAccepted: boolean
+  /** False when cadre will not run the write (repo-local GSD only, D-72): the person runs `command`. */
+  readonly isRunnable: boolean
+  /** The exact command in display form (D-71, D-72). */
+  readonly command: string
+}
+
+export type Op = FileOp | HunkOp
+
+/** The file plan (PLAN-01). */
+export type Plan = {
+  readonly ops: readonly Op[]
+  readonly warnings: readonly string[]
+}
+
+/** One print-only recommendation (ROLE-03, D-74): nothing is installed. */
+export type Recommendation = {
+  readonly tool: string
+  /** The role that benefits; null when every role does. */
+  readonly roleId: string | null
+  readonly why: string
+  /** The exact command for the person to run. */
+  readonly install: string
+}
