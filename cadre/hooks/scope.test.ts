@@ -349,6 +349,7 @@ function ownSegments(id: string): string[] {
 function matchesAtAnyDepth(entry: string, path: string): boolean {
   if (!entry.endsWith('/**)')) return false
   const folders = denySegments(entry)
+  if (folders.length === 0) return false
   const parts = path.split('/')
   for (let start = 0; start + folders.length < parts.length; start++) {
     if (folders.every((folder, offset) => parts[start + offset] === folder)) return true
@@ -645,6 +646,7 @@ describe('scope rules', () => {
     expect(matchesAtAnyDepth('Read(./src/**)', 'docs/src/a.ts')).toBe(true)
     expect(matchesAtAnyDepth('Read(./src/**)', '.cadre/pm/ROLE.md')).toBe(false)
     expect(matchesAtAnyDepth('Read(./.env)', '.cadre/pm/ROLE.md')).toBe(false)
+    expect(matchesAtAnyDepth('Read(~/.aws/**)', '.cadre/pm/ROLE.md')).toBe(false)
   })
 
   test('the own folders are those of the role id: a custom role skips its own id, not another role', () => {
