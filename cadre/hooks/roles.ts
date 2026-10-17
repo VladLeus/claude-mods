@@ -288,6 +288,13 @@ function titleOf(raw: string): string | null {
   return cleanKickoffTextOr(raw, MAX_ROLE_CHARS, null)
 }
 
+/** A purpose as a role keeps it: cleaned and capped at MAX_PURPOSE_CHARS; null when nothing is left. */
+function purposeOf(raw: string): string | null {
+  const cleaned = clean(raw, MAX_PURPOSE_CHARS)
+
+  return cleaned.trim() === '' ? null : cleaned
+}
+
 /**
  * Why a role id cannot be used, or null when it can (D-48). The id must match the slug pattern exactly, with no case
  * folding, and `bin` is taken by the launcher folder `.cadre/bin/`.
@@ -416,11 +423,11 @@ function readEntry(entry: unknown, index: number): EntryRead {
   const errors: string[] = []
   const basedOn = basedOnOf(entry.basedOn)
   if (basedOn === undefined) errors.push(`${label}: basedOn must be one of ${TEMPLATE_IDS.join(', ')}, or null`)
-  const purpose = typeof entry.purpose === 'string' ? clean(entry.purpose, MAX_PURPOSE_CHARS) : ''
-  if (purpose.trim() === '') errors.push(`${label} has no purpose`)
+  const purpose = typeof entry.purpose === 'string' ? purposeOf(entry.purpose) : null
+  if (purpose === null) errors.push(`${label} has no purpose`)
   const title = typeof entry.title === 'string' ? titleOf(entry.title) : null
 
-  return { role: { id, title: title ?? '', purpose, basedOn: basedOn ?? null }, errors }
+  return { role: { id, title: title ?? '', purpose: purpose ?? '', basedOn: basedOn ?? null }, errors }
 }
 
 /** The list-level problems; a reply whose entries all lack an id has none, because each entry was reported already. */
@@ -700,13 +707,6 @@ const PERMISSION_MODES: readonly PermissionMode[] = [
 
 /** The instruction and memory groups a role may be given (D-63). */
 const INSTRUCTION_GROUPS: readonly InstructionGroup[] = ['global-claude-md', 'auto-memory', 'project-claude-md']
-
-/** A purpose as a role keeps it: cleaned and capped at MAX_PURPOSE_CHARS; null when nothing is left. */
-function purposeOf(raw: string): string | null {
-  const cleaned = clean(raw, MAX_PURPOSE_CHARS)
-
-  return cleaned.trim() === '' ? null : cleaned
-}
 
 /** A list of strings that each match the pattern; null when the value is not such a list. */
 function namesOf(value: unknown, pattern: RegExp): string[] | null {
