@@ -606,6 +606,7 @@ function setupScan(over: Partial<SetupScan> = {}): SetupScan {
     settingsKeys: [],
     hooks: [],
     carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+    isMcpPartial: false,
     warnings: [],
     ...over,
   }

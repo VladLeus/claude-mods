@@ -41,6 +41,7 @@ function setup(over: Partial<SetupScan> = {}): SetupScan {
     settingsKeys: [],
     hooks: [],
     carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+    isMcpPartial: false,
     warnings: [],
     ...over,
   }
@@ -100,6 +101,10 @@ const ATTENDED_RULE = 'Attended: this role needs a person for framework steps th
 
 /** The rule the card of a role without Bash carries on GSD: GSD workflows need Bash, so a person runs them (A1). */
 const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them through a person'
+
+/** The note on every card when the setup scan could not see every MCP server (A4). */
+const PARTIAL_MCP_RULE =
+  'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
 
 /** The rule that names the code dirs the committed template leaves alone because their names match the role's own. */
 function skippedRule(dirs: string): string {
@@ -659,6 +664,16 @@ describe('scope rules', () => {
     expect(labelOf(templateRole('pm'), 'merged', denied)).toBe('best-effort')
     expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'strict', nothing)).toBe('hard')
     expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'merged', nothing)).toBe('best-effort')
+  })
+
+  test('a partial MCP scan adds a none rule after the MCP rules, and a full scan adds none', () => {
+    const partial = compileScope(templateRole('pm'), context({ setup: setup({ isMcpPartial: true }) }))
+    const full = compileScope(templateRole('pm'), context())
+    const texts = partial.card.rules.map(candidate => candidate.text)
+
+    expect(ruleOf(partial, PARTIAL_MCP_RULE)).toEqual({ text: PARTIAL_MCP_RULE, enforcement: 'none' })
+    expect(texts.indexOf(PARTIAL_MCP_RULE)).toBe(texts.indexOf('No other scanned MCP servers to deny') + 1)
+    expect(ruleOf(full, PARTIAL_MCP_RULE)).toBeUndefined()
   })
 
   test('roleOwnPaths gives the role folder, .planning and the handoff folder, sorted, as a fresh array', () => {
