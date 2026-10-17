@@ -4,6 +4,8 @@ import {
   COMMAND_COLUMN,
   helpText,
   parseCommand,
+  isRoleId,
+  RESERVED_ROLE_IDS,
   ROLE_ID_PATTERN,
   takeSwitch,
   USAGE_LINES,
@@ -33,6 +35,23 @@ describe('ROLE_ID_PATTERN', () => {
     expect(ROLE_ID_PATTERN.test('..')).toBe(false)
     expect(ROLE_ID_PATTERN.test('a b')).toBe(false)
     expect(ROLE_ID_PATTERN.test('a\n')).toBe(false)
+  })
+})
+
+describe('isRoleId', () => {
+  test('bin, all and none are reserved: bin is the launcher folder, all and none are answer words', () => {
+    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none'])
+    expect(Object.isFrozen(RESERVED_ROLE_IDS)).toBe(true)
+  })
+
+  test('a slug that is not reserved is a role id', () => {
+    for (const id of ['be', 'security', 'a-1', 'binary', 'nonexistent', 'allies']) expect(isRoleId(id)).toBe(true)
+  })
+
+  test('a reserved id, or anything that is not a slug, is not a role id', () => {
+    for (const id of ['bin', 'all', 'none', 'Bin', 'ALL', '', '../x', 'a b', 'a'.repeat(25)]) {
+      expect(isRoleId(id)).toBe(false)
+    }
   })
 })
 

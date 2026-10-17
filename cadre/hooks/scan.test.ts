@@ -1153,6 +1153,12 @@ describe('parseCadreState', () => {
     }
   })
 
+  test('a reserved role id (bin, all, none) makes the state null, as a role can never take one', () => {
+    for (const reserved of ['bin', 'all', 'none']) {
+      expect(parseCadreState(stateText({ roles: ['be', reserved] }))).toBeNull()
+    }
+  })
+
   test('a schema other than the number 1, or a bad cadre version, is null', () => {
     expect(parseCadreState(stateText({ schema: 2 }))).toBeNull()
     expect(parseCadreState(stateText({ schema: '1' }))).toBeNull()

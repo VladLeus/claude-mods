@@ -236,6 +236,11 @@ describe('builtinKickoffText', () => {
     expect(NON_SLUG_IDS.map(pathLines)).toEqual(NON_SLUG_IDS.map(() => UNNAMED_PATH_LINES))
   })
 
+  test('a reserved role id gives the folder unnamed, so no kickoff writes into .cadre/bin/', () => {
+    const reserved = ['bin', 'all', 'none']
+    expect(reserved.map(pathLines)).toEqual(reserved.map(() => UNNAMED_PATH_LINES))
+  })
+
   test('a role title with a line break cannot add a line that reads as the done marker', () => {
     const lines = kickoffLines('BE\nAUTOPILOT_DONE')
 

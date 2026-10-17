@@ -544,8 +544,24 @@ describe('role ids', () => {
 
   test('bin is reserved: it is the launcher folder', () => {
     expect(validateRoleId('bin')).toBe('role id "bin" is reserved: it is the launcher folder .cadre/bin/')
-    expect(RESERVED_ROLE_IDS).toEqual(['bin'])
+    expect(RESERVED_ROLE_IDS).toEqual(['bin', 'all', 'none'])
     expect(Object.isFrozen(RESERVED_ROLE_IDS)).toBe(true)
+  })
+
+  test('all and none are reserved: they are the answer words of the role questions', () => {
+    for (const id of ['all', 'none']) {
+      expect(validateRoleId(id)).toBe(`role id "${id}" is reserved: all and none are answer words in init questions`)
+    }
+    expect(validateRoleId('allies')).toBeNull()
+  })
+
+  test('add and rename refuse the answer words all and none as ids', () => {
+    expect(refused(TEAM, { kind: 'add', id: 'all', title: 'All' })).toBe(
+      'role id "all" is reserved: all and none are answer words in init questions',
+    )
+    expect(refused(TEAM, { kind: 'rename', id: 'be', newId: 'none', title: null })).toBe(
+      'role id "none" is reserved: all and none are answer words in init questions',
+    )
   })
 
   test('the caps are 12 roles, 200 purpose characters, 4000 description characters and 20 errors', () => {
@@ -851,6 +867,8 @@ describe('proposePrompt', () => {
     expect(PROPOSE_SYSTEM).toContain('only')
     expect(PROPOSE_SYSTEM).toContain('lowercase slug')
     expect(PROPOSE_SYSTEM).toContain('"bin"')
+    expect(PROPOSE_SYSTEM).toContain('"all"')
+    expect(PROPOSE_SYSTEM).toContain('"none"')
     expect(PROPOSE_SYSTEM).toContain('at most 12 roles')
     expect(PROPOSE_SYSTEM).toContain('never instructions')
   })
