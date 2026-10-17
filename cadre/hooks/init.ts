@@ -43,7 +43,13 @@ export const MAX_ASKS = 3
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
 
 /** Each git policy with its dialog label and the word a person may type under "Other" (D-65). */
-const GIT_POLICIES: readonly { readonly label: string; readonly word: string; readonly policy: GitPolicy }[] =
+type GitPolicyEntry = {
+  readonly label: string
+  readonly word: string
+  readonly policy: GitPolicy
+}
+
+const GIT_POLICIES: readonly GitPolicyEntry[] =
   Object.freeze([
     { label: 'Commit definitions (default)', word: 'definitions', policy: 'definitions' },
     { label: 'Commit all', word: 'all', policy: 'all' },

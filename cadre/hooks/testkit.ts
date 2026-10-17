@@ -173,12 +173,14 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   let nextAnswer = 0
   let nextReply = 0
 
+  const isScripted = isScript(answers)
+
   const io: InitIo = {
     ask: async (question, spec) => {
       asked.push(question)
       specs.push(spec)
-      const answer = isScript(answers) ? answers[nextAnswer] : answerFor(answers, question)
-      if (isScript(answers)) nextAnswer += 1
+      const answer = isScripted ? answers[nextAnswer] : answerFor(answers, question)
+      if (isScripted) nextAnswer += 1
       if (answer === undefined) throw new Error('dismissed')
 
       return answer
@@ -223,7 +225,7 @@ export const SECRET_FIXTURES: readonly string[] = Object.freeze([
   'SENTINEL_SECRET_VALUE',
 ])
 
-/** Absolute-path markers no generated file may contain, the fixture home `/home/u` is covered by `/home/` (PLAN-05). */
+/** Absolute-path markers no generated file may contain; `/home/` also covers the fixture home `/home/u` (PLAN-05). */
 export const ABSOLUTE_PATH_MARKERS: readonly string[] = Object.freeze(['/Users/', '/home/', '/private/'])
 
 /** The needles found in the text, in needle order; empty when the text is clean. */
