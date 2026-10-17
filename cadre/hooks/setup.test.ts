@@ -284,6 +284,11 @@ describe('setup settings', () => {
     expect(projectHooks(value, 'user')).toEqual([{ script: 'a.sh', event: 'PreTool', source: 'user' }])
   })
 
+  test('projectHooks caps an event name at 60 characters and ends a cut name with an ellipsis', () => {
+    const value = { hooks: { [`${'e'.repeat(70)}`]: [{ hooks: [{ command: 'a.sh' }] }] } }
+    expect(projectHooks(value, 'user')[0]?.event).toBe(`${'e'.repeat(59)}\u2026`)
+  })
+
   test('projectHooks ignores a hooks block of the wrong shape without throwing', () => {
     const malformed: readonly unknown[] = [
       null,
@@ -424,6 +429,17 @@ describe('setup sources', () => {
       { name: 'gsd-plan-phase', plugin: null },
       { name: 'superpowers:brainstorming', plugin: 'superpowers' },
     ])
+  })
+
+  test('projectCommands keeps a command of any source but builtin and mcp, and drops one with no source', () => {
+    const found = projectCommands([
+      { name: 'from-project', source: 'project' },
+      { name: 'no-source' },
+      { name: 'numeric-source', source: 5 },
+      { name: 'builtin-one', source: 'builtin' },
+      { name: 'mcp-one', source: 'mcp' },
+    ])
+    expect(found).toEqual([{ name: 'from-project', plugin: null }])
   })
 
   test('projectCommands sorts by name and lists a name once for each plugin that adds it', () => {
@@ -904,6 +920,23 @@ describe('setup consent and instructions', () => {
     const { scan, reads } = await runOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), true, ctx)
     expect(reads.filter(path => path.endsWith('.claude.json'))).toEqual([])
     expect(scan.warnings).toEqual(['HOME is unset: user-level setup was not scanned'])
+  })
+
+  test('a server name with a hidden character is dropped from every source and named in a warning', async () => {
+    const world = memWorld({
+      files: {
+        [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { 'bad\u0007json': {}, ok: {} } }),
+        [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { 'bad\u0007cfg': {} } }),
+      },
+      tools: [{ name: 'mcp__bad\u0007tool__x' }],
+    })
+    const scan = await scanOf(world, true)
+    expect(scan.mcp).toEqual([{ name: 'ok', source: 'project' }])
+    expect(scan.warnings).toEqual([
+      'ignored MCP server name "badjson": its name has hidden characters or is too long',
+      'ignored MCP server name "badtool": its name has hidden characters or is too long',
+      'ignored MCP server name "badcfg": its name has hidden characters or is too long',
+    ])
   })
 
   test('a server in the project, session and user config is listed once, under project, then session', async () => {
