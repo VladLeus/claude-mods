@@ -102,6 +102,11 @@ function ownNames(id: string): ReadonlySet<string> {
   return new Set(names.filter(name => name !== '').map(name => name.toLowerCase()))
 }
 
+/** The lowercase first folder of each own path of a role id: `.cadre`, `.planning` and `thoughts` (B7). */
+function ownRoots(id: string): ReadonlySet<string> {
+  return new Set(roleOwnPaths(id).map(path => (path.split('/')[0] ?? '').toLowerCase()))
+}
+
 /**
  * Whether a deny pattern blocks an infra tool. A rule with an argument on an infra tool other than Skill
  * (`PushNotification(*)`) blocks it; `Skill(<name>)` blocks only the skills it can match. A pattern with a glob
@@ -219,7 +224,9 @@ type DenyPlan = {
   readonly entries: readonly string[]
   /** The code dirs whose reads and edits are denied, sorted. */
   readonly dirs: readonly string[]
-  /** The code dirs left out because their name matches a folder of the role's own paths. */
+  /** The code dirs left out because they are the role's own top folders (`.cadre`, `.planning`, `thoughts`), sorted. */
+  readonly ownDirs: readonly string[]
+  /** The other code dirs left out because their name matches a folder inside the role's own paths, sorted. */
   readonly skippedDirs: readonly string[]
   /** The code dirs left out because their name could widen or break a pattern. */
   readonly unusualDirs: readonly string[]
@@ -264,16 +271,18 @@ function mcpToolName(name: string): string {
  * The deny list of a role (ROLE-05, D-80): Bash for a role without it (hard), reads and edits under each scanned code
  * dir for that role (best effort, and `./x/**` matches at any depth, P13), the secret reads for every role, and every
  * scanned MCP server the role was not given, by its engine tool name (A5). A code dir whose name matches a folder of
- * the role's own paths is left out, so those folders stay readable; exact denies for it are rendered at launch (D-98).
- * A dir with an unusual name is left out too, and so is a server whose tool name is that of a server the role has or
- * of an infra server, since denying it would block that server. Every entry must pass the lint, and one that does not
- * is dropped and named (T-02-24).
+ * the role's own paths is left out, so those folders stay readable: a top folder of its own paths is never denied, and
+ * exact denies for any other such name are rendered at launch (D-98, B7). A dir with an unusual name is left out too,
+ * and so is a server whose tool name is that of a server the role has or of an infra server, since denying it would
+ * block that server. Every entry must pass the lint, and one that does not is dropped and named (T-02-24).
  */
 function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
   const dirs = role.hasBash ? [] : sortedUnique(ctx.codeDirs)
   const usable = dirs.filter(isSafeDir)
   const own = ownNames(role.id)
+  const roots = ownRoots(role.id)
   const covered = usable.filter(dir => !own.has(dir.toLowerCase()))
+  const skipped = usable.filter(dir => own.has(dir.toLowerCase()))
   const notGiven = notGivenMcp(role, ctx)
   const had = new Set([...role.mcp, ...INFRA_MCP_SERVERS].map(mcpToolName))
   const named = notGiven.filter(name => !had.has(mcpToolName(name)))
@@ -287,7 +296,8 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
   return {
     entries: kept,
     dirs: covered.filter(dir => kept.includes(`Read(./${dir}/**)`) && kept.includes(`Edit(./${dir}/**)`)),
-    skippedDirs: usable.filter(dir => own.has(dir.toLowerCase())),
+    ownDirs: skipped.filter(dir => roots.has(dir.toLowerCase())),
+    skippedDirs: skipped.filter(dir => !roots.has(dir.toLowerCase())),
     unusualDirs: dirs.filter(dir => !isSafeDir(dir)),
     mcp: named.filter(name => kept.includes(mcpToolName(name))),
     unusualMcp: notGiven.filter(name => had.has(mcpToolName(name))),
@@ -366,6 +376,16 @@ function deniedDirRules(deny: DenyPlan): ScopeRule[] {
   const text = `Reads and edits under ${cardList(deny.dirs.map(shown))} are denied; the patterns match at any depth`
 
   return [rule(text, 'best-effort')]
+}
+
+/**
+ * The rule for the code dirs that are the role's own top folders: no deny covers them, so the rule is a note labelled
+ * none (B7); none when there is no such dir.
+ */
+function ownDirRules(deny: DenyPlan): ScopeRule[] {
+  if (deny.ownDirs.length === 0) return []
+
+  return [rule(`Reads and edits under ${cardList(deny.ownDirs.map(shown))} are never denied (own folders)`, 'none')]
 }
 
 /** The rule for the code dirs the committed template leaves to the launch render; none when no dir is skipped. */
@@ -450,6 +470,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule(`Plugins: only ${cardList(plugins.map(shown))} load (--setting-sources project whitelist)`, 'hard'),
     bashRule(role),
     ...deniedDirRules(deny),
+    ...ownDirRules(deny),
     ...skippedDirRules(deny),
     ...unusualDirRules(deny),
     rule('Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', 'best-effort'),
