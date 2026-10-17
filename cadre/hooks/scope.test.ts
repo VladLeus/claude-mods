@@ -17,7 +17,7 @@ import type {
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import type { ChainRole } from './roles'
-import { compileScope, infraViolations, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
+import { compileScope, infraViolations, isSafeDir, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
 import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
 
 /** The template role with this id, as init builds it: nothing assigned, every other field a default. */
@@ -834,6 +834,13 @@ describe('scope rules', () => {
       { text: 'Permission mode: auto', enforcement: 'hard' },
       { text: 'MCP route: merged (provisional; Phase 3 decides)', enforcement: 'none' },
     ])
+  })
+})
+
+describe('isSafeDir', () => {
+  test('a plain folder name is safe, a dot folder included; dot, dot-dot, a space and a glob character are not', () => {
+    expect(['src', 'my-app_2', '.cadre'].filter(name => !isSafeDir(name))).toEqual([])
+    expect(['.', '..', 'a b', 'x*', 'x)', 'a/b', ''].filter(isSafeDir)).toEqual([])
   })
 })
 
