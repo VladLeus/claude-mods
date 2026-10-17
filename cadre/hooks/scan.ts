@@ -1,7 +1,6 @@
 import type {
   CadreState,
   EntryKind,
-  FrameworkId,
   GitPolicy,
   InitIo,
   Manifest,
@@ -14,7 +13,19 @@ import type {
   ScanKind,
 } from '../types'
 import { ROLE_ID_PATTERN } from './command'
-import { clean, hiddenNameWarnings, isChangedByClean, isFileInsideRoot, isObject, MAX_READ_BYTES } from './facts'
+import {
+  clean,
+  compareText,
+  hiddenNameWarnings,
+  isChangedByClean,
+  isFileInsideRoot,
+  isObject,
+  keysOf,
+  MAX_READ_BYTES,
+  parseJsonValue,
+  trimSlash,
+} from './facts'
+import { isFrameworkId } from './framework'
 import { freezeRows } from './freeze'
 
 /**
@@ -30,7 +41,7 @@ export type RunState = 'none' | 'active' | 'unknown'
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
 
 /** Code points a repo entry name keeps; a longer name is skipped, as the detection skips it (WR-03). */
-const MAX_NAME_CHARS = 255
+const MAX_ENTRY_NAME_CHARS = 255
 
 /** Code points of a repo path a warning shows. */
 const MAX_WARNING_PATH_CHARS = 120
@@ -46,23 +57,6 @@ const VERSION_TEXT = /^\d+\.\d+\.\d+$/
 
 /** One path segment of a repo-relative path: letters, digits, dot, underscore, at sign and dash. */
 const SAFE_SEGMENT = /^[A-Za-z0-9._@-]+$/
-
-/** The value of a JSON text; undefined when the text is not JSON. */
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return undefined
-  }
-}
-
-/** Orders two texts by code unit, so a sort never depends on the locale. */
-function compareText(a: string, b: string): number {
-  if (a < b) return -1
-  if (a > b) return 1
-
-  return 0
-}
 
 /**
  * The path of a session's autopilot status file, `<home>/.claude/autopilot/<id>.json`. Null when the home folder is not
@@ -87,7 +81,7 @@ export function autopilotRunState(read: PortRead, now: number): RunState {
   if (read.state === 'absent') return 'none'
   if (read.state !== 'text') return 'unknown'
 
-  const value = parseJson(read.text)
+  const value = parseJsonValue(read.text)?.value
   if (!isObject(value)) return 'unknown'
   if (value.isOn === false) return 'none'
   if (value.isOn !== true) return 'unknown'
@@ -234,11 +228,6 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   dirRow('e2e', 'Cypress folder', 'cypress'),
 ])
 
-/** The root without trailing slashes, so a path below it is `${base}/${name}`; empty for the root `/`. */
-function baseOf(root: string): string {
-  return root.replace(/\/+$/, '')
-}
-
 /** A repo path as a warning shows it: cleaned and capped. */
 function shown(path: string): string {
   return clean(path, MAX_WARNING_PATH_CHARS)
@@ -251,7 +240,7 @@ function shown(path: string): string {
  * over `maxBytes` UTF-8 bytes comes back `too-large`.
  */
 export async function readRepoFile(io: InitIo, root: string, relPath: string, maxBytes: number): Promise<PortRead> {
-  const path = `${baseOf(root)}/${relPath}`
+  const path = `${trimSlash(root)}/${relPath}`
   const stat = await io.stat(path)
   if (stat === null) return io.read(path, maxBytes)
   if (!isFileInsideRoot(stat, root)) return { state: 'unknown' }
@@ -273,11 +262,6 @@ export function isSafeRelativePath(path: string): boolean {
 /** Whether a value is a cadre version text: x.y.z, or `unknown` when cadre could not read its own version. */
 function isVersionText(value: unknown): value is string {
   return typeof value === 'string' && (value === 'unknown' || VERSION_TEXT.test(value))
-}
-
-/** Whether a value is a framework id cadre stores. */
-function isFramework(value: unknown): value is FrameworkId {
-  return value === 'gsd' || value === 'superpowers' || value === 'none'
 }
 
 /** Whether a value is a git policy cadre stores. */
@@ -302,7 +286,7 @@ function manifestEntryOf(value: unknown): ManifestEntry | null {
  * listed twice makes the whole manifest invalid, and a field the contract does not name is dropped.
  */
 export function parseManifest(text: string): Manifest | null {
-  const value = parseJson(text)
+  const value = parseJsonValue(text)?.value
   if (!isObject(value) || value.schema !== 1 || !isVersionText(value.cadreVersion)) return null
   if (!Array.isArray(value.files)) return null
 
@@ -324,10 +308,10 @@ export function parseManifest(text: string): Manifest | null {
  * role id pattern and are not listed twice. A field the contract does not name is dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
-  const value = parseJson(text)
+  const value = parseJsonValue(text)?.value
   if (!isObject(value) || value.schema !== 1 || !isVersionText(value.cadreVersion)) return null
   const { framework, gitPolicy, roles } = value
-  if (framework !== null && !isFramework(framework)) return null
+  if (framework !== null && !isFrameworkId(framework)) return null
   if (!isGitPolicy(gitPolicy) || !Array.isArray(roles)) return null
 
   const ids: string[] = []
@@ -381,7 +365,7 @@ async function readCadreFile<T>(
  * cannot be listed is unknown, because something is there that the scan cannot see into.
  */
 async function cadreDirState(io: InitIo, root: string): Promise<ReadState> {
-  const path = `${baseOf(root)}/.cadre`
+  const path = `${trimSlash(root)}/.cadre`
   if ((await io.list(path)) !== null) return 'present'
   if ((await io.stat(path)) === null) return 'absent'
 
@@ -478,7 +462,7 @@ async function walk(io: InitIo, base: string): Promise<Walk> {
     for (const entry of sortedByName(listing)) {
       if (count >= MAX_SCAN_ENTRIES) return { seen, hidden, warnings, isTruncated: true }
       count += 1
-      if (isChangedByClean(entry.name, MAX_NAME_CHARS)) {
+      if (isChangedByClean(entry.name, MAX_ENTRY_NAME_CHARS)) {
         hidden.push(entry.name)
         continue
       }
@@ -536,11 +520,6 @@ function packageFilesOf(seen: readonly Seen[]): string[] {
   return seen.filter(isPackage).map(entry => entry.path)
 }
 
-/** The keys of an object value, names only; none when the value is not an object. */
-function keysOf(value: unknown): string[] {
-  return isObject(value) ? Object.keys(value) : []
-}
-
 /**
  * Adds a finding for each dependency of one package.json that a dependency row names. Only the dependency names are
  * read; their versions and every other field are ignored. Returns the warning when the file cannot be read or parsed,
@@ -550,7 +529,7 @@ async function readDependencies(found: Findings, io: InitIo, root: string, path:
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
   if (read.state !== 'text') return `could not read ${shown(path)} (treated as unknown)`
 
-  const value = parseJson(read.text)
+  const value = parseJsonValue(read.text)?.value
   if (!isObject(value)) return `could not parse ${shown(path)} as JSON (treated as unknown)`
 
   const names = new Set(DEPENDENCY_GROUPS.flatMap(group => keysOf(value[group])))
@@ -610,10 +589,10 @@ function sortedFindings(found: Findings): ScanFinding[] {
  * is a warning, never an absence. It writes nothing and runs nothing.
  */
 export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
-  const walked = await walk(io, baseOf(root))
+  const walked = await walk(io, trimSlash(root))
   const found: Findings = new Map()
   addMarkers(found, walked.seen)
-  const warnings = [...walked.warnings, ...hiddenNameWarnings(walked.hidden, 'repo entry', MAX_NAME_CHARS)]
+  const warnings = [...walked.warnings, ...hiddenNameWarnings(walked.hidden, 'repo entry', MAX_ENTRY_NAME_CHARS)]
   // One file at a time and in walk order, so the first path that names a dependency is always the same one.
   for (const path of packageFilesOf(walked.seen)) {
     const problem = await readDependencies(found, io, root, path)
@@ -636,7 +615,7 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
 /** The root and each folder above it, nearest first, then the file system root as the empty string. */
 function folderChain(root: string): string[] {
   const chain: string[] = []
-  let folder = baseOf(root)
+  let folder = trimSlash(root)
   while (folder !== '') {
     chain.push(folder)
     folder = folder.slice(0, folder.lastIndexOf('/'))
@@ -671,7 +650,7 @@ export async function findGitTop(
  * slashes are ignored when the two are compared, and the top level is shown cleaned and capped at 240 code points.
  */
 export function gitRootRefusal(root: string, top: string, command: 'init' | 'regen'): string | null {
-  if (baseOf(root) === baseOf(top)) return null
+  if (trimSlash(root) === trimSlash(top)) return null
 
   return `run /cadre ${command} from the repo root: ${clean(top, MAX_TOP_CHARS)}`
 }

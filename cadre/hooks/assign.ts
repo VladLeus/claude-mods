@@ -1,6 +1,7 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
-import { clean } from './facts'
+import { clean, compareText } from './facts'
 import { freezeRows } from './freeze'
+import { EFFORTS, MODEL_PATTERN } from './roles'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
@@ -139,7 +140,7 @@ export const NONE_OPTION = 'None'
 export const ALL_OPTION = 'All roles'
 
 /** The most code points of a scanned name that a question shows. A scanned name is data, not text to trust. */
-const MAX_NAME_CHARS = 60
+const MAX_SHOWN_NAME_CHARS = 60
 
 /** The hint that ends every question whose answer is a list of roles. */
 const ROLE_ANSWER_HINT = '(e.g. BE, QA, or none)'
@@ -147,16 +148,9 @@ const ROLE_ANSWER_HINT = '(e.g. BE, QA, or none)'
 /** The label of the skill group that holds the user's own skills and the project's, which no plugin adds. */
 const OWN_SKILLS_LABEL = 'your own'
 
-/** Orders names by code point, so the order never depends on the locale of the machine. */
-function compareNames(a: string, b: string): number {
-  if (a === b) return 0
-
-  return a < b ? -1 : 1
-}
-
 /** The names once each, in code point order. */
 function sortedUnique(names: readonly string[]): string[] {
-  return Array.from(new Set(names)).sort(compareNames)
+  return Array.from(new Set(names)).sort(compareText)
 }
 
 /** Whether a role is one of the template roles: by its own id, or by the template role it is based on. */
@@ -199,7 +193,7 @@ export function classifyMcp(
 
 /** The question for an MCP server the table does not decide. The name is cleaned and cut to 60 code points. */
 export function mcpQuestion(name: string): string {
-  return `Which roles get the ${clean(name, MAX_NAME_CHARS)} MCP server? ${ROLE_ANSWER_HINT}`
+  return `Which roles get the ${clean(name, MAX_SHOWN_NAME_CHARS)} MCP server? ${ROLE_ANSWER_HINT}`
 }
 
 /** The skills once each by name, the first sighting kept, sorted by name. */
@@ -209,7 +203,7 @@ function uniqueByName(skills: readonly SkillRef[]): SkillRef[] {
     if (!first.has(skill.name)) first.set(skill.name, skill)
   }
 
-  return Array.from(first.values()).sort((a, b) => compareNames(a.name, b.name))
+  return Array.from(first.values()).sort((a, b) => compareText(a.name, b.name))
 }
 
 /** Orders groups by label, with the group of the user's own skills (no plugin) last. */
@@ -217,7 +211,7 @@ function compareGroups(a: SkillGroup, b: SkillGroup): number {
   if (a.plugin === null) return b.plugin === null ? 0 : 1
   if (b.plugin === null) return -1
 
-  return compareNames(a.label, b.label)
+  return compareText(a.label, b.label)
 }
 
 /** The skills grouped by plugin, in group order. The skills must already be sorted by name, which the names keep. */
@@ -259,7 +253,9 @@ export function classifySkills(
 
 /** The question for a group of skills the table does not decide. The label is cleaned and cut to 60 code points. */
 export function skillGroupQuestion(group: SkillGroup): string {
-  return `Which roles get ${clean(group.label, MAX_NAME_CHARS)} skills (${group.names.length})? ${ROLE_ANSWER_HINT}`
+  const label = clean(group.label, MAX_SHOWN_NAME_CHARS)
+
+  return `Which roles get ${label} skills (${group.names.length})? ${ROLE_ANSWER_HINT}`
 }
 
 /** Records a role id under the lowercase form of a name, unless the name is blank or an earlier role holds it. */
@@ -357,11 +353,8 @@ export const SAME_FOR_ALL = 'Same for all roles'
 /** The button that asks the question for each role in turn (D-86). */
 export const PER_ROLE = 'Per role'
 
-/** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18). */
-export const EFFORTS: readonly Effort[] = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max'])
-
-/** A model family alias such as `opus`: lowercase letters and hyphens, 24 characters at most, and no digit (OQ 8). */
-const MODEL_ALIAS = /^[a-z][a-z-]{0,23}$/
+/** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18); roles.ts owns the list. */
+export { EFFORTS }
 
 /** What separates a model from its effort in a typed answer: a plus with or without spaces, or spaces alone. */
 const MODEL_EFFORT_SEPARATOR = /\s*\+\s*|\s+/
@@ -380,7 +373,7 @@ function isEffort(text: string): text is Effort {
 export function parseModelEffort(answer: string): { readonly model: string; readonly effort: Effort } | null {
   const [model, effort, ...rest] = answer.trim().toLowerCase().split(MODEL_EFFORT_SEPARATOR)
   if (model === undefined || effort === undefined || rest.length > 0) return null
-  if (!MODEL_ALIAS.test(model) || !isEffort(effort)) return null
+  if (!MODEL_PATTERN.test(model) || !isEffort(effort)) return null
 
   return { model, effort }
 }
@@ -415,7 +408,7 @@ export function parseEnvNames(answer: string, available: readonly string[]): rea
  * each; values are never read, so none can be shown.
  */
 export function envQuestion(names: readonly string[]): string {
-  const shown = names.map(name => clean(name, MAX_NAME_CHARS)).join(', ')
+  const shown = names.map(name => clean(name, MAX_SHOWN_NAME_CHARS)).join(', ')
 
   return `Which env variables do roles carry? Names: ${shown} (values are never stored; e.g. API_KEY, or none)`
 }
@@ -437,7 +430,7 @@ const MEMORY_ANSWER_HINT = '(e.g. PM, TL, or none)'
 function shownNames(names: readonly string[]): string {
   if (names.length === 0) return ''
 
-  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_NAME_CHARS))
+  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
   const rest = names.length - shown.length
   const items = rest > 0 ? [...shown, `+${rest} more`] : shown
 

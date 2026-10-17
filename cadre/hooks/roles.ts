@@ -16,8 +16,8 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { ROLE_ID_PATTERN } from './command'
-import { clean, isObject } from './facts'
-import { DECISION_TYPES } from './framework'
+import { clean, idLabel, isObject, parseJsonValue } from './facts'
+import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './kickoff'
 
@@ -266,9 +266,6 @@ export const MAX_DESCRIPTION_CHARS = 4000
 /** The most errors parseProposal lists; when there are more, one extra line says so. */
 export const MAX_PROPOSAL_ERRORS = 20
 
-/** Code points a role id keeps when a message shows it. */
-const LABEL_CHARS = 40
-
 /** What a role id must be, as the messages say it. */
 const SLUG_RULE = 'a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
 
@@ -277,11 +274,6 @@ const TEMPLATE_IDS: readonly TemplateRoleId[] = ROLE_TEMPLATE.map(row => row.id)
 
 /** A custom role with no template base starts TL-like: Bash allowed, no `--ask-user` (D-92). */
 const CUSTOM_TRAITS: RoleTraits = Object.freeze({ hasBash: true, askUser: false })
-
-/** A role id as a message shows it: cleaned and capped, so a hostile id cannot add a line or hide itself. */
-function idLabel(id: string): string {
-  return clean(id, LABEL_CHARS)
-}
 
 /** A title as a role keeps it: cleaned and capped like a kickoff role name (D-48); null when nothing is left. */
 function titleOf(raw: string): string | null {
@@ -398,15 +390,6 @@ function unfenced(text: string): string {
   return trimmed.slice(FENCE.length, -FENCE.length).replace(/^json/i, '').trim()
 }
 
-/** The parsed JSON of a text, boxed so that a JSON `null` differs from text that is not JSON (which gives null). */
-function parseJsonValue(text: string): { readonly value: unknown } | null {
-  try {
-    return { value: JSON.parse(text) }
-  } catch {
-    return null
-  }
-}
-
 /** The template id a reply's basedOn names: null for none, undefined for anything else (there is no case folding). */
 function basedOnOf(value: unknown): TemplateRoleId | null | undefined {
   if (value === undefined || value === null) return null
@@ -481,9 +464,6 @@ function traitsOf(basedOn: TemplateRoleId | null): RoleTraits {
 export function rolesFromProposal(proposed: readonly ProposedRole[]): RoleSpec[] {
   return proposed.map(role => roleOf(role, traitsOf(role.basedOn)))
 }
-
-/** The frameworks a role can be set to; `none` is the built-in fallback. */
-const FRAMEWORK_IDS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
 
 /** The purpose of a role added by the Adjust grammar, which gives no purpose. */
 const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
@@ -677,23 +657,35 @@ export function isAutopilotDuration(text: string): boolean {
   return minutes !== null && minutes > 0 && minutes <= MAX_DURATION_MINUTES
 }
 
-/** A model family alias: lowercase letters and dashes, never a pinned id with a digit (D-52). */
-const MODEL_PATTERN = /^[a-z][a-z-]{0,23}$/
+/**
+ * A model family alias such as `opus`: lowercase letters and dashes, 24 characters at most, never a pinned id with a
+ * digit (D-52, OQ 8). A role.json and a typed model answer are both checked against it.
+ */
+export const MODEL_PATTERN = /^[a-z][a-z-]{0,23}$/
 
-/** An MCP server or skill name as a role.json lists it: plugin, scope and version punctuation are allowed. */
-const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,99}$/
+/**
+ * An MCP server, skill or command name as a role.json lists it: a letter or digit, then up to 99 more letters, digits
+ * and plugin, scope and version punctuation (`:_.@-`). The setup scan keeps only names that match it.
+ */
+export const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,99}$/
 
-/** An environment variable name a role carries (D-60). */
-const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/
+/**
+ * An environment variable name a role carries (D-60): upper case letters, digits and underscores, at most 64
+ * characters. The setup scan keeps only env names that match it.
+ */
+export const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/
 
-/** A hook script basename a role carries (D-62). */
-const HOOK_NAME_PATTERN = /^[A-Za-z0-9._-]{1,80}$/
+/** The most characters of a hook script basename a role carries (D-62); the setup scan drops a longer one. */
+export const MAX_HOOK_NAME_CHARS = 80
+
+/** A hook script basename a role carries (D-62): 1 to MAX_HOOK_NAME_CHARS letters, digits, dots, dashes, underscores. */
+const HOOK_NAME_PATTERN = new RegExp(`^[A-Za-z0-9._-]{1,${MAX_HOOK_NAME_CHARS}}$`)
 
 /** The highest context threshold a role.json may set, in percent. */
 const MAX_THRESHOLD = 95
 
-/** The effort levels `claude --effort` takes (P18). */
-const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+/** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18). */
+export const EFFORTS: readonly Effort[] = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /** The permission modes `claude --permission-mode` takes (P18). */
 const PERMISSION_MODES: readonly PermissionMode[] = [

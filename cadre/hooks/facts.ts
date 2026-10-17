@@ -21,10 +21,10 @@ import type {
 export const MAX_READ_BYTES = 256 * 1024
 /** Code points a repo or docs entry name keeps; a longer name is cut with an ellipsis. */
 const MAX_NAME_CHARS = 255
-/** Code points a settings key keeps; a plugin key reads as `name@marketplace`. */
-const MAX_KEY_CHARS = 120
-/** Code points a hook event name keeps. */
-const MAX_EVENT_CHARS = 60
+/** Code points a settings key keeps; a plugin key reads as `name@marketplace`. The setup scan shares it. */
+export const MAX_KEY_CHARS = 120
+/** Code points a hook event name keeps. The setup scan shares it. */
+export const MAX_EVENT_CHARS = 60
 /** Code points a version text keeps; longer text is not a version. */
 const MAX_VERSION_CHARS = 40
 /** Code points a host warning keeps, the ellipsis included. */
@@ -37,8 +37,11 @@ const MAX_HIDDEN_NAME_CHARS = 60
 const ELLIPSIS = '\u2026'
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
 const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
-/** Settings sources in override order: a later source wins over an earlier one for the same key. */
-const SOURCE_ORDER: readonly SettingsSource[] = ['user', 'project', 'local']
+/**
+ * Settings sources in override order: a later source wins over an earlier one for the same key. The setup scan reads
+ * the sources in this order too.
+ */
+export const SOURCE_ORDER: readonly SettingsSource[] = Object.freeze(['user', 'project', 'local'])
 /**
  * A GSD hook script basename: `gsd-` then 1 to 80 letters, digits and hyphens, then `.js`, `.sh` or `.cjs`. The
  * lookarounds require a whole basename, so `mygsd-x.js` and `gsd-x.js.bak` do not match, and a longer name is not
@@ -128,6 +131,45 @@ export function hiddenNameWarnings(names: readonly string[], kind: string, maxCh
 /** A plain object: not null and not an array. */
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The parsed JSON of a text, boxed so that a JSON `null` differs from text that is not JSON (which gives null). */
+export function parseJsonValue(text: string): { readonly value: unknown } | null {
+  try {
+    return { value: JSON.parse(text) }
+  } catch {
+    return null
+  }
+}
+
+/** Orders two texts by code unit, so a sort never depends on the locale of the machine. */
+export function compareText(a: string, b: string): number {
+  if (a === b) return 0
+
+  return a < b ? -1 : 1
+}
+
+/** The own key names of a plain object; [] for anything else. Only the names are read, never the values. */
+export function keysOf(value: unknown): string[] {
+  return isObject(value) ? Object.keys(value) : []
+}
+
+/** The own key names of the plain object under `field`, such as `enabledPlugins`; [] when either is not one. */
+export function fieldKeysOf(value: unknown, field: string): string[] {
+  return isObject(value) ? keysOf(value[field]) : []
+}
+
+/** Code points of an id that a message shows. */
+const MAX_ID_LABEL_CHARS = 40
+
+/**
+ * An id as message text: a string is cleaned and capped at 40 code points, so a hostile id cannot add a line or hide
+ * itself, and anything else is a fixed token. It never stringifies a value.
+ */
+export function idLabel(id: unknown): string {
+  if (typeof id !== 'string') return '<non-string id>'
+
+  return clean(id, MAX_ID_LABEL_CHARS)
 }
 
 /** The length of a text in UTF-8 bytes, which is what a file size and a read cap count; not its UTF-16 length. */
@@ -246,6 +288,16 @@ export function foldEnabledPlugins(flags: readonly PluginFlag[]): PluginFlag[] {
  * discarded, and a script named twice for the same event appears once.
  */
 export function parseHookScripts(value: unknown, source: SettingsSource): HookScript[] {
+  return hookScriptsMatching(value, source, GSD_SCRIPT_PATTERN)
+}
+
+/**
+ * The hook script basenames under `hooks` of one settings value that the global `pattern` finds in a command, each
+ * with its event and source. The rest of each command is discarded: the interpreter, the path and the arguments, which
+ * may hold a secret. An event that cleans to nothing is skipped, and a script named twice for the same event appears
+ * once. The detection and the setup scan share this walk over the settings shape, each with its own pattern.
+ */
+export function hookScriptsMatching(value: unknown, source: SettingsSource, pattern: RegExp): HookScript[] {
   if (!isObject(value) || !isObject(value.hooks)) return []
   const found = new Map<string, HookScript>()
   for (const [rawEvent, matchers] of Object.entries(value.hooks)) {
@@ -255,7 +307,7 @@ export function parseHookScripts(value: unknown, source: SettingsSource): HookSc
       if (!isObject(matcher) || !Array.isArray(matcher.hooks)) continue
       for (const hook of matcher.hooks) {
         if (!isObject(hook) || typeof hook.command !== 'string') continue
-        for (const match of hook.command.match(GSD_SCRIPT_PATTERN) ?? []) {
+        for (const match of hook.command.match(pattern) ?? []) {
           const script = clean(match)
           found.set(JSON.stringify([event, script]), { script, event, source })
         }
@@ -440,8 +492,10 @@ function gsdTarget(location: GsdLocation, dir: string, manifestPath: string): Gs
   }
 }
 
-/** A path without its trailing slashes; null stays null. */
-function trimSlash(path: string | null): string | null {
+/** A path without its trailing slashes, so a path below it is `${trimmed}/${name}`; '' for `/`, and null stays null. */
+export function trimSlash(path: string): string
+export function trimSlash(path: string | null): string | null
+export function trimSlash(path: string | null): string | null {
   return path === null ? null : path.replace(/\/+$/, '')
 }
 
@@ -454,7 +508,7 @@ function trimSlash(path: string | null): string | null {
  */
 export function factReadPlan(input: ReadEnv): ReadPlan {
   const env = {
-    root: trimSlash(input.root) ?? '',
+    root: trimSlash(input.root),
     home: trimSlash(input.home),
     configDir: trimSlash(input.configDir),
   }
@@ -689,11 +743,11 @@ export function normalizeFacts(raw: RawFacts, configDir: string | null, givenRoo
     ...hiddenNameWarnings(entryNames(raw.repoEntries), 'repo entry', MAX_NAME_CHARS),
     ...hiddenNameWarnings(entryNames(raw.docsEntries), 'docs/ entry', MAX_NAME_CHARS),
     ...hiddenNameWarnings(
-      settings.flatMap(entry => keysOf(entry.value, 'enabledPlugins')),
+      settings.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
       'enabledPlugins key',
       MAX_KEY_CHARS,
     ),
-    ...hiddenNameWarnings(keysOf(raw.installedPlugins, 'plugins'), 'installed plugin key', MAX_KEY_CHARS),
+    ...hiddenNameWarnings(fieldKeysOf(raw.installedPlugins, 'plugins'), 'installed plugin key', MAX_KEY_CHARS),
   ]
 
   return {
@@ -712,14 +766,6 @@ function entryNames(value: unknown): string[] {
   if (!Array.isArray(value)) return []
 
   return value.flatMap(item => (isObject(item) && typeof item.name === 'string' ? [item.name] : []))
-}
-
-/** The keys of one object field of a host value, such as `enabledPlugins`; [] when the field is not an object. */
-function keysOf(value: unknown, field: string): string[] {
-  if (!isObject(value)) return []
-  const inner = value[field]
-
-  return isObject(inner) ? Object.keys(inner) : []
 }
 
 /**
