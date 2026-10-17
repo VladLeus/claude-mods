@@ -28,6 +28,7 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
+  sortedUnique,
   utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate } from './facts'
@@ -1180,6 +1181,17 @@ describe('isFileInsideRoot (WR-02)', () => {
     expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
     expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
     expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
+  })
+})
+
+describe('sortedUnique', () => {
+  test('gives each name once, in code unit order, as a new array', () => {
+    const names = ['b', 'a', 'b']
+
+    expect(sortedUnique(names)).toEqual(['a', 'b'])
+    expect(sortedUnique(['b', 'B', 'a', '_'])).toEqual(['B', '_', 'a', 'b'])
+    expect(sortedUnique([])).toEqual([])
+    expect(names).toEqual(['b', 'a', 'b'])
   })
 })
 
