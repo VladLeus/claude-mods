@@ -130,6 +130,17 @@ export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** The length of a text in UTF-8 bytes, which is what a file size and a read cap count; not its UTF-16 length. */
+export function utf8Bytes(text: string): number {
+  let bytes = 0
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
+  }
+
+  return bytes
+}
+
 function isEntryKind(value: unknown): value is EntryKind {
   return ENTRY_KINDS.some(kind => kind === value)
 }
