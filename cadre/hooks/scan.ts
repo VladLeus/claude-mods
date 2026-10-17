@@ -12,7 +12,7 @@ import type {
   ScanFinding,
   ScanKind,
 } from '../types'
-import { ROLE_ID_PATTERN } from './command'
+import { isRoleId } from './command'
 import {
   clean,
   compareText,
@@ -304,8 +304,9 @@ export function parseManifest(text: string): Manifest | null {
 
 /**
  * The text of `.cadre/cadre.json` as the repo state, or null when it is not one (T-02-12): JSON with schema 1, a cadre
- * version, a framework that is gsd, superpowers, none or null, a git policy, and a list of role ids that each match the
- * role id pattern and are not listed twice. A field the contract does not name is dropped.
+ * version, a framework that is gsd, superpowers, none or null, a git policy, and a list of role ids that are each a
+ * usable role id (isRoleId: a slug, not reserved) and are not listed twice. A field the contract does not name is
+ * dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value
@@ -316,7 +317,7 @@ export function parseCadreState(text: string): CadreState | null {
 
   const ids: string[] = []
   for (const role of roles) {
-    if (typeof role !== 'string' || !ROLE_ID_PATTERN.test(role) || ids.includes(role)) return null
+    if (typeof role !== 'string' || !isRoleId(role) || ids.includes(role)) return null
     ids.push(role)
   }
 
