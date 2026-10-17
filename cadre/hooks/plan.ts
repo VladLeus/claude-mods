@@ -333,7 +333,8 @@ function twiceWarning(path: string): string {
 
 /**
  * The desired files the plan takes, and one warning for each it refuses: an unsafe path, a path cadre plans itself,
- * and a path named a second time.
+ * and a path named a second time. Both checks ignore letter case, since a file system may (B10); a warning shows the
+ * path as it was given.
  */
 function acceptFiles(desired: readonly DesiredFile[]): {
   readonly files: readonly DesiredFile[]
@@ -343,19 +344,20 @@ function acceptFiles(desired: readonly DesiredFile[]): {
   const warnings: string[] = []
   const seen = new Set<string>()
   for (const file of desired) {
+    const key = file.path.toLowerCase()
     if (!isSafeOpPath(file.path)) {
       warnings.push(refusalWarning(file.path))
       continue
     }
-    if (OWN_PATHS.includes(file.path)) {
+    if (OWN_PATHS.some(own => own.toLowerCase() === key)) {
       warnings.push(`refused to plan ${reportText(file.path)}: cadre plans it itself`)
       continue
     }
-    if (seen.has(file.path)) {
+    if (seen.has(key)) {
       warnings.push(twiceWarning(file.path))
       continue
     }
-    seen.add(file.path)
+    seen.add(key)
     files.push(file)
   }
 
