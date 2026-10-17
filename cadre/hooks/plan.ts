@@ -13,6 +13,7 @@ import type {
 import { compareText, isObject } from './facts'
 import { sha256Hex } from './hash'
 import { pad, reportText } from './render'
+import { isSafeRelativePath } from './scan'
 
 /**
  * The repo-relative path of the manifest, which records every file cadre generated with its hash. Re-runs, regen and a
@@ -177,21 +178,62 @@ export function mergeIgnoreBlock(existing: string | null, lines: readonly string
 }
 
 /**
+ * The framework config files a hunk may target (PLAN-06). Phase 2 knows one, GSD's `.planning/config.json`; workstream
+ * configs are not read. A hunk for any other file is refused.
+ */
+export const HUNK_FILES: readonly string[] = Object.freeze(['.planning/config.json'])
+
+/**
+ * Whether a path may be the target of a file op (PLAN-06): a safe relative path under `.cadre/` that is never inside a
+ * `.runtime` folder, whatever the letter case (those hold the per-user files rendered at launch), or exactly the root
+ * `.gitignore`. The root CLAUDE.md, `.claude/`, `.planning/`, any path with `..` and any absolute path all fail.
+ */
+export function isSafeOpPath(path: string): boolean {
+  if (!isSafeRelativePath(path)) return false
+  if (path === GITIGNORE_PATH) return true
+  if (!path.startsWith('.cadre/')) return false
+
+  return !path.split('/').some(segment => segment.toLowerCase() === '.runtime')
+}
+
+/** The paths cadre plans itself: the manifest, and the `.gitignore` through its marked block. */
+const OWN_PATHS: readonly string[] = [MANIFEST_PATH, GITIGNORE_PATH]
+
+/** The suffix of the copy a conflict plans beside a user-edited file, so the person can diff the two (D-67). */
+const BESIDE_SUFFIX = '.cadre-new'
+
+/** The note under a conflict: the file is the user's now, and the new version goes beside it. */
+const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is planned beside it'
+
+/** The note under a conflict whose file cannot be read: it counts as edited, never as absent or equal. */
+const UNREADABLE_NOTE = 'could not read it (treated as changed): kept as is; the new version is planned beside it'
+
+/** The note under the `.cadre-new` copy. */
+const NEW_VERSION_NOTE = 'the new version, for diffing; Phase 3 offers take-new per file'
+
+/** The note under a `.cadre-new` path that already holds something else: it is kept as it is too. */
+const OCCUPIED_NOTE = 'a different file is already there: kept as is'
+
+/** The note under a file the last manifest lists and this plan no longer generates. */
+const STALE_NOTE = 'no longer generated (kept; Phase 2 deletes nothing)'
+
+/**
  * What buildPlan reads, all of it gathered before the call so that planning itself touches nothing. `disk` is keyed by
- * repo-relative path and a missing key counts as absent. `manifest` is the manifest of the last run, with the state it
- * was read in. `carried`, `gitignore` and `hunks` are for the cases later in the plan.
+ * repo-relative path and a missing key counts as absent. Only a manifest read in full (`manifestState` present) is
+ * trusted: with any other state every differing file is a conflict (fail closed).
  */
 export type PlanInput = {
-  /** The files the plan wants on disk. */
+  /** The files the plan wants on disk. A path outside `.cadre/`, or one named twice, is refused with a warning. */
   readonly desired: readonly DesiredFile[]
   readonly disk: ReadonlyMap<string, PortRead>
+  /** The manifest of the last run; null when there is none or it could not be read. */
   readonly manifest: Manifest | null
   readonly manifestState: ReadState
   /** Manifest entries of files this plan does not regenerate; they stay in the new manifest with no op (D-68). */
   readonly carried: readonly ManifestEntry[]
   /** The root `.gitignore` as read and the lines of the cadre block to put in it; null when no block is planned. */
   readonly gitignore: { readonly disk: PortRead; readonly lines: readonly string[] } | null
-  /** The framework config changes, already answered; they come after the file ops in this order. */
+  /** The framework config changes, already answered; they come after the file ops in this order (PLAN-06). */
   readonly hunks: readonly HunkOp[]
   /** The cadre version the manifest records. */
   readonly cadreVersion: string
@@ -251,27 +293,171 @@ function ignorePart(gitignore: PlanInput['gitignore']): Part {
   return { ops: [{ kind, path: GITIGNORE_PATH, mode: 'file', note: null }], warnings: [] }
 }
 
+/** The warning for a path the plan will not touch: PLAN-06 allows only `.cadre/` and the root `.gitignore`. */
+function refusalWarning(path: string): string {
+  return `refused to plan ${reportText(path)}: not a .cadre/ path or .gitignore (PLAN-06)`
+}
+
 /**
- * The file plan (PLAN-01): one op per desired file, one for the manifest and, when asked, one for the `.gitignore`
- * block, sorted by path. Every file is hashed once and classified against the disk and the last manifest (D-67), and
- * the manifest is planned from the desired files' hashes with no timestamp, so building the plan again from the same
- * input gives the same plan (PLAN-04).
+ * The desired files the plan takes, and one warning for each it refuses: an unsafe path, a path cadre plans itself,
+ * and a path named a second time.
  */
-export async function buildPlan(input: PlanInput): Promise<Plan> {
-  const recorded = new Map((input.manifest?.files ?? []).map((entry): [string, string] => [entry.path, entry.sha256]))
+function acceptFiles(desired: readonly DesiredFile[]): {
+  readonly files: readonly DesiredFile[]
+  readonly warnings: readonly string[]
+} {
+  const files: DesiredFile[] = []
+  const warnings: string[] = []
+  const seen = new Set<string>()
+  for (const file of desired) {
+    if (!isSafeOpPath(file.path)) {
+      warnings.push(refusalWarning(file.path))
+      continue
+    }
+    if (OWN_PATHS.includes(file.path)) {
+      warnings.push(`refused to plan ${reportText(file.path)}: cadre plans it itself`)
+      continue
+    }
+    if (seen.has(file.path)) {
+      warnings.push(`refused to plan ${reportText(file.path)} twice: only the first is kept`)
+      continue
+    }
+    seen.add(file.path)
+    files.push(file)
+  }
+
+  return { files, warnings }
+}
+
+/** What one desired file adds to the plan: its ops and warnings, and the entry the new manifest records for it. */
+type FilePlan = Part & { readonly entry: ManifestEntry | null }
+
+/**
+ * The `.cadre-new` copy beside a conflict (D-67): the new version, for diffing. It is classified like any generated
+ * file that has no manifest entry, so one that is already there with the new text is left and one that holds something
+ * else is kept as it is, never overwritten. A path another desired file already names is not planned twice.
+ */
+async function besidePart(
+  input: PlanInput,
+  file: DesiredFile,
+  sha256: string,
+  attempted: ReadonlySet<string>,
+): Promise<Part> {
+  const path = `${file.path}${BESIDE_SUFFIX}`
+  if (attempted.has(path)) {
+    return { ops: [], warnings: [`refused to plan ${reportText(path)} twice: only the first is kept`] }
+  }
+  const kind = classifyFile(sha256, null, await diskHashOf(input.disk.get(path)))
+  const note = kind === 'conflict' ? OCCUPIED_NOTE : NEW_VERSION_NOTE
+
+  return { ops: [{ kind, path, mode: file.mode, note }], warnings: [] }
+}
+
+/**
+ * The ops for one desired file and its manifest entry (D-67, PLAN-04). A conflict keeps the user's file, so it is never
+ * a create or a change, and the new manifest keeps the entry the old one had, or none, rather than claiming the file
+ * holds what cadre generated.
+ */
+async function planFile(
+  input: PlanInput,
+  file: DesiredFile,
+  old: ManifestEntry | null,
+  attempted: ReadonlySet<string>,
+): Promise<FilePlan> {
+  const sha256 = await sha256Hex(file.content)
+  const disk = await diskHashOf(input.disk.get(file.path))
+  const kind = classifyFile(sha256, old?.sha256 ?? null, disk)
+  if (kind !== 'conflict') {
+    const entry: ManifestEntry = { path: file.path, sha256, mode: file.mode }
+
+    return { ops: [{ kind, path: file.path, mode: file.mode, note: null }], warnings: [], entry }
+  }
+  const note = disk.state === 'unknown' ? UNREADABLE_NOTE : CONFLICT_NOTE
+  const beside = await besidePart(input, file, sha256, attempted)
+  const conflict: FileOp = { kind, path: file.path, mode: file.mode, note }
+
+  return { ops: [conflict, ...beside.ops], warnings: beside.warnings, entry: old }
+}
+
+/**
+ * The manifest entries this plan keeps without regenerating: the carried ones (regen, D-68) and the ones the last
+ * manifest lists that are no longer desired, which get a leave op with a note because Phase 2 deletes nothing. An
+ * entry whose path is already taken, or is one cadre plans itself, is skipped; one outside `.cadre/` is refused.
+ */
+function keptPart(
+  carried: readonly ManifestEntry[],
+  old: readonly ManifestEntry[],
+  taken: ReadonlySet<string>,
+): Part & { readonly entries: readonly ManifestEntry[] } {
   const ops: FileOp[] = []
   const entries: ManifestEntry[] = []
-  for (const file of input.desired) {
-    const sha256 = await sha256Hex(file.content)
-    const disk = await diskHashOf(input.disk.get(file.path))
-    const kind = classifyFile(sha256, recorded.get(file.path) ?? null, disk)
-    ops.push({ kind, path: file.path, mode: file.mode, note: null })
-    entries.push({ path: file.path, sha256, mode: file.mode })
+  const warnings: string[] = []
+  const seen = new Set([...taken, ...OWN_PATHS])
+  const tagged = [
+    ...carried.map((entry): [ManifestEntry, boolean] => [entry, false]),
+    ...old.map((entry): [ManifestEntry, boolean] => [entry, true]),
+  ]
+  for (const [entry, isStale] of tagged) {
+    if (seen.has(entry.path)) continue
+    seen.add(entry.path)
+    if (!isSafeOpPath(entry.path)) {
+      warnings.push(refusalWarning(entry.path))
+      continue
+    }
+    entries.push(entry)
+    if (isStale) ops.push({ kind: 'leave', path: entry.path, mode: entry.mode, note: STALE_NOTE })
   }
-  const ignore = ignorePart(input.gitignore)
-  ops.push(manifestOp(input, entries), ...ignore.ops)
 
-  return { ops: ops.sort(byPath), warnings: [...ignore.warnings] }
+  return { ops, warnings, entries }
+}
+
+/** The hunks the plan keeps, in their order, and one warning for each aimed at a file that is not a known config. */
+function hunkPart(hunks: readonly HunkOp[]): { readonly ops: readonly HunkOp[]; readonly warnings: readonly string[] } {
+  const ops: HunkOp[] = []
+  const warnings: string[] = []
+  for (const hunk of hunks) {
+    if (!HUNK_FILES.includes(hunk.file)) {
+      warnings.push(`refused hunk for ${reportText(hunk.file)}: not a known framework config (PLAN-06)`)
+      continue
+    }
+    ops.push(hunk)
+  }
+
+  return { ops, warnings }
+}
+
+/**
+ * The file plan (PLAN-01): one op per desired file, one for the manifest and, when asked, one for the `.gitignore`
+ * block, sorted by path, then the framework config hunks in their given order. Every file is hashed once and
+ * classified against the disk and the last manifest (D-67); a file the user edited or cadre cannot read is a conflict
+ * and is never planned for overwrite (PLAN-04), and there is no op that deletes. Every path is checked against the
+ * PLAN-06 allow-list and the manifest is planned from the hashes with no timestamp, so building the plan again from the
+ * same input gives the same plan. Classification uses the disk as read for this run; Phase 3 checks again before it
+ * writes.
+ */
+export async function buildPlan(input: PlanInput): Promise<Plan> {
+  const manifest = input.manifestState === 'present' ? input.manifest : null
+  const old = manifest?.files ?? []
+  const recorded = new Map(old.map((entry): [string, ManifestEntry] => [entry.path, entry]))
+  const attempted = new Set(input.desired.map(file => file.path))
+  const accepted = acceptFiles(input.desired)
+  const ops: FileOp[] = []
+  const entries: ManifestEntry[] = []
+  const warnings = [...accepted.warnings]
+  for (const file of accepted.files) {
+    const planned = await planFile(input, file, recorded.get(file.path) ?? null, attempted)
+    ops.push(...planned.ops)
+    warnings.push(...planned.warnings)
+    if (planned.entry !== null) entries.push(planned.entry)
+  }
+  const kept = keptPart(input.carried, old, new Set([...attempted, ...ops.map(op => op.path)]))
+  const ignore = ignorePart(input.gitignore)
+  const hunks = hunkPart(input.hunks)
+  entries.push(...kept.entries)
+  ops.push(...kept.ops, ...ignore.ops, manifestOp(input, entries))
+  warnings.push(...kept.warnings, ...ignore.warnings, ...hunks.warnings)
+
+  return { ops: [...ops.sort(byPath), ...hunks.ops], warnings }
 }
 
 /** The rows of one file op: the kind and path, `(executable)` for a launcher, and the note under the path. */
@@ -320,4 +506,30 @@ export function renderPlan(plan: Plan): string[] {
   const kinds = `${counts.create} create, ${counts.change} change, ${counts.leave} leave, ${counts.conflict} conflict`
 
   return ['File plan:', ...rows, ...warnings, `Summary: ${kinds}, ${hunkCount}`]
+}
+
+/**
+ * Groups lines into chunks of text, each at most `maxChars` UTF-16 units when its lines are joined with a newline, so
+ * that no single log entry passes the host's 2000 character limit and loses its tail (P9). Joining the chunks with a
+ * newline gives the input joined with a newline again. A line longer than the cap stays whole in a chunk of its own,
+ * since cutting it would change the text.
+ */
+export function chunkLines(lines: readonly string[], maxChars: number): string[] {
+  const chunks: string[] = []
+  let current: string[] = []
+  let length = 0
+  for (const line of lines) {
+    const joined = current.length === 0 ? line.length : length + 1 + line.length
+    if (current.length > 0 && joined > maxChars) {
+      chunks.push(current.join('\n'))
+      current = [line]
+      length = line.length
+      continue
+    }
+    current.push(line)
+    length = joined
+  }
+  if (current.length > 0) chunks.push(current.join('\n'))
+
+  return chunks
 }
