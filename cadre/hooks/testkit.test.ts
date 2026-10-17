@@ -136,7 +136,24 @@ describe('testkit', () => {
     const files = { '/repo/a.txt': 'abc', '/repo/l.txt': 'ab' }
     const run = memIo(memWorld({ files, realPaths: { '/repo/l.txt': '/data/l.txt' } }), [])
     expect(await run.io.stat('/repo/a.txt')).toEqual({ kind: 'file', size: 3, isLink: false, realPath: '/repo/a.txt' })
-    expect(await run.io.stat('/repo/l.txt')).toEqual({ kind: 'file', size: 2, isLink: false, realPath: '/data/l.txt' })
+    expect(await run.io.stat('/repo/l.txt')).toEqual({ kind: 'file', size: 2, isLink: true, realPath: '/data/l.txt' })
+  })
+
+  test('a path whose real path is itself is not a link, even when realPaths names it', async () => {
+    const run = memIo(memWorld({ files: { '/repo/a.txt': 'abc' }, realPaths: { '/repo/a.txt': '/repo/a.txt' } }), [])
+    expect(await run.io.stat('/repo/a.txt')).toEqual({ kind: 'file', size: 3, isLink: false, realPath: '/repo/a.txt' })
+  })
+
+  test('sizes are UTF-8 bytes: a non-ASCII text is sized by stat and read by its bytes', async () => {
+    const run = memIo(memWorld({ files: { '/repo/a.txt': '€€' } }), [])
+    expect(await run.io.stat('/repo/a.txt')).toEqual({ kind: 'file', size: 6, isLink: false, realPath: '/repo/a.txt' })
+    expect(await run.io.read('/repo/a.txt', 5)).toEqual({ state: 'too-large', bytes: 6 })
+    expect(await run.io.read('/repo/a.txt', 6)).toEqual({ state: 'text', text: '€€' })
+  })
+
+  test('read of a listed folder is unknown, as the real port never reads a non-file', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo/src': [entry('a.ts')] } }), [])
+    expect(await run.io.read('/repo/src', 100)).toEqual({ state: 'unknown' })
   })
 
   test('stat of a listed folder gives kind dir, and of a missing or unknown path gives null', async () => {
@@ -229,6 +246,6 @@ describe('testkit', () => {
       'ghp_FAKEFAKEFAKEFAKEFAKE',
       'SENTINEL_SECRET_VALUE',
     ])
-    expect(ABSOLUTE_PATH_MARKERS).toEqual(['/Users/', '/home/', '/private/', '/home/u'])
+    expect(ABSOLUTE_PATH_MARKERS).toEqual(['/Users/', '/home/', '/private/'])
   })
 })
