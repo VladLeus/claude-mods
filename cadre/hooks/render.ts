@@ -41,8 +41,12 @@ export function pad(text: string, width: number): string {
   return `${text}${' '.repeat(width - length)}`
 }
 
-/** Text from Facts or a detection as the report may show it: unsafe characters removed, then capped. */
-function reportText(text: string): string {
+/**
+ * Text from Facts or a detection as the report may show it: unsafe characters removed, then capped at MAX_REPORT_CHARS
+ * code points. The plan and card renderers reuse it for every value that comes from outside the code, so a hostile
+ * value cannot add a line or hide text.
+ */
+export function reportText(text: string): string {
   return clean(text, MAX_REPORT_CHARS)
 }
 
