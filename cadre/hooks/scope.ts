@@ -38,9 +38,6 @@ const MAX_SHOWN_CHARS = 110
 /** The most names one card list shows before it counts the rest. */
 const MAX_CARD_LIST = 12
 
-/** What an MCP server name must look like for its `mcp__<name>` rule to be written: letters, digits, `_` and `-`. */
-const MCP_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
-
 /** What a top-level code folder must look like for a path rule to be written: no glob character, space or paren. */
 const SAFE_DIR_PATTERN = /^[A-Za-z0-9._-]+$/
 
@@ -224,9 +221,9 @@ type DenyPlan = {
   readonly skippedDirs: readonly string[]
   /** The code dirs left out because their name could widen or break a pattern. */
   readonly unusualDirs: readonly string[]
-  /** The MCP servers denied, by name, sorted. */
+  /** The MCP servers denied, by name as scanned, sorted: those whose tool-name pattern passed the lint. */
   readonly mcp: readonly string[]
-  /** The not-given MCP servers left out because their name is unusual. */
+  /** The not-given MCP servers left out because their tool name is that of a server the role has (A5). */
   readonly unusualMcp: readonly string[]
   /** The patterns the lint refused. */
   readonly refused: readonly Refusal[]
@@ -251,11 +248,21 @@ function lintAll(patterns: readonly string[]): { readonly kept: readonly string[
 }
 
 /**
+ * The tool name the engine gives an MCP server, which is what a deny rule must name: `mcp__` and the server name with
+ * every character outside letters, digits, `_` and `-` replaced by `_`, so `my.server` is `mcp__my_server` (A5).
+ */
+function mcpToolName(name: string): string {
+  return `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}`
+}
+
+/**
  * The deny list of a role (ROLE-05, D-80): Bash for a role without it (hard), reads and edits under each scanned code
  * dir for that role (best effort, and `./x/**` matches at any depth, P13), the secret reads for every role, and every
- * scanned MCP server the role was not given. A code dir whose name matches a folder of the role's own paths is left
- * out, so those folders stay readable; exact denies for it are rendered at launch (D-98). A dir or server with an
- * unusual name is left out too. Every entry must pass the lint, and one that does not is dropped and named (T-02-24).
+ * scanned MCP server the role was not given, by its engine tool name (A5). A code dir whose name matches a folder of
+ * the role's own paths is left out, so those folders stay readable; exact denies for it are rendered at launch (D-98).
+ * A dir with an unusual name is left out too, and so is a server whose tool name is that of a server the role has or
+ * of an infra server, since denying it would block that server. Every entry must pass the lint, and one that does not
+ * is dropped and named (T-02-24).
  */
 function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
   const dirs = role.hasBash ? [] : sortedUnique(ctx.codeDirs)
@@ -263,12 +270,13 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
   const own = ownNames(role.id)
   const covered = usable.filter(dir => !own.has(dir.toLowerCase()))
   const notGiven = notGivenMcp(role, ctx)
-  const named = notGiven.filter(name => MCP_NAME_PATTERN.test(name))
+  const had = new Set([...role.mcp, ...INFRA_MCP_SERVERS].map(mcpToolName))
+  const named = notGiven.filter(name => !had.has(mcpToolName(name)))
   const { kept, refused } = lintAll([
     ...(role.hasBash ? [] : ['Bash']),
     ...covered.flatMap(dir => [`Read(./${dir}/**)`, `Edit(./${dir}/**)`]),
     ...SECRET_READ_DENY,
-    ...named.map(name => `mcp__${name}`),
+    ...named.map(mcpToolName),
   ])
 
   return {
@@ -276,8 +284,8 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
     dirs: covered.filter(dir => kept.includes(`Read(./${dir}/**)`) && kept.includes(`Edit(./${dir}/**)`)),
     skippedDirs: usable.filter(dir => own.has(dir.toLowerCase())),
     unusualDirs: dirs.filter(dir => !isSafeDir(dir)),
-    mcp: named.filter(name => kept.includes(`mcp__${name}`)),
-    unusualMcp: notGiven.filter(name => !MCP_NAME_PATTERN.test(name)),
+    mcp: named.filter(name => kept.includes(mcpToolName(name))),
+    unusualMcp: notGiven.filter(name => had.has(mcpToolName(name))),
     refused,
   }
 }
@@ -371,9 +379,9 @@ function unusualDirRules(deny: DenyPlan): ScopeRule[] {
 }
 
 /**
- * The MCP rules: the scanned servers denied, or that there are none, then the unusual names and the refused patterns.
- * The first rule is hard only on the strict route; on the merged route a server the scan did not see still loads, so it
- * is best effort (A4).
+ * The MCP rules: the scanned servers denied, or that there are none, then the servers left out because they share a
+ * tool name with one the role has (A5), and the refused patterns. The first rule is hard only on the strict route; on
+ * the merged route a server the scan did not see still loads, so it is best effort (A4).
  */
 function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
@@ -384,7 +392,9 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
 
   return [
     denied,
-    ...deny.unusualMcp.map(name => rule(`MCP server ${shown(name)} has an unusual name and is not denied`, 'none')),
+    ...deny.unusualMcp.map(name =>
+      rule(`MCP server ${shown(name)} shares its tool name with a server this role has and is not denied`, 'none'),
+    ),
     ...deny.refused.map(item => rule(`${shown(item.pattern)} was not emitted: ${item.message}`, 'none')),
   ]
 }
