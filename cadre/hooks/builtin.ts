@@ -1,5 +1,5 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
-import { ROLE_ID_PATTERN } from './command'
+import { isRoleId } from './command'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
@@ -40,12 +40,13 @@ export const BUILTIN_GATES: readonly Gate[] = freezeRows([
 ])
 
 /**
- * The role folder under `.cadre/`: the role id when it is a slug (ROLE_ID_PATTERN, D-48), else `unnamed`. The id is
- * checked here, not trusted, so a separator, a dot segment, an uppercase or blank id, a line break or an id over 24
- * characters can never put a path segment into a kickoff path (D-38). The folder is the id itself, never the title.
+ * The role folder under `.cadre/`: the role id when it is a usable role id (isRoleId, D-48), else `unnamed`. The id is
+ * checked here, not trusted, so a separator, a dot segment, an uppercase or blank id, a line break, an id over 24
+ * characters or a reserved id such as `bin` can never put a path segment into a kickoff path (D-38). The folder is the
+ * id itself, never the title.
  */
 function roleFolder(roleId: string): string {
-  if (!ROLE_ID_PATTERN.test(roleId)) return UNNAMED_ROLE
+  if (!isRoleId(roleId)) return UNNAMED_ROLE
 
   return roleId
 }

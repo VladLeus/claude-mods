@@ -15,7 +15,7 @@ import type {
   ScanKind,
   TemplateRoleId,
 } from '../types'
-import { ROLE_ID_PATTERN } from './command'
+import { isRoleId, RESERVED_ROLE_IDS } from './command'
 import { clean, idLabel, isObject, parseJsonValue } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
 import { freezeRows } from './freeze'
@@ -251,8 +251,8 @@ export function proposeRoles(scan: RepoScan): RoleProposal {
   return { roles, changes }
 }
 
-/** Role ids the layout owns, so a role cannot take them: `bin` is the launcher folder (Pitfall 7). */
-export const RESERVED_ROLE_IDS: readonly string[] = Object.freeze(['bin'])
+/** Role ids a role cannot take; command.ts owns the list beside ROLE_ID_PATTERN (Pitfall 7). */
+export { RESERVED_ROLE_IDS }
 
 /** The most roles one team has; a longer list is refused (D-46). */
 export const MAX_ROLES = 12
@@ -288,14 +288,15 @@ function purposeOf(raw: string): string | null {
 }
 
 /**
- * Why a role id cannot be used, or null when it can (D-48). The id must match the slug pattern exactly, with no case
- * folding, and `bin` is taken by the launcher folder `.cadre/bin/`.
+ * Why a role id cannot be used, or null when it can (D-48, isRoleId). The id must match the slug pattern exactly, with
+ * no case folding; `bin` is taken by the launcher folder `.cadre/bin/`, and `all` and `none` by the answer words.
  */
 export function validateRoleId(id: string): string | null {
+  if (id === 'bin') return 'role id "bin" is reserved: it is the launcher folder .cadre/bin/'
   if (RESERVED_ROLE_IDS.includes(id)) {
-    return `role id "${idLabel(id)}" is reserved: it is the launcher folder .cadre/bin/`
+    return `role id "${idLabel(id)}" is reserved: all and none are answer words in init questions`
   }
-  if (ROLE_ID_PATTERN.test(id)) return null
+  if (isRoleId(id)) return null
 
   return `role id "${idLabel(id)}" must be ${SLUG_RULE}`
 }
@@ -337,7 +338,7 @@ export const PROPOSE_SYSTEM = [
   'You turn a description of how a person wants to split their work into roles into a list of roles.',
   'Answer only with JSON of the shape {"roles":[{"id","title","purpose","basedOn"}]}, with no text around it.',
   'Each id is a lowercase slug: a letter, then lowercase letters, digits or dashes, 24 characters at most.',
-  'The id "bin" is not allowed.',
+  'The ids "bin", "all" and "none" are not allowed.',
   `Give at most ${MAX_ROLES} roles, and each id once.`,
   'title is the short name shown to people, and purpose is one sentence on what the role does.',
   'basedOn is the allowed template id the role is most like, or null when none fits.',
