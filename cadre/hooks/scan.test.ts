@@ -10,6 +10,7 @@ import {
   findGitTop,
   gitRootRefusal,
   isSafeRelativePath,
+  listingState,
   MARKER_ROWS,
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
@@ -136,6 +137,12 @@ describe('autopilot guard', () => {
     for (const id of ['', '../x', 'a/b', 'a b', 'a.b', 'a\nb', 'x\u202Ey', 'a'.repeat(129)]) {
       expect(autopilotStatusPath('/home/u', id)).toBeNull()
     }
+  })
+
+  test('trailing slashes on the home folder are dropped, so the path never holds a double slash', () => {
+    expect(autopilotStatusPath('/', 's1')).toBe('/.claude/autopilot/s1.json')
+    expect(autopilotStatusPath('/home/u/', 's1')).toBe('/home/u/.claude/autopilot/s1.json')
+    expect(autopilotStatusPath('/home/u//', 's1')).toBe('/home/u/.claude/autopilot/s1.json')
   })
 
   test('a home folder that is not an absolute path gives no path, so the guard cannot look at the wrong file', () => {
@@ -288,7 +295,7 @@ describe('scanRepo', () => {
     expect(scan.warnings).toEqual([])
   })
 
-  test('folders at depth 0 to 2 are listed and one at depth 3 is not, so a file has at most 3 segments', async () => {
+  test('folders at depth 0 to 2 are listed and one at depth 3 is not, and the depth limit is no truncation', async () => {
     const run = memIo(
       memWorld({
         dirs: {
@@ -308,7 +315,7 @@ describe('scanRepo', () => {
       label: 'JS/TS test files',
       evidence: 'a/b/three.test.ts',
     })
-    expect(scan.isTruncated).toBe(true)
+    expect(scan.isTruncated).toBe(false)
   })
 
   test('the skip folders are never listed, at the root or deeper', async () => {
@@ -965,6 +972,24 @@ describe('readRepoFile', () => {
     expect(run.reads).toEqual(['/repo/missing.json'])
   })
 
+  test('a path with no stat is probed with a zero-byte read and its text is never returned', async () => {
+    const run = memIo(memWorld({ files: { '/repo/a.json': '{"secret":true}' } }), [])
+    const caps: number[] = []
+    const io: InitIo = {
+      ...run.io,
+      stat: async () => null,
+      read: async (path, maxBytes) => {
+        caps.push(maxBytes)
+
+        return run.io.read(path, maxBytes)
+      },
+    }
+
+    expect(await readRepoFile(io, '/repo', 'a.json', MAX_READ_BYTES)).toEqual({ state: 'unknown' })
+    expect(await readRepoFile(io, '/repo', 'missing.json', MAX_READ_BYTES)).toEqual({ state: 'absent' })
+    expect(caps).toEqual([0, 0])
+  })
+
   test('a path that cannot be stat or read is unknown, never absent', async () => {
     const run = memIo(memWorld({ unknownPaths: ['/repo/a.json'] }), [])
 
@@ -996,6 +1021,30 @@ function stateText(over: Readonly<Record<string, unknown>> = {}): string {
 
   return JSON.stringify({ ...state, ...over })
 }
+
+describe('listingState', () => {
+  test('a folder the port lists is present with its entries', async () => {
+    const listing = [entry('a.ts'), entry('src', 'dir')]
+    const run = memIo(memWorld({ dirs: { '/repo/x': listing } }), [])
+
+    expect(await listingState(run.io, '/repo/x')).toEqual({ state: 'present', entries: listing })
+    expect(run.reads).toEqual([])
+  })
+
+  test('a path that is not there is absent, told by a read probe that reads nothing', async () => {
+    const run = memIo(memWorld({}), [])
+
+    expect(await listingState(run.io, '/repo/x')).toEqual({ state: 'absent' })
+    expect(run.reads).toEqual(['/repo/x'])
+  })
+
+  test('a path that cannot be listed but is there, or that fails, is unknown', async () => {
+    const run = memIo(memWorld({ files: { '/repo/file': 'text' }, unknownPaths: ['/repo/u'] }), [])
+
+    expect(await listingState(run.io, '/repo/file')).toEqual({ state: 'unknown' })
+    expect(await listingState(run.io, '/repo/u')).toEqual({ state: 'unknown' })
+  })
+})
 
 describe('isSafeRelativePath', () => {
   test('a path of plain segments joined by single slashes is safe', () => {
@@ -1353,6 +1402,14 @@ describe('existing .cadre', () => {
     expect(run.reads).not.toContain('/repo/.cadre/manifest.json')
     expect(scan.cadre.manifestState).toBe('unknown')
     expect(scan.warnings).toEqual(['could not read .cadre/manifest.json (treated as unknown)'])
+  })
+
+  test('a .cadre whose stat and listing both fail is unknown with a warning, never absent', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo': [entry('.cadre', 'dir')] }, unknownPaths: ['/repo/.cadre'] }), [])
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(scan.cadre.dir).toBe('unknown')
+    expect(scan.warnings).toEqual(['could not list .cadre (treated as unknown)'])
   })
 
   test('a .cadre that exists but cannot be listed is unknown with a warning', async () => {
