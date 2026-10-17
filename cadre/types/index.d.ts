@@ -580,8 +580,11 @@ export type ScopeContext = {
   readonly codeDirs: readonly string[]
   readonly isAttended: boolean
   readonly mcpRoute: McpRoute
-  /** Every role id of the team, for the decision chain (D-12, D-54). */
-  readonly roleIds: readonly string[]
+  /**
+   * Every role of the team, for the decision chain through basedOn (D-12, D-54, U5), in the ChainRole shape of
+   * roles.ts: a role id, or a role's id with the template role it is based on.
+   */
+  readonly roles: readonly (string | Pick<RoleSpec, 'id' | 'basedOn'>)[]
 }
 
 /** The committed settings template: portable keys only (D-84). Per-user values are rendered at launch. */
