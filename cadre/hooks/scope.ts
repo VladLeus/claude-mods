@@ -108,24 +108,30 @@ function ownNames(id: string): ReadonlySet<string> {
 }
 
 /**
- * Whether a deny pattern is an infra tool, covers one, or is the start of one. A pattern counts up to its first glob
- * character, so `mcp__*` and `mcp__au*` cover `mcp__autopilot__wait_for`. A rule with an argument on an infra tool
- * other than Skill (`PushNotification(*)`) blocks it; `Skill(<name>)` blocks only the skills it can match.
+ * Whether a deny pattern blocks an infra tool. A rule with an argument on an infra tool other than Skill
+ * (`PushNotification(*)`) blocks it; `Skill(<name>)` blocks only the skills it can match. A pattern with a glob
+ * character counts up to its first one, so `mcp__*` and `mcp__au*` cover `mcp__autopilot__wait_for`. A literal pattern
+ * blocks only an infra name it equals, or the tools of a server it names (`mcp__autopilot` covers
+ * `mcp__autopilot__wait_for`), so `mcp__a` and `mcp__autopilot__wait` block nothing of the infra (B9).
  */
 function blocksInfra(pattern: string): boolean {
   const open = pattern.indexOf('(')
   const tool = open < 0 ? pattern : pattern.slice(0, open)
   if (INFRA_TOOLS.includes(tool) && (open < 0 || tool !== 'Skill')) return true
+  if (GLOB_CHARS.test(pattern)) {
+    const literal = pattern.split(GLOB_CHARS)[0] ?? ''
 
-  const literal = pattern.split(GLOB_CHARS)[0] ?? ''
+    return INFRA_DENY_TARGETS.some(target => target.startsWith(literal))
+  }
 
-  return INFRA_DENY_TARGETS.some(target => target.startsWith(literal))
+  return INFRA_DENY_TARGETS.some(target => target === pattern || target.startsWith(`${pattern}__`))
 }
 
 /**
  * The reason a deny pattern must not be emitted, or null when it is fine (ROLE-05, P13, ISO-04, T-02-24): a pattern
- * that is, or starts like, an infra tool; a path rule with a single leading `/`, which is anchored at the settings
- * file and matches nothing; or a path rule with `//`, which belongs only in the rendered `.runtime` settings (D-84).
+ * that blocks an infra tool (an infra name, a server rule over its tools, or a glob over one, B9); a path rule with a
+ * single leading `/`, which is anchored at the settings file and matches nothing; or a path rule with `//`, which
+ * belongs only in the rendered `.runtime` settings (D-84).
  */
 export function lintDenyPattern(pattern: string): string | null {
   if (blocksInfra(pattern)) return INFRA_MESSAGE
@@ -548,8 +554,8 @@ function startSkillProblem(name: string, scope: CompiledScope, framework: Framew
 
 /**
  * The checker behind ISO-04 (D-77): every way a compiled scope could block autopilot, agent-fleet or the handoff
- * skills, each as a message that names what broke, and an empty list when none. (a) No deny entry may be, or start
- * like, an infra tool or server, cover a handoff skill as `Skill(<name>)`, or name an infra plugin by its key. (b) The
+ * skills, each as a message that names what broke, and an empty list when none. (a) No deny entry may block an infra
+ * tool or server (blocksInfra), cover a handoff skill as `Skill(<name>)`, or name an infra plugin by its key. (b) The
  * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of the framework must
  * be present (in the overlay, or through an enabled plugin), and no flag may turn off slash commands. Absence matters
  * as much as denial: under `--setting-sources project` a user-level skill is missing unless the overlay links it. The
