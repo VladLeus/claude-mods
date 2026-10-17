@@ -1,5 +1,26 @@
-import type { CarryFacts, HookScript, InitIo, SettingsSource, SetupScan } from '../types'
-import { clean, foldEnabledPlugins, hiddenNameWarnings, isChangedByClean, isObject, parseEnabledPlugins } from './facts'
+import type {
+  CarryFacts,
+  HookScript,
+  InitIo,
+  McpRef,
+  McpSource,
+  PortEntry,
+  SettingsSource,
+  SetupScan,
+  SkillRef,
+} from '../types'
+import {
+  clean,
+  displayPath,
+  foldEnabledPlugins,
+  hiddenNameWarnings,
+  isChangedByClean,
+  isFileInsideRoot,
+  isObject,
+  MAX_READ_BYTES,
+  parseEnabledPlugins,
+  parseInstalledPlugins,
+} from './facts'
 
 /**
  * Where a scan looks: the repo root as the host resolved it and as given, the home folder and CLAUDE_CONFIG_DIR. Every
@@ -35,6 +56,22 @@ const MAX_KEY_CHARS = 120
 const MAX_EVENT_CHARS = 60
 /** At most this many key names are kept per settings source. */
 const MAX_SETTINGS_KEYS = 100
+/** Code points a command, MCP server or agent name keeps; a longer name is dropped, with a warning. */
+const MAX_NAME_CHARS = 100
+/** The extension of an agent file. */
+const AGENT_EXTENSION = '.md'
+/** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
+const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
+/** A command or skill name, or the plugin that adds it: a letter or digit, then up to 99 more safe characters. */
+const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,99}$/
+/** A tool the engine names `mcp__<server>__<tool>`: the server is what lies between the first two `__`. */
+const MCP_TOOL_PATTERN = /^mcp__(.+?)__.+$/
+/** The warning when the host cannot list the commands and skills. */
+const COMMANDS_WARNING = 'could not list commands and skills (treated as unknown)'
+/** The warning when the host cannot list the session tools. */
+const TOOLS_WARNING = 'could not list session tools (treated as unknown)'
+/** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
+const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
 /**
  * A hook script basename: 1 to 80 letters, digits, dots, hyphens and underscores, then `.js`, `.cjs`, `.mjs`, `.sh`,
  * `.py` or `.ts`. The lookarounds require a whole basename, so `x.js.bak`, `a.jsx` and a longer name do not match.
@@ -63,6 +100,13 @@ function stableNames(names: readonly string[], maxChars: number): string[] {
 /** The names in code unit order: the same order on every host, whatever its locale. */
 function sorted(names: readonly string[]): string[] {
   return [...names].sort()
+}
+
+/** The order of two texts by code unit, which is the order `sorted` gives. */
+function compareText(first: string, second: string): number {
+  if (first === second) return 0
+
+  return first < second ? -1 : 1
 }
 
 /** The value when it is a positive safe integer, else null. */
@@ -159,6 +203,165 @@ function settingsNameWarnings(sources: readonly SettingsEntry[]): string[] {
   ]
 }
 
+/** Whether a command name, or the plugin that adds a command, is a plain ASCII name of at most 100 characters. */
+function isCommandName(value: unknown): value is string {
+  return typeof value === 'string' && COMMAND_NAME_PATTERN.test(value)
+}
+
+/** The objects of a command list whose source a scan names: user, plugin and any source that is not built in or MCP. */
+function skillItems(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .filter(isObject)
+    .filter(item => typeof item.source === 'string' && !UNNAMED_SOURCES.includes(item.source))
+}
+
+/** One command as a name and the plugin that adds it; null when the name, or a plugin that is given, is not a name. */
+function skillRefOf(item: Record<string, unknown>): SkillRef | null {
+  const { name, plugin } = item
+  if (!isCommandName(name)) return null
+  if (item.source !== 'plugin' || plugin === undefined) return { name, plugin: null }
+  if (!isCommandName(plugin)) return null
+
+  return { name, plugin }
+}
+
+/** Skills in the order of their names, then of their plugins, a command with no plugin first. */
+function bySkill(first: SkillRef, second: SkillRef): number {
+  return compareText(first.name, second.name) || compareText(first.plugin ?? '', second.plugin ?? '')
+}
+
+/**
+ * The skills and plugin commands of a `$.command.list()` answer, by name and the plugin that adds each (SCAN-02, D-57).
+ * Built-in commands and MCP prompts are dropped, and so is a command whose name, or whose plugin, is not a plain name
+ * of at most 100 characters. A description, a hint and every other field is never read, so none can be kept. A name is
+ * listed once for each plugin, sorted by name. Anything but a list gives [].
+ */
+export function projectCommands(value: unknown): SkillRef[] {
+  const found = new Map<string, SkillRef>()
+  for (const item of skillItems(value)) {
+    const ref = skillRefOf(item)
+    if (ref !== null) found.set(JSON.stringify([ref.name, ref.plugin]), ref)
+  }
+
+  return Array.from(found.values()).sort(bySkill)
+}
+
+/** The command and plugin names of a command list as the host gave them, for the hidden-name warnings. */
+function skillNames(value: unknown): string[] {
+  return skillItems(value)
+    .flatMap(item => [item.name, item.plugin])
+    .filter((name): name is string => typeof name === 'string')
+}
+
+/** MCP servers of one source: the names that clean leaves unchanged, once each, sorted by name. */
+function mcpRefsOf(names: readonly string[], source: McpSource): McpRef[] {
+  return sorted(stableNames(names, MAX_NAME_CHARS)).map(name => ({ name, source }))
+}
+
+/** The server of each `mcp__<server>__<tool>` name in a `$.tool.list()` answer, as the host spells it. */
+function toolServerNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap(item => {
+    const server = isObject(item) && typeof item.name === 'string' ? MCP_TOOL_PATTERN.exec(item.name)?.[1] : undefined
+
+    return server === undefined ? [] : [server]
+  })
+}
+
+/**
+ * The MCP servers the session has, from the tool names of the form `mcp__<server>__<tool>` (SCAN-02, D-57): each server
+ * once, sorted, with source `session`. Only the name of a tool is read, never its description. Anything but a list
+ * gives [].
+ */
+export function projectToolServers(value: unknown): McpRef[] {
+  return mcpRefsOf(toolServerNames(value), 'session')
+}
+
+/** The server names of a `.mcp.json` value, which are the keys of its `mcpServers`. */
+function mcpServerNames(value: unknown): string[] {
+  return fieldKeysOf(value, 'mcpServers')
+}
+
+/**
+ * The MCP servers a repo's `.mcp.json` declares (SCAN-02, D-57): the keys of `mcpServers` only, sorted, with source
+ * `project`. The entries, which hold commands, URLs, headers and tokens, are never read. Anything but a plain object
+ * with an `mcpServers` object gives [].
+ */
+export function projectMcpJson(value: unknown): McpRef[] {
+  return mcpRefsOf(mcpServerNames(value), 'project')
+}
+
+/**
+ * The folder the user-level sources live in: CLAUDE_CONFIG_DIR when it is set, else `<home>/.claude`; null when there
+ * is neither.
+ */
+function userDirOf(ctx: SetupContext): string | null {
+  if (ctx.configDir !== null) return ctx.configDir
+
+  return ctx.home === null ? null : `${ctx.home}/.claude`
+}
+
+/** The warning for a path the scan could not read: its display form, never the path itself (D-57). */
+function unreadableWarning(ctx: SetupContext, path: string): string {
+  return `could not read ${displayPath(path, ctx.home, ctx.root, ctx.configDir)} (treated as unknown)`
+}
+
+/**
+ * A JSON file read through the port, up to `maxBytes`. A file that is not there gives null quietly; one that cannot be
+ * read, is over the cap or does not parse gives null with a warning, because unknown is never the same as absent.
+ */
+async function readJson(
+  io: InitIo,
+  ctx: SetupContext,
+  path: string,
+  maxBytes: number,
+  warnings: string[],
+): Promise<unknown> {
+  const read = await io.read(path, maxBytes)
+  if (read.state === 'absent') return null
+  if (read.state !== 'text') {
+    warnings.push(unreadableWarning(ctx, path))
+
+    return null
+  }
+  try {
+    return JSON.parse(read.text)
+  } catch {
+    warnings.push(unreadableWarning(ctx, path))
+
+    return null
+  }
+}
+
+/**
+ * A folder's listing. The port's list answers null both for a folder that is not there and for one that cannot be
+ * listed, and its read answers `absent` only for a path that is not there, so a null listing is told apart by a read: a
+ * folder that is not there gives [] quietly, any other null gives [] with a warning (unknown is not absent).
+ */
+async function listFolder(
+  io: InitIo,
+  ctx: SetupContext,
+  path: string,
+  warnings: string[],
+): Promise<readonly PortEntry[]> {
+  const entries = await io.list(path)
+  if (entries !== null) return entries
+  const probe = await io.read(path, 0)
+  if (probe.state !== 'absent') warnings.push(unreadableWarning(ctx, path))
+
+  return []
+}
+
+/** The names of the regular files in a listing that end with `extension`; a folder, a link or another kind does not. */
+function fileNames(entries: readonly PortEntry[], extension: string): string[] {
+  return entries
+    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(extension))
+    .map(entry => entry.name)
+}
+
 /** Each settings source the port can read as a plain object, in override order; any other source adds a warning. */
 async function readSettings(io: InitIo, warnings: string[]): Promise<SettingsEntry[]> {
   const read: SettingsEntry[] = []
@@ -175,21 +378,122 @@ async function readSettings(io: InitIo, warnings: string[]): Promise<SettingsEnt
 }
 
 /**
+ * The keys of the plugins installed for the user or for this repo, from `installed_plugins.json` in the user folder.
+ * The install paths, scopes and versions in the file are read only to decide that, and are not kept.
+ */
+async function installedPluginKeys(
+  io: InitIo,
+  ctx: SetupContext,
+  userDir: string | null,
+  warnings: string[],
+): Promise<string[]> {
+  if (userDir === null) return []
+  const value = await readJson(io, ctx, `${userDir}/plugins/installed_plugins.json`, MAX_READ_BYTES, warnings)
+  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), 'installed plugin key', MAX_KEY_CHARS))
+
+  return parseInstalledPlugins(value, ctx.root, ctx.givenRoot).map(plugin => plugin.key)
+}
+
+/** The skills and plugin commands of the host's command list; a list the host cannot give adds a warning. */
+async function commandRefs(io: InitIo, warnings: string[]): Promise<SkillRef[]> {
+  const value = await io.commands()
+  if (!Array.isArray(value)) {
+    warnings.push(COMMANDS_WARNING)
+
+    return []
+  }
+  warnings.push(...hiddenNameWarnings(skillNames(value), 'command or plugin name', MAX_NAME_CHARS))
+
+  return projectCommands(value)
+}
+
+/** The MCP servers of the session, from the host's tool list; a list the host cannot give adds a warning. */
+async function sessionMcpRefs(io: InitIo, warnings: string[]): Promise<McpRef[]> {
+  const value = await io.tools()
+  if (!Array.isArray(value)) {
+    warnings.push(TOOLS_WARNING)
+
+    return []
+  }
+  warnings.push(...hiddenNameWarnings(toolServerNames(value), 'MCP server name', MAX_NAME_CHARS))
+
+  return projectToolServers(value)
+}
+
+/**
+ * The MCP servers of the repo's `.mcp.json`. The file is read only when its stat shows a regular file whose real path
+ * is inside the repo (WR-02); a link out of the repo, a folder or any other kind is not read and adds a warning. A file
+ * that is not there is quiet.
+ */
+async function projectMcpRefs(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<McpRef[]> {
+  const path = `${ctx.root}/.mcp.json`
+  const stat = await io.stat(path)
+  if (stat === null) return []
+  if (!isFileInsideRoot(stat, ctx.root)) {
+    warnings.push(unreadableWarning(ctx, path))
+
+    return []
+  }
+  const value = await readJson(io, ctx, path, MAX_READ_BYTES, warnings)
+  warnings.push(...hiddenNameWarnings(mcpServerNames(value), 'MCP server name', MAX_NAME_CHARS))
+
+  return projectMcpJson(value)
+}
+
+/** The agents in the user folder and in the repo's `.claude/agents`: the `.md` files, by name without the extension. */
+async function agentNames(
+  io: InitIo,
+  ctx: SetupContext,
+  userDir: string | null,
+  warnings: string[],
+): Promise<string[]> {
+  const folders = userDir === null ? [] : [`${userDir}/agents`]
+  const names: string[] = []
+  for (const folder of [...folders, `${ctx.root}/.claude/agents`]) {
+    const entries = await listFolder(io, ctx, folder, warnings)
+    names.push(...fileNames(entries, AGENT_EXTENSION).map(name => name.slice(0, -AGENT_EXTENSION.length)))
+  }
+  warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_NAME_CHARS))
+
+  return sorted(stableNames(names, MAX_NAME_CHARS))
+}
+
+/** The servers once each by name, keeping the first source in the order the lists are given, sorted by name. */
+function mergeMcp(lists: readonly (readonly McpRef[])[]): McpRef[] {
+  const first = new Map<string, McpRef>()
+  for (const ref of lists.flat()) {
+    if (!first.has(ref.name)) first.set(ref.name, ref)
+  }
+
+  return Array.from(first.values()).sort((a, b) => compareText(a.name, b.name))
+}
+
+/**
  * The user-setup scan (SCAN-02, D-57): every source is read through the port and projected at once to names, counts and
- * booleans, so no value, command, token or file content can reach a later module. This part reads the three settings
- * sources; a source the port cannot read adds a warning and is treated as unknown, never as empty.
+ * booleans, so no value, command, token or file content can reach a later module. The sources are the three settings
+ * files, the installed and enabled plugins, the commands and skills, the MCP servers of the repo's `.mcp.json` and of
+ * the session, and the agent files. A source the port cannot read adds a warning and is treated as unknown, never as
+ * empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder, the user-level sources are
+ * skipped.
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
+  const userDir = userDirOf(ctx)
+  if (userDir === null) warnings.push(NO_USER_DIR_WARNING)
   const sources = await readSettings(io, warnings)
   const settings = projectSettings(sources)
   warnings.push(...settingsNameWarnings(sources))
+  const installed = await installedPluginKeys(io, ctx, userDir, warnings)
+  const skills = await commandRefs(io, warnings)
+  const projectServers = await projectMcpRefs(io, ctx, warnings)
+  const sessionServers = await sessionMcpRefs(io, warnings)
+  const agents = await agentNames(io, ctx, userDir, warnings)
 
   return {
-    plugins: settings.enabled,
-    skills: [],
-    mcp: [],
-    agents: [],
+    plugins: sorted(Array.from(new Set([...settings.enabled, ...installed]))),
+    skills,
+    mcp: mergeMcp([projectServers, sessionServers]),
+    agents,
     claudeMd: [],
     hasGlobalClaudeMd: false,
     memoryFiles: [],
