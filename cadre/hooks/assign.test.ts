@@ -1,18 +1,27 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { McpRef, RoleSpec, TemplateRoleId } from '../types'
+import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import {
   ALL_OPTION,
   assignToRoles,
   classifyMcp,
+  classifySkills,
+  FRAMEWORK_START_SKILLS,
   INFRA_MCP_SERVERS,
+  INFRA_PLUGINS,
+  INFRA_SKILLS,
+  INFRA_TOOLS,
+  isFrameworkSkill,
   MCP_ROLE_ROWS,
   mcpQuestion,
   NONE_OPTION,
   parseRoleList,
+  SKILL_ROLE_ROWS,
+  skillGroupQuestion,
 } from './assign'
+import type { SkillGroup } from './assign'
 
-/** A role as init builds it: nothing assigned, every other field a fixed default. `over` changes the fields it names. */
+/** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
 function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
   return {
     id,
@@ -50,6 +59,18 @@ function server(name: string): McpRef {
 /** The ids of the roles a name was assigned to, or null when the classifier did not assign it. */
 function assignedTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
   const found = classifyMcp([server(name)], roles).assigned.find(row => row.name === name)
+
+  return found === undefined ? null : found.roleIds
+}
+
+/** A skill the session lists; `plugin` is null for a user or project skill. */
+function skill(name: string, plugin: string | null = null): SkillRef {
+  return { name, plugin }
+}
+
+/** The ids of the roles a skill was assigned to by the table, or null when the classifier did not assign it. */
+function skillAssignedTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
+  const found = classifySkills([skill(name)], roles).assigned.find(row => row.name === name)
 
   return found === undefined ? null : found.roleIds
 }
@@ -331,5 +352,196 @@ describe('parseRoleList', () => {
     expect(parseRoleList('none', [])).toEqual([])
     expect(parseRoleList('all', [])).toEqual([])
     expect(parseRoleList('be', [])).toBeNull()
+  })
+})
+
+describe('skill assignment', () => {
+  test('the infra lists are the ones D-77 names, in order, and frozen', () => {
+    expect(INFRA_PLUGINS).toEqual(['autopilot@local-mods', 'agent-fleet@local-mods', 'cadre@local-mods'])
+    expect(INFRA_SKILLS).toEqual(['create-handoff-doc', 'resume-handoff-doc'])
+    expect(INFRA_TOOLS).toEqual([
+      'mcp__autopilot__restart_session',
+      'mcp__autopilot__wait_for',
+      'mcp__autopilot__queue_question',
+      'Skill',
+      'PushNotification',
+    ])
+    expect([INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS].every(list => Object.isFrozen(list))).toBe(true)
+  })
+
+  test('FRAMEWORK_START_SKILLS names the start skills of each framework, none for the built-in one, all frozen', () => {
+    expect(FRAMEWORK_START_SKILLS.gsd).toEqual([
+      'gsd-autonomous',
+      'gsd-discuss-phase',
+      'gsd-plan-phase',
+      'gsd-execute-phase',
+      'gsd-validate-phase',
+      'gsd-code-review',
+    ])
+    expect(FRAMEWORK_START_SKILLS.superpowers).toEqual([
+      'superpowers:brainstorming',
+      'superpowers:writing-plans',
+      'superpowers:executing-plans',
+      'superpowers:subagent-driven-development',
+    ])
+    expect(FRAMEWORK_START_SKILLS.none).toEqual([])
+    expect(Object.isFrozen(FRAMEWORK_START_SKILLS)).toBe(true)
+    expect(Object.values(FRAMEWORK_START_SKILLS).every(list => Object.isFrozen(list))).toBe(true)
+  })
+
+  test('a gsd- skill belongs to gsd, and a superpowers skill to superpowers', () => {
+    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'gsd')).toBe(true)
+    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'superpowers')).toBe(true)
+    expect(isFrameworkSkill(skill('superpowers:brainstorming'), 'superpowers')).toBe(true)
+    expect(isFrameworkSkill(skill('brainstorming', 'superpowers'), 'superpowers')).toBe(true)
+  })
+
+  test('a skill of one framework is not one of the other, and gsd- must start the name', () => {
+    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'superpowers')).toBe(false)
+    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'gsd')).toBe(false)
+    expect(isFrameworkSkill(skill('my-gsd-tool'), 'gsd')).toBe(false)
+    expect(isFrameworkSkill(skill('gsdx'), 'gsd')).toBe(false)
+  })
+
+  test('with framework none no skill is a framework skill', () => {
+    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'none')).toBe(false)
+    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'none')).toBe(false)
+    expect(isFrameworkSkill(skill('my-skill'), 'none')).toBe(false)
+  })
+
+  test('table skills go to their roles, infra and framework skills are skipped, the rest are grouped by plugin', () => {
+    const skills = [
+      skill('security-review'),
+      skill('frontend-design', 'frontend'),
+      skill('create-handoff-doc'),
+      skill('gsd-plan-phase'),
+      skill('superpowers:brainstorming', 'superpowers'),
+      skill('codex:rescue', 'codex'),
+      skill('codex:setup', 'codex'),
+      skill('my-skill'),
+    ]
+
+    expect(classifySkills(skills, TEAM)).toEqual({
+      assigned: [
+        { name: 'frontend-design', roleIds: ['fe'] },
+        { name: 'security-review', roleIds: ['security'] },
+      ],
+      groups: [
+        { label: 'codex', plugin: 'codex', names: ['codex:rescue', 'codex:setup'] },
+        { label: 'your own', plugin: null, names: ['my-skill'] },
+      ],
+    })
+  })
+
+  test('the handoff skills are neither assigned nor asked about, with or without roles', () => {
+    const handoff = [skill('create-handoff-doc'), skill('resume-handoff-doc')]
+
+    expect(classifySkills(handoff, TEAM)).toEqual({ assigned: [], groups: [] })
+    expect(classifySkills(handoff, [])).toEqual({ assigned: [], groups: [] })
+  })
+
+  test('gsd and superpowers skills are never asked about, whichever framework the roles use', () => {
+    const skills = [skill('gsd-plan-phase'), skill('gsd-ns-context'), skill('superpowers:writing-plans', 'superpowers')]
+
+    expect(classifySkills(skills, TEAM)).toEqual({ assigned: [], groups: [] })
+  })
+
+  test('the table sends security-review to security and frontend and design skills to fe', () => {
+    const table: readonly (readonly [string, readonly string[] | null])[] = [
+      ['security-review', ['security']],
+      ['pkg:security-review', ['security']],
+      ['security-review-extra', null],
+      ['frontend-design', ['fe']],
+      ['frontend-design:frontend-design', ['fe']],
+      ['frontend', ['fe']],
+      ['design', ['fe']],
+      ['ui-ux', ['fe']],
+      ['UI-Design', ['fe']],
+      ['web-design-guidelines', ['fe']],
+      ['redesign', null],
+      ['designer', null],
+      ['my-skill', null],
+    ]
+
+    for (const [name, expected] of table) expect([name, skillAssignedTo(name, TEAM)]).toEqual([name, expected])
+  })
+
+  test('a table skill whose roles are all absent is asked in its group', () => {
+    expect(classifySkills([skill('security-review')], [PM, BE])).toEqual({
+      assigned: [],
+      groups: [{ label: 'your own', plugin: null, names: ['security-review'] }],
+    })
+    expect(classifySkills([skill('frontend-design', 'frontend')], [PM, BE])).toEqual({
+      assigned: [],
+      groups: [{ label: 'frontend', plugin: 'frontend', names: ['frontend-design'] }],
+    })
+  })
+
+  test('a custom role based on fe or security receives the table skills', () => {
+    const roles = [PM, role('web', 'fe'), role('auditor', 'security')]
+
+    expect(classifySkills([skill('security-review'), skill('frontend-design')], roles).assigned).toEqual([
+      { name: 'frontend-design', roleIds: ['web'] },
+      { name: 'security-review', roleIds: ['auditor'] },
+    ])
+  })
+
+  test('groups are sorted by label with your own last, and the names in a group are sorted', () => {
+    const skills = [
+      skill('zed', 'zeta'),
+      skill('own-b'),
+      skill('beta:x', 'beta'),
+      skill('own-a'),
+      skill('alpha:z', 'alpha'),
+      skill('alpha:a', 'alpha'),
+    ]
+
+    expect(classifySkills(skills, TEAM).groups).toEqual([
+      { label: 'alpha', plugin: 'alpha', names: ['alpha:a', 'alpha:z'] },
+      { label: 'beta', plugin: 'beta', names: ['beta:x'] },
+      { label: 'zeta', plugin: 'zeta', names: ['zed'] },
+      { label: 'your own', plugin: null, names: ['own-a', 'own-b'] },
+    ])
+  })
+
+  test('user and project skills share one group, and a skill seen twice counts once', () => {
+    const skills = ['b-skill', 'a-skill', 'b-skill', 'security-review', 'security-review'].map(name => skill(name))
+
+    expect(classifySkills(skills, [PM, SECURITY])).toEqual({
+      assigned: [{ name: 'security-review', roleIds: ['security'] }],
+      groups: [{ label: 'your own', plugin: null, names: ['a-skill', 'b-skill'] }],
+    })
+  })
+
+  test('with no skills there is nothing to assign or ask', () => {
+    expect(classifySkills([], TEAM)).toEqual({ assigned: [], groups: [] })
+  })
+
+  test('skillGroupQuestion words the question with the label and the number of skills', () => {
+    const group: SkillGroup = { label: 'codex', plugin: 'codex', names: ['codex:rescue', 'codex:setup'] }
+
+    expect(skillGroupQuestion(group)).toBe('Which roles get codex skills (2)? (e.g. BE, QA, or none)')
+    expect(skillGroupQuestion({ label: 'your own', plugin: null, names: ['my-skill'] })).toBe(
+      'Which roles get your own skills (1)? (e.g. BE, QA, or none)',
+    )
+  })
+
+  test('skillGroupQuestion cleans a label with a bidi override', () => {
+    const label = `co${String.fromCodePoint(0x202e)}dex`
+    const group: SkillGroup = { label, plugin: 'codex', names: ['codex:rescue'] }
+
+    expect(skillGroupQuestion(group)).toBe('Which roles get codex skills (1)? (e.g. BE, QA, or none)')
+  })
+
+  test('SKILL_ROLE_ROWS and every row, with its roles, are frozen', () => {
+    expect(Object.isFrozen(SKILL_ROLE_ROWS)).toBe(true)
+    expect(SKILL_ROLE_ROWS.every(row => Object.isFrozen(row))).toBe(true)
+    expect(SKILL_ROLE_ROWS.every(row => Object.isFrozen(row.roles))).toBe(true)
+  })
+
+  test('SKILL_ROLE_ROWS names the roles of the two rows in order, each with a label', () => {
+    expect(SKILL_ROLE_ROWS.map(row => row.roles)).toEqual([['security'], ['fe']])
+    expect(SKILL_ROLE_ROWS.every(row => row.label.trim() !== '')).toBe(true)
+    expect(new Set(SKILL_ROLE_ROWS.map(row => row.label)).size).toBe(SKILL_ROLE_ROWS.length)
   })
 })
