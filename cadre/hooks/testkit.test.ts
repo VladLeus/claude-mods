@@ -1,22 +1,21 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, PortEntry } from '../types'
+import type { AskSpec } from '../types'
 import {
   ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
+  entry,
   leaks,
+  link,
   memIo,
   memWorld,
   SECRET_FIXTURES,
+  ZERO_WIDTH_SPACE,
 } from './testkit'
 
 const SPEC: AskSpec = { options: ['one', 'two'] }
-
-/** A listing entry: a file unless told otherwise. */
-function entry(name: string, kind: PortEntry['kind'] = 'file'): PortEntry {
-  return { name, kind, size: 0, mtimeMs: 0, isLink: false }
-}
 
 /** The message a promise rejects with, or null when it resolves. */
 async function rejection(promise: Promise<unknown>): Promise<string | null> {
@@ -170,6 +169,19 @@ describe('testkit', () => {
     expect(await run.io.list('/repo')).toEqual(listing)
     expect(await run.io.list('/repo/none')).toBeNull()
     expect(await run.io.list('/repo/u')).toBeNull()
+    expect(run.listed).toEqual(['/repo', '/repo/none', '/repo/u'])
+  })
+
+  test('entry builds a plain file unless told otherwise, and link a symbolic link', () => {
+    expect(entry('a.ts')).toEqual({ name: 'a.ts', kind: 'file', size: 0, mtimeMs: 0, isLink: false })
+    expect(entry('src', 'dir', true)).toEqual({ name: 'src', kind: 'dir', size: 0, mtimeMs: 0, isLink: true })
+    expect(link('alias')).toEqual({ name: 'alias', kind: 'other', size: 0, mtimeMs: 0, isLink: true })
+  })
+
+  test('the hostile-text constants are the bidi override and the zero-width space', () => {
+    expect(BIDI_OVERRIDE.codePointAt(0)).toBe(0x202e)
+    expect(ZERO_WIDTH_SPACE.codePointAt(0)).toBe(0x200b)
+    expect([BIDI_OVERRIDE.length, ZERO_WIDTH_SPACE.length]).toEqual([1, 1])
   })
 
   test('settings gives the world value of a source, and null for a source the world does not have', async () => {

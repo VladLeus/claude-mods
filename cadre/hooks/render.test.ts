@@ -185,7 +185,7 @@ describe('reportText', () => {
   })
 
   test('unsafe characters are removed before the text is shown', () => {
-    expect(reportText('x‮y')).toBe('xy')
+    expect(reportText('x\u202Ey')).toBe('xy')
   })
 })
 

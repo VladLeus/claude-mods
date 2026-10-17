@@ -30,6 +30,15 @@ import {
   skillGroupQuestion,
 } from './assign'
 import type { SkillGroup } from './assign'
+import {
+  AUTOPILOT_THRESHOLD,
+  DEFAULT_DURATION,
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
+  DEFAULT_PERMISSION_MODE,
+  EMPTY_CARRY,
+} from './roles'
+import { BIDI_OVERRIDE } from './testkit'
 
 /** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
 function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
@@ -38,15 +47,15 @@ function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec
     title: id.toUpperCase(),
     purpose: 'p',
     basedOn,
-    model: 'opus',
-    effort: 'medium',
-    permissionMode: 'auto',
-    autopilot: { duration: '4h', threshold: 65, askUser: false },
+    model: DEFAULT_MODEL,
+    effort: DEFAULT_EFFORT,
+    permissionMode: DEFAULT_PERMISSION_MODE,
+    autopilot: { duration: DEFAULT_DURATION, threshold: AUTOPILOT_THRESHOLD, askUser: false },
     hasBash: true,
     mcp: [],
     skills: [],
     instructions: [],
-    carry: { autoCompactWindow: false, statusLine: false, env: [], hooks: [] },
+    carry: EMPTY_CARRY,
     ...over,
   }
 }
@@ -192,7 +201,7 @@ describe('MCP assignment', () => {
   })
 
   test('mcpQuestion cleans a name with a bidi override or a line break', () => {
-    const name = `sen${String.fromCodePoint(0x202e)}try\n`
+    const name = `sen${BIDI_OVERRIDE}try\n`
 
     expect(mcpQuestion(name)).toBe('Which roles get the sentry MCP server? (e.g. BE, QA, or none)')
   })
@@ -537,7 +546,7 @@ describe('skill assignment', () => {
   })
 
   test('skillGroupQuestion cleans a label with a bidi override', () => {
-    const label = `co${String.fromCodePoint(0x202e)}dex`
+    const label = `co${BIDI_OVERRIDE}dex`
     const group: SkillGroup = { label, plugin: 'codex', names: ['codex:rescue'] }
 
     expect(skillGroupQuestion(group)).toBe('Which roles get codex skills (1)? (e.g. BE, QA, or none)')
@@ -666,7 +675,7 @@ describe('answer parsers', () => {
   })
 
   test('envQuestion cleans each name and cuts it to 60 code points', () => {
-    const odd = `A${String.fromCodePoint(0x202e)}B`
+    const odd = `A${BIDI_OVERRIDE}B`
 
     expect(envQuestion([odd, 'X'.repeat(70)])).toBe(
       `Which env variables do roles carry? Names: AB, ${'X'.repeat(59)}… ` +
@@ -703,7 +712,7 @@ describe('answer parsers', () => {
   })
 
   test('memoryQuestion cleans each name to 60 code points, and with no name it leaves the brackets out', () => {
-    const odd = `m${String.fromCodePoint(0x202e)}.md`
+    const odd = `m${BIDI_OVERRIDE}.md`
 
     expect(memoryQuestion('auto-memory', [odd, 'x'.repeat(61)])).toBe(autoMemoryAsk(`m.md, ${'x'.repeat(59)}…`))
     expect(memoryQuestion('auto-memory', [])).toBe(

@@ -92,7 +92,10 @@ export function memWorld(over: Partial<MemWorld>): MemWorld {
   }
 }
 
-/** A scripted port and what it was asked, in order: every question and spec, line logged, prompt and path read. */
+/**
+ * A scripted port and what it was asked, in order: every question and spec, line logged, prompt, path read and folder
+ * listed.
+ */
 export type MemRun = {
   readonly io: InitIo
   /** Every question asked, the dismissed ones included. */
@@ -102,6 +105,8 @@ export type MemRun = {
   /** Every completion asked, as `${system}\n---\n${prompt}`. */
   readonly prompts: string[]
   readonly reads: string[]
+  /** Every folder path listed, in order. */
+  readonly listed: string[]
 }
 
 /** Whether scripted answers are given in order, rather than by question prefix. */
@@ -170,6 +175,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   const logged: string[] = []
   const prompts: string[] = []
   const reads: string[] = []
+  const listed: string[] = []
   let nextAnswer = 0
   let nextReply = 0
 
@@ -201,7 +207,11 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     sessionId: async () => world.sessionId,
     now: async () => world.now,
     cadreVersion: async () => world.cadreVersion,
-    list: async path => listOf(world, path),
+    list: async path => {
+      listed.push(path)
+
+      return listOf(world, path)
+    },
     stat: async path => statOf(world, path),
     read: async (path, maxBytes) => {
       reads.push(path)
@@ -214,8 +224,24 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     tools: async () => world.tools,
   }
 
-  return { io, asked, specs, logged, prompts, reads }
+  return { io, asked, specs, logged, prompts, reads, listed }
 }
+
+/** A listing entry as the port gives it: a file unless told otherwise, and not a link unless told so. */
+export function entry(name: string, kind: PortEntry['kind'] = 'file', isLink = false): PortEntry {
+  return { name, kind, size: 0, mtimeMs: 0, isLink }
+}
+
+/** A symbolic link as the host lists it: kind other, isLink true. */
+export function link(name: string): PortEntry {
+  return entry(name, 'other', true)
+}
+
+/** A right-to-left override (U+202E), the bidi character the hostile-text tests hide in names and titles. */
+export const BIDI_OVERRIDE = '\u202E'
+
+/** A zero-width space (U+200B), the invisible character the hostile-text tests hide in names and titles. */
+export const ZERO_WIDTH_SPACE = '\u200B'
 
 /** Fake secrets no output, question, log line or generated file may contain. */
 export const SECRET_FIXTURES: readonly string[] = Object.freeze([

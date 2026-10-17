@@ -16,7 +16,7 @@ import {
   portProbeOf,
   portTextOf,
 } from './init'
-import { answerFor, memIo, memWorld } from './testkit'
+import { answerFor, entry, memIo, memWorld } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -100,11 +100,6 @@ const FORBIDDEN_OPS: readonly string[] = [
   'mcp.call',
   'tool.register',
 ]
-
-/** A listing entry: a file unless told otherwise, and not a link unless told so. */
-function entry(name: string, kind: FakeEntry['kind'] = 'file', isLink = false): FakeEntry {
-  return { name, kind, size: 0, mtimeMs: 0, isLink }
-}
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
