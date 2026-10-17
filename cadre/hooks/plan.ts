@@ -239,6 +239,20 @@ export type PlanInput = {
   readonly cadreVersion: string
 }
 
+/**
+ * The exact repo-relative paths the caller must read into PlanInput.disk before buildPlan: each desired path that
+ * isSafeOpPath accepts, the `.cadre-new` copy beside it, and the manifest, once each and sorted by code unit. A key
+ * missing from `disk` counts as absent, so a path left out would be planned as if nothing were there (B1).
+ */
+export function planReadPaths(desired: readonly DesiredFile[]): string[] {
+  const paths = desired
+    .map(file => file.path)
+    .filter(isSafeOpPath)
+    .flatMap(path => [path, `${path}${BESIDE_SUFFIX}`])
+
+  return Array.from(new Set([...paths, MANIFEST_PATH])).sort(compareText)
+}
+
 /** A file read through the port as classifyFile sees it. A read that failed or was too large is unknown. */
 async function diskHashOf(read: PortRead | undefined): Promise<DiskHash> {
   if (read === undefined || read.state === 'absent') return { state: 'absent' }
