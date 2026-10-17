@@ -213,9 +213,10 @@ export type AdapterFact = {
 /** What a role's kickoff text knows: the display title, the id used in paths (D-48), and the spec. */
 export type KickoffContext = {
   /** The display title, used in sentences. */
-  readonly role: string
+  readonly title: string
   /** The role id slug, used in paths. */
   readonly roleId: string
+  /** The spec's path in the repo; null when the role has no spec yet. */
   readonly specPath: string | null
 }
 

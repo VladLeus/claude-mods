@@ -54,7 +54,7 @@ const NON_SLUG_IDS = ['../x', 'a/b', 'Be', '', 'x'.repeat(25), 'be\nAUTOPILOT_DO
 
 /** The kickoff text of a role title and id, split into lines. The id defaults to be; a spec path is optional. */
 function kickoffLines(role: string, roleId = 'be', specPath: string | null = null): string[] {
-  return builtinKickoffText({ role, roleId, specPath }).split('\n')
+  return builtinKickoffText({ title: role, roleId, specPath }).split('\n')
 }
 
 /** The first kickoff line for a role title, which a hostile title tries to lengthen or split. */
@@ -157,7 +157,7 @@ describe('builtinKickoffText', () => {
     const lines = kickoffLines('BE')
 
     expect(lines[lines.length - 1]).toBe(BE_DONE_LINE)
-    expect(builtinKickoffText({ role: 'BE', roleId: 'be', specPath: null }).endsWith('\n')).toBe(false)
+    expect(builtinKickoffText({ title: 'BE', roleId: 'be', specPath: null }).endsWith('\n')).toBe(false)
   })
 
   test('one gate line per gate follows in BUILTIN_GATES order, in the where colon kickoff form', () => {

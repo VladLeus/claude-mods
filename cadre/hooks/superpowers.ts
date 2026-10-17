@@ -9,7 +9,7 @@ import type {
   RepoEntry,
 } from '../types'
 import { freezeRows } from './freeze'
-import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the
@@ -169,11 +169,6 @@ const SPEC_START_LINE = 'Start: superpowers:writing-plans with that spec.'
 const NO_SPEC_START_LINE =
   'Start: superpowers:brainstorming (TL/PM), or superpowers:writing-plans <spec path> once TL gives you a spec.'
 
-/** The role as the kickoff names it: cleaned and capped, or `unnamed` when nothing is left once cleaned and trimmed. */
-function roleName(role: string): string {
-  return cleanKickoffTextOr(role, MAX_ROLE_CHARS, UNNAMED_ROLE)
-}
-
 /**
  * The Approved spec line, which is the standing approval for a spec TL wrote or approved (D-16). A role with no spec,
  * or a spec path that cleans to nothing, gets no line, so a blank path can never approve work.
@@ -189,7 +184,7 @@ function approvedSpecLines(specPath: string | null): string[] {
 /**
  * The kickoff text a superpowers role starts from: who the role is, the standing approval when it has a spec, the start
  * command, the execution method, the rule against chat questions, one line per gate in SUPERPOWERS_GATES order, and the
- * done answer last. Lines are joined with newlines and the text has no trailing newline. The role and spec path come
+ * done answer last. Lines are joined with newlines and the text has no trailing newline. The title and spec path come
  * from outside the adapter, so they are cleaned before they can add a line.
  */
 export function superpowersKickoffText(ctx: KickoffContext): string {
@@ -197,7 +192,7 @@ export function superpowersKickoffText(ctx: KickoffContext): string {
   const start = approved.length > 0 ? SPEC_START_LINE : NO_SPEC_START_LINE
 
   return [
-    `You are the ${roleName(ctx.role)} role. This repo uses superpowers: follow its skills.`,
+    `You are the ${kickoffTitle(ctx)} role. This repo uses superpowers: follow its skills.`,
     ...approved,
     start,
     'Execution method: subagent-driven.',

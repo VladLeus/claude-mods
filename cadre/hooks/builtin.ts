@@ -1,7 +1,7 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
 import { ROLE_ID_PATTERN } from './command'
 import { freezeRows } from './freeze'
-import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is
@@ -75,7 +75,7 @@ function doneLine(folder: string): string {
  * come from outside the adapter, so they are cleaned before they can add a line.
  */
 export function builtinKickoffText(ctx: KickoffContext): string {
-  const title = cleanKickoffTextOr(ctx.role, MAX_ROLE_CHARS, UNNAMED_ROLE)
+  const title = kickoffTitle(ctx)
   const folder = roleFolder(ctx.roleId)
 
   return [

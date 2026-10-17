@@ -10,7 +10,7 @@ import type {
   SettingProposal,
 } from '../types'
 import { freezeRows } from './freeze'
-import { cleanKickoffTextOr, MAX_ROLE_CHARS, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
@@ -242,13 +242,13 @@ function approvedSpecLines(specPath: string | null): string[] {
 /**
  * The kickoff text a GSD role starts from: who the role is, the GSD commands that start, check and verify its work, one
  * line per human gate, and the done answer. Lines are joined with newlines and the text has no trailing newline. The
- * role and the spec path come from outside the adapter, so they are cleaned before they can add a line.
+ * title and the spec path come from outside the adapter, so they are cleaned before they can add a line.
  */
 export function gsdKickoffText(ctx: KickoffContext): string {
-  const role = cleanKickoffTextOr(ctx.role, MAX_ROLE_CHARS, UNNAMED_ROLE)
+  const title = kickoffTitle(ctx)
 
   return [
-    `You are the ${role} role. This repo uses GSD: drive the work with its own commands.`,
+    `You are the ${title} role. This repo uses GSD: drive the work with its own commands.`,
     ...approvedSpecLines(ctx.specPath),
     'Start: /gsd-autonomous --only N for the phase you own, or step by step ' +
       '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N.',
