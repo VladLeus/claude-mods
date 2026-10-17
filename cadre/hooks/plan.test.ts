@@ -16,12 +16,15 @@ import { compareText } from './facts'
 import { sha256Hex } from './hash'
 import {
   buildPlan,
+  chunkLines,
   classifyFile,
   gitignoreLines,
   hasThoughtsIgnore,
+  HUNK_FILES,
   IGNORE_BEGIN,
   IGNORE_END,
   ignoreLines,
+  isSafeOpPath,
   MANIFEST_PATH,
   mergeIgnoreBlock,
   renderPlan,
@@ -29,6 +32,7 @@ import {
   stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
+import { parseManifest } from './scan'
 import { BIDI_OVERRIDE } from './testkit'
 
 const VERSION = '0.2.0'
@@ -773,5 +777,602 @@ describe('ignore block', () => {
 
       expect(kindOf(plan, '.gitignore')).toBe('leave')
     })
+  })
+})
+
+/** The role definition as the plan wants it now. */
+const NEW_ROLE = file(ROLE, 'new\n')
+
+const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is planned beside it'
+const UNREADABLE_NOTE = 'could not read it (treated as changed): kept as is; the new version is planned beside it'
+const NEW_VERSION_NOTE = 'the new version, for diffing; Phase 3 offers take-new per file'
+const OCCUPIED_NOTE = 'a different file is already there: kept as is'
+const STALE_NOTE = 'no longer generated (kept; Phase 2 deletes nothing)'
+
+/** The reason a path is refused: PLAN-06 allows only `.cadre/` and the `.gitignore`. */
+function refusal(path: string): string {
+  return `refused to plan ${path}: not a .cadre/ path or .gitignore (PLAN-06)`
+}
+
+/** A role's three generated files, as the generator plans them: the definition, the role file and the launcher. */
+function roleFiles(id: string): DesiredFile[] {
+  return [
+    file(`.cadre/${id}/role.json`, `{"id":"${id}"}\n`),
+    file(`.cadre/${id}/ROLE.md`, `# ${id}\n`),
+    file(`.cadre/bin/${id}`, `#!/bin/sh\nexec ${id}\n`, 'exec'),
+  ]
+}
+
+/** The hunks of a plan, in plan order. */
+function hunkOps(plan: Plan): HunkOp[] {
+  const hunks: HunkOp[] = []
+  for (const op of plan.ops) {
+    if (op.kind === 'hunk') hunks.push(op)
+  }
+
+  return hunks
+}
+
+/** The disk after a plan was applied: every file with its content, and the manifest text. */
+function appliedDisk(
+  files: readonly DesiredFile[],
+  manifestText: string,
+  extra: Readonly<Record<string, PortRead>> = {},
+): ReadonlyMap<string, PortRead> {
+  const reads: Record<string, PortRead> = { ...extra, [MANIFEST_PATH]: text(manifestText) }
+  for (const planned of files) reads[planned.path] = text(planned.content)
+
+  return diskOf(reads)
+}
+
+describe('plan conflicts and limits', () => {
+  describe('conflicts', () => {
+    test('a file edited since cadre wrote it is a conflict, kept as is, with the new version beside it', async () => {
+      const old = file(ROLE, 'old\n')
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
+      const plan = await buildPlan(
+        input({
+          desired: [file(ROLE, 'new\n')],
+          disk: diskOf({ [ROLE]: text('edited by hand\n') }),
+          manifest,
+          manifestState: 'present',
+        }),
+      )
+
+      expect(fileOps(plan)).toEqual([
+        { kind: 'conflict', path: ROLE, mode: 'file', note: CONFLICT_NOTE },
+        { kind: 'create', path: `${ROLE}.cadre-new`, mode: 'file', note: NEW_VERSION_NOTE },
+        { kind: 'create', path: MANIFEST_PATH, mode: 'file', note: null },
+      ])
+      expect(plan.warnings).toEqual([])
+    })
+
+    test('an untracked file that differs is a conflict with the new version beside it', async () => {
+      const plan = await buildPlan(
+        input({ desired: [file(ROLE, 'new\n')], disk: diskOf({ [ROLE]: text('somebody wrote this\n') }) }),
+      )
+
+      expect(summary(plan)).toEqual([`conflict ${ROLE}`, `create ${ROLE}.cadre-new`, `create ${MANIFEST_PATH}`])
+    })
+
+    test('a file that cannot be read is a conflict with its own note, and so is one that is too large', async () => {
+      const unreadable = diskOf({ [ROLE]: { state: 'unknown' } })
+      const tooLarge = diskOf({ [ROLE]: { state: 'too-large', bytes: 300_000 } })
+      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk: unreadable }))
+      const large = await buildPlan(input({ desired: [NEW_ROLE], disk: tooLarge }))
+
+      expect(fileOps(unknown)[0]).toEqual({ kind: 'conflict', path: ROLE, mode: 'file', note: UNREADABLE_NOTE })
+      expect(fileOps(large)[0]).toEqual({ kind: 'conflict', path: ROLE, mode: 'file', note: UNREADABLE_NOTE })
+      expect(kindOf(unknown, `${ROLE}.cadre-new`)).toBe('create')
+      expect(kindOf(large, `${ROLE}.cadre-new`)).toBe('create')
+    })
+
+    test('a conflict keeps the old manifest entry in the new manifest', async () => {
+      const old = file(ROLE, 'old\n')
+      const other = file(INDEX, '# Roles\n')
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
+      const planned = manifestTextOf([...(await entriesOf([old])), ...(await entriesOf([other]))])
+      const disk = diskOf({ [ROLE]: text('edited\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(planned) })
+      const plan = await buildPlan(
+        input({ desired: [file(ROLE, 'new\n'), other], disk, manifest, manifestState: 'present' }),
+      )
+
+      expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
+    })
+
+    test('an untracked conflict has no manifest entry at all', async () => {
+      const other = file(INDEX, '# Roles\n')
+      const planned = manifestTextOf(await entriesOf([other]))
+      const disk = diskOf({ [ROLE]: text('edited\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(planned) })
+      const plan = await buildPlan(input({ desired: [file(ROLE, 'new\n'), other], disk }))
+
+      expect(kindOf(plan, ROLE)).toBe('conflict')
+      expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
+    })
+
+    test('the new version beside a launcher keeps the launcher mode', async () => {
+      const launcher = file('.cadre/bin/be', '#!/bin/sh\nnew\n', 'exec')
+      const plan = await buildPlan(input({ desired: [launcher], disk: diskOf({ [launcher.path]: text('mine\n') }) }))
+
+      expect(fileOps(plan).slice(0, 2)).toEqual([
+        { kind: 'conflict', path: '.cadre/bin/be', mode: 'exec', note: CONFLICT_NOTE },
+        { kind: 'create', path: '.cadre/bin/be.cadre-new', mode: 'exec', note: NEW_VERSION_NOTE },
+      ])
+    })
+
+    test('with the manifest state unknown a differing file is a conflict, even with a manifest passed', async () => {
+      const old = file(ROLE, 'old\n')
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
+      const disk = diskOf({ [ROLE]: text('old\n') })
+      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'unknown' }))
+      const absent = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'absent' }))
+      const equal = await buildPlan(
+        input({ desired: [NEW_ROLE], disk: diskOf({ [ROLE]: text('new\n') }), manifestState: 'unknown' }),
+      )
+
+      expect(kindOf(unknown, ROLE)).toBe('conflict')
+      expect(kindOf(absent, ROLE)).toBe('conflict')
+      expect(kindOf(equal, ROLE)).toBe('leave')
+    })
+
+    test('a .cadre-new already there is left when it holds the new text and kept as is when it does not', async () => {
+      const beside = `${ROLE}.cadre-new`
+      const withBeside = (read: PortRead): ReadonlyMap<string, PortRead> => {
+        return diskOf({ [ROLE]: text('mine\n'), [beside]: read })
+      }
+      const same = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside(text('new\n')) }))
+      const other = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside(text('older\n')) }))
+      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside({ state: 'unknown' }) }))
+
+      expect(fileOps(same)[1]).toEqual({ kind: 'leave', path: beside, mode: 'file', note: NEW_VERSION_NOTE })
+      expect(fileOps(other)[1]).toEqual({ kind: 'conflict', path: beside, mode: 'file', note: OCCUPIED_NOTE })
+      expect(fileOps(unknown)[1]).toEqual({ kind: 'conflict', path: beside, mode: 'file', note: OCCUPIED_NOTE })
+    })
+
+    test('a desired file named like the new version beside a conflict is planned once', async () => {
+      const desired = [file(ROLE, 'new\n'), file(`${ROLE}.cadre-new`, 'mine\n')]
+      const plan = await buildPlan(input({ desired, disk: diskOf({ [ROLE]: text('edited\n') }) }))
+
+      expect(summary(plan)).toEqual([`conflict ${ROLE}`, `create ${ROLE}.cadre-new`, `create ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([`refused to plan ${ROLE}.cadre-new twice: only the first is kept`])
+    })
+
+    test('no op creates or changes a file the user edited or that cadre cannot read', async () => {
+      const old = file(ROLE, 'old\n')
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
+      const reads: PortRead[] = [text('edited\n'), { state: 'unknown' }, { state: 'too-large', bytes: 300_000 }]
+      const writes: string[][] = []
+
+      for (const read of reads) {
+        const disk = diskOf({ [ROLE]: read })
+        const tracked = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'present' }))
+        const untracked = await buildPlan(input({ desired: [NEW_ROLE], disk }))
+        for (const plan of [tracked, untracked]) {
+          const targets = fileOps(plan).filter(planned => planned.kind === 'create' || planned.kind === 'change')
+          writes.push(targets.map(planned => planned.path))
+        }
+      }
+
+      expect(writes).toEqual(Array.from({ length: 6 }, () => [`${ROLE}.cadre-new`, MANIFEST_PATH]))
+    })
+  })
+
+  describe('stale and carried entries', () => {
+    test('a file in the old manifest that is no longer desired is left, with a note, and stays in it', async () => {
+      const keep = file('.cadre/a.md', 'a\n')
+      const gone = file('.cadre/b.md', 'b\n')
+      const launcher = file('.cadre/bin/c', '#!/bin/sh\n', 'exec')
+      const entries = await entriesOf([keep, gone, launcher])
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
+      const disk = diskOf({ [keep.path]: text('a\n'), [MANIFEST_PATH]: text(manifestTextOf(entries)) })
+      const plan = await buildPlan(input({ desired: [keep], disk, manifest, manifestState: 'present' }))
+
+      expect(fileOps(plan)).toEqual([
+        { kind: 'leave', path: '.cadre/a.md', mode: 'file', note: null },
+        { kind: 'leave', path: '.cadre/b.md', mode: 'file', note: STALE_NOTE },
+        { kind: 'leave', path: '.cadre/bin/c', mode: 'exec', note: STALE_NOTE },
+        { kind: 'leave', path: MANIFEST_PATH, mode: 'file', note: null },
+      ])
+    })
+
+    test('a stale entry is only known from a manifest that was read in full', async () => {
+      const keep = file('.cadre/a.md', 'a\n')
+      const entries = await entriesOf([keep, file('.cadre/b.md', 'b\n')])
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
+      const plan = await buildPlan(input({ desired: [keep], manifest, manifestState: 'unknown' }))
+
+      expect(summary(plan)).toEqual(['create .cadre/a.md', `create ${MANIFEST_PATH}`])
+    })
+
+    test('carried entries stay in the new manifest and get no op', async () => {
+      const mine = file('.cadre/be/role.json', 'be\n')
+      const others = [file('.cadre/pm/role.json', 'pm\n'), file('.cadre/bin/pm', '#!/bin/sh\n', 'exec')]
+      const carried = await entriesOf(others)
+      const planned = manifestTextOf([...(await entriesOf([mine])), ...carried])
+      const disk = diskOf({ [MANIFEST_PATH]: text(planned) })
+      const plan = await buildPlan(input({ desired: [mine], carried, disk }))
+
+      expect(summary(plan)).toEqual(['create .cadre/be/role.json', `leave ${MANIFEST_PATH}`])
+    })
+
+    test('a carried entry for a desired path is not repeated: the desired file wins', async () => {
+      const carried: ManifestEntry[] = [{ path: ROLE, sha256: 'a'.repeat(64), mode: 'file' }]
+      const planned = manifestTextOf(await entriesOf([NEW_ROLE]))
+      const disk = diskOf({ [MANIFEST_PATH]: text(planned) })
+      const plan = await buildPlan(input({ desired: [NEW_ROLE], carried, disk }))
+
+      expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
+    })
+
+    test('an entry for the manifest or the .gitignore, carried or stale, is not planned or kept', async () => {
+      const entries: ManifestEntry[] = [
+        { path: MANIFEST_PATH, sha256: 'a'.repeat(64), mode: 'file' },
+        { path: '.gitignore', sha256: 'b'.repeat(64), mode: 'file' },
+      ]
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
+      const disk = diskOf({ [MANIFEST_PATH]: text(manifestTextOf([])) })
+      const plan = await buildPlan(input({ carried: entries, disk, manifest, manifestState: 'present' }))
+
+      expect(summary(plan)).toEqual([`leave ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([])
+    })
+
+    test('a stale or carried path outside .cadre/ is refused with a warning and not kept', async () => {
+      const staleEntry: ManifestEntry = { path: 'CLAUDE.md', sha256: 'a'.repeat(64), mode: 'file' }
+      const runtimePath = '.cadre/be/.runtime/settings.json'
+      const carriedEntry: ManifestEntry = { path: runtimePath, sha256: 'b'.repeat(64), mode: 'file' }
+      const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: [staleEntry] }
+      const disk = diskOf({ [MANIFEST_PATH]: text(manifestTextOf([])) })
+      const plan = await buildPlan(input({ carried: [carriedEntry], disk, manifest, manifestState: 'present' }))
+
+      expect(summary(plan)).toEqual([`leave ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([refusal(runtimePath), refusal('CLAUDE.md')])
+    })
+  })
+
+  describe('path limits (PLAN-06)', () => {
+    const SAFE_PATHS = [
+      '.cadre/be/role.json',
+      '.cadre/bin/be',
+      '.cadre/INDEX.md',
+      '.cadre/manifest.json',
+      '.cadre/be/role.json.cadre-new',
+      '.gitignore',
+    ]
+    const UNSAFE_PATHS = [
+      'CLAUDE.md',
+      '.claude/settings.json',
+      '.planning/config.json',
+      '../x',
+      '/abs',
+      '.cadre/be/.runtime/settings.json',
+      '.cadre',
+      '',
+    ]
+
+    test('a safe relative path under .cadre/, or exactly .gitignore, is safe', () => {
+      expect(SAFE_PATHS.filter(path => !isSafeOpPath(path))).toEqual([])
+    })
+
+    test('the root CLAUDE.md, .claude/, .planning/, a parent path, an absolute path and .cadre itself are not', () => {
+      expect(UNSAFE_PATHS.filter(path => isSafeOpPath(path))).toEqual([])
+    })
+
+    test('nothing under a .runtime folder is safe, whatever the case of the folder name', () => {
+      expect(isSafeOpPath('.cadre/be/.runtime')).toBe(false)
+      expect(isSafeOpPath('.cadre/.runtime/x')).toBe(false)
+      expect(isSafeOpPath('.cadre/be/.Runtime/x')).toBe(false)
+      expect(isSafeOpPath('.cadre/be/.RUNTIME/mcp.json')).toBe(false)
+      expect(isSafeOpPath('.cadre/be/runtime/x')).toBe(true)
+    })
+
+    test('a dot segment, an empty segment, a space, a backslash and a hidden character are not safe', () => {
+      expect(isSafeOpPath('.cadre/./x')).toBe(false)
+      expect(isSafeOpPath('.cadre/../CLAUDE.md')).toBe(false)
+      expect(isSafeOpPath('.cadre//x')).toBe(false)
+      expect(isSafeOpPath('.cadre/')).toBe(false)
+      expect(isSafeOpPath('.cadre/a b')).toBe(false)
+      expect(isSafeOpPath('.cadre\\x')).toBe(false)
+      expect(isSafeOpPath(`.cadre/a${BIDI_OVERRIDE}b`)).toBe(false)
+      expect(isSafeOpPath('.gitignore/x')).toBe(false)
+      expect(isSafeOpPath('x/.cadre/y')).toBe(false)
+    })
+
+    test('a refused desired path is skipped with the warning, and the safe ones are still planned', async () => {
+      const runtimePath = '.cadre/be/.runtime/settings.json'
+      const desired = [file('CLAUDE.md', 'x'), file(ROLE, '{}\n'), file(runtimePath, 'x'), file('../x', 'x')]
+      const planned = manifestTextOf(await entriesOf([file(ROLE, '{}\n')]))
+      const plan = await buildPlan(input({ desired, disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
+
+      expect(summary(plan)).toEqual([`create ${ROLE}`, `leave ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([refusal('CLAUDE.md'), refusal(runtimePath), refusal('../x')])
+    })
+
+    test('the path in a warning is cleaned, so a hidden character or a line break cannot reach a line', async () => {
+      const plan = await buildPlan(input({ desired: [file(`a${BIDI_OVERRIDE}\nb`, 'x')] }))
+
+      expect(plan.warnings).toEqual([refusal('ab')])
+    })
+
+    test('a path asked for twice is planned once, the first wins, and the manifest records the first', async () => {
+      const first = file(ROLE, 'first\n')
+      const planned = manifestTextOf(await entriesOf([first]))
+      const plan = await buildPlan(
+        input({ desired: [first, file(ROLE, 'second\n')], disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }),
+      )
+
+      expect(summary(plan)).toEqual([`create ${ROLE}`, `leave ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([`refused to plan ${ROLE} twice: only the first is kept`])
+    })
+
+    test('the manifest and the .gitignore are planned by cadre itself, never as desired files', async () => {
+      const plan = await buildPlan(input({ desired: [file(MANIFEST_PATH, 'x'), file('.gitignore', 'x')] }))
+
+      expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
+      expect(plan.warnings).toEqual([
+        `refused to plan ${MANIFEST_PATH}: cadre plans it itself`,
+        'refused to plan .gitignore: cadre plans it itself',
+      ])
+    })
+
+    test('nothing is planned under the root CLAUDE.md, .claude/ or .planning/', async () => {
+      const hostile = [
+        file('CLAUDE.md', 'x'),
+        file('.claude/settings.json', 'x'),
+        file('.claude/hooks/x.sh', 'x', 'exec'),
+        file('.planning/config.json', 'x'),
+        file('.planning/phases/x.md', 'x'),
+      ]
+      const plan = await buildPlan(input({ desired: [...hostile, file(ROLE, '{}\n')] }))
+      const paths = fileOps(plan).map(planned => planned.path)
+
+      expect(paths.filter(path => /^(CLAUDE\.md|\.claude\/|\.planning\/)/.test(path))).toEqual([])
+      expect(paths).toEqual([ROLE, MANIFEST_PATH])
+    })
+  })
+
+  describe('hunks (PLAN-06)', () => {
+    const TEXT_MODE: HunkOp = {
+      ...HUNK,
+      key: 'workflow.text_mode',
+      before: 'not set (GSD default)',
+      after: 'false',
+      isRequired: false,
+      isAccepted: false,
+      isRunnable: false,
+      command: `${GSD_TOOLS} config-set workflow.text_mode false`,
+    }
+
+    test('the framework config files a hunk may target are the GSD config alone, in a frozen list', () => {
+      expect(HUNK_FILES).toEqual(['.planning/config.json'])
+      expect(Object.isFrozen(HUNK_FILES)).toBe(true)
+    })
+
+    test('hunks come after every file op, in the order they were given, as given', async () => {
+      const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], hunks: [TEXT_MODE, HUNK] }))
+
+      expect(plan.ops).toEqual([
+        { kind: 'create', path: ROLE, mode: 'file', note: null },
+        { kind: 'create', path: MANIFEST_PATH, mode: 'file', note: null },
+        TEXT_MODE,
+        HUNK,
+      ])
+      expect(plan.warnings).toEqual([])
+    })
+
+    test('a hunk for a file that is not a known framework config is skipped with the warning', async () => {
+      const claude: HunkOp = { ...HUNK, file: '.claude/settings.json' }
+      const outside: HunkOp = { ...HUNK, file: '../config.json' }
+      const plan = await buildPlan(input({ hunks: [claude, HUNK, outside] }))
+
+      expect(hunkOps(plan)).toEqual([HUNK])
+      expect(plan.warnings).toEqual([
+        'refused hunk for .claude/settings.json: not a known framework config (PLAN-06)',
+        'refused hunk for ../config.json: not a known framework config (PLAN-06)',
+      ])
+    })
+
+    test('the file in a hunk warning is cleaned', async () => {
+      const plan = await buildPlan(input({ hunks: [{ ...HUNK, file: `x${BIDI_OVERRIDE}\ny` }] }))
+
+      expect(plan.warnings).toEqual(['refused hunk for xy: not a known framework config (PLAN-06)'])
+    })
+
+    test('a plan with hunks prints them after the files and counts the accepted ones', async () => {
+      const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], hunks: [HUNK, TEXT_MODE] }))
+      const lines = renderPlan(plan)
+
+      expect(lines.slice(-5)).toEqual([
+        '  hunk      .planning/config.json  mode: interactive -> yolo  (required, accepted)',
+        `            run: ${GSD_TOOLS} config-set mode yolo`,
+        '  hunk      .planning/config.json  workflow.text_mode: not set (GSD default) -> false  (optional, declined)',
+        `            run: ${GSD_TOOLS} config-set workflow.text_mode false`,
+        'Summary: 2 create, 0 change, 0 leave, 0 conflict, 2 hunks (1 accepted)',
+      ])
+    })
+  })
+
+  describe('chunkLines', () => {
+    test('groups lines so that each chunk, joined with a newline, fits in the cap', () => {
+      expect(chunkLines(['aaa', 'bbb', 'ccc'], 7)).toEqual(['aaa\nbbb', 'ccc'])
+      expect(chunkLines(['aaa', 'bbb', 'ccc'], 11)).toEqual(['aaa\nbbb\nccc'])
+      expect(chunkLines(['aaa', 'bbb', 'ccc'], 6)).toEqual(['aaa', 'bbb', 'ccc'])
+    })
+
+    test('no lines give no chunks, and an empty line is kept as a line', () => {
+      expect(chunkLines([], 2000)).toEqual([])
+      expect(chunkLines(['a', '', 'b'], 100)).toEqual(['a\n\nb'])
+      expect(chunkLines([''], 100)).toEqual([''])
+    })
+
+    test('a line longer than the cap stays whole in a chunk of its own', () => {
+      const long = 'x'.repeat(10)
+
+      expect(chunkLines(['a', long, 'b'], 5)).toEqual(['a', long, 'b'])
+    })
+
+    test('counts UTF-16 units, as the host does, so an astral character counts as two', () => {
+      const emoji = String.fromCodePoint(0x1f600)
+
+      expect(chunkLines([emoji, emoji], 5)).toEqual([`${emoji}\n${emoji}`])
+      expect(chunkLines([emoji, emoji], 4)).toEqual([emoji, emoji])
+    })
+  })
+})
+
+describe('plan properties', () => {
+  const HASH = 'f'.repeat(64)
+  const HOSTILE_PATHS = [
+    'CLAUDE.md',
+    '.claude/settings.json',
+    '.claude/hooks/x.sh',
+    '.planning/config.json',
+    '.planning/phases/x.md',
+    '../x',
+    '.cadre/../x',
+    '.cadre/../../x',
+    '.cadre/be/../../x',
+    '/abs',
+    '/etc/passwd',
+    '.cadre',
+    '.cadre/',
+    '.gitignore/x',
+    '.cadre/be/.runtime/settings.json',
+    '.cadre/.runtime/x',
+    '.cadre/be/.Runtime/x',
+    '.cadre/be/.RUNTIME/mcp.json',
+    '',
+    '.',
+    '..',
+    './x',
+    '.cadre//x',
+    '.cadre/a b',
+    '.cadre\\x',
+    '.cadre/a\nb',
+    `.cadre/a${BIDI_OVERRIDE}b`,
+    'x/.cadre/y',
+    '.CADRE/x',
+    ' .cadre/x',
+  ]
+
+  test('PLAN-06: whatever paths are asked for, every file op is safe and every hunk is for a known file', async () => {
+    const reads: PortRead[] = [{ state: 'absent' }, text('same'), text('other'), { state: 'unknown' }]
+    const violations: string[] = []
+
+    for (const path of HOSTILE_PATHS) {
+      for (const read of reads) {
+        const entry: ManifestEntry = { path, sha256: HASH, mode: 'file' }
+        const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: [entry] }
+        const plan = await buildPlan(
+          input({
+            desired: [file(path, 'same'), file(ROLE, '{}\n')],
+            disk: diskOf({ [path]: read }),
+            manifest,
+            manifestState: 'present',
+            carried: [entry],
+            hunks: [{ ...HUNK, file: path }, HUNK],
+          }),
+        )
+
+        for (const planned of plan.ops) {
+          if (planned.kind === 'hunk' && !HUNK_FILES.includes(planned.file)) violations.push(`hunk ${planned.file}`)
+          if (planned.kind !== 'hunk' && !isSafeOpPath(planned.path)) violations.push(`${planned.kind} ${planned.path}`)
+        }
+        expect(kindOf(plan, ROLE)).toBe('create')
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
+  test('PLAN-04: planning again from a disk that holds the last plan gives only leaves in every policy', async () => {
+    const files = [...roleFiles('pm'), ...roleFiles('be'), file(INDEX, '# Roles\n')]
+    const policies: GitPolicy[] = ['definitions', 'all', 'ignore']
+
+    for (const policy of policies) {
+      const lines = gitignoreLines(policy, 'node_modules\n')
+      const merged = mergeIgnoreBlock('node_modules\n', lines) ?? ''
+      const first = await buildPlan(input({ desired: files, gitignore: { disk: text('node_modules\n'), lines } }))
+      const manifestText = manifestTextOf(await entriesOf(files))
+      const disk = appliedDisk(files, manifestText, { '.gitignore': text(merged) })
+      const again = await buildPlan(
+        input({
+          desired: files,
+          disk,
+          manifest: parseManifest(manifestText),
+          manifestState: 'present',
+          gitignore: { disk: text(merged), lines: gitignoreLines(policy, merged) },
+        }),
+      )
+
+      expect(summary(first).filter(line => !line.startsWith('create ') && line !== 'change .gitignore')).toEqual([])
+      expect(again.warnings).toEqual([])
+      expect(fileOps(again).filter(planned => planned.kind !== 'leave')).toEqual([])
+      expect(fileOps(again)).toHaveLength(files.length + 2)
+    }
+  })
+
+  test('PLAN-01: building twice from the same input gives byte-identical text, in any file order', async () => {
+    const files = [...roleFiles('tl'), ...roleFiles('qa'), file(INDEX, '# Roles\n')]
+    const lines = gitignoreLines('all', null)
+    const base = input({ desired: files, gitignore: { disk: { state: 'absent' }, lines }, hunks: [HUNK] })
+    const first = renderPlan(await buildPlan(base)).join('\n')
+    const second = renderPlan(await buildPlan(base)).join('\n')
+    const reversed = renderPlan(await buildPlan({ ...base, desired: [...files].reverse() })).join('\n')
+
+    expect(second).toBe(first)
+    expect(reversed).toBe(first)
+  })
+
+  test('the manifest it plans reads back through parseManifest as the planned entries', async () => {
+    const files = [...roleFiles('pm'), file(INDEX, '# Roles\n')]
+    const entries = await entriesOf(files)
+    const sorted = [...entries].sort((a, b) => compareText(a.path, b.path))
+    const parsed = parseManifest(manifestTextOf(entries))
+
+    expect(parsed).toEqual({ schema: 1, cadreVersion: VERSION, files: sorted })
+  })
+
+  test('D-68: a plan for one role with the others carried has no op for another role', async () => {
+    const pm = roleFiles('pm')
+    const be = roleFiles('be')
+    const fe = roleFiles('fe')
+    const oldIndex = file(INDEX, '# Roles v1\n')
+    const all = [...pm, ...be, ...fe, oldIndex]
+    const oldEntries = await entriesOf(all)
+    const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: oldEntries }
+    const carried = await entriesOf([...pm, ...fe])
+    const newIndex = file(INDEX, '# Roles v2\n')
+    const newBe = [file('.cadre/be/role.json', '{"id":"be","v":2}\n'), ...be.slice(1)]
+    const plan = await buildPlan(
+      input({
+        desired: [...newBe, newIndex],
+        carried,
+        disk: appliedDisk(all, manifestTextOf(oldEntries)),
+        manifest,
+        manifestState: 'present',
+      }),
+    )
+    const others = ['pm', 'fe'].flatMap(id => [`.cadre/${id}/`, `.cadre/bin/${id}`])
+    const foreign = fileOps(plan).filter(planned => others.some(prefix => planned.path.startsWith(prefix)))
+
+    expect(foreign).toEqual([])
+    expect(summary(plan)).toEqual([
+      'change .cadre/INDEX.md',
+      'leave .cadre/be/ROLE.md',
+      'change .cadre/be/role.json',
+      'leave .cadre/bin/be',
+      'change .cadre/manifest.json',
+    ])
+  })
+
+  test('P9: the lines of a big plan fit in chunks of 2000 characters that join back to the same text', async () => {
+    const files = Array.from({ length: 120 }, (_, index) => file(`.cadre/${'r'.repeat(150)}${index}/role.json`, '{}\n'))
+    const lines = renderPlan(await buildPlan(input({ desired: files })))
+    const chunks = chunkLines(lines, 2000)
+
+    expect(chunks.length > 1).toBe(true)
+    expect(chunks.filter(chunk => chunk.length > 2000)).toEqual([])
+    expect(chunks.join('\n')).toBe(lines.join('\n'))
   })
 })
