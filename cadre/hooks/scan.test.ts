@@ -725,6 +725,14 @@ describe('scanRepo', () => {
     expect(scan.hasSource).toBe(false)
   })
 
+  test('a dotfile or a name with no dot is not a source file, whatever it is called', async () => {
+    const names = ['go', 'ts', 'py', '.ts', '.py', '.go']
+    const scan = await scanOf({ dirs: { '/repo': names.map(name => entry(name)) } })
+
+    expect(scan.languages).toEqual([])
+    expect(scan.hasSource).toBe(false)
+  })
+
   test('the scan asks nothing, logs nothing and sends nothing to the model', async () => {
     const run = memIo(
       memWorld({ dirs: { '/repo': [entry('src', 'dir')], '/repo/src': [entry('a.ts')] } }),
