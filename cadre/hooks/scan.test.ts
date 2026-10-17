@@ -7,9 +7,15 @@ import {
   autopilotReply,
   autopilotRunState,
   autopilotStatusPath,
+  findGitTop,
+  gitRootRefusal,
+  isSafeRelativePath,
   MARKER_ROWS,
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
+  notGitRepoReply,
+  parseCadreState,
+  parseManifest,
   readRepoFile,
   scanRepo,
   SKIP_DIRS,
@@ -986,5 +992,534 @@ describe('readRepoFile', () => {
     const run = memIo(memWorld({ files: { '/repo/a.json': 'abcdefghijk' } }), [])
 
     expect(await readRepoFile(run.io, '/repo', 'a.json', 10)).toEqual({ state: 'too-large', bytes: 11 })
+  })
+})
+
+const SHA_A = 'a'.repeat(64)
+const SHA_B = '0123456789abcdef'.repeat(4)
+const BE_FILE = { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' }
+const BE_LAUNCHER = { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' }
+const BACKSLASH = String.fromCharCode(92)
+const BIDI = String.fromCharCode(0x202e)
+const ELLIPSIS = String.fromCharCode(0x2026)
+
+/** A manifest as JSON text with these file entries; `over` replaces or adds top-level fields. */
+function manifestText(files: readonly unknown[], over: Readonly<Record<string, unknown>> = {}): string {
+  return JSON.stringify({ schema: 1, cadreVersion: '0.2.0', files, ...over })
+}
+
+/** A `.cadre/cadre.json` as JSON text; `over` replaces or adds fields. */
+function stateText(over: Readonly<Record<string, unknown>> = {}): string {
+  const state = { schema: 1, cadreVersion: '0.2.0', framework: 'gsd', gitPolicy: 'definitions', roles: ['be'] }
+
+  return JSON.stringify({ ...state, ...over })
+}
+
+describe('isSafeRelativePath', () => {
+  test('a path of plain segments joined by single slashes is safe', () => {
+    for (const path of ['.cadre/be/role.json', 'a', 'a/b', '.gitignore', 'INDEX.md', 'a-b_c.d@e/f']) {
+      expect(isSafeRelativePath(path)).toBe(true)
+    }
+  })
+
+  test('an empty path, an absolute path, a dot segment and an empty segment are not safe', () => {
+    for (const path of ['', '/x', 'a/../b', '..', '.', './a', 'a/.', 'a//b', 'a/', '/']) {
+      expect(isSafeRelativePath(path)).toBe(false)
+    }
+  })
+
+  test('a backslash, a space, a control character, a non-ASCII letter or a shell character is not safe', () => {
+    const unsafe = [
+      `a${BACKSLASH}b`,
+      'a/ b',
+      ' a',
+      'a b',
+      'a\nb',
+      `a${String.fromCharCode(0)}b`,
+      `a${BIDI}b`,
+      `caf${String.fromCharCode(0xe9)}/x`,
+      '~/x',
+      '$HOME/x',
+      'a/*',
+      'a:b',
+    ]
+    for (const path of unsafe) {
+      expect(isSafeRelativePath(path)).toBe(false)
+    }
+  })
+})
+
+describe('parseManifest', () => {
+  test('a valid manifest comes back with its files in order', () => {
+    expect(parseManifest(manifestText([BE_FILE, BE_LAUNCHER]))).toEqual({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      files: [
+        { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' },
+        { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' },
+      ],
+    })
+  })
+
+  test('a manifest with no files, and a version of unknown, are valid', () => {
+    expect(parseManifest(manifestText([]))).toEqual({ schema: 1, cadreVersion: '0.2.0', files: [] })
+    expect(parseManifest(manifestText([], { cadreVersion: 'unknown' }))).toEqual({
+      schema: 1,
+      cadreVersion: 'unknown',
+      files: [],
+    })
+  })
+
+  test('fields the contract does not name are dropped', () => {
+    const parsed = parseManifest(manifestText([{ ...BE_FILE, extra: 1 }], { note: 'x' }))
+
+    expect(parsed).toEqual({ schema: 1, cadreVersion: '0.2.0', files: [BE_FILE] })
+  })
+
+  test('text that is not a JSON object is null', () => {
+    for (const text of ['', '{', 'null', '[]', '"x"', '1', 'not json']) {
+      expect(parseManifest(text)).toBeNull()
+    }
+  })
+
+  test('a schema other than the number 1, or no schema, is null', () => {
+    expect(parseManifest(manifestText([], { schema: 2 }))).toBeNull()
+    expect(parseManifest(manifestText([], { schema: '1' }))).toBeNull()
+    expect(parseManifest(JSON.stringify({ cadreVersion: '0.2.0', files: [] }))).toBeNull()
+  })
+
+  test('a cadre version that is not x.y.z or unknown is null', () => {
+    for (const version of ['0.2', 'v0.2.0', '0.2.0.1', '', ' 0.2.0', 'latest', 1, null]) {
+      expect(parseManifest(manifestText([], { cadreVersion: version }))).toBeNull()
+    }
+    expect(parseManifest(JSON.stringify({ schema: 1, files: [] }))).toBeNull()
+  })
+
+  test('files that are missing or not a list are null', () => {
+    expect(parseManifest(JSON.stringify({ schema: 1, cadreVersion: '0.2.0' }))).toBeNull()
+    expect(parseManifest(manifestText([], { files: 'x' }))).toBeNull()
+    expect(parseManifest(manifestText([], { files: { a: 1 } }))).toBeNull()
+  })
+
+  test('an entry that is not an object is null', () => {
+    for (const item of ['x', null, 5, [], [BE_FILE]]) {
+      expect(parseManifest(manifestText([item]))).toBeNull()
+    }
+  })
+
+  test('an entry with an unsafe path is null', () => {
+    for (const path of ['', '/x', '../x', 'a/../b', './a', 'a//b', 'a/', 'a b', `a${BACKSLASH}b`, 5, null]) {
+      expect(parseManifest(manifestText([{ ...BE_FILE, path }]))).toBeNull()
+    }
+  })
+
+  test('an entry whose sha256 is not 64 lowercase hex characters is null', () => {
+    const bad = ['g'.repeat(64), 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), '', ` ${'a'.repeat(63)}`, 1, null]
+    for (const sha256 of bad) {
+      expect(parseManifest(manifestText([{ ...BE_FILE, sha256 }]))).toBeNull()
+    }
+  })
+
+  test('an entry whose mode is not file or exec is null', () => {
+    for (const mode of ['x', 'File', 'executable', '', 0, null]) {
+      expect(parseManifest(manifestText([{ ...BE_FILE, mode }]))).toBeNull()
+    }
+    expect(parseManifest(manifestText([{ path: BE_FILE.path, sha256: SHA_A }]))).toBeNull()
+  })
+
+  test('two entries with the same path are null, even with different hashes', () => {
+    expect(parseManifest(manifestText([BE_FILE, BE_FILE]))).toBeNull()
+    expect(parseManifest(manifestText([BE_FILE, { ...BE_FILE, sha256: SHA_B, mode: 'exec' }]))).toBeNull()
+  })
+})
+
+describe('parseCadreState', () => {
+  test('a valid state comes back as it is', () => {
+    expect(parseCadreState(stateText({ roles: ['be', 'security'] }))).toEqual({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'gsd',
+      gitPolicy: 'definitions',
+      roles: ['be', 'security'],
+    })
+  })
+
+  test('every framework, a null framework, every git policy and no roles are valid', () => {
+    for (const framework of ['gsd', 'superpowers', 'none', null]) {
+      expect(parseCadreState(stateText({ framework }))?.framework).toBe(framework)
+    }
+    for (const gitPolicy of ['all', 'definitions', 'ignore']) {
+      expect(parseCadreState(stateText({ gitPolicy }))?.gitPolicy).toBe(gitPolicy)
+    }
+    expect(parseCadreState(stateText({ roles: [] }))?.roles).toEqual([])
+    expect(parseCadreState(stateText({ cadreVersion: 'unknown' }))?.cadreVersion).toBe('unknown')
+  })
+
+  test('fields the contract does not name are dropped', () => {
+    expect(parseCadreState(stateText({ extra: 1 }))).toEqual({
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'gsd',
+      gitPolicy: 'definitions',
+      roles: ['be'],
+    })
+  })
+
+  test('text that is not a JSON object is null', () => {
+    for (const text of ['', '{', 'null', '[]', '"x"', 'not json']) {
+      expect(parseCadreState(text)).toBeNull()
+    }
+  })
+
+  test('a schema other than the number 1, or a bad cadre version, is null', () => {
+    expect(parseCadreState(stateText({ schema: 2 }))).toBeNull()
+    expect(parseCadreState(stateText({ schema: '1' }))).toBeNull()
+    expect(parseCadreState(stateText({ cadreVersion: '0.2' }))).toBeNull()
+    expect(parseCadreState(stateText({ cadreVersion: 2 }))).toBeNull()
+  })
+
+  test('a framework outside gsd, superpowers, none and null is null, and so is a missing one', () => {
+    for (const framework of ['bmad', 'GSD', '', 1, [], {}]) {
+      expect(parseCadreState(stateText({ framework }))).toBeNull()
+    }
+    const withoutFramework = { schema: 1, cadreVersion: '0.2.0', gitPolicy: 'definitions', roles: ['be'] }
+    expect(parseCadreState(JSON.stringify(withoutFramework))).toBeNull()
+  })
+
+  test('a git policy outside all, definitions and ignore is null', () => {
+    for (const gitPolicy of ['commit', 'ALL', '', null, 1]) {
+      expect(parseCadreState(stateText({ gitPolicy }))).toBeNull()
+    }
+  })
+
+  test('roles that are not a list of role ids are null', () => {
+    expect(parseCadreState(stateText({ roles: 'be' }))).toBeNull()
+    expect(parseCadreState(stateText({ roles: { be: true } }))).toBeNull()
+    expect(parseCadreState(stateText({ roles: null }))).toBeNull()
+  })
+
+  test('a role id that fails the role id pattern is null', () => {
+    const bad = ['Be', '1a', '-a', 'a_b', '', 'a'.repeat(25), '../x', 'a/b', 'a b', 5, null]
+    for (const id of bad) {
+      expect(parseCadreState(stateText({ roles: ['be', id] }))).toBeNull()
+    }
+    expect(parseCadreState(stateText({ roles: ['a'.repeat(24)] }))?.roles).toEqual(['a'.repeat(24)])
+  })
+
+  test('a role id listed twice is null', () => {
+    expect(parseCadreState(stateText({ roles: ['be', 'fe', 'be'] }))).toBeNull()
+  })
+})
+
+describe('existing .cadre', () => {
+  const MANIFEST = manifestText([BE_FILE])
+  const STATE = stateText()
+  const PARSED_MANIFEST = { schema: 1, cadreVersion: '0.2.0', files: [BE_FILE] }
+  const PARSED_STATE = { schema: 1, cadreVersion: '0.2.0', framework: 'gsd', gitPolicy: 'definitions', roles: ['be'] }
+
+  /** The scan of a repo whose `.cadre` holds these files; a name in `files` is listed. */
+  function cadreScan(files: Readonly<Record<string, string>>, over: Partial<MemWorld> = {}): Promise<RepoScan> {
+    const inCadre: Record<string, string> = {}
+    for (const [name, text] of Object.entries(files)) inCadre[`/repo/.cadre/${name}`] = text
+
+    return scanOf({
+      dirs: { '/repo': [entry('.cadre', 'dir')], '/repo/.cadre': Object.keys(files).map(name => entry(name)) },
+      files: inCadre,
+      ...over,
+    })
+  }
+
+  test('no .cadre folder gives an absent state and reads no .cadre file', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo': [entry('a.ts')] } }), [])
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(scan.cadre).toEqual({
+      dir: 'absent',
+      manifest: null,
+      manifestState: 'absent',
+      state: null,
+      stateState: 'absent',
+    })
+    expect(run.reads).toEqual([])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a valid manifest.json is present with its parsed manifest', async () => {
+    const scan = await cadreScan({ 'manifest.json': MANIFEST })
+
+    expect(scan.cadre).toEqual({
+      dir: 'present',
+      manifest: PARSED_MANIFEST,
+      manifestState: 'present',
+      state: null,
+      stateState: 'absent',
+    })
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a valid cadre.json is present with its parsed state', async () => {
+    const scan = await cadreScan({ 'cadre.json': STATE })
+
+    expect(scan.cadre).toEqual({
+      dir: 'present',
+      manifest: null,
+      manifestState: 'absent',
+      state: PARSED_STATE,
+      stateState: 'present',
+    })
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('both files are read when both are there', async () => {
+    const scan = await cadreScan({ 'manifest.json': MANIFEST, 'cadre.json': STATE })
+
+    expect(scan.cadre.manifestState).toBe('present')
+    expect(scan.cadre.stateState).toBe('present')
+    expect(scan.cadre.manifest).toEqual(PARSED_MANIFEST)
+    expect(scan.cadre.state).toEqual(PARSED_STATE)
+  })
+
+  test('a .cadre folder with neither file is present with both absent', async () => {
+    const scan = await cadreScan({})
+
+    expect(scan.cadre).toEqual({
+      dir: 'present',
+      manifest: null,
+      manifestState: 'absent',
+      state: null,
+      stateState: 'absent',
+    })
+  })
+
+  test('a manifest.json that cannot be read is unknown with a could not read warning', async () => {
+    const scan = await cadreScan({ 'manifest.json': MANIFEST }, { unknownPaths: ['/repo/.cadre/manifest.json'] })
+
+    expect(scan.cadre.manifestState).toBe('unknown')
+    expect(scan.cadre.manifest).toBeNull()
+    expect(scan.warnings).toEqual(['could not read .cadre/manifest.json (treated as unknown)'])
+  })
+
+  test('a manifest.json over the read cap is unknown with a could not read warning', async () => {
+    const scan = await cadreScan({ 'manifest.json': 'x'.repeat(MAX_READ_BYTES + 1) })
+
+    expect(scan.cadre.manifestState).toBe('unknown')
+    expect(scan.warnings).toEqual(['could not read .cadre/manifest.json (treated as unknown)'])
+  })
+
+  test('a manifest.json that is not a valid manifest is unknown with an ignored warning', async () => {
+    for (const text of ['not json', manifestText([], { schema: 2 }), manifestText([BE_FILE, BE_FILE])]) {
+      const scan = await cadreScan({ 'manifest.json': text })
+
+      expect(scan.cadre.manifestState).toBe('unknown')
+      expect(scan.cadre.manifest).toBeNull()
+      expect(scan.warnings).toEqual([
+        'ignored .cadre/manifest.json: not a valid cadre manifest (treated as unknown)',
+      ])
+    }
+  })
+
+  test('a cadre.json that cannot be read is unknown with a could not read warning', async () => {
+    const scan = await cadreScan({ 'cadre.json': STATE }, { unknownPaths: ['/repo/.cadre/cadre.json'] })
+
+    expect(scan.cadre.stateState).toBe('unknown')
+    expect(scan.cadre.state).toBeNull()
+    expect(scan.warnings).toEqual(['could not read .cadre/cadre.json (treated as unknown)'])
+  })
+
+  test('a cadre.json over the read cap is unknown with a could not read warning', async () => {
+    const scan = await cadreScan({ 'cadre.json': 'x'.repeat(MAX_READ_BYTES + 1) })
+
+    expect(scan.cadre.stateState).toBe('unknown')
+    expect(scan.warnings).toEqual(['could not read .cadre/cadre.json (treated as unknown)'])
+  })
+
+  test('a cadre.json that is not a valid state is unknown with an ignored warning', async () => {
+    for (const text of ['not json', stateText({ framework: 'bmad' }), stateText({ roles: ['Be'] })]) {
+      const scan = await cadreScan({ 'cadre.json': text })
+
+      expect(scan.cadre.stateState).toBe('unknown')
+      expect(scan.cadre.state).toBeNull()
+      expect(scan.warnings).toEqual(['ignored .cadre/cadre.json: not a valid cadre state (treated as unknown)'])
+    }
+  })
+
+  test('one bad file does not hide the other', async () => {
+    const scan = await cadreScan({ 'manifest.json': 'not json', 'cadre.json': STATE })
+
+    expect(scan.cadre.manifestState).toBe('unknown')
+    expect(scan.cadre.stateState).toBe('present')
+    expect(scan.cadre.state).toEqual(PARSED_STATE)
+  })
+
+  test('a manifest.json that links out of the repo is never read and is unknown', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: { '/repo': [entry('.cadre', 'dir')], '/repo/.cadre': [link('manifest.json')] },
+        files: { '/repo/.cadre/manifest.json': MANIFEST },
+        realPaths: { '/repo/.cadre/manifest.json': '/elsewhere/manifest.json' },
+      }),
+      [],
+    )
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(run.reads).not.toContain('/repo/.cadre/manifest.json')
+    expect(scan.cadre.manifestState).toBe('unknown')
+    expect(scan.warnings).toEqual(['could not read .cadre/manifest.json (treated as unknown)'])
+  })
+
+  test('a .cadre that exists but cannot be listed is unknown with a warning', async () => {
+    const scan = await scanOf({ dirs: { '/repo': [entry('.cadre')] }, files: { '/repo/.cadre': 'not a folder' } })
+
+    expect(scan.cadre.dir).toBe('unknown')
+    expect(scan.warnings).toEqual(['could not list .cadre (treated as unknown)'])
+  })
+
+  test('only .cadre itself is listed, and what is inside it adds no finding', async () => {
+    const run = spiedIo(
+      memWorld({
+        dirs: {
+          '/repo': [entry('.cadre', 'dir')],
+          '/repo/.cadre': [entry('be', 'dir')],
+          '/repo/.cadre/be': [entry('role.test.ts')],
+        },
+      }),
+    )
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(run.listed).toEqual(['/repo', '/repo/.cadre'])
+    expect(scan.findings).toEqual([])
+  })
+
+  test('the .cadre warnings come after the walk and package.json warnings', async () => {
+    const scan = await scanOf({
+      dirs: {
+        '/repo': [entry('.cadre', 'dir'), entry('gone', 'dir'), entry('package.json')],
+        '/repo/.cadre': [entry('manifest.json')],
+      },
+      files: { '/repo/package.json': '{', '/repo/.cadre/manifest.json': 'not json' },
+    })
+
+    expect(scan.warnings).toEqual([
+      'could not list gone (treated as unknown)',
+      'could not parse package.json as JSON (treated as unknown)',
+      'ignored .cadre/manifest.json: not a valid cadre manifest (treated as unknown)',
+    ])
+  })
+})
+
+describe('git top level', () => {
+  /** A port over the world that also records every path it is asked to stat. */
+  function statSpy(world: MemWorld): { readonly io: InitIo; readonly statted: string[] } {
+    const run = memIo(world, [])
+    const statted: string[] = []
+    const io: InitIo = {
+      ...run.io,
+      stat: async path => {
+        statted.push(path)
+
+        return run.io.stat(path)
+      },
+    }
+
+    return { io, statted }
+  }
+
+  test('a .git folder above the root gives that folder as the top level', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
+
+    expect(await findGitTop(run.io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
+  })
+
+  test('a .git file, as a linked worktree has, counts too', async () => {
+    const run = memIo(memWorld({ files: { '/repo/.git': 'gitdir: /elsewhere/.git/worktrees/repo' } }), [])
+
+    expect(await findGitTop(run.io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
+  })
+
+  test('the root itself may be the top level', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
+
+    expect(await findGitTop(run.io, '/repo')).toEqual({ state: 'found', top: '/repo' })
+    expect(await findGitTop(run.io, '/repo/')).toEqual({ state: 'found', top: '/repo' })
+  })
+
+  test('the nearest .git wins, so a repo inside a repo has its own top level', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo/.git': [], '/repo/sub/.git': [] } }), [])
+
+    expect(await findGitTop(run.io, '/repo/sub/deep')).toEqual({ state: 'found', top: '/repo/sub' })
+  })
+
+  test('a .git at the file system root is found as /', async () => {
+    const run = memIo(memWorld({ dirs: { '/.git': [] } }), [])
+
+    expect(await findGitTop(run.io, '/repo')).toEqual({ state: 'found', top: '/' })
+  })
+
+  test('with no .git on the way up the answer is none, after trying each folder up to /', async () => {
+    const spy = statSpy(memWorld({}))
+
+    expect(await findGitTop(spy.io, '/repo/sub')).toEqual({ state: 'none' })
+    expect(spy.statted).toEqual(['/repo/sub/.git', '/repo/.git', '/.git'])
+  })
+
+  test('the walk uses stat only, never a read, a listing or a prompt', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
+    await findGitTop(run.io, '/repo/sub')
+
+    expect(run.reads).toEqual([])
+    expect(run.asked).toEqual([])
+  })
+
+  test('a .git that cannot be stat is passed over and the walk goes on', async () => {
+    const world = memWorld({ dirs: { '/repo/.git': [] }, unknownPaths: ['/repo/sub/.git'] })
+
+    expect(await findGitTop(memIo(world, []).io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
+    expect(await findGitTop(memIo(memWorld({ unknownPaths: ['/repo/.git'] }), []).io, '/repo')).toEqual({
+      state: 'none',
+    })
+  })
+
+  test('a .git that is neither a file nor a folder does not count', async () => {
+    const run = memIo(memWorld({}), [])
+    const io: InitIo = { ...run.io, stat: async () => ({ kind: 'other', size: 0, isLink: true }) }
+
+    expect(await findGitTop(io, '/repo')).toEqual({ state: 'none' })
+  })
+
+  test('a root that is not an absolute path has no top level and is not walked', async () => {
+    const spy = statSpy(memWorld({ dirs: { '/repo/.git': [] } }))
+
+    expect(await findGitTop(spy.io, 'repo/sub')).toEqual({ state: 'none' })
+    expect(await findGitTop(spy.io, '')).toEqual({ state: 'none' })
+    expect(spy.statted).toEqual([])
+  })
+
+  test('a root that is the top level has no refusal, with or without a trailing slash', () => {
+    expect(gitRootRefusal('/repo', '/repo', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo/', '/repo', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo', '/repo/', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo//', '/repo/', 'regen')).toBeNull()
+  })
+
+  test('a root below the top level is refused with the top level named', () => {
+    expect(gitRootRefusal('/repo/sub', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
+    expect(gitRootRefusal('/repo/sub', '/repo', 'regen')).toBe('run /cadre regen from the repo root: /repo')
+    expect(gitRootRefusal('/repo-other', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
+  })
+
+  test('the top level is shown cleaned and capped at 240 code points', () => {
+    const hidden = gitRootRefusal('/x/sub', `/re${BIDI}po`, 'init')
+    const long = gitRootRefusal('/x/sub', `/${'a'.repeat(300)}`, 'init')
+    const prefix = 'run /cadre init from the repo root: '
+
+    expect(hidden).toBe(`${prefix}/repo`)
+    expect(long?.startsWith(prefix)).toBe(true)
+    expect(Array.from(long?.slice(prefix.length) ?? '')).toHaveLength(240)
+    expect(long?.endsWith(ELLIPSIS)).toBe(true)
+  })
+
+  test('no git repo above the root is refused with the locked wording', () => {
+    expect(notGitRepoReply('init')).toBe('cadre init needs a git repo: run git init first')
+    expect(notGitRepoReply('regen')).toBe('cadre regen needs a git repo: run git init first')
   })
 })
