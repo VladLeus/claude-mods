@@ -298,6 +298,11 @@ function refusalWarning(path: string): string {
   return `refused to plan ${reportText(path)}: not a .cadre/ path or .gitignore (PLAN-06)`
 }
 
+/** The warning for a path that would be planned a second time: the first one is kept, so one path has one op. */
+function twiceWarning(path: string): string {
+  return `refused to plan ${reportText(path)} twice: only the first is kept`
+}
+
 /**
  * The desired files the plan takes, and one warning for each it refuses: an unsafe path, a path cadre plans itself,
  * and a path named a second time.
@@ -319,7 +324,7 @@ function acceptFiles(desired: readonly DesiredFile[]): {
       continue
     }
     if (seen.has(file.path)) {
-      warnings.push(`refused to plan ${reportText(file.path)} twice: only the first is kept`)
+      warnings.push(twiceWarning(file.path))
       continue
     }
     seen.add(file.path)
@@ -344,9 +349,7 @@ async function besidePart(
   attempted: ReadonlySet<string>,
 ): Promise<Part> {
   const path = `${file.path}${BESIDE_SUFFIX}`
-  if (attempted.has(path)) {
-    return { ops: [], warnings: [`refused to plan ${reportText(path)} twice: only the first is kept`] }
-  }
+  if (attempted.has(path)) return { ops: [], warnings: [twiceWarning(path)] }
   const kind = classifyFile(sha256, null, await diskHashOf(input.disk.get(path)))
   const note = kind === 'conflict' ? OCCUPIED_NOTE : NEW_VERSION_NOTE
 

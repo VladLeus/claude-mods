@@ -72,8 +72,8 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
 /** The file ops of a plan, in plan order; the hunks are dropped. */
 function fileOps(plan: Plan): FileOp[] {
   const ops: FileOp[] = []
-  for (const op of plan.ops) {
-    if (op.kind !== 'hunk') ops.push(op)
+  for (const planned of plan.ops) {
+    if (planned.kind !== 'hunk') ops.push(planned)
   }
 
   return ops
@@ -81,12 +81,12 @@ function fileOps(plan: Plan): FileOp[] {
 
 /** One `kind path` line per file op: a compact way to compare the order and the kinds of a plan. */
 function summary(plan: Plan): string[] {
-  return fileOps(plan).map(op => `${op.kind} ${op.path}`)
+  return fileOps(plan).map(planned => `${planned.kind} ${planned.path}`)
 }
 
 /** The kind of the op for one path; undefined when the plan has none. */
 function kindOf(plan: Plan, path: string): string | undefined {
-  return fileOps(plan).find(op => op.path === path)?.kind
+  return fileOps(plan).find(planned => planned.path === path)?.kind
 }
 
 /** The manifest entries of some desired files, as the plan records them. */
@@ -806,8 +806,8 @@ function roleFiles(id: string): DesiredFile[] {
 /** The hunks of a plan, in plan order. */
 function hunkOps(plan: Plan): HunkOp[] {
   const hunks: HunkOp[] = []
-  for (const op of plan.ops) {
-    if (op.kind === 'hunk') hunks.push(op)
+  for (const planned of plan.ops) {
+    if (planned.kind === 'hunk') hunks.push(planned)
   }
 
   return hunks
