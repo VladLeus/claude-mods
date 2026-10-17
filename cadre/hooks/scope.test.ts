@@ -617,16 +617,39 @@ describe('scope rules', () => {
     ])
   })
 
-  test('an MCP server with an unusual name is not denied and the card says so', () => {
-    const scanned = setup({ mcp: [session('my.server'), session(`ev${BIDI_OVERRIDE}il`), session('good-one_2')] })
-    const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
-    const dotted = 'MCP server my.server has an unusual name and is not denied'
-    const hidden = 'MCP server evil has an unusual name and is not denied'
+  test('an MCP server with a dot, a colon or another character is denied by its engine tool name', () => {
+    const names = ['my.server', 'plugin:context7:context7', 'good-one_2']
+    const scope = compileScope(templateRole('pm'), context({ setup: setup({ mcp: names.map(session) }) }))
+    const denied = 'Scanned MCP servers not given are denied: good-one_2, my.server, plugin:context7:context7'
 
-    expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__good-one_2'])
-    expect(ruleOf(scope, dotted)).toEqual({ text: dotted, enforcement: 'none' })
-    expect(ruleOf(scope, hidden)).toEqual({ text: hidden, enforcement: 'none' })
-    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: good-one_2')?.enforcement).toBe('best-effort')
+    expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([
+      'mcp__good-one_2',
+      'mcp__my_server',
+      'mcp__plugin_context7_context7',
+    ])
+    expect(ruleOf(scope, denied)?.enforcement).toBe('best-effort')
+    expect(scope.card.rules.filter(candidate => candidate.text.includes('is not denied'))).toEqual([])
+  })
+
+  test('a character outside letters, digits, _ and - becomes _ in the tool name, a hidden one included', () => {
+    const scanned = setup({ mcp: [session(`ev${BIDI_OVERRIDE}il`), session('a@b')] })
+    const deny = compileScope(templateRole('pm'), context({ setup: scanned })).settings.permissions.deny
+
+    expect(deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__a_b', 'mcp__ev_il'])
+  })
+
+  test('a server whose tool name is that of a server the role has is not denied, and the card says so', () => {
+    const scanned = setup({ mcp: [session('my.server'), session('my_server'), session('jira')] })
+    const forUnderscore = compileScope(templateRole('pm', { mcp: ['my_server'] }), context({ setup: scanned }))
+    const forDot = compileScope(templateRole('pm', { mcp: ['my.server'] }), context({ setup: scanned }))
+    const dotted = 'MCP server my.server shares its tool name with a server this role has and is not denied'
+    const plain = 'MCP server my_server shares its tool name with a server this role has and is not denied'
+
+    expect(forUnderscore.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
+    expect(ruleOf(forUnderscore, dotted)).toEqual({ text: dotted, enforcement: 'none' })
+    expect(ruleOf(forUnderscore, 'Scanned MCP servers not given are denied: jira')?.enforcement).toBe('best-effort')
+    expect(forDot.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
+    expect(ruleOf(forDot, plain)).toEqual({ text: plain, enforcement: 'none' })
   })
 
   test('a deny the lint refuses is dropped and the card names it, so a bug cannot ship a broken deny', () => {
@@ -783,8 +806,7 @@ describe('scope rules', () => {
       { text: skippedRule('pm'), enforcement: 'best-effort' },
       { text: 'Code dir * has an unusual name and is not denied', enforcement: 'none' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: 'Scanned MCP servers not given are denied: jira', enforcement: 'hard' },
-      { text: 'MCP server my.server has an unusual name and is not denied', enforcement: 'none' },
+      { text: 'Scanned MCP servers not given are denied: jira, my.server', enforcement: 'hard' },
       {
         text: 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)',
         enforcement: 'none',
