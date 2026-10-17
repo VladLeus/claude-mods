@@ -10,7 +10,7 @@ import type {
   PortRead,
   ReadState,
 } from '../types'
-import { compareText, isObject } from './facts'
+import { compareText, isObject, sortedUnique } from './facts'
 import { sha256Hex } from './hash'
 import { pad, reportText } from './render'
 import { isSafeRelativePath } from './scan'
@@ -250,7 +250,7 @@ export function planReadPaths(desired: readonly DesiredFile[]): string[] {
     .filter(isSafeOpPath)
     .flatMap(path => [path, `${path}${BESIDE_SUFFIX}`])
 
-  return Array.from(new Set([...paths, MANIFEST_PATH])).sort(compareText)
+  return sortedUnique([...paths, MANIFEST_PATH])
 }
 
 /** A file read through the port as classifyFile sees it. A read that failed or was too large is unknown. */
@@ -543,28 +543,5 @@ export function renderPlan(plan: Plan): string[] {
   return ['File plan:', ...rows, ...warnings, `Summary: ${kinds}, ${hunkCount}`]
 }
 
-/**
- * Groups lines into chunks of text, each at most `maxChars` UTF-16 units when its lines are joined with a newline, so
- * that no single log entry passes the host's 2000 character limit and loses its tail (P9). Joining the chunks with a
- * newline gives the input joined with a newline again. A line longer than the cap stays whole in a chunk of its own,
- * since cutting it would change the text.
- */
-export function chunkLines(lines: readonly string[], maxChars: number): string[] {
-  const chunks: string[] = []
-  let current: string[] = []
-  let length = 0
-  for (const line of lines) {
-    const joined = current.length === 0 ? line.length : length + 1 + line.length
-    if (current.length > 0 && joined > maxChars) {
-      chunks.push(current.join('\n'))
-      current = [line]
-      length = line.length
-      continue
-    }
-    current.push(line)
-    length = joined
-  }
-  if (current.length > 0) chunks.push(current.join('\n'))
-
-  return chunks
-}
+/** chunkLines lives in render.ts beside the other report helpers; this keeps the import from './plan' working. */
+export { chunkLines } from './render'

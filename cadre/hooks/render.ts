@@ -51,6 +51,32 @@ export function reportText(text: string): string {
 }
 
 /**
+ * Groups lines into chunks of text, each at most `maxChars` UTF-16 units when its lines are joined with a newline, so
+ * that no single log entry passes the host's 2000 character limit and loses its tail (P9). Joining the chunks with a
+ * newline gives the input joined with a newline again. A line longer than the cap stays whole in a chunk of its own,
+ * since cutting it would change the text.
+ */
+export function chunkLines(lines: readonly string[], maxChars: number): string[] {
+  const chunks: string[] = []
+  let current: string[] = []
+  let length = 0
+  for (const line of lines) {
+    const joined = current.length === 0 ? line.length : length + 1 + line.length
+    if (current.length > 0 && joined > maxChars) {
+      chunks.push(current.join('\n'))
+      current = [line]
+      length = line.length
+      continue
+    }
+    current.push(line)
+    length = joined
+  }
+  if (current.length > 0) chunks.push(current.join('\n'))
+
+  return chunks
+}
+
+/**
  * The line that says which adapter the repo gets, or why none is chosen. Only a chosen adapter is named as the one in
  * use; an ambiguous or installed-only repo names its candidates and says init will ask (D-07, D-08, D-29).
  */

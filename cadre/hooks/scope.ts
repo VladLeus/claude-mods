@@ -11,7 +11,7 @@ import type {
   SkillRef,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from './assign'
-import { clean, compareText } from './facts'
+import { clean, compareText, sortedUnique } from './facts'
 import { reportText } from './render'
 import { chainLines } from './roles'
 
@@ -75,11 +75,6 @@ const FRAMEWORK_NAMES: Readonly<Record<FrameworkId, string>> = Object.freeze({
   superpowers: 'superpowers',
   none: 'built-in',
 })
-
-/** The names once each, in code point order, so a list hashes the same on every run. */
-function sortedUnique(names: readonly string[]): string[] {
-  return Array.from(new Set(names)).sort(compareText)
-}
 
 /** A scanned name or pattern as a card rule shows it: unsafe characters removed and the length capped. */
 function shown(text: string): string {
@@ -196,19 +191,20 @@ function notGivenMcp(role: RoleSpec, ctx: ScopeContext): string[] {
  * Whether the role has a scanned skill: it was given, it is an infra or start skill, or its plugin is enabled (the
  * commands of the infra plugins count, and so does every skill of a plugin enabled for another of its skills).
  */
-function hasSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: ReadonlySet<string>): boolean {
+function hasScannedSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: ReadonlySet<string>): boolean {
   if (given.has(skill.name)) return true
   const plugin = skill.plugin ?? skillPlugin(skill.name)
 
   return plugin !== null && enabled.has(pluginName(plugin))
 }
 
-/** The scanned skill names this role does not have; see hasSkill. */
+/** The scanned skill names this role does not have; see hasScannedSkill. */
 function notGivenSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
   const given = new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills])
   const enabled = new Set(plugins.map(pluginName))
+  const missing = ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 
-  return sortedUnique(ctx.setup.skills.filter(skill => !hasSkill(skill, given, enabled)).map(skill => skill.name))
+  return sortedUnique(missing.map(skill => skill.name))
 }
 
 /** A deny pattern the lint refused, with the reason. */
@@ -580,7 +576,7 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
 }
 
 /** A list as a card line shows it: `none` when empty, else the names, past 12 of them the first 12 and `+N more`. */
-function listText(names: readonly string[]): string {
+function cardList(names: readonly string[]): string {
   if (names.length === 0) return 'none'
   const rest = names.length - MAX_CARD_LIST
   if (rest <= 0) return names.join(', ')
@@ -599,10 +595,10 @@ export function scopeCardLines(card: ScopeCard): string[] {
   const lines = [
     `Scope card: ${card.title} (${card.roleId})`,
     `  framework: ${framework}; model: ${card.model} + ${card.effort}; permission mode: ${card.permissionMode}`,
-    `  skills: ${listText(card.skills)}`,
-    `  MCP servers: ${listText(card.mcp)}`,
-    `  not given: skills: ${listText(card.notGiven.skills)}; MCP: ${listText(card.notGiven.mcp)}`,
-    `  hooks loaded: ${listText(card.hooks.loaded)}; not loaded: ${listText(card.hooks.notLoaded)}`,
+    `  skills: ${cardList(card.skills)}`,
+    `  MCP servers: ${cardList(card.mcp)}`,
+    `  not given: skills: ${cardList(card.notGiven.skills)}; MCP: ${cardList(card.notGiven.mcp)}`,
+    `  hooks loaded: ${cardList(card.hooks.loaded)}; not loaded: ${cardList(card.hooks.notLoaded)}`,
     '  rules:',
     ...card.rules.map(item => `    [${item.enforcement}] ${item.text}`),
     '  decisions:',

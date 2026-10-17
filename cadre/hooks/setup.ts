@@ -27,6 +27,7 @@ import {
   parseInstalledPlugins,
   parseJsonValue,
   SOURCE_ORDER,
+  sortedUnique,
   trimSlash,
 } from './facts'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './roles'
@@ -101,11 +102,6 @@ function stableNames(names: readonly string[], maxChars: number): string[] {
   return Array.from(new Set(names.filter(name => name !== '' && !isChangedByClean(name, maxChars))))
 }
 
-/** The names in code unit order (compareText): the same order on every host, whatever its locale. */
-function sorted(names: readonly string[]): string[] {
-  return [...names].sort(compareText)
-}
-
 /**
  * The warning for names a scan dropped because a role.json could not hold them, naming the source and the count and
  * never a name; none when nothing was dropped.
@@ -162,7 +158,7 @@ function carryOf(user: unknown): CarryFacts {
     autoCompactWindow: positiveInteger(user.autoCompactWindow),
     hasStatusLine: statusLine !== null,
     isGsdStatusline: typeof command === 'string' && GSD_STATUSLINE_PATTERN.test(command),
-    envNames: sorted(keysOf(user.env).filter(name => ENV_NAME_PATTERN.test(name))),
+    envNames: sortedUnique(keysOf(user.env).filter(name => ENV_NAME_PATTERN.test(name))),
   }
 }
 
@@ -190,11 +186,11 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
   return {
     settingsKeys: read.map(entry => ({
       source: entry.source,
-      keys: sorted(stableNames(keysOf(entry.value), MAX_KEY_CHARS)).slice(0, MAX_SETTINGS_KEYS),
+      keys: sortedUnique(stableNames(keysOf(entry.value), MAX_KEY_CHARS)).slice(0, MAX_SETTINGS_KEYS),
     })),
     hooks: read.flatMap(entry => projectHooks(entry.value, entry.source)),
     carry: carryOf(user === undefined ? null : user.value),
-    enabled: sorted(flags.filter(flag => flag.value).map(flag => flag.key)),
+    enabled: sortedUnique(flags.filter(flag => flag.value).map(flag => flag.key)),
   }
 }
 
@@ -270,7 +266,7 @@ function skillNames(value: unknown): string[] {
 function mcpRefsOf(names: readonly string[], source: McpSource): McpRef[] {
   const fit = stableNames(names, MAX_REF_NAME_CHARS).filter(name => NAME_PATTERN.test(name))
 
-  return sorted(fit).map(name => ({ name, source }))
+  return sortedUnique(fit).map(name => ({ name, source }))
 }
 
 /** The warning for the MCP server names of one source that clean leaves alone but NAME_PATTERN refuses. */
@@ -591,7 +587,7 @@ async function agentNames(
   const names = fileNames(entries, MARKDOWN_EXTENSION).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
 
-  return sorted(stableNames(names, MAX_REF_NAME_CHARS))
+  return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
 }
 
 /** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
@@ -678,7 +674,7 @@ async function memoryFileNames(
   }
   warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
 
-  return sorted(stableNames(names, MAX_FILE_NAME_CHARS))
+  return sortedUnique(stableNames(names, MAX_FILE_NAME_CHARS))
 }
 
 /** The servers once each by name, keeping the first source in the order the lists are given, sorted by name. */
@@ -720,7 +716,7 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   const memoryFiles = await memoryFileNames(io, ctx, userDir, warnings)
 
   return {
-    plugins: sorted(Array.from(new Set([...settings.enabled, ...installed]))),
+    plugins: sortedUnique([...settings.enabled, ...installed]),
     skills,
     mcp: mergeMcp(servers.map(found => found.refs)),
     isMcpPartial: servers.some(found => found.isPartial),
