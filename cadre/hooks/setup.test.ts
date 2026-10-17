@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { SettingsSource, SetupScan } from '../types'
-import { projectHooks, projectSettings, scanSetup } from './setup'
+import type { PortEntry, SettingsSource, SetupScan } from '../types'
+import { MAX_READ_BYTES } from './facts'
+import { projectCommands, projectHooks, projectMcpJson, projectSettings, projectToolServers, scanSetup } from './setup'
 import type { SetupContext } from './setup'
 import { ABSOLUTE_PATH_MARKERS, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
 import type { MemWorld } from './testkit'
@@ -13,7 +14,7 @@ const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', 
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
 
 /** User settings that hold a secret in every place a value can sit: env, the status line and two hook commands. */
-function secretUserSettings(): unknown {
+function secretUserSettings(): Record<string, unknown> {
   return {
     env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'x' },
     autoCompactWindow: 800000,
@@ -44,9 +45,28 @@ function settingsWorld(user: unknown, project: unknown = {}, local: unknown = {}
   return memWorld({ settings: { user, project, local } })
 }
 
-/** A scan of `world` as the person at CTX gets it. */
-async function scanOf(world: MemWorld, isClaudeJsonAllowed = false): Promise<SetupScan> {
-  return scanSetup(memIo(world, []).io, CTX, isClaudeJsonAllowed)
+/** A scan and the paths it read through the port, in order. */
+type ScanRun = {
+  readonly scan: SetupScan
+  readonly reads: readonly string[]
+}
+
+/** A scan of `world` as the person at `ctx` gets it, with the paths it read. */
+async function runOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<ScanRun> {
+  const run = memIo(world, [])
+  const scan = await scanSetup(run.io, ctx, isClaudeJsonAllowed)
+
+  return { scan, reads: run.reads }
+}
+
+/** A scan of `world` as the person at `ctx` gets it. */
+async function scanOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<SetupScan> {
+  return (await runOf(world, isClaudeJsonAllowed, ctx)).scan
+}
+
+/** A listing entry: a file unless told otherwise. */
+function entry(name: string, kind: PortEntry['kind'] = 'file', isLink = false): PortEntry {
+  return { name, kind, size: 0, mtimeMs: 0, isLink }
 }
 
 /** The projection of user settings alone. */
@@ -347,5 +367,373 @@ describe('setup settings', () => {
     const scan = await scanOf(settingsWorld({ enabledPlugins: { 'a\u200B@m': true, 'b@m': true } }))
     expect(scan.plugins).toEqual(['b@m'])
     expect(scan.warnings).toEqual(['ignored enabledPlugins key "a@m": its name has hidden characters or is too long'])
+  })
+})
+
+/** installed_plugins.json: a user plugin, one for this repo, one for another repo and one with no usable version. */
+const INSTALLED_PLUGINS = JSON.stringify({
+  version: 2,
+  plugins: {
+    'a@m': [{ scope: 'user', installPath: '/home/u/p/a', version: '1.0.0' }],
+    'b@m': [{ scope: 'project', projectPath: '/repo', installPath: '/home/u/p/b', version: '2.0.0' }],
+    'c@m': [{ scope: 'project', projectPath: '/other', installPath: '/home/u/p/c', version: '3.0.0' }],
+    'd@m': [{ scope: 'user', installPath: '/home/u/p/d', version: 'not-a-version' }],
+  },
+})
+
+/** A .mcp.json whose server entries hold a token and an authorization header. */
+const MCP_JSON = JSON.stringify({
+  mcpServers: {
+    github: { command: 'npx', env: { GITHUB_TOKEN: 'ghp_FAKEFAKEFAKEFAKEFAKE' } },
+    jira: { url: 'https://jira.example', headers: { Authorization: 'Bearer FAKE-TOKEN-0123' } },
+  },
+})
+
+const INSTALLED_PATH = '/home/u/.claude/plugins/installed_plugins.json'
+const MCP_JSON_PATH = '/repo/.mcp.json'
+const USER_AGENTS = '/home/u/.claude/agents'
+const REPO_AGENTS = '/repo/.claude/agents'
+
+/** The tool entries of a session that has the jira and slack servers and the built-in Read tool. */
+const SESSION_TOOLS: readonly unknown[] = [
+  { name: 'mcp__jira__search', description: 'sk-FAKE-SECRET-0123456789', mcp: true },
+  { name: 'mcp__slack__post', description: 'x', mcp: true },
+  { name: 'Read', description: 'x', mcp: false },
+]
+
+describe('setup sources', () => {
+  test('projectCommands keeps the user and plugin commands with their plugin, and drops builtin and mcp ones', () => {
+    const found = projectCommands([
+      { name: 'gsd-plan-phase', source: 'user', description: 'x' },
+      { name: 'superpowers:brainstorming', source: 'plugin', plugin: 'superpowers', description: 'y' },
+      { name: 'help', source: 'builtin', description: 'z' },
+      { name: 'mcp__x__y', source: 'mcp', description: '' },
+    ])
+    expect(found).toEqual([
+      { name: 'gsd-plan-phase', plugin: null },
+      { name: 'superpowers:brainstorming', plugin: 'superpowers' },
+    ])
+  })
+
+  test('projectCommands sorts by name and lists a name once for each plugin that adds it', () => {
+    const found = projectCommands([
+      { name: 'b', source: 'user' },
+      { name: 'a', source: 'plugin', plugin: 'p2' },
+      { name: 'a', source: 'plugin', plugin: 'p1' },
+      { name: 'a', source: 'plugin', plugin: 'p1' },
+      { name: 'a', source: 'user' },
+    ])
+    expect(found).toEqual([
+      { name: 'a', plugin: null },
+      { name: 'a', plugin: 'p1' },
+      { name: 'a', plugin: 'p2' },
+      { name: 'b', plugin: null },
+    ])
+  })
+
+  test('projectCommands never keeps a description or any other field of a command', () => {
+    const found = projectCommands([
+      { name: 'one', source: 'user', description: 'Bearer FAKE-TOKEN-0123', argumentHint: 'sk-FAKE-SECRET-0123456789' },
+    ])
+    expect(found).toEqual([{ name: 'one', plugin: null }])
+    expect(leaks(JSON.stringify(found), SECRETS)).toEqual([])
+  })
+
+  test('projectCommands drops a name or a plugin outside the name pattern', () => {
+    const bad = ['', ' lead', 'has space', 'a/b', '-dash', ':colon', 'emoji\u{1F600}', 'bell\u0007', 'x'.repeat(101)]
+    const found = projectCommands([
+      ...bad.map(name => ({ name, source: 'user' })),
+      { name: 'ok-plugin-space', source: 'plugin', plugin: 'bad plugin' },
+      { name: 'ok-plugin-number', source: 'plugin', plugin: 5 },
+      { name: 5, source: 'user' },
+      { source: 'user' },
+      { name: 'ok.name_1@x-y:z', source: 'user' },
+      { name: '1digit', source: 'plugin' },
+    ])
+    expect(found).toEqual([
+      { name: '1digit', plugin: null },
+      { name: 'ok.name_1@x-y:z', plugin: null },
+    ])
+  })
+
+  test('projectCommands keeps a name of 100 characters and drops one of 101', () => {
+    const found = projectCommands([
+      { name: 'n'.repeat(100), source: 'user' },
+      { name: 'n'.repeat(101), source: 'user' },
+    ])
+    expect(found).toEqual([{ name: 'n'.repeat(100), plugin: null }])
+  })
+
+  test('projectCommands of null, or of a value that is not a list, is empty', () => {
+    const values: readonly unknown[] = [null, undefined, 'text', 5, {}, { name: 'a', source: 'user' }]
+    expect(values.flatMap(value => projectCommands(value))).toEqual([])
+    expect(projectCommands([null, 'x', 5, []])).toEqual([])
+  })
+
+  test('a scan whose command list cannot be read warns once and still scans the other sources', async () => {
+    for (const commands of [null, {}, 'text']) {
+      const scan = await scanOf(memWorld({ commands, tools: SESSION_TOOLS }))
+      expect(scan.warnings).toEqual(['could not list commands and skills (treated as unknown)'])
+      expect(scan.skills).toEqual([])
+      expect(scan.mcp.map(server => server.name)).toEqual(['jira', 'slack'])
+    }
+  })
+
+  test('a command name with a hidden character is dropped and named in a warning', async () => {
+    const commands = [
+      { name: 'ok', source: 'user', description: '' },
+      { name: 'bad\u0007name', source: 'user', description: '' },
+    ]
+    const scan = await scanOf(memWorld({ commands }))
+    expect(scan.skills).toEqual([{ name: 'ok', plugin: null }])
+    expect(scan.warnings).toEqual([
+      'ignored command or plugin name "badname": its name has hidden characters or is too long',
+    ])
+  })
+
+  test('projectToolServers gives each mcp server of the tool names once, sorted, as a session server', () => {
+    const found = projectToolServers([
+      { name: 'mcp__jira__search' },
+      { name: 'mcp__jira__get' },
+      { name: 'Read' },
+      { name: 'mcp__plugin_context7_context7__query-docs' },
+    ])
+    expect(found).toEqual([
+      { name: 'jira', source: 'session' },
+      { name: 'plugin_context7_context7', source: 'session' },
+    ])
+  })
+
+  test('projectToolServers ignores a name that is not mcp__<server>__<tool>, and a value that is not a list', () => {
+    const names = ['mcp__x', 'mcp____tool', 'mcp__a__', 'MCP__x__y', 'xmcp__x__y', 'Read', '']
+    expect(projectToolServers(names.map(name => ({ name })))).toEqual([])
+    expect(projectToolServers([null, 5, 'mcp__x__y', { name: 5 }, {}])).toEqual([])
+    expect([null, {}, 'text', 5].flatMap(value => projectToolServers(value))).toEqual([])
+  })
+
+  test('a scan whose tool list cannot be read warns and still scans the other sources', async () => {
+    const scan = await scanOf(memWorld({ tools: null, files: { [MCP_JSON_PATH]: MCP_JSON } }))
+    expect(scan.warnings).toEqual(['could not list session tools (treated as unknown)'])
+    expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira'])
+  })
+
+  test('projectMcpJson keeps the names of the mcpServers keys and nothing of their entries', () => {
+    const found = projectMcpJson({ mcpServers: { github: { command: 'x', env: { T: 'sk-FAKE-SECRET-0123456789' } } } })
+    expect(found).toEqual([{ name: 'github', source: 'project' }])
+    expect(leaks(JSON.stringify(found), SECRETS)).toEqual([])
+  })
+
+  test('projectMcpJson of a value without an mcpServers object is empty', () => {
+    const values: readonly unknown[] = [
+      null,
+      'text',
+      5,
+      [],
+      {},
+      { mcpServers: null },
+      { mcpServers: ['a'] },
+      { mcpServers: 'a' },
+    ]
+    expect(values.flatMap(value => projectMcpJson(value))).toEqual([])
+  })
+
+  test('the .mcp.json of the repo gives project servers, and no value of it reaches the scan', async () => {
+    const { scan, reads } = await runOf(memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON } }))
+    expect(scan.mcp).toEqual([
+      { name: 'github', source: 'project' },
+      { name: 'jira', source: 'project' },
+    ])
+    expect(reads).toContain(MCP_JSON_PATH)
+    expect(leaks(JSON.stringify(scan), SECRETS)).toEqual([])
+  })
+
+  test('a .mcp.json that links out of the repo is not read, and the scan says so', async () => {
+    const world = memWorld({
+      files: { [MCP_JSON_PATH]: MCP_JSON },
+      realPaths: { [MCP_JSON_PATH]: '/elsewhere/.mcp.json' },
+    })
+    const { scan, reads } = await runOf(world)
+    expect(reads).not.toContain(MCP_JSON_PATH)
+    expect(scan.mcp).toEqual([])
+    expect(scan.warnings).toEqual(['could not read <repo>/.mcp.json (treated as unknown)'])
+  })
+
+  test('a .mcp.json that is a folder is not read, and the scan says so', async () => {
+    const { scan, reads } = await runOf(memWorld({ dirs: { [MCP_JSON_PATH]: [] } }))
+    expect(reads).not.toContain(MCP_JSON_PATH)
+    expect(scan.warnings).toEqual(['could not read <repo>/.mcp.json (treated as unknown)'])
+  })
+
+  test('a missing .mcp.json is quiet, and a broken or oversized one warns without keeping a server', async () => {
+    const missing = await runOf(memWorld({}))
+    expect(missing.reads).not.toContain(MCP_JSON_PATH)
+    expect(missing.scan.warnings).toEqual([])
+    for (const text of ['{ not json', ' '.repeat(MAX_READ_BYTES + 1)]) {
+      const scan = await scanOf(memWorld({ files: { [MCP_JSON_PATH]: text } }))
+      expect(scan.warnings).toEqual(['could not read <repo>/.mcp.json (treated as unknown)'])
+      expect(scan.mcp).toEqual([])
+    }
+  })
+
+  test('the plugins are the enabled keys and the installed keys for the user or this repo, sorted', async () => {
+    const world = memWorld({
+      settings: { user: { enabledPlugins: { 'z@m': true, 'a@m': true } }, project: {}, local: {} },
+      files: { [INSTALLED_PATH]: INSTALLED_PLUGINS },
+    })
+    const { scan, reads } = await runOf(world)
+    expect(scan.plugins).toEqual(['a@m', 'b@m', 'z@m'])
+    expect(reads).toContain(INSTALLED_PATH)
+    expect(leaks(JSON.stringify(scan), SECRETS)).toEqual([])
+  })
+
+  test('an installed plugin entry for the root as given counts, as one for the root as resolved does', async () => {
+    const installed = JSON.stringify({
+      plugins: {
+        'g@m': [{ scope: 'project', projectPath: '/link/repo/', version: '1.0.0' }],
+        'r@m': [{ scope: 'local', projectPath: '/real/repo', version: '1.0.0' }],
+        'o@m': [{ scope: 'project', projectPath: '/link/other', version: '1.0.0' }],
+      },
+    })
+    const ctx: SetupContext = { root: '/real/repo', givenRoot: '/link/repo', home: '/home/u', configDir: null }
+    const scan = await scanOf(memWorld({ files: { [INSTALLED_PATH]: installed } }), false, ctx)
+    expect(scan.plugins).toEqual(['g@m', 'r@m'])
+  })
+
+  test('a missing installed_plugins file is quiet, and an unreadable, oversized or broken one warns', async () => {
+    const warning = ['could not read ~/.claude/plugins/installed_plugins.json (treated as unknown)']
+    expect((await scanOf(memWorld({}))).warnings).toEqual([])
+    expect((await scanOf(memWorld({ unknownPaths: [INSTALLED_PATH] }))).warnings).toEqual(warning)
+    for (const text of ['{ not json', ' '.repeat(MAX_READ_BYTES + 1)]) {
+      expect((await scanOf(memWorld({ files: { [INSTALLED_PATH]: text } }))).warnings).toEqual(warning)
+    }
+  })
+
+  test('an installed plugin key with a hidden character is dropped and named in a warning', async () => {
+    const installed = JSON.stringify({
+      plugins: { 'ok@m': [{ scope: 'user', version: '1.0.0' }], 'bad\u0007@m': [{ scope: 'user', version: '1.0.0' }] },
+    })
+    const scan = await scanOf(memWorld({ files: { [INSTALLED_PATH]: installed } }))
+    expect(scan.plugins).toEqual(['ok@m'])
+    expect(scan.warnings).toEqual([
+      'ignored installed plugin key "bad@m": its name has hidden characters or is too long',
+    ])
+  })
+
+  test('CLAUDE_CONFIG_DIR is the user folder when it is set, and the home folder is then not read', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '/cfg' }
+    const world = memWorld({
+      files: { '/cfg/plugins/installed_plugins.json': INSTALLED_PLUGINS, [INSTALLED_PATH]: '{}' },
+      dirs: { '/cfg/agents': [entry('cfg-agent.md')], [USER_AGENTS]: [entry('home-agent.md')] },
+    })
+    const { scan, reads } = await runOf(world, false, ctx)
+    expect(scan.plugins).toEqual(['a@m', 'b@m'])
+    expect(scan.agents).toEqual(['cfg-agent'])
+    expect(reads).not.toContain(INSTALLED_PATH)
+  })
+
+  test('a user folder that cannot be read is named in display form under CLAUDE_CONFIG_DIR', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '/cfg' }
+    const world = memWorld({ unknownPaths: ['/cfg/plugins/installed_plugins.json'] })
+    const scan = await scanOf(world, false, ctx)
+    expect(scan.warnings).toEqual([
+      'could not read $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json (treated as unknown)',
+    ])
+  })
+
+  test('with no home and no CLAUDE_CONFIG_DIR the user-level sources are skipped with one warning', async () => {
+    const ctx: SetupContext = { root: '/repo', givenRoot: '/repo', home: null, configDir: null }
+    const world = memWorld({
+      files: { [INSTALLED_PATH]: INSTALLED_PLUGINS },
+      dirs: { [USER_AGENTS]: [entry('home-agent.md')], [REPO_AGENTS]: [entry('repo-agent.md')] },
+    })
+    const { scan, reads } = await runOf(world, false, ctx)
+    expect(scan.warnings).toEqual(['HOME is unset: user-level setup was not scanned'])
+    expect(scan.plugins).toEqual([])
+    expect(scan.agents).toEqual(['repo-agent'])
+    expect(reads.filter(path => path.startsWith('/home/'))).toEqual([])
+  })
+
+  test('the agents are the .md files of the user and repo agents folders, by name, once and sorted', async () => {
+    const world = memWorld({
+      dirs: {
+        [USER_AGENTS]: [
+          entry('b.md'),
+          entry('a.md'),
+          entry('notes.txt'),
+          entry('sub', 'dir'),
+          entry('linked.md', 'other', true),
+          entry('.md'),
+        ],
+        [REPO_AGENTS]: [entry('a.md'), entry('c.md'), entry('README.MD')],
+      },
+    })
+    expect((await scanOf(world)).agents).toEqual(['a', 'b', 'c'])
+  })
+
+  test('an agents folder that cannot be listed warns, and one that is not there does not', async () => {
+    const world = memWorld({ unknownPaths: [USER_AGENTS], dirs: { [REPO_AGENTS]: [entry('r.md')] } })
+    const scan = await scanOf(world)
+    expect(scan.warnings).toEqual(['could not read ~/.claude/agents (treated as unknown)'])
+    expect(scan.agents).toEqual(['r'])
+    expect((await scanOf(memWorld({ unknownPaths: [REPO_AGENTS] }))).warnings).toEqual([
+      'could not read <repo>/.claude/agents (treated as unknown)',
+    ])
+    expect((await scanOf(memWorld({}))).warnings).toEqual([])
+  })
+
+  test('an agent name with a hidden character is dropped and named in a warning', async () => {
+    const scan = await scanOf(memWorld({ dirs: { [REPO_AGENTS]: [entry('ok.md'), entry('bad\u0007name.md')] } }))
+    expect(scan.agents).toEqual(['ok'])
+    expect(scan.warnings).toEqual(['ignored agent name "badname": its name has hidden characters or is too long'])
+  })
+
+  test('an agent name of 100 characters is kept and one of 101 is dropped', async () => {
+    const dirs = { [REPO_AGENTS]: [entry(`${'n'.repeat(100)}.md`), entry(`${'n'.repeat(101)}.md`)] }
+    const scan = await scanOf(memWorld({ dirs }))
+    expect(scan.agents).toEqual(['n'.repeat(100)])
+    expect(scan.warnings).toHaveLength(1)
+  })
+
+  test('an MCP server seen in two sources is listed once, under the first of project and session', async () => {
+    const world = memWorld({ files: { [MCP_JSON_PATH]: MCP_JSON }, tools: SESSION_TOOLS })
+    const scan = await scanOf(world)
+    expect(scan.mcp).toEqual([
+      { name: 'github', source: 'project' },
+      { name: 'jira', source: 'project' },
+      { name: 'slack', source: 'session' },
+    ])
+  })
+
+  test('MCP server names compare exactly, so two names that differ only in case are both listed', async () => {
+    const tools = [{ name: 'mcp__Jira__a' }, { name: 'mcp__jira__a' }]
+    const scan = await scanOf(memWorld({ tools }))
+    expect(scan.mcp.map(server => server.name)).toEqual(['Jira', 'jira'])
+  })
+
+  test('the full source world names every plugin, skill, MCP server and agent, and keeps no secret', async () => {
+    const user = { ...secretUserSettings(), enabledPlugins: { 'z@m': true } }
+    const world = memWorld({
+      settings: { user, project: {}, local: {} },
+      files: { [INSTALLED_PATH]: INSTALLED_PLUGINS, [MCP_JSON_PATH]: MCP_JSON },
+      dirs: { [USER_AGENTS]: [entry('b.md'), entry('a.md')], [REPO_AGENTS]: [entry('c.md')] },
+      commands: [
+        { name: 'gsd-plan-phase', source: 'user', description: 'Bearer FAKE-TOKEN-0123' },
+        { name: 'superpowers:brainstorming', source: 'plugin', plugin: 'superpowers', description: 'x' },
+        { name: 'help', source: 'builtin', description: 'x' },
+      ],
+      tools: SESSION_TOOLS,
+    })
+    const scan = await scanOf(world)
+    expect(scan.plugins).toEqual(['a@m', 'b@m', 'z@m'])
+    expect(scan.skills).toEqual([
+      { name: 'gsd-plan-phase', plugin: null },
+      { name: 'superpowers:brainstorming', plugin: 'superpowers' },
+    ])
+    expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira', 'slack'])
+    expect(scan.agents).toEqual(['a', 'b', 'c'])
+    expect(scan.warnings).toEqual([])
+    const json = JSON.stringify(scan)
+    expect(leaks(json, SECRETS)).toEqual([])
+    expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
   })
 })
