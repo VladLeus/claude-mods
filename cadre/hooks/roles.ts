@@ -144,20 +144,38 @@ export function roleFromTemplate(row: TemplateRole): RoleSpec {
 }
 
 /**
- * Who takes a decision of this type on a team (D-12, D-54): its owner when the owner is on the team, else the team
- * lead, and the person last, always. A team with neither the owner nor a team lead goes straight to the person.
+ * A role as a decision chain sees it: its id and the template role it is based on. A plain id stands for a role with
+ * that id and no base, so a list of ids still gives the chain it gave before basedOn counted.
  */
-export function decisionChain(decision: DecisionType, roleIds: readonly string[]): readonly string[] {
-  const owner = DECISION_OWNERS[decision]
-  if (roleIds.includes(owner)) return [owner, HUMAN_FALLBACK]
-  if (roleIds.includes(FALLBACK_OWNER)) return [FALLBACK_OWNER, HUMAN_FALLBACK]
+export type ChainRole = string | Pick<RoleSpec, 'id' | 'basedOn'>
 
-  return [HUMAN_FALLBACK]
+/**
+ * The id of the role that stands for a template role on the team, as assign.ts counts a role for MCP and skills: the
+ * role with that id, else the first role based on it; null when there is neither.
+ */
+function standIn(templateId: TemplateRoleId, roles: readonly ChainRole[]): string | null {
+  const members = roles.map(role => (typeof role === 'string' ? { id: role, basedOn: null } : role))
+  const byId = members.find(role => role.id === templateId)
+  if (byId !== undefined) return byId.id
+
+  return members.find(role => role.basedOn === templateId)?.id ?? null
+}
+
+/**
+ * Who takes a decision of this type on a team (D-12, D-54): the role that stands for its owner (by id, else by
+ * basedOn), else the one that stands for the team lead, and the person last, always. A renamed or custom role based on
+ * a template role keeps that role's decisions. A team with neither goes straight to the person.
+ */
+export function decisionChain(decision: DecisionType, roles: readonly ChainRole[]): readonly string[] {
+  const owner = standIn(DECISION_OWNERS[decision], roles) ?? standIn(FALLBACK_OWNER, roles)
+  if (owner === null) return [HUMAN_FALLBACK]
+
+  return [owner, HUMAN_FALLBACK]
 }
 
 /** One line per decision type in DECISION_TYPES order, naming its chain for this team: `Arch: tl -> human (...)`. */
-export function chainLines(roleIds: readonly string[]): string[] {
-  return DECISION_TYPES.map(decision => `${decision}: ${decisionChain(decision, roleIds).join(' -> ')}`)
+export function chainLines(roles: readonly ChainRole[]): string[] {
+  return DECISION_TYPES.map(decision => `${decision}: ${decisionChain(decision, roles).join(' -> ')}`)
 }
 
 /** The findings of these kinds, in finding order. */
@@ -481,14 +499,14 @@ export type AdjustOp =
   | { readonly kind: 'rename'; readonly id: string; readonly newId: string; readonly title: string | null }
   | { readonly kind: 'framework'; readonly id: string; readonly framework: FrameworkId }
 
-/** `add <id> <title>`: the title is the rest of the line. */
-const ADJUST_ADD = /^add\s+(\S+)\s+(\S[\s\S]*)$/i
+/** `add <id> <title>`: the title is the rest of the line, and a title that runs onto another line does not match. */
+const ADJUST_ADD = /^add\s+(\S+)\s+(\S[^\n]*)$/i
 
 /** `drop <id>`. */
 const ADJUST_DROP = /^drop\s+(\S+)$/i
 
-/** `rename <id> <new-id> [<title>]`: the title, when there is one, is the rest of the line. */
-const ADJUST_RENAME = /^rename\s+(\S+)\s+(\S+)(?:\s+(\S[\s\S]*))?$/i
+/** `rename <id> <new-id> [<title>]`: the title, when there is one, is the rest of the line, never another line. */
+const ADJUST_RENAME = /^rename\s+(\S+)\s+(\S+)(?:\s+(\S[^\n]*))?$/i
 
 /** `framework <id> <gsd|superpowers|none>`. */
 const ADJUST_FRAMEWORK = /^framework\s+(\S+)\s+(\S+)$/i
@@ -541,7 +559,8 @@ function frameworkOp(line: string): AdjustOp | null {
 
 /**
  * The adjustment a line of the person's text asks for (D-47), or null when it is none of the four. The keywords and the
- * framework word ignore case. Ids are taken as typed, with no case folding: applyAdjust checks them.
+ * framework word ignore case. Ids are taken as typed, with no case folding: applyAdjust checks them. A title that runs
+ * onto a second line is refused, so a multi-line answer cannot carry more text in a title.
  */
 export function parseAdjust(text: string): AdjustOp | null {
   const line = text.trim()
