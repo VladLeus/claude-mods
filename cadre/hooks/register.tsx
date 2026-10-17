@@ -318,8 +318,8 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
 
 /**
  * A file as the init port reads it (Pitfall 6). A file is read only when the host says the path is there and its stat
- * shows a regular file within `maxBytes`: a failed probe, a failed stat or a folder, FIFO or
- * device is `unknown` and never read. A read that fails is `unknown`; the text is checked again by its UTF-8 bytes.
+ * shows a regular file within `maxBytes`: a failed probe, a failed stat or a folder, FIFO or device is `unknown` and
+ * never read. A read that fails is `unknown`; the text is checked again by its UTF-8 bytes.
  * The decisions are portProbeOf and portTextOf; this only asks the host.
  */
 async function portRead($: EngineInterface, path: string, maxBytes: number): Promise<PortRead> {
