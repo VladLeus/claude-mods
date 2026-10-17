@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { PortStat } from '../types'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import {
+  askChoice,
   commandRefusal,
   GIT_POLICY_OPTIONS,
   INIT_CANCELLED,
@@ -11,7 +13,10 @@ import {
   parseGitPolicy,
   pluginVersionOf,
   policyLine,
+  portProbeOf,
+  portTextOf,
 } from './init'
+import { memIo, memWorld } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -902,6 +907,47 @@ describe('init helpers', () => {
     for (const text of bad) {
       expect(pluginVersionOf(text)).toBeNull()
     }
+  })
+
+  test('askChoice gives null after exactly two asks for an invalid answer followed by a dismissal', async () => {
+    const run = memIo(memWorld({}), ['nonsense'])
+    const policy = await askChoice(run.io, 'Git policy?', { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
+    expect(policy).toBeNull()
+    expect(run.asked).toEqual(['Git policy?', 'Git policy?'])
+  })
+
+  describe('the init port read decisions', () => {
+    const MAX = 10
+    const file = (size: number): PortStat => ({ kind: 'file', size, isLink: false, realPath: '/repo/a' })
+
+    test('portProbeOf is absent only when the probe says the path is not there', () => {
+      expect(portProbeOf(false, null, MAX)).toEqual({ state: 'absent' })
+      expect(portProbeOf(false, file(1), MAX)).toEqual({ state: 'absent' })
+    })
+
+    test('portProbeOf is unknown when the probe failed', () => {
+      expect(portProbeOf(null, null, MAX)).toEqual({ state: 'unknown' })
+    })
+
+    test('portProbeOf is unknown for a null stat and for a stat that is not a file', () => {
+      expect(portProbeOf(true, null, MAX)).toEqual({ state: 'unknown' })
+      for (const kind of ['dir', 'other'] as const) {
+        expect(portProbeOf(true, { kind, size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
+      }
+    })
+
+    test('portProbeOf is too-large by the stat size and null (go on and read) at the limit', () => {
+      expect(portProbeOf(true, file(MAX + 1), MAX)).toEqual({ state: 'too-large', bytes: MAX + 1 })
+      expect(portProbeOf(true, file(MAX), MAX)).toBeNull()
+    })
+
+    test('portTextOf is unknown for a non-string, too-large by the UTF-8 bytes, else the text', () => {
+      expect(portTextOf(null, MAX)).toEqual({ state: 'unknown' })
+      expect(portTextOf(42, MAX)).toEqual({ state: 'unknown' })
+      expect(portTextOf('€€€€', MAX)).toEqual({ state: 'too-large', bytes: 12 })
+      expect(portTextOf('€€€', MAX)).toEqual({ state: 'text', text: '€€€' })
+      expect(portTextOf('abcdefghij', MAX)).toEqual({ state: 'text', text: 'abcdefghij' })
+    })
   })
 })
 

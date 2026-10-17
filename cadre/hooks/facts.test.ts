@@ -28,6 +28,7 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
+  utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate } from './facts'
 
@@ -1179,5 +1180,15 @@ describe('isFileInsideRoot (WR-02)', () => {
     expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
     expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
     expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
+  })
+})
+
+describe('utf8Bytes', () => {
+  test('counts UTF-8 bytes, not UTF-16 units', () => {
+    expect(utf8Bytes('')).toBe(0)
+    expect(utf8Bytes('abc')).toBe(3)
+    expect(utf8Bytes('é')).toBe(2)
+    expect(utf8Bytes('€')).toBe(3)
+    expect(utf8Bytes('😀')).toBe(4)
   })
 })
