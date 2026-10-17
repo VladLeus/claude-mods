@@ -153,7 +153,7 @@ function autonomyLines(adapter: FrameworkAdapter): string[] {
  * from Facts are cleaned and capped by reportText.
  */
 function adapterBlock(adapter: FrameworkAdapter): string[] {
-  const kickoff = adapter.kickoffText({ role: 'BE', specPath: null }).split('\n')
+  const kickoff = adapter.kickoffText({ role: 'BE', roleId: 'be', specPath: null }).split('\n')
   const { artifact, check } = adapter.doneSignal
   const done = `${artifact}: ${check}; then a line that starts with AUTOPILOT_DONE`
 
