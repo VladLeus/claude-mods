@@ -14,6 +14,7 @@ import type {
 import { isSecurityReviewSkill } from './assign'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { reportText } from './render'
+import { standsFor } from './roles'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */
 export const NOT_SET_TEXT = 'not set (GSD default)'
@@ -295,7 +296,7 @@ export function isGsdAttendedFromConfig(
 }
 
 /** Names joined for a sentence: `a`, `a and b`, `a, b and c`. */
-function listText(names: readonly string[]): string {
+function sentenceList(names: readonly string[]): string {
   const head = names.slice(0, -1)
   const last = names.slice(-1).join('')
   if (head.length === 0) return last
@@ -309,7 +310,7 @@ function listText(names: readonly string[]): string {
  */
 export function attendedNote(keys: readonly string[]): string {
   const shown = keys.map(reportText)
-  const what = shown.length === 0 ? 'its settings' : listText(shown)
+  const what = shown.length === 0 ? 'its settings' : sentenceList(shown)
 
   return `attended: GSD needs a person until ${what} ${shown.length === 1 ? 'is' : 'are'} set as proposed`
 }
@@ -351,11 +352,6 @@ function frameworkRecommendations(frameworks: readonly FrameworkId[]): Recommend
     { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd },
     { tool: 'superpowers', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.superpowers },
   ]
-}
-
-/** Whether a role stands for a template role: it has that id, or it is based on that role. */
-function standsFor(role: RoleSpec, template: TemplateRoleId): boolean {
-  return role.id === template || role.basedOn === template
 }
 
 /** One recommendation for each role that stands for `template`, when the tool is missing; none otherwise. */

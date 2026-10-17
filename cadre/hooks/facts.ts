@@ -149,6 +149,14 @@ export function compareText(a: string, b: string): number {
   return a < b ? -1 : 1
 }
 
+/**
+ * The names once each, in code unit order (compareText), as a new array: the same list on every host, whatever its
+ * locale, so a list built from it hashes the same on every run. The input is never changed.
+ */
+export function sortedUnique(names: readonly string[]): string[] {
+  return Array.from(new Set(names)).sort(compareText)
+}
+
 /** The own key names of a plain object; [] for anything else. Only the names are read, never the values. */
 export function keysOf(value: unknown): string[] {
   return isObject(value) ? Object.keys(value) : []

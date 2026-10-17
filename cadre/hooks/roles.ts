@@ -150,15 +150,23 @@ export function roleFromTemplate(row: TemplateRole): RoleSpec {
 export type ChainRole = string | Pick<RoleSpec, 'id' | 'basedOn'>
 
 /**
- * The id of the role that stands for a template role on the team, as assign.ts counts a role for MCP and skills: the
- * role with that id, else the first role based on it; null when there is neither.
+ * Whether a role stands for a template role: its id is the template id, or it is based on that template role. The
+ * decision chain, the MCP and skill tables and the recommendations all count a role this way.
+ */
+export function standsFor(role: Pick<RoleSpec, 'id' | 'basedOn'>, templateId: TemplateRoleId): boolean {
+  return role.id === templateId || role.basedOn === templateId
+}
+
+/**
+ * The id of the role that stands for a template role on the team (standsFor): the role with that id first, else the
+ * first role based on it; null when there is neither.
  */
 function standIn(templateId: TemplateRoleId, roles: readonly ChainRole[]): string | null {
   const members = roles.map(role => (typeof role === 'string' ? { id: role, basedOn: null } : role))
   const byId = members.find(role => role.id === templateId)
   if (byId !== undefined) return byId.id
 
-  return members.find(role => role.basedOn === templateId)?.id ?? null
+  return members.find(role => standsFor(role, templateId))?.id ?? null
 }
 
 /**

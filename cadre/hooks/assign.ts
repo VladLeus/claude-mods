@@ -1,7 +1,7 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
-import { clean, compareText } from './facts'
+import { clean, compareText, sortedUnique } from './facts'
 import { freezeRows } from './freeze'
-import { EFFORTS, MODEL_PATTERN } from './roles'
+import { EFFORTS, MODEL_PATTERN, standsFor } from './roles'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
@@ -162,25 +162,17 @@ const ROLE_ANSWER_HINT = '(e.g. BE, QA, or none)'
 /** The label of the skill group that holds the user's own skills and the project's, which no plugin adds. */
 const OWN_SKILLS_LABEL = 'your own'
 
-/** The names once each, in code point order. */
-function sortedUnique(names: readonly string[]): string[] {
-  return Array.from(new Set(names)).sort(compareText)
-}
-
-/** Whether a role is one of the template roles: by its own id, or by the template role it is based on. */
-function isRoleOf(role: RoleSpec, templateIds: readonly TemplateRoleId[]): boolean {
-  return templateIds.some(id => id === role.id || id === role.basedOn)
-}
-
 /**
  * The ids of the present roles of the first row that matches the name, sorted. Empty when no row matches, and also when
- * the row matches but none of its roles is on the team: the name is then unknown and gets its own question.
+ * the row matches but none of its roles is on the team: the name is then unknown and gets its own question. A role is
+ * present when it stands for one of the row's template roles, by its id or its basedOn.
  */
 function presentRoleIds(rows: readonly NameRow[], name: string, roles: readonly RoleSpec[]): string[] {
   const row = rows.find(candidate => candidate.pattern.test(name))
   if (row === undefined) return []
+  const present = roles.filter(role => row.roles.some(id => standsFor(role, id)))
 
-  return sortedUnique(roles.filter(role => isRoleOf(role, row.roles)).map(role => role.id))
+  return sortedUnique(present.map(role => role.id))
 }
 
 /**
