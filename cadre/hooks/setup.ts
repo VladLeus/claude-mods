@@ -73,7 +73,10 @@ const MARKDOWN_EXTENSION = '.md'
 const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
 const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
-/** A tool the engine names `mcp__<server>__<tool>`: the server is what lies between the first two `__`. */
+/**
+ * A tool the engine names `mcp__<server>__<tool>`: the server is what lies between the first two `__`. The match is
+ * lazy, so a server whose own name holds `__` is cut at its first `__`.
+ */
 const MCP_TOOL_PATTERN = /^mcp__(.+?)__.+$/
 /** The warning when the host cannot list the commands and skills. */
 const COMMANDS_WARNING = 'could not list commands and skills (treated as unknown)'
