@@ -12,7 +12,7 @@ import {
   parseRoleList,
 } from './assign'
 
-/** A role as init builds it: nothing assigned yet and every other field a fixed default. `over` changes the fields it names. */
+/** A role as init builds it: nothing assigned, every other field a fixed default. `over` changes the fields it names. */
 function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
   return {
     id,
