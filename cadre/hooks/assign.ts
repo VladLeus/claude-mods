@@ -1,12 +1,80 @@
-import type { McpRef, RoleSpec, TemplateRoleId } from '../types'
+import type { FrameworkId, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { clean } from './facts'
 import { freezeRows } from './freeze'
+
+/**
+ * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
+ * launcher. Scope settings enable them and never deny them (ISO-04, D-77).
+ */
+export const INFRA_PLUGINS: readonly string[] = Object.freeze([
+  'autopilot@local-mods',
+  'agent-fleet@local-mods',
+  'cadre@local-mods',
+])
+
+/**
+ * The skills every role keeps for the autopilot handoff and restart. They are never asked about, never assigned and
+ * never denied (ISO-04, D-77).
+ */
+export const INFRA_SKILLS: readonly string[] = Object.freeze(['create-handoff-doc', 'resume-handoff-doc'])
+
+/**
+ * The tools autopilot relies on in every role: its three MCP tools, Skill, and PushNotification. No deny rule may name
+ * or cover them (ISO-04, D-77).
+ */
+export const INFRA_TOOLS: readonly string[] = Object.freeze([
+  'mcp__autopilot__restart_session',
+  'mcp__autopilot__wait_for',
+  'mcp__autopilot__queue_question',
+  'Skill',
+  'PushNotification',
+])
 
 /**
  * The MCP servers that are infrastructure: every role always has them, so they are never asked about, never assigned
  * and never denied (ISO-04, D-77). Scope compile imports this list instead of naming the server a second time.
  */
 export const INFRA_MCP_SERVERS: readonly string[] = Object.freeze(['autopilot'])
+
+/**
+ * The skills that start and check work in each framework (D-77). Every role of that framework must be able to run
+ * them, so scope compile links or enables them; they come through the adapter and are never asked about. The built-in
+ * fallback has none: it starts from the kickoff text alone.
+ */
+export const FRAMEWORK_START_SKILLS: Readonly<Record<FrameworkId, readonly string[]>> = Object.freeze({
+  gsd: Object.freeze([
+    'gsd-autonomous',
+    'gsd-discuss-phase',
+    'gsd-plan-phase',
+    'gsd-execute-phase',
+    'gsd-validate-phase',
+    'gsd-code-review',
+  ]),
+  superpowers: Object.freeze([
+    'superpowers:brainstorming',
+    'superpowers:writing-plans',
+    'superpowers:executing-plans',
+    'superpowers:subagent-driven-development',
+  ]),
+  none: Object.freeze([]),
+})
+
+/**
+ * Whether a skill belongs to a framework, and so comes through its adapter instead of a question. A GSD skill is named
+ * `gsd-...`. A superpowers skill comes from the superpowers plugin, so it is named `superpowers:...` or lists that
+ * plugin. The built-in fallback owns no skill.
+ */
+export function isFrameworkSkill(skill: SkillRef, framework: FrameworkId): boolean {
+  if (framework === 'gsd') return skill.name.startsWith('gsd-')
+  if (framework === 'superpowers') return skill.plugin === 'superpowers' || skill.name.startsWith('superpowers:')
+
+  return false
+}
+
+/** Whether a skill belongs to any framework cadre has an adapter for. */
+function isAnyFrameworkSkill(skill: SkillRef): boolean {
+  return isFrameworkSkill(skill, 'gsd') || isFrameworkSkill(skill, 'superpowers')
+}
 
 /**
  * One row of a name table. A scanned name that `pattern` matches goes to the template roles in `roles`; `label` says in
@@ -34,10 +102,34 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
   { pattern: /(^|[-_])github([-_]|$)/i, roles: frozenRoles('tl'), label: 'GitHub' },
 ])
 
+/**
+ * Which roles a skill goes to, by its name (D-53), tried in order like MCP_ROLE_ROWS: `security-review` goes to
+ * Security, and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the ends of the
+ * name), so `redesign` is not a design skill.
+ */
+export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
+  { pattern: /(^|[-:])security-review$/, roles: frozenRoles('security'), label: 'security-review' },
+  {
+    pattern: /(^|[-:])(frontend-design|frontend|design|ui-ux|ui-design)([-:]|$)/i,
+    roles: frozenRoles('fe'),
+    label: 'frontend and design skills',
+  },
+])
+
 /** One scanned name given to the roles with these ids. */
 export type NameAssignment = {
   readonly name: string
   readonly roleIds: readonly string[]
+}
+
+/**
+ * Skills the table does not decide, grouped by the plugin that adds them so one question covers the group. `label` is
+ * the plugin name, or `your own` for user and project skills, which share one group (`plugin` null). `names` is sorted.
+ */
+export type SkillGroup = {
+  readonly label: string
+  readonly plugin: string | null
+  readonly names: readonly string[]
 }
 
 /** The dialog button that gives an item to no role. A typed answer of the same words counts the same, in any case. */
@@ -51,6 +143,9 @@ const MAX_NAME_CHARS = 60
 
 /** The hint that ends every question whose answer is a list of roles. */
 const ROLE_ANSWER_HINT = '(e.g. BE, QA, or none)'
+
+/** The label of the skill group that holds the user's own skills and the project's, which no plugin adds. */
+const OWN_SKILLS_LABEL = 'your own'
 
 /** Orders names by code point, so the order never depends on the locale of the machine. */
 function compareNames(a: string, b: string): number {
@@ -105,6 +200,66 @@ export function classifyMcp(
 /** The question for an MCP server the table does not decide. The name is cleaned and cut to 60 code points. */
 export function mcpQuestion(name: string): string {
   return `Which roles get the ${clean(name, MAX_NAME_CHARS)} MCP server? ${ROLE_ANSWER_HINT}`
+}
+
+/** The skills once each by name, the first sighting kept, sorted by name. */
+function uniqueByName(skills: readonly SkillRef[]): SkillRef[] {
+  const first = new Map<string, SkillRef>()
+  for (const skill of skills) {
+    if (!first.has(skill.name)) first.set(skill.name, skill)
+  }
+
+  return Array.from(first.values()).sort((a, b) => compareNames(a.name, b.name))
+}
+
+/** Orders groups by label, with the group of the user's own skills (no plugin) last. */
+function compareGroups(a: SkillGroup, b: SkillGroup): number {
+  if (a.plugin === null) return b.plugin === null ? 0 : 1
+  if (b.plugin === null) return -1
+
+  return compareNames(a.label, b.label)
+}
+
+/** The skills grouped by plugin, in group order. The skills must already be sorted by name, which the names keep. */
+function groupByPlugin(skills: readonly SkillRef[]): SkillGroup[] {
+  const namesOf = new Map<string | null, string[]>()
+  for (const skill of skills) {
+    const names = namesOf.get(skill.plugin)
+    if (names === undefined) namesOf.set(skill.plugin, [skill.name])
+    else names.push(skill.name)
+  }
+  const groups = Array.from(namesOf, ([plugin, names]) => ({ label: plugin ?? OWN_SKILLS_LABEL, plugin, names }))
+
+  return groups.sort(compareGroups)
+}
+
+/**
+ * Splits the scanned skills into the ones the table gives to roles and the groups left to ask about. The handoff
+ * skills (infra) and the GSD and superpowers skills (framework, which come through the adapter) are skipped, whichever
+ * framework the roles use, and a skill seen twice counts once. A skill goes to the roles of its row that are on the
+ * team; one that no row matches, or whose row has no role on the team, joins the group of its plugin. Assigned skills
+ * are sorted by name, groups by label with `your own` last, and the names in a group by name (D-53, ISO-04).
+ */
+export function classifySkills(
+  skills: readonly SkillRef[],
+  roles: readonly RoleSpec[],
+): { readonly assigned: readonly NameAssignment[]; readonly groups: readonly SkillGroup[] } {
+  const assigned: NameAssignment[] = []
+  const asked: SkillRef[] = []
+  for (const skill of uniqueByName(skills)) {
+    if (INFRA_SKILLS.includes(skill.name) || isAnyFrameworkSkill(skill)) continue
+
+    const roleIds = presentRoleIds(SKILL_ROLE_ROWS, skill.name, roles)
+    if (roleIds.length === 0) asked.push(skill)
+    else assigned.push({ name: skill.name, roleIds })
+  }
+
+  return { assigned, groups: groupByPlugin(asked) }
+}
+
+/** The question for a group of skills the table does not decide. The label is cleaned and cut to 60 code points. */
+export function skillGroupQuestion(group: SkillGroup): string {
+  return `Which roles get ${clean(group.label, MAX_NAME_CHARS)} skills (${group.names.length})? ${ROLE_ANSWER_HINT}`
 }
 
 /** Lowercase role id or title to role id. Every id comes before every title, so an id beats another role's title. */
