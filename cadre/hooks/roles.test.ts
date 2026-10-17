@@ -35,6 +35,7 @@ import {
   roleFromTemplate,
   ROLE_TEMPLATE,
   rolesFromProposal,
+  standsFor,
   validateRoleId,
   validateRoles,
 } from './roles'
@@ -470,6 +471,13 @@ describe('decision owners', () => {
       HUMAN_FALLBACK,
     ])
     expect(decisionChain('QA', [{ id: 'api', basedOn: 'be' }, { id: 'docs', basedOn: null }])).toEqual([HUMAN_FALLBACK])
+  })
+
+  test('standsFor: a role stands for a template role by its id or by its basedOn', () => {
+    expect(standsFor({ id: 'api', basedOn: 'be' }, 'be')).toBe(true)
+    expect(standsFor({ id: 'be', basedOn: null }, 'be')).toBe(true)
+    expect(standsFor({ id: 'x', basedOn: null }, 'be')).toBe(false)
+    expect(standsFor({ id: 'api', basedOn: 'fe' }, 'be')).toBe(false)
   })
 
   test('a role whose id is the owner wins over another role based on it', () => {

@@ -4,9 +4,11 @@ import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } 
 import { ADAPTERS, detectAll } from './adapters'
 import { BUILTIN_ADAPTER } from './builtin'
 import { GSD_GATES } from './gsd'
+import { chunkLines as planChunkLines } from './plan'
 import {
   adaptersReportLines,
   choiceLine,
+  chunkLines,
   detectReportLines,
   detectText,
   pad,
@@ -447,6 +449,17 @@ describe('adaptersReportLines', () => {
       '      You are the BE role. This repo has no dev framework: work in plan, execute, verify steps.',
     )
     expect(block).toContain('      Write your plan to .cadre/be/.runtime/plan.md, then execute it with subagents.')
+  })
+})
+
+describe('chunkLines', () => {
+  test('groups lines into chunks that fit the cap when joined with a newline', () => {
+    expect(chunkLines(['aaa', 'bbb', 'ccc'], 7)).toEqual(['aaa\nbbb', 'ccc'])
+    expect(chunkLines(['aaa', 'bbb', 'ccc'], 11)).toEqual(['aaa\nbbb\nccc'])
+  })
+
+  test('plan.ts gives the same function, so the old import keeps working', () => {
+    expect(planChunkLines).toBe(chunkLines)
   })
 })
 
