@@ -847,6 +847,56 @@ describe('scope rules', () => {
   })
 })
 
+/** Names that sort in their own order: `${prefix}00`, `${prefix}01` and on, `count` of them. */
+function numbered(prefix: string, count: number): string[] {
+  return Array.from({ length: count }, (_, index) => `${prefix}${String(index).padStart(2, '0')}`)
+}
+
+describe('card rule lists', () => {
+  test('the MCP deny rule names 12 servers and then counts the rest', () => {
+    const names = numbered('mcp-', 15)
+    const scope = compileScope(templateRole('pm'), context({ setup: setup({ mcp: names.map(session) }) }))
+    const text = `Scanned MCP servers not given are denied: ${names.slice(0, 12).join(', ')}, +3 more`
+
+    expect(ruleOf(scope, text)?.enforcement).toBe('best-effort')
+    expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toHaveLength(15)
+  })
+
+  test('the MCP deny rule shows a scanned name cleaned', () => {
+    const scanned = setup({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
+    const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
+
+    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: evil')?.enforcement).toBe('best-effort')
+  })
+
+  test('a long code dir name is capped in the denied-dirs rule, so the card line keeps its fixed tail', () => {
+    const dir = 'd'.repeat(300)
+    const scope = compileScope(templateRole('pm'), context({ codeDirs: [dir] }))
+    const text = `Reads and edits under ${'d'.repeat(109)}… are denied; the patterns match at any depth`
+
+    expect(ruleOf(scope, text)?.enforcement).toBe('best-effort')
+    expect(scopeCardLines(scope.card)).toContain(`    [best-effort] ${text}`)
+    expect(scope.settings.permissions.deny).toContain(`Read(./${dir}/**)`)
+  })
+
+  test('the plugins rule names 12 plugin keys and then counts the rest', () => {
+    const plugins = numbered('p', 12)
+    const scanned = setup({ plugins: plugins.map(name => `${name}@m`) })
+    const role = templateRole('pm', { skills: plugins.map(name => `${name}:s`) })
+    const scope = compileScope(role, context({ setup: scanned }))
+    const shownKeys = [
+      'agent-fleet@local-mods',
+      'autopilot@local-mods',
+      'cadre@local-mods',
+      ...plugins.slice(0, 9).map(name => `${name}@m`),
+    ]
+    const text = `Plugins: only ${shownKeys.join(', ')}, +3 more load (--setting-sources project whitelist)`
+
+    expect(Object.keys(scope.settings.enabledPlugins)).toHaveLength(15)
+    expect(ruleOf(scope, text)?.enforcement).toBe('hard')
+  })
+})
+
 describe('isSafeDir', () => {
   test('a plain folder name is safe, a dot folder included; dot, dot-dot, a space and a glob character are not', () => {
     expect(['src', 'my-app_2', '.cadre'].filter(name => !isSafeDir(name))).toEqual([])
