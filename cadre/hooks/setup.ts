@@ -17,6 +17,7 @@ import {
   hiddenNameWarnings,
   hookScriptsMatching,
   isChangedByClean,
+  isDirInsideRoot,
   isFileInsideRoot,
   isObject,
   keysOf,
@@ -28,7 +29,8 @@ import {
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
-import { ENV_NAME_PATTERN, NAME_PATTERN } from './roles'
+import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './roles'
+import { listingState, missingState } from './scan'
 
 /**
  * Where a scan looks: the repo root as the host resolved it and as given, the home folder and CLAUDE_CONFIG_DIR. Every
@@ -104,6 +106,21 @@ function sorted(names: readonly string[]): string[] {
   return [...names].sort(compareText)
 }
 
+/**
+ * The warning for names a scan dropped because a role.json could not hold them, naming the source and the count and
+ * never a name; none when nothing was dropped.
+ */
+function unfitNameWarnings(count: number, noun: string, source: string): string[] {
+  if (count === 0) return []
+
+  return [`ignored ${count} ${noun} ${count === 1 ? 'name' : 'names'} from ${source} that a role.json cannot hold`]
+}
+
+/** Whether a hook script basename fits the role.json cap, so a role can carry it (D-62). */
+function fitsHookCap(script: string): boolean {
+  return script.length <= MAX_HOOK_NAME_CHARS
+}
+
 /** The value when it is a positive safe integer, else null. */
 function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -112,11 +129,23 @@ function positiveInteger(value: unknown): number | null {
 /**
  * The hook script basenames under `hooks` of one settings value, each with its event and source. Every basename ending
  * `.js`, `.cjs`, `.mjs`, `.sh`, `.py` or `.ts` is kept and the rest of its command is discarded: the interpreter, the
- * path and the arguments, which may hold a secret. A script named twice for the same event appears once. The walk is
- * the one parseHookScripts makes over the settings shape, with every script extension, not the `gsd-` names alone.
+ * path and the arguments, which may hold a secret. A script named twice for the same event appears once, and a name
+ * over the role.json cap of MAX_HOOK_NAME_CHARS is dropped, so every script a scan keeps is one a role can carry. The
+ * walk is the one parseHookScripts makes over the settings shape, with every script extension, not the `gsd-` names
+ * alone.
  */
 export function projectHooks(value: unknown, source: SettingsSource): HookScript[] {
-  return hookScriptsMatching(value, source, HOOK_SCRIPT_PATTERN)
+  return hookScriptsMatching(value, source, HOOK_SCRIPT_PATTERN).filter(hook => fitsHookCap(hook.script))
+}
+
+/** One warning per settings source that names hook scripts over the role.json cap, counting them, never naming one. */
+function hookNameWarnings(sources: readonly SettingsEntry[]): string[] {
+  return sources.flatMap(entry => {
+    const scripts = hookScriptsMatching(entry.value, entry.source, HOOK_SCRIPT_PATTERN).map(hook => hook.script)
+    const tooLong = new Set(scripts.filter(script => !fitsHookCap(script)))
+
+    return unfitNameWarnings(tooLong.size, 'hook script', `the ${entry.source} settings`)
+  })
 }
 
 /**
@@ -233,9 +262,22 @@ function skillNames(value: unknown): string[] {
     .filter((name): name is string => typeof name === 'string')
 }
 
-/** MCP servers of one source: the names that clean leaves unchanged, once each, sorted by name. */
+/**
+ * MCP servers of one source: the names that clean leaves unchanged and that fit the role.json name rule (NAME_PATTERN),
+ * once each, sorted by name. A name a role.json could not hold is never kept, so every server a scan names is one a
+ * role can be given.
+ */
 function mcpRefsOf(names: readonly string[], source: McpSource): McpRef[] {
-  return sorted(stableNames(names, MAX_REF_NAME_CHARS)).map(name => ({ name, source }))
+  const fit = stableNames(names, MAX_REF_NAME_CHARS).filter(name => NAME_PATTERN.test(name))
+
+  return sorted(fit).map(name => ({ name, source }))
+}
+
+/** The warning for the MCP server names of one source that clean leaves alone but NAME_PATTERN refuses. */
+function unfitMcpWarnings(names: readonly string[], source: string): string[] {
+  const unfit = stableNames(names, MAX_REF_NAME_CHARS).filter(name => !NAME_PATTERN.test(name))
+
+  return unfitNameWarnings(unfit.length, 'MCP server', source)
 }
 
 /** The server of each `mcp__<server>__<tool>` name in a `$.tool.list()` answer, as the host spells it. */
@@ -251,8 +293,8 @@ function toolServerNames(value: unknown): string[] {
 
 /**
  * The MCP servers the session has, from the tool names of the form `mcp__<server>__<tool>` (SCAN-02, D-57): each server
- * once, sorted, with source `session`. Only the name of a tool is read, never its description. Anything but a list
- * gives [].
+ * once, sorted, with source `session`. Only the name of a tool is read, never its description. A server name a
+ * role.json cannot hold (NAME_PATTERN) is dropped. Anything but a list gives [].
  */
 export function projectToolServers(value: unknown): McpRef[] {
   return mcpRefsOf(toolServerNames(value), 'session')
@@ -265,8 +307,8 @@ function mcpServerNames(value: unknown): string[] {
 
 /**
  * The MCP servers a repo's `.mcp.json` declares (SCAN-02, D-57): the keys of `mcpServers` only, sorted, with source
- * `project`. The entries, which hold commands, URLs, headers and tokens, are never read. Anything but a plain object
- * with an `mcpServers` object gives [].
+ * `project`. The entries, which hold commands, URLs, headers and tokens, are never read. A server name a role.json
+ * cannot hold (NAME_PATTERN) is dropped. Anything but a plain object with an `mcpServers` object gives [].
  */
 export function projectMcpJson(value: unknown): McpRef[] {
   return mcpRefsOf(mcpServerNames(value), 'project')
@@ -287,7 +329,7 @@ function claudeJsonNames(value: unknown, roots: readonly string[]): string[] {
  * keys of the top-level `mcpServers` and of the `mcpServers` of the project at any of `roots` (the repo root as given
  * and as resolved, trailing slashes ignored), sorted, with source `user-config`. Nothing else in the file is kept: not
  * the server entries, which hold tokens, not the account block and not another project. An empty root form matches no
- * project. Anything but a plain object gives [].
+ * project, and a server name a role.json cannot hold (NAME_PATTERN) is dropped. Anything but a plain object gives [].
  */
 export function projectClaudeJson(value: unknown, roots: readonly string[]): McpRef[] {
   return mcpRefsOf(claudeJsonNames(value, roots), 'user-config')
@@ -330,9 +372,14 @@ function userDirOf(ctx: SetupContext): string | null {
   return ctx.home === null ? null : `${ctx.home}/.claude`
 }
 
+/** A path as a warning shows it: its display form (`<repo>/...`, `~/...`), never the path itself (D-57). */
+function shownPath(ctx: SetupContext, path: string): string {
+  return displayPath(path, ctx.home, ctx.root, ctx.configDir)
+}
+
 /** The warning for a path the scan could not read: its display form, never the path itself (D-57). */
 function unreadableWarning(ctx: SetupContext, path: string): string {
-  return `could not read ${displayPath(path, ctx.home, ctx.root, ctx.configDir)} (treated as unknown)`
+  return `could not read ${shownPath(ctx, path)} (treated as unknown)`
 }
 
 /**
@@ -360,9 +407,8 @@ async function readJson(
 }
 
 /**
- * A folder's listing. The port's list answers null both for a folder that is not there and for one that cannot be
- * listed, and its read answers `absent` only for a path that is not there, so a null listing is told apart by a read: a
- * folder that is not there gives [] quietly, any other null gives [] with a warning (unknown is not absent).
+ * A folder's listing, by listingState: a folder that is not there gives [] quietly, and one that cannot be listed gives
+ * [] with a warning, because unknown is not absent.
  */
 async function listFolder(
   io: InitIo,
@@ -370,12 +416,31 @@ async function listFolder(
   path: string,
   warnings: string[],
 ): Promise<readonly PortEntry[]> {
-  const entries = await io.list(path)
-  if (entries !== null) return entries
-  const probe = await io.read(path, 0)
-  if (probe.state !== 'absent') warnings.push(unreadableWarning(ctx, path))
+  const listing = await listingState(io, path)
+  if (listing.state === 'present') return listing.entries
+  if (listing.state === 'unknown') warnings.push(unreadableWarning(ctx, path))
 
   return []
+}
+
+/**
+ * Whether a repo path may be read or listed: its stat must pass `isInside`, the containment rule for its kind (WR-02).
+ * A path that fails it adds a warning; a path with no stat is told apart by missingState, so a missing path is quiet
+ * and one the port could not stat adds a warning, because unknown is not absent.
+ */
+async function isInsideRepo(
+  io: InitIo,
+  ctx: SetupContext,
+  path: string,
+  isInside: (stat: unknown, root: string) => boolean,
+  warnings: string[],
+): Promise<boolean> {
+  const stat = await io.stat(path)
+  const isAllowed = stat !== null && isInside(stat, ctx.root)
+  if (isAllowed) return true
+  if (stat !== null || (await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
+
+  return false
 }
 
 /** The names of the regular files in a listing that end with `extension`; a folder, a link or another kind does not. */
@@ -439,28 +504,36 @@ async function sessionMcpRefs(io: InitIo, warnings: string[]): Promise<McpRef[]>
     return []
   }
   warnings.push(...hiddenNameWarnings(toolServerNames(value), 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(toolServerNames(value), 'the session tools'))
 
   return projectToolServers(value)
 }
 
 /**
  * The MCP servers of the repo's `.mcp.json`. The file is read only when its stat shows a regular file whose real path
- * is inside the repo (WR-02); a link out of the repo, a folder or any other kind is not read and adds a warning. A file
- * that is not there is quiet.
+ * is inside the repo (WR-02); a link out of the repo, a folder, any other kind or a failed stat is not read and adds a
+ * warning. A file that is not there is quiet.
  */
 async function projectMcpRefs(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<McpRef[]> {
   const path = `${ctx.root}/.mcp.json`
-  const stat = await io.stat(path)
-  if (stat === null) return []
-  if (!isFileInsideRoot(stat, ctx.root)) {
-    warnings.push(unreadableWarning(ctx, path))
-
-    return []
-  }
+  if (!(await isInsideRepo(io, ctx, path, isFileInsideRoot, warnings))) return []
   const value = await readJson(io, ctx, path, MAX_READ_BYTES, warnings)
   warnings.push(...hiddenNameWarnings(mcpServerNames(value), 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(mcpServerNames(value), shownPath(ctx, path)))
 
   return projectMcpJson(value)
+}
+
+/**
+ * The `.md` files of the repo's `.claude/agents`, listed only when its stat shows a folder whose real path is inside
+ * the repo (isDirInsideRoot, the rule `.mcp.json` follows), so a link out of the repo is never listed and adds a
+ * warning, and so does a failed stat; a folder that is not there is quiet.
+ */
+async function repoAgentEntries(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<readonly PortEntry[]> {
+  const path = `${ctx.root}/.claude/agents`
+  if (!(await isInsideRepo(io, ctx, path, isDirInsideRoot, warnings))) return []
+
+  return listFolder(io, ctx, path, warnings)
 }
 
 /** The agents in the user folder and in the repo's `.claude/agents`: the `.md` files, by name without the extension. */
@@ -470,12 +543,9 @@ async function agentNames(
   userDir: string | null,
   warnings: string[],
 ): Promise<string[]> {
-  const folders = userDir === null ? [] : [`${userDir}/agents`]
-  const names: string[] = []
-  for (const folder of [...folders, `${ctx.root}/.claude/agents`]) {
-    const entries = await listFolder(io, ctx, folder, warnings)
-    names.push(...fileNames(entries, MARKDOWN_EXTENSION).map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
-  }
+  const userEntries = userDir === null ? [] : await listFolder(io, ctx, `${userDir}/agents`, warnings)
+  const entries = [...userEntries, ...(await repoAgentEntries(io, ctx, warnings))]
+  const names = fileNames(entries, MARKDOWN_EXTENSION).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
 
   return sorted(stableNames(names, MAX_REF_NAME_CHARS))
@@ -505,6 +575,7 @@ async function userConfigMcpRefs(
   const value = await readJson(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
   const roots = [ctx.root, ctx.givenRoot]
   warnings.push(...hiddenNameWarnings(claudeJsonNames(value, roots), 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(claudeJsonNames(value, roots), shownPath(ctx, path)))
 
   return projectClaudeJson(value, roots)
 }
@@ -521,15 +592,30 @@ async function claudeMdChain(io: InitIo, ctx: SetupContext, warnings: string[]):
   return projectAncestors(value, ctx)
 }
 
-/** Whether the user folder holds a CLAUDE.md file. Its stat answers; its text is never read. */
-async function isGlobalClaudeMdThere(io: InitIo, userDir: string | null): Promise<boolean> {
+/**
+ * Whether the user folder holds a CLAUDE.md file. Its stat answers; its text is never read. A stat that fails on a
+ * path that is there (missingState) adds a warning and counts as no file, because unknown is not absent.
+ */
+async function isGlobalClaudeMdThere(
+  io: InitIo,
+  ctx: SetupContext,
+  userDir: string | null,
+  warnings: string[],
+): Promise<boolean> {
   if (userDir === null) return false
-  const stat = await io.stat(`${userDir}/CLAUDE.md`)
+  const path = `${userDir}/CLAUDE.md`
+  const stat = await io.stat(path)
+  if (stat !== null) return stat.kind === 'file'
+  if ((await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
 
-  return stat !== null && stat.kind === 'file'
+  return false
 }
 
-/** The `.md` file names in the auto-memory folder of this repo, with their extension; their text is never read. */
+/**
+ * The `.md` file names in the auto-memory folders of this repo, with their extension; their text is never read. The
+ * folder of the root as resolved and the one of the root as given are both listed, once each when they are the same,
+ * as `~/.claude.json` is matched by both root forms.
+ */
 async function memoryFileNames(
   io: InitIo,
   ctx: SetupContext,
@@ -537,8 +623,12 @@ async function memoryFileNames(
   warnings: string[],
 ): Promise<string[]> {
   if (userDir === null) return []
-  const folder = `${userDir}/projects/${mangledProjectDir(ctx.root)}/memory`
-  const names = fileNames(await listFolder(io, ctx, folder, warnings), MARKDOWN_EXTENSION)
+  const projects = new Set([ctx.root, ctx.givenRoot].map(mangledProjectDir))
+  const names: string[] = []
+  for (const project of projects) {
+    const folder = `${userDir}/projects/${project}/memory`
+    names.push(...fileNames(await listFolder(io, ctx, folder, warnings), MARKDOWN_EXTENSION))
+  }
   warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
 
   return sorted(stableNames(names, MAX_FILE_NAME_CHARS))
@@ -569,7 +659,7 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   if (userDir === null) warnings.push(NO_USER_DIR_WARNING)
   const sources = await readSettings(io, warnings)
   const settings = projectSettings(sources)
-  warnings.push(...settingsNameWarnings(sources))
+  warnings.push(...settingsNameWarnings(sources), ...hookNameWarnings(sources))
   const installed = await installedPluginKeys(io, ctx, userDir, warnings)
   const skills = await commandRefs(io, warnings)
   const projectServers = await projectMcpRefs(io, ctx, warnings)
@@ -577,7 +667,7 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   const userServers = await userConfigMcpRefs(io, ctx, isClaudeJsonAllowed, warnings)
   const agents = await agentNames(io, ctx, userDir, warnings)
   const claudeMd = await claudeMdChain(io, ctx, warnings)
-  const hasGlobalClaudeMd = await isGlobalClaudeMdThere(io, userDir)
+  const hasGlobalClaudeMd = await isGlobalClaudeMdThere(io, ctx, userDir, warnings)
   const memoryFiles = await memoryFileNames(io, ctx, userDir, warnings)
 
   return {
