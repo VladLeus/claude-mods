@@ -2,20 +2,30 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import {
+  ALL_ENV_OPTION,
   ALL_OPTION,
   assignToRoles,
   classifyMcp,
   classifySkills,
+  EFFORTS,
+  envQuestion,
   FRAMEWORK_START_SKILLS,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
   INFRA_TOOLS,
+  INSTRUCTION_LABELS,
   isFrameworkSkill,
   MCP_ROLE_ROWS,
   mcpQuestion,
+  memoryQuestion,
+  MODEL_EFFORT_OPTIONS,
   NONE_OPTION,
+  parseEnvNames,
+  parseModelEffort,
   parseRoleList,
+  PER_ROLE,
+  SAME_FOR_ALL,
   SKILL_ROLE_ROWS,
   skillGroupQuestion,
 } from './assign'
@@ -543,5 +553,161 @@ describe('skill assignment', () => {
     expect(SKILL_ROLE_ROWS.map(row => row.roles)).toEqual([['security'], ['fe']])
     expect(SKILL_ROLE_ROWS.every(row => row.label.trim() !== '')).toBe(true)
     expect(new Set(SKILL_ROLE_ROWS.map(row => row.label)).size).toBe(SKILL_ROLE_ROWS.length)
+  })
+})
+
+/** The question memoryQuestion words for the auto-memories, with `shown` between the brackets. */
+function autoMemoryAsk(shown: string): string {
+  return `Which roles get the auto-memories for this repo (${shown})? (e.g. PM, TL, or none)`
+}
+
+describe('answer parsers', () => {
+  test('the model and effort options, the two shortcuts and the efforts are fixed and frozen', () => {
+    expect(MODEL_EFFORT_OPTIONS).toEqual(['opus + medium', 'sonnet + medium', 'sonnet + high'])
+    expect(SAME_FOR_ALL).toBe('Same for all roles')
+    expect(PER_ROLE).toBe('Per role')
+    expect(EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(Object.isFrozen(MODEL_EFFORT_OPTIONS)).toBe(true)
+    expect(Object.isFrozen(EFFORTS)).toBe(true)
+  })
+
+  test('every model and effort button reads back as the model and effort it shows', () => {
+    expect(MODEL_EFFORT_OPTIONS.map(option => parseModelEffort(option))).toEqual([
+      { model: 'opus', effort: 'medium' },
+      { model: 'sonnet', effort: 'medium' },
+      { model: 'sonnet', effort: 'high' },
+    ])
+  })
+
+  test('parseModelEffort reads a family alias and an effort, split by a plus or spaces, in any case', () => {
+    expect(parseModelEffort('opus + medium')).toEqual({ model: 'opus', effort: 'medium' })
+    expect(parseModelEffort('sonnet high')).toEqual({ model: 'sonnet', effort: 'high' })
+    expect(parseModelEffort('haiku+low')).toEqual({ model: 'haiku', effort: 'low' })
+    expect(parseModelEffort(' Opus + MEDIUM ')).toEqual({ model: 'opus', effort: 'medium' })
+    expect(parseModelEffort('fable max')).toEqual({ model: 'fable', effort: 'max' })
+    expect(parseModelEffort('opus  +  xhigh')).toEqual({ model: 'opus', effort: 'xhigh' })
+  })
+
+  test('parseModelEffort takes a model of 24 letters and hyphens at most and refuses a longer one', () => {
+    expect(parseModelEffort(`${'a'.repeat(24)} low`)).toEqual({ model: 'a'.repeat(24), effort: 'low' })
+    expect(parseModelEffort(`${'a'.repeat(25)} low`)).toBeNull()
+    expect(parseModelEffort('my-alias high')).toEqual({ model: 'my-alias', effort: 'high' })
+  })
+
+  test('parseModelEffort refuses a pinned model id, which has digits', () => {
+    expect(parseModelEffort('claude-opus-5-5 medium')).toBeNull()
+    expect(parseModelEffort('opus5 high')).toBeNull()
+  })
+
+  test('parseModelEffort refuses an effort outside low, medium, high, xhigh and max', () => {
+    expect(parseModelEffort('opus extreme')).toBeNull()
+    expect(parseModelEffort('opus 3')).toBeNull()
+    expect(parseModelEffort('opus none')).toBeNull()
+  })
+
+  test('parseModelEffort refuses a model alone, an effort alone, empty text and extra words', () => {
+    expect(parseModelEffort('opus')).toBeNull()
+    expect(parseModelEffort('medium')).toBeNull()
+    expect(parseModelEffort('')).toBeNull()
+    expect(parseModelEffort('opus + ')).toBeNull()
+    expect(parseModelEffort('+ medium')).toBeNull()
+    expect(parseModelEffort('opus medium high')).toBeNull()
+    expect(parseModelEffort('opus++medium')).toBeNull()
+    expect(parseModelEffort('-opus medium')).toBeNull()
+  })
+
+  test('parseEnvNames keeps the scanned names, sorted and once each, whatever the order and separators', () => {
+    const scanned = ['API_KEY', 'JIRA_URL', 'TOKEN']
+
+    expect(parseEnvNames('JIRA_URL, API_KEY', scanned)).toEqual(['API_KEY', 'JIRA_URL'])
+    expect(parseEnvNames('TOKEN JIRA_URL', scanned)).toEqual(['JIRA_URL', 'TOKEN'])
+    expect(parseEnvNames('API_KEY, API_KEY', scanned)).toEqual(['API_KEY'])
+  })
+
+  test('parseEnvNames reads none as no names, and all or the All of them button as every scanned name, sorted', () => {
+    const scanned = ['TOKEN', 'API_KEY']
+
+    expect(parseEnvNames('None', scanned)).toEqual([])
+    expect(parseEnvNames('none', scanned)).toEqual([])
+    expect(parseEnvNames('All of them', scanned)).toEqual(['API_KEY', 'TOKEN'])
+    expect(parseEnvNames('all', scanned)).toEqual(['API_KEY', 'TOKEN'])
+    expect(parseEnvNames('ALL OF THEM', scanned)).toEqual(['API_KEY', 'TOKEN'])
+    expect(ALL_ENV_OPTION).toBe('All of them')
+  })
+
+  test('parseEnvNames gives null for a name that was not scanned, a name in the wrong case, or an empty answer', () => {
+    const scanned = ['API_KEY', 'JIRA_URL']
+
+    expect(parseEnvNames('HOME', scanned)).toBeNull()
+    expect(parseEnvNames('jira_url', scanned)).toBeNull()
+    expect(parseEnvNames('API_KEY, HOME', scanned)).toBeNull()
+    expect(parseEnvNames('', scanned)).toBeNull()
+    expect(parseEnvNames(' , ', scanned)).toBeNull()
+    expect(parseEnvNames('none, API_KEY', scanned)).toBeNull()
+  })
+
+  test('parseEnvNames lets nothing but a scanned name through: no value, no prototype key (names only, D-60)', () => {
+    const scanned = ['API_KEY', 'JIRA_URL']
+    const answers = ['API_KEY=sk-live-123', 'sk-live-123', '$(whoami)', 'API_KEY;JIRA_URL', '__proto__', 'constructor']
+
+    for (const answer of answers) expect([answer, parseEnvNames(answer, scanned)]).toEqual([answer, null])
+  })
+
+  test('parseEnvNames with nothing scanned gives no names for none and all, and null for any name', () => {
+    expect(parseEnvNames('none', [])).toEqual([])
+    expect(parseEnvNames('all', [])).toEqual([])
+    expect(parseEnvNames('API_KEY', [])).toBeNull()
+  })
+
+  test('envQuestion lists the scanned names and says that values are never stored', () => {
+    expect(envQuestion(['API_KEY', 'JIRA_URL'])).toBe(
+      'Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)',
+    )
+  })
+
+  test('envQuestion cleans each name and cuts it to 60 code points', () => {
+    const odd = `A${String.fromCodePoint(0x202e)}B`
+
+    expect(envQuestion([odd, 'X'.repeat(70)])).toBe(
+      `Which env variables do roles carry? Names: AB, ${'X'.repeat(59)}… ` +
+        '(values are never stored; e.g. API_KEY, or none)',
+    )
+  })
+
+  test('INSTRUCTION_LABELS words the three instruction groups and is frozen', () => {
+    expect(INSTRUCTION_LABELS).toEqual({
+      'global-claude-md': 'your global ~/.claude/CLAUDE.md and the files it imports',
+      'auto-memory': 'the auto-memories for this repo',
+      'project-claude-md': 'the project CLAUDE.md',
+    })
+    expect(Object.isFrozen(INSTRUCTION_LABELS)).toBe(true)
+  })
+
+  test('memoryQuestion words the question with the group label and the names found', () => {
+    expect(memoryQuestion('auto-memory', ['a.md', 'b.md'])).toBe(autoMemoryAsk('a.md, b.md'))
+    expect(memoryQuestion('project-claude-md', ['<repo>/CLAUDE.md'])).toBe(
+      'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
+    )
+    expect(memoryQuestion('global-claude-md', ['~/.claude/CLAUDE.md'])).toBe(
+      'Which roles get your global ~/.claude/CLAUDE.md and the files it imports (~/.claude/CLAUDE.md)? ' +
+        '(e.g. PM, TL, or none)',
+    )
+  })
+
+  test('memoryQuestion shows five names at most and counts the rest', () => {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+
+    expect(memoryQuestion('auto-memory', names.slice(0, 5))).toBe(autoMemoryAsk('a, b, c, d, e'))
+    expect(memoryQuestion('auto-memory', names.slice(0, 6))).toBe(autoMemoryAsk('a, b, c, d, e, +1 more'))
+    expect(memoryQuestion('auto-memory', names)).toBe(autoMemoryAsk('a, b, c, d, e, +2 more'))
+  })
+
+  test('memoryQuestion cleans each name to 60 code points, and with no name it leaves the brackets out', () => {
+    const odd = `m${String.fromCodePoint(0x202e)}.md`
+
+    expect(memoryQuestion('auto-memory', [odd, 'x'.repeat(61)])).toBe(autoMemoryAsk(`m.md, ${'x'.repeat(59)}…`))
+    expect(memoryQuestion('auto-memory', [])).toBe(
+      'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)',
+    )
   })
 })
