@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HunkOp, PortRead, SettingProposal, ToolCommand } from '../types'
+import type {
+  FrameworkId,
+  HunkOp,
+  McpRef,
+  PortRead,
+  Recommendation,
+  RepoScan,
+  RoleSpec,
+  ScanFinding,
+  SettingProposal,
+  SetupScan,
+  SkillRef,
+  TemplateRoleId,
+  ToolCommand,
+} from '../types'
 import { GSD_AUTONOMY } from './gsd'
 import {
   attendedNote,
@@ -8,10 +22,13 @@ import {
   hunkCandidates,
   hunkOp,
   hunkQuestion,
+  INSTALL_COMMANDS,
   isGsdAttended,
   isGsdAttendedFromConfig,
   NOT_SET_TEXT,
   parseHunkAnswer,
+  recommend,
+  recommendationLines,
   resolveToolCommand,
   TOOL_SCRIPTS,
   UNKNOWN_CONFIG_TEXT,
@@ -525,5 +542,372 @@ describe('tool commands and attended', () => {
 
   test('attendedNote cleans its keys, so a hostile key cannot add a line or hide text', () => {
     expect(attendedNote([`a${BIDI_OVERRIDE}\nb`])).toBe('attended: GSD needs a person until ab is set as proposed')
+  })
+})
+
+/** A role with the fields recommend reads set and the rest defaults. */
+function role(id: string, basedOn: TemplateRoleId | null, title: string): RoleSpec {
+  return {
+    id,
+    title,
+    purpose: 'p',
+    basedOn,
+    model: 'opus',
+    effort: 'medium',
+    permissionMode: 'auto',
+    autopilot: { duration: '4h', threshold: 65, askUser: false },
+    hasBash: true,
+    mcp: [],
+    skills: [],
+    instructions: [],
+    carry: { autoCompactWindow: false, statusLine: false, env: [], hooks: [] },
+  }
+}
+
+const PM = role('pm', 'pm', 'PM')
+const TL = role('tl', 'tl', 'Team Lead')
+const BE = role('be', 'be', 'BE')
+const FE = role('fe', 'fe', 'FE')
+const QA = role('qa', 'qa', 'QA')
+const SECURITY = role('security', 'security', 'Security')
+
+/** The six template roles in template order. */
+const FULL_TEAM: readonly RoleSpec[] = [PM, TL, BE, FE, QA, SECURITY]
+
+/** Every role of a team on one framework, in role order, as init resolves them. */
+function allOn(roles: readonly RoleSpec[], framework: FrameworkId): FrameworkId[] {
+  return roles.map(() => framework)
+}
+
+/** A repo scan that found nothing; `over` changes the fields it names. */
+function repoScan(over: Partial<RepoScan> = {}): RepoScan {
+  return {
+    findings: [],
+    languages: [],
+    codeDirs: [],
+    hasSource: false,
+    isTruncated: false,
+    cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
+    warnings: [],
+    ...over,
+  }
+}
+
+/** A user setup that holds nothing; `over` changes the fields it names. */
+function setupScan(over: Partial<SetupScan> = {}): SetupScan {
+  return {
+    plugins: [],
+    skills: [],
+    mcp: [],
+    agents: [],
+    claudeMd: [],
+    hasGlobalClaudeMd: false,
+    memoryFiles: [],
+    settingsKeys: [],
+    hooks: [],
+    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+    warnings: [],
+    ...over,
+  }
+}
+
+/** An E2E finding, as the repo scan records one. */
+const E2E: ScanFinding = { kind: 'e2e', label: 'playwright', evidence: 'playwright.config.ts' }
+
+/** An MCP server of the session, by name. */
+function server(name: string): McpRef {
+  return { name, source: 'session' }
+}
+
+/** A skill by name; `plugin` is null for a user or project skill. */
+function skill(name: string, plugin: string | null = null): SkillRef {
+  return { name, plugin }
+}
+
+const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in plan, execute, verify loop'
+const PLAYWRIGHT_WHY = 'the FE role has no E2E setup to check its work in a browser'
+const DEVTOOLS_WHY = 'the FE role cannot inspect the running page'
+const SECURITY_WHY = 'the Security role has no security-review skill'
+
+const GSD_LINE: Recommendation = { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd }
+const SUPERPOWERS_LINE: Recommendation = {
+  tool: 'superpowers',
+  roleId: null,
+  why: NO_FRAMEWORK_WHY,
+  install: INSTALL_COMMANDS.superpowers,
+}
+
+/** The Playwright MCP recommendation for the FE role `roleId`. */
+function playwrightFor(roleId: string): Recommendation {
+  return { tool: 'Playwright MCP', roleId, why: PLAYWRIGHT_WHY, install: INSTALL_COMMANDS.playwright }
+}
+
+/** The DevTools MCP recommendation for the FE role `roleId`. */
+function devtoolsFor(roleId: string): Recommendation {
+  return { tool: 'DevTools MCP', roleId, why: DEVTOOLS_WHY, install: INSTALL_COMMANDS.devtools }
+}
+
+/** The security-review recommendation for the Security role `roleId`. */
+function securityReviewFor(roleId: string): Recommendation {
+  return { tool: 'security-review', roleId, why: SECURITY_WHY, install: INSTALL_COMMANDS.securityReview }
+}
+
+describe('recommend', () => {
+  test('INSTALL_COMMANDS holds the five printed commands word for word, and is frozen', () => {
+    expect(INSTALL_COMMANDS).toEqual({
+      gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+      superpowers: 'claude plugin install superpowers@claude-plugins-official',
+      playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
+      devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
+      securityReview:
+        "built into Claude Code as /security-review; add it to the Security role's skills in .cadre/<id>/role.json",
+    })
+    expect(Object.isFrozen(INSTALL_COMMANDS)).toBe(true)
+  })
+
+  test('no framework in use for any role gives the GSD and superpowers lines, first', () => {
+    const roles = [PM, TL]
+
+    expect(recommend({ roles, frameworks: allOn(roles, 'none'), scan: repoScan(), setup: setupScan() })).toEqual([
+      GSD_LINE,
+      SUPERPOWERS_LINE,
+    ])
+  })
+
+  test('a framework in use for any role gives no GSD or superpowers line', () => {
+    const roles = [PM, TL]
+    const frameworks: readonly (readonly FrameworkId[])[] = [
+      ['gsd', 'gsd'],
+      ['superpowers', 'superpowers'],
+      ['gsd', 'none'],
+      ['none', 'superpowers'],
+    ]
+
+    for (const resolved of frameworks) {
+      expect(recommend({ roles, frameworks: resolved, scan: repoScan(), setup: setupScan() })).toEqual([])
+    }
+  })
+
+  test('a team with no roles gets no recommendation', () => {
+    expect(recommend({ roles: [], frameworks: [], scan: repoScan(), setup: setupScan() })).toEqual([])
+  })
+
+  test('an FE role with no E2E finding and no playwright MCP gets the Playwright MCP line', () => {
+    const setup = setupScan({ mcp: [server('chrome-devtools')] })
+
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([playwrightFor('fe')])
+  })
+
+  test('an E2E finding means no Playwright MCP line', () => {
+    const scan = repoScan({ findings: [E2E] })
+    const setup = setupScan({ mcp: [server('chrome-devtools')] })
+
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([])
+  })
+
+  test('a playwright MCP server, in any case and inside a longer name, means no Playwright MCP line', () => {
+    for (const name of ['playwright', 'Playwright', 'plugin_playwright_playwright', 'my-PLAYWRIGHT-server']) {
+      const setup = setupScan({ mcp: [server(name), server('chrome-devtools')] })
+
+      expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
+    }
+  })
+
+  test('an FE role with no devtools MCP gets the DevTools MCP line, whether E2E was found or not', () => {
+    const scan = repoScan({ findings: [E2E] })
+    const setup = setupScan({ mcp: [server('playwright')] })
+
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([devtoolsFor('fe')])
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([devtoolsFor('fe')])
+  })
+
+  test('a devtools MCP server, in any case and inside a longer name, means no DevTools MCP line', () => {
+    for (const name of ['chrome-devtools', 'DevTools', 'devtools-mcp']) {
+      const setup = setupScan({ mcp: [server(name), server('playwright')] })
+
+      expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
+    }
+  })
+
+  test('an FE role with neither tool gets both lines, Playwright first', () => {
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() })).toEqual([
+      playwrightFor('fe'),
+      devtoolsFor('fe'),
+    ])
+  })
+
+  test('a role based on fe is named by its own id, and a role with the id fe needs no base', () => {
+    const web = role('web', 'fe', 'Web UI')
+    const frontend = role('fe', null, 'Frontend')
+
+    expect(recommend({ roles: [web], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() })).toEqual([
+      playwrightFor('web'),
+      devtoolsFor('web'),
+    ])
+    expect(recommend({ roles: [frontend], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() })).toEqual([
+      playwrightFor('fe'),
+      devtoolsFor('fe'),
+    ])
+  })
+
+  test('each FE role gets its own line, rule by rule', () => {
+    const roles = [FE, role('web', 'fe', 'Web UI')]
+
+    expect(recommend({ roles, frameworks: allOn(roles, 'gsd'), scan: repoScan(), setup: setupScan() })).toEqual([
+      playwrightFor('fe'),
+      playwrightFor('web'),
+      devtoolsFor('fe'),
+      devtoolsFor('web'),
+    ])
+  })
+
+  test('a Security role with no security-review skill gets the security-review line', () => {
+    expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() })).toEqual([
+      securityReviewFor('security'),
+    ])
+    expect(
+      recommend({ roles: [role('sec', 'security', 'Sec')], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() }),
+    ).toEqual([securityReviewFor('sec')])
+  })
+
+  test('a security-review skill, plain or from a plugin, means no security-review line', () => {
+    const skills = [skill('security-review'), skill('claude-code:security-review', 'claude-code')]
+
+    for (const found of skills) {
+      const setup = setupScan({ skills: [skill('review'), found] })
+
+      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
+    }
+  })
+
+  test('only the name security-review or a plugin name ending in :security-review counts as the skill', () => {
+    const setup = setupScan({ skills: [skill('my-security-review'), skill('security-review-extra'), skill('review')] })
+
+    expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
+      securityReviewFor('security'),
+    ])
+  })
+
+  test('a full team with nothing found gets the five lines in rule order', () => {
+    const lines = recommend({
+      roles: FULL_TEAM,
+      frameworks: allOn(FULL_TEAM, 'none'),
+      scan: repoScan(),
+      setup: setupScan(),
+    })
+
+    expect(lines.map(line => [line.tool, line.roleId])).toEqual([
+      ['GSD', null],
+      ['superpowers', null],
+      ['Playwright MCP', 'fe'],
+      ['DevTools MCP', 'fe'],
+      ['security-review', 'security'],
+    ])
+  })
+
+  test('with a framework, E2E, both MCP servers and a security-review skill nothing is recommended', () => {
+    const scan = repoScan({ findings: [E2E] })
+    const setup = setupScan({
+      mcp: [server('playwright'), server('chrome-devtools')],
+      skills: [skill('security-review')],
+    })
+
+    expect(recommend({ roles: FULL_TEAM, frameworks: allOn(FULL_TEAM, 'gsd'), scan, setup })).toEqual([])
+  })
+
+  test('a recommendation is plain data: a tool, a role id, a reason and a command as text, never run', () => {
+    const lines = recommend({
+      roles: FULL_TEAM,
+      frameworks: allOn(FULL_TEAM, 'none'),
+      scan: repoScan(),
+      setup: setupScan(),
+    })
+
+    expect(lines).toHaveLength(5)
+    for (const line of lines) {
+      expect(Object.keys(line).sort()).toEqual(['install', 'roleId', 'tool', 'why'])
+      expect(typeof line.install).toBe('string')
+      expect(typeof line.why).toBe('string')
+    }
+  })
+
+  test('the security-review text is the one printed string, wherever it is shown', () => {
+    const lines = recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup: setupScan() })
+
+    expect(lines.map(line => line.install)).toEqual([INSTALL_COMMANDS.securityReview])
+  })
+
+  test('recommendationLines of no recommendation says none', () => {
+    expect(recommendationLines([], FULL_TEAM)).toEqual(['Recommendations: none'])
+  })
+
+  test('recommendationLines prints a heading, then each tool for its role with the exact command to run', () => {
+    const lines = recommend({
+      roles: FULL_TEAM,
+      frameworks: allOn(FULL_TEAM, 'none'),
+      scan: repoScan(),
+      setup: setupScan(),
+    })
+
+    expect(recommendationLines(lines, FULL_TEAM)).toEqual([
+      'Recommendations (print-only; nothing is installed):',
+      '- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop',
+      '    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+      '- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop',
+      '    run: claude plugin install superpowers@claude-plugins-official',
+      '- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser',
+      '    run: claude mcp add playwright -- npx @playwright/mcp@latest',
+      '- DevTools MCP for FE: the FE role cannot inspect the running page',
+      '    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
+      '- security-review for Security: the Security role has no security-review skill',
+      `    run: ${INSTALL_COMMANDS.securityReview}`,
+    ])
+  })
+
+  test('recommendationLines names the role by its title, and by its id when no role has it', () => {
+    const web = role('web', 'fe', 'Web UI')
+    const named = recommendationLines([playwrightFor('web')], [web])
+    const unknown = recommendationLines([playwrightFor('ghost')], [web])
+
+    expect(named[1]).toBe(`- Playwright MCP for Web UI: ${PLAYWRIGHT_WHY}`)
+    expect(unknown[1]).toBe(`- Playwright MCP for ghost: ${PLAYWRIGHT_WHY}`)
+  })
+
+  test('recommendationLines cleans every cell, so a hostile value adds no line and hides no text', () => {
+    const hostile: Recommendation = {
+      tool: `T${BIDI_OVERRIDE}\nx`,
+      roleId: 'web',
+      why: 'w\nFAKE',
+      install: `i${BIDI_OVERRIDE}\nrm -rf`,
+    }
+    const lines = recommendationLines([hostile], [role('web', 'fe', 'A\nB')])
+
+    expect(lines).toEqual([
+      'Recommendations (print-only; nothing is installed):',
+      '- Tx for AB: wFAKE',
+      '    run: irm -rf',
+    ])
+  })
+
+  test('recommendationLines caps a long cell at 240 code points', () => {
+    const long: Recommendation = { tool: 'T', roleId: null, why: 'w'.repeat(300), install: 'i' }
+    const lines = recommendationLines([long], [])
+
+    expect(lines[1]).toBe(`- T for all roles: ${'w'.repeat(239)}…`)
+  })
+
+  test('tracer for the whole path: a team with no framework gives lines that name the commands and run none', () => {
+    const roles = [PM, FE]
+    const lines = recommendationLines(
+      recommend({ roles, frameworks: allOn(roles, 'none'), scan: repoScan(), setup: setupScan() }),
+      roles,
+    )
+
+    expect(lines.filter(line => line.startsWith('    run: '))).toEqual([
+      `    run: ${INSTALL_COMMANDS.gsd}`,
+      `    run: ${INSTALL_COMMANDS.superpowers}`,
+      `    run: ${INSTALL_COMMANDS.playwright}`,
+      `    run: ${INSTALL_COMMANDS.devtools}`,
+    ])
   })
 })
