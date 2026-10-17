@@ -2,7 +2,18 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, SettingsSource, SetupScan } from '../types'
 import { MAX_READ_BYTES } from './facts'
-import { projectCommands, projectHooks, projectMcpJson, projectSettings, projectToolServers, scanSetup } from './setup'
+import {
+  CLAUDE_JSON_MAX_BYTES,
+  mangledProjectDir,
+  projectAncestors,
+  projectClaudeJson,
+  projectCommands,
+  projectHooks,
+  projectMcpJson,
+  projectSettings,
+  projectToolServers,
+  scanSetup,
+} from './setup'
 import type { SetupContext } from './setup'
 import { ABSOLUTE_PATH_MARKERS, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
 import type { MemWorld } from './testkit'
@@ -734,6 +745,329 @@ describe('setup sources', () => {
     expect(scan.warnings).toEqual([])
     const json = JSON.stringify(scan)
     expect(leaks(json, SECRETS)).toEqual([])
+    expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
+  })
+})
+
+const CLAUDE_JSON_PATH = '/home/u/.claude.json'
+const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
+
+/** A ~/.claude.json whose entries hold secrets and an account block, with servers for this repo and for another one. */
+const CLAUDE_JSON = JSON.stringify({
+  mcpServers: {
+    jira: { type: 'stdio', command: 'x', args: [], env: { JIRA_TOKEN: 'sk-FAKE-SECRET-0123456789' } },
+  },
+  oauthAccount: { emailAddress: 'someone@example.com', accountUuid: 'SENTINEL_SECRET_VALUE' },
+  projects: {
+    '/repo': {
+      mcpServers: { linear: { env: { T: 'Bearer FAKE-TOKEN-0123' } } },
+      history: [{ display: 'ghp_FAKEFAKEFAKEFAKEFAKE' }],
+    },
+    '/other': { mcpServers: { secret: {} } },
+  },
+})
+
+/** A ~/.claude.json text of exactly `bytes` ASCII bytes that names the server `jira`. */
+function claudeJsonOfSize(bytes: number): string {
+  const base = JSON.stringify({ mcpServers: { jira: {} }, pad: '' })
+
+  return JSON.stringify({ mcpServers: { jira: {} }, pad: 'x'.repeat(bytes - base.length) })
+}
+
+/** The CLAUDE.md files the host lists for a session in /repo under /home/u/work, with secret content in each. */
+const CHAIN: readonly unknown[] = [
+  { dir: '/', name: 'CLAUDE.md', content: 'SENTINEL_SECRET_VALUE', parts: [] },
+  { dir: '/home/u/work', name: 'CLAUDE.md', content: 'Bearer FAKE-TOKEN-0123', parts: [] },
+  { dir: '/repo', name: 'CLAUDE.md', content: 'sk-FAKE-SECRET-0123456789', parts: [] },
+  { dir: '/repo', name: '.claude/CLAUDE.md', content: 'x', parts: [] },
+  { dir: '/repo', name: 'AGENTS.md', content: 'ghp_FAKEFAKEFAKEFAKEFAKE', parts: [] },
+]
+
+describe('setup consent and instructions', () => {
+  test('CLAUDE_JSON_MAX_BYTES is the 4 MiB host cap, far above the 256 KiB cap of the detect files', () => {
+    expect(CLAUDE_JSON_MAX_BYTES).toBe(4 * 1024 * 1024)
+    expect(CLAUDE_JSON_MAX_BYTES > MAX_READ_BYTES).toBe(true)
+  })
+
+  test('projectClaudeJson keeps the mcpServers names of the file and of this repo, and nothing else', () => {
+    const value = {
+      mcpServers: { jira: { env: { T: 'sk-FAKE-SECRET-0123456789' } } },
+      oauthAccount: { emailAddress: 'a@b.c' },
+      projects: { '/repo': { mcpServers: { linear: {} } }, '/other': { mcpServers: { secret: {} } } },
+    }
+    const found = projectClaudeJson(value, ['/repo', '/repo'])
+    expect(found).toEqual([
+      { name: 'jira', source: 'user-config' },
+      { name: 'linear', source: 'user-config' },
+    ])
+    expect(leaks(JSON.stringify(found), [...SECRETS, 'a@b.c'])).toEqual([])
+  })
+
+  test('projectClaudeJson matches the project by the root as given or as resolved, ignoring trailing slashes', () => {
+    const value = {
+      projects: {
+        '/link/repo/': { mcpServers: { given: {} } },
+        '/real/repo': { mcpServers: { resolved: {} } },
+        '/other': { mcpServers: { other: {} } },
+        '': { mcpServers: { empty: {} } },
+        '/': { mcpServers: { top: {} } },
+      },
+    }
+    const found = projectClaudeJson(value, ['/link/repo', '/real/repo/'])
+    expect(found.map(server => server.name)).toEqual(['given', 'resolved'])
+    expect(projectClaudeJson(value, ['', '/'])).toEqual([])
+    expect(projectClaudeJson(value, [])).toEqual([])
+  })
+
+  test('projectClaudeJson of a value of the wrong shape is empty', () => {
+    const values: readonly unknown[] = [
+      null,
+      'text',
+      5,
+      [],
+      {},
+      { mcpServers: 5 },
+      { projects: 'text' },
+      { projects: { '/repo': 'text' } },
+      { projects: { '/repo': { mcpServers: ['a'] } } },
+    ]
+    expect(values.flatMap(value => projectClaudeJson(value, ['/repo']))).toEqual([])
+  })
+
+  test('projectClaudeJson drops a server name that clean would change', () => {
+    const value = {
+      mcpServers: { ok: {}, 'bad\u0007': {} },
+      projects: { '/repo': { mcpServers: { 'worse\u0007': {} } } },
+    }
+    expect(projectClaudeJson(value, ['/repo'])).toEqual([{ name: 'ok', source: 'user-config' }])
+  })
+
+  test('without consent the file is neither read nor missed, even when it cannot be read', async () => {
+    const found = await runOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), false)
+    expect(found.reads).not.toContain(CLAUDE_JSON_PATH)
+    expect(found.scan.mcp).toEqual([])
+    const unreadable = await runOf(memWorld({ unknownPaths: [CLAUDE_JSON_PATH] }), false)
+    expect(unreadable.reads).not.toContain(CLAUDE_JSON_PATH)
+    expect(unreadable.scan.warnings).toEqual([])
+  })
+
+  test('with consent the file is read once and its server names join the scan as user-config', async () => {
+    const { scan, reads } = await runOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), true)
+    expect(reads.filter(path => path === CLAUDE_JSON_PATH)).toEqual([CLAUDE_JSON_PATH])
+    expect(scan.mcp).toEqual([
+      { name: 'jira', source: 'user-config' },
+      { name: 'linear', source: 'user-config' },
+    ])
+    const json = JSON.stringify(scan)
+    expect(leaks(json, [...SECRETS, 'someone@example.com'])).toEqual([])
+    expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
+  })
+
+  test('the file is read with the 4 MiB cap: 300 KiB and exactly 4 MiB are read, one byte more is not', async () => {
+    const sizes = [300 * 1024, CLAUDE_JSON_MAX_BYTES, CLAUDE_JSON_MAX_BYTES + 1]
+    const found: (readonly string[])[][] = []
+    for (const size of sizes) {
+      const scan = await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: claudeJsonOfSize(size) } }), true)
+      found.push([scan.mcp.map(server => server.name), scan.warnings])
+    }
+    expect(found).toEqual([
+      [['jira'], []],
+      [['jira'], []],
+      [[], ['could not read ~/.claude.json (treated as unknown)']],
+    ])
+  })
+
+  test('a ~/.claude.json that cannot be read or parsed warns, and one that is not there is quiet', async () => {
+    const warning = ['could not read ~/.claude.json (treated as unknown)']
+    expect((await scanOf(memWorld({}), true)).warnings).toEqual([])
+    expect((await scanOf(memWorld({ unknownPaths: [CLAUDE_JSON_PATH] }), true)).warnings).toEqual(warning)
+    expect((await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: '{ not json' } }), true)).warnings).toEqual(warning)
+  })
+
+  test('the file is looked for in CLAUDE_CONFIG_DIR when it is set, and then not in the home folder', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '/cfg' }
+    const world = memWorld({
+      files: {
+        '/cfg/.claude.json': JSON.stringify({ mcpServers: { cfgserver: {} } }),
+        [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { decoy: {} } }),
+      },
+    })
+    const { scan, reads } = await runOf(world, true, ctx)
+    expect(scan.mcp).toEqual([{ name: 'cfgserver', source: 'user-config' }])
+    expect(reads).not.toContain(CLAUDE_JSON_PATH)
+    const unreadable = await scanOf(memWorld({ unknownPaths: ['/cfg/.claude.json'] }), true, ctx)
+    expect(unreadable.warnings).toEqual(['could not read $CLAUDE_CONFIG_DIR/.claude.json (treated as unknown)'])
+  })
+
+  test('with consent but neither a home folder nor CLAUDE_CONFIG_DIR no config file is looked for', async () => {
+    const ctx: SetupContext = { root: '/repo', givenRoot: '/repo', home: null, configDir: null }
+    const { scan, reads } = await runOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), true, ctx)
+    expect(reads.filter(path => path.endsWith('.claude.json'))).toEqual([])
+    expect(scan.warnings).toEqual(['HOME is unset: user-level setup was not scanned'])
+  })
+
+  test('a server in the project, session and user config is listed once, under project, then session', async () => {
+    const world = memWorld({
+      files: { [MCP_JSON_PATH]: MCP_JSON, [CLAUDE_JSON_PATH]: CLAUDE_JSON },
+      tools: [{ name: 'mcp__linear__issues' }, { name: 'mcp__jira__search' }],
+    })
+    const scan = await scanOf(world, true)
+    expect(scan.mcp).toEqual([
+      { name: 'github', source: 'project' },
+      { name: 'jira', source: 'project' },
+      { name: 'linear', source: 'session' },
+    ])
+  })
+
+  test('projectAncestors gives the display form of each CLAUDE.md in the order given, and no content', () => {
+    const found = projectAncestors(
+      [
+        { dir: '/repo', name: 'CLAUDE.md', content: 'SENTINEL_SECRET_VALUE' },
+        { dir: '/repo', name: '.claude/CLAUDE.md', content: 'x' },
+        { dir: '/home/u/work', name: 'CLAUDE.md', content: 'y' },
+        { dir: '/repo', name: 'AGENTS.md', content: 'z' },
+      ],
+      CTX,
+    )
+    expect(found).toEqual(['<repo>/CLAUDE.md', '<repo>/.claude/CLAUDE.md', '~/work/CLAUDE.md'])
+    expect(leaks(JSON.stringify(found), SECRETS)).toEqual([])
+  })
+
+  test('projectAncestors shows a file at the file system root, and a folder of CLAUDE_CONFIG_DIR, as they are', () => {
+    const entries = [
+      { dir: '/', name: 'CLAUDE.md', content: '' },
+      { dir: '/cfg', name: 'CLAUDE.md', content: '' },
+      { dir: '/srv/team/', name: 'CLAUDE.md', content: '' },
+    ]
+    const found = projectAncestors(entries, { ...CTX, configDir: '/cfg' })
+    expect(found).toEqual(['/CLAUDE.md', '$CLAUDE_CONFIG_DIR/CLAUDE.md', '/srv/team/CLAUDE.md'])
+  })
+
+  test('projectAncestors skips an entry without a dir or a name, and a value that is not a list', () => {
+    const entries = [null, 'x', 5, {}, { dir: '/repo' }, { name: 'CLAUDE.md' }, { dir: 5, name: 'CLAUDE.md' }]
+    expect(projectAncestors(entries, CTX)).toEqual([])
+    expect([null, {}, 'text', 5].flatMap(value => projectAncestors(value, CTX))).toEqual([])
+  })
+
+  test('projectAncestors lists a file once', () => {
+    const entry = { dir: '/repo', name: 'CLAUDE.md', content: 'x' }
+    expect(projectAncestors([entry, entry], CTX)).toEqual(['<repo>/CLAUDE.md'])
+  })
+
+  test('the scan asks the host for the CLAUDE.md files of every folder and keeps their display forms', async () => {
+    const base = memIo(memWorld({ ancestors: CHAIN }), [])
+    const asked: (readonly string[])[] = []
+    const io = {
+      ...base.io,
+      ancestors: async (names: readonly string[]) => {
+        asked.push(names)
+
+        return base.io.ancestors(names)
+      },
+    }
+    const scan = await scanSetup(io, CTX, false)
+    expect(asked).toEqual([['CLAUDE.md', '.claude/CLAUDE.md']])
+    expect(scan.claudeMd).toEqual(['/CLAUDE.md', '~/work/CLAUDE.md', '<repo>/CLAUDE.md', '<repo>/.claude/CLAUDE.md'])
+    expect(leaks(JSON.stringify(scan), [...SECRETS, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+
+  test('a CLAUDE.md chain the host cannot give adds a warning', async () => {
+    for (const ancestors of [null, {}, 'text']) {
+      const scan = await scanOf(memWorld({ ancestors }))
+      expect(scan.warnings).toEqual(['could not read the CLAUDE.md chain (treated as unknown)'])
+      expect(scan.claudeMd).toEqual([])
+    }
+  })
+
+  test('hasGlobalClaudeMd is true for a CLAUDE.md file in the user folder, and its content is not read', async () => {
+    const { scan, reads } = await runOf(memWorld({ files: { '/home/u/.claude/CLAUDE.md': 'SENTINEL_SECRET_VALUE' } }))
+    expect(scan.hasGlobalClaudeMd).toBe(true)
+    expect(reads).not.toContain('/home/u/.claude/CLAUDE.md')
+    expect(leaks(JSON.stringify(scan), SECRETS)).toEqual([])
+  })
+
+  test('hasGlobalClaudeMd is false for a folder of that name and for a file that is not there', async () => {
+    expect((await scanOf(memWorld({ dirs: { '/home/u/.claude/CLAUDE.md': [] } }))).hasGlobalClaudeMd).toBe(false)
+    expect((await scanOf(memWorld({}))).hasGlobalClaudeMd).toBe(false)
+  })
+
+  test('hasGlobalClaudeMd looks in CLAUDE_CONFIG_DIR when it is set, and in no folder when there is none', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '/cfg' }
+    const home = memWorld({ files: { '/home/u/.claude/CLAUDE.md': 'x' } })
+    expect((await scanOf(home, false, ctx)).hasGlobalClaudeMd).toBe(false)
+    expect((await scanOf(memWorld({ files: { '/cfg/CLAUDE.md': 'x' } }), false, ctx)).hasGlobalClaudeMd).toBe(true)
+    const none: SetupContext = { root: '/repo', givenRoot: '/repo', home: null, configDir: null }
+    expect((await scanOf(home, false, none)).hasGlobalClaudeMd).toBe(false)
+  })
+
+  test('mangledProjectDir replaces every character that is not a letter or a digit with a hyphen', () => {
+    expect(mangledProjectDir('/repo')).toBe('-repo')
+    expect(mangledProjectDir('/Users/me/work/my.repo_v2')).toBe('-Users-me-work-my-repo-v2')
+    expect(mangledProjectDir('/a b/c-d')).toBe('-a-b-c-d')
+    expect(mangledProjectDir('/caf\u00E9')).toBe('-caf-')
+    expect(mangledProjectDir('abc123')).toBe('abc123')
+    expect(mangledProjectDir('')).toBe('')
+  })
+
+  test('memoryFiles are the .md files of the memory folder of this repo, sorted, with their extension', async () => {
+    const dirs = {
+      [MEMORY_DIR]: [
+        entry('project_x.md'),
+        entry('MEMORY.md'),
+        entry('notes.txt'),
+        entry('sub', 'dir'),
+        entry('linked.md', 'other', true),
+        entry('feedback_y.md'),
+      ],
+    }
+    const scan = await scanOf(memWorld({ dirs }))
+    expect(scan.memoryFiles).toEqual(['MEMORY.md', 'feedback_y.md', 'project_x.md'])
+  })
+
+  test('the memory folder of another repo is not listed, and the memory file contents are never read', async () => {
+    const dirs = { '/home/u/.claude/projects/-other/memory': [entry('other.md')], [MEMORY_DIR]: [entry('mine.md')] }
+    const files = { [`${MEMORY_DIR}/mine.md`]: 'SENTINEL_SECRET_VALUE' }
+    const { scan, reads } = await runOf(memWorld({ dirs, files }))
+    expect(scan.memoryFiles).toEqual(['mine.md'])
+    expect(reads.filter(path => path.endsWith('.md'))).toEqual([])
+  })
+
+  test('a memory folder that cannot be listed warns, and one that is not there does not', async () => {
+    const unreadable = await scanOf(memWorld({ unknownPaths: [MEMORY_DIR] }))
+    expect(unreadable.warnings).toEqual(['could not read ~/.claude/projects/-repo/memory (treated as unknown)'])
+    expect(unreadable.memoryFiles).toEqual([])
+    expect((await scanOf(memWorld({}))).warnings).toEqual([])
+  })
+
+  test('a memory file name with a hidden character is dropped and named in a warning', async () => {
+    const scan = await scanOf(memWorld({ dirs: { [MEMORY_DIR]: [entry('ok.md'), entry('bad\u0007.md')] } }))
+    expect(scan.memoryFiles).toEqual(['ok.md'])
+    expect(scan.warnings).toEqual(['ignored memory file name "bad.md": its name has hidden characters or is too long'])
+  })
+
+  test('the full secret world, with consent, keeps no secret fixture and no absolute home path', async () => {
+    const world = memWorld({
+      settings: { user: { ...secretUserSettings(), enabledPlugins: { 'z@m': true } }, project: {}, local: {} },
+      files: {
+        [INSTALLED_PATH]: INSTALLED_PLUGINS,
+        [MCP_JSON_PATH]: MCP_JSON,
+        [CLAUDE_JSON_PATH]: CLAUDE_JSON,
+        '/home/u/.claude/CLAUDE.md': 'SENTINEL_SECRET_VALUE',
+      },
+      dirs: { [USER_AGENTS]: [entry('a.md')], [MEMORY_DIR]: [entry('MEMORY.md')] },
+      ancestors: CHAIN,
+      commands: [{ name: 'one', source: 'user', description: 'Bearer FAKE-TOKEN-0123' }],
+      tools: SESSION_TOOLS,
+    })
+    const scan = await scanOf(world, true)
+    expect(scan.warnings).toEqual([])
+    expect(scan.plugins).toEqual(['a@m', 'b@m', 'z@m'])
+    expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira', 'linear', 'slack'])
+    expect(scan.claudeMd).toHaveLength(4)
+    expect(scan.hasGlobalClaudeMd).toBe(true)
+    expect(scan.memoryFiles).toEqual(['MEMORY.md'])
+    const json = JSON.stringify(scan)
+    expect(leaks(json, [...SECRETS, 'someone@example.com'])).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
   })
 })
