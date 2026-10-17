@@ -430,7 +430,7 @@ function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], 
     notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },
     hooks: { loaded, notLoaded },
     rules: rulesFor(role, ctx, plugins, deny),
-    chain: chainLines(ctx.roleIds),
+    chain: chainLines(ctx.roles),
     memoryPattern: `${MEMORY_PATTERN}${role.id}/`,
     mcpRoute: ctx.mcpRoute,
   }

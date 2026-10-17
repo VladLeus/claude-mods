@@ -53,7 +53,7 @@ function context(over: Partial<ScopeContext> = {}): ScopeContext {
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
-    roleIds: ['pm', 'tl'],
+    roles: ['pm', 'tl'],
     ...over,
   }
 }
@@ -283,7 +283,7 @@ describe('compileScope', () => {
   })
 
   test('the card names the memory folder pattern and the decision chain of the team', () => {
-    const card = compileScope(templateRole('pm'), context({ roleIds: ['pm', 'tl'] })).card
+    const card = compileScope(templateRole('pm'), context({ roles: ['pm', 'tl'] })).card
 
     expect(card.memoryPattern).toBe('~/.claude/cadre/<repo>-<hash8>/pm/')
     expect(card.chain).toEqual(chainLines(['pm', 'tl']))
@@ -933,7 +933,7 @@ describe('scopeCardLines', () => {
   })
 
   test('the chain lines and the memory line come from the card', () => {
-    const card = compileScope(templateRole('be', { id: 'api' }), context({ roleIds: ['pm', 'api'] })).card
+    const card = compileScope(templateRole('be', { id: 'api' }), context({ roles: ['pm', 'api'] })).card
     const lines = scopeCardLines(card)
     const decisions = lines.indexOf('  decisions:')
 
@@ -986,9 +986,9 @@ const ASSIGNMENTS: readonly (readonly [string, (role: RoleSpec) => RoleSpec])[] 
 
 /** The scope of a role in a framework, with the matrix setup and the overlapping code dirs. */
 function matrixScope(role: RoleSpec, framework: FrameworkId): CompiledScope {
-  const roleIds = MATRIX_ROLES.map(member => member.id)
+  const ctx = context({ framework, setup: MATRIX_SETUP, codeDirs: OVERLAPPING_DIRS, roles: MATRIX_ROLES })
 
-  return compileScope(role, context({ framework, setup: MATRIX_SETUP, codeDirs: OVERLAPPING_DIRS, roleIds }))
+  return compileScope(role, ctx)
 }
 
 /** The scope with one more deny entry; the compiled value is never changed. */
