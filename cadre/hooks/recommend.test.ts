@@ -1,17 +1,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortRead, SettingProposal } from '../types'
+import type { HunkOp, PortRead, SettingProposal, ToolCommand } from '../types'
 import { GSD_AUTONOMY } from './gsd'
 import {
+  attendedNote,
   configValue,
   hunkCandidates,
   hunkOp,
   hunkQuestion,
+  isGsdAttended,
+  isGsdAttendedFromConfig,
   NOT_SET_TEXT,
   parseHunkAnswer,
+  resolveToolCommand,
+  TOOL_SCRIPTS,
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
-import type { HunkCandidate } from './recommend'
+import type { GsdToolContext, HunkCandidate } from './recommend'
 import { BIDI_OVERRIDE } from './testkit'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
@@ -306,5 +311,219 @@ describe('autonomy hunks', () => {
       ['mode', 'interactive', 'yolo', true],
       ['workflow.text_mode', 'not set (GSD default)', 'false', false],
     ])
+  })
+})
+
+/** A user-level GSD under the home folder, as init resolves it. */
+const USER_GSD: GsdToolContext = {
+  userDir: '/home/u/.claude/gsd-core',
+  home: '/home/u',
+  root: '/repo',
+  configDir: null,
+}
+
+/** The mode write as a logical command. */
+const MODE_COMMAND: ToolCommand = { tool: 'gsd-tools', args: ['config-set', 'mode', 'yolo'] }
+
+const MODE_USER_ARGV = ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo']
+const MODE_USER_DISPLAY = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+const MODE_REPO_DISPLAY = 'node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+const REFUSED = { argv: null, display: 'refused: an argument is not a plain word' }
+
+/** A hunk op that is required, accepted and runnable; `over` changes the fields it names. */
+function op(over: Partial<HunkOp>): HunkOp {
+  return {
+    kind: 'hunk',
+    file: '.planning/config.json',
+    key: 'mode',
+    before: 'interactive',
+    after: 'yolo',
+    isRequired: true,
+    isAccepted: true,
+    isRunnable: true,
+    command: MODE_USER_DISPLAY,
+    ...over,
+  }
+}
+
+describe('tool commands and attended', () => {
+  test('a user-level GSD gives the argv from the raw dir and shows the command in display form', () => {
+    expect(resolveToolCommand(MODE_COMMAND, USER_GSD)).toEqual({ argv: MODE_USER_ARGV, display: MODE_USER_DISPLAY })
+  })
+
+  test('with no user-level GSD there is no argv, and the display is the repo-local command for the person', () => {
+    expect(resolveToolCommand(MODE_COMMAND, { ...USER_GSD, userDir: null })).toEqual({
+      argv: null,
+      display: MODE_REPO_DISPLAY,
+    })
+  })
+
+  test('an argument that is not a plain word refuses the command, with a user-level GSD or without one', () => {
+    const args = ['yolo; rm -rf', 'a b', '$(id)', '`id`', 'x\ny', '', "it's", 'a|b', 'a&b', 'a/b', '--flag=$HOME']
+
+    for (const arg of args) {
+      const command: ToolCommand = { tool: 'gsd-tools', args: ['config-set', 'mode', arg] }
+
+      expect(resolveToolCommand(command, USER_GSD)).toEqual(REFUSED)
+      expect(resolveToolCommand(command, { ...USER_GSD, userDir: null })).toEqual(REFUSED)
+    }
+  })
+
+  test('letters, digits, dots, underscores and hyphens are plain words', () => {
+    const command: ToolCommand = { tool: 'gsd-tools', args: ['config-set', 'workflow.text_mode', 'v1-2_3'] }
+
+    expect(resolveToolCommand(command, USER_GSD).argv).toEqual([
+      'node',
+      '/home/u/.claude/gsd-core/bin/gsd-tools.cjs',
+      'config-set',
+      'workflow.text_mode',
+      'v1-2_3',
+    ])
+  })
+
+  test('a command with no arguments resolves to the bare script', () => {
+    expect(resolveToolCommand({ tool: 'gsd-tools', args: [] }, USER_GSD)).toEqual({
+      argv: ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs'],
+      display: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs',
+    })
+    expect(resolveToolCommand({ tool: 'gsd-tools', args: [] }, { ...USER_GSD, userDir: null })).toEqual({
+      argv: null,
+      display: 'node .claude/gsd-core/bin/gsd-tools.cjs',
+    })
+  })
+
+  test('trailing slashes on the user dir do not reach the argv', () => {
+    const resolved = resolveToolCommand(MODE_COMMAND, { ...USER_GSD, userDir: '/home/u/.claude/gsd-core//' })
+
+    expect(resolved).toEqual({ argv: MODE_USER_ARGV, display: MODE_USER_DISPLAY })
+  })
+
+  test('the display names a dir under CLAUDE_CONFIG_DIR by that name, and any other dir as it is', () => {
+    const underConfig = { userDir: '/cfg/gsd-core', home: '/home/u', root: '/repo', configDir: '/cfg' }
+    const elsewhere = { userDir: '/opt/gsd', home: '/home/u', root: '/repo', configDir: null }
+    const noHome = { ...USER_GSD, home: null }
+
+    expect(resolveToolCommand(MODE_COMMAND, underConfig)).toEqual({
+      argv: ['node', '/cfg/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo'],
+      display: 'node $CLAUDE_CONFIG_DIR/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+    })
+    expect(resolveToolCommand(MODE_COMMAND, elsewhere).display).toBe(
+      'node /opt/gsd/bin/gsd-tools.cjs config-set mode yolo',
+    )
+    expect(resolveToolCommand(MODE_COMMAND, noHome).display).toBe(
+      'node /home/u/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+    )
+  })
+
+  test('a user dir that is not an absolute path without empty, dot or dot-dot segments is no user-level GSD', () => {
+    const dirs = ['', '/', 'gsd-core', './gsd-core', '/home/u/../x', '/home//u', '/home/u/./gsd-core']
+
+    for (const userDir of dirs) {
+      expect(resolveToolCommand(MODE_COMMAND, { ...USER_GSD, userDir })).toEqual({
+        argv: null,
+        display: MODE_REPO_DISPLAY,
+      })
+    }
+  })
+
+  test('every GSD_AUTONOMY write resolves to a runnable user-level command, so its arguments are plain words', () => {
+    for (const proposal of GSD_AUTONOMY) {
+      expect(resolveToolCommand(proposal.write, USER_GSD)).toEqual({
+        argv: ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', proposal.key, proposal.to],
+        display: `node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set ${proposal.key} ${proposal.to}`,
+      })
+    }
+  })
+
+  test('repo-local GSD is never an argv: every GSD_AUTONOMY write gives none, only the command to run', () => {
+    for (const proposal of GSD_AUTONOMY) {
+      const resolved = resolveToolCommand(proposal.write, { ...USER_GSD, userDir: null })
+
+      expect(resolved.argv).toBeNull()
+      expect(resolved.display).toBe(`node .claude/gsd-core/bin/gsd-tools.cjs config-set ${proposal.key} ${proposal.to}`)
+    }
+  })
+
+  test('TOOL_SCRIPTS names the one script of gsd-tools and is frozen', () => {
+    expect(TOOL_SCRIPTS).toEqual({ 'gsd-tools': 'bin/gsd-tools.cjs' })
+    expect(Object.isFrozen(TOOL_SCRIPTS)).toBe(true)
+  })
+
+  test('a required hunk that is accepted and runnable leaves the roles unattended', () => {
+    expect(isGsdAttended([op({})])).toBe(false)
+  })
+
+  test('a declined required hunk makes the roles attended', () => {
+    expect(isGsdAttended([op({ isAccepted: false })])).toBe(true)
+  })
+
+  test('a required hunk that cadre cannot run makes the roles attended, though it was accepted', () => {
+    expect(isGsdAttended([op({ isRunnable: false })])).toBe(true)
+  })
+
+  test('an optional hunk never makes the roles attended, declined or not runnable', () => {
+    expect(isGsdAttended([op({ isRequired: false, isAccepted: false })])).toBe(false)
+    expect(isGsdAttended([op({ isRequired: false, isRunnable: false })])).toBe(false)
+  })
+
+  test('one open required hunk among accepted ones is enough', () => {
+    const hunks = [op({}), op({ key: 'workflow.text_mode', isAccepted: false }), op({ isRequired: false })]
+
+    expect(isGsdAttended(hunks)).toBe(true)
+  })
+
+  test('no hunks leave the roles unattended (empty edge)', () => {
+    expect(isGsdAttended([])).toBe(false)
+  })
+
+  test('from the config: the roles are unattended when every required value is at its target', () => {
+    const atTargets = configText('{"mode":"yolo","workflow":{"text_mode":false}}')
+
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets, false)).toBe(false)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets, true)).toBe(false)
+  })
+
+  test('from the config: the roles are attended when a required value differs or is not set', () => {
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"interactive"}'), false)).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"yolo"}'), false)).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"workflow":{"text_mode":true}}'), false)).toBe(true)
+  })
+
+  test('from the config: a missing, unreadable or unusable config attends the roles (fail closed)', () => {
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, ABSENT, false)).toBe(true)
+
+    for (const config of UNUSABLE) {
+      expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config, false)).toBe(true)
+    }
+  })
+
+  test('from the config: no proposals attend nothing, whatever the config is (empty edge)', () => {
+    expect(isGsdAttendedFromConfig([], UNREADABLE, true)).toBe(false)
+    expect(isGsdAttendedFromConfig([], ABSENT, false)).toBe(false)
+    expect(isGsdAttendedFromConfig([], configText('{"mode":"interactive"}'), true)).toBe(false)
+  })
+
+  test('from the config: an unmet optional proposal alone attends nothing', () => {
+    const config = configText('{"mode":"yolo","workflow":{"text_mode":false},"hooks":{"context_warnings":true}}')
+
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config, true)).toBe(false)
+  })
+
+  test('attendedNote lists the keys and says what the roles wait for', () => {
+    expect(attendedNote(['mode', 'workflow.text_mode'])).toBe(
+      'attended: GSD needs a person until mode and workflow.text_mode are set as proposed',
+    )
+  })
+
+  test('attendedNote reads right for one key, three keys, and none', () => {
+    expect(attendedNote(['workflow.text_mode'])).toBe(
+      'attended: GSD needs a person until workflow.text_mode is set as proposed',
+    )
+    expect(attendedNote(['a', 'b', 'c'])).toBe('attended: GSD needs a person until a, b and c are set as proposed')
+    expect(attendedNote([])).toBe('attended: GSD needs a person until its settings are set as proposed')
+  })
+
+  test('attendedNote cleans its keys, so a hostile key cannot add a line or hide text', () => {
+    expect(attendedNote([`a${BIDI_OVERRIDE}\nb`])).toBe('attended: GSD needs a person until ab is set as proposed')
   })
 })
