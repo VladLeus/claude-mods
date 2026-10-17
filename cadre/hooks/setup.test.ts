@@ -15,7 +15,7 @@ import {
   scanSetup,
 } from './setup'
 import type { SetupContext } from './setup'
-import { ABSOLUTE_PATH_MARKERS, entry, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
+import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, entry, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
 import type { MemWorld } from './testkit'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
@@ -335,6 +335,8 @@ describe('setup settings', () => {
       ],
       hooks: [],
       carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+      // Without consent ~/.claude.json is not read, so the scan cannot have seen every MCP server (A4).
+      isMcpPartial: true,
       warnings: [],
     })
   })
@@ -1186,5 +1188,43 @@ describe('setup consent and instructions', () => {
     const json = JSON.stringify(scan)
     expect(leaks(json, [...SECRETS, 'someone@example.com'])).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
+  })
+})
+
+describe('setup MCP completeness', () => {
+  test('isMcpPartial is false when ~/.claude.json was read or is not there and no MCP name was dropped', async () => {
+    const world = memWorld({
+      files: { [MCP_JSON_PATH]: MCP_JSON, [CLAUDE_JSON_PATH]: CLAUDE_JSON },
+      tools: SESSION_TOOLS,
+    })
+    expect((await scanOf(world, true)).isMcpPartial).toBe(false)
+    expect((await scanOf(memWorld({}), true)).isMcpPartial).toBe(false)
+  })
+
+  test('isMcpPartial is true when ~/.claude.json is not read: no consent or folder, unreadable or broken', async () => {
+    const noFolder: SetupContext = { root: '/repo', givenRoot: '/repo', home: null, configDir: null }
+    const tooLarge = claudeJsonOfSize(CLAUDE_JSON_MAX_BYTES + 1)
+    const partial = [
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), false),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: CLAUDE_JSON } }), true, noFolder),
+      await scanOf(memWorld({ unknownPaths: [CLAUDE_JSON_PATH] }), true),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: '{ not json' } }), true),
+      await scanOf(memWorld({ files: { [CLAUDE_JSON_PATH]: tooLarge } }), true),
+    ]
+    expect(partial.map(scan => scan.isMcpPartial)).toEqual([true, true, true, true, true])
+  })
+
+  test('isMcpPartial is true when the scan drops an MCP server name from any source', async () => {
+    const long = 'x'.repeat(101)
+    const worlds = [
+      memWorld({ files: { [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { ok: {}, 'has space': {} } }) } }),
+      memWorld({ files: { [MCP_JSON_PATH]: JSON.stringify({ mcpServers: { [`bad${BIDI_OVERRIDE}name`]: {} } }) } }),
+      memWorld({ tools: [{ name: 'mcp__jira__x' }, { name: 'mcp__bad server__x' }] }),
+      memWorld({ tools: [{ name: `mcp__${long}__x` }] }),
+      memWorld({ files: { [CLAUDE_JSON_PATH]: JSON.stringify({ mcpServers: { jira: {}, 'x y': {} } }) } }),
+    ]
+    const found: boolean[] = []
+    for (const world of worlds) found.push((await scanOf(world, true)).isMcpPartial)
+    expect(found).toEqual([true, true, true, true, true])
   })
 })
