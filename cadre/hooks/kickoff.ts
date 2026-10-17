@@ -1,3 +1,4 @@
+import type { KickoffContext } from '../types'
 import { clean } from './facts'
 
 /** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
@@ -38,4 +39,12 @@ export function cleanKickoffTextOr<T>(value: string, maxChars: number, fallback:
   const cleaned = cleanKickoffText(value, maxChars)
 
   return cleaned.trim() === '' ? fallback : cleaned
+}
+
+/**
+ * The role title as every adapter's kickoff names it in its first sentence: cleaned and capped at MAX_ROLE_CHARS, or
+ * UNNAMED_ROLE when nothing is left once cleaned and trimmed. The adapters share it, so they name a role the same way.
+ */
+export function kickoffTitle(ctx: KickoffContext): string {
+  return cleanKickoffTextOr(ctx.title, MAX_ROLE_CHARS, UNNAMED_ROLE)
 }

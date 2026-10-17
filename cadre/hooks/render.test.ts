@@ -434,7 +434,7 @@ describe('adaptersReportLines', () => {
 
     for (const adapter of ADAPTERS) {
       const block = blockOf(lines, `${adapter.name} (${adapter.id})`)
-      for (const line of adapter.kickoffText({ role: 'BE', roleId: 'be', specPath: null }).split('\n')) {
+      for (const line of adapter.kickoffText({ title: 'BE', roleId: 'be', specPath: null }).split('\n')) {
         expect(block).toContain(`      ${line}`)
       }
     }

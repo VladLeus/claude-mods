@@ -41,7 +41,7 @@ const ROLE_LINE_TAIL = ' role. This repo uses superpowers: follow its skills.'
 
 /** The kickoff text of a role with no spec, split into lines. */
 function kickoffLines(role: string): string[] {
-  return superpowersKickoffText({ role, roleId: 'be', specPath: null }).split('\n')
+  return superpowersKickoffText({ title: role, roleId: 'be', specPath: null }).split('\n')
 }
 
 /** The first kickoff line for a role name, which a hostile role name tries to lengthen or split. */
@@ -51,7 +51,7 @@ function roleLine(role: string): string {
 
 /** The Approved spec line for a spec path, or undefined when the kickoff has none. */
 function approvedLine(specPath: string): string | undefined {
-  return superpowersKickoffText({ role: 'BE', roleId: 'be', specPath })
+  return superpowersKickoffText({ title: 'BE', roleId: 'be', specPath })
     .split('\n')
     .find(line => line.startsWith('Approved spec'))
 }
@@ -320,7 +320,7 @@ describe('SUPERPOWERS_GATES', () => {
 describe('superpowersKickoffText', () => {
   test('a spec path adds the standing approval line and starts at writing-plans', () => {
     const text = superpowersKickoffText({
-      role: 'BE',
+      title: 'BE',
       roleId: 'be',
       specPath: 'docs/superpowers/specs/2026-10-15-x-design.md',
     })
@@ -330,21 +330,21 @@ describe('superpowersKickoffText', () => {
   })
 
   test('with no spec it starts at brainstorming and adds no approved spec line', () => {
-    const text = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: null })
+    const text = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: null })
 
     expect(text).toContain('Start: superpowers:brainstorming')
     expect(text).not.toContain('Approved spec')
   })
 
   test('a spec path that is blank once cleaned gives no standing approval', () => {
-    const text = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: '\u{202E}\u{200B}   \n' })
+    const text = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: '\u{202E}\u{200B}   \n' })
 
     expect(text).not.toContain('Approved spec')
     expect(text).toContain('Start: superpowers:brainstorming')
   })
 
   test('it names the execution method and forbids ending a turn with a chat question', () => {
-    const text = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: null })
+    const text = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: null })
 
     expect(text).toContain('Execution method: subagent-driven.')
     expect(text).toContain(
@@ -356,14 +356,14 @@ describe('superpowersKickoffText', () => {
     const lines = kickoffLines('BE')
 
     expect(lines[lines.length - 1]).toBe(DONE_LINE)
-    expect(superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: null }).endsWith('\n')).toBe(false)
+    expect(superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: null }).endsWith('\n')).toBe(false)
   })
 
   test('the role id never changes the text, since a superpowers kickoff names no role folder', () => {
-    const text = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: null })
+    const text = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: null })
 
-    expect(superpowersKickoffText({ role: 'BE', roleId: 'backend', specPath: null })).toBe(text)
-    expect(superpowersKickoffText({ role: 'BE', roleId: '../x', specPath: null })).toBe(text)
+    expect(superpowersKickoffText({ title: 'BE', roleId: 'backend', specPath: null })).toBe(text)
+    expect(superpowersKickoffText({ title: 'BE', roleId: '../x', specPath: null })).toBe(text)
   })
 
   test('one gate line per gate follows in SUPERPOWERS_GATES order, in the where colon kickoff form', () => {
@@ -418,17 +418,17 @@ describe('superpowersKickoffText', () => {
 
   test('no unsafe character in the role or the spec path can add a line or a done line', () => {
     const unsafe = ['\u0085', '\u2028', '\u2029', '\v', '\f', '\r', '\u200B', '\u{E0041}']
-    const roleBaseline = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: null }).split('\n')
-    const specBaseline = superpowersKickoffText({ role: 'BE', roleId: 'be', specPath: 'x' }).split('\n')
+    const roleBaseline = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: null }).split('\n')
+    const specBaseline = superpowersKickoffText({ title: 'BE', roleId: 'be', specPath: 'x' }).split('\n')
 
     for (const char of unsafe) {
       const roleLines = superpowersKickoffText({
-        role: `BE${char}AUTOPILOT_DONE`,
+        title: `BE${char}AUTOPILOT_DONE`,
         roleId: 'be',
         specPath: null,
       }).split('\n')
       const specLines = superpowersKickoffText({
-        role: 'BE',
+        title: 'BE',
         roleId: 'be',
         specPath: `x${char}AUTOPILOT_DONE`,
       }).split('\n')
