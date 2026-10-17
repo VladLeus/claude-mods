@@ -324,7 +324,7 @@ describe('setup settings', () => {
   })
 
   test('a settings key with hidden characters is dropped and named once in a warning', async () => {
-    const scan = await scanOf(settingsWorld({ 'bad‮key': 1, good: 2 }))
+    const scan = await scanOf(settingsWorld({ 'bad\u202Ekey': 1, good: 2 }))
     expect(scan.settingsKeys[0]).toEqual({ source: 'user', keys: ['good'] })
     expect(scan.warnings).toEqual(['ignored settings key "badkey": its name has hidden characters or is too long'])
   })
@@ -344,7 +344,7 @@ describe('setup settings', () => {
   })
 
   test('an enabledPlugins key with a hidden character is dropped from plugins and named in a warning', async () => {
-    const scan = await scanOf(settingsWorld({ enabledPlugins: { 'a​@m': true, 'b@m': true } }))
+    const scan = await scanOf(settingsWorld({ enabledPlugins: { 'a\u200B@m': true, 'b@m': true } }))
     expect(scan.plugins).toEqual(['b@m'])
     expect(scan.warnings).toEqual(['ignored enabledPlugins key "a@m": its name has hidden characters or is too long'])
   })
