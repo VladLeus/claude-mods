@@ -1,6 +1,14 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { GsdReadTarget, RawFacts, RawGsdCandidate, SettingsSource } from '../types'
+import type {
+  GsdReadTarget,
+  InitIo,
+  InitLocations,
+  PortRead,
+  RawFacts,
+  RawGsdCandidate,
+  SettingsSource,
+} from '../types'
 import { helpText, parseCommand } from './command'
 import {
   detectRefusal,
@@ -17,10 +25,15 @@ import {
   runtimeSkipProblem,
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
+import { pluginVersionOf, runInit } from './init'
 import { detectText } from './render'
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
+/** The most tokens one model completion for init may answer with (D-83). */
+const COMPLETE_MAX_TOKENS = 2048
+/** How long one model completion for init may take before it is given up (D-83). */
+const COMPLETE_TIMEOUT_MS = 60_000
 /** The settings sources, read one at a time so each value keeps the source it came from. */
 const SETTINGS_SOURCES: readonly SettingsSource[] = ['user', 'project', 'local']
 
@@ -46,16 +59,9 @@ const NO_RUN: IdentityRun = { stdout: null, problem: null }
 
 /**
  * The session root, the home folder and CLAUDE_CONFIG_DIR as the host resolved them, with their warnings, plus the
- * root and home as given, which the refusal checks too (WR-06).
+ * root and home as given, which the refusal checks too (WR-06). It is the InitLocations init works with.
  */
-type Locations = {
-  readonly root: string
-  readonly home: string | null
-  readonly configDir: string | null
-  readonly givenRoot: string
-  readonly givenHome: string | null
-  readonly warnings: readonly string[]
-}
+type Locations = InitLocations
 
 /** The home folder from HOME, kept only when it is an absolute path; any other value counts as no home. */
 async function homeFolder($: EngineInterface): Promise<string | null> {
@@ -300,12 +306,93 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   return detectText(normalizeFacts(raw, locations.configDir, locations.givenRoot), isAdapters)
 }
 
+/**
+ * A file as the init port reads it (Pitfall 6): `absent` only when the host says the path is not there, `unknown` when
+ * the probe, the stat or the read failed or the read answered no text, `too-large` over `maxBytes`, else its text. The
+ * size is checked twice: by the stat before the read, and by the UTF-8 length of the text read.
+ */
+async function portRead($: EngineInterface, path: string, maxBytes: number): Promise<PortRead> {
+  const isThere = await $.fs.exists(path).catch(() => null)
+  if (isThere === false) return { state: 'absent' }
+  if (isThere === null) return { state: 'unknown' }
+  const stat = await $.fs.stat(path).catch(() => null)
+  if (stat !== null && stat.size > maxBytes) return { state: 'too-large', bytes: stat.size }
+  const text = await $.fs.read(path).catch(() => null)
+  if (typeof text !== 'string') return { state: 'unknown' }
+  const bytes = new TextEncoder().encode(text).byteLength
+  if (bytes > maxBytes) return { state: 'too-large', bytes }
+
+  return { state: 'text', text }
+}
+
+/**
+ * The port one init run goes through (P8): plain closures over `$`, built here because `$` cannot cross into another
+ * file, so the pure modules never see it. Every member except `ask` turns a host failure into null or unknown, never
+ * into absent, and none reads an error message. `ask` rejects when the person dismisses the dialog (D-45).
+ */
+function initIoOf($: EngineInterface): InitIo {
+  return {
+    ask: (question, spec) => $.ui.ask(question, spec),
+    log: text => $.ui.log(text),
+    complete: async (prompt, system) => {
+      const model = await $.session.model().catch(() => null)
+      if (model === null) return null
+      const result = await $.model
+        .complete({
+          model,
+          prompt,
+          system,
+          maxTokens: COMPLETE_MAX_TOKENS,
+          timeoutMs: COMPLETE_TIMEOUT_MS,
+          effort: 'low',
+        })
+        .catch(() => null)
+
+      return result !== null && result.isAnswered ? result.text : null
+    },
+    isInteractive: async () => {
+      const surfaces = await $.session.surfaces().catch(() => null)
+
+      return surfaces === null ? null : surfaces.length > 0
+    },
+    locations: async () => {
+      const root = await $.session.root().catch(() => null)
+
+      return root === null ? null : locationsOf($, root)
+    },
+    facts: async locations => {
+      const raw = await collectFacts($, locations)
+      const { root, home, configDir } = locations
+      const userTarget = factReadPlan({ root, home, configDir }).gsd.find(target => target.location === 'user')
+
+      return {
+        facts: normalizeFacts(raw, locations.configDir, locations.givenRoot),
+        gsdUserDir: userTarget?.dir ?? null,
+      }
+    },
+    sessionId: () => $.session.id().catch(() => null),
+    now: () => $.clock.now().catch(() => null),
+    cadreVersion: async () => {
+      const text = await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`).catch(() => null)
+
+      return typeof text === 'string' ? pluginVersionOf(text) : null
+    },
+    list: path => $.fs.list(path).catch(() => null),
+    stat: path => $.fs.stat(path, { resolve: true }).catch(() => null),
+    read: (path, maxBytes) => portRead($, path, maxBytes),
+    ancestors: names => $.fs.ancestors({ names: [...names] }).catch(() => null),
+    settings: source => $.settings.read({ source }).catch(() => null),
+    commands: () => $.command.list().catch(() => null),
+    tools: () => $.tool.list().catch(() => null),
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'cadre',
-      description: 'Detect which dev framework this repo uses (read-only)',
-      argumentHint: 'detect [--adapters]',
+      description: 'Split this repo into scope-limited role sessions (Phase 2: detect, init; writes nothing)',
+      argumentHint: 'detect [--adapters] | init [--dry-run]',
     })
 
     return next(e)
@@ -314,6 +401,9 @@ export const register: Register = on => {
   on('command.run', { command: 'cadre' }, async ($, e) => {
     const command = parseCommand(e.args)
     if (command.kind === 'help') return { text: helpText(command.unknown) }
+    if (command.kind === 'init') return { text: await runInit(initIoOf($), { dryRun: command.dryRun }) }
+    // regen has no grammar yet, so the parser never gives it; its route arrives with its grammar.
+    if (command.kind === 'regen') return { text: helpText(null) }
 
     return { text: await detectReply($, command.adapters) }
   })

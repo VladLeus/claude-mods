@@ -1,6 +1,7 @@
 /**
- * What `/cadre` asked for: the help text, or the read-only detection. Every input other than empty,
- * `help`, or `detect [--adapters]` is help with the input echoed back as unknown.
+ * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
+ * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role. Any other input is help
+ * with the input echoed back as unknown. Phase 2 writes nothing on any path.
  */
 export type CadreCommand =
   | {
@@ -12,6 +13,17 @@ export type CadreCommand =
       readonly kind: 'detect'
       /** Whether `--adapters` was given: also show the contract each framework is driven with. */
       readonly adapters: boolean
+    }
+  | {
+      readonly kind: 'init'
+      /** Whether `--dry-run` was given. In Phase 2 plain init prints the same plan and also writes nothing (D-44). */
+      readonly dryRun: boolean
+    }
+  | {
+      readonly kind: 'regen'
+      /** The role id, already matched against the role-id slug (D-48). */
+      readonly id: string
+      readonly dryRun: boolean
     }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */
@@ -276,3 +288,88 @@ export type RoleSpec = {
   readonly id: string
   readonly framework?: FrameworkId
 }
+
+/** One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select. */
+export type AskSpec = {
+  readonly options: readonly string[]
+  readonly header?: string
+  readonly multiSelect?: true
+}
+
+/** One directory entry as the host lists it. A symlink is `other` with `isLink` true. */
+export type PortEntry = {
+  readonly name: string
+  readonly kind: EntryKind
+  readonly size: number
+  readonly mtimeMs: number
+  readonly isLink: boolean
+}
+
+/** A path's stat, always asked with `resolve`; `realPath` is absent when the host could not resolve it. */
+export type PortStat = {
+  readonly kind: EntryKind
+  readonly size: number
+  readonly isLink: boolean
+  readonly realPath?: string
+}
+
+/** A file read through the port: absent, unknown (the read failed), over the cap, or its text (Pitfall 6). */
+export type PortRead =
+  | { readonly state: 'absent' }
+  | { readonly state: 'unknown' }
+  | { readonly state: 'too-large'; readonly bytes: number }
+  | { readonly state: 'text'; readonly text: string }
+
+/** The session root and HOME as given and as resolved, and CLAUDE_CONFIG_DIR, for one init or regen run. */
+export type InitLocations = {
+  readonly root: string
+  readonly givenRoot: string
+  readonly home: string | null
+  readonly givenHome: string | null
+  readonly configDir: string | null
+  readonly warnings: readonly string[]
+}
+
+/** What the detect pipeline gives init: the normalised facts, and the raw user-level GSD dir. */
+export type InitFacts = {
+  readonly facts: Facts
+  /** Absolute; never printed or written. Null when there is no user-level GSD candidate (D-71 resolver input). */
+  readonly gsdUserDir: string | null
+}
+
+/**
+ * The host port init and regen run through. register.tsx builds it from closures over `$`, so pure modules never see
+ * `$` (P8). Every member except `ask` maps a host failure to null or `unknown`, never to absent.
+ */
+export type InitIo = {
+  /** Rejects when the person dismisses the dialog; the rejection text is never shown (D-45). */
+  readonly ask: (question: string, spec: AskSpec) => Promise<string>
+  /** One transcript entry of at most 2000 characters (P9). */
+  readonly log: (text: string) => void
+  /** One model completion; the model has no tools (D-83). Null when the model gave no text. */
+  readonly complete: (prompt: string, system: string) => Promise<string | null>
+  /** True when a surface can show a dialog, false in `claude -p`, null when unknown. */
+  readonly isInteractive: () => Promise<boolean | null>
+  /** Null when the session root cannot be read. */
+  readonly locations: () => Promise<InitLocations | null>
+  /** The detect pipeline (the one Phase 1 identity call included) for these locations. */
+  readonly facts: (locations: InitLocations) => Promise<InitFacts>
+  readonly sessionId: () => Promise<string | null>
+  readonly now: () => Promise<number | null>
+  /** The version in cadre's own plugin.json; null when it cannot be read. */
+  readonly cadreVersion: () => Promise<string | null>
+  readonly list: (path: string) => Promise<readonly PortEntry[] | null>
+  readonly stat: (path: string) => Promise<PortStat | null>
+  readonly read: (path: string, maxBytes: number) => Promise<PortRead>
+  /** `$.fs.ancestors({ names })` unvalidated. It carries file content, which only setup.ts may project away. */
+  readonly ancestors: (names: readonly string[]) => Promise<unknown>
+  /** One settings source unvalidated; null when unreadable. */
+  readonly settings: (source: SettingsSource) => Promise<unknown>
+  /** `$.command.list()` unvalidated; null when unreadable. */
+  readonly commands: () => Promise<unknown>
+  /** `$.tool.list()` unvalidated; null when unreadable. */
+  readonly tools: () => Promise<unknown>
+}
+
+/** The git policy for `.cadre/` (D-65, D-90): commit all, commit definitions (the default), or ignore all of it. */
+export type GitPolicy = 'all' | 'definitions' | 'ignore'
