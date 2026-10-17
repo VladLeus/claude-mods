@@ -104,12 +104,12 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
 ])
 
 /**
- * Which roles a skill goes to, by its name (D-53), tried in order like MCP_ROLE_ROWS: `security-review` goes to
- * Security, and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the ends of the
- * name), so `redesign` is not a design skill.
+ * Which roles a skill goes to, by its name in any case (D-53), tried in order like MCP_ROLE_ROWS: `security-review`
+ * goes to Security, and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the
+ * ends of the name), so `redesign` is not a design skill.
  */
 export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
-  { pattern: /(^|[-:])security-review$/, roles: frozenRoles('security'), label: 'security-review' },
+  { pattern: /(^|[-:])security-review$/i, roles: frozenRoles('security'), label: 'security-review' },
   {
     pattern: /(^|[-:])(frontend-design|frontend|design|ui-ux|ui-design)([-:]|$)/i,
     roles: frozenRoles('fe'),
@@ -196,14 +196,20 @@ export function mcpQuestion(name: string): string {
   return `Which roles get the ${clean(name, MAX_SHOWN_NAME_CHARS)} MCP server? ${ROLE_ANSWER_HINT}`
 }
 
-/** The skills once each by name, the first sighting kept, sorted by name. */
-function uniqueByName(skills: readonly SkillRef[]): SkillRef[] {
+/**
+ * The skills once each by name and plugin, so a same-named skill from another plugin stays in its own group; sorted by
+ * name, then by plugin with the user's own skills (no plugin) first.
+ */
+function uniqueSkills(skills: readonly SkillRef[]): SkillRef[] {
   const first = new Map<string, SkillRef>()
   for (const skill of skills) {
-    if (!first.has(skill.name)) first.set(skill.name, skill)
+    const key = JSON.stringify([skill.name, skill.plugin])
+    if (!first.has(key)) first.set(key, skill)
   }
 
-  return Array.from(first.values()).sort((a, b) => compareText(a.name, b.name))
+  return Array.from(first.values()).sort(
+    (a, b) => compareText(a.name, b.name) || compareText(a.plugin ?? '', b.plugin ?? ''),
+  )
 }
 
 /** Orders groups by label, with the group of the user's own skills (no plugin) last. */
@@ -230,9 +236,10 @@ function groupByPlugin(skills: readonly SkillRef[]): SkillGroup[] {
 /**
  * Splits the scanned skills into the ones the table gives to roles and the groups left to ask about. The handoff
  * skills (infra) and the GSD and superpowers skills (framework, which come through the adapter) are skipped, whichever
- * framework the roles use, and a skill seen twice counts once. A skill goes to the roles of its row that are on the
- * team; one that no row matches, or whose row has no role on the team, joins the group of its plugin. Assigned skills
- * are sorted by name, groups by label with `your own` last, and the names in a group by name (D-53, ISO-04).
+ * framework the roles use, and a skill seen twice from the same plugin counts once. A skill goes to the roles of its
+ * row that are on the team, once by name whichever plugins add it; one that no row matches, or whose row has no role
+ * on the team, joins the group of each plugin that adds it. Assigned skills are sorted by name, groups by label with
+ * `your own` last, and the names in a group by name (D-53, ISO-04).
  */
 export function classifySkills(
   skills: readonly SkillRef[],
@@ -240,12 +247,12 @@ export function classifySkills(
 ): { readonly assigned: readonly NameAssignment[]; readonly groups: readonly SkillGroup[] } {
   const assigned: NameAssignment[] = []
   const asked: SkillRef[] = []
-  for (const skill of uniqueByName(skills)) {
+  for (const skill of uniqueSkills(skills)) {
     if (INFRA_SKILLS.includes(skill.name) || isAnyFrameworkSkill(skill)) continue
 
     const roleIds = presentRoleIds(SKILL_ROLE_ROWS, skill.name, roles)
     if (roleIds.length === 0) asked.push(skill)
-    else assigned.push({ name: skill.name, roleIds })
+    else if (!assigned.some(assignment => assignment.name === skill.name)) assigned.push({ name: skill.name, roleIds })
   }
 
   return { assigned, groups: groupByPlugin(asked) }
@@ -279,14 +286,41 @@ function roleIdsInOrder(roles: readonly RoleSpec[]): string[] {
   return Array.from(new Set(roles.map(role => role.id)))
 }
 
+/** The answer words that mean no role or every role, lowercase; inside a list they never name a role. */
+const ANSWER_WORDS: readonly string[] = Object.freeze([
+  NONE_OPTION.toLowerCase(),
+  'all',
+  ALL_OPTION.toLowerCase(),
+])
+
+/**
+ * The role ids one comma part of an answer names: the whole part as one role's id or title, which is how a multi-word
+ * title such as `Team Lead` is found, else every space-separated word as a role id or a single-word title. Null when a
+ * word names no role or is an answer word (`none`, `all`).
+ */
+function partRoleIds(part: string, names: ReadonlyMap<string, string>): string[] | null {
+  if (ANSWER_WORDS.includes(part)) return null
+  const whole = names.get(part)
+  if (whole !== undefined) return [whole]
+
+  const ids: string[] = []
+  for (const word of part.split(/\s+/)) {
+    const id = ANSWER_WORDS.includes(word) ? undefined : names.get(word)
+    if (id === undefined) return null
+    ids.push(id)
+  }
+
+  return ids
+}
+
 /**
  * Reads a typed answer to "which roles get this?" into role ids (D-53). The answer is case-insensitive. `none` (the
- * None button) gives no roles, and `all` or the All roles button gives every role. Otherwise the whole answer may be
- * one role's id or title, which is how a multi-word title such as `Team Lead` is found; failing that the answer is
- * split on commas and spaces and every word must be a role id or a single-word title. The ids come back once each, in
- * role order. Any unknown word, an empty answer, or `none` or `all` mixed into a list gives null, so the question is
- * asked again (T-02-19). A role whose id or title is `all` or `none` cannot be picked by that word: the two words
- * always keep their meaning.
+ * None button) gives no roles, and `all` or the All roles button gives every role, only as the whole answer. Otherwise
+ * the answer is split on commas first, and each part is tried as a whole role id or title, so `Team Lead, QA` finds the
+ * multi-word title; a part that is neither is split on spaces and every word must be a role id or a single-word title,
+ * so `tl be` works too. The ids come back once each, in role order. Any unknown word, an empty answer, or `none` or
+ * `all` inside a list gives null, so the question is asked again (T-02-19). A role titled `All` or `None` cannot be
+ * picked by that word: the answer words always keep their meaning.
  */
 export function parseRoleList(answer: string, roles: readonly RoleSpec[]): readonly string[] | null {
   const text = answer.trim().toLowerCase()
@@ -295,17 +329,14 @@ export function parseRoleList(answer: string, roles: readonly RoleSpec[]): reado
   if (text === 'all' || text === ALL_OPTION.toLowerCase()) return roleIdsInOrder(roles)
 
   const names = roleNames(roles)
-  const whole = names.get(text)
-  if (whole !== undefined) return [whole]
-
-  const words = text.split(/[\s,]+/).filter(word => word !== '')
-  if (words.length === 0) return null
+  const parts = text.split(',').map(part => part.trim()).filter(part => part !== '')
+  if (parts.length === 0) return null
 
   const picked = new Set<string>()
-  for (const word of words) {
-    const id = names.get(word)
-    if (id === undefined) return null
-    picked.add(id)
+  for (const part of parts) {
+    const ids = partRoleIds(part, names)
+    if (ids === null) return null
+    for (const id of ids) picked.add(id)
   }
 
   return roleIdsInOrder(roles).filter(id => picked.has(id))
