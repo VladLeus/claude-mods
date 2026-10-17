@@ -27,6 +27,7 @@ import {
   isSafeOpPath,
   MANIFEST_PATH,
   mergeIgnoreBlock,
+  planReadPaths,
   renderPlan,
   RUNTIME_RENDERED,
   stableJson,
@@ -1260,6 +1261,62 @@ describe('plan conflicts and limits', () => {
       expect(chunkLines([emoji, emoji], 5)).toEqual([`${emoji}\n${emoji}`])
       expect(chunkLines([emoji, emoji], 4)).toEqual([emoji, emoji])
     })
+  })
+})
+
+/** A disk map that records every path a plan looks up in it, in order. */
+function recordingDisk(reads: Readonly<Record<string, PortRead>>): {
+  readonly disk: ReadonlyMap<string, PortRead>
+  readonly asked: readonly string[]
+} {
+  const asked: string[] = []
+  const map = new Map(Object.entries(reads))
+  const read = map.get.bind(map)
+  map.get = (path: string): PortRead | undefined => {
+    asked.push(path)
+
+    return read(path)
+  }
+
+  return { disk: map, asked }
+}
+
+describe('planReadPaths', () => {
+  test('lists each desired path and the copy beside it, and the manifest, once each and sorted', () => {
+    expect(planReadPaths([file('.cadre/pm/ROLE.md', 'x'), file('.cadre/be/x', 'y')])).toEqual([
+      '.cadre/be/x',
+      '.cadre/be/x.cadre-new',
+      '.cadre/manifest.json',
+      '.cadre/pm/ROLE.md',
+      '.cadre/pm/ROLE.md.cadre-new',
+    ])
+  })
+
+  test('a path given twice is listed once, and a path isSafeOpPath refuses is not listed', () => {
+    const desired = [file(ROLE, 'a'), file(ROLE, 'b'), file('CLAUDE.md', 'x'), file('../x', 'x')]
+
+    expect(planReadPaths(desired)).toEqual([ROLE, `${ROLE}.cadre-new`, MANIFEST_PATH])
+  })
+
+  test('with nothing desired only the manifest is read', () => {
+    expect(planReadPaths([])).toEqual([MANIFEST_PATH])
+  })
+
+  test('buildPlan looks up no disk path that planReadPaths leaves out, conflicts included', async () => {
+    const desired = [file(ROLE, 'new\n'), file(INDEX, '# Roles\n'), file('CLAUDE.md', 'x')]
+    const { disk, asked } = recordingDisk({ [ROLE]: text('edited\n'), [INDEX]: { state: 'unknown' } })
+    const plan = await buildPlan(input({ desired, disk }))
+    const wanted = planReadPaths(desired)
+
+    expect(summary(plan)).toEqual([
+      `conflict ${INDEX}`,
+      `create ${INDEX}.cadre-new`,
+      `conflict ${ROLE}`,
+      `create ${ROLE}.cadre-new`,
+      `create ${MANIFEST_PATH}`,
+    ])
+    expect(asked.filter(path => !wanted.includes(path))).toEqual([])
+    expect(asked.length > 0).toBe(true)
   })
 })
 
