@@ -457,6 +457,68 @@ export function compileScope(role: RoleSpec, ctx: ScopeContext): CompiledScope {
   }
 }
 
+/** The launcher flag that turns off slash commands, and with them the handoff skills and the start skills (S1, S4). */
+const DISABLE_SLASH_FLAG = '--disable-slash-commands'
+
+/** Whether the plugin key is on in the plugin record: it is an entry of the record itself, with the value true. */
+function isEnabled(plugins: Readonly<Record<string, boolean>>, key: string): boolean {
+  return Object.hasOwn(plugins, key) && plugins[key] === true
+}
+
+/** The problems with the deny entries: one that would block an infra tool, or one that names an infra plugin. */
+function denyProblems(deny: readonly string[]): string[] {
+  const problems: string[] = []
+  for (const entry of sortedUnique(deny)) {
+    if (blocksInfra(entry)) problems.push(`deny entry ${shown(entry)} would block an infra tool`)
+    const key = INFRA_PLUGINS.find(candidate => entry.includes(candidate))
+    if (key !== undefined) problems.push(`deny entry ${shown(entry)} names the infra plugin ${key}`)
+  }
+
+  return problems
+}
+
+/**
+ * The problem with one start skill of the framework, or null when it is present: a skill without a plugin part must
+ * be in the overlay, a skill named `plugin:skill` needs an enabled plugin key of that plugin.
+ */
+function startSkillProblem(name: string, scope: CompiledScope, framework: FrameworkId): string | null {
+  const plugin = skillPlugin(name)
+  if (plugin === null) {
+    return scope.overlay.skills.includes(name) ? null : `start skill ${name} of ${framework} is not in the overlay`
+  }
+  const plugins = scope.settings.enabledPlugins
+  const isPresent = Object.keys(plugins).some(key => pluginName(key) === plugin && isEnabled(plugins, key))
+
+  return isPresent ? null : `start skill ${name} of ${framework} needs the plugin ${plugin}, which is not enabled`
+}
+
+/**
+ * The checker behind ISO-04 (D-77): every way a compiled scope could block autopilot, agent-fleet or the handoff
+ * skills, each as a message that names what broke, and an empty list when none. (a) No deny entry may be, or start
+ * like, an infra tool or server, cover a handoff skill as `Skill(<name>)`, or name an infra plugin by its key. (b) The
+ * three infra plugins must be on, the handoff skills must be in the overlay, every start skill of the framework must
+ * be present (in the overlay, or through an enabled plugin), and no flag may turn off slash commands. Absence matters
+ * as much as denial: under `--setting-sources project` a user-level skill is missing unless the overlay links it. The
+ * result does not depend on the order of the deny list.
+ */
+export function infraViolations(scope: CompiledScope, framework: FrameworkId): string[] {
+  const plugins = scope.settings.enabledPlugins
+
+  return [
+    ...denyProblems(scope.settings.permissions.deny),
+    ...INFRA_PLUGINS.filter(key => !isEnabled(plugins, key)).map(key => `infra plugin ${key} is not enabled`),
+    ...INFRA_SKILLS.filter(name => !scope.overlay.skills.includes(name)).map(
+      name => `handoff skill ${name} is not in the overlay`,
+    ),
+    ...FRAMEWORK_START_SKILLS[framework]
+      .map(name => startSkillProblem(name, scope, framework))
+      .filter((problem): problem is string => problem !== null),
+    ...scope.flags
+      .filter(flag => flag === DISABLE_SLASH_FLAG || flag.startsWith(`${DISABLE_SLASH_FLAG}=`))
+      .map(flag => `flag ${shown(flag)} would turn off the handoff skills`),
+  ]
+}
+
 /** A list as a card line shows it: `none` when empty, else the names, past 12 of them the first 12 and `+N more`. */
 function listText(names: readonly string[]): string {
   if (names.length === 0) return 'none'
