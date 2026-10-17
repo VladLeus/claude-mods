@@ -653,16 +653,26 @@ describe('scope rules', () => {
   })
 
   test('a deny the lint refuses is dropped and the card names it, so a bug cannot ship a broken deny', () => {
-    const scanned = setup({ mcp: [session('autopilot__wait_for'), session('a'), session('jira')] })
+    const scanned = setup({ mcp: [session('autopilot__wait_for'), session('jira')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
-    const notice = 'would block an infra tool (ISO-04)'
-    const wait = `mcp__autopilot__wait_for was not emitted: ${notice}`
-    const short = `mcp__a was not emitted: ${notice}`
+    const wait = 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)'
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(scope, wait)).toEqual({ text: wait, enforcement: 'none' })
-    expect(ruleOf(scope, short)).toEqual({ text: short, enforcement: 'none' })
     expect(ruleOf(scope, 'Scanned MCP servers not given are denied: jira')?.enforcement).toBe('best-effort')
+  })
+
+  test('a server whose name only starts like the autopilot server is denied, with no refusal on the card', () => {
+    const scanned = setup({ mcp: [session('a'), session('auto'), session('jira')] })
+    const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
+
+    expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([
+      'mcp__a',
+      'mcp__auto',
+      'mcp__jira',
+    ])
+    expect(scope.card.rules.filter(candidate => candidate.text.includes('was not emitted'))).toEqual([])
+    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: a, auto, jira')?.enforcement).toBe('best-effort')
   })
 
   test('every MCP server given leaves nothing to deny, and the rule says so', () => {
@@ -872,24 +882,29 @@ describe('lintDenyPattern', () => {
     expect(lintDenyPattern('Edit(//repo/src/**)')).toBe('absolute // patterns belong only in .runtime (D-84)')
   })
 
-  test('a pattern that is, or is a prefix of, an infra tool is refused (ISO-04)', () => {
+  test('an infra tool or server, or a glob whose literal start begins one, is refused (ISO-04)', () => {
     const message = 'would block an infra tool (ISO-04)'
     const refused = [
       'mcp__*',
-      'mcp__',
       'mcp__autopilot',
-      'mcp__autopilot_',
-      'mcp__autopilot__wait',
+      'mcp__autopilot__*',
       'mcp__autopilot__wait_for',
       'mcp__autopilot__restart_session',
       'mcp__autopilot__queue_question',
       'mcp__au*',
-      'mcp__a',
+      'mcp__a?topilot',
+      'mcp__autopilot__wa[i]t_for',
       'Skill',
       'PushNotification',
     ]
 
     expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
+  })
+
+  test('a literal pattern blocks only the infra name it equals or the server it names, not a longer one (B9)', () => {
+    const passing = ['mcp__a', 'mcp__auto', 'mcp__autopilot_', 'mcp__autopilot__wait', 'mcp__autopilot__wait_fo']
+
+    expect(passing.filter(pattern => lintDenyPattern(pattern) !== null)).toEqual([])
   })
 
   test('a rule on an infra tool with an argument, or on a handoff skill, is refused too', () => {
@@ -901,14 +916,16 @@ describe('lintDenyPattern', () => {
       'Skill(resume-handoff-doc)',
       'Skill(create-*)',
       'Skill(*)',
-      'Skill(',
     ]
 
     expect(refused.filter(pattern => lintDenyPattern(pattern) !== message)).toEqual([])
   })
 
-  test('the empty pattern is refused, and a name that only starts like an infra tool is not', () => {
-    expect(lintDenyPattern('')).toBe('would block an infra tool (ISO-04)')
+  test('a literal naming no infra tool is not refused: the empty pattern, mcp__ and an unclosed Skill( (B9)', () => {
+    expect(['', 'mcp__', 'Skill('].filter(pattern => lintDenyPattern(pattern) !== null)).toEqual([])
+  })
+
+  test('a name that only starts like an infra tool is not refused', () => {
     expect(lintDenyPattern('mcp__autopilot2')).toBeNull()
     expect(lintDenyPattern('mcp__autopilot_x')).toBeNull()
     expect(lintDenyPattern('mcp__j')).toBeNull()
@@ -1206,6 +1223,7 @@ describe('ISO-04', () => {
     expect(infraViolations(withDeny(base, 'mcp__jira'), 'gsd')).toEqual([])
     expect(infraViolations(withDeny(base, 'Read(./secret/**)'), 'gsd')).toEqual([])
     expect(infraViolations(withDeny(base, 'Skill(my-skill)'), 'gsd')).toEqual([])
+    expect(infraViolations(withDeny(base, 'mcp__a'), 'gsd')).toEqual([])
   })
 
   test('mutation: a deny of the autopilot server is caught and named', () => {
@@ -1222,15 +1240,15 @@ describe('ISO-04', () => {
     expect(infraViolations(withDeny(base, 'Skill'), 'gsd').join('\n')).toContain('Skill')
   })
 
-  test('mutation: a deny that is a prefix of an infra tool is caught, and so are the other infra denies', () => {
+  test('mutation: a deny of the infra server, or a glob over an infra tool, is caught, and so are the others', () => {
     const base = matrixScope(templateRole('pm'), 'gsd')
     const entries = [
-      'mcp__autopilot__wait',
+      'mcp__autopilot',
       'mcp__autopilot__wait_for',
       'mcp__autopilot__restart_session',
       'mcp__autopilot__queue_question',
       'mcp__*',
-      'mcp__',
+      'mcp__au*',
       'PushNotification',
       'Skill(create-handoff-doc)',
       'Skill(resume-*)',
@@ -1307,14 +1325,17 @@ describe('ISO-04', () => {
     expect(problems.join('\n')).toContain('--disable-slash-commands')
   })
 
-  test('the lint and the checker both reject a deny that is a prefix of an infra tool name', () => {
+  test('the lint and the checker agree: the server and a glob over a tool are refused, a tool prefix is not', () => {
     const base = matrixScope(templateRole('pm'), 'gsd')
-    const prefixes = ['mcp__autopilot', 'mcp__autopilot__wait']
+    const refused = ['mcp__autopilot', 'mcp__autopilot__wa*']
+    const literal = 'mcp__autopilot__wait'
 
-    expect(prefixes.map(prefix => lintDenyPattern(prefix))).toEqual([
+    expect(refused.map(pattern => lintDenyPattern(pattern))).toEqual([
       'would block an infra tool (ISO-04)',
       'would block an infra tool (ISO-04)',
     ])
-    expect(prefixes.filter(prefix => infraViolations(withDeny(base, prefix), 'gsd').length === 0)).toEqual([])
+    expect(refused.filter(pattern => infraViolations(withDeny(base, pattern), 'gsd').length === 0)).toEqual([])
+    expect(lintDenyPattern(literal)).toBeNull()
+    expect(infraViolations(withDeny(base, literal), 'gsd')).toEqual([])
   })
 })
