@@ -280,6 +280,26 @@ function unfitMcpWarnings(names: readonly string[], source: string): string[] {
   return unfitNameWarnings(unfit.length, 'MCP server', source)
 }
 
+/** The MCP servers a scan kept from one source, and whether it could not see every server there (A4). */
+type McpScan = {
+  readonly refs: readonly McpRef[]
+  readonly isPartial: boolean
+}
+
+/** A source the scan did not read: no server, and the scan cannot have seen them all. */
+const UNREAD_MCP: McpScan = Object.freeze({ refs: Object.freeze([]), isPartial: true })
+
+/** A source with no server to see: nothing kept and nothing missed. */
+const NO_MCP: McpScan = Object.freeze({ refs: Object.freeze([]), isPartial: false })
+
+/**
+ * The servers a projection kept from the raw names of one source, partial when it dropped a name: one clean would
+ * change, one over the cap, or one outside the role.json name rule (A4). A name given twice counts once.
+ */
+function mcpScanOf(refs: readonly McpRef[], names: readonly string[]): McpScan {
+  return { refs, isPartial: new Set(names).size > refs.length }
+}
+
 /** The server of each `mcp__<server>__<tool>` name in a `$.tool.list()` answer, as the host spells it. */
 function toolServerNames(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -382,10 +402,36 @@ function unreadableWarning(ctx: SetupContext, path: string): string {
   return `could not read ${shownPath(ctx, path)} (treated as unknown)`
 }
 
+/** A JSON file as the port read it: not there, unknown (unreadable, over the cap or not JSON), or its parsed value. */
+type JsonRead =
+  | { readonly state: 'absent' }
+  | { readonly state: 'unknown' }
+  | { readonly state: 'parsed'; readonly value: unknown }
+
 /**
- * A JSON file read through the port, up to `maxBytes`. A file that is not there gives null quietly; one that cannot be
- * read, is over the cap or does not parse gives null with a warning, because unknown is never the same as absent.
+ * A JSON file read through the port, up to `maxBytes`. A file that is not there is absent and quiet; one that cannot be
+ * read, is over the cap or does not parse is unknown with a warning, because unknown is never the same as absent.
  */
+async function readJsonFile(
+  io: InitIo,
+  ctx: SetupContext,
+  path: string,
+  maxBytes: number,
+  warnings: string[],
+): Promise<JsonRead> {
+  const read = await io.read(path, maxBytes)
+  if (read.state === 'absent') return { state: 'absent' }
+  const json = read.state === 'text' ? parseJsonValue(read.text) : null
+  if (json === null) {
+    warnings.push(unreadableWarning(ctx, path))
+
+    return { state: 'unknown' }
+  }
+
+  return { state: 'parsed', value: json.value }
+}
+
+/** The value of a JSON file read by readJsonFile, with its warning; null when the file is absent or unknown. */
 async function readJson(
   io: InitIo,
   ctx: SetupContext,
@@ -393,17 +439,9 @@ async function readJson(
   maxBytes: number,
   warnings: string[],
 ): Promise<unknown> {
-  const read = await io.read(path, maxBytes)
-  if (read.state === 'absent') return null
-  if (read.state !== 'text') {
-    warnings.push(unreadableWarning(ctx, path))
+  const read = await readJsonFile(io, ctx, path, maxBytes, warnings)
 
-    return null
-  }
-  const json = parseJsonValue(read.text)
-  if (json === null) warnings.push(unreadableWarning(ctx, path))
-
-  return json === null ? null : json.value
+  return read.state === 'parsed' ? read.value : null
 }
 
 /**
@@ -495,33 +533,38 @@ async function commandRefs(io: InitIo, warnings: string[]): Promise<SkillRef[]> 
   return projectCommands(value)
 }
 
-/** The MCP servers of the session, from the host's tool list; a list the host cannot give adds a warning. */
-async function sessionMcpRefs(io: InitIo, warnings: string[]): Promise<McpRef[]> {
+/**
+ * The MCP servers of the session, from the host's tool list; a list the host cannot give adds a warning. The scan is
+ * partial when a server name was dropped.
+ */
+async function sessionMcpScan(io: InitIo, warnings: string[]): Promise<McpScan> {
   const value = await io.tools()
   if (!Array.isArray(value)) {
     warnings.push(TOOLS_WARNING)
 
-    return []
+    return NO_MCP
   }
-  warnings.push(...hiddenNameWarnings(toolServerNames(value), 'MCP server name', MAX_REF_NAME_CHARS))
-  warnings.push(...unfitMcpWarnings(toolServerNames(value), 'the session tools'))
+  const names = toolServerNames(value)
+  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(names, 'the session tools'))
 
-  return projectToolServers(value)
+  return mcpScanOf(projectToolServers(value), names)
 }
 
 /**
  * The MCP servers of the repo's `.mcp.json`. The file is read only when its stat shows a regular file whose real path
  * is inside the repo (WR-02); a link out of the repo, a folder, any other kind or a failed stat is not read and adds a
- * warning. A file that is not there is quiet.
+ * warning. A file that is not there is quiet. The scan is partial when a server name was dropped.
  */
-async function projectMcpRefs(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<McpRef[]> {
+async function projectMcpScan(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<McpScan> {
   const path = `${ctx.root}/.mcp.json`
-  if (!(await isInsideRepo(io, ctx, path, isFileInsideRoot, warnings))) return []
+  if (!(await isInsideRepo(io, ctx, path, isFileInsideRoot, warnings))) return NO_MCP
   const value = await readJson(io, ctx, path, MAX_READ_BYTES, warnings)
-  warnings.push(...hiddenNameWarnings(mcpServerNames(value), 'MCP server name', MAX_REF_NAME_CHARS))
-  warnings.push(...unfitMcpWarnings(mcpServerNames(value), shownPath(ctx, path)))
+  const names = mcpServerNames(value)
+  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
-  return projectMcpJson(value)
+  return mcpScanOf(projectMcpJson(value), names)
 }
 
 /**
@@ -561,23 +604,27 @@ function claudeJsonPathOf(ctx: SetupContext): string | null {
 /**
  * The MCP servers named in `~/.claude.json`. The file is looked for only when the person consented (D-58): without
  * consent nothing is read, stat'ed or warned about. A file that is not there is quiet, one that cannot be read, is over
- * the 4 MiB cap or does not parse adds a warning.
+ * the 4 MiB cap or does not parse adds a warning. The scan is partial when the file was not read (no consent, no user
+ * folder, or a file it could not read or parse) or a server name was dropped (A4); a file that is not there is not.
  */
-async function userConfigMcpRefs(
+async function userConfigMcpScan(
   io: InitIo,
   ctx: SetupContext,
   isAllowed: boolean,
   warnings: string[],
-): Promise<McpRef[]> {
-  if (!isAllowed) return []
+): Promise<McpScan> {
+  if (!isAllowed) return UNREAD_MCP
   const path = claudeJsonPathOf(ctx)
-  if (path === null) return []
-  const value = await readJson(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
+  if (path === null) return UNREAD_MCP
+  const read = await readJsonFile(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
+  if (read.state === 'unknown') return UNREAD_MCP
+  const value = read.state === 'parsed' ? read.value : null
   const roots = [ctx.root, ctx.givenRoot]
-  warnings.push(...hiddenNameWarnings(claudeJsonNames(value, roots), 'MCP server name', MAX_REF_NAME_CHARS))
-  warnings.push(...unfitMcpWarnings(claudeJsonNames(value, roots), shownPath(ctx, path)))
+  const names = claudeJsonNames(value, roots)
+  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
-  return projectClaudeJson(value, roots)
+  return mcpScanOf(projectClaudeJson(value, roots), names)
 }
 
 /** The CLAUDE.md files above and in the repo, as display forms; a chain the host cannot give adds a warning. */
@@ -651,7 +698,8 @@ function mergeMcp(lists: readonly (readonly McpRef[])[]): McpRef[] {
  * session and, only when `isClaudeJsonAllowed` is true, of `~/.claude.json` (D-58), the agent files, the CLAUDE.md
  * chain, the global CLAUDE.md and the auto-memory file names. A source the port cannot read adds a warning and is
  * treated as unknown, never as empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder,
- * the user-level sources are skipped.
+ * the user-level sources are skipped. `isMcpPartial` is true when an MCP server name was dropped from any source, or
+ * `~/.claude.json` was not read (A4).
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
@@ -662,9 +710,10 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   warnings.push(...settingsNameWarnings(sources), ...hookNameWarnings(sources))
   const installed = await installedPluginKeys(io, ctx, userDir, warnings)
   const skills = await commandRefs(io, warnings)
-  const projectServers = await projectMcpRefs(io, ctx, warnings)
-  const sessionServers = await sessionMcpRefs(io, warnings)
-  const userServers = await userConfigMcpRefs(io, ctx, isClaudeJsonAllowed, warnings)
+  const projectServers = await projectMcpScan(io, ctx, warnings)
+  const sessionServers = await sessionMcpScan(io, warnings)
+  const userServers = await userConfigMcpScan(io, ctx, isClaudeJsonAllowed, warnings)
+  const servers = [projectServers, sessionServers, userServers]
   const agents = await agentNames(io, ctx, userDir, warnings)
   const claudeMd = await claudeMdChain(io, ctx, warnings)
   const hasGlobalClaudeMd = await isGlobalClaudeMdThere(io, ctx, userDir, warnings)
@@ -673,7 +722,8 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
   return {
     plugins: sorted(Array.from(new Set([...settings.enabled, ...installed]))),
     skills,
-    mcp: mergeMcp([projectServers, sessionServers, userServers]),
+    mcp: mergeMcp(servers.map(found => found.refs)),
+    isMcpPartial: servers.some(found => found.isPartial),
     agents,
     claudeMd,
     hasGlobalClaudeMd,
