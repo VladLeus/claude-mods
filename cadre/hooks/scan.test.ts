@@ -221,6 +221,11 @@ function spiedIo(world: MemWorld): { readonly io: InitIo; readonly listed: strin
   return { io, listed, reads: run.reads }
 }
 
+/** The folders the walk listed: `/repo/.cadre` is listed by the `.cadre` read, not by the walk, so it is left out. */
+function walkedFolders(listed: readonly string[]): string[] {
+  return listed.filter(path => path !== '/repo/.cadre')
+}
+
 /** The finding of a kind and label, or undefined. */
 function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
   return scan.findings.find(finding => finding.kind === kind && finding.label === label)
@@ -322,7 +327,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.listed).toEqual(['/repo', '/repo/a', '/repo/a/b'])
+    expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/a', '/repo/a/b'])
     expect(findingOf(scan, 'test', 'JS/TS test files')).toEqual({
       kind: 'test',
       label: 'JS/TS test files',
@@ -343,7 +348,7 @@ describe('scanRepo', () => {
     const run = spiedIo(memWorld({ dirs }))
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.listed).toEqual(['/repo', '/repo/src'])
+    expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/src'])
     expect(scan.findings).toEqual([])
     expect(scan.isTruncated).toBe(false)
   })
@@ -362,7 +367,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.listed).toEqual(['/repo', '/repo/real'])
+    expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/real'])
     expect(findingOf(scan, 'test', 'JS/TS test files')).toBeUndefined()
     expect(scan.codeDirs).toEqual(['real'])
   })
@@ -593,7 +598,7 @@ describe('scanRepo', () => {
     )
     const scan = await scanRepo(run.io, '/repo')
 
-    expect(run.listed).toEqual(['/repo', '/repo/real'])
+    expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/real'])
     expect(scan.findings).toEqual([])
     expect(scan.warnings).toEqual([])
   })
