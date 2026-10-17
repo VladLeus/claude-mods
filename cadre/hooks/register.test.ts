@@ -16,7 +16,7 @@ import {
   portProbeOf,
   portTextOf,
 } from './init'
-import { memIo, memWorld } from './testkit'
+import { answerFor, memIo, memWorld } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -147,14 +147,6 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     answers: {},
     ...over,
   }
-}
-
-/** The answer a world gives to a dialog question: the value of the longest `answers` key the question starts with. */
-function answerFor(answers: World['answers'], question: string): string | undefined {
-  const keys = Object.keys(answers).filter(key => question.startsWith(key))
-  const [longest] = keys.sort((first, second) => second.length - first.length)
-
-  return longest === undefined ? undefined : answers[longest]
 }
 
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
@@ -931,9 +923,8 @@ describe('init helpers', () => {
 
     test('portProbeOf is unknown for a null stat and for a stat that is not a file', () => {
       expect(portProbeOf(true, null, MAX)).toEqual({ state: 'unknown' })
-      for (const kind of ['dir', 'other'] as const) {
-        expect(portProbeOf(true, { kind, size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
-      }
+      expect(portProbeOf(true, { kind: 'dir', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
+      expect(portProbeOf(true, { kind: 'other', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
     })
 
     test('portProbeOf is too-large by the stat size and null (go on and read) at the limit', () => {

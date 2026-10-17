@@ -1,5 +1,5 @@
-import type { AskSpec, GitPolicy, InitIo } from '../types'
-import { detectRefusal, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
+import type { AskSpec, GitPolicy, InitIo, PortRead, PortStat } from '../types'
+import { detectRefusal, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, utf8Bytes } from './facts'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =
@@ -36,18 +36,22 @@ export const APPLY_LATER_NOTE = 'Applying this plan arrives in a later cadre ver
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees (Phase 3.1)"
 
-/** The most times one question is asked: an answer that is not a listed choice is asked again, up to this many asks. */
-export const MAX_REASKS = 3
+/** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
+export const MAX_ASKS = 3
 
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
 
+/** Each git policy with its dialog label and the word a person may type under "Other" (D-65). */
+const GIT_POLICIES: readonly { readonly label: string; readonly word: string; readonly policy: GitPolicy }[] =
+  Object.freeze([
+    { label: 'Commit definitions (default)', word: 'definitions', policy: 'definitions' },
+    { label: 'Commit all', word: 'all', policy: 'all' },
+    { label: 'Ignore all of .cadre/', word: 'ignore', policy: 'ignore' },
+  ])
+
 /** The git policy choices in the fixed order default, all, ignore; nothing is preselected (D-65). */
-export const GIT_POLICY_OPTIONS: readonly string[] = Object.freeze([
-  'Commit definitions (default)',
-  'Commit all',
-  'Ignore all of .cadre/',
-])
+export const GIT_POLICY_OPTIONS: readonly string[] = Object.freeze(GIT_POLICIES.map(entry => entry.label))
 
 /**
  * The git policy an answer names, else null. The three dialog labels match trimmed and in any case, and so do the
@@ -55,19 +59,33 @@ export const GIT_POLICY_OPTIONS: readonly string[] = Object.freeze([
  * choice.
  */
 export function parseGitPolicy(answer: string): GitPolicy | null {
-  switch (answer.trim().toLowerCase()) {
-    case 'commit definitions (default)':
-    case 'definitions':
-      return 'definitions'
-    case 'commit all':
-    case 'all':
-      return 'all'
-    case 'ignore all of .cadre/':
-    case 'ignore':
-      return 'ignore'
-    default:
-      return null
-  }
+  const wanted = answer.trim().toLowerCase()
+  const found = GIT_POLICIES.find(entry => entry.label.toLowerCase() === wanted || entry.word === wanted)
+
+  return found?.policy ?? null
+}
+
+/**
+ * What the init port answers before it reads a file, or null when the file may be read: `absent` only when the probe
+ * says the path is not there, `unknown` when the probe or the stat failed or the stat shows anything but a regular
+ * file (a folder, FIFO or device is never read), `too-large` when the stat size is over `maxBytes` (Pitfall 6).
+ */
+export function portProbeOf(isThere: boolean | null, stat: PortStat | null, maxBytes: number): PortRead | null {
+  if (isThere === false) return { state: 'absent' }
+  if (isThere === null) return { state: 'unknown' }
+  if (stat === null || stat.kind !== 'file') return { state: 'unknown' }
+  if (stat.size > maxBytes) return { state: 'too-large', bytes: stat.size }
+
+  return null
+}
+
+/** What the init port answers once a file was read: `unknown` when no text came, `too-large` over `maxBytes` UTF-8 bytes. */
+export function portTextOf(text: unknown, maxBytes: number): PortRead {
+  if (typeof text !== 'string') return { state: 'unknown' }
+  const bytes = utf8Bytes(text)
+  if (bytes > maxBytes) return { state: 'too-large', bytes }
+
+  return { state: 'text', text }
 }
 
 /** Asks once; null when the dialog is dismissed. The rejection is never read, so its text cannot reach a reply. */
@@ -81,7 +99,7 @@ async function askOnce(io: InitIo, question: string, spec: AskSpec): Promise<str
 
 /**
  * Asks `question` and returns what `parse` makes of the answer. An answer `parse` does not take is asked again, up to
- * MAX_REASKS asks in all, and then null; a dismissed dialog is null at once and is not asked again (D-45). A dismissal,
+ * MAX_ASKS asks in all, and then null; a dismissed dialog is null at once and is not asked again (D-45). A dismissal,
  * an empty answer and an unknown answer are never taken as the person's choice.
  */
 export async function askChoice<T>(
@@ -90,7 +108,7 @@ export async function askChoice<T>(
   spec: AskSpec,
   parse: (answer: string) => T | null,
 ): Promise<T | null> {
-  for (let asked = 0; asked < MAX_REASKS; asked += 1) {
+  for (let asked = 0; asked < MAX_ASKS; asked += 1) {
     const answer = await askOnce(io, question, spec)
     if (answer === null) return null
     const parsed = parse(answer)

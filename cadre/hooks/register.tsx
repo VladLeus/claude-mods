@@ -23,9 +23,10 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
+  utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
-import { pluginVersionOf, runInit } from './init'
+import { pluginVersionOf, portProbeOf, portTextOf, runInit } from './init'
 import { detectText } from './render'
 
 /** How long the user-level runtime identity call may run before it is given up. */
@@ -145,7 +146,7 @@ async function readText(
     return null
   }
   const text = await $.fs.read(path).catch(() => null)
-  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > MAX_READ_BYTES) {
+  if (typeof text !== 'string' || utf8Bytes(text) > MAX_READ_BYTES) {
     read.warnings.push(`could not read ${shown(read, path)} (treated as unknown)`)
 
     return null
@@ -248,11 +249,18 @@ async function gsdCandidateOf(
   }
 }
 
+/** What one collect run gave: the raw facts and the user-level GSD folder from the plan the reads followed. */
+type Collected = {
+  readonly raw: RawFacts
+  readonly gsdUserDir: string | null
+}
+
 /**
  * The host reads for one repo root, in the order factReadPlan names them, and nothing else. The locations arrive
- * resolved and already past the home-folder refusal. A read that fails is recorded as a warning, never thrown.
+ * resolved and already past the home-folder refusal. A read that fails is recorded as a warning, never thrown. The
+ * user-level GSD folder comes back beside the facts so no caller plans the reads a second time.
  */
-async function collectFacts($: EngineInterface, locations: Locations): Promise<RawFacts> {
+async function collectFacts($: EngineInterface, locations: Locations): Promise<Collected> {
   const { root, home, configDir } = locations
   const plan = factReadPlan({ root, home, configDir })
   const read: ReadContext = { root, home, configDir, warnings: [...locations.warnings, ...plan.warnings] }
@@ -268,7 +276,9 @@ async function collectFacts($: EngineInterface, locations: Locations): Promise<R
     gsd.push(await gsdCandidateOf($, read, target))
   }
 
-  return { root, home, repoEntries, docsEntries, settings, installedPlugins, gsd, warnings: read.warnings }
+  const raw = { root, home, repoEntries, docsEntries, settings, installedPlugins, gsd, warnings: read.warnings }
+
+  return { raw, gsdUserDir: plan.gsd.find(target => target.location === 'user')?.dir ?? null }
 }
 
 /** The raw facts of a session whose root cannot be read: nothing is read, and the report says so. */
@@ -301,28 +311,24 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
-  const raw = await collectFacts($, locations)
+  const { raw } = await collectFacts($, locations)
 
   return detectText(normalizeFacts(raw, locations.configDir, locations.givenRoot), isAdapters)
 }
 
 /**
- * A file as the init port reads it (Pitfall 6): `absent` only when the host says the path is not there, `unknown` when
- * the probe, the stat or the read failed or the read answered no text, `too-large` over `maxBytes`, else its text. The
- * size is checked twice: by the stat before the read, and by the UTF-8 length of the text read.
+ * A file as the init port reads it (Pitfall 6). A file is read only when the host says the path is there and its stat,
+ * asked with `resolve`, shows a regular file within `maxBytes`: a failed probe, a failed stat or a folder, FIFO or
+ * device is `unknown` and never read. A read that fails is `unknown`; the text is checked again by its UTF-8 bytes.
+ * The decisions are portProbeOf and portTextOf; this only asks the host.
  */
 async function portRead($: EngineInterface, path: string, maxBytes: number): Promise<PortRead> {
   const isThere = await $.fs.exists(path).catch(() => null)
-  if (isThere === false) return { state: 'absent' }
-  if (isThere === null) return { state: 'unknown' }
-  const stat = await $.fs.stat(path).catch(() => null)
-  if (stat !== null && stat.size > maxBytes) return { state: 'too-large', bytes: stat.size }
-  const text = await $.fs.read(path).catch(() => null)
-  if (typeof text !== 'string') return { state: 'unknown' }
-  const bytes = new TextEncoder().encode(text).byteLength
-  if (bytes > maxBytes) return { state: 'too-large', bytes }
+  const stat = isThere === true ? await $.fs.stat(path, { resolve: true }).catch(() => null) : null
+  const before = portProbeOf(isThere, stat, maxBytes)
+  if (before !== null) return before
 
-  return { state: 'text', text }
+  return portTextOf(await $.fs.read(path).catch(() => null), maxBytes)
 }
 
 /**
@@ -361,14 +367,9 @@ function initIoOf($: EngineInterface): InitIo {
       return root === null ? null : locationsOf($, root)
     },
     facts: async locations => {
-      const raw = await collectFacts($, locations)
-      const { root, home, configDir } = locations
-      const userTarget = factReadPlan({ root, home, configDir }).gsd.find(target => target.location === 'user')
+      const { raw, gsdUserDir } = await collectFacts($, locations)
 
-      return {
-        facts: normalizeFacts(raw, locations.configDir, locations.givenRoot),
-        gsdUserDir: userTarget?.dir ?? null,
-      }
+      return { facts: normalizeFacts(raw, locations.configDir, locations.givenRoot), gsdUserDir }
     },
     sessionId: () => $.session.id().catch(() => null),
     now: () => $.clock.now().catch(() => null),
@@ -400,11 +401,16 @@ export const register: Register = on => {
 
   on('command.run', { command: 'cadre' }, async ($, e) => {
     const command = parseCommand(e.args)
-    if (command.kind === 'help') return { text: helpText(command.unknown) }
-    if (command.kind === 'init') return { text: await runInit(initIoOf($), { dryRun: command.dryRun }) }
-    // regen has no grammar yet, so the parser never gives it; its route arrives with its grammar.
-    if (command.kind === 'regen') return { text: helpText(null) }
-
-    return { text: await detectReply($, command.adapters) }
+    switch (command.kind) {
+      case 'help':
+        return { text: helpText(command.unknown) }
+      case 'detect':
+        return { text: await detectReply($, command.adapters) }
+      case 'init':
+        return { text: await runInit(initIoOf($), { dryRun: command.dryRun }) }
+      case 'regen':
+        // Plan 02-13 adds regen's grammar and its route; until then the parser never gives this kind.
+        return { text: helpText(null) }
+    }
   })
 }
