@@ -17,6 +17,14 @@ function rawStatus(text: string): PortRead {
   return { state: 'text', text }
 }
 
+/** The status path of session s1 under /home/u; the test fails when there is none, so it never passes without one. */
+function s1Path(): string {
+  const path = autopilotStatusPath('/home/u', 's1')
+  if (path === null) throw new Error('no status path for session s1')
+
+  return path
+}
+
 describe('autopilot guard', () => {
   test('a status file is fresh for 60 seconds, twice the 30 second heartbeat autopilot writes', () => {
     expect(AUTOPILOT_FRESH_MS).toBe(60_000)
@@ -105,7 +113,7 @@ describe('autopilot guard', () => {
   test('a session id outside 1 to 128 letters, digits, underscores and dashes gives no path', () => {
     const longest = 'a'.repeat(128)
     expect(autopilotStatusPath('/home/u', longest)).toBe(`/home/u/.claude/autopilot/${longest}.json`)
-    for (const id of ['', '../x', 'a/b', 'a b', 'a.b', 'a\nb', 'x‮y', 'a'.repeat(129)]) {
+    for (const id of ['', '../x', 'a/b', 'a b', 'a.b', 'a\nb', 'x\u202Ey', 'a'.repeat(129)]) {
       expect(autopilotStatusPath('/home/u', id)).toBeNull()
     }
   })
@@ -118,18 +126,14 @@ describe('autopilot guard', () => {
   test('the session status file read through the port is an active run', async () => {
     const files = { '/home/u/.claude/autopilot/s1.json': '{"isOn":true,"phase":"paused","beat":1000000}' }
     const run = memIo(memWorld({ files }), [])
-    const path = autopilotStatusPath('/home/u', 's1')
-    expect(path).toBe('/home/u/.claude/autopilot/s1.json')
-    if (path === null) return
+    const path = s1Path()
 
     expect(autopilotRunState(await run.io.read(path, MAX_READ_BYTES), NOW)).toBe('active')
-    expect(run.reads).toEqual([path])
+    expect(run.reads).toEqual(['/home/u/.claude/autopilot/s1.json'])
   })
 
   test('through the port a missing file is no run and a file that cannot be read is unknown', async () => {
-    const path = autopilotStatusPath('/home/u', 's1')
-    if (path === null) return
-
+    const path = s1Path()
     const missing = memIo(memWorld({}), [])
     expect(autopilotRunState(await missing.io.read(path, MAX_READ_BYTES), NOW)).toBe('none')
     const unreadable = memIo(memWorld({ unknownPaths: [path] }), [])
