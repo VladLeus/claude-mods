@@ -174,10 +174,14 @@ describe('compileScope', () => {
 
   test('the autopilot server is never denied, whether or not the scan lists it', () => {
     const scanned = setup({ mcp: [session('autopilot'), session('jira')] })
-    const deny = compileScope(templateRole('pm'), context({ setup: scanned })).settings.permissions.deny
+    const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
+    const deny = scope.settings.permissions.deny
 
     expect(deny).toContain('mcp__jira')
     expect(deny).not.toContain('mcp__autopilot')
+    // The infra server is left out before the lint sees it, so the card has no refusal to report for it.
+    expect(scope.card.rules.filter(candidate => candidate.text.includes('was not emitted'))).toEqual([])
+    expect(scope.card.notGiven.mcp).toEqual(['jira'])
   })
 
   test('the MCP file and the deny list are sorted and once each', () => {
