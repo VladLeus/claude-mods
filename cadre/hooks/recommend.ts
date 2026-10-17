@@ -1,4 +1,16 @@
-import type { AskSpec, HunkOp, PortRead, SettingProposal, ToolCommand } from '../types'
+import type {
+  AskSpec,
+  FrameworkId,
+  HunkOp,
+  PortRead,
+  Recommendation,
+  RepoScan,
+  RoleSpec,
+  SettingProposal,
+  SetupScan,
+  TemplateRoleId,
+  ToolCommand,
+} from '../types'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { reportText } from './render'
 
@@ -270,4 +282,147 @@ export function attendedNote(keys: readonly string[]): string {
   const what = shown.length === 0 ? 'its settings' : listText(shown)
 
   return `attended: GSD needs a person until ${what} ${shown.length === 1 ? 'is' : 'are'} set as proposed`
+}
+
+/**
+ * The commands printed for the person to run (D-96, approved word for word). cadre runs none of them (ROLE-03, D-28).
+ * `securityReview` is not a command: that skill is built into Claude Code and is added to the Security role's
+ * `role.json`, with `<id>` left as literal text. It is defined once and used wherever it is shown.
+ */
+export const INSTALL_COMMANDS: Readonly<{
+  gsd: string
+  superpowers: string
+  playwright: string
+  devtools: string
+  securityReview: string
+}> = Object.freeze({
+  gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+  superpowers: 'claude plugin install superpowers@claude-plugins-official',
+  playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
+  devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
+  securityReview:
+    "built into Claude Code as /security-review; add it to the Security role's skills in .cadre/<id>/role.json",
+})
+
+/** Why GSD and superpowers are recommended: no role of the team uses a framework (D-17, D-74). */
+const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in plan, execute, verify loop'
+
+/** An MCP server name that already gives the FE role a browser to check its work in, in any case (D-74). */
+const PLAYWRIGHT_NAME = /playwright/i
+
+/** An MCP server name that already lets the FE role inspect the running page, in any case (D-74). */
+const DEVTOOLS_NAME = /devtools/i
+
+/** The skill the Security role needs: named exactly this, or a plugin skill whose name ends in `:security-review`. */
+const SECURITY_REVIEW_SKILL = 'security-review'
+
+/** The GSD and superpowers lines: only for a team with roles where none of them uses a framework (D-17, D-74). */
+function frameworkRecommendations(frameworks: readonly FrameworkId[]): Recommendation[] {
+  if (frameworks.length === 0 || frameworks.some(framework => framework !== 'none')) return []
+
+  return [
+    { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd },
+    { tool: 'superpowers', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.superpowers },
+  ]
+}
+
+/** Whether a role stands for a template role: it has that id, or it is based on that role. */
+function standsFor(role: RoleSpec, template: TemplateRoleId): boolean {
+  return role.id === template || role.basedOn === template
+}
+
+/** One recommendation for each role that stands for `template`, when the tool is missing; none otherwise. */
+function forTemplateRole(
+  roles: readonly RoleSpec[],
+  template: TemplateRoleId,
+  isMissing: boolean,
+  row: Pick<Recommendation, 'tool' | 'why' | 'install'>,
+): Recommendation[] {
+  if (!isMissing) return []
+
+  return roles.filter(role => standsFor(role, template)).map(role => ({ ...row, roleId: role.id }))
+}
+
+/** Whether the repo scan found an E2E setup. */
+function hasE2e(scan: RepoScan): boolean {
+  return scan.findings.some(finding => finding.kind === 'e2e')
+}
+
+/** Whether the user has an MCP server whose name matches. */
+function hasMcp(setup: SetupScan, pattern: RegExp): boolean {
+  return setup.mcp.some(server => pattern.test(server.name))
+}
+
+/** Whether the user has the skill: named exactly `name`, or a plugin skill whose name ends in `:name`. */
+function hasSkill(setup: SetupScan, name: string): boolean {
+  return setup.skills.some(skill => skill.name === name || skill.name.endsWith(`:${name}`))
+}
+
+/**
+ * The tools to recommend for a team (ROLE-03, D-74), in this order: GSD and superpowers when no role uses a framework;
+ * Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP server exists; DevTools MCP
+ * for each FE role when no devtools MCP server exists; security-review for each Security role when no such skill
+ * exists. A role is FE or Security by its id or its `basedOn`. `frameworks` is each role's resolved framework, in role
+ * order. The result is text for the person to read: nothing here runs a command (T-02-23).
+ */
+export function recommend(input: {
+  readonly roles: readonly RoleSpec[]
+  readonly frameworks: readonly FrameworkId[]
+  readonly scan: RepoScan
+  readonly setup: SetupScan
+}): Recommendation[] {
+  const { roles, frameworks, scan, setup } = input
+
+  return [
+    ...frameworkRecommendations(frameworks),
+    ...forTemplateRole(roles, 'fe', !hasE2e(scan) && !hasMcp(setup, PLAYWRIGHT_NAME), {
+      tool: 'Playwright MCP',
+      why: 'the FE role has no E2E setup to check its work in a browser',
+      install: INSTALL_COMMANDS.playwright,
+    }),
+    ...forTemplateRole(roles, 'fe', !hasMcp(setup, DEVTOOLS_NAME), {
+      tool: 'DevTools MCP',
+      why: 'the FE role cannot inspect the running page',
+      install: INSTALL_COMMANDS.devtools,
+    }),
+    ...forTemplateRole(roles, 'security', !hasSkill(setup, SECURITY_REVIEW_SKILL), {
+      tool: 'security-review',
+      why: 'the Security role has no security-review skill',
+      install: INSTALL_COMMANDS.securityReview,
+    }),
+  ]
+}
+
+/** The heading above the recommendation lines. */
+const RECOMMENDATIONS_HEADING = 'Recommendations (print-only; nothing is installed):'
+
+/** The one line printed when there is nothing to recommend. */
+const NO_RECOMMENDATIONS = 'Recommendations: none'
+
+/** Who benefits when a recommendation names no role. */
+const ALL_ROLES = 'all roles'
+
+/** The title of the role with this id; the id itself when no role has it. */
+function roleTitle(roleId: string, roles: readonly RoleSpec[]): string {
+  return roles.find(role => role.id === roleId)?.title ?? roleId
+}
+
+/**
+ * The lines init prints for the recommendations: `Recommendations: none`, or a heading and then two lines for each,
+ * `- <tool> for <role title or all roles>: <why>` and `    run: <command>`. Every cell is cleaned and capped as a
+ * report cell is, so none can add a line or hide text.
+ */
+export function recommendationLines(
+  recommendations: readonly Recommendation[],
+  roles: readonly RoleSpec[],
+): string[] {
+  if (recommendations.length === 0) return [NO_RECOMMENDATIONS]
+  const lines = [RECOMMENDATIONS_HEADING]
+  for (const recommendation of recommendations) {
+    const who = recommendation.roleId === null ? ALL_ROLES : roleTitle(recommendation.roleId, roles)
+    lines.push(`- ${reportText(recommendation.tool)} for ${reportText(who)}: ${reportText(recommendation.why)}`)
+    lines.push(`    run: ${reportText(recommendation.install)}`)
+  }
+
+  return lines
 }
