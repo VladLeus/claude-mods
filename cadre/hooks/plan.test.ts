@@ -220,6 +220,14 @@ describe('stableJson', () => {
   })
 })
 
+/** The note under a manifest that could not be read: it is kept, so no role's entries are dropped (A6). */
+const MANIFEST_NOTE =
+  "could not read it (treated as changed): kept as is, so no role's entries are dropped; Phase 3 will not write it"
+
+/** The plan warning for a manifest that could not be read (A6). */
+const MANIFEST_WARNING =
+  'could not read .cadre/manifest.json (treated as unknown): it is kept as is and Phase 3 will not write it'
+
 describe('buildPlan', () => {
   test('one new file gives a create op for it and one for the manifest, in path order', async () => {
     const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')] }))
@@ -262,15 +270,50 @@ describe('buildPlan', () => {
     expect(kindOf(compact, MANIFEST_PATH)).toBe('change')
   })
 
-  test('the manifest is never a conflict: an unreadable or too large one is a change', async () => {
+  test('an unreadable or too large manifest is a conflict with a note and a warning, never a change', async () => {
     const files = [file(ROLE, '{}\n')]
-    const unknown = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: { state: 'unknown' } }) }))
-    const large = await buildPlan(
-      input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: { state: 'too-large', bytes: 300_000 } }) }),
+    const reads: PortRead[] = [{ state: 'unknown' }, { state: 'too-large', bytes: 300_000 }]
+
+    for (const read of reads) {
+      const plan = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: read }) }))
+
+      expect(fileOps(plan).find(planned => planned.path === MANIFEST_PATH)).toEqual({
+        kind: 'conflict',
+        path: MANIFEST_PATH,
+        mode: 'file',
+        note: MANIFEST_NOTE,
+      })
+      expect(plan.warnings).toEqual([MANIFEST_WARNING])
+    }
+  })
+
+  test('a manifest whose state is unknown is a conflict, even when the disk holds the planned text', async () => {
+    const files = [file(ROLE, '{}\n')]
+    const planned = manifestTextOf(await entriesOf(files))
+    const unread = await buildPlan(input({ desired: files, manifestState: 'unknown' }))
+    const equal = await buildPlan(
+      input({ desired: files, manifestState: 'unknown', disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }),
     )
 
-    expect(kindOf(unknown, MANIFEST_PATH)).toBe('change')
-    expect(kindOf(large, MANIFEST_PATH)).toBe('change')
+    expect(kindOf(unread, MANIFEST_PATH)).toBe('conflict')
+    expect(kindOf(equal, MANIFEST_PATH)).toBe('conflict')
+    expect(equal.warnings).toEqual([MANIFEST_WARNING])
+  })
+
+  test('a manifest read in full is left when equal, changed when not, and created when it is not there', async () => {
+    const files = [file(ROLE, '{}\n')]
+    const planned = manifestTextOf(await entriesOf(files))
+    const manifest = parseManifest(planned)
+    const kinds: (string | undefined)[] = []
+    for (const read of [text(planned), text(`${planned} `)]) {
+      const plan = await buildPlan(
+        input({ desired: files, manifest, manifestState: 'present', disk: diskOf({ [MANIFEST_PATH]: read }) }),
+      )
+      kinds.push(kindOf(plan, MANIFEST_PATH))
+    }
+    kinds.push(kindOf(await buildPlan(input({ desired: files, manifestState: 'absent' })), MANIFEST_PATH))
+
+    expect(kinds).toEqual(['leave', 'change', 'create'])
   })
 
   test('a new version of cadre plans a changed manifest and nothing else', async () => {
@@ -981,7 +1024,7 @@ describe('plan conflicts and limits', () => {
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
       const plan = await buildPlan(input({ desired: [keep], manifest, manifestState: 'unknown' }))
 
-      expect(summary(plan)).toEqual(['create .cadre/a.md', `create ${MANIFEST_PATH}`])
+      expect(summary(plan)).toEqual(['create .cadre/a.md', `conflict ${MANIFEST_PATH}`])
     })
 
     test('carried entries stay in the new manifest and get no op', async () => {
