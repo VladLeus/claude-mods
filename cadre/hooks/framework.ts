@@ -10,7 +10,7 @@ import type {
   RepoEntry,
   UnsupportedMarker,
 } from '../types'
-import { clean, isObject } from './facts'
+import { idLabel, isObject } from './facts'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this
@@ -76,6 +76,17 @@ function hasDirOrLink(entries: readonly RepoEntry[], name: string): boolean {
  * fallback, not a framework found in the repo, so it is never ranked here.
  */
 export const SUPPORTED_IDS: readonly FrameworkId[] = ['gsd', 'superpowers']
+
+/**
+ * Every framework id cadre stores for a repo or a role: the supported frameworks, then `none`, the built-in fallback.
+ * Role parsing and the `.cadre/cadre.json` reader both check against this one list.
+ */
+export const FRAMEWORK_IDS: readonly FrameworkId[] = Object.freeze([...SUPPORTED_IDS, 'none'])
+
+/** Whether a value is one of FRAMEWORK_IDS; anything that is not such a string is not. */
+export function isFrameworkId(value: unknown): value is FrameworkId {
+  return FRAMEWORK_IDS.some(id => id === value)
+}
 
 /**
  * The adapter choice for a repo, decided from the detections alone. Only `chosen` picks an adapter. A user pick is
@@ -215,13 +226,6 @@ function decisionTypeProblem(gate: Record<string, unknown>): string | null {
   if (!isDecisionType(gate.decisionType)) return 'unknown decisionType'
 
   return null
-}
-
-/** A gate id as message text: a string is cleaned and capped, anything else is a fixed token. Never stringifies. */
-function idLabel(id: unknown): string {
-  if (typeof id !== 'string') return '<non-string id>'
-
-  return clean(id, 40)
 }
 
 /** The problems with one gate's own fields: its decision type against its kind, and its kickoff. */
