@@ -29,28 +29,44 @@ const CONTEXT_WARNINGS_KEY = 'hooks.context_warnings'
 /** A config key's value as the text a hunk shows: set, with its text, or not set. */
 type ConfigValue = { readonly state: 'set'; readonly text: string } | { readonly state: 'not-set' }
 
-/** A config value as hunk text: a string cleaned, a number or boolean as its digits or word, anything else as JSON. */
+/** A config key's raw parsed value: set, with the value, or not set. */
+type RawValue = { readonly state: 'set'; readonly value: unknown } | { readonly state: 'not-set' }
+
+/**
+ * A config value as hunk text: a number or boolean as its digits or word, anything else as JSON, so a string shows in
+ * quotes and the string "false" never reads like the boolean false (A2). The text is cleaned and capped.
+ */
 function valueText(value: unknown): string {
-  if (typeof value === 'string') return clean(value, MAX_VALUE_CHARS)
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
 
   return clean(JSON.stringify(value), MAX_VALUE_CHARS)
 }
 
 /**
- * The value at a dotted key path, such as `workflow.text_mode`, in a parsed config, as the text a hunk shows. A key
- * counts only when the object has it as its own, so an inherited name is never a value, and a step that is not a plain
- * object ends the walk as not set. A string is cleaned and capped at 80 code points, so a repo file cannot add a line
- * to a question (T-02-22). `config` is parsed JSON.
+ * The raw value at a dotted key path in a parsed config. A key counts only when the object has it as its own, so an
+ * inherited name is never a value, and a step that is not a plain object ends the walk as not set.
  */
-export function configValue(config: unknown, key: string): ConfigValue {
+function rawValue(config: unknown, key: string): RawValue {
   let current: unknown = config
   for (const segment of key.split('.')) {
     if (!isObject(current) || !Object.hasOwn(current, segment)) return { state: 'not-set' }
     current = current[segment]
   }
 
-  return { state: 'set', text: valueText(current) }
+  return { state: 'set', value: current }
+}
+
+/**
+ * The value at a dotted key path, such as `workflow.text_mode`, in a parsed config, as the text a hunk shows. A key
+ * counts only when the object has it as its own, so an inherited name is never a value, and a step that is not a plain
+ * object ends the walk as not set. A string is shown JSON-quoted, cleaned and capped at 80 code points, so a repo file
+ * cannot add a line to a question (T-02-22). `config` is parsed JSON.
+ */
+export function configValue(config: unknown, key: string): ConfigValue {
+  const found = rawValue(config, key)
+  if (found.state === 'not-set') return { state: 'not-set' }
+
+  return { state: 'set', text: valueText(found.value) }
 }
 
 /** What the config file gives a lookup: its object, no file, or a file whose value cannot be known. */
@@ -98,11 +114,25 @@ function isOffered(proposal: SettingProposal, isGsdStatusline: boolean): boolean
 }
 
 /**
+ * Whether the config already holds the target of a proposal: the key is set and its raw value, as JSON, equals the
+ * target parsed as JSON (the target text itself when it is not JSON). Cleaned text is never compared, so the string
+ * "false" is not the boolean false (A2). An absent or unknown config never holds a target (fail closed).
+ */
+function isAtTarget(source: ConfigSource, proposal: SettingProposal): boolean {
+  if (source.kind !== 'object') return false
+  const found = rawValue(source.value, proposal.key)
+  if (found.state === 'not-set') return false
+  const target = parseJsonValue(proposal.to)?.value ?? proposal.to
+
+  return JSON.stringify(found.value) === JSON.stringify(target)
+}
+
+/**
  * The hunks to ask, in the order of the proposals (D-70). A proposal is offered when autonomy requires it, or when it
- * is the optional `hooks.context_warnings` and gsd-statusline is the statusline. One whose current value already equals
- * its target is a no-op and is not offered, so a boolean false read from the config equals the target `false`. The
- * before text comes from the config read alone: an unreadable config never equals a target, so every required proposal
- * is offered then (fail closed). No process runs.
+ * is the optional `hooks.context_warnings` and gsd-statusline is the statusline. One whose raw config value already
+ * equals its target, compared as JSON, is a no-op and is not offered: a boolean false equals the target `false`, and
+ * the string "false" does not (A2). The before text comes from the config read alone: an unreadable config never
+ * equals a target, so every required proposal is offered then (fail closed). No process runs.
  */
 export function hunkCandidates(
   proposals: readonly SettingProposal[],
@@ -113,9 +143,8 @@ export function hunkCandidates(
   const candidates: HunkCandidate[] = []
   for (const proposal of proposals) {
     if (!isOffered(proposal, isGsdStatusline)) continue
-    const before = beforeText(source, proposal.key)
-    if (before === proposal.to) continue
-    candidates.push({ proposal, before })
+    if (isAtTarget(source, proposal)) continue
+    candidates.push({ proposal, before: beforeText(source, proposal.key) })
   }
 
   return candidates
