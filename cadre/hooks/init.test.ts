@@ -1834,9 +1834,10 @@ describe('carryStep', () => {
 
   test('no env, settings or file value of the secret world reaches a question or a log line (T-02-34)', async () => {
     const run = memIo(secretWorld(), { ...INIT_ANSWERS, 'Which env variables': 'All of them' })
-    await runInit(run.io, { dryRun: true })
+    const reply = await runInit(run.io, { dryRun: true })
     expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(6)
-    expect(leaks([...run.asked, ...run.logged].join('\n'), [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+    const text = [...run.asked, ...run.logged, reply].join('\n')
+    expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 
   test('the roles it is given are never changed', async () => {
@@ -2069,7 +2070,7 @@ describe('hunkStep', () => {
 
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
     const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true })
+    const reply = await runInit(run.io, { dryRun: true })
     const policyAt = run.asked.indexOf(GIT_POLICY_QUESTION)
     const [env, ...hunks] = run.asked.slice(policyAt - 4, policyAt).map(question => question.split('\n')[0])
     expect(env?.startsWith('Which env variables do roles carry?')).toBe(true)
@@ -2079,11 +2080,12 @@ describe('hunkStep', () => {
       '.planning/config.json: hooks.context_warnings',
     ])
     expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
-    expect(leaks([...run.asked, ...run.logged].join('\n'), [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+    const text = [...run.asked, ...run.logged, reply].join('\n')
+    expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, INIT_ANSWERS)
-    await runInit(proven.io, { dryRun: true })
+    const provenReply = await runInit(proven.io, { dryRun: true })
     expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
-    const provenText = [...proven.asked, ...proven.logged].join('\n')
+    const provenText = [...proven.asked, ...proven.logged, provenReply].join('\n')
     expect(leaks(provenText, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 
@@ -3676,6 +3678,16 @@ describe('runRegen', () => {
       expect(reply.split('\n')[0]).toBe('cadre regen be --dry-run')
       expect(run.asked).toEqual([])
       expect(reply).not.toContain(NOT_INTERACTIVE_REPLY)
+    }
+  })
+
+  test('no secret or absolute path of the secret world reaches the regen reply, with consent or not (B5)', async () => {
+    const claudeJson = '{"mcpServers":{"linear":{"command":"x","env":{"TOKEN":"sk-FAKE-SECRET-0123456789"}}}}'
+    const base = secretWorld({ files: { ...secretWorld().files, '/home/u/.claude.json': claudeJson } })
+    for (const readUserMcp of [false, true]) {
+      const reply = await regenBe(await regenWorld(team, { readUserMcp }, base))
+      expect([readUserMcp, reply.split('\n')[0]]).toEqual([readUserMcp, 'cadre regen be --dry-run'])
+      expect([readUserMcp, leaks(reply, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])]).toEqual([readUserMcp, []])
     }
   })
 })
