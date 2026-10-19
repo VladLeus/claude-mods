@@ -1310,6 +1310,41 @@ async function regenMatrixWorld(over: Partial<World> = {}): Promise<World> {
 /** A fresh autopilot status file for session s1 at the clock of the fake host: a run is on, in the running phase. */
 const AUTOPILOT_RUNNING = '{"isOn":true,"phase":"running","beat":1000000}'
 
+/** This repo's session folder for the fixture user /home/u: `projects/` and the mangled repo path /repo. */
+const HISTORY_DIR = '/home/u/.claude/projects/-repo'
+
+/** The history question for the two transcripts of historyHostWorld (SCAN-03, D-59). */
+const HISTORY_QUESTION =
+  "Scan this repo's session history (2 sessions; the newest 50 are read) for frequently used commands and skills? " +
+  'Only names and counts are kept.'
+
+/** A session transcript that runs /gsd-plan-phase and holds SENTINEL_SECRET_VALUE outside every marker. */
+const SENTINEL_TRANSCRIPT = [
+  '<command-name>/gsd-plan-phase</command-name>',
+  '{"type":"user","message":{"content":"the token is SENTINEL_SECRET_VALUE"}}',
+].join('\n')
+
+/**
+ * The repo of initWorld with this repo's session folder: two `.jsonl` transcripts, a.jsonl the newer, each holding
+ * SENTINEL_TRANSCRIPT. Pass `over` to change one part of it.
+ */
+function historyHostWorld(over: Partial<World> = {}): World {
+  const base = initWorld()
+  const sessions = [
+    { ...entry('a.jsonl'), mtimeMs: 2 },
+    { ...entry('b.jsonl'), mtimeMs: 1 },
+  ]
+  const paths = sessions.map(session => `${HISTORY_DIR}/${session.name}`)
+  const transcripts = Object.fromEntries(paths.map(path => [path, SENTINEL_TRANSCRIPT]))
+
+  return {
+    ...base,
+    listings: { ...base.listings, [HISTORY_DIR]: sessions },
+    files: { ...base.files, ...transcripts },
+    ...over,
+  }
+}
+
 /** The lines of a reply between its first line and its last, which plain init and --dry-run share. */
 function middleLines(reply: string): string[] {
   return reply.split('\n').slice(1, -1)
@@ -1469,6 +1504,40 @@ describe('Phase 2 faked-host matrix', () => {
     expect(out.text).toBe(NOT_INTERACTIVE_REPLY)
     expect(log.ops).toEqual([])
     expect(log.asks).toEqual([])
+  })
+
+  test('history answered No, skip it: no transcript is touched and no process runs (SCAN-03, D-59)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, historyHostWorld(), log)
+    const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
+    expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    const at = log.asks.indexOf(`ask ${HISTORY_QUESTION}`)
+    expect(at >= 0).toBe(true)
+    expect(log.askOptions[at]).toEqual(['Yes, scan names and counts', 'No, skip it'])
+    expect(log.ops).toContain(`fs.list ${HISTORY_DIR}`)
+    expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([])
+    expect(log.ops.filter(op => op.endsWith('.jsonl'))).toEqual([])
+    expect(log.logs.join('\n')).not.toContain('Session history')
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(log.runs).toEqual([])
+  })
+
+  test('history answered Yes: names and counts are logged, never transcript text (SCAN-03, T-02-41)', async ($, on) => {
+    const log = newLog()
+    const answers = { ...INIT_ANSWERS, "Scan this repo's session history": 'Yes, scan names and counts' }
+    const world = historyHostWorld({ answers })
+    expect(leaks(JSON.stringify(world.files), ['SENTINEL_SECRET_VALUE'])).toEqual(['SENTINEL_SECRET_VALUE'])
+    fakeHost(on, world, log)
+    const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
+    expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([
+      `fs.read ${HISTORY_DIR}/a.jsonl`,
+      `fs.read ${HISTORY_DIR}/b.jsonl`,
+    ])
+    expect(log.logs).toContain('Session history (names and counts only):\n  gsd-plan-phase  2')
+    expect(leaks([dry, ...log.logs].join('\n'), ['SENTINEL_SECRET_VALUE'])).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(log.runs).toEqual([])
   })
 
   test('no secret or home path reaches the reply or a log line, consent given (SCAN-02, PLAN-05)', async ($, on) => {
