@@ -663,6 +663,20 @@ describe('runtimeDeny', () => {
     ])
   })
 
+  test('a template code-dir deny the launch scan missed is still denied, exactly (B1)', () => {
+    const role = templateRole('pm')
+    const scope = compileScope(role, context({ codeDirs: ['cadre', 'src'] }))
+    const missed = runtimeDeny(role, scope, user({ codeDirs: ['src'] }))
+    const none = runtimeDeny(role, scope, user({ codeDirs: [] }))
+
+    expect(scope.settings.permissions.deny).toContain('Read(./cadre/**)')
+    expect(missed.deny).toContain('Read(//repo/cadre/**)')
+    expect(missed.deny).toContain('Edit(//repo/cadre/**)')
+    expect(missed.deny).not.toContain('Read(./cadre/**)')
+    expect(missed.warnings).toEqual([])
+    expect(coveredPrefixes(none.deny)).toEqual(['/repo/cadre/', '/repo/src/', '/repo/cadre/', '/repo/src/'])
+  })
+
   test('every deny of the result passes the runtime lint', () => {
     const role = templateRole('pm')
     const scope = compileScope(role, context({ codeDirs: ['cadre', 'src'] }))
