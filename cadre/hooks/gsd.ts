@@ -179,9 +179,12 @@ export const GSD_GATES: readonly Gate[] = freezeRows([
   },
 ])
 
+/** The repo-relative GSD config whose values are read statically (D-70); every GSD autonomy proposal changes it. */
+export const GSD_CONFIG_FILE = '.planning/config.json'
+
 /**
  * The GSD settings an autonomous role needs, as proposals only: Phase 2 shows each as a hunk and nothing runs it. Every
- * key lives in `.planning/config.json`, where its before value is read statically (D-70). Each write goes through GSD's
+ * key lives in GSD_CONFIG_FILE, where its before value is read statically (D-70). Each write goes through GSD's
  * own writer, `gsd-tools config-set`, as a logical `{ tool, args }` that cadre resolves to a real argv from facts
  * (D-71); the args are fixed constants. `isRequired` is true when autonomy cannot work without the change (T-01-21).
  */
@@ -189,7 +192,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'mode',
-    file: '.planning/config.json',
+    file: GSD_CONFIG_FILE,
     write: Object.freeze({
       tool: 'gsd-tools',
       args: Object.freeze(['config-set', 'mode', 'yolo']),
@@ -201,7 +204,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'workflow.text_mode',
-    file: '.planning/config.json',
+    file: GSD_CONFIG_FILE,
     write: Object.freeze({
       tool: 'gsd-tools',
       args: Object.freeze(['config-set', 'workflow.text_mode', 'false']),
@@ -213,7 +216,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   {
     kind: 'command',
     key: 'hooks.context_warnings',
-    file: '.planning/config.json',
+    file: GSD_CONFIG_FILE,
     write: Object.freeze({
       tool: 'gsd-tools',
       args: Object.freeze(['config-set', 'hooks.context_warnings', 'false']),
