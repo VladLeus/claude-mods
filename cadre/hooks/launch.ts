@@ -107,8 +107,11 @@ const NO_LINKS: LinkSet = Object.freeze({ links: Object.freeze([]), warnings: Ob
 /** The most code points of a scanned name that a warning shows. */
 const MAX_SHOWN_CHARS = 110
 
-/** The repo name used in the memory slug when the common dir has no parent folder to name it after. */
+/** The repo name used in the memory slug when the common dir gives no folder name to name it after. */
 const FALLBACK_REPO_NAME = 'repo'
+
+/** The name of a git folder inside a checkout, and the end of a bare repo's folder name. */
+const GIT_DIR_NAME = '.git'
 
 /** A character a memory slug may not hold: anything but letters, digits, dot, underscore and dash, per code point. */
 const UNSAFE_SLUG_CHARS = /[^A-Za-z0-9._-]/gu
@@ -150,19 +153,27 @@ const MAX_NAME_CHARS = 255
 /** A skill or agent name that may become a link name: a plain name of 1 to 80 characters (T-02-46). */
 const SAFE_OVERLAY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
 
+/** The repo's name from its git common dir, as memorySlug says; empty when the common dir gives none. */
+function repoName(gitCommonDir: string): string {
+  const parts = gitCommonDir.split('/').filter(part => part !== '')
+  const last = parts.at(-1) ?? ''
+  if (last === GIT_DIR_NAME) return parts.at(-2) ?? ''
+  if (last.endsWith(GIT_DIR_NAME)) return last.slice(0, -GIT_DIR_NAME.length)
+
+  return last
+}
+
 /**
- * The folder name of a repo's role memory (D-91): the name of the folder that holds the git common dir, then `-` and
- * the first 8 hex characters of the hash of the common dir, so two repos with the same name do not share memory. Every
- * character outside letters, digits, `.`, `_` and `-` becomes `-`, so the slug is always one safe path segment. A
- * common dir with no parent folder is named `repo`. A linked worktree has the same common dir as its main checkout, so
- * all roles of all worktrees of a repo share one memory folder (D-20).
+ * The folder name of a repo's role memory (D-91): the repo's name, then `-` and the first 8 hex characters of the hash
+ * of the git common dir, so two repos with the same name do not share memory. When the common dir is a `.git` folder
+ * the name is that of the folder holding it (`/w/repo/.git` is `repo`); otherwise it is the common dir's own name with
+ * one trailing `.git` removed, so a bare repo `/srv/repo.git` is `repo` and a submodule's `/super/.git/modules/sub` is
+ * `sub`. An empty name is `repo`. Every character outside letters, digits, `.`, `_` and `-` becomes `-`, so the slug is
+ * always one safe path segment. A linked worktree has the same common dir as its main checkout, so all roles of all
+ * worktrees of a repo share one memory folder (D-20).
  */
 export function memorySlug(gitCommonDir: string, hashHex: string): string {
-  const parents = gitCommonDir
-    .split('/')
-    .filter(part => part !== '')
-    .slice(0, -1)
-  const name = parents.at(-1) ?? ''
+  const name = repoName(gitCommonDir)
   const base = name === '' ? FALLBACK_REPO_NAME : name
 
   return `${base}-${hashHex.slice(0, 8)}`.replace(UNSAFE_SLUG_CHARS, '-')
