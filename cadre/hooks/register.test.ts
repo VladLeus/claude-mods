@@ -2,14 +2,18 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
+import { sha256Hex } from './hash'
 import {
   GIT_POLICY_DISMISSED_REASON,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   NOT_INTERACTIVE_REPLY,
   policyLine,
+  REGEN_NO_STATE,
+  regenNoRole,
 } from './init'
 import { stableJson } from './plan'
+import { autopilotReply } from './scan'
 import { answerFor, entry, INIT_ANSWERS, templateRole } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
@@ -1174,5 +1178,232 @@ describe('cadre regen with a faked host', () => {
     expect([print, unknown]).toEqual([terminal, terminal])
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+})
+
+/**
+ * The repo of initWorld with GSD alone: `.planning/` is in use, the user-level GSD has a proven identity, and there is
+ * no superpowers folder and no superpowers plugin. Pass `over` to change one part of it.
+ */
+function gsdOnlyWorld(over: Partial<World> = {}): World {
+  const base = initWorld()
+
+  return {
+    ...base,
+    listings: { '/repo': [entry('.planning', 'dir')] },
+    files: { ...base.files, '/home/u/.claude/plugins/installed_plugins.json': '{"plugins":{}}' },
+    settings: { user: {}, project: {}, local: {} },
+    ...over,
+  }
+}
+
+/**
+ * The repo of initWorld with superpowers alone: `docs/superpowers/` is in use, the plugin is enabled, and there is no
+ * `.planning/` and no GSD install. Pass `over` to change one part of it.
+ */
+function superpowersOnlyWorld(over: Partial<World> = {}): World {
+  const base = initWorld()
+
+  return {
+    ...base,
+    listings: { '/repo': [entry('docs', 'dir')], '/repo/docs': [entry('superpowers', 'dir')] },
+    files: {
+      '/home/u/.claude/plugins/installed_plugins.json':
+        '{"plugins":{"superpowers@claude-plugins-official":[{"scope":"user","version":"6.4.1"}]}}',
+    },
+    dirs: ['/repo/.git'],
+    ...over,
+  }
+}
+
+/** The repo of initWorld with no framework marker and nothing installed. Pass `over` to change one part of it. */
+function noFrameworkWorld(over: Partial<World> = {}): World {
+  const base = initWorld()
+
+  return {
+    ...base,
+    listings: { '/repo': [entry('README.md')] },
+    files: {},
+    dirs: ['/repo/.git'],
+    settings: { user: {}, project: {}, local: {} },
+    ...over,
+  }
+}
+
+/** The four framework worlds of the matrix, each with the name its tests carry. */
+const FRAMEWORK_WORLDS: readonly (readonly [string, () => World])[] = [
+  ['GSD only', gsdOnlyWorld],
+  ['superpowers only', superpowersOnlyWorld],
+  ['ambiguous', initWorld],
+  ['no framework', noFrameworkWorld],
+]
+
+/**
+ * The repo of initWorld after an init of BE and PM on the built-in default: the `.cadre/` folder with its cadre.json,
+ * the role.json of both roles and a manifest that lists those three files with the hash of their text, so a regen of BE
+ * has PM's entry to keep. Pass `over` to change one part of it.
+ */
+async function regenMatrixWorld(over: Partial<World> = {}): Promise<World> {
+  const base = initWorld()
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ['be', 'pm'],
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  })
+  const texts: Readonly<Record<string, string>> = {
+    '.cadre/be/role.json': roleJsonText(templateRole('be')),
+    '.cadre/cadre.json': state,
+    '.cadre/pm/role.json': roleJsonText(templateRole('pm')),
+  }
+  const entries = await Promise.all(
+    Object.entries(texts).map(async ([path, text]) => ({ path, sha256: await sha256Hex(text), mode: 'file' })),
+  )
+  const onDisk = Object.entries(texts).map(([path, text]) => [`/repo/${path}`, text])
+
+  return {
+    ...base,
+    dirs: [...base.dirs, '/repo/.cadre'],
+    files: {
+      ...base.files,
+      ...Object.fromEntries(onDisk),
+      '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: entries }),
+    },
+    ...over,
+  }
+}
+
+/** A fresh autopilot status file for session s1 at the clock of the fake host: a run is on, in the running phase. */
+const AUTOPILOT_RUNNING = '{"isOn":true,"phase":"running","beat":1000000}'
+
+/** The lines of a reply between its first line and its last, which plain init and --dry-run share. */
+function middleLines(reply: string): string[] {
+  return reply.split('\n').slice(1, -1)
+}
+
+/** The kind and the path of every op row in the file plan of a reply: two spaces, the op kind, then the path. */
+function planRows(reply: string): { readonly kind: string; readonly path: string }[] {
+  return reply.split('\n').flatMap(line => {
+    const [, kind, path] = /^ {2}(create|change|leave|conflict|hunk) +(\S+)/.exec(line) ?? []
+    if (kind === undefined || path === undefined) return []
+
+    return [{ kind, path }]
+  })
+}
+
+/** Whether a plan row names a path a plan may touch (PLAN-06): in `.cadre/`, the root `.gitignore` or a GSD hunk. */
+function isAllowedRow(row: { readonly kind: string; readonly path: string }): boolean {
+  if (row.path.startsWith('.cadre/')) return true
+  if (row.path === '.gitignore') return true
+
+  return row.kind === 'hunk' && row.path === '.planning/config.json'
+}
+
+describe('Phase 2 faked-host matrix', () => {
+  for (const [name, build] of FRAMEWORK_WORLDS) {
+    test(`${name}: init and init --dry-run print one plan and write nothing (PLAN-02, D-82)`, async ($, on) => {
+      const log = newLog()
+      fakeHost(on, build(), log)
+      const plain = (await $.command.run({ command: 'cadre', args: 'init' })).text
+      const runsAfterPlain = log.runs.length
+      const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
+      expect(plain).toContain('File plan:')
+      expect(dry).toContain('File plan:')
+      expect(plain.endsWith('Applying this plan arrives in a later cadre version; nothing was written.')).toBe(true)
+      expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
+      expect(middleLines(dry)).toEqual(middleLines(plain))
+      expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+      expect(runsAfterPlain <= 1).toBe(true)
+      expect(log.runs.length - runsAfterPlain <= 1).toBe(true)
+    })
+
+    test(`${name}: every path of the init plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)`, async ($, on) => {
+      fakeHost(on, build(), newLog())
+      const rows = planRows((await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text)
+      expect(rows.filter(row => !isAllowedRow(row))).toEqual([])
+      expect(rows.some(row => row.path.startsWith('.cadre/'))).toBe(true)
+      expect(rows.some(row => row.path === '.gitignore')).toBe(true)
+    })
+  }
+
+  test('regen be, with and without --dry-run, asks nothing and plans no path of PM (D-68, D-82)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await regenMatrixWorld(), log)
+    const plain = (await $.command.run({ command: 'cadre', args: 'regen be' })).text
+    const runsAfterPlain = log.runs.length
+    const dry = (await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text
+    for (const reply of [plain, dry]) {
+      expect(reply).toContain('File plan:')
+      expect(reply.split('\n').some(line => line.includes('.cadre/be/'))).toBe(true)
+      expect(reply.split('\n').filter(line => line.includes('.cadre/pm/'))).toEqual([])
+    }
+    expect(plain.endsWith('Applying this plan arrives in a later cadre version; nothing was written.')).toBe(true)
+    expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(runsAfterPlain <= 1).toBe(true)
+    expect(log.runs.length - runsAfterPlain <= 1).toBe(true)
+  })
+
+  test('every path of the regen plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)', async ($, on) => {
+    fakeHost(on, await regenMatrixWorld(), newLog())
+    const rows = planRows((await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text)
+    expect(rows.filter(row => !isAllowedRow(row))).toEqual([])
+    expect(rows.some(row => row.path.startsWith('.cadre/be/'))).toBe(true)
+  })
+
+  test('regen of a role cadre.json does not list answers the no-role refusal, asking nothing (D-68)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await regenMatrixWorld(), log)
+    const out = await $.command.run({ command: 'cadre', args: 'regen zz' })
+    expect(out.text).toBe(regenNoRole('zz', ['be', 'pm']))
+    expect(out.text).toBe('no role zz in .cadre/cadre.json (roles: be, pm)')
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('regen in a repo with no cadre.json answers REGEN_NO_STATE and asks nothing (D-68)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    const out = await $.command.run({ command: 'cadre', args: 'regen be' })
+    expect(out.text).toBe(REGEN_NO_STATE)
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('with a running autopilot, init and regen refuse before any listing or settings (SCAN-04)', async ($, on) => {
+    const log = newLog()
+    const world = await regenMatrixWorld()
+    const running = { ...world.files, '/home/u/.claude/autopilot/s1.json': AUTOPILOT_RUNNING }
+    fakeHost(on, { ...world, files: running }, log)
+    const init = await $.command.run({ command: 'cadre', args: 'init' })
+    const regen = await $.command.run({ command: 'cadre', args: 'regen be' })
+    expect(init.text).toBe(autopilotReply('active', 'init'))
+    expect(regen.text).toBe(autopilotReply('active', 'regen'))
+    expect(log.ops.filter(op => op.startsWith('fs.list') || op.startsWith('settings.read'))).toEqual([])
+    expect(log.asks).toEqual([])
+  })
+
+  test('in claude -p regen be --dry-run prints its plan and asks nothing (D-99)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await regenMatrixWorld({ surfaces: [] }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })
+    expect(out.text).not.toBe(NOT_INTERACTIVE_REPLY)
+    expect(out.text).toContain('File plan:')
+    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('in claude -p init --dry-run still answers the non-interactive refusal, with no op (D-99)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ surfaces: [] }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text).toBe(NOT_INTERACTIVE_REPLY)
+    expect(log.ops).toEqual([])
+    expect(log.asks).toEqual([])
   })
 })
