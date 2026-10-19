@@ -1061,7 +1061,8 @@ describe('frameworkStep', () => {
     expect(Object.isFrozen(FRAMEWORK_LABELS)).toBe(true)
     expect(FRAMEWORK_QUESTION_PREFIX).toBe('Which framework do the roles use?')
     expect(FRAMEWORK_ALL_QUESTION).toBe('Framework for all roles?')
-    expect(frameworkRoleQuestion('Team Lead')).toBe('Framework for Team Lead?')
+    expect(frameworkRoleQuestion({ id: 'tl', title: 'Team Lead' })).toBe('Framework for Team Lead (tl)?')
+    expect(frameworkRoleQuestion({ id: 'be-api', title: 'Backend' })).toBe('Framework for Backend (be-api)?')
   })
 
   test('frameworkReason says why the question is asked, and what a choice that asks nothing found', () => {
@@ -1101,16 +1102,16 @@ describe('frameworkStep', () => {
     expect(run.specs).toEqual([{ options: ['Same for all roles', 'Per role'] }, { options: BOTH_OPTIONS }])
   })
 
-  test('ambiguous: Per role asks each role in role order with the two frameworks and none', async () => {
+  test('ambiguous: Per role asks each role by title and id, in role order, with both frameworks and none', async () => {
     const run = memIo(memWorld({}), ['Per role', 'GSD', 'none (built-in)', 'superpowers'])
     const result = valueOf(await frameworkStep(run.io, ambiguous, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
     expect(result.repoDefault).toBeNull()
     expect(run.asked).toEqual([
       AMBIGUOUS_QUESTION,
-      'Framework for PM?',
-      'Framework for Team Lead?',
-      'Framework for Security?',
+      'Framework for PM (pm)?',
+      'Framework for Team Lead (tl)?',
+      'Framework for Security (security)?',
     ])
     const each = { options: BOTH_OPTIONS }
     expect(run.specs.slice(1)).toEqual([each, each, each])
@@ -1336,17 +1337,17 @@ describe('modelStep', () => {
     expect(run.logged).toEqual([])
   })
 
-  test('Per role asks each role by its title in role order, each with the three options', async () => {
+  test('Per role asks each role by its title and id in role order, each with the three options (A6)', async () => {
     const answers = ['Per role', 'opus + medium', 'sonnet + high', 'sonnet + medium', 'haiku low', 'OPUS+max']
     const run = memIo(memWorld({}), answers)
     const modelled = valueOf(await modelStep(run.io, roles))
     expect(run.asked).toEqual([
       MODEL_MODE_QUESTION,
-      'Model and effort for PM?',
-      'Model and effort for Team Lead?',
-      'Model and effort for BE?',
-      'Model and effort for QA?',
-      'Model and effort for Security?',
+      'Model and effort for PM (pm)?',
+      'Model and effort for Team Lead (tl)?',
+      'Model and effort for BE (be)?',
+      'Model and effort for QA (qa)?',
+      'Model and effort for Security (security)?',
     ])
     const each = { options: MODEL_EFFORT_OPTIONS }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
@@ -1356,6 +1357,21 @@ describe('modelStep', () => {
       'be: sonnet medium',
       'qa: haiku low',
       'security: opus max',
+    ])
+  })
+
+  test('two roles with the same title are told apart by their ids in the per-role questions (A6)', async () => {
+    const be = { ...roleIn(roles, 'be'), title: 'Backend' }
+    const run = memIo(memWorld({}), ['Per role', 'opus + medium', 'sonnet + high'])
+    const modelled = valueOf(await modelStep(run.io, [be, { ...be, id: 'be-api' }]))
+    expect(run.asked).toEqual([
+      MODEL_MODE_QUESTION,
+      'Model and effort for Backend (be)?',
+      'Model and effort for Backend (be-api)?',
+    ])
+    expect(modelled.map(role => [role.id, role.model, role.effort])).toEqual([
+      ['be', 'opus', 'medium'],
+      ['be-api', 'sonnet', 'high'],
     ])
   })
 
