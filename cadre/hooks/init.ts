@@ -4,6 +4,7 @@ import type {
   Detection,
   FrameworkId,
   GitPolicy,
+  HunkOp,
   InitFacts,
   InitIo,
   InitLocations,
@@ -51,7 +52,18 @@ import {
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
-import { recommend, recommendationLines } from './recommend'
+import { GSD_AUTONOMY } from './gsd'
+import {
+  attendedNote,
+  hunkCandidates,
+  hunkOp,
+  hunkQuestion,
+  isGsdAttended,
+  parseHunkAnswer,
+  recommend,
+  recommendationLines,
+  resolveToolCommand,
+} from './recommend'
 import { cardList, choiceLine, chunkLines, pad, reportText, shown } from './render'
 import {
   applyAdjust,
@@ -72,6 +84,7 @@ import {
   isSafeRelativePath,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
+  readRepoFile,
   scanRepo,
 } from './scan'
 import { scanSetup } from './setup'
@@ -1206,6 +1219,67 @@ export async function carryStep(
   return roles.map(role => ({ ...role, carry }))
 }
 
+/**
+ * The user-level GSD dir cadre may run a write through (D-28, D-71, D-72): the raw dir the detect pipeline gave, but
+ * only when the facts hold a user-level GSD whose identity is proven; null otherwise, so an unproven GSD or the repo's
+ * own copy is never run.
+ */
+export function provenUserDir(initFacts: InitFacts): string | null {
+  const isProven = initFacts.facts.gsd.some(fact => fact.location === 'user' && fact.identity === 'proven')
+
+  return isProven ? initFacts.gsdUserDir : null
+}
+
+/** The repo-relative GSD config the autonomy hunks change; its values are read statically (D-70). */
+const GSD_CONFIG_PATH = '.planning/config.json'
+
+/** Why init cancels when a hunk question is dismissed or never answered with Accept or Decline (A1, ROLE-04). */
+export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answered.'
+
+/**
+ * The autonomy hunk step (ROLE-04, D-70, D-71, D-72). With no role on GSD (resolvedFramework) nothing is read or asked
+ * and there are no hunks. Otherwise `.planning/config.json` is read through readRepoFile, so a file that links out of
+ * the repo is unknown and never read, and each hunk hunkCandidates offers is asked one by one, in GSD_AUTONOMY order
+ * under `Hunk <i> of <n>`, as its before and after with Accept or Decline (hunkQuestion, parseHunkAnswer). Each op
+ * records the answer, the exact command and whether cadre can run it, which only a proven user-level GSD allows
+ * (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is declined or cannot run, the GSD
+ * roles stay attended (isGsdAttended) and the attended note names those keys. A dismissal, or MAX_ASKS answers that
+ * are neither Accept nor Decline, prints HUNK_DISMISSED_REASON and gives null, so no hunk counts as accepted (A1).
+ */
+export async function hunkStep(
+  io: InitIo,
+  input: {
+    readonly roles: readonly RoleSpec[]
+    readonly repoDefault: FrameworkId | null
+    readonly gathered: Gathered
+    readonly locations: InitLocations
+  },
+): Promise<readonly HunkOp[] | null> {
+  const { roles, repoDefault, gathered, locations } = input
+  if (!roles.some(role => resolvedFramework(role, repoDefault) === 'gsd')) return []
+
+  const config = await readRepoFile(io, locations.root, GSD_CONFIG_PATH, MAX_READ_BYTES)
+  const candidates = hunkCandidates(GSD_AUTONOMY, config, gathered.setup.carry.isGsdStatusline)
+  const gsd = {
+    userDir: provenUserDir(gathered.facts),
+    home: locations.home,
+    root: locations.root,
+    configDir: locations.configDir,
+  }
+  const hunks: HunkOp[] = []
+  for (const [index, candidate] of candidates.entries()) {
+    const { question, spec } = hunkQuestion(candidate, index + 1, candidates.length)
+    const isAccepted = await askChoice(io, question, spec, parseHunkAnswer)
+    if (isAccepted === null) return cancelled(io, HUNK_DISMISSED_REASON)
+    hunks.push(hunkOp(candidate, isAccepted, resolveToolCommand(candidate.proposal.write, gsd)))
+  }
+  // The keys of the hunks that each leave the GSD roles attended on their own.
+  const unmet = hunks.filter(hunk => isGsdAttended([hunk])).map(hunk => hunk.key)
+  if (unmet.length > 0) logLines(io, [attendedNote(unmet)])
+
+  return hunks
+}
+
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
 export const LAUNCH_START_QUESTION = 'Where should the role launchers start their sessions? (asked once for this repo)'
 
@@ -1349,10 +1423,11 @@ function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): stri
  * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
  * (durationStep) and each role's model and effort (modelStep), gives the MCP servers and skills to roles
  * (assignmentStep), asks which roles get each instruction and memory group (memoryStep) and which env names they carry
- * (carryStep), asks the git policy and then, once for the repo, where the launchers start (launchStartStep), and ends
- * with the note that nothing was written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED
- * (D-45); a cancelled roles step, per-role step or launcher start prints its reason first, and only roles the person
- * accepted reach the steps after it (A1).
+ * (carryStep), asks each GSD autonomy hunk one by one when a role runs GSD (hunkStep; 02-13 compiles the scopes and
+ * the file plan from these roles and hunks), asks the git policy and then, once for the repo, where the launchers
+ * start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or unlisted answer
+ * cancels with INIT_CANCELLED (D-45); a cancelled roles step, per-role step or launcher start prints its reason first,
+ * and only roles the person accepted reach the steps after it (A1).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1396,6 +1471,9 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
 
   const carried = await carryStep(io, instructed, gathered.setup)
   if (carried === null) return INIT_CANCELLED
+
+  const hunks = await hunkStep(io, { roles: carried, repoDefault, gathered, locations: guard.locations })
+  if (hunks === null) return INIT_CANCELLED
 
   const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
   if (policy === null) return INIT_CANCELLED
