@@ -113,16 +113,23 @@ const GIT_POLICIES: readonly GitPolicyEntry[] =
 /** The git policy choices in the fixed order default, all, ignore; nothing is preselected (D-65). */
 export const GIT_POLICY_OPTIONS: readonly string[] = Object.freeze(GIT_POLICIES.map(entry => entry.label))
 
+/** Each git policy dialog label with the policy it stands for. */
+const GIT_POLICY_LABELS: readonly Labelled<GitPolicy>[] = Object.freeze(
+  GIT_POLICIES.map(entry => ({ label: entry.label, value: entry.policy })),
+)
+
+/** Each git policy word a person may type under "Other", as a label with the policy it stands for. */
+const GIT_POLICY_WORDS: readonly Labelled<GitPolicy>[] = Object.freeze(
+  GIT_POLICIES.map(entry => ({ label: entry.word, value: entry.policy })),
+)
+
 /**
  * The git policy an answer names, else null. The three dialog labels match trimmed and in any case, and so do the
  * words `definitions`, `all` and `ignore` a person may type under "Other". An empty or unknown answer is never a
  * choice.
  */
 export function parseGitPolicy(answer: string): GitPolicy | null {
-  const wanted = answer.trim().toLowerCase()
-  const found = GIT_POLICIES.find(entry => entry.label.toLowerCase() === wanted || entry.word === wanted)
-
-  return found?.policy ?? null
+  return labelled(GIT_POLICY_LABELS, answer) ?? labelled(GIT_POLICY_WORDS, answer)
 }
 
 /**
