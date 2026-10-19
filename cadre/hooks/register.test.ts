@@ -876,6 +876,28 @@ describe('cadre init with a faked host', () => {
     expect(log.ops).not.toContain('process.run')
   })
 
+  test('init asks in order: consent, roles, framework, duration, model and effort, git policy', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const prefixes = [
+      'ask Read ~/.claude.json',
+      'ask Use these roles?',
+      'ask Which framework do the roles use?',
+      'ask Framework for all roles?',
+      'ask Autopilot duration for roles?',
+      'ask Model and effort: same for all roles, or per role?',
+      'ask Model and effort for all roles?',
+      POLICY_ASK,
+    ]
+    const order = log.asks.flatMap(ask => {
+      const at = prefixes.findIndex(prefix => ask.startsWith(prefix))
+
+      return at < 0 ? [] : [at]
+    })
+    expect(order).toEqual(prefixes.map((_, index) => index))
+  })
+
   test('commit all prints its own policy line and no worktree line', async ($, on) => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
