@@ -1019,7 +1019,7 @@ function modelRoleQuestion(title: string): string {
   return `Model and effort for ${title}?`
 }
 
-/** Why init cancels when a model and effort question is dismissed or never answered with a listed pair (A1). */
+/** Why init cancels when a model and effort question is dismissed or never answered with a model and effort (A1). */
 export const MODEL_DISMISSED_REASON = 'A model and effort question was dismissed or not answered.'
 
 /** The role with its model family alias and its effort set. */
