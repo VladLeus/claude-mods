@@ -6,6 +6,7 @@ import type {
   DetectStatus,
   Facts,
   FrameworkId,
+  HookScript,
   InitIo,
   LaunchStart,
   PortStat,
@@ -24,6 +25,9 @@ import {
   ADJUST_ROUNDS_NOTE,
   adjustLoop,
   askChoice,
+  ASSIGNMENT_DISMISSED_REASON,
+  assignmentStep,
+  carryStep,
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   commandRefusal,
@@ -36,6 +40,7 @@ import {
   DURATION_OPTIONS,
   DURATION_QUESTION,
   durationStep,
+  ENV_DISMISSED_REASON,
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
@@ -65,6 +70,8 @@ import {
   MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
   MAX_ROLE_ROUNDS,
+  MEMORY_DISMISSED_REASON,
+  memoryStep,
   MODEL_DISMISSED_REASON,
   MODEL_MODE_QUESTION,
   modelStep,
@@ -103,6 +110,9 @@ import {
   leaks,
   memIo,
   memWorld,
+  SECRET_FIXTURES,
+  session,
+  skillRef,
 } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 
@@ -1338,6 +1348,299 @@ describe('modelStep', () => {
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(dismissed.asked.at(-1)).toBe(MODEL_ALL)
     expect(dismissed.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
+  })
+})
+
+/** The role with this id in what a step gave; a missing role stops the test with a clear message. */
+function roleIn(roles: readonly RoleSpec[] | null, id: string): RoleSpec {
+  const found = roles?.find(role => role.id === id)
+  if (found === undefined) throw new Error(`no role ${id}`)
+
+  return found
+}
+
+/** The buttons of every question on which roles get an item. */
+const ROLE_LIST_SPEC = { options: ['None', 'All roles'] }
+
+describe('assignmentStep', () => {
+  /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** jira, which the table gives to PM and TL, the unknown sentry, security-review and two codex skills. */
+  const setup = emptySetupScan({
+    mcp: [session('jira'), session('sentry')],
+    skills: [skillRef('security-review'), skillRef('codex:rescue', 'codex'), skillRef('codex:setup', 'codex')],
+  })
+  const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
+  const CODEX_QUESTION = 'Which roles get codex skills (2)? (e.g. BE, QA, or none)'
+
+  test('the tables decide the known names; each unknown server and skill group is asked once', async () => {
+    const run = memIo(memWorld({}), ['be', 'All roles'])
+    const assigned = await assignmentStep(run.io, roles, setup)
+    expect(run.asked).toEqual([SENTRY_QUESTION, CODEX_QUESTION])
+    expect(run.specs).toEqual([ROLE_LIST_SPEC, ROLE_LIST_SPEC])
+    expect(assigned?.map(role => [role.id, role.mcp])).toEqual([
+      ['pm', ['jira']],
+      ['tl', ['jira']],
+      ['be', ['sentry']],
+      ['fe', []],
+      ['qa', []],
+      ['security', []],
+    ])
+    expect(roleIn(assigned, 'security').skills).toEqual(['codex:rescue', 'codex:setup', 'security-review'])
+    for (const id of ['pm', 'tl', 'be', 'fe', 'qa']) {
+      expect(roleIn(assigned, id).skills).toEqual(['codex:rescue', 'codex:setup'])
+    }
+    expect(run.logged).toEqual([])
+  })
+
+  test('a typed list of ids or titles gives the item to those roles, and None to no role', async () => {
+    const run = memIo(memWorld({}), ['Team Lead, qa', 'None'])
+    const assigned = await assignmentStep(run.io, roles, setup)
+    expect(roleIn(assigned, 'tl').mcp).toEqual(['jira', 'sentry'])
+    expect(roleIn(assigned, 'qa').mcp).toEqual(['sentry'])
+    expect(roleIn(assigned, 'pm').skills).toEqual([])
+    expect(roleIn(assigned, 'security').skills).toEqual(['security-review'])
+  })
+
+  test('an answer that names a role the team does not have is asked again', async () => {
+    const run = memIo(memWorld({}), ['cto', 'be', 'None'])
+    const assigned = await assignmentStep(run.io, roles, setup)
+    expect(roleIn(assigned, 'be').mcp).toEqual(['sentry'])
+    expect(run.asked).toEqual([SENTRY_QUESTION, SENTRY_QUESTION, CODEX_QUESTION])
+  })
+
+  test('three unreadable answers or a dismissal cancel with the reason, and no answer is kept (A1)', async () => {
+    for (const answers of [['cto', 'cto', 'cto'], [], ['be']]) {
+      const run = memIo(memWorld({}), answers)
+      expect(await assignmentStep(run.io, roles, setup)).toBeNull()
+      expect(run.logged).toEqual([ASSIGNMENT_DISMISSED_REASON])
+    }
+    expect(ASSIGNMENT_DISMISSED_REASON).toBe(
+      'A question on which roles get an MCP server or skills was dismissed or not answered.',
+    )
+  })
+
+  test('infra servers and handoff and framework skills are never asked about; nothing found asks nothing', async () => {
+    const quiet = emptySetupScan({
+      mcp: [session('autopilot'), session('github')],
+      skills: [
+        skillRef('create-handoff-doc'),
+        skillRef('gsd-plan-phase'),
+        skillRef('superpowers:brainstorming', 'superpowers'),
+      ],
+    })
+    const run = memIo(memWorld({}), [])
+    const assigned = await assignmentStep(run.io, roles, quiet)
+    expect(run.asked).toEqual([])
+    expect(roleIn(assigned, 'tl').mcp).toEqual(['github'])
+    expect(assigned?.flatMap(role => role.skills)).toEqual([])
+    expect(await assignmentStep(memIo(memWorld({}), []).io, roles, emptySetupScan())).toEqual(roles)
+  })
+
+  test('the roles it is given are never changed', async () => {
+    const before = JSON.stringify(roles)
+    await assignmentStep(memIo(memWorld({}), ['All roles', 'All roles']).io, roles, setup)
+    expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+describe('memoryStep', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** A global CLAUDE.md, one auto-memory and the project CLAUDE.md: all three groups are there. */
+  const found = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] })
+  const GLOBAL_QUESTION =
+    'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
+  const MEMORY_QUESTION = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
+  const PROJECT_QUESTION = 'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)'
+
+  test('one question per group that is there: the global CLAUDE.md, the auto-memories, the project', async () => {
+    const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
+    const given = await memoryStep(run.io, roles, found)
+    expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION])
+    expect(run.specs).toEqual([ROLE_LIST_SPEC, ROLE_LIST_SPEC, ROLE_LIST_SPEC])
+    expect(given?.map(role => [role.id, role.instructions])).toEqual([
+      ['pm', ['global-claude-md', 'project-claude-md']],
+      ['tl', ['global-claude-md', 'project-claude-md']],
+      ['be', ['project-claude-md']],
+      ['fe', ['project-claude-md']],
+      ['qa', ['project-claude-md']],
+      ['security', ['project-claude-md']],
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test('a role keeps the groups it was given in the order global, auto-memory, project', async () => {
+    const given = await memoryStep(memIo(memWorld({}), ['None', 'be', 'BE']).io, roles, found)
+    expect(roleIn(given, 'be').instructions).toEqual(['auto-memory', 'project-claude-md'])
+    expect(roleIn(given, 'pm').instructions).toEqual([])
+  })
+
+  test('only the groups the scan found are asked, and with none found nothing is asked', async () => {
+    const run = memIo(memWorld({}), ['qa'])
+    const given = await memoryStep(run.io, roles, emptySetupScan({ memoryFiles: ['a.md', 'b.md'] }))
+    expect(run.asked).toEqual(['Which roles get the auto-memories for this repo (a.md, b.md)? (e.g. PM, TL, or none)'])
+    expect(roleIn(given, 'qa').instructions).toEqual(['auto-memory'])
+    const none = memIo(memWorld({}), [])
+    expect(await memoryStep(none.io, roles, emptySetupScan())).toEqual(roles)
+    expect(none.asked).toEqual([])
+  })
+
+  test('an unknown role is asked again; three such answers or a dismissal cancel with the reason (A1)', async () => {
+    const again = memIo(memWorld({}), ['cto', 'pm', 'None', 'None'])
+    expect(roleIn(await memoryStep(again.io, roles, found), 'pm').instructions).toEqual(['global-claude-md'])
+    expect(again.asked).toEqual([GLOBAL_QUESTION, GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION])
+    for (const answers of [['cto', 'cto', 'cto'], [], ['pm', 'pm']]) {
+      const run = memIo(memWorld({}), answers)
+      expect(await memoryStep(run.io, roles, found)).toBeNull()
+      expect(run.logged).toEqual([MEMORY_DISMISSED_REASON])
+    }
+    expect(MEMORY_DISMISSED_REASON).toBe(
+      'A question on which roles get instructions or memories was dismissed or not answered.',
+    )
+  })
+
+  test('names only: nothing is read or listed, and the roles it is given are never changed', async () => {
+    const world = memWorld({ files: { '/home/u/.claude/CLAUDE.md': 'SENTINEL_SECRET_VALUE' } })
+    const run = memIo(world, ['pm', 'pm', 'pm'])
+    const before = JSON.stringify(roles)
+    await memoryStep(run.io, roles, found)
+    expect(run.reads).toEqual([])
+    expect(run.listed).toEqual([])
+    expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+/**
+ * A git repo whose user setup holds a fake secret wherever a value can sit: env values, the status line and a hook
+ * command in the user settings, an MCP tool and a skill description, the text of the global CLAUDE.md, of the project
+ * CLAUDE.md and of an auto-memory. The scans keep the names: sentry, the codex skill, the three instruction groups,
+ * the env names API_KEY and JIRA_URL, autoCompactWindow, the status line and the secret read guard.
+ */
+function secretWorld(): MemWorld {
+  const guard = { type: 'command', command: 'T=SENTINEL_SECRET_VALUE node /h/gsd-secret-read-guard.js' }
+  const user = {
+    env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'Bearer FAKE-TOKEN-0123' },
+    autoCompactWindow: 800000,
+    statusLine: { type: 'command', command: 'node /home/u/bin/line.js --token ghp_FAKEFAKEFAKEFAKEFAKE' },
+    hooks: { PreToolUse: [{ hooks: [guard] }] },
+  }
+
+  return gitWorld({
+    settings: { user, project: {}, local: {} },
+    tools: [{ name: 'mcp__sentry__issues', description: 'sk-FAKE-SECRET-0123456789', mcp: true }],
+    commands: [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Bearer FAKE-TOKEN-0123' }],
+    ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: 'SENTINEL_SECRET_VALUE', parts: [] }],
+    dirs: { '/repo/.git': [], '/home/u/.claude/projects/-repo/memory': [entry('notes.md')] },
+    files: {
+      '/home/u/.claude/CLAUDE.md': 'sk-FAKE-SECRET-0123456789',
+      '/home/u/.claude/projects/-repo/memory/notes.md': 'ghp_FAKEFAKEFAKEFAKEFAKE',
+    },
+  })
+}
+
+describe('carryStep', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** The carry facts of user settings with two env variables and nothing else. */
+  const noCarry = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] }
+  const twoNames = emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } })
+  const ENV_QUESTION =
+    'Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)'
+
+  /** A hook script registered for an event in the user settings. */
+  function hook(script: string, event = 'PreToolUse'): HookScript {
+    return { script, event, source: 'user' }
+  }
+
+  test('the env question is asked once, and every role carries the picked names only', async () => {
+    const run = memIo(memWorld({}), ['JIRA_URL'])
+    const carried = await carryStep(run.io, roles, twoNames)
+    expect(run.asked).toEqual([ENV_QUESTION])
+    expect(run.specs).toEqual([{ options: ['None', 'All of them'] }])
+    const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
+    expect(carried?.map(role => role.carry)).toEqual(roles.map(() => carry))
+    expect(run.logged).toEqual([])
+  })
+
+  test('All of them carries every scanned name, None carries none, and NAME=value is asked again', async () => {
+    const all = memIo(memWorld({}), ['API_KEY=x', 'All of them'])
+    const carried = await carryStep(all.io, roles, twoNames)
+    expect(carried?.every(role => role.carry.env.join() === 'API_KEY,JIRA_URL')).toBe(true)
+    expect(all.asked).toEqual([ENV_QUESTION, ENV_QUESTION])
+    const none = await carryStep(memIo(memWorld({}), ['None']).io, roles, twoNames)
+    expect(none?.every(role => role.carry.env.length === 0)).toBe(true)
+  })
+
+  test('with no env names nothing is asked; autoCompactWindow and the status line are carried when set', async () => {
+    const run = memIo(memWorld({}), [])
+    const set = emptySetupScan({ carry: { ...noCarry, autoCompactWindow: 800000, hasStatusLine: true } })
+    const carried = await carryStep(run.io, roles, set)
+    expect(run.asked).toEqual([])
+    const carry = { autoCompactWindow: true, statusLine: true, env: [], hooks: [] }
+    expect(carried?.map(role => role.carry)).toEqual(roles.map(() => carry))
+    const bare = await carryStep(memIo(memWorld({}), []).io, roles, emptySetupScan())
+    const nothing = { autoCompactWindow: false, statusLine: false, env: [], hooks: [] }
+    expect(bare?.map(role => role.carry)).toEqual(roles.map(() => nothing))
+  })
+
+  test('of the user hooks only the GSD secret read guard is carried, once, by every role', async () => {
+    const hooks = [
+      hook('gsd-secret-read-guard.js'),
+      hook('gsd-context-monitor.js', 'PostToolUse'),
+      hook('my-hook.sh'),
+      hook('gsd-secret-read-guard.js', 'PostToolUse'),
+    ]
+    const carried = await carryStep(memIo(memWorld({}), []).io, roles, emptySetupScan({ hooks }))
+    expect(carried?.map(role => role.carry.hooks)).toEqual(roles.map(() => ['gsd-secret-read-guard.js']))
+  })
+
+  test('the guard is matched by its whole name, with a .js, .cjs or .sh extension', async () => {
+    const scripts = [
+      'gsd-secret-read-guard.sh',
+      'gsd-secret-read-guard.py',
+      'my-gsd-secret-read-guard.js',
+      'gsd-secret-read-guard.js.bak',
+      'gsd-secret-read-guard.cjs',
+    ]
+    const setup = emptySetupScan({ hooks: scripts.map(script => hook(script)) })
+    const [first] = (await carryStep(memIo(memWorld({}), []).io, roles, setup)) ?? []
+    expect(first?.carry.hooks).toEqual(['gsd-secret-read-guard.cjs', 'gsd-secret-read-guard.sh'])
+  })
+
+  test('a dismissal or three answers that name no scanned variable cancel with the reason (A1)', async () => {
+    for (const answers of [[], ['HOME', 'jira_url', 'API_KEY JIRA_URL=1']]) {
+      const run = memIo(memWorld({}), answers)
+      expect(await carryStep(run.io, roles, twoNames)).toBeNull()
+      expect(run.logged).toEqual([ENV_DISMISSED_REASON])
+    }
+    expect(ENV_DISMISSED_REASON).toBe('The env variables question was dismissed or not answered.')
+  })
+
+  test('init asks the assignment, memory and env questions after the model questions, in that order', async () => {
+    const run = memIo(secretWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const modelAt = run.asked.indexOf('Model and effort for all roles?')
+    expect(run.asked.slice(modelAt + 1, modelAt + 7)).toEqual([
+      'Which roles get the sentry MCP server? (e.g. BE, QA, or none)',
+      'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
+      'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)',
+      'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
+      ENV_QUESTION,
+    ])
+    expect(run.asked[modelAt + 7]).toBe(GIT_POLICY_QUESTION)
+  })
+
+  test('no env, settings or file value of the secret world reaches a question or a log line (T-02-34)', async () => {
+    const run = memIo(secretWorld(), { ...INIT_ANSWERS, 'Which env variables': 'All of them' })
+    await runInit(run.io, { dryRun: true })
+    expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(6)
+    expect(leaks([...run.asked, ...run.logged].join('\n'), SECRET_FIXTURES)).toEqual([])
+  })
+
+  test('the roles it is given are never changed', async () => {
+    const before = JSON.stringify(roles)
+    await carryStep(memIo(memWorld({}), ['All of them']).io, roles, twoNames)
+    expect(JSON.stringify(roles)).toBe(before)
   })
 })
 
