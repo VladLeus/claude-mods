@@ -7,10 +7,12 @@ import type {
   InitFacts,
   InitIo,
   InitLocations,
+  InstructionGroup,
   LaunchStart,
   PortRead,
   PortStat,
   RepoScan,
+  RoleCarry,
   RoleChange,
   RoleProposal,
   RoleSpec,
@@ -18,7 +20,25 @@ import type {
   SetupScan,
 } from '../types'
 import { detectAll } from './adapters'
-import { MODEL_EFFORT_OPTIONS, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from './assign'
+import {
+  ALL_ENV_OPTION,
+  ALL_OPTION,
+  assignToRoles,
+  classifyMcp,
+  classifySkills,
+  envQuestion,
+  mcpQuestion,
+  memoryQuestion,
+  MODEL_EFFORT_OPTIONS,
+  NONE_OPTION,
+  parseEnvNames,
+  parseModelEffort,
+  parseRoleList,
+  PER_ROLE,
+  SAME_FOR_ALL,
+  skillGroupQuestion,
+} from './assign'
+import type { NameAssignment } from './assign'
 import {
   clean,
   detectRefusal,
@@ -27,6 +47,7 @@ import {
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
+  sortedUnique,
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
@@ -1020,6 +1041,171 @@ export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise
   return modelled
 }
 
+/** The buttons of every question on which roles get an item: no role or every role; a list is typed under "Other". */
+const ROLE_LIST_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, ALL_OPTION])
+
+/** Why init cancels when a question on which roles get an MCP server or skills is dismissed or not answered (A1). */
+export const ASSIGNMENT_DISMISSED_REASON =
+  'A question on which roles get an MCP server or skills was dismissed or not answered.'
+
+/** One question on which roles get an item, and the names its answer gives them. */
+type AssignItem = {
+  readonly question: string
+  readonly names: readonly string[]
+}
+
+/**
+ * Asks each item once, answered with None, All roles or a typed list of role ids or titles (parseRoleList), and gives
+ * every name of the item to the roles the answer named. Null when a question is dismissed or never answered with a
+ * role list, so no earlier answer is handed back (A1).
+ */
+async function askAssignments(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  items: readonly AssignItem[],
+): Promise<NameAssignment[] | null> {
+  const parse = (answer: string): readonly string[] | null => parseRoleList(answer, roles)
+  const assignments: NameAssignment[] = []
+  for (const item of items) {
+    const roleIds = await askChoice(io, item.question, { options: ROLE_LIST_OPTIONS }, parse)
+    if (roleIds === null) return null
+    assignments.push(...item.names.map(name => ({ name, roleIds })))
+  }
+
+  return assignments
+}
+
+/**
+ * The MCP and skill step (D-53, ISO-04). The servers and skills the name tables decide go to their roles with no
+ * question (classifyMcp, classifySkills), and infra servers and handoff and framework skills are never asked about.
+ * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
+ * QA, or none)", answered with None, All roles or a typed list of role ids or titles; an answer that names any other
+ * role is asked again (parseRoleList, T-02-33). Every name joins the `mcp` or `skills` list of its roles
+ * (assignToRoles). Only an answer to every question gives roles: a dismissal, or MAX_ASKS answers it cannot read at
+ * one question, prints ASSIGNMENT_DISMISSED_REASON and gives null (A1). The roles it is given never change.
+ */
+export async function assignmentStep(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+): Promise<readonly RoleSpec[] | null> {
+  const mcp = classifyMcp(setup.mcp, roles)
+  const skills = classifySkills(setup.skills, roles)
+  const serverItems = mcp.unknown.map(name => ({ question: mcpQuestion(name), names: [name] }))
+  const groupItems = skills.groups.map(group => ({ question: skillGroupQuestion(group), names: group.names }))
+  const servers = await askAssignments(io, roles, serverItems)
+  if (servers === null) return cancelled(io, ASSIGNMENT_DISMISSED_REASON)
+  const grouped = await askAssignments(io, roles, groupItems)
+  if (grouped === null) return cancelled(io, ASSIGNMENT_DISMISSED_REASON)
+  const withMcp = assignToRoles(roles, [...mcp.assigned, ...servers], 'mcp')
+
+  return assignToRoles(withMcp, [...skills.assigned, ...grouped], 'skills')
+}
+
+/** The instruction groups in the order init asks about them and a role stores them (D-63). */
+const INSTRUCTION_ORDER: readonly InstructionGroup[] = Object.freeze([
+  'global-claude-md',
+  'auto-memory',
+  'project-claude-md',
+])
+
+/** Why init cancels when a question on which roles get instructions or memories is dismissed or not answered (A1). */
+export const MEMORY_DISMISSED_REASON =
+  'A question on which roles get instructions or memories was dismissed or not answered.'
+
+/**
+ * The names the question of an instruction group shows, or null when the scan did not find the group, so it is not
+ * asked: none for the global CLAUDE.md, which its label names, the file names of the auto-memories, and the CLAUDE.md
+ * files of the chain in display form (D-63, D-100). These are names only: no file is read.
+ */
+function groupNames(group: InstructionGroup, setup: SetupScan): readonly string[] | null {
+  switch (group) {
+    case 'global-claude-md':
+      return setup.hasGlobalClaudeMd ? [] : null
+    case 'auto-memory':
+      return setup.memoryFiles.length > 0 ? setup.memoryFiles : null
+    case 'project-claude-md':
+      return setup.claudeMd.length > 0 ? setup.claudeMd : null
+  }
+}
+
+/**
+ * The instruction and memory step (D-63, D-100). For each group the scan found, in the order the global
+ * ~/.claude/CLAUDE.md, the auto-memories for this repo, the project CLAUDE.md, one question names the group and its
+ * files and asks which roles get it (memoryQuestion), answered with None, All roles or a typed list of role ids or
+ * titles (parseRoleList); a group the scan did not find is not asked. Each role's `instructions` becomes the groups it
+ * was given, in that order, so the answers decide the whole list. Only an answer to every question gives roles: a
+ * dismissal, or MAX_ASKS answers it cannot read at one question, prints MEMORY_DISMISSED_REASON and gives null (A1).
+ * No file is read and no content is shown; the roles it is given never change.
+ */
+export async function memoryStep(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+): Promise<readonly RoleSpec[] | null> {
+  const parse = (answer: string): readonly string[] | null => parseRoleList(answer, roles)
+  const given = new Map<InstructionGroup, readonly string[]>()
+  for (const group of INSTRUCTION_ORDER) {
+    const names = groupNames(group, setup)
+    if (names === null) continue
+    const roleIds = await askChoice(io, memoryQuestion(group, names), { options: ROLE_LIST_OPTIONS }, parse)
+    if (roleIds === null) return cancelled(io, MEMORY_DISMISSED_REASON)
+    given.set(group, roleIds)
+  }
+
+  return roles.map(role => ({
+    ...role,
+    instructions: INSTRUCTION_ORDER.filter(group => given.get(group)?.includes(role.id) === true),
+  }))
+}
+
+/** The buttons of the env question: no name or every scanned name; names are typed under "Other" (D-60). */
+const ENV_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, ALL_ENV_OPTION])
+
+/** Why init cancels when the env variables question is dismissed or never answered with scanned names (A1). */
+export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or not answered.'
+
+/** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */
+const SECRET_READ_GUARD = /^gsd-secret-read-guard\.(?:js|cjs|sh)$/
+
+/**
+ * The env variable names roles carry (D-60): none when the scan found no name, else the answer to the one env question
+ * (envQuestion), None, All of them or typed names that were scanned (parseEnvNames). Null when the question is
+ * dismissed or never answered with such names.
+ */
+async function carriedEnv(io: InitIo, names: readonly string[]): Promise<readonly string[] | null> {
+  if (names.length === 0) return []
+  const parse = (answer: string): readonly string[] | null => parseEnvNames(answer, names)
+
+  return askChoice(io, envQuestion(names), { options: ENV_OPTIONS }, parse)
+}
+
+/**
+ * The carried settings step (D-60, D-62, D-84). When the user settings define env variables, one question lists their
+ * names and asks which ones roles carry; with none, nothing is asked. Every role carries the same: the picked names,
+ * never a value; `autoCompactWindow` and `statusLine` when the user settings set them; and the GSD secret read guard
+ * when settings register it, the one hook carried, so no other hook reaches a role. A dismissal, or MAX_ASKS answers
+ * that name no scanned variable, prints ENV_DISMISSED_REASON and gives null (A1). No env or settings value is read,
+ * stored or printed (T-02-34); the roles it is given never change.
+ */
+export async function carryStep(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+): Promise<readonly RoleSpec[] | null> {
+  const env = await carriedEnv(io, setup.carry.envNames)
+  if (env === null) return cancelled(io, ENV_DISMISSED_REASON)
+  const guards = setup.hooks.map(hook => hook.script).filter(script => SECRET_READ_GUARD.test(script))
+  const carry: RoleCarry = {
+    autoCompactWindow: setup.carry.autoCompactWindow !== null,
+    statusLine: setup.carry.hasStatusLine,
+    env,
+    hooks: sortedUnique(guards),
+  }
+
+  return roles.map(role => ({ ...role, carry }))
+}
+
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
 export const LAUNCH_START_QUESTION = 'Where should the role launchers start their sessions? (asked once for this repo)'
 
@@ -1161,10 +1347,12 @@ function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): stri
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
  * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
  * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
- * (durationStep) and each role's model and effort (modelStep), asks the git policy and then, once for the repo, where
- * the launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or
- * unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step, per-role step or launcher start prints
- * its reason first, and only roles the person accepted reach the steps after it (A1).
+ * (durationStep) and each role's model and effort (modelStep), gives the MCP servers and skills to roles
+ * (assignmentStep), asks which roles get each instruction and memory group (memoryStep) and which env names they carry
+ * (carryStep), asks the git policy and then, once for the repo, where the launchers start (launchStartStep), and ends
+ * with the note that nothing was written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED
+ * (D-45); a cancelled roles step, per-role step or launcher start prints its reason first, and only roles the person
+ * accepted reach the steps after it (A1).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1199,6 +1387,15 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
 
   const modelled = await modelStep(io, withDuration(roles, duration))
   if (modelled === null) return INIT_CANCELLED
+
+  const assigned = await assignmentStep(io, modelled, gathered.setup)
+  if (assigned === null) return INIT_CANCELLED
+
+  const instructed = await memoryStep(io, assigned, gathered.setup)
+  if (instructed === null) return INIT_CANCELLED
+
+  const carried = await carryStep(io, instructed, gathered.setup)
+  if (carried === null) return INIT_CANCELLED
 
   const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
   if (policy === null) return INIT_CANCELLED
