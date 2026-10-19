@@ -7,6 +7,7 @@ import type {
   InitFacts,
   InitIo,
   InitLocations,
+  LaunchStart,
   PortRead,
   PortStat,
   RepoScan,
@@ -45,6 +46,7 @@ import {
   autopilotStatusPath,
   findGitTop,
   gitRootRefusal,
+  isSafeRelativePath,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
   scanRepo,
@@ -930,11 +932,137 @@ export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | nul
   return role.framework ?? repoDefault ?? 'none'
 }
 
-/** The reply of a finished run: what was asked for, the git policy, and the note that nothing was written. */
-function initReply(policy: GitPolicy, dryRun: boolean): string {
+/** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
+export const LAUNCH_START_QUESTION = 'Where should the role launchers start their sessions? (asked once for this repo)'
+
+/** What the launcher start question picks: the git root, the folder a launcher is run from, or a typed folder. */
+type LaunchChoice = 'git-root' | 'here' | 'dir'
+
+/** Each launcher start with its dialog label and the word a person may type under "Other" (A2). */
+type LaunchStartEntry = {
+  readonly label: string
+  readonly word: string
+  readonly choice: LaunchChoice
+}
+
+const LAUNCH_STARTS: readonly LaunchStartEntry[] = Object.freeze([
+  { label: 'Git root of this repo', word: 'git root', choice: 'git-root' },
+  { label: 'The folder I run it from', word: 'in here', choice: 'here' },
+  { label: 'Another folder in this repo', word: 'other', choice: 'dir' },
+])
+
+/** The answers to the launcher start question, in the fixed order git root, here, another folder; none preselected. */
+export const LAUNCH_START_OPTIONS: readonly string[] = Object.freeze(LAUNCH_STARTS.map(entry => entry.label))
+
+/** Each launcher start dialog label with what it picks. */
+const LAUNCH_START_LABELS: readonly Labelled<LaunchChoice>[] = Object.freeze(
+  LAUNCH_STARTS.map(entry => ({ label: entry.label, value: entry.choice })),
+)
+
+/** Each launcher start word a person may type under "Other", as a label with what it picks. */
+const LAUNCH_START_WORDS: readonly Labelled<LaunchChoice>[] = Object.freeze(
+  LAUNCH_STARTS.map(entry => ({ label: entry.word, value: entry.choice })),
+)
+
+/** The free-text question for the folder the launchers start in, after `Another folder in this repo` (A2). */
+export const LAUNCH_DIR_QUESTION =
+  'Type the folder the launchers start in, relative to the repo root (for example apps/web).'
+
+/** The one button of the folder question, which ends init; the folder itself is typed in the text field. */
+const LAUNCH_DIR_CHOICES: readonly Labelled<'cancel'>[] = Object.freeze([{ label: 'Cancel init', value: 'cancel' }])
+
+/** The buttons of the folder question. */
+export const LAUNCH_DIR_OPTIONS: readonly string[] = Object.freeze(LAUNCH_DIR_CHOICES.map(entry => entry.label))
+
+/** Why init cancels when the launcher start question is dismissed or never answered with a listed choice. */
+export const LAUNCH_START_DISMISSED_REASON = 'The launcher start question was dismissed or not answered.'
+
+/** Why init cancels when the folder question is dismissed or `Cancel init` is chosen there. */
+export const LAUNCH_DIR_CANCELLED_REASON = 'The launcher folder question was dismissed or cancelled.'
+
+/** Why init cancels when no typed folder could be used after MAX_ASKS tries. */
+export const LAUNCH_DIR_ROUNDS_REASON = `No usable launcher folder after ${MAX_ASKS} tries: nothing was chosen.`
+
+/** The problem with a typed folder that isSafeRelativePath refuses. */
+const UNSAFE_LAUNCH_DIR = 'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /'
+
+/** The problem with a typed folder that is not a plain folder of the repo. */
+const NOT_A_LAUNCH_DIR = 'it is not a folder in this repo'
+
+/** What launchStartStep gives: where the launchers start, or why nothing was chosen. */
+type LaunchStartResult =
+  | { readonly kind: 'chosen'; readonly start: LaunchStart }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/** The line of the init reply that says where the role launchers start (A2). */
+export function launchLine(start: LaunchStart): string {
+  if (start.kind === 'git-root') return 'Launchers start in: the git root'
+  if (start.kind === 'here') return 'Launchers start in: the folder they are run from'
+
+  return `Launchers start in: ${start.path}/ under the git root`
+}
+
+/** The launcher start an answer picks, by its label or its word, trimmed and in any case; else null. */
+function parseLaunchChoice(answer: string): LaunchChoice | null {
+  return labelled(LAUNCH_START_LABELS, answer) ?? labelled(LAUNCH_START_WORDS, answer)
+}
+
+/**
+ * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath and
+ * stat as a folder of the repo that is not a link, since a link could lead out of the repo.
+ */
+async function launchDirProblem(io: InitIo, root: string, path: string): Promise<string | null> {
+  if (!isSafeRelativePath(path)) return UNSAFE_LAUNCH_DIR
+  const stat = await io.stat(`${root}/${path}`)
+  if (stat === null || stat.kind !== 'dir' || stat.isLink) return NOT_A_LAUNCH_DIR
+
+  return null
+}
+
+/**
+ * The folder question (A2), asked at most MAX_ASKS times: `Cancel init` or a dismissal cancels. An answer is trimmed
+ * and loses one trailing `/`; one that launchDirProblem refuses is logged with why and asked again, and after MAX_ASKS
+ * refused answers nothing is chosen.
+ */
+async function launchDirStep(io: InitIo, root: string): Promise<LaunchStartResult> {
+  for (let asked = 0; asked < MAX_ASKS; asked += 1) {
+    const answer = await askOnce(io, LAUNCH_DIR_QUESTION, { options: LAUNCH_DIR_OPTIONS })
+    const isCancel = answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel'
+    if (isCancel) return { kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON }
+    const trimmed = answer.trim()
+    const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
+    const problem = await launchDirProblem(io, root, path)
+    if (problem === null) return { kind: 'chosen', start: { kind: 'dir', path } }
+    logLines(io, [`Cannot use ${shown(answer)}: ${problem}.`])
+  }
+
+  return { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
+}
+
+/**
+ * Where the role launchers start (A2), asked once per repo right after the git policy: `Git root of this repo`, `The
+ * folder I run it from`, or `Another folder in this repo`, which asks for a folder relative to the repo root
+ * (launchDirStep). The labels and the words `git root`, `in here` and `other` match trimmed and in any case. Only an
+ * explicit answer gives a start: a dismissal, an unlisted answer MAX_ASKS times, or no usable folder cancels with a
+ * reason, so nothing the person did not confirm is used.
+ */
+export async function launchStartStep(io: InitIo, root: string): Promise<LaunchStartResult> {
+  const choice = await askChoice(io, LAUNCH_START_QUESTION, { options: LAUNCH_START_OPTIONS }, parseLaunchChoice)
+  if (choice === null) return { kind: 'cancelled', reason: LAUNCH_START_DISMISSED_REASON }
+  if (choice === 'dir') return launchDirStep(io, root)
+
+  return { kind: 'chosen', start: { kind: choice } }
+}
+
+/**
+ * The reply of a finished run: what was asked for, the git policy, where the launchers start, and the note that
+ * nothing was written.
+ */
+function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): string {
   return [
     dryRun ? 'cadre init --dry-run' : 'cadre init',
     policyLine(policy),
+    launchLine(start),
     ...(policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE,
   ].join('\n')
@@ -943,9 +1071,10 @@ function initReply(policy: GitPolicy, dryRun: boolean): string {
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
  * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
- * (frameworkStep), prints the recommendations (ROLE-03), asks the git policy, and ends with the note that nothing was
- * written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step
- * prints its reason first, and only roles the person accepted reach the steps after it (A1).
+ * (frameworkStep), prints the recommendations (ROLE-03), asks the git policy and then, once for the repo, where the
+ * launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or
+ * unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step or launcher start prints its reason
+ * first, and only roles the person accepted reach the steps after it (A1).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -978,5 +1107,12 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
   if (policy === null) return INIT_CANCELLED
 
-  return initReply(policy, options.dryRun)
+  const launch = await launchStartStep(io, guard.locations.root)
+  if (launch.kind === 'cancelled') {
+    logLines(io, [launch.reason])
+
+    return INIT_CANCELLED
+  }
+
+  return initReply(policy, launch.start, options.dryRun)
 }
