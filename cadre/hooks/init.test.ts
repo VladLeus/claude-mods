@@ -1168,6 +1168,21 @@ describe('init helpers', () => {
     expect(parseGitPolicy('commit all of it')).toBeNull()
   })
 
+  test('pin: parseGitPolicy takes a label or a word, trimmed and in any case, and nothing else (B6)', () => {
+    const answers = ['Commit all', ' COMMIT ALL ', 'ignore', 'definitions', 'DEFINITIONS', ' All ', '', 'nope', 'al']
+    expect(answers.map(answer => parseGitPolicy(answer))).toEqual([
+      'all',
+      'all',
+      'ignore',
+      'definitions',
+      'definitions',
+      'all',
+      null,
+      null,
+      null,
+    ])
+  })
+
   test('the git policy options are listed default, all, ignore, frozen, and each parses to its own policy', () => {
     expect(GIT_POLICY_OPTIONS).toEqual(['Commit definitions (default)', 'Commit all', 'Ignore all of .cadre/'])
     expect(Object.isFrozen(GIT_POLICY_OPTIONS)).toBe(true)
