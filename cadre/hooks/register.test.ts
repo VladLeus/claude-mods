@@ -1547,18 +1547,38 @@ describe('Phase 2 faked-host matrix', () => {
       mcpServers: { datadog: { command: 'npx', env: { DD_API_KEY: token } } },
       oauthAccount: { emailAddress: bearer, accessToken: apiKey },
     }
+    // This repo's session history: one transcript is named after a secret, and the others sit outside every marker.
+    const sessions = [
+      { ...entry(`${token}.jsonl`), mtimeMs: 2 },
+      { ...entry('b.jsonl'), mtimeMs: 1 },
+    ]
+    const transcripts = {
+      [`${HISTORY_DIR}/${token}.jsonl`]: [
+        `<command-name>/gsd-plan-phase</command-name><command-args>${apiKey} /home/u/notes</command-args>`,
+        `{"type":"user","message":{"content":"use ${bearer} from /home/u/.env"}}`,
+      ].join('\n'),
+      [`${HISTORY_DIR}/b.jsonl`]:
+        `{"type":"tool_use","name":"Skill","input":{"skill":"codex:rescue","args":"${sentinel} /Users/v/key"}}`,
+    }
+    expect(leaks(JSON.stringify([sessions, transcripts]), SECRET_FIXTURES)).toEqual([...SECRET_FIXTURES])
     const base = initWorld()
     const world = initWorld({
       settings: { user: secretUserSettings(), project: {}, local: {} },
+      listings: { ...base.listings, [HISTORY_DIR]: sessions },
       files: {
         ...base.files,
+        ...transcripts,
         '/repo/.mcp.json': JSON.stringify(mcpJson),
         '/home/u/.claude.json': JSON.stringify(claudeJson),
       },
       ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: sentinel, parts: [] }],
       tools: [{ name: 'mcp__sentry__issues', description: apiKey, mcp: true }],
       commands: [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: bearer }],
-      answers: { ...INIT_ANSWERS, 'Read ~/.claude.json': 'Yes, read names only' },
+      answers: {
+        ...INIT_ANSWERS,
+        'Read ~/.claude.json': 'Yes, read names only',
+        "Scan this repo's session history": 'Yes, scan names and counts',
+      },
     })
     // The world holds every fixture, so a clean reply means the scans dropped them, not that they were never there.
     const held = JSON.stringify([world.settings, world.files, world.ancestors, world.tools, world.commands])
@@ -1570,6 +1590,8 @@ describe('Phase 2 faked-host matrix', () => {
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
     expect(log.logs.join('\n')).toContain('MCP servers: datadog, linear, sentry')
     expect(log.logs.join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
+    expect(log.ops).toContain(`fs.read ${HISTORY_DIR}/${token}.jsonl`)
+    expect(log.logs).toContain('Session history (names and counts only):\n  codex:rescue  1\n  gsd-plan-phase  1')
     const shown = [out.text, ...log.logs, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
