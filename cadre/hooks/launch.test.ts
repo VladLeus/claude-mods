@@ -121,7 +121,10 @@ const USER_HOOKS = [
   { event: 'PostToolUse', script: 'gsd-context-monitor.js', command: 'node /home/u/m.js' },
 ]
 
-/** A launching user that has something to carry and one env value the roles do not carry. */
+/** The skills every role on GSD has in its overlay: the handoff skills and the start skills of GSD. */
+const GSD_SKILLS: readonly string[] = [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS.gsd]
+
+/** A launching user that has something to carry, the skills of a GSD overlay, and one env value no role carries. */
 function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
   return user({
     autoCompactWindow: 800000,
@@ -129,6 +132,7 @@ function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
     env: { JIRA_URL: 'https://j', API_KEY: 'k' },
     hooks: USER_HOOKS,
     codeDirs: ['cadre'],
+    userSkills: GSD_SKILLS,
     ...over,
   })
 }
@@ -225,7 +229,8 @@ describe('launch render', () => {
       sandbox: { enabled: false },
       statusLine: { type: 'command', command: '/home/u/x.js' },
     })
-    expect(plan.links).toEqual([])
+    expect(plan.links).toHaveLength(GSD_SKILLS.length)
+    expect(plan.links.filter(link => !link.path.includes('/overlay/.claude/skills/'))).toEqual([])
     expect(plan.warnings).toEqual([])
   })
 
@@ -881,7 +886,7 @@ describe('instructionPlan', () => {
       '/repo/.claude/CLAUDE.md',
       '/repo/CLAUDE.md',
     ])
-    expect(plan.links).toEqual([
+    expect(plan.links.filter(link => link.path.includes('/instructions/'))).toEqual([
       { path: `${linkDir('global')}/01-CLAUDE.md`, target: '/home/u/.claude/CLAUDE.md' },
       { path: `${linkDir('memory')}/MEMORY.md`, target: '/home/u/.claude/projects/-repo/memory/MEMORY.md' },
     ])
@@ -891,7 +896,7 @@ describe('instructionPlan', () => {
   test('launchPlan lists the warnings of the denies before those of the instructions', () => {
     const role = templateRole('pm', { instructions: ['auto-memory'] })
     const scope = compileScope(role, context())
-    const plan = launchPlan(role, scope, user({ root: '/w/a(b)', memoryFiles: ['../x.md'] }))
+    const plan = launchPlan(role, scope, user({ root: '/w/a(b)', memoryFiles: ['../x.md'], userSkills: GSD_SKILLS }))
 
     expect(plan.warnings).toEqual([
       'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth',
@@ -1023,7 +1028,7 @@ describe('overlayLinks', () => {
     expect(plan.warnings).toEqual([
       'Code dir * has an unusual name and is not denied',
       'memory file .bad.md has an unsafe name: not linked',
-      ...FRAMEWORK_START_SKILLS.gsd.map(notFound),
+      ...sortedUnique(FRAMEWORK_START_SKILLS.gsd).map(notFound),
     ])
   })
 
