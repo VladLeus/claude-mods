@@ -423,6 +423,16 @@ describe('desiredFiles', () => {
     expect(contentOf(files, '.cadre/be/kickoff.txt')).toContain('start with the plan in .cadre/be/.runtime/plan.md.')
   })
 
+  test('ROLE.md, kickoff.txt and the index row take the framework the scope was compiled for (A4)', () => {
+    const be = templateRole('be')
+    const scopes = new Map([['be', scopeOf(be, 'superpowers', [be])]])
+    const files = desiredFiles({ ...inputOf([be], 'gsd'), scopes })
+
+    expect(contentOf(files, '.cadre/be/ROLE.md')).toContain('Framework: superpowers.')
+    expect(contentOf(files, '.cadre/be/kickoff.txt')).toContain('start with superpowers:brainstorming.')
+    expect(indexRowOf(contentOf(files, '.cadre/INDEX.md') ?? '', 'be')).toContain(' | superpowers | ')
+  })
+
   test('the six template roles give 36 role files, the index and the repo state, sorted and once each', () => {
     const paths = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd')).map(file => file.path)
 
@@ -556,6 +566,21 @@ describe('role documents', () => {
       expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
       expect(text).toContain(`Framework: ${adapter.name}. Model: opus + medium. Permission mode: auto.`)
     }
+  })
+
+  test('the framework line of ROLE.md names the framework of the scope card, for every framework (A4)', () => {
+    const be = templateRole('be')
+    const lines = FRAMEWORKS.map(framework => {
+      const scope = scopeOf(be, framework, [be])
+
+      return [scope.card.framework, roleMdText(be, scope).split('\n')[4]]
+    })
+
+    expect(lines).toEqual([
+      ['gsd', 'Framework: GSD. Model: opus + medium. Permission mode: auto.'],
+      ['superpowers', 'Framework: superpowers. Model: opus + medium. Permission mode: auto.'],
+      ['none', 'Framework: built-in. Model: opus + medium. Permission mode: auto.'],
+    ])
   })
 
   test('Decisions lists the chain of the card, one line for each decision type', () => {
