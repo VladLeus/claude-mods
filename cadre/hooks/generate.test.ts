@@ -35,6 +35,7 @@ import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
 import { buildPlan, isSafeOpPath, stableJson } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { parseCadreState } from './scan'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
 import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks, SECRET_FIXTURES } from './testkit'
@@ -96,7 +97,14 @@ function scopeOf(
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
-  return { schema: 1, cadreVersion: '0.2.0', framework, gitPolicy: 'definitions', roles: team.map(role => role.id) }
+  return {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework,
+    gitPolicy: 'definitions',
+    roles: team.map(role => role.id),
+    launchStart: { kind: 'git-root' },
+  }
 }
 
 /** The input init gives desiredFiles for a team that runs one framework; `over` changes the fields it names. */
@@ -753,6 +761,19 @@ describe('role documents', () => {
     expect(cadreJsonText(state)).toBe(stableJson(state))
     expect(JSON.parse(cadreJsonText(state))).toEqual(state)
     expect(cadreJsonText({ ...state, framework: null })).toContain('"framework": null')
+  })
+
+  test('cadreJsonText round-trips through parseCadreState with every launch start (A2)', () => {
+    const state = stateOf(TEMPLATE_ROLES, 'gsd')
+    const starts: readonly CadreState['launchStart'][] = [
+      { kind: 'git-root' },
+      { kind: 'here' },
+      { kind: 'dir', path: 'apps/web' },
+    ]
+    for (const launchStart of starts) {
+      const text = cadreJsonText({ ...state, launchStart })
+      expect(parseCadreState(text)).toEqual({ ...state, launchStart })
+    }
   })
 })
 
