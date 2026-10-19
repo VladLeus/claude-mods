@@ -15,6 +15,7 @@ import type {
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
+import { MODEL_EFFORT_OPTIONS } from './assign'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
   ADJUST_DISMISSED_REASON,
@@ -31,6 +32,10 @@ import {
   DESCRIBE_QUESTION,
   describeStep,
   DRY_RUN_NOTE,
+  DURATION_DISMISSED_REASON,
+  DURATION_OPTIONS,
+  DURATION_QUESTION,
+  durationStep,
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
@@ -60,6 +65,9 @@ import {
   MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
   MAX_ROLE_ROUNDS,
+  MODEL_DISMISSED_REASON,
+  MODEL_MODE_QUESTION,
+  modelStep,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
   pluginVersionOf,
@@ -81,7 +89,7 @@ import {
 import type { AdjustOutcome, Gathered, RolesState } from './init'
 import { recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
-import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
+import { AUTOPILOT_THRESHOLD, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
 import { scanSetup } from './setup'
 import {
@@ -1178,6 +1186,158 @@ describe('runInit framework and recommendations', () => {
     const answers = Object.fromEntries(kept)
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+  })
+})
+
+/** The INIT_ANSWERS without the answer for one question prefix, so that question is dismissed. */
+function answersWithout(prefix: string): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== prefix))
+}
+
+describe('durationStep', () => {
+  test('the duration question offers 4h first, then 2h and 8h, and the list is frozen', () => {
+    expect(DURATION_QUESTION).toBe('Autopilot duration for roles?')
+    expect(DURATION_OPTIONS).toEqual(['4h', '2h', '8h'])
+    expect(Object.isFrozen(DURATION_OPTIONS)).toBe(true)
+  })
+
+  test('a chosen or typed duration in autopilot grammar is taken, trimmed and lowercased', async () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ['4h', '4h'],
+      ['90m', '90m'],
+      [' 8H ', '8h'],
+      ['1h30M', '1h30m'],
+      ['45', '45'],
+    ]
+    for (const [answer, duration] of cases) {
+      const run = memIo(memWorld({}), [answer])
+      expect(await durationStep(run.io)).toBe(duration)
+      expect(run.asked).toEqual([DURATION_QUESTION])
+      expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'] }])
+      expect(run.logged).toEqual([])
+    }
+  })
+
+  test('zero and more than 168 hours are asked again, and a duration after them is taken', async () => {
+    const run = memIo(memWorld({}), ['0', '200h', '2h'])
+    expect(await durationStep(run.io)).toBe('2h')
+    expect(run.asked).toEqual([DURATION_QUESTION, DURATION_QUESTION, DURATION_QUESTION])
+  })
+
+  test('an answer outside the grammar three times cancels with the reason, and nothing is taken (A1)', async () => {
+    const run = memIo(memWorld({}), ['soon', 'soon', 'soon', '4h'])
+    expect(await durationStep(run.io)).toBeNull()
+    expect(run.asked).toHaveLength(MAX_ASKS)
+    expect(run.logged).toEqual([DURATION_DISMISSED_REASON])
+  })
+
+  test('a dismissed duration question cancels at once with the reason (D-45)', async () => {
+    const run = memIo(memWorld({}), [])
+    expect(await durationStep(run.io)).toBeNull()
+    expect(run.asked).toEqual([DURATION_QUESTION])
+    expect(run.logged).toEqual([DURATION_DISMISSED_REASON])
+    expect(DURATION_DISMISSED_REASON).toBe('The autopilot duration question was dismissed or not answered.')
+  })
+
+  test('init asks the duration once, after the recommendations, and a dismissed one cancels init', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const recommendedAt = events.findIndex(event => event.startsWith('log Recommendations'))
+    expect(events.indexOf(`ask ${DURATION_QUESTION}`) > recommendedAt).toBe(true)
+    expect(run.asked.filter(question => question === DURATION_QUESTION)).toHaveLength(1)
+    const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(dismissed.asked.at(-1)).toBe(DURATION_QUESTION)
+    expect(dismissed.logged.at(-1)).toBe(DURATION_DISMISSED_REASON)
+  })
+})
+
+describe('modelStep', () => {
+  /** PM, Team Lead, BE, QA and Security, each with the 90m run the duration step gave them. */
+  const roles = proposeRoles(SOURCE_SCAN).roles.map(role => ({
+    ...role,
+    autopilot: { ...role.autopilot, duration: '90m' },
+  }))
+  const MODEL_ALL = 'Model and effort for all roles?'
+
+  test('the first model question offers Same for all roles first, then Per role', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'opus + medium'])
+    await modelStep(run.io, roles)
+    expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
+    expect(run.asked[0]).toBe(MODEL_MODE_QUESTION)
+    expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'] })
+  })
+
+  test('Same for all roles asks once more and gives every role that model family and effort', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'sonnet + high'])
+    const modelled = await modelStep(run.io, roles)
+    expect(modelled?.map(role => [role.id, role.model, role.effort])).toEqual(
+      roles.map(role => [role.id, 'sonnet', 'high']),
+    )
+    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL])
+    expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'] })
+    expect(run.logged).toEqual([])
+  })
+
+  test('Per role asks each role by its title in role order, each with the three options', async () => {
+    const answers = ['Per role', 'opus + medium', 'sonnet + high', 'sonnet + medium', 'haiku low', 'OPUS+max']
+    const run = memIo(memWorld({}), answers)
+    const modelled = await modelStep(run.io, roles)
+    expect(run.asked).toEqual([
+      MODEL_MODE_QUESTION,
+      'Model and effort for PM?',
+      'Model and effort for Team Lead?',
+      'Model and effort for BE?',
+      'Model and effort for QA?',
+      'Model and effort for Security?',
+    ])
+    const each = { options: MODEL_EFFORT_OPTIONS }
+    expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
+    expect(modelled?.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
+      'pm: opus medium',
+      'tl: sonnet high',
+      'be: sonnet medium',
+      'qa: haiku low',
+      'security: opus max',
+    ])
+  })
+
+  test('a pinned model id, a model alone or an unknown effort is asked again', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'claude-opus-5-5 high', 'opus', 'opus + high'])
+    const modelled = await modelStep(run.io, roles)
+    expect(modelled?.every(role => role.model === 'opus' && role.effort === 'high')).toBe(true)
+    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL, MODEL_ALL, MODEL_ALL])
+  })
+
+  test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', async () => {
+    const before = JSON.stringify(roles)
+    const modelled = await modelStep(memIo(memWorld({}), ['Per role', 'sonnet high']).io, roles.slice(0, 1))
+    expect(modelled?.map(role => role.autopilot)).toEqual([{ duration: '90m', threshold: 65, askUser: true }])
+    expect(roles.every(role => role.autopilot.threshold === AUTOPILOT_THRESHOLD)).toBe(true)
+    expect(AUTOPILOT_THRESHOLD).toBe(65)
+    expect(JSON.stringify(roles)).toBe(before)
+  })
+
+  test('a dismissal or unlisted answer at any model question cancels with the reason, no roles (A1)', async () => {
+    const scripts = [[], ['Same for all roles'], ['Per role', 'opus + medium'], ['nope', 'nope', 'nope']]
+    for (const answers of scripts) {
+      const run = memIo(memWorld({}), answers)
+      expect(await modelStep(run.io, roles)).toBeNull()
+      expect(run.logged).toEqual([MODEL_DISMISSED_REASON])
+    }
+    expect(MODEL_DISMISSED_REASON).toBe('A model and effort question was dismissed or not answered.')
+  })
+
+  test('init asks the model questions right after the duration, and a dismissed one cancels init', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const at = run.asked.indexOf(DURATION_QUESTION)
+    expect(run.asked.slice(at + 1, at + 3)).toEqual([MODEL_MODE_QUESTION, MODEL_ALL])
+    const dismissed = memIo(gitWorld(), answersWithout('Model and effort for'))
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(dismissed.asked.at(-1)).toBe(MODEL_ALL)
+    expect(dismissed.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
   })
 })
 
