@@ -232,7 +232,7 @@ describe('autonomy hunks', () => {
       question: [
         '.planning/config.json: mode',
         '  before: interactive',
-        '  after:  yolo',
+        '  after:  "yolo"',
         `Why: ${MODE.why}`,
         'Required for unattended GSD roles.',
       ].join('\n'),
@@ -295,7 +295,7 @@ describe('autonomy hunks', () => {
       file: '.planning/config.json',
       key: 'mode',
       before: 'interactive',
-      after: 'yolo',
+      after: '"yolo"',
       isRequired: true,
       isAccepted: true,
       isRunnable: true,
@@ -338,8 +338,25 @@ describe('autonomy hunks', () => {
 
     expect(asked.map(question => question.spec.header)).toEqual(['Hunk 1 of 2', 'Hunk 2 of 2'])
     expect(ops.map(op => [op.key, op.before, op.after, op.isAccepted])).toEqual([
-      ['mode', '"interactive"', 'yolo', true],
+      ['mode', '"interactive"', '"yolo"', true],
       ['workflow.text_mode', 'not set (GSD default)', 'false', false],
+    ])
+    expect(asked[0]?.question).toContain('\n  before: "interactive"\n  after:  "yolo"\n')
+  })
+
+  test('a string target is shown JSON-quoted and a boolean or number target as itself, as a before is (A2)', () => {
+    const numeric: SettingProposal = { ...MODE, key: 'workflow.max', to: '3' }
+    const candidates: readonly HunkCandidate[] = [
+      { proposal: MODE, before: '"interactive"' },
+      { proposal: TEXT_MODE, before: 'true' },
+      { proposal: numeric, before: '2' },
+    ]
+
+    expect(candidates.map(candidate => hunkOp(candidate, true, RUNNABLE).after)).toEqual(['"yolo"', 'false', '3'])
+    expect(candidates.map(candidate => hunkQuestion(candidate, 1, 1).question.split('\n')[2])).toEqual([
+      '  after:  "yolo"',
+      '  after:  false',
+      '  after:  3',
     ])
   })
 })
@@ -367,7 +384,7 @@ function op(over: Partial<HunkOp>): HunkOp {
     file: '.planning/config.json',
     key: 'mode',
     before: 'interactive',
-    after: 'yolo',
+    after: '"yolo"',
     isRequired: true,
     isAccepted: true,
     isRunnable: true,
