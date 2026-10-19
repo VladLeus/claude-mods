@@ -104,7 +104,6 @@ function inputOf(team: readonly RoleSpec[], framework: FrameworkId, over: Partia
   return {
     roles: team,
     scopes: new Map(team.map((role): [string, CompiledScope] => [role.id, scopeOf(role, framework, team)])),
-    frameworks: new Map(team.map((role): [string, FrameworkId] => [role.id, framework])),
     state: stateOf(team, framework),
     only: null,
     ...over,
@@ -415,9 +414,14 @@ describe('desiredFiles', () => {
   })
 
   test('each role is generated with its own framework', () => {
-    const team = [templateRole('pm'), templateRole('be')]
-    const input = inputOf(team, 'gsd', { frameworks: new Map<string, FrameworkId>([['pm', 'gsd'], ['be', 'none']]) })
-    const files = desiredFiles(input)
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const team = [pm, be]
+    const scopes = new Map([
+      ['pm', scopeOf(pm, 'gsd', team)],
+      ['be', scopeOf(be, 'none', team)],
+    ])
+    const files = desiredFiles(inputOf(team, 'gsd', { scopes }))
 
     expect(contentOf(files, '.cadre/pm/kickoff.txt')).toContain('start with /gsd-autonomous.')
     expect(contentOf(files, '.cadre/be/kickoff.txt')).toContain('start with the plan in .cadre/be/.runtime/plan.md.')
@@ -456,23 +460,19 @@ describe('desiredFiles', () => {
     expect(files.map(file => file.path)).toEqual(['.cadre/INDEX.md'])
   })
 
-  test('a role with no scope or no framework is skipped, with its launcher', () => {
+  test('a role with no scope is skipped, with its launcher', () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const full = inputOf([pm, be], 'gsd')
     const noScope = desiredFiles({ ...full, scopes: new Map([['pm', scopeOf(pm, 'gsd', [pm, be])]]) })
-    const noFramework = desiredFiles({ ...full, frameworks: new Map<string, FrameworkId>([['be', 'gsd']]) })
 
     expect(pathsOfRole(noScope, 'be')).toEqual([])
     expect(pathsOfRole(noScope, 'pm')).toHaveLength(6)
-    expect(pathsOfRole(noFramework, 'pm')).toEqual([])
-    expect(pathsOfRole(noFramework, 'be')).toHaveLength(6)
   })
 
   test('generation keeps no state: the same input gives the same files and the input is not changed', () => {
     const input = inputOf(TEMPLATE_ROLES, 'gsd')
-    const snapshot = (): string =>
-      JSON.stringify([input.roles, Array.from(input.scopes), Array.from(input.frameworks), input.state])
+    const snapshot = (): string => JSON.stringify([input.roles, Array.from(input.scopes), input.state])
     const before = snapshot()
     const first = desiredFiles(input)
     const second = desiredFiles(input)
@@ -489,9 +489,9 @@ describe('desiredFiles', () => {
     const files = desiredFiles(input)
     const scope = scopeOf(be, 'gsd', [pm, be])
 
-    expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope, 'gsd'))
+    expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope))
     expect(contentOf(files, '.cadre/bin/be')).toBe(launcherText(be, scope))
-    expect(contentOf(files, '.cadre/INDEX.md')).toBe(indexMdText(input.roles, input.scopes, input.frameworks))
+    expect(contentOf(files, '.cadre/INDEX.md')).toBe(indexMdText(input.roles, input.scopes))
     expect(contentOf(files, '.cadre/cadre.json')).toBe(cadreJsonText(input.state))
   })
 
@@ -534,7 +534,7 @@ function indexRowOf(index: string, id: string): string | undefined {
 describe('role documents', () => {
   test('ROLE.md opens with the title and id, the purpose, the framework line and the banner of an attended PM', () => {
     const pm = templateRole('pm')
-    const text = roleMdText(pm, scopeOf(pm, 'gsd', TEMPLATE_ROLES), 'gsd')
+    const text = roleMdText(pm, scopeOf(pm, 'gsd', TEMPLATE_ROLES))
 
     expect(text.split('\n').slice(0, 7)).toEqual([
       '# PM (cadre role pm)',
@@ -549,7 +549,7 @@ describe('role documents', () => {
 
   test('ROLE.md has the sections How you work, Decisions, Handoffs and Scope, in that order', () => {
     const be = templateRole('be')
-    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES), 'gsd')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
     expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Scope'])
     expect(text.endsWith('\n')).toBe(true)
@@ -560,7 +560,7 @@ describe('role documents', () => {
     const api = templateRole('be', { id: 'api', title: 'Backend API' })
     for (const framework of FRAMEWORKS) {
       const adapter = ADAPTER_OF[framework]
-      const text = roleMdText(api, scopeOf(api, framework, [api]), framework)
+      const text = roleMdText(api, scopeOf(api, framework, [api]))
       const kickoff = adapter.kickoffText({ title: 'Backend API', roleId: 'api', specPath: null })
 
       expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
@@ -587,7 +587,7 @@ describe('role documents', () => {
     const pm = templateRole('pm')
     const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES)
 
-    expect(roleMdText(pm, scope, 'gsd')).toContain(
+    expect(roleMdText(pm, scope)).toContain(
       '## Decisions\n\n' +
         '- Product: pm -> human (queue_question)\n' +
         '- Arch: tl -> human (queue_question)\n' +
@@ -600,14 +600,14 @@ describe('role documents', () => {
   test('Decisions follow basedOn: a renamed PM still takes the product decisions', () => {
     const product = templateRole('pm', { id: 'product', title: 'Product' })
     const be = templateRole('be')
-    const text = roleMdText(be, scopeOf(be, 'gsd', [product, be]), 'gsd')
+    const text = roleMdText(be, scopeOf(be, 'gsd', [product, be]))
 
     expect(text).toContain('- Product: product -> human (queue_question)\n')
   })
 
   test('Handoffs names the handoff folder of the role id', () => {
     const api = templateRole('be', { id: 'api', title: 'Backend API' })
-    const text = roleMdText(api, scopeOf(api, 'gsd', [api]), 'gsd')
+    const text = roleMdText(api, scopeOf(api, 'gsd', [api]))
 
     expect(text).toContain(
       '## Handoffs\n\n' +
@@ -618,7 +618,7 @@ describe('role documents', () => {
   test('Scope holds the lines of the scope card', () => {
     const be = templateRole('be', { mcp: ['jira'] })
     const scope = scopeOf(be, 'superpowers', TEMPLATE_ROLES)
-    const text = roleMdText(be, scope, 'superpowers')
+    const text = roleMdText(be, scope)
 
     expect(text.endsWith(`## Scope\n\n${scopeCardLines(scope.card).join('\n')}\n`)).toBe(true)
     expect(text).toContain('Scope card: BE (be)\n')
@@ -626,7 +626,7 @@ describe('role documents', () => {
 
   test('a role with Bash on an unattended team has no banner', () => {
     const be = templateRole('be')
-    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES), 'gsd')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
     expect(bannerLines(text)).toEqual([])
     expect(text).toContain('Permission mode: auto.\n\n## How you work\n')
@@ -635,7 +635,7 @@ describe('role documents', () => {
   test('an attended context adds the banner once, and the banner never repeats the text of a card rule', () => {
     const be = templateRole('be')
     const scope = scopeOf(be, 'gsd', TEMPLATE_ROLES, { isAttended: true })
-    const text = roleMdText(be, scope, 'gsd')
+    const text = roleMdText(be, scope)
 
     expect(bannerLines(text)).toEqual([ATTENDED_LINE])
     expect(text).toContain(
@@ -647,7 +647,7 @@ describe('role documents', () => {
   test('a PM on GSD in an attended context has two Attended card rules and still one banner', () => {
     const pm = templateRole('pm')
     const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES, { isAttended: true })
-    const text = roleMdText(pm, scope, 'gsd')
+    const text = roleMdText(pm, scope)
 
     expect(bannerLines(text)).toEqual([ATTENDED_LINE])
     expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(2)
@@ -656,7 +656,7 @@ describe('role documents', () => {
 
   test('a title and a purpose are cleaned before they reach the document', () => {
     const role = templateRole('pm', { title: `PM${BIDI_OVERRIDE}`, purpose: 'Owns a thing.\n## Injected\nmore' })
-    const text = roleMdText(role, scopeOf(role, 'gsd', [role]), 'gsd')
+    const text = roleMdText(role, scopeOf(role, 'gsd', [role]))
     const lines = text.split('\n')
 
     expect(leaks(text, [BIDI_OVERRIDE])).toEqual([])
@@ -670,7 +670,7 @@ describe('role documents', () => {
     const be = templateRole('be')
     const input = inputOf([pm, be], 'gsd')
 
-    expect(indexMdText(input.roles, input.scopes, input.frameworks)).toBe(
+    expect(indexMdText(input.roles, input.scopes)).toBe(
       [
         '# cadre roles',
         '',
@@ -696,7 +696,7 @@ describe('role documents', () => {
     ]
     for (const [framework, cell] of expected) {
       const input = inputOf([be], framework)
-      const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+      const row = indexRowOf(indexMdText(input.roles, input.scopes), 'be')
 
       expect(row).toContain(` | ${cell} | `)
     }
@@ -705,7 +705,7 @@ describe('role documents', () => {
   test('more than 12 MCP servers show the first 12 and the count of the rest', () => {
     const names = Array.from({ length: 14 }, (_, index) => `srv${String(index + 1).padStart(2, '0')}`)
     const input = inputOf([templateRole('be', { mcp: names })], 'gsd')
-    const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+    const row = indexRowOf(indexMdText(input.roles, input.scopes), 'be')
 
     expect(row).toContain(`MCP: ${names.slice(0, 12).join(', ')}, +2 more; `)
     expect(row).not.toContain('srv13')
@@ -713,7 +713,7 @@ describe('role documents', () => {
 
   test('a pipe in a title or a purpose is written as \\| so it stays one cell', () => {
     const input = inputOf([templateRole('be', { title: 'B|E', purpose: 'Builds a | b.' })], 'gsd')
-    const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+    const row = indexRowOf(indexMdText(input.roles, input.scopes), 'be')
 
     expect(row?.startsWith('| B\\|E (be) | Builds a \\| b. | GSD | ')).toBe(true)
   })
@@ -721,7 +721,7 @@ describe('role documents', () => {
   test('a title and a purpose in the index are cleaned', () => {
     const role = templateRole('be', { title: `B${BIDI_OVERRIDE}E`, purpose: 'Line one\nLine two' })
     const input = inputOf([role], 'gsd')
-    const index = indexMdText(input.roles, input.scopes, input.frameworks)
+    const index = indexMdText(input.roles, input.scopes)
 
     expect(leaks(index, [BIDI_OVERRIDE])).toEqual([])
     expect(indexRowOf(index, 'be')?.startsWith('| BE (be) | Line oneLine two | ')).toBe(true)
@@ -729,19 +729,18 @@ describe('role documents', () => {
 
   test('INDEX.md is static: the same input gives the same text, with no date and no count of handoffs', () => {
     const input = inputOf(TEMPLATE_ROLES, 'gsd')
-    const first = indexMdText(input.roles, input.scopes, input.frameworks)
-    const second = indexMdText(input.roles, input.scopes, input.frameworks)
+    const first = indexMdText(input.roles, input.scopes)
+    const second = indexMdText(input.roles, input.scopes)
 
     expect(second).toBe(first)
     expect(/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}/.test(first)).toBe(false)
     expect(first.toLowerCase()).not.toContain('latest')
   })
 
-  test('a role with no scope or no framework has no row in the index', () => {
+  test('a role with no scope has no row in the index', () => {
     const input = inputOf(TEMPLATE_ROLES, 'gsd')
-    const noScope = new Map(Array.from(input.scopes).filter(([id]) => id !== 'qa'))
-    const noFramework = new Map(Array.from(input.frameworks).filter(([id]) => id !== 'fe'))
-    const text = indexMdText(input.roles, noScope, noFramework)
+    const noScope = new Map(Array.from(input.scopes).filter(([id]) => id !== 'qa' && id !== 'fe'))
+    const text = indexMdText(input.roles, noScope)
 
     expect(indexRowOf(text, 'qa')).toBeUndefined()
     expect(indexRowOf(text, 'fe')).toBeUndefined()
@@ -1065,7 +1064,6 @@ function worldInput(
   return {
     roles: team,
     scopes: new Map(team.map((role): [string, CompiledScope] => [role.id, scopeOf(role, framework, team, world)])),
-    frameworks: new Map(team.map((role): [string, FrameworkId] => [role.id, framework])),
     state: stateOf(team, framework),
     only: null,
   }
@@ -1151,10 +1149,9 @@ const settingsFilesCheck: FilesCheck = (input, files) =>
     const path = `.cadre/${role.id}/settings.json`
     const content = contentOf(files, path)
     const scope = input.scopes.get(role.id)
-    const framework = input.frameworks.get(role.id)
-    if (content === undefined || scope === undefined || framework === undefined) return [`${path} is missing`]
+    if (content === undefined || scope === undefined) return [`${path} is missing`]
 
-    return settingsFileProblems(path, content, scope, framework)
+    return settingsFileProblems(path, content, scope, scope.card.framework)
   })
 
 describe('generated file properties', () => {

@@ -92,12 +92,13 @@ const ATTENDED_LINE =
  * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
  * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts, D-79) and "Scope" (the lines of the scope card, ROLE-06). The title and
- * the purpose come from outside, so they are cleaned.
+ * "Handoffs" (the folder autopilot accepts, D-79) and "Scope" (the lines of the scope card, ROLE-06). The framework is
+ * the one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title
+ * and the purpose come from outside, so they are cleaned.
  */
-export function roleMdText(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   const { card } = scope
-  const adapter = adapterOf(framework)
+  const adapter = adapterOf(card.framework)
   const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })
   const model = `Model: ${role.model} + ${role.effort}.`
   const lines = [
@@ -193,26 +194,29 @@ function namesCell(names: readonly string[]): string {
   return cardList(names.map(name => cell(name, MAX_NAME_CHARS)))
 }
 
-/** How many skills a role can run: the handoff skills, the start skills of its framework and its own (D-77). */
-function skillCount(role: RoleSpec, framework: FrameworkId): number {
-  return new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[framework], ...role.skills]).size
+/**
+ * How many skills a role can run: the handoff skills, the start skills of the framework its scope was compiled for and
+ * its own (D-77).
+ */
+function skillCount(role: RoleSpec, scope: CompiledScope): number {
+  return new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[scope.card.framework], ...role.skills]).size
 }
 
 /** The one-line scope of a role: its Bash, the MCP servers it is given and how many skills it can run. */
-function scopeSummary(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+function scopeSummary(role: RoleSpec, scope: CompiledScope): string {
   const bash = role.hasBash ? 'sandboxed Bash' : 'no Bash'
 
-  return `${bash}; MCP: ${namesCell(scope.mcp.servers)}; skills: ${skillCount(role, framework)}`
+  return `${bash}; MCP: ${namesCell(scope.mcp.servers)}; skills: ${skillCount(role, scope)}`
 }
 
-/** One row of the index table. */
-function indexRow(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+/** One row of the index table; the framework is the one the scope was compiled for. */
+function indexRow(role: RoleSpec, scope: CompiledScope): string {
   const cells = [
     `${cell(role.title, MAX_ROLE_CHARS)} (${role.id})`,
     cell(role.purpose, MAX_PURPOSE_CHARS),
-    adapterOf(framework).name,
+    adapterOf(scope.card.framework).name,
     `${role.model} + ${role.effort}`,
-    scopeSummary(role, scope, framework),
+    scopeSummary(role, scope),
     `.cadre/bin/${role.id}`,
     `thoughts/shared/handoffs/${role.id}/`,
   ]
@@ -222,21 +226,16 @@ function indexRow(role: RoleSpec, scope: CompiledScope, framework: FrameworkId):
 
 /**
  * The text of `.cadre/INDEX.md` (D-69): a static table with one row per role, in role order, built from the definitions
- * alone, so it hashes stably. A row shows the title and id, the purpose, the framework, the model and effort, a
- * one-line scope, the launcher and the handoff folder; it has no date and no count. A pipe in a title or a purpose is
- * escaped. A role with no scope or no framework has no row.
+ * alone, so it hashes stably. A row shows the title and id, the purpose, the framework of its compiled scope, the model
+ * and effort, a one-line scope, the launcher and the handoff folder; it has no date and no count. A pipe in a title or
+ * a purpose is escaped. A role with no scope has no row.
  */
-export function indexMdText(
-  roles: readonly RoleSpec[],
-  scopes: ReadonlyMap<string, CompiledScope>,
-  frameworks: ReadonlyMap<string, FrameworkId>,
-): string {
+export function indexMdText(roles: readonly RoleSpec[], scopes: ReadonlyMap<string, CompiledScope>): string {
   const rows = roles.flatMap(role => {
     const scope = scopes.get(role.id)
-    const framework = frameworks.get(role.id)
-    if (scope === undefined || framework === undefined) return []
+    if (scope === undefined) return []
 
-    return [indexRow(role, scope, framework)]
+    return [indexRow(role, scope)]
   })
 
   return `${[...INDEX_HEAD, ...rows].join('\n')}\n`
@@ -251,10 +250,11 @@ export function cadreJsonText(state: CadreState): string {
 export type GenerateInput = {
   /** Every role of the team, in role order: the index lists them all. */
   readonly roles: readonly RoleSpec[]
-  /** The compiled scope of each role by role id. A role with no scope is skipped. */
+  /**
+   * The compiled scope of each role by role id. The framework a role runs is the one its scope was compiled for
+   * (`card.framework`). A role with no scope is skipped.
+   */
   readonly scopes: ReadonlyMap<string, CompiledScope>
-  /** The framework each role runs, by role id: its own, else the repo default. A role with none is skipped. */
-  readonly frameworks: ReadonlyMap<string, FrameworkId>
   /** The repo state init writes as `.cadre/cadre.json`. */
   readonly state: CadreState
   /** The id of the one role regen re-renders; null for init, which generates every role and the repo state. */
@@ -268,20 +268,16 @@ const INDEX_PATH = '.cadre/INDEX.md'
 const STATE_PATH = '.cadre/cadre.json'
 
 /**
- * The files of one role: the five in its folder and its launcher. A role with no scope or no framework gives none, so
- * nothing is generated from a half-known role.
+ * The files of one role: the five in its folder and its launcher, each with the framework its scope was compiled for.
+ * A role with no scope gives none, so nothing is generated from a half-known role.
  */
-function roleFiles(
-  role: RoleSpec,
-  scope: CompiledScope | undefined,
-  framework: FrameworkId | undefined,
-): DesiredFile[] {
-  if (scope === undefined || framework === undefined) return []
+function roleFiles(role: RoleSpec, scope: CompiledScope | undefined): DesiredFile[] {
+  if (scope === undefined) return []
 
   return [
     { path: rolePath(role.id, 'role.json'), content: roleJsonText(role), mode: 'file' },
-    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope, framework), mode: 'file' },
-    { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, framework), mode: 'file' },
+    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope), mode: 'file' },
+    { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
     { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope), mode: 'exec' },
@@ -296,10 +292,10 @@ function roleFiles(
  * runs cannot interleave, and it never changes its input.
  */
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
-  const { roles, scopes, frameworks, state, only } = input
+  const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
-  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), frameworks.get(role.id)))
-  files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes, frameworks), mode: 'file' })
+  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id)))
+  files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
   if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
 
   return files.sort((a, b) => compareText(a.path, b.path))
