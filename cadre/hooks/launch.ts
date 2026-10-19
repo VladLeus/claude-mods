@@ -116,8 +116,11 @@ const UNSAFE_SLUG_CHARS = /[^A-Za-z0-9._-]/gu
 /** A repo root a permission rule can hold: a canonical absolute path of safe characters (`/a/b`), nothing else. */
 const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
 
-/** The template's code-dir denies are exactly `Read(./<dir>/**)` and `Edit(./<dir>/**)`; the secret denies differ. */
-const CODE_DIR_DENY = /^(?:Read|Edit)\(\.\/[^/]+\/\*\*\)$/
+/**
+ * The template's code-dir denies are exactly `Read(./<dir>/**)` and `Edit(./<dir>/**)`, and the group holds the dir;
+ * the secret denies differ.
+ */
+const CODE_DIR_DENY = /^(?:Read|Edit)\(\.\/([^/]+)\/\*\*\)$/
 
 /** A rule on a tool that takes a path, with an absolute `//` argument. */
 const ABSOLUTE_RULE = /^(?:Edit|NotebookEdit|Read|Write)\((\/\/[\s\S]*)\)$/
@@ -210,19 +213,26 @@ function lintedDeny(entries: readonly string[], warnings: readonly string[]): De
 /**
  * The deny list of a role at launch (ROLE-05, D-84, P13). A role with Bash keeps the denies of its template, which hold
  * no code dir. For a role without Bash, the template's any-depth code-dir denies (`Read(./x/**)` matches every folder
- * named x) are replaced by exact absolute ones, `Read(//<root>/<dir>/**)` and `Edit(//<root>/<dir>/**)`, for every code
- * dir the user has, which hit that one folder and no other. A dir is skipped when `<root>/<dir>/` is a prefix of one of
- * the role's own paths (`.cadre/<id>/`, `.planning/`, `thoughts/shared/handoffs/<id>/`; compared without letter case,
- * as a file system may ignore it), so those stay readable (D-80); a dir with an unusual name (`isSafeDir`) is skipped
- * with a warning. A root a rule cannot hold keeps the template's denies and warns. The result is sorted and once each,
- * and an entry that fails `lintRuntimeDenyPattern` is dropped with a warning, so no deny can block an infra tool.
+ * named x) are replaced by exact absolute ones, `Read(//<root>/<dir>/**)` and `Edit(//<root>/<dir>/**)`, which hit
+ * that one folder and no other, for every code dir the launch scan names and every dir a template code-dir deny names,
+ * so a folder the launch scan missed keeps its deny (fail closed). A dir is skipped when `<root>/<dir>/` is a prefix of
+ * one of the role's own paths (`.cadre/<id>/`, `.planning/`, `thoughts/shared/handoffs/<id>/`; compared without letter
+ * case, as a file system may ignore it), so those stay readable (D-80); a dir with an unusual name (`isSafeDir`) is
+ * skipped with a warning. A root a rule cannot hold keeps the template's denies and warns. The result is sorted and
+ * once each, and an entry that fails `lintRuntimeDenyPattern` is dropped with a warning, so no deny can block an infra
+ * tool.
  */
 export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const template = scope.settings.permissions.deny
   if (role.hasBash) return lintedDeny(template, [])
   if (!isSafeRoot(user.root)) return lintedDeny(template, [UNSAFE_ROOT_WARNING])
 
-  const dirs = sortedUnique(user.codeDirs)
+  const templateDirs = template.flatMap(entry => {
+    const dir = CODE_DIR_DENY.exec(entry)?.[1]
+
+    return dir === undefined ? [] : [dir]
+  })
+  const dirs = sortedUnique([...user.codeDirs, ...templateDirs])
   const own = roleOwnPaths(role.id).map(path => path.toLowerCase())
   const exact = dirs
     .filter(isSafeDir)
