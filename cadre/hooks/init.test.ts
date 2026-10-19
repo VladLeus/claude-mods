@@ -24,6 +24,7 @@ import type {
   PortStat,
   RepoScan,
   RoleChange,
+  RoleProposal,
   RoleSpec,
   ScopeCard,
   TemplateRoleId,
@@ -768,10 +769,10 @@ function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detec
 }
 
 /** The roles an Adjust outcome or a roles step result holds; null when it was cancelled. */
-function rolesOf(result: AdjustOutcome | StepResult<readonly RoleSpec[]>): readonly RoleSpec[] | null {
+function rolesOf(result: AdjustOutcome | StepResult<RoleProposal>): readonly RoleSpec[] | null {
   if (result.kind === 'cancelled') return null
 
-  return result.kind === 'adjusted' ? result.roles : result.value
+  return result.kind === 'adjusted' ? result.roles : result.value.roles
 }
 
 /** The value of an accepted step result; a cancelled one stops the test with its reason. */
@@ -1015,7 +1016,7 @@ describe('rolesStep', () => {
 
   test('Use these roles returns the proposed roles, after the proposal lines are logged', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
-    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal })
     expect(run.logged).toEqual([proposalLines(proposal.roles, proposal.changes).join('\n')])
     expect(run.asked).toEqual([ROLES_QUESTION])
     expect(run.specs[0]).toEqual({ options: ['Use these roles', 'Adjust them', 'Describe my own structure'] })
@@ -1027,7 +1028,9 @@ describe('rolesStep', () => {
   test('a described structure goes through the model twice and is used after Use these roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', DESCRIBED_REPLY] }), answers)
-    const roles = rolesOf(await rolesStep(run.io, proposal, FRAMEWORKS))
+    const result = await rolesStep(run.io, proposal, FRAMEWORKS)
+    expect(result).toEqual({ kind: 'accepted', value: { roles: DESCRIBED_ROLES, changes: [] } })
+    const roles = rolesOf(result)
     expect(run.prompts).toHaveLength(2)
     expect(run.prompts[1]).toContain('the reply is not JSON')
     expect(roles).toEqual(DESCRIBED_ROLES)
@@ -1041,7 +1044,7 @@ describe('rolesStep', () => {
   test('three invalid replies print why and ask the roles question again with the template roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', 'not json', 'not json'] }), answers)
-    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal })
     expect(run.prompts).toHaveLength(3)
     const reason = run.logged[1]
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
@@ -1053,7 +1056,7 @@ describe('rolesStep', () => {
   test('Use the template instead goes back to the roles question with no model call', async () => {
     const answers = ['Describe my own structure', '  ', 'Use the template instead', 'Use these roles']
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
-    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal })
     expect(run.prompts).toEqual([])
     expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
@@ -1125,7 +1128,10 @@ describe('rolesStep', () => {
     const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe'), 'Use these roles']
     const run = memIo(memWorld({}), answers)
     const kept = full.roles.filter(role => role.id !== 'fe')
-    expect(await rolesStep(run.io, full, FRAMEWORKS)).toEqual({ kind: 'accepted', value: kept })
+    expect(await rolesStep(run.io, full, FRAMEWORKS)).toEqual({
+      kind: 'accepted',
+      value: { roles: kept, changes: full.changes },
+    })
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     const noteAt = run.logged.indexOf(ADJUST_ROUNDS_NOTE)
     expect(noteAt > 0 && run.logged[noteAt + 1] === proposalLines(kept, full.changes).join('\n')).toBe(true)
@@ -1136,6 +1142,14 @@ describe('rolesStep', () => {
     const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe')]
     const run = memIo(memWorld({}), answers)
     expect(await rolesStep(run.io, full, FRAMEWORKS)).toEqual({ kind: 'cancelled', reason: ROLES_DISMISSED_REASON })
+  })
+
+  test('a start team is shown with its own scan changes, none for a described team (A6)', async () => {
+    const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
+    const start: RoleProposal = { roles: DESCRIBED_ROLES, changes: [] }
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS, start)).toEqual({ kind: 'accepted', value: start })
+    expect(run.logged).toEqual([proposalLines(DESCRIBED_ROLES, []).join('\n')])
+    expect(run.logged.at(-1)?.split('\n').slice(-2)).toEqual(['Changes from the scan:', '  none'])
   })
 })
 
@@ -3218,6 +3232,29 @@ describe('reviewStep', () => {
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
     expect(run.asked.filter(question => question === DESCRIBE_QUESTION)).toHaveLength(1)
     expect(kinds.get('.cadre/security/role.json')).toBe('create')
+  })
+
+  test('Change roles shows a described team with no scan changes, as it was accepted (A6)', async () => {
+    const run = queuedIo(gitWorld({ replies: [DESCRIBED_REPLY] }), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Describe my own structure', 'Use these roles'],
+      'Describe your role structure': DESCRIPTION,
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const proposals = run.logged.filter(text => text.startsWith('Proposed roles:'))
+    expect(proposals).toHaveLength(3)
+    expect(proposals.at(-1)?.split('\n').slice(-2)).toEqual(['Changes from the scan:', '  none'])
+  })
+
+  test("Change roles shows the template team with the template's scan changes, as first shown (A6)", async () => {
+    const answers = { ...INIT_ANSWERS, 'Review the plan': ['Change roles', 'Confirm'] }
+    const run = queuedIo(gitWorld({ replies: [DESCRIBED_REPLY] }), answers)
+    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const proposals = run.logged.filter(text => text.startsWith('Proposed roles:'))
+    expect(proposals).toHaveLength(2)
+    expect(proposals.at(-1)).toBe(proposals[0])
+    expect(proposals[0]?.split('\n').slice(-1)).not.toEqual(['  none'])
   })
 
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
