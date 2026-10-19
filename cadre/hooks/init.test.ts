@@ -1733,6 +1733,121 @@ describe('assignmentStep', () => {
   })
 })
 
+describe('history hints', () => {
+  /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** The unknown sentry, and three skill groups to ask about: alpha (1), codex (2) and the user's own (1). */
+  const setup = emptySetupScan({
+    mcp: [session('sentry')],
+    skills: [
+      skillRef('alpha:x', 'alpha'),
+      skillRef('codex:rescue', 'codex'),
+      skillRef('codex:setup', 'codex'),
+      skillRef('my-skill'),
+    ],
+  })
+  const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
+  /** The 02-07 questions in the 02-07 order: the server, then the groups by label with the user's own last. */
+  const PLAIN_QUESTIONS = [
+    SENTRY_QUESTION,
+    'Which roles get alpha skills (1)? (e.g. BE, QA, or none)',
+    'Which roles get codex skills (2)? (e.g. BE, QA, or none)',
+    'Which roles get your own skills (1)? (e.g. BE, QA, or none)',
+  ]
+  const NONE_FOR_ALL = ['None', 'None', 'None', 'None']
+
+  test('assignmentStep with hints asks the busiest skill group first, with its uses; servers come first', async () => {
+    const hints = new Map([
+      ['my-skill', 5],
+      ['codex:rescue', 2],
+      ['codex:setup', 1],
+    ])
+    const run = memIo(memWorld({}), NONE_FOR_ALL)
+    valueOf(await assignmentStep(run.io, roles, setup, hints))
+    expect(run.asked).toEqual([
+      SENTRY_QUESTION,
+      'Which roles get your own skills (1)? (used 5 times in recent sessions) (e.g. BE, QA, or none)',
+      'Which roles get codex skills (2)? (used 3 times in recent sessions) (e.g. BE, QA, or none)',
+      'Which roles get alpha skills (1)? (e.g. BE, QA, or none)',
+    ])
+  })
+
+  test('without hints, or with none that count, assignmentStep asks the 02-07 questions in order', async () => {
+    for (const hints of [undefined, new Map<string, number>(), new Map([['not-asked', 4]])]) {
+      const run = memIo(memWorld({}), NONE_FOR_ALL)
+      valueOf(await assignmentStep(run.io, roles, setup, hints))
+      expect(run.asked).toEqual(PLAIN_QUESTIONS)
+    }
+  })
+
+  test('with hints each answer still decides the whole list of the names it asks about (A3)', async () => {
+    const hints = new Map([['my-skill', 5]])
+    const all = ['All roles', 'All roles', 'All roles', 'All roles']
+    const first = valueOf(await assignmentStep(memIo(memWorld({}), all).io, roles, setup, hints))
+    expect(first.every(role => role.skills.includes('my-skill') && role.skills.includes('alpha:x'))).toBe(true)
+    const again = valueOf(await assignmentStep(memIo(memWorld({}), NONE_FOR_ALL).io, first, setup, hints))
+    expect(again.flatMap(role => [...role.mcp, ...role.skills])).toEqual([])
+  })
+
+  test('runInit with Yes orders and annotates the skill questions by use; skipped, it asks as before', async () => {
+    const skillCall = '{"type":"tool_use","name":"Skill","input":{"skill":"my-skill"}}'
+    const commands = [
+      { name: 'codex:rescue', source: 'plugin', plugin: 'codex' },
+      { name: 'my-skill', source: 'user' },
+    ]
+    const world = historyGitWorld({ commands, files: { [`${HISTORY_DIR}/a.jsonl`]: `${skillCall}\n${skillCall}` } })
+    const skillAsks = (run: MemRun): string[] => run.asked.filter(question => / skills \(\d+\)\?/.test(question))
+    const scanned = memIo(world, { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    await runInit(scanned.io, { dryRun: true })
+    expect(skillAsks(scanned)).toEqual([
+      'Which roles get your own skills (1)? (used 2 times in recent sessions) (e.g. BE, QA, or none)',
+      'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+    ])
+    const skipped = memIo(world, INIT_ANSWERS)
+    await runInit(skipped.io, { dryRun: true })
+    expect(skillAsks(skipped)).toEqual([
+      'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      'Which roles get your own skills (1)? (e.g. BE, QA, or none)',
+    ])
+  })
+
+  test('the history counts reach the assignments go-back of the review too', async () => {
+    const skillCall = '{"type":"tool_use","name":"Skill","input":{"skill":"my-skill"}}'
+    const commands = [
+      { name: 'codex:rescue', source: 'plugin', plugin: 'codex' },
+      { name: 'my-skill', source: 'user' },
+    ]
+    const world = historyGitWorld({ commands, files: { [`${HISTORY_DIR}/a.jsonl`]: skillCall } })
+    const run = queuedIo(world, {
+      ...INIT_ANSWERS,
+      [HISTORY_PREFIX]: 'Yes, scan names and counts',
+      'Review the plan': ['assignments', 'Confirm'],
+    })
+    await runInit(run.io, { dryRun: true })
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([
+      'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
+      'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+    ])
+  })
+
+  test('init asks and replies the same whether the history was skipped, scanned or absent (D-59)', async () => {
+    const answers = { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' }
+    const runs = [
+      memIo(historyGitWorld(), INIT_ANSWERS),
+      memIo(historyGitWorld(), answers),
+      memIo(gitWorld(), INIT_ANSWERS),
+    ]
+    const replies: string[] = []
+    for (const run of runs) replies.push(await runInit(run.io, { dryRun: true }))
+    const asked = runs.map(run => run.asked.filter(question => !question.startsWith(HISTORY_PREFIX)))
+    expect(asked[1]).toEqual(asked[0])
+    expect(asked[2]).toEqual(asked[0])
+    expect(replies[1]).toBe(replies[0])
+    expect(replies[2]).toBe(replies[0])
+    expect(replies[0]?.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+  })
+})
+
 describe('memoryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
   /** A global CLAUDE.md, one auto-memory and the project CLAUDE.md: all three groups are there. */

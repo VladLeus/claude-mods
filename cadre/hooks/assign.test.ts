@@ -10,6 +10,7 @@ import {
   EFFORTS,
   envQuestion,
   FRAMEWORK_START_SKILLS,
+  groupUses,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
@@ -23,6 +24,7 @@ import {
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
   NONE_OPTION,
+  orderGroupsByUse,
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
@@ -618,6 +620,60 @@ describe('skill assignment', () => {
     expect(SKILL_ROLE_ROWS.map(row => row.roles)).toEqual([['security'], ['fe']])
     expect(SKILL_ROLE_ROWS.every(row => row.label.trim() !== '')).toBe(true)
     expect(new Set(SKILL_ROLE_ROWS.map(row => row.label)).size).toBe(SKILL_ROLE_ROWS.length)
+  })
+})
+
+describe('history hints', () => {
+  const CODEX: SkillGroup = { label: 'codex', plugin: 'codex', names: ['codex:rescue', 'codex:setup'] }
+  const ALPHA: SkillGroup = { label: 'alpha', plugin: 'alpha', names: ['alpha:x'] }
+  const OWN: SkillGroup = { label: 'your own', plugin: null, names: ['my-skill'] }
+  /** The three groups in the 02-07 order: by label, with the user's own skills last. */
+  const GROUPS: readonly SkillGroup[] = [ALPHA, CODEX, OWN]
+
+  test('groupUses sums the counts of the names in a group; a name the history does not have counts 0', () => {
+    const counts = new Map([
+      ['codex:rescue', 7],
+      ['codex:setup', 5],
+      ['other', 9],
+    ])
+    expect(groupUses(CODEX, counts)).toBe(12)
+    expect(groupUses(ALPHA, counts)).toBe(0)
+    expect(groupUses(CODEX, new Map())).toBe(0)
+  })
+
+  test('skillGroupQuestion shows the uses before the hint; no uses, or 0, keeps the 02-07 text exactly', () => {
+    expect(skillGroupQuestion(CODEX, 12)).toBe(
+      'Which roles get codex skills (2)? (used 12 times in recent sessions) (e.g. BE, QA, or none)',
+    )
+    expect(skillGroupQuestion(CODEX)).toBe('Which roles get codex skills (2)? (e.g. BE, QA, or none)')
+    expect(skillGroupQuestion(CODEX, 0)).toBe('Which roles get codex skills (2)? (e.g. BE, QA, or none)')
+  })
+
+  test('one use is singular', () => {
+    expect(skillGroupQuestion(OWN, 1)).toBe(
+      'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
+    )
+  })
+
+  test('orderGroupsByUse puts the busiest group first, and equal uses keep the 02-07 order', () => {
+    const counts = new Map([
+      ['my-skill', 5],
+      ['codex:rescue', 2],
+      ['codex:setup', 1],
+    ])
+    expect(orderGroupsByUse(GROUPS, counts)).toEqual([OWN, CODEX, ALPHA])
+    const tied = new Map([
+      ['my-skill', 3],
+      ['alpha:x', 3],
+    ])
+    expect(orderGroupsByUse(GROUPS, tied)).toEqual([ALPHA, OWN, CODEX])
+  })
+
+  test('with no counts orderGroupsByUse gives the 02-07 order, and it never changes the list it is given', () => {
+    const before = JSON.stringify(GROUPS)
+    expect(orderGroupsByUse(GROUPS, new Map())).toEqual([ALPHA, CODEX, OWN])
+    expect(orderGroupsByUse(GROUPS, new Map([['my-skill', 9]]))).toEqual([OWN, ALPHA, CODEX])
+    expect(JSON.stringify(GROUPS)).toBe(before)
   })
 })
 
