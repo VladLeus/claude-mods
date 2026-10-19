@@ -69,7 +69,7 @@ import {
   hunkCandidates,
   hunkOp,
   hunkQuestion,
-  isGsdAttendedFromConfig,
+  isAttendedFromConfig,
   isUnmetHunk,
   parseHunkAnswer,
   recommend,
@@ -2125,7 +2125,7 @@ async function regenRoles(io: InitIo, root: string, ids: readonly string[]): Pro
  * The frameworks whose roles the current config leaves attended, with no question asked (regen, D-70, D-72, A5): for
  * each adapter in ADAPTERS order that a role runs on and that offers autonomy hunks for this setup, its config file is
  * read through readRepoFile, and the framework is attended while a required proposal is not at its target
- * (isGsdAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
+ * (isAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
  */
 async function attendedByConfig(
   io: InitIo,
@@ -2139,7 +2139,7 @@ async function attendedByConfig(
     const offered = adapter.autonomyHunks(setup)
     if (offered === null) continue
     const config = await readRepoFile(io, root, offered.file, MAX_READ_BYTES)
-    if (isGsdAttendedFromConfig(offered.proposals, config)) attended.add(adapter.id)
+    if (isAttendedFromConfig(offered.proposals, config)) attended.add(adapter.id)
   }
 
   return attended

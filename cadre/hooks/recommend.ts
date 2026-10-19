@@ -286,12 +286,12 @@ export function isGsdAttended(hunks: readonly HunkOp[]): boolean {
 }
 
 /**
- * Whether the GSD roles are attended by the current config alone, without asking (regen, D-70, D-72): a required
- * proposal among those the adapter offers (autonomyHunks, A5) is still offered, that is, not yet at its target. A
- * config that cannot be read never equals a target, so it attends the roles too (fail closed). With no required
- * proposal, as for superpowers and the built-in fallback, nothing is attended.
+ * Whether the roles of a framework are attended by its current config alone, without asking (regen, D-70, D-72): a
+ * required proposal among those the adapter offers (autonomyHunks, A5) is still offered, that is, not yet at its
+ * target. A config that cannot be read never equals a target, so it attends the roles too (fail closed). With no
+ * required proposal, as for superpowers and the built-in fallback, nothing is attended.
  */
-export function isGsdAttendedFromConfig(proposals: readonly SettingProposal[], config: PortRead): boolean {
+export function isAttendedFromConfig(proposals: readonly SettingProposal[], config: PortRead): boolean {
   return hunkCandidates(proposals, config).some(candidate => candidate.proposal.isRequired)
 }
 
