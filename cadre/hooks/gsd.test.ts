@@ -2,7 +2,16 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
-import { detectGsd, GSD_ADAPTER, GSD_AUTONOMY, GSD_GATES, GSD_HOOK_NOTES, gsdHookFacts, gsdKickoffText } from './gsd'
+import {
+  detectGsd,
+  GSD_ADAPTER,
+  GSD_AUTONOMY,
+  GSD_CONFIG_FILE,
+  GSD_GATES,
+  GSD_HOOK_NOTES,
+  gsdHookFacts,
+  gsdKickoffText,
+} from './gsd'
 import { DONE_MARKER_LINE } from './kickoff'
 import { adaptersReportLines } from './render'
 
@@ -403,6 +412,11 @@ describe('GSD_AUTONOMY', () => {
 
   test('no proposal has a read command, since the before value is read from the config file (D-70)', () => {
     expect(GSD_AUTONOMY.map(setting => Object.hasOwn(setting, 'read'))).toEqual([false, false, false])
+  })
+
+  test('GSD_CONFIG_FILE is the repo-relative GSD config, and every proposal names it as its file (B4)', () => {
+    expect(GSD_CONFIG_FILE).toBe('.planning/config.json')
+    expect(GSD_AUTONOMY.map(setting => setting.file)).toEqual([GSD_CONFIG_FILE, GSD_CONFIG_FILE, GSD_CONFIG_FILE])
   })
 
   test('each row, its write object and its args array are frozen', () => {
