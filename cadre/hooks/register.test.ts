@@ -1255,7 +1255,9 @@ const FRAMEWORK_WORLDS: readonly (readonly [string, () => World, WorldExpect])[]
 /**
  * The repo of initWorld after an init of BE and PM on the built-in default: the `.cadre/` folder with its cadre.json,
  * the role.json of both roles and a manifest that lists those three files with the hash of their text, so a regen of BE
- * has PM's entry to keep. Pass `over` to change one part of it.
+ * has PM's entry to keep. The folders a scan lists are listed (the repo root with `.cadre`, `.cadre/` itself and
+ * `docs/superpowers/`), so regen runs on a complete scan that warns about nothing (B3). Pass `over` to change one part
+ * of it.
  */
 async function regenMatrixWorld(over: Partial<World> = {}): Promise<World> {
   const base = initWorld()
@@ -1280,6 +1282,12 @@ async function regenMatrixWorld(over: Partial<World> = {}): Promise<World> {
 
   return {
     ...base,
+    listings: {
+      ...base.listings,
+      '/repo': [...base.listings['/repo'], entry('.cadre', 'dir')],
+      '/repo/.cadre': [entry('be', 'dir'), entry('pm', 'dir'), entry('cadre.json'), entry('manifest.json')],
+      '/repo/docs/superpowers': [],
+    },
     dirs: [...base.dirs, '/repo/.cadre'],
     files: {
       ...base.files,
@@ -1385,6 +1393,7 @@ describe('Phase 2 faked-host matrix', () => {
       expect(reply).toContain('File plan:')
       expect(reply.split('\n').some(line => line.includes('.cadre/be/'))).toBe(true)
       expect(reply.split('\n').filter(line => line.includes('.cadre/pm/'))).toEqual([])
+      expect(reply.split('\n').filter(line => line.startsWith('warning:'))).toEqual([])
     }
     expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
