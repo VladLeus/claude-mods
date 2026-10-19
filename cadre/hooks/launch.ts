@@ -1,5 +1,6 @@
 import type { CompiledScope, RoleSpec } from '../types'
-import { clean, compareText, isChangedByClean, sortedUnique } from './facts'
+import { compareText, isChangedByClean, sortedUnique } from './facts'
+import { shown } from './render'
 import { isSafeDir, lintDenyPattern, roleOwnPaths } from './scope'
 import { mangledProjectDir } from './setup'
 
@@ -103,9 +104,6 @@ type LinkSet = {
 
 /** A group that plans no link and no warning. */
 const NO_LINKS: LinkSet = Object.freeze({ links: Object.freeze([]), warnings: Object.freeze([]) })
-
-/** The most code points of a scanned name that a warning shows. */
-const MAX_SHOWN_CHARS = 110
 
 /** The repo name used in the memory slug when the common dir gives no folder name to name it after. */
 const FALLBACK_REPO_NAME = 'repo'
@@ -215,7 +213,7 @@ function lintedDeny(entries: readonly string[], warnings: readonly string[]): De
   for (const entry of sortedUnique(entries)) {
     const message = lintRuntimeDenyPattern(entry)
     if (message === null) deny.push(entry)
-    else refused.push(`${clean(entry, MAX_SHOWN_CHARS)} was not emitted: ${message}`)
+    else refused.push(`${shown(entry)} was not emitted: ${message}`)
   }
 
   return { deny, warnings: [...warnings, ...refused] }
@@ -251,7 +249,7 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
     .flatMap(dir => [`Read(//${user.root.slice(1)}/${dir}/**)`, `Edit(//${user.root.slice(1)}/${dir}/**)`])
   const unusual = dirs
     .filter(dir => !isSafeDir(dir))
-    .map(dir => `Code dir ${clean(dir, MAX_SHOWN_CHARS)} has an unusual name and is not denied`)
+    .map(dir => `Code dir ${shown(dir)} has an unusual name and is not denied`)
 
   return lintedDeny([...template.filter(entry => !CODE_DIR_DENY.test(entry)), ...exact], unusual)
 }
@@ -396,7 +394,7 @@ function globalLinks(id: string, user: LaunchUser): LinkSet {
   for (const [index, target] of user.globalClaudeMd.entries()) {
     const name = target.slice(target.lastIndexOf('/') + 1)
     if (!isCleanName(name)) {
-      warnings.push(`global file ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      warnings.push(`global file ${shown(name)} has an unsafe name: not linked`)
       continue
     }
     const number = String(index + 1).padStart(2, '0')
@@ -434,7 +432,7 @@ function memoryLinks(id: string, user: LaunchUser): LinkSet {
   const warnings: string[] = []
   for (const [name, target] of [...targets].sort(([a], [b]) => compareText(a, b))) {
     if (!isSafeFileName(name)) {
-      warnings.push(`memory file ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      warnings.push(`memory file ${shown(name)} has an unsafe name: not linked`)
       continue
     }
     links.push({ path: `${runtimeDir(user, id)}/instructions/memory/${name}`, target })
@@ -491,7 +489,7 @@ function overlayGroup(
   const warnings: string[] = []
   for (const name of sortedUnique(names)) {
     if (!isSafeOverlayName(name)) {
-      warnings.push(`${kind} ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      warnings.push(`${kind} ${shown(name)} has an unsafe name: not linked`)
       continue
     }
     if (!have.includes(name)) {

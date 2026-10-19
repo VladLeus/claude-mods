@@ -19,6 +19,12 @@ const GATE_HUMAN_WIDTH = 8
  */
 const MAX_REPORT_CHARS = 240
 
+/** The most code points of a scanned name that a card rule or a warning shows. A scanned name is data, not trusted. */
+const MAX_SHOWN_CHARS = 110
+
+/** The most names one card list shows before it counts the rest. */
+const MAX_CARD_LIST = 12
+
 /** The title line of the detect report. It says that nothing was written. */
 const TITLE = 'cadre detect  (read-only, nothing was written)'
 
@@ -48,6 +54,24 @@ export function pad(text: string, width: number): string {
  */
 export function reportText(text: string): string {
   return clean(text, MAX_REPORT_CHARS)
+}
+
+/** A scanned name or pattern as a card rule or a warning shows it: unsafe characters removed and the length capped. */
+export function shown(text: string): string {
+  return clean(text, MAX_SHOWN_CHARS)
+}
+
+/**
+ * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
+ * `+N more`. A rule passes each scanned name through `shown` first, so a long name or list never runs past the 240 code
+ * points a card line keeps and loses the fixed text after it (B6).
+ */
+export function cardList(names: readonly string[]): string {
+  if (names.length === 0) return 'none'
+  const rest = names.length - MAX_CARD_LIST
+  if (rest <= 0) return names.join(', ')
+
+  return [...names.slice(0, MAX_CARD_LIST), `+${rest} more`].join(', ')
 }
 
 /**

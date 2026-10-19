@@ -1,4 +1,4 @@
-import type { Detection, Facts, FrameworkAdapter } from '../types'
+import type { Detection, Facts, FrameworkAdapter, FrameworkId } from '../types'
 import { BUILTIN_ADAPTER } from './builtin'
 import { detectUnsupported } from './framework'
 import { GSD_ADAPTER } from './gsd'
@@ -10,6 +10,14 @@ import { SUPERPOWERS_ADAPTER } from './superpowers'
  * and its tables are deep-frozen where they are declared, so no caller can change the contract at runtime (T-01-27).
  */
 export const ADAPTERS: readonly FrameworkAdapter[] = Object.freeze([GSD_ADAPTER, SUPERPOWERS_ADAPTER, BUILTIN_ADAPTER])
+
+/**
+ * The adapter of a framework id: where a role's framework name and kickoff text come from, so every module names a
+ * framework the way its adapter does. An id ADAPTERS does not list gets the built-in fallback.
+ */
+export function adapterOf(id: FrameworkId): FrameworkAdapter {
+  return ADAPTERS.find(adapter => adapter.id === id) ?? BUILTIN_ADAPTER
+}
 
 /**
  * One detection per adapter except the built-in fallback, in ADAPTERS order, then one detection per unsupported marker
