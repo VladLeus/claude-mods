@@ -115,7 +115,9 @@ import {
   proposalLines,
   provenUserDir,
   PROVISIONAL_MCP_ROUTE,
+  REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
+  REGEN_NO_MANIFEST,
   REGEN_NO_STATE,
   regenBadRole,
   regenNeedsFramework,
@@ -3293,6 +3295,8 @@ describe('runRegen', () => {
   const BE_ROLE = '/repo/.cadre/be/role.json'
   /** PM's role.json in the fixtures. */
   const PM_ROLE = '/repo/.cadre/pm/role.json'
+  /** The manifest of the fixtures. */
+  const MANIFEST = '/repo/.cadre/manifest.json'
   /** The heads of the paths regen of BE may plan: its folder, its launcher, the index and the manifest (D-68). */
   const BE_PLAN_HEADS = ['.cadre/be/', '.cadre/bin/be', '.cadre/INDEX.md', '.cadre/manifest.json']
 
@@ -3436,6 +3440,44 @@ describe('runRegen', () => {
     const kinds = opKinds(await regenBe(await regenWorld(framed, { framework: null })))
     expect(kinds.get('.cadre/be/role.json')).toBe('leave')
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test("with no .cadre/manifest.json regen refuses, since it cannot keep the other roles' files (A2)", async () => {
+    expect(REGEN_NO_MANIFEST).toBe(
+      ".cadre/manifest.json is missing, so regen cannot keep the other roles' files: run /cadre init again.",
+    )
+    const run = memIo(without(await regenWorld(), MANIFEST), {})
+    expect(await runRegen(run.io, { id: 'be', dryRun: true })).toBe(REGEN_NO_MANIFEST)
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
+  })
+
+  test('a manifest that cannot be read, is too large or is not valid refuses with its own text (A2)', async () => {
+    expect(REGEN_BAD_MANIFEST).toBe(
+      ".cadre/manifest.json is not valid, so regen cannot keep the other roles' files: run /cadre init again.",
+    )
+    const world = await regenWorld()
+    const worlds: readonly MemWorld[] = [
+      withFiles(world, { [MANIFEST]: '{' }),
+      withFiles(world, { [MANIFEST]: stableJson({ schema: 2, cadreVersion: '0.2.0', files: [] }) }),
+      withFiles(world, { [MANIFEST]: 'x'.repeat(MAX_READ_BYTES + 1) }),
+      { ...world, unknownPaths: [MANIFEST] },
+      { ...world, realPaths: { [MANIFEST]: '/elsewhere/manifest.json' } },
+    ]
+    for (const [index, bad] of worlds.entries()) {
+      const run = memIo(bad, {})
+      expect([index, await runRegen(run.io, { id: 'be', dryRun: true })]).toEqual([index, REGEN_BAD_MANIFEST])
+      expect([index, run.asked, run.logged]).toEqual([index, [], []])
+    }
+  })
+
+  test('the manifest refusal comes last: every earlier refusal still wins without a manifest (A2)', async () => {
+    const world = without(await regenWorld(), MANIFEST)
+    expect(await runRegen(memIo(world, {}).io, { id: 'qa', dryRun: true })).toBe(regenNoRole('qa', ['be', 'pm']))
+    expect(await regenBe(withFiles(world, { [BE_ROLE]: 'not json' }))).toBe(regenBadRole('be'))
+    const unframed = without(await regenWorld(team, { framework: null }), MANIFEST)
+    expect(await regenBe(unframed)).toBe(regenNeedsFramework('be'))
+    expect(await regenBe(without(world, STATE))).toBe(REGEN_NO_STATE)
   })
 
   test('a valid setup asks and logs nothing, reads no ~/.claude.json or .gitignore, and plans only BE', async () => {
