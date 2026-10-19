@@ -1,6 +1,7 @@
 import type {
   AskSpec,
   Choice,
+  Detection,
   FrameworkId,
   GitPolicy,
   InitFacts,
@@ -562,21 +563,56 @@ function unreadChange(answer: string): string {
   return `Could not read that change: ${answer.trim()}. Use add, drop, rename or framework.`
 }
 
-/** The roles after one typed change, or the exact message why the line cannot be read or the change applied. */
-function adjusted(roles: readonly RoleSpec[], answer: string): ReturnType<typeof applyAdjust> {
+/**
+ * The frameworks an Adjust line may set a role to (A5): each supported framework this repo has in use or installed,
+ * in SUPPORTED_IDS order, then `none`, the built-in fallback, which is always there.
+ */
+export function installedFrameworks(detections: readonly Detection[]): FrameworkId[] {
+  const isThere = (id: FrameworkId): boolean =>
+    detections.some(found => found.id === id && (found.status === 'in-use' || found.status === 'installed'))
+
+  return [...SUPPORTED_IDS.filter(isThere), 'none']
+}
+
+/** The message for an Adjust line that sets a role to a framework this repo does not have installed (A5). */
+function notInstalledMessage(id: string, framework: FrameworkId, installed: readonly FrameworkId[]): string {
+  const names = installed.map(item => FRAMEWORK_LABELS[item]).join(', ')
+
+  return (
+    `Cannot set ${id} to ${framework}: it is not installed for this repo (installed: ${names}). ` +
+    `${id} keeps its framework.`
+  )
+}
+
+/**
+ * The roles after one typed change, or the exact message why the line cannot be read or the change applied. Setting a
+ * role the team has to a framework outside `installed` is refused, so the role keeps its framework (A5).
+ */
+function adjusted(
+  roles: readonly RoleSpec[],
+  answer: string,
+  installed: readonly FrameworkId[],
+): ReturnType<typeof applyAdjust> {
   const op = parseAdjust(answer)
   if (op === null) return { kind: 'error', message: unreadChange(answer) }
+  if (op.kind === 'framework' && roles.some(role => role.id === op.id) && !installed.includes(op.framework)) {
+    return { kind: 'error', message: notInstalledMessage(op.id, op.framework, installed) }
+  }
 
   return applyAdjust(roles, op)
 }
 
 /**
  * The Adjust loop (D-47): one typed change per answer, add, drop, rename or framework, until `Done adjusting`. A line
- * it cannot read or a change applyAdjust refuses prints its exact message and the loop goes on; `Show the roles`
- * prints the roles as they are now. A dismissed dialog is null. After MAX_ADJUST_ROUNDS answers the roles adjusted so
- * far are used. The roles it is given are never changed.
+ * it cannot read, a change applyAdjust refuses, or a framework outside `installed` (A5) prints its exact message and
+ * the loop goes on; `Show the roles` prints the roles as they are now. A dismissed dialog is null. After
+ * MAX_ADJUST_ROUNDS answers the roles adjusted so far are used. The roles it is given are never changed.
  */
-export async function adjustLoop(io: InitIo, roles: readonly RoleSpec[]): Promise<readonly RoleSpec[] | null> {
+export async function adjustLoop(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  installed: readonly FrameworkId[],
+): Promise<readonly RoleSpec[] | null> {
   let current = roles
   for (let round = 0; round < MAX_ADJUST_ROUNDS; round += 1) {
     const answer = await askOnce(io, ADJUST_QUESTION, { options: ADJUST_OPTIONS })
@@ -587,7 +623,7 @@ export async function adjustLoop(io: InitIo, roles: readonly RoleSpec[]): Promis
       logLines(io, roleLines(current))
       continue
     }
-    const result = adjusted(current, answer)
+    const result = adjusted(current, answer, installed)
     if (result.kind === 'error') {
       logLines(io, [result.message])
       continue
@@ -610,8 +646,8 @@ type Shown = {
 }
 
 /** The roles shown after the Adjust loop, with the same scan changes; null when the loop was cancelled. */
-async function adjustShown(io: InitIo, shown: Shown): Promise<Shown | null> {
-  const roles = await adjustLoop(io, shown.roles)
+async function adjustShown(io: InitIo, shown: Shown, installed: readonly FrameworkId[]): Promise<Shown | null> {
+  const roles = await adjustLoop(io, shown.roles, installed)
 
   return roles === null ? null : { roles, changes: shown.changes }
 }
@@ -631,18 +667,22 @@ async function describeShown(io: InitIo, proposal: RoleProposal): Promise<Shown 
 
 /**
  * The roles step (ROLE-01, ROLE-02, D-46, D-47): prints the roles with the scan changes behind them and asks `Use
- * these roles?`. `Use these roles` takes the roles shown; `Adjust them` runs adjustLoop on them; `Describe my own
- * structure` runs describeStep. After either, the roles are shown and asked about again. A dismissed dialog anywhere
- * is null (D-45). After MAX_ROLE_ROUNDS rounds the roles shown are used.
+ * these roles?`. `Use these roles` takes the roles shown; `Adjust them` runs adjustLoop on them with the frameworks
+ * `installed` for the repo; `Describe my own structure` runs describeStep. After either, the roles are shown and
+ * asked about again. A dismissed dialog anywhere is null (D-45). After MAX_ROLE_ROUNDS rounds the roles shown are used.
  */
-export async function rolesStep(io: InitIo, proposal: RoleProposal): Promise<readonly RoleSpec[] | null> {
+export async function rolesStep(
+  io: InitIo,
+  proposal: RoleProposal,
+  installed: readonly FrameworkId[],
+): Promise<readonly RoleSpec[] | null> {
   let shown: Shown = proposal
   for (let round = 0; round < MAX_ROLE_ROUNDS; round += 1) {
     logLines(io, proposalLines(shown.roles, shown.changes))
     const choice = await askChoice(io, ROLES_QUESTION, { options: ROLES_OPTIONS }, parseRolesChoice)
     if (choice === null) return null
     if (choice === 'use') return shown.roles
-    const next = choice === 'adjust' ? await adjustShown(io, shown) : await describeShown(io, proposal)
+    const next = choice === 'adjust' ? await adjustShown(io, shown, installed) : await describeShown(io, proposal)
     if (next === null) return null
     shown = next
   }
@@ -809,10 +849,11 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const gathered = await gatherScans(io, guard.locations, isClaudeJsonAllowed)
   logLines(io, scanSummaryLines(gathered.repo, gathered.setup))
 
-  const proposed = await rolesStep(io, proposeRoles(gathered.repo))
+  const detections = detectAll(gathered.facts.facts)
+  const proposed = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
   if (proposed === null) return INIT_CANCELLED
 
-  const framed = await frameworkStep(io, chooseFramework(detectAll(gathered.facts.facts), null), proposed)
+  const framed = await frameworkStep(io, chooseFramework(detections, null), proposed)
   if (framed === null) return INIT_CANCELLED
 
   const { roles, repoDefault } = framed
