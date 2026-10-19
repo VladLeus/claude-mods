@@ -801,14 +801,15 @@ function parseRolesChoice(answer: string): RolesChoice | null {
  *   roles question is asked.
  * - `adjusting`: the Adjust loop runs on those roles.
  * - `describing`: the person describes a structure of their own.
- * - `accepted`: the person answered `Use these roles` for the roles shown; the only state that holds a choice.
+ * - `accepted`: the person answered `Use these roles` for the roles shown, with the scan changes shown with them (A6);
+ *   the only state that holds a choice.
  * - `cancelled`: the step ended with nothing chosen, and `reason` says why.
  */
 export type RolesState =
   | { readonly kind: 'proposed'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
   | { readonly kind: 'adjusting'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
   | { readonly kind: 'describing' }
-  | { readonly kind: 'accepted'; readonly roles: readonly RoleSpec[] }
+  | { readonly kind: 'accepted'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
   | { readonly kind: 'cancelled'; readonly reason: string }
 
 /** The roles step cancelled with a reason. */
@@ -824,7 +825,7 @@ async function afterProposed(
   logLines(io, proposalLines(state.roles, state.changes))
   const choice = await askChoice(io, ROLES_QUESTION, { options: ROLES_OPTIONS }, parseRolesChoice)
   if (choice === null) return rolesCancelled(ROLES_DISMISSED_REASON)
-  if (choice === 'use') return { kind: 'accepted', roles: state.roles }
+  if (choice === 'use') return { kind: 'accepted', roles: state.roles, changes: state.changes }
   if (choice === 'adjust') return { kind: 'adjusting', roles: state.roles, changes: state.changes }
 
   return { kind: 'describing' }
@@ -877,23 +878,24 @@ async function nextState(
 
 /**
  * The roles step (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83), as the states of RolesState. It starts at `proposed`
- * with `start`, the proposal's roles unless the final review passes the current team, and shows them with the scan
- * changes behind the proposal under `Use these roles?`. `Adjust them` runs adjustLoop with the frameworks `installed`
- * for the repo and `Describe my own structure` runs describeStep, whose template answer goes back to the proposal
- * itself; either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an accepted StepResult: a
- * dismissal anywhere is cancelled with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals with
+ * with `start`, the proposal itself unless the final review passes the current team with the scan changes it was
+ * accepted with (A6), and shows those roles and changes under `Use these roles?`. `Adjust them` runs adjustLoop with
+ * the frameworks `installed` for the repo and `Describe my own structure` runs describeStep, whose template answer goes
+ * back to the proposal itself; either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an
+ * accepted StepResult with the scan changes shown with them (none for a described structure, A6): a dismissal anywhere
+ * is cancelled with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals with
  * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used (A1).
  */
 export async function rolesStep(
   io: InitIo,
   proposal: RoleProposal,
   installed: readonly FrameworkId[],
-  start: readonly RoleSpec[] = proposal.roles,
-): Promise<StepResult<readonly RoleSpec[]>> {
-  let state: RolesState = { kind: 'proposed', roles: start, changes: proposal.changes }
+  start: RoleProposal = proposal,
+): Promise<StepResult<RoleProposal>> {
+  let state: RolesState = { kind: 'proposed', roles: start.roles, changes: start.changes }
   let rounds = 0
   for (;;) {
-    if (state.kind === 'accepted') return accepted(state.roles)
+    if (state.kind === 'accepted') return accepted({ roles: state.roles, changes: state.changes })
     if (state.kind === 'cancelled') return state
     const isPastCap = state.kind === 'proposed' && rounds === MAX_ROLE_ROUNDS
     if (isPastCap) return cancelled(ROLE_ROUNDS_REASON)
@@ -1769,8 +1771,8 @@ export const REVIEW_HINT = 'To change something else, type one of: duration, mod
  * What one init run holds in memory while the person reviews the plan (D-43, D-45, D-82): where it runs and what the
  * scans gave, the ~/.claude.json consent answer the scans were gathered with (cadre.json records it, A1), what the
  * roles and framework steps are asked with (the installed frameworks, the framework choice and the template proposal
- * with its scan changes), and every answer so far. It is never written or kept after the run; a go-back gives a new
- * Draft.
+ * with its scan changes), and every answer so far, the accepted team's scan changes included, so Change roles shows
+ * those again (A6). It is never written or kept after the run; a go-back gives a new Draft.
  */
 type Draft = {
   readonly locations: InitLocations
@@ -1781,6 +1783,8 @@ type Draft = {
   readonly proposal: RoleProposal
   readonly duration: string
   readonly roles: readonly RoleSpec[]
+  /** The scan changes shown with the accepted roles: the template's, or none for a described structure (A6). */
+  readonly changes: readonly RoleChange[]
   readonly repoDefault: FrameworkId | null
   readonly hunks: readonly HunkOp[]
   readonly policy: GitPolicy
@@ -1790,8 +1794,11 @@ type Draft = {
 /** The parts of a Draft that the scans, and the consent answer they were gathered with, fix for the whole run. */
 type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'installed' | 'choice' | 'proposal'>
 
-/** What the role steps decide: the duration, the roles with every per-role answer, the repo default and the hunks. */
-type Team = Pick<Draft, 'duration' | 'roles' | 'repoDefault' | 'hunks'>
+/**
+ * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
+ * with (A6), the repo default and the hunks.
+ */
+type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks'>
 
 /** A step result with its value turned into another; a cancelled result stays cancelled with its reason (A1). */
 function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult<U> {
@@ -1809,7 +1816,7 @@ async function perRoleSteps(
   base: DraftBase,
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
-): Promise<StepResult<Omit<Team, 'duration'>>> {
+): Promise<StepResult<Omit<Team, 'duration' | 'changes'>>> {
   const { gathered, locations } = base
   const modelled = await modelStep(io, roles)
   if (modelled.kind === 'cancelled') return modelled
@@ -1827,21 +1834,22 @@ async function perRoleSteps(
 
 /**
  * The role steps from the roles question to the hunks (ROLE-01 to ROLE-05, D-43): the roles (rolesStep from `start`,
- * with the scan changes behind the proposal), their frameworks (frameworkStep), the recommendations for that team
- * (ROLE-03), the duration, asked when `duration` is null and else kept for every role (D-51), then perRoleSteps. Init
- * runs it once from the proposal; Change roles runs it again from the current team with the duration it has. The
- * first cancelled step ends it with its reason (A1).
+ * shown with its scan changes), their frameworks (frameworkStep), the recommendations for that team (ROLE-03), the
+ * duration, asked when `duration` is null and else kept for every role (D-51), then perRoleSteps. Init runs it once
+ * from the proposal; Change roles runs it again from the current team with the scan changes it was accepted with (A6)
+ * and the duration it has. The team keeps the scan changes of the roles accepted. The first cancelled step ends it with
+ * its reason (A1).
  */
 async function teamStep(
   io: InitIo,
   base: DraftBase,
-  start: readonly RoleSpec[],
+  start: RoleProposal,
   duration: string | null,
 ): Promise<StepResult<Team>> {
   const { gathered } = base
   const chosen = await rolesStep(io, base.proposal, base.installed, start)
   if (chosen.kind === 'cancelled') return chosen
-  const framed = await frameworkStep(io, base.choice, chosen.value)
+  const framed = await frameworkStep(io, base.choice, chosen.value.roles)
   if (framed.kind === 'cancelled') return framed
   const { roles, repoDefault } = framed.value
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
@@ -1852,20 +1860,24 @@ async function teamStep(
   const kept = asked.value
   const steps = await perRoleSteps(io, base, withDuration(roles, kept), repoDefault)
 
-  return mapped(steps, decided => ({ duration: kept, ...decided }))
+  return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, ...decided }))
 }
 
 /**
  * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
- * Change roles every role step from the current team with the duration kept (teamStep). The duration, model,
- * assignment, memory and env steps run again on the current roles and decide the whole list they ask about (A3), so a
- * narrower answer takes a name away. A cancelled step ends the review with its reason (A1).
+ * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
+ * duration kept (teamStep). The duration, model, assignment, memory and env steps run again on the current roles and
+ * decide the whole list they ask about (A3), so a narrower answer takes a name away. A cancelled step ends the review
+ * with its reason (A1).
  */
 async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confirm'>): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
-    case 'roles':
-      return mapped(await teamStep(io, draft, roles, draft.duration), team => ({ ...draft, ...team }))
+    case 'roles': {
+      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration)
+
+      return mapped(team, decided => ({ ...draft, ...decided }))
+    }
     case 'policy':
       return mapped(await gitPolicyStep(io), policy => ({ ...draft, policy }))
     case 'launch':
@@ -1982,7 +1994,7 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
     choice: chooseFramework(detections, null),
     proposal,
   }
-  const team = await teamStep(io, base, proposal.roles, null)
+  const team = await teamStep(io, base, proposal, null)
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
 
   const { roles, repoDefault, hunks } = team.value
