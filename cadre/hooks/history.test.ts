@@ -66,6 +66,19 @@ function countsOf(text: string): Record<string, number> {
   return Object.fromEntries(countNames(text))
 }
 
+/**
+ * One Skill tool call as Claude Code 2.1.303 writes it: one assistant line that holds the input twice, once in the
+ * tool_use block and once in `wireToolInputs` under the call's id (WR-01).
+ */
+function skillCallLine(skill: string, id: string): string {
+  const input = `{"skill":"${skill}","args":"--fast"}`
+
+  return (
+    `{"message":{"role":"assistant","content":[{"type":"tool_use","id":"${id}","name":"Skill","input":${input},` +
+    `"caller":{"type":"direct"}}]},"wireToolInputs":{"${id}":${input}},"type":"assistant"}`
+  )
+}
+
 describe('history scan', () => {
   test('historyDir is the projects folder of the mangled repo path under the user folder', () => {
     expect(historyDir('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
@@ -158,6 +171,15 @@ describe('history scan', () => {
       '{"name":"Skill","input":{"skill":"codex:rescue"}},{"name":"Skill","input":{"skill":"Codex:Setup"}}',
     ].join('\n')
     expect(countsOf(text)).toEqual({ 'codex:rescue': 2, 'codex:setup': 1 })
+  })
+
+  test('a Skill call counts once when its line holds the name in input and in wireToolInputs (WR-01)', () => {
+    expect(countsOf(skillCallLine('gsd-quick', 'toolu_01'))).toEqual({ 'gsd-quick': 1 })
+  })
+
+  test('two Skill call lines of one skill count 2, one for each line (WR-01)', () => {
+    const text = [skillCallLine('gsd-quick', 'toolu_01'), skillCallLine('gsd-quick', 'toolu_02')].join('\n')
+    expect(countsOf(text)).toEqual({ 'gsd-quick': 2 })
   })
 
   test('scanHistory counts the readable sessions and skips one over 4 MiB, with its note (Pitfall 9)', async () => {
