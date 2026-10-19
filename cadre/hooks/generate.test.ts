@@ -4,27 +4,37 @@ import type {
   CadreState,
   CompiledScope,
   DesiredFile,
+  FrameworkAdapter,
   FrameworkId,
   RoleSpec,
   ScopeContext,
   SetupScan,
   TemplateRoleId,
 } from '../types'
+import { BUILTIN_ADAPTER } from './builtin'
 import { compareText } from './facts'
 import {
   asciiLine,
+  cadreJsonText,
   desiredFiles,
+  indexMdText,
   kickoffRoleLine,
   kickoffText,
+  launcherText,
   mcpText,
   ROLE_LINE_MAX,
   roleJsonText,
+  roleMdText,
   settingsText,
+  shQuote,
 } from './generate'
 import type { GenerateInput } from './generate'
+import { GSD_ADAPTER } from './gsd'
 import { stableJson } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { compileScope } from './scope'
+import { compileScope, scopeCardLines } from './scope'
+import { SUPERPOWERS_ADAPTER } from './superpowers'
+import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
 
 /** The template role with this id, as init builds it: nothing assigned, every other field a default. */
 function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
@@ -58,8 +68,16 @@ function emptySetup(): SetupScan {
   }
 }
 
-/** The compiled scope of a role on the merged MCP route, with the whole team for the decision chain. */
-function scopeOf(role: RoleSpec, framework: FrameworkId, team: readonly RoleSpec[]): CompiledScope {
+/**
+ * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
+ * context fields it names.
+ */
+function scopeOf(
+  role: RoleSpec,
+  framework: FrameworkId,
+  team: readonly RoleSpec[],
+  over: Partial<ScopeContext> = {},
+): CompiledScope {
   const ctx: ScopeContext = {
     framework,
     setup: emptySetup(),
@@ -67,6 +85,7 @@ function scopeOf(role: RoleSpec, framework: FrameworkId, team: readonly RoleSpec
     isAttended: false,
     mcpRoute: 'merged',
     roles: team,
+    ...over,
   }
 
   return compileScope(role, ctx)
@@ -432,5 +451,494 @@ describe('desiredFiles', () => {
     expect(second).toEqual(first)
     expect(second).not.toBe(first)
     expect(snapshot()).toBe(before)
+  })
+
+  test('ROLE.md, the launcher, the index and the repo state hold the text of their builders', () => {
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const input = inputOf([pm, be], 'gsd')
+    const files = desiredFiles(input)
+    const scope = scopeOf(be, 'gsd', [pm, be])
+
+    expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope, 'gsd'))
+    expect(contentOf(files, '.cadre/bin/be')).toBe(launcherText(be, scope))
+    expect(contentOf(files, '.cadre/INDEX.md')).toBe(indexMdText(input.roles, input.scopes, input.frameworks))
+    expect(contentOf(files, '.cadre/cadre.json')).toBe(cadreJsonText(input.state))
+  })
+
+  test('with only a role id the index still lists every role and has the same text as for init (D-68)', () => {
+    const all = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd'))
+    const one = desiredFiles(inputOf(TEMPLATE_ROLES, 'gsd', { only: 'be' }))
+    const index = contentOf(one, '.cadre/INDEX.md') ?? ''
+
+    expect(index).toBe(contentOf(all, '.cadre/INDEX.md'))
+    expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
+  })
+})
+
+/** The line ROLE.md adds after the framework line of an attended role. It is no card rule, so it never repeats one. */
+const ATTENDED_LINE =
+  'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
+
+/** The adapter each framework is driven with: where ROLE.md takes its framework name and kickoff text from. */
+const ADAPTER_OF: Readonly<Record<FrameworkId, FrameworkAdapter>> = {
+  gsd: GSD_ADAPTER,
+  superpowers: SUPERPOWERS_ADAPTER,
+  none: BUILTIN_ADAPTER,
+}
+
+/** The lines of a document that start a section. */
+function headings(text: string): string[] {
+  return text.split('\n').filter(line => line.startsWith('## '))
+}
+
+/** The lines of a document that start with `Attended:` at the left margin: the banner, never an indented card rule. */
+function bannerLines(text: string): string[] {
+  return text.split('\n').filter(line => line.startsWith('Attended:'))
+}
+
+/** The table row of the role with this id in an index; undefined when it has none. */
+function indexRowOf(index: string, id: string): string | undefined {
+  return index.split('\n').find(line => line.includes(`| .cadre/bin/${id} |`))
+}
+
+describe('role documents', () => {
+  test('ROLE.md opens with the title and id, the purpose, the framework line and the banner of an attended PM', () => {
+    const pm = templateRole('pm')
+    const text = roleMdText(pm, scopeOf(pm, 'gsd', TEMPLATE_ROLES), 'gsd')
+
+    expect(text.split('\n').slice(0, 7)).toEqual([
+      '# PM (cadre role pm)',
+      '',
+      'Owns product decisions: scope, requirements and acceptance.',
+      '',
+      'Framework: GSD. Model: opus + medium. Permission mode: auto.',
+      ATTENDED_LINE,
+      '',
+    ])
+  })
+
+  test('ROLE.md has the sections How you work, Decisions, Handoffs and Scope, in that order', () => {
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES), 'gsd')
+
+    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Scope'])
+    expect(text.endsWith('\n')).toBe(true)
+    expect(text.endsWith('\n\n')).toBe(false)
+  })
+
+  test('How you work holds the kickoff text of the adapter, and the framework line names the adapter', () => {
+    const api = templateRole('be', { id: 'api', title: 'Backend API' })
+    for (const framework of FRAMEWORKS) {
+      const adapter = ADAPTER_OF[framework]
+      const text = roleMdText(api, scopeOf(api, framework, [api]), framework)
+      const kickoff = adapter.kickoffText({ title: 'Backend API', roleId: 'api', specPath: null })
+
+      expect(text).toContain(`## How you work\n\n${kickoff}\n\n## Decisions\n`)
+      expect(text).toContain(`Framework: ${adapter.name}. Model: opus + medium. Permission mode: auto.`)
+    }
+  })
+
+  test('Decisions lists the chain of the card, one line for each decision type', () => {
+    const pm = templateRole('pm')
+    const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES)
+
+    expect(roleMdText(pm, scope, 'gsd')).toContain(
+      '## Decisions\n\n' +
+        '- Product: pm -> human (queue_question)\n' +
+        '- Arch: tl -> human (queue_question)\n' +
+        '- Security: security -> human (queue_question)\n' +
+        '- QA: tl -> human (queue_question)\n\n## Handoffs\n',
+    )
+    expect(scope.card.chain).toHaveLength(4)
+  })
+
+  test('Decisions follow basedOn: a renamed PM still takes the product decisions', () => {
+    const product = templateRole('pm', { id: 'product', title: 'Product' })
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', [product, be]), 'gsd')
+
+    expect(text).toContain('- Product: product -> human (queue_question)\n')
+  })
+
+  test('Handoffs names the handoff folder of the role id', () => {
+    const api = templateRole('be', { id: 'api', title: 'Backend API' })
+    const text = roleMdText(api, scopeOf(api, 'gsd', [api]), 'gsd')
+
+    expect(text).toContain(
+      '## Handoffs\n\n' +
+        "Write every handoff under thoughts/shared/handoffs/api/ (autopilot's handoff path).\n\n## Scope\n",
+    )
+  })
+
+  test('Scope holds the lines of the scope card', () => {
+    const be = templateRole('be', { mcp: ['jira'] })
+    const scope = scopeOf(be, 'superpowers', TEMPLATE_ROLES)
+    const text = roleMdText(be, scope, 'superpowers')
+
+    expect(text.endsWith(`## Scope\n\n${scopeCardLines(scope.card).join('\n')}\n`)).toBe(true)
+    expect(text).toContain('Scope card: BE (be)\n')
+  })
+
+  test('a role with Bash on an unattended team has no banner', () => {
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES), 'gsd')
+
+    expect(bannerLines(text)).toEqual([])
+    expect(text).toContain('Permission mode: auto.\n\n## How you work\n')
+  })
+
+  test('an attended context adds the banner once, and the banner never repeats the text of a card rule', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', TEMPLATE_ROLES, { isAttended: true })
+    const text = roleMdText(be, scope, 'gsd')
+
+    expect(bannerLines(text)).toEqual([ATTENDED_LINE])
+    expect(text).toContain(
+      '    [none] Attended: this role needs a person for framework steps that cannot run unattended\n',
+    )
+    expect(text).not.toContain('Attended: Attended:')
+  })
+
+  test('a PM on GSD in an attended context has two Attended card rules and still one banner', () => {
+    const pm = templateRole('pm')
+    const scope = scopeOf(pm, 'gsd', TEMPLATE_ROLES, { isAttended: true })
+    const text = roleMdText(pm, scope, 'gsd')
+
+    expect(bannerLines(text)).toEqual([ATTENDED_LINE])
+    expect(text.split('\n').filter(line => line.startsWith('    [none] Attended:'))).toHaveLength(2)
+    expect(text).not.toContain('Attended: Attended:')
+  })
+
+  test('a title and a purpose are cleaned before they reach the document', () => {
+    const role = templateRole('pm', { title: `PM${BIDI_OVERRIDE}`, purpose: 'Owns a thing.\n## Injected\nmore' })
+    const text = roleMdText(role, scopeOf(role, 'gsd', [role]), 'gsd')
+    const lines = text.split('\n')
+
+    expect(leaks(text, [BIDI_OVERRIDE])).toEqual([])
+    expect(lines[0]).toBe('# PM (cadre role pm)')
+    expect(lines[2]).toBe('Owns a thing.## Injectedmore')
+    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Scope'])
+  })
+
+  test('INDEX.md of two roles is the header, the table header and one row each, in role order', () => {
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const input = inputOf([pm, be], 'gsd')
+
+    expect(indexMdText(input.roles, input.scopes, input.frameworks)).toBe(
+      [
+        '# cadre roles',
+        '',
+        'Generated by cadre from the role definitions. Edit .cadre/<id>/role.json and run /cadre regen <id>.',
+        '',
+        '| Role | Purpose | Framework | Model | Scope | Launcher | Handoffs |',
+        '| --- | --- | --- | --- | --- | --- | --- |',
+        '| PM (pm) | Owns product decisions: scope, requirements and acceptance. | GSD | opus + medium | ' +
+          'no Bash; MCP: none; skills: 8 | .cadre/bin/pm | thoughts/shared/handoffs/pm/ |',
+        '| BE (be) | Implements the backend and core code. | GSD | opus + medium | ' +
+          'sandboxed Bash; MCP: none; skills: 8 | .cadre/bin/be | thoughts/shared/handoffs/be/ |',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  test('the scope cell lists the MCP servers sorted and counts the skills the role can run, by framework', () => {
+    const be = templateRole('be', { mcp: ['jira', 'github'], skills: ['codex:rescue', 'my-skill', 'gsd-plan-phase'] })
+    const expected: readonly (readonly [FrameworkId, string])[] = [
+      ['gsd', 'sandboxed Bash; MCP: github, jira; skills: 10'],
+      ['superpowers', 'sandboxed Bash; MCP: github, jira; skills: 9'],
+      ['none', 'sandboxed Bash; MCP: github, jira; skills: 5'],
+    ]
+    for (const [framework, cell] of expected) {
+      const input = inputOf([be], framework)
+      const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+
+      expect(row).toContain(` | ${cell} | `)
+    }
+  })
+
+  test('more than 12 MCP servers show the first 12 and the count of the rest', () => {
+    const names = Array.from({ length: 14 }, (_, index) => `srv${String(index + 1).padStart(2, '0')}`)
+    const input = inputOf([templateRole('be', { mcp: names })], 'gsd')
+    const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+
+    expect(row).toContain(`MCP: ${names.slice(0, 12).join(', ')}, +2 more; `)
+    expect(row).not.toContain('srv13')
+  })
+
+  test('a pipe in a title or a purpose is written as \\| so it stays one cell', () => {
+    const input = inputOf([templateRole('be', { title: 'B|E', purpose: 'Builds a | b.' })], 'gsd')
+    const row = indexRowOf(indexMdText(input.roles, input.scopes, input.frameworks), 'be')
+
+    expect(row?.startsWith('| B\\|E (be) | Builds a \\| b. | GSD | ')).toBe(true)
+  })
+
+  test('a title and a purpose in the index are cleaned', () => {
+    const role = templateRole('be', { title: `B${BIDI_OVERRIDE}E`, purpose: 'Line one\nLine two' })
+    const input = inputOf([role], 'gsd')
+    const index = indexMdText(input.roles, input.scopes, input.frameworks)
+
+    expect(leaks(index, [BIDI_OVERRIDE])).toEqual([])
+    expect(indexRowOf(index, 'be')?.startsWith('| BE (be) | Line oneLine two | ')).toBe(true)
+  })
+
+  test('INDEX.md is static: the same input gives the same text, with no date and no count of handoffs', () => {
+    const input = inputOf(TEMPLATE_ROLES, 'gsd')
+    const first = indexMdText(input.roles, input.scopes, input.frameworks)
+    const second = indexMdText(input.roles, input.scopes, input.frameworks)
+
+    expect(second).toBe(first)
+    expect(/\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}/.test(first)).toBe(false)
+    expect(first.toLowerCase()).not.toContain('latest')
+  })
+
+  test('a role with no scope or no framework has no row in the index', () => {
+    const input = inputOf(TEMPLATE_ROLES, 'gsd')
+    const noScope = new Map(Array.from(input.scopes).filter(([id]) => id !== 'qa'))
+    const noFramework = new Map(Array.from(input.frameworks).filter(([id]) => id !== 'fe'))
+    const text = indexMdText(input.roles, noScope, noFramework)
+
+    expect(indexRowOf(text, 'qa')).toBeUndefined()
+    expect(indexRowOf(text, 'fe')).toBeUndefined()
+    expect(indexRowOf(text, 'security')).toContain('| Security (security) |')
+  })
+
+  test('cadreJsonText is the stable JSON of the repo state and parses back to it', () => {
+    const state = stateOf(TEMPLATE_ROLES, 'gsd')
+
+    expect(cadreJsonText(state)).toBe(stableJson(state))
+    expect(JSON.parse(cadreJsonText(state))).toEqual(state)
+    expect(cadreJsonText({ ...state, framework: null })).toContain('"framework": null')
+  })
+})
+
+/** The characters a shell reads as part of a bare word: what shQuote leaves unquoted. */
+const BARE_SHELL_CHAR = /[A-Za-z0-9_./=:@+-]/
+
+/**
+ * The words a POSIX shell reads from a line, for the quoting shapes the launcher uses: bare words of plain characters,
+ * single-quoted spans, a backslash before a single quote, and double-quoted spans read to the next double quote. It
+ * throws on any other character outside quotes, so a metacharacter left bare fails the test that reads the line.
+ */
+function shellWords(line: string): string[] {
+  const words: string[] = []
+  let word: string | null = null
+  let quote = ''
+  for (let index = 0; index < line.length; index++) {
+    const char = line.charAt(index)
+    if (quote !== '') {
+      if (char === quote) quote = ''
+      else word = `${word ?? ''}${char}`
+      continue
+    }
+    if (char === ' ') {
+      if (word !== null) words.push(word)
+      word = null
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      word = word ?? ''
+      continue
+    }
+    if (char === '\\' && line.charAt(index + 1) === "'") {
+      word = `${word ?? ''}'`
+      index += 1
+      continue
+    }
+    if (!BARE_SHELL_CHAR.test(char)) throw new Error(`a bare ${JSON.stringify(char)} in ${line}`)
+    word = `${word ?? ''}${char}`
+  }
+  if (quote !== '') throw new Error(`an unclosed quote in ${line}`)
+  if (word !== null) words.push(word)
+
+  return words
+}
+
+/** Whether the shell reader refuses a line (a bare metacharacter or an unclosed quote). */
+function isRefused(line: string): boolean {
+  try {
+    shellWords(line)
+  } catch {
+    return true
+  }
+
+  return false
+}
+
+/** The words of the `exec claude` line of a launcher. */
+function execWords(launcher: string): string[] {
+  const start = launcher.indexOf('\nexec ')
+
+  return shellWords(launcher.slice(start + 1).replace(/\n$/, ''))
+}
+
+/** The flags of the BE role on the merged route, in launcher order. */
+const BE_FLAGS = [
+  '--setting-sources project',
+  '--settings .cadre/be/.runtime/settings.json',
+  '--append-system-prompt-file .cadre/be/ROLE.md',
+  '--name cadre-be',
+  '--model opus',
+  '--effort medium',
+  '--permission-mode auto',
+  '--add-dir .cadre/be/.runtime/overlay',
+  '--mcp-config .cadre/be/.runtime/mcp.json',
+].join(' ')
+
+/** Words a shell would treat as more than one word, a command or a substitution if they were left bare. */
+const HOSTILE_WORDS: readonly string[] = [
+  '',
+  'a b',
+  "it's",
+  "'",
+  "''",
+  '$(x)',
+  '${HOME}',
+  '$HOME',
+  '`x`',
+  'a;b',
+  'a|b',
+  'a&b',
+  'a>b',
+  'a<b',
+  'a\nb',
+  'a"b',
+  'a\\b',
+  '*',
+  '~',
+  '#x',
+  '!x',
+  '{a,b}',
+  '--flag=value with space',
+  `caf${String.fromCodePoint(0xe9)}`,
+]
+
+describe('launcher', () => {
+  test('shQuote leaves a plain word bare and single-quotes any other, writing a quote as four characters', () => {
+    expect(shQuote('cadre-be')).toBe('cadre-be')
+    expect(shQuote('.cadre/be/.runtime/settings.json')).toBe('.cadre/be/.runtime/settings.json')
+    expect(shQuote('a b')).toBe("'a b'")
+    expect(shQuote("it's")).toBe("'it'\\''s'")
+    expect(shQuote('$(x)')).toBe("'$(x)'")
+    expect(shQuote('')).toBe("''")
+  })
+
+  test('a shell reads shQuote of any hostile word back as that one word', () => {
+    for (const word of HOSTILE_WORDS) {
+      expect(shellWords(shQuote(word))).toEqual([word])
+    }
+  })
+
+  test('the shell reader refuses a bare metacharacter, so it can fail the launcher tests', () => {
+    expect(isRefused('a;b')).toBe(true)
+    expect(isRefused('$(x)')).toBe(true)
+    expect(isRefused("'open")).toBe(true)
+    expect(isRefused("a 'b c' d\\'e \"f g\"")).toBe(false)
+    expect(shellWords("a 'b c' d\\'e \"f g\"")).toEqual(['a', 'b c', "d'e", 'f g'])
+  })
+
+  test('the launcher of the BE is the shebang, two comment lines, set -eu, cd to the top level and exec claude', () => {
+    const be = templateRole('be')
+
+    expect(launcherText(be, scopeOf(be, 'gsd', [be]))).toBe(
+      [
+        '#!/bin/sh',
+        '# cadre launcher for role be. Provisional (Phase 2): Phase 3 adds the claude version check',
+        '# and renders .cadre/be/.runtime/ before it starts the session.',
+        'set -eu',
+        'cd "$(git rev-parse --show-toplevel)"',
+        `exec claude ${BE_FLAGS} -- "$(cat .cadre/be/kickoff.txt)"`,
+        '',
+      ].join('\n'),
+    )
+  })
+
+  test('the words of the exec line are claude, the flags of the scope one by one, --, and the kickoff text', () => {
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const scope = scopeOf(role, framework, TEMPLATE_ROLES)
+
+        expect(execWords(launcherText(role, scope))).toEqual([
+          'exec',
+          'claude',
+          ...scope.flags,
+          '--',
+          `$(cat .cadre/${role.id}/kickoff.txt)`,
+        ])
+      }
+    }
+  })
+
+  test('on the strict MCP route the last flag word is --strict-mcp-config, before the --', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', [be], { mcpRoute: 'strict' })
+    const words = execWords(launcherText(be, scope))
+
+    expect(words.slice(-3)).toEqual(['--strict-mcp-config', '--', '$(cat .cadre/be/kickoff.txt)'])
+  })
+
+  test('a flag that holds a space, a quote or a dollar stays one word', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', [be])
+    const hostile: CompiledScope = { ...scope, flags: [...scope.flags, '--add-dir', "x y'$(z);`"] }
+
+    expect(execWords(launcherText(be, hostile))).toEqual([
+      'exec',
+      'claude',
+      ...scope.flags,
+      '--add-dir',
+      "x y'$(z);`",
+      '--',
+      '$(cat .cadre/be/kickoff.txt)',
+    ])
+  })
+
+  test('a role id with a space, a quote or a dollar cannot add a command', () => {
+    const id = "x y'$(z);`"
+    const role = templateRole('be', { id })
+    const text = launcherText(role, scopeOf(role, 'gsd', [role]))
+    const lines = text.split('\n')
+    const kickoffPath = `.cadre/${id}/kickoff.txt`
+
+    expect(lines).toHaveLength(7)
+    expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
+    expect(lines.slice(3, 5)).toEqual(['set -eu', 'cd "$(git rev-parse --show-toplevel)"'])
+    expect(execWords(text).slice(-2)).toEqual(['--', `$(cat ${shQuote(kickoffPath)})`])
+  })
+
+  test('a role id with a line break cannot leave the comment lines or the quotes', () => {
+    const id = 'x\nrm -rf ~'
+    const role = templateRole('be', { id })
+    const text = launcherText(role, scopeOf(role, 'gsd', [role]))
+    const lines = text.split('\n')
+
+    expect(lines.slice(0, 5).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'c'])
+    expect(lines[1]).toBe(
+      '# cadre launcher for role xrm -rf ~. Provisional (Phase 2): Phase 3 adds the claude version check',
+    )
+    expect(execWords(text)).toContain(`.cadre/${id}/.runtime/settings.json`)
+  })
+
+  test('a title never reaches the launcher', () => {
+    const be = templateRole('be', { title: '$(evil) `x`; rm -rf ~' })
+    const text = launcherText(be, scopeOf(be, 'gsd', [be]))
+
+    expect(text).not.toContain('evil')
+    expect(text).not.toContain('rm -rf')
+  })
+
+  test('the launcher holds no absolute user path and no variable reference, whatever the role and framework', () => {
+    const problems: string[] = []
+    for (const framework of FRAMEWORKS) {
+      for (const role of TEMPLATE_ROLES) {
+        const text = launcherText(role, scopeOf(role, framework, TEMPLATE_ROLES))
+        const found = leaks(text, [...ABSOLUTE_PATH_MARKERS, '${'])
+        problems.push(...found.map(needle => `${framework} / ${role.id}: ${needle}`))
+      }
+    }
+
+    expect(problems).toEqual([])
   })
 })
