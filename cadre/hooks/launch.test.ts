@@ -17,7 +17,7 @@ import { compileScope } from './scope'
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
 
-/** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry; `over` changes the fields it names. */
+/** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry; `over` changes named fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
   return {
     root: '/repo',
@@ -261,6 +261,16 @@ describe('launch render', () => {
     expect(Object.keys(plan.settings)).not.toContain('env')
   })
 
+  test('an env value the user object only inherits is not the value of the user settings and is not rendered', () => {
+    const role = templateRole('pm', { carry: CARRY_ALL })
+    const scope = compileScope(role, context())
+    const inherited = Object.create({ JIRA_URL: 'SENTINEL_SECRET_VALUE' })
+    const plan = launchPlan(role, scope, carrier({ env: inherited }))
+
+    expect(Object.keys(plan.settings)).not.toContain('env')
+    expect(JSON.stringify(plan)).not.toContain('SENTINEL_SECRET_VALUE')
+  })
+
   test('a value the role does not carry, or the user does not have, is not rendered', () => {
     const scope = compileScope(templateRole('pm'), context())
     const notCarried = launchPlan(templateRole('pm'), scope, carrier())
@@ -468,6 +478,16 @@ describe('runtimeDeny', () => {
     })
   })
 
+  test('a role with Bash is not warned about the repo path, since its template holds no code-dir deny', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+
+    expect(runtimeDeny(role, scope, user({ root: '/w/a(b)', codeDirs: ['src'] }))).toEqual({
+      deny: scope.settings.permissions.deny,
+      warnings: [],
+    })
+  })
+
   test('a repo path with a character a permission rule cannot hold keeps the any-depth denies and warns', () => {
     const role = templateRole('pm')
     const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
@@ -481,7 +501,7 @@ describe('runtimeDeny', () => {
     })
   })
 
-  test('a repo path that is not plain and canonical is unsafe: a space, a dot segment, a double or trailing slash', () => {
+  test('a repo path that is not plain and canonical is unsafe: a space, a dot segment, a double slash', () => {
     const role = templateRole('pm')
     const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
     const roots = ['/w/a b', '/w/a/../b', '/w/a/./b', '/w/a//b', '/repo/', '/', '/w/é']
