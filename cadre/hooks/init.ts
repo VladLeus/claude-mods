@@ -492,8 +492,9 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
 
 /**
  * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan and of the
- * setup scan, in that order, each text once where it first comes. Init prints them right after the scan summary, and
- * 02-13's final review shows the same list again next to the plan.
+ * setup scan, then the guard-source warning of the setup (guardSourceWarnings, A2), in that order, each text once where
+ * it first comes. Init prints them right after the scan summary, and 02-13's final review shows the same list again
+ * next to the plan.
  */
 export function scanWarnings(locations: InitLocations, gathered: Gathered): string[] {
   const all = [
@@ -501,6 +502,7 @@ export function scanWarnings(locations: InitLocations, gathered: Gathered): stri
     ...gathered.facts.facts.warnings,
     ...gathered.repo.warnings,
     ...gathered.setup.warnings,
+    ...guardSourceWarnings(gathered.setup),
   ]
 
   return Array.from(new Set(all))
@@ -1267,6 +1269,23 @@ export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */
 const SECRET_READ_GUARD = /^gsd-secret-read-guard\.(?:js|cjs|sh)$/
+
+/** The warning init prints when the GSD secret read guard is registered only in local settings (A2, D-62). */
+export const GUARD_SOURCE_WARNING =
+  'the GSD secret read guard is registered only in local settings, so it will not load in role sessions yet'
+
+/**
+ * The guard-source warning of a setup (A2, D-62): GUARD_SOURCE_WARNING when the GSD secret read guard is registered
+ * only in local settings, else none. Local settings do not load under --setting-sources project, and launch renders
+ * only user-settings hooks until Phase 3, so a guard registered only in local settings is named in carry.hooks but
+ * does not load in a role session; a guard in project settings does load, and one in user settings is rendered.
+ */
+export function guardSourceWarnings(setup: SetupScan): string[] {
+  const sources = setup.hooks.filter(hook => SECRET_READ_GUARD.test(hook.script)).map(hook => hook.source)
+  if (sources.length === 0) return []
+
+  return sources.every(source => source === 'local') ? [GUARD_SOURCE_WARNING] : []
+}
 
 /**
  * The env variable names roles carry (D-60): none when the scan found no name, else the answer to the one env question
