@@ -18,7 +18,7 @@ import type {
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
-import { MODEL_EFFORT_OPTIONS } from './assign'
+import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
   ADJUST_DISMISSED_REASON,
@@ -1375,11 +1375,20 @@ describe('modelStep', () => {
     ])
   })
 
-  test('a pinned model id, a model alone or an unknown effort is asked again', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'claude-opus-5-5 high', 'opus', 'opus + high'])
+  test('a model that is no family alias prints the refusal line and is asked again (A4)', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'high high', 'opus + high'])
     const modelled = valueOf(await modelStep(run.io, roles))
-    expect(modelled.every(role => role.model === 'opus' && role.effort === 'high')).toBe(true)
+    expect(modelled.map(role => [role.model, role.effort])).toEqual(roles.map(() => ['opus', 'high']))
     expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL, MODEL_ALL, MODEL_ALL])
+    expect(run.logged).toEqual([modelEffortRefusal('sonet + high'), modelEffortRefusal('high high')])
+  })
+
+  test('MAX_ASKS refused models, a pinned id among them, cancel with the reason after the refusal lines', async () => {
+    const refused = ['claude-opus-5-5 high', 'opus', 'sonet high']
+    const run = memIo(memWorld({}), ['Same for all roles', ...refused, 'opus + high'])
+    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
+    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL, MODEL_ALL, MODEL_ALL])
+    expect(run.logged).toEqual(refused.map(answer => modelEffortRefusal(answer)))
   })
 
   test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', async () => {
