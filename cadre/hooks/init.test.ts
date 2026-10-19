@@ -143,7 +143,7 @@ import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan,
 import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
 import { AUTOPILOT_THRESHOLD, parseRoleJson, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
-import { autopilotReply, scanRepo } from './scan'
+import { autopilotReply, parseCadreState, scanRepo } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 import {
@@ -2502,9 +2502,9 @@ const FULL_DIRS = {
 /** The package.json of FULL_DIRS: React is a dependency, so FE is kept. */
 const FULL_FILES = { '/repo/package.json': '{"dependencies":{"react":"18.0.0"}}' }
 
-/** The scans of a run in `world`, gathered as init gathers them when ~/.claude.json is not read. */
-async function scansOf(world: MemWorld): Promise<Gathered> {
-  return gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, false)
+/** The scans of a run in `world`, gathered as init gathers them; ~/.claude.json is read only when it is allowed. */
+async function scansOf(world: MemWorld, isClaudeJsonAllowed = false): Promise<Gathered> {
+  return gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, isClaudeJsonAllowed)
 }
 
 /** The roles init keeps for `world` with the INIT_ANSWERS defaults: the template proposal of its scan, unchanged. */
@@ -2512,7 +2512,10 @@ async function defaultRoles(world: MemWorld): Promise<readonly RoleSpec[]> {
   return proposeRoles((await scansOf(world)).repo).roles
 }
 
-/** The repo state the init fixtures plan: the built-in default, committed definitions, the git root, cadre 0.2.0. */
+/**
+ * The repo state the init fixtures plan: the built-in default, committed definitions, the git root, cadre 0.2.0 and
+ * no consent to read ~/.claude.json.
+ */
 function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): CadreState {
   return {
     schema: 1,
@@ -2521,18 +2524,22 @@ function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): Ca
     gitPolicy: 'definitions',
     roles: roles.map(role => role.id),
     launchStart: { kind: 'git-root' },
+    readUserMcp: false,
     ...over,
   }
 }
 
-/** The files init plans for these roles in `world`: every scope compiled on the state's default, none attended. */
+/**
+ * The files init plans for these roles in `world`: every scope compiled on the state's default, none attended, from
+ * scans that read ~/.claude.json only when the state records the consent (A1).
+ */
 async function plannedFiles(
   world: MemWorld,
   roles: readonly RoleSpec[],
   over: Partial<CadreState> = {},
 ): Promise<DesiredFile[]> {
-  const gathered = await scansOf(world)
   const state = stateOf(roles, over)
+  const gathered = await scansOf(world, state.readUserMcp)
 
   return desiredFiles({ roles, scopes: scopesFor(roles, state.framework, gathered, []), state, only: null })
 }
@@ -2682,6 +2689,7 @@ describe('init plan', () => {
       hunks,
       repo: scans.repo,
       locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
     }
     const result = await planStep(memIo(gitWorld(), {}).io, input)
     expect(result.state).toEqual(stateOf(team))
@@ -2709,6 +2717,7 @@ describe('init plan', () => {
       hunks: [],
       repo: scans.repo,
       locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
     })
     const desired = desiredFiles({ roles: team, scopes, state: result.state, only: null })
     const paths = [...planReadPaths(desired), '.gitignore'].map(path => `/repo/${path}`)
@@ -2732,6 +2741,7 @@ describe('init plan', () => {
       hunks: [],
       repo: scans.repo,
       locations: DEFAULT_LOCATIONS,
+      readUserMcp: false,
     }
     const desired = desiredFiles({ roles: team, scopes, state: stateOf(team, { cadreVersion: 'unknown' }), only: null })
     expect(desired.find(file => file.path === '.cadre/cadre.json')?.content).toContain('"cadreVersion": "unknown"')
@@ -2744,6 +2754,29 @@ describe('init plan', () => {
     const known = await planStep(memIo(gitWorld({ files }), {}).io, input)
     expect(known.state.cadreVersion).toBe('0.2.0')
     expect(manifestKind(known.plan)).toBe('change')
+  })
+
+  test('planStep records the ~/.claude.json consent answer in the state and the planned cadre.json (A1)', async () => {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(gitWorld())
+    const scopes = scopesFor(team, 'none', scans, [])
+    for (const readUserMcp of [true, false]) {
+      const result = await planStep(memIo(gitWorld(), {}).io, {
+        roles: team,
+        repoDefault: 'none',
+        policy: 'definitions',
+        launchStart: { kind: 'git-root' },
+        scopes,
+        hunks: [],
+        repo: scans.repo,
+        locations: DEFAULT_LOCATIONS,
+        readUserMcp,
+      })
+      expect([readUserMcp, result.state.readUserMcp]).toEqual([readUserMcp, readUserMcp])
+      const desired = desiredFiles({ roles: team, scopes, state: result.state, only: null })
+      const stored = parseCadreState(desired.find(file => file.path === '.cadre/cadre.json')?.content ?? '')
+      expect([readUserMcp, stored?.readUserMcp]).toEqual([readUserMcp, readUserMcp])
+    }
   })
 
   test('initReplyText puts the plan lines between the command and the policy, the start and the note', async () => {
@@ -2815,6 +2848,24 @@ describe('init plan', () => {
     expect(kinds.size).toBe(files.length + 2)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
     expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${files.length + 2} leave, 0 conflict, 0 hunks`)
+  })
+
+  test('init stores the consent answer: over a stored yes, yes leaves cadre.json and no changes it (A1)', async () => {
+    const team = await defaultRoles(gitWorld())
+    const files = await plannedFiles(gitWorld(), team, { readUserMcp: true })
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/.cadre': [] },
+      files: { ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files) },
+    })
+    const cases: readonly (readonly [string, string])[] = [
+      ['Yes, read names only', 'leave'],
+      ['No, skip it', 'change'],
+    ]
+    for (const [answer, kind] of cases) {
+      const run = memIo(world, { ...INIT_ANSWERS, 'Read ~/.claude.json': answer })
+      const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+      expect([answer, kinds.get('.cadre/cadre.json')]).toEqual([answer, kind])
+    }
   })
 
   test('a file edited since the last run is a conflict, with the new version planned beside it (D-67)', async () => {
@@ -3028,6 +3079,7 @@ describe('reviewStep', () => {
       hunks: [],
       repo: gathered.repo,
       locations,
+      readUserMcp: false,
     })
     const expected = [
       'Roles:',
@@ -3320,6 +3372,8 @@ describe('runRegen', () => {
   test('a cadre.json that cannot be read, is too large or is not valid state refuses (T-02-36)', async () => {
     const world = await regenWorld()
     const state = stateOf(team)
+    // The object rest leaves the consent answer out, as a cadre.json written before A1 would.
+    const { readUserMcp, ...withoutConsent } = state
     const worlds: readonly MemWorld[] = [
       withFiles(world, { [STATE]: '{' }),
       withFiles(world, { [STATE]: stableJson({ ...state, schema: 2 }) }),
@@ -3328,6 +3382,8 @@ describe('runRegen', () => {
       withFiles(world, { [STATE]: 'x'.repeat(MAX_READ_BYTES + 1) }),
       { ...world, unknownPaths: [STATE] },
       { ...world, realPaths: { [STATE]: '/elsewhere/cadre.json' } },
+      withFiles(world, { [STATE]: stableJson(withoutConsent) }),
+      withFiles(world, { [STATE]: stableJson({ ...state, readUserMcp: 'yes' }) }),
     ]
     for (const [index, bad] of worlds.entries()) {
       const run = memIo(bad, {})
@@ -3395,6 +3451,19 @@ describe('runRegen', () => {
     expect([...kinds.keys()]).toEqual(expected)
     expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(5)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test('a stored consent re-reads ~/.claude.json once, so an unchanged BE keeps its user MCP deny (A1)', async () => {
+    const base = gitWorld({ files: { '/home/u/.claude.json': '{"mcpServers":{"linear":{"command":"x"}}}' } })
+    const world = await regenWorld(team, { readUserMcp: true }, base)
+    expect(world.files['/repo/.cadre/be/settings.json']).toContain('mcp__linear')
+    const run = memIo(world, {})
+    const kinds = opKinds(await runRegen(run.io, { id: 'be', dryRun: true }))
+    expect([kinds.get('.cadre/be/settings.json'), kinds.get('.cadre/be/ROLE.md')]).toEqual(['leave', 'leave'])
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+    expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
   })
 
   test('every manifest entry outside BE, its launcher and the index is carried, with no op (D-68)', async () => {

@@ -1029,6 +1029,7 @@ function stateText(over: Readonly<Record<string, unknown>> = {}): string {
     gitPolicy: 'definitions',
     roles: ['be'],
     launchStart: { kind: 'git-root' },
+    readUserMcp: false,
   }
 
   return JSON.stringify({ ...state, ...over })
@@ -1185,7 +1186,29 @@ describe('parseCadreState', () => {
       gitPolicy: 'definitions',
       roles: ['be', 'security'],
       launchStart: { kind: 'git-root' },
+      readUserMcp: false,
     })
+  })
+
+  test('the consent answer for ~/.claude.json is read back, true or false (A1)', () => {
+    for (const readUserMcp of [true, false]) {
+      expect(parseCadreState(stateText({ readUserMcp }))?.readUserMcp).toBe(readUserMcp)
+    }
+  })
+
+  test('a missing consent answer, or one that is not a boolean, makes the state null (A1)', () => {
+    const withoutConsent = {
+      schema: 1,
+      cadreVersion: '0.2.0',
+      framework: 'gsd',
+      gitPolicy: 'definitions',
+      roles: ['be'],
+      launchStart: { kind: 'git-root' },
+    }
+    expect(parseCadreState(JSON.stringify(withoutConsent))).toBeNull()
+    for (const readUserMcp of [null, 'true', 1, 0]) {
+      expect(parseCadreState(stateText({ readUserMcp }))).toBeNull()
+    }
   })
 
   test('the launch start is read back: the git root, the folder it is run from, or a folder in the repo (A2)', () => {
@@ -1234,6 +1257,7 @@ describe('parseCadreState', () => {
       gitPolicy: 'definitions',
       roles: ['be'],
       launchStart: { kind: 'git-root' },
+      readUserMcp: false,
     })
   })
 
@@ -1300,6 +1324,7 @@ describe('existing .cadre', () => {
     gitPolicy: 'definitions',
     roles: ['be'],
     launchStart: { kind: 'git-root' },
+    readUserMcp: false,
   }
 
   /** The scan of a repo whose `.cadre` holds these files; a name in `files` is listed. */

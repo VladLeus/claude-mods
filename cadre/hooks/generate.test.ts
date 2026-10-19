@@ -83,6 +83,7 @@ function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState 
     gitPolicy: 'definitions',
     roles: team.map(role => role.id),
     launchStart: { kind: 'git-root' },
+    readUserMcp: false,
   }
 }
 
@@ -742,16 +743,18 @@ describe('role documents', () => {
     expect(cadreJsonText({ ...state, framework: null })).toContain('"framework": null')
   })
 
-  test('cadreJsonText round-trips through parseCadreState with every launch start (A2)', () => {
+  test('cadreJsonText round-trips through parseCadreState with every launch start and consent answer (A2, A1)', () => {
     const state = stateOf(TEMPLATE_ROLES, 'gsd')
     const starts: readonly CadreState['launchStart'][] = [
       { kind: 'git-root' },
       { kind: 'here' },
       { kind: 'dir', path: 'apps/web' },
     ]
-    for (const launchStart of starts) {
-      const text = cadreJsonText({ ...state, launchStart })
-      expect(parseCadreState(text)).toEqual({ ...state, launchStart })
+    for (const readUserMcp of [false, true]) {
+      for (const launchStart of starts) {
+        const text = cadreJsonText({ ...state, launchStart, readUserMcp })
+        expect(parseCadreState(text)).toEqual({ ...state, launchStart, readUserMcp })
+      }
     }
   })
 })
