@@ -895,9 +895,12 @@ export const FRAMEWORK_QUESTION_PREFIX = 'Which framework do the roles use?'
 /** The one follow-up question after `Same for all roles` (D-86). */
 export const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
 
-/** The framework question for one role, by its title, after `Per role` (D-73). */
-export function frameworkRoleQuestion(title: string): string {
-  return `Framework for ${title}?`
+/**
+ * The framework question for one role after `Per role` (D-73): its title and its id, since the id tells apart roles
+ * with the same title (A6).
+ */
+export function frameworkRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
+  return `Framework for ${role.title} (${role.id})?`
 }
 
 /**
@@ -984,7 +987,7 @@ async function askFrameworks(
 
   const framed: RoleSpec[] = []
   for (const role of roles) {
-    const framework = await askChoice(io, frameworkRoleQuestion(role.title), spec, parse)
+    const framework = await askChoice(io, frameworkRoleQuestion(role), spec, parse)
     if (framework === null) return cancelled(FRAMEWORK_DISMISSED_REASON)
     framed.push(withFramework(role, framework))
   }
@@ -1064,9 +1067,12 @@ export const MODEL_MODE_QUESTION = 'Model and effort: same for all roles, or per
 /** The one model question after `Same for all roles` (D-86). */
 const MODEL_ALL_QUESTION = 'Model and effort for all roles?'
 
-/** The model question for one role, by its title, after `Per role` (D-52). */
-function modelRoleQuestion(title: string): string {
-  return `Model and effort for ${title}?`
+/**
+ * The model question for one role after `Per role` (D-52): its title and its id, since the id tells apart roles with
+ * the same title (A6).
+ */
+function modelRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
+  return `Model and effort for ${role.title} (${role.id})?`
 }
 
 /** Why init cancels when a model and effort question is dismissed or never answered with a model and effort (A1). */
@@ -1098,7 +1104,7 @@ export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise
 
   const modelled: RoleSpec[] = []
   for (const role of roles) {
-    const choice = await askChoice(io, modelRoleQuestion(role.title), spec, parseModelEffort)
+    const choice = await askChoice(io, modelRoleQuestion(role), spec, parseModelEffort)
     if (choice === null) return cancelled(MODEL_DISMISSED_REASON)
     modelled.push(withModel(role, choice))
   }
