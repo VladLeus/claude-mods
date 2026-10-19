@@ -15,7 +15,16 @@ import {
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
-import { answerFor, entry, INIT_ANSWERS, leaks, SECRET_FIXTURES, secretUserSettings, templateRole } from './testkit'
+import {
+  ABSOLUTE_PATH_MARKERS,
+  answerFor,
+  entry,
+  INIT_ANSWERS,
+  leaks,
+  SECRET_FIXTURES,
+  secretUserSettings,
+  templateRole,
+} from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -1478,16 +1487,21 @@ describe('Phase 2 faked-host matrix', () => {
         '/home/u/.claude.json': JSON.stringify(claudeJson),
       },
       ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: sentinel, parts: [] }],
+      tools: [{ name: 'mcp__sentry__issues', description: apiKey, mcp: true }],
+      commands: [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: bearer }],
       answers: { ...INIT_ANSWERS, 'Read ~/.claude.json': 'Yes, read names only' },
     })
     // The world holds every fixture, so a clean reply means the scans dropped them, not that they were never there.
-    const held = JSON.stringify([world.settings, world.files, world.ancestors])
+    const held = JSON.stringify([world.settings, world.files, world.ancestors, world.tools, world.commands])
     expect(leaks(held, SECRET_FIXTURES)).toEqual([...SECRET_FIXTURES])
     const log = newLog()
     fakeHost(on, world, log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
-    expect(leaks(`${out.text}\n${log.logs.join('\n')}`, [...SECRET_FIXTURES, '/home/u'])).toEqual([])
+    expect(log.logs.join('\n')).toContain('MCP servers: linear, sentry')
+    expect(log.logs.join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
+    const shown = [out.text, ...log.logs, ...log.asks, ...log.askOptions.flat()].join('\n')
+    expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })
