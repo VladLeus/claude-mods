@@ -24,6 +24,7 @@ import {
   detectRefusal,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
+  isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
   utf8Bytes,
@@ -986,7 +987,7 @@ export const LAUNCH_DIR_ROUNDS_REASON = `No usable launcher folder after ${MAX_A
 /** The problem with a typed folder that isSafeRelativePath refuses. */
 const UNSAFE_LAUNCH_DIR = 'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /'
 
-/** The problem with a typed folder that is not a plain folder of the repo. */
+/** The problem with a typed folder whose real path is not a folder inside the repo. */
 const NOT_A_LAUNCH_DIR = 'it is not a folder in this repo'
 
 /** What launchStartStep gives: where the launchers start, or why nothing was chosen. */
@@ -1008,13 +1009,14 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
 }
 
 /**
- * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath and
- * stat as a folder of the repo that is not a link, since a link could lead out of the repo.
+ * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath, and
+ * the folder's real path must lie inside the repo (isDirInsideRoot), so a link anywhere in the path that leads out is
+ * refused, and so is a folder whose real path the host could not give.
  */
 async function launchDirProblem(io: InitIo, root: string, path: string): Promise<string | null> {
   if (!isSafeRelativePath(path)) return UNSAFE_LAUNCH_DIR
   const stat = await io.stat(`${root}/${path}`)
-  if (stat === null || stat.kind !== 'dir' || stat.isLink) return NOT_A_LAUNCH_DIR
+  if (!isDirInsideRoot(stat, root)) return NOT_A_LAUNCH_DIR
 
   return null
 }
