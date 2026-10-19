@@ -9,12 +9,21 @@ import type {
   RoleSpec,
   ScopeContext,
   ScopeRule,
+  SettingsSource,
   SetupScan,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import type { ChainRole } from './roles'
-import { compileScope, infraViolations, isSafeDir, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
+import {
+  compileScope,
+  infraViolations,
+  isContextMonitorScript,
+  isSafeDir,
+  lintDenyPattern,
+  roleOwnPaths,
+  scopeCardLines,
+} from './scope'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -39,9 +48,9 @@ function context(over: Partial<ScopeContext> = {}): ScopeContext {
   }
 }
 
-/** A hook script the user's settings register. */
-function hook(script: string): HookScript {
-  return { script, event: 'PostToolUse', source: 'user' }
+/** A hook script the settings of `source` register, the user settings unless named. */
+function hook(script: string, source: SettingsSource = 'user'): HookScript {
+  return { script, event: 'PostToolUse', source }
 }
 
 /** The card rule with exactly this text, or undefined when the card has none. */
@@ -536,8 +545,79 @@ describe('scope rules', () => {
     const card = compileScope(role, context({ setup: scanned })).card
 
     expect(card.hooks.loaded).toEqual(['gsd-secret-read-guard.js'])
+    expect(card.hooks.loadedByProject).toEqual([])
     expect(card.hooks.notLoaded).toEqual(['gsd-context-monitor.js', 'gsd-statusline.js'])
   })
+
+  test('the card splits the scanned hooks by source: carried, loaded by project settings, not loaded (A1)', () => {
+    const scanned = emptySetupScan({
+      hooks: [
+        hook('gsd-secret-read-guard.js'),
+        hook('user-only.sh'),
+        hook('project-only.sh', 'project'),
+        hook('local-only.sh', 'local'),
+        hook('both.sh'),
+        hook('both.sh', 'project'),
+      ],
+    })
+    const role = templateRole('pm', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
+    const card = compileScope(role, context({ setup: scanned })).card
+
+    expect(card.hooks).toEqual({
+      loaded: ['gsd-secret-read-guard.js'],
+      loadedByProject: ['both.sh', 'project-only.sh'],
+      notLoaded: ['local-only.sh', 'user-only.sh'],
+    })
+    expect(scopeCardLines(card)).toContain(
+      '  hooks loaded: gsd-secret-read-guard.js; loaded by project settings: both.sh, project-only.sh; ' +
+        'not loaded: local-only.sh, user-only.sh',
+    )
+  })
+
+  test(
+    'a context monitor registered in project settings gets a warning rule before the MCP route rule; ' +
+      'one in user or local settings does not (A1, D-62)',
+    () => {
+      const inProject = emptySetupScan({
+        hooks: [hook('gsd-context-monitor.js', 'project'), hook('gsd-context-monitor-v2.js', 'project')],
+      })
+      const elsewhere = emptySetupScan({
+        hooks: [hook('gsd-context-monitor.js'), hook('gsd-context-monitor.js', 'local')],
+      })
+      const scope = compileScope(templateRole('pm'), context({ setup: inProject }))
+      const quiet = compileScope(templateRole('pm'), context({ setup: elsewhere }))
+
+      expect(scope.card.rules.slice(-4)).toEqual([
+        { text: GSD_NO_BASH_RULE, enforcement: 'none' },
+        {
+          text:
+            'WARNING: gsd-context-monitor-v2.js is registered in project settings and loads in every role; ' +
+            'it conflicts with the autopilot handoff (D-62)',
+          enforcement: 'none',
+        },
+        {
+          text:
+            'WARNING: gsd-context-monitor.js is registered in project settings and loads in every role; ' +
+            'it conflicts with the autopilot handoff (D-62)',
+          enforcement: 'none',
+        },
+        { text: 'MCP route: merged (provisional; Phase 3 decides)', enforcement: 'none' },
+      ])
+      expect(quiet.card.rules.filter(item => item.text.includes('registered in project settings'))).toEqual([])
+    },
+  )
+
+  test(
+    'isContextMonitorScript is whether a script name starts with gsd-context-monitor, whatever its letter case (D-62)',
+    () => {
+      expect(isContextMonitorScript('gsd-context-monitor.js')).toBe(true)
+      expect(isContextMonitorScript('GSD-Context-Monitor.JS')).toBe(true)
+      expect(isContextMonitorScript('gsd-context-monitor-v2.js')).toBe(true)
+      expect(isContextMonitorScript('gsd-statusline.js')).toBe(false)
+      expect(isContextMonitorScript('my-gsd-context-monitor.js')).toBe(false)
+      expect(isContextMonitorScript('')).toBe(false)
+    },
+  )
 
   test('a hand-set bypassPermissions leads the card with a warning and shows in the settings and the flags', () => {
     const scope = compileScope(templateRole('pm', { permissionMode: 'bypassPermissions' }), context())
@@ -995,7 +1075,7 @@ describe('scopeCardLines', () => {
       '  skills: none',
       '  MCP servers: none',
       '  not given: skills: my-skill; MCP: jira',
-      '  hooks loaded: gsd-secret-read-guard.js; not loaded: gsd-context-monitor.js',
+      '  hooks loaded: gsd-secret-read-guard.js; loaded by project settings: none; not loaded: gsd-context-monitor.js',
       '  rules:',
       `    [hard] ${PLUGIN_RULE}`,
       '    [hard] No Bash tool (denied)',

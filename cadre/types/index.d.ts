@@ -646,7 +646,17 @@ export type ScopeCard = {
   readonly skills: readonly string[]
   readonly mcp: readonly string[]
   readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
-  readonly hooks: { readonly loaded: readonly string[]; readonly notLoaded: readonly string[] }
+  /**
+   * The scanned hook scripts by what loads them in a role session (D-62, A1): `loaded` are the hooks the role carries;
+   * `loadedByProject` are scripts registered in project settings that are not carried, which load in every role
+   * because the launcher runs `--setting-sources project`; `notLoaded` are the user and local scripts that are neither.
+   * Each list is sorted, once each.
+   */
+  readonly hooks: {
+    readonly loaded: readonly string[]
+    readonly loadedByProject: readonly string[]
+    readonly notLoaded: readonly string[]
+  }
   readonly rules: readonly ScopeRule[]
   readonly chain: readonly string[]
   /**

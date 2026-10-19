@@ -34,6 +34,17 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
  */
 export const MEMORY_PATTERN = '<config dir>/cadre/<repo>-<hash8>/'
 
+/** The script name prefix of the hook that fights autopilot's handoff, which no role ever gets (D-62). */
+const CONTEXT_MONITOR_PREFIX = 'gsd-context-monitor'
+
+/**
+ * Whether a hook script is the GSD context monitor, which fights autopilot's handoff (D-62): its name starts with
+ * `gsd-context-monitor`, whatever its letter case.
+ */
+export function isContextMonitorScript(script: string): boolean {
+  return script.toLowerCase().startsWith(CONTEXT_MONITOR_PREFIX)
+}
+
 /** What a top-level code folder must look like for a path rule to be written: no glob character, space or paren. */
 const SAFE_DIR_PATTERN = /^[A-Za-z0-9._-]+$/
 
@@ -445,6 +456,23 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 }
 
 /**
+ * The warnings of a GSD context monitor registered in project settings (D-62, A1): it loads in every role, since the
+ * launcher runs --setting-sources project, and cadre's settings cannot remove it. One rule per script, sorted; none
+ * when no project hook is the monitor.
+ */
+function projectMonitorRules(setup: SetupScan): ScopeRule[] {
+  const monitors = setup.hooks.filter(hook => hook.source === 'project' && isContextMonitorScript(hook.script))
+
+  return sortedUnique(monitors.map(hook => hook.script)).map(script => {
+    const text =
+      `WARNING: ${shown(script)} is registered in project settings and loads in every role; ` +
+      'it conflicts with the autopilot handoff (D-62)'
+
+    return rule(text, 'none')
+  })
+}
+
+/**
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
  * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none (ROLE-06).
  */
@@ -464,6 +492,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
     rule(`Permission mode: ${role.permissionMode}`, 'hard'),
     ...attendedRules(role, ctx),
+    ...projectMonitorRules(ctx.setup),
     rule(`MCP route: ${ctx.mcpRoute} (provisional; Phase 3 decides)`, 'none'),
   ]
 }
@@ -474,7 +503,11 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
  */
 function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
-  const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(script => !loaded.includes(script))
+  const byProject = sortedUnique(ctx.setup.hooks.filter(hook => hook.source === 'project').map(hook => hook.script))
+  const loadedByProject = byProject.filter(script => !loaded.includes(script))
+  const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(
+    script => !loaded.includes(script) && !byProject.includes(script),
+  )
 
   return {
     roleId: role.id,
@@ -488,7 +521,7 @@ function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], 
     skills: sortedUnique(role.skills),
     mcp: sortedUnique(role.mcp),
     notGiven: { skills: notGivenSkills(role, ctx, plugins), mcp: notGivenMcp(role, ctx) },
-    hooks: { loaded, notLoaded },
+    hooks: { loaded, loadedByProject, notLoaded },
     rules: rulesFor(role, ctx, plugins, deny),
     chain: chainLines(ctx.roles),
     memoryPattern: `${MEMORY_PATTERN}${role.id}/`,
@@ -582,19 +615,22 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
 
 /**
  * The lines of a scope card, as init shows it and ROLE.md holds it (ROLE-06): the title, the framework with the model,
- * effort and permission mode, the skills and MCP servers, what the role was not given, the hooks loaded and not loaded,
- * each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the memory folder. Every line passes
- * through reportText, so a hostile value cannot add a line or hide text.
+ * effort and permission mode, the skills and MCP servers, what the role was not given, the hooks loaded, loaded by
+ * project settings and not loaded, each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the
+ * memory folder. Every line passes through reportText, so a hostile value cannot add a line or hide text.
  */
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
+  const hooks =
+    `  hooks loaded: ${cardList(card.hooks.loaded)}; ` +
+    `loaded by project settings: ${cardList(card.hooks.loadedByProject)}; not loaded: ${cardList(card.hooks.notLoaded)}`
   const lines = [
     `Scope card: ${card.title} (${card.roleId})`,
     `  framework: ${framework}; model: ${card.model} + ${card.effort}; permission mode: ${card.permissionMode}`,
     `  skills: ${cardList(card.skills)}`,
     `  MCP servers: ${cardList(card.mcp)}`,
     `  not given: skills: ${cardList(card.notGiven.skills)}; MCP: ${cardList(card.notGiven.mcp)}`,
-    `  hooks loaded: ${cardList(card.hooks.loaded)}; not loaded: ${cardList(card.hooks.notLoaded)}`,
+    hooks,
     '  rules:',
     ...card.rules.map(item => `    [${item.enforcement}] ${item.text}`),
     '  decisions:',

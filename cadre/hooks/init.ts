@@ -1334,8 +1334,9 @@ async function carriedEnv(io: InitIo, names: readonly string[]): Promise<readonl
  * The carried settings step (D-60, D-62, D-84). When the user settings define env variables, one question lists their
  * names and asks which ones roles carry; with none, nothing is asked. Every role carries the same: the picked names,
  * never a value; `autoCompactWindow` and `statusLine` when the user settings set them; and the GSD secret read guard
- * when settings register it, the one hook carried, so no other hook reaches a role. A dismissal, or MAX_ASKS answers
- * that name no scanned variable, gives the cancel reason ENV_DISMISSED_REASON (A1). No env or settings value is read,
+ * when settings register it, the one hook carried from user settings; hooks registered in project settings load in
+ * every role regardless, and the card lists them as loaded by project settings. A dismissal, or MAX_ASKS answers that
+ * name no scanned variable, gives the cancel reason ENV_DISMISSED_REASON (A1). No env or settings value is read,
  * stored or printed (T-02-34); the roles it is given never change.
  */
 export async function carryStep(

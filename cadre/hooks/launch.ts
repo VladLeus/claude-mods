@@ -1,7 +1,7 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, isChangedByClean, sortedUnique } from './facts'
 import { shown } from './render'
-import { isSafeDir, lintDenyPattern, roleOwnPaths } from './scope'
+import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths } from './scope'
 import { mangledProjectDir } from './setup'
 
 /**
@@ -132,9 +132,6 @@ const DOTDOT_MESSAGE = 'a .. segment is not allowed in an absolute pattern'
 /** The warning when the repo path cannot be written into a rule, so the any-depth denies of the template stay. */
 const UNSAFE_ROOT_WARNING =
   'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth'
-
-/** The script name prefix of the hook that fights autopilot's handoff, which no role ever gets (D-62). */
-const CONTEXT_MONITOR_PREFIX = 'gsd-context-monitor'
 
 /** A token after an `@`: the `@` starts the text or follows white space, and the token runs to the next white space. */
 const IMPORT_TOKEN = /(?:^|\s)@(\S+)/g
@@ -545,11 +542,6 @@ function carriedEnv(role: RoleSpec, user: LaunchUser): Record<string, string> | 
   return entries.length === 0 ? null : Object.fromEntries(entries)
 }
 
-/** Whether a hook script is the context monitor, which fights autopilot's handoff (D-62), whatever its letter case. */
-function isContextMonitor(script: string): boolean {
-  return script.toLowerCase().startsWith(CONTEXT_MONITOR_PREFIX)
-}
-
 /** One carried hook command as the settings hold it; `timeout` only when the user set one. */
 type HookEntry = { readonly type: 'command'; readonly command: string; readonly timeout?: number }
 
@@ -565,7 +557,7 @@ function carriedHooks(role: RoleSpec, user: LaunchUser): Record<string, unknown>
   const wanted = new Set(role.carry.hooks)
   const events = new Map<string, Map<string | null, HookEntry[]>>()
   for (const hook of user.hooks) {
-    if (!wanted.has(hook.script) || isContextMonitor(hook.script)) continue
+    if (!wanted.has(hook.script) || isContextMonitorScript(hook.script)) continue
     const groups = events.get(hook.event) ?? new Map<string | null, HookEntry[]>()
     const matcher = hook.matcher === '' ? null : hook.matcher
     const list = groups.get(matcher) ?? []
