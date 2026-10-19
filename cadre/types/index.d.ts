@@ -664,7 +664,15 @@ export type HunkOp = {
   /** Repo-relative config file, such as `.planning/config.json`. */
   readonly file: string
   readonly key: string
+  /**
+   * Display text: a string value JSON-quoted, a number or boolean as itself; the write runs `command`, never this
+   * text.
+   */
   readonly before: string
+  /**
+   * Display text: a string value JSON-quoted, a number or boolean as itself; the write runs `command`, never this
+   * text.
+   */
   readonly after: string
   readonly isRequired: boolean
   readonly isAccepted: boolean
