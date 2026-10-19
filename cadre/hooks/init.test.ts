@@ -17,13 +17,16 @@ import type {
 import { detectAll } from './adapters'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
+  ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
   ADJUST_QUESTION,
+  ADJUST_ROUNDS_NOTE,
   adjustLoop,
   askChoice,
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   commandRefusal,
+  DESCRIBE_CANCELLED_REASON,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
   describeStep,
@@ -41,7 +44,9 @@ import {
   INIT_ROOT_UNKNOWN_REPLY,
   initGuard,
   installedFrameworks,
+  MAX_ADJUST_ROUNDS,
   MAX_PROPOSE_ATTEMPTS,
+  MAX_ROLE_ROUNDS,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
   pluginVersionOf,
@@ -50,6 +55,8 @@ import {
   portTextOf,
   proposalLines,
   resolvedFramework,
+  ROLE_ROUNDS_REASON,
+  ROLES_DISMISSED_REASON,
   ROLES_OPTIONS,
   ROLES_QUESTION,
   rolesStep,
@@ -58,7 +65,7 @@ import {
   scanWarningLines,
   scanWarnings,
 } from './init'
-import type { Gathered } from './init'
+import type { AdjustOutcome, Gathered, RolesState } from './init'
 import { recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
@@ -562,11 +569,23 @@ describe('runInit', () => {
     expect(events[3]).toBe(`ask ${ROLES_QUESTION}`)
   })
 
-  test('a dismissed roles question cancels init', async () => {
+  test('a dismissed roles question cancels init and prints why', async () => {
     const answers = Object.fromEntries(Object.entries(RUN_ANSWERS).filter(([key]) => key !== 'Use these roles?'))
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.asked).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
+    expect(run.logged.at(-1)).toBe(ROLES_DISMISSED_REASON)
+  })
+
+  test('a roles step that hits its round cap prints the reason as its own line and asks nothing after it', async () => {
+    const answers = { ...RUN_ANSWERS, 'Use these roles?': 'Adjust them', 'Adjust the roles': 'Done adjusting' }
+    const run = memIo(gitWorld(), answers)
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.logged.at(-1)).toBe(ROLE_ROUNDS_REASON)
+    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
+    expect(run.asked.filter(question => question !== ROLES_QUESTION && question !== ADJUST_QUESTION)).toEqual([
+      CLAUDE_JSON_QUESTION,
+    ])
   })
 })
 
@@ -611,6 +630,14 @@ const ALL_INSTALLED: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
 /** A detection of one framework or marker with this status, as detectAll gives it. */
 function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detection {
   return { id, name: id, status, version: null, evidence: [] }
+}
+
+/** What the roles step ends with: the roles the person accepted, or why it was cancelled. */
+type RolesEnd = Extract<RolesState, { readonly kind: 'accepted' | 'cancelled' }>
+
+/** The roles an Adjust outcome or a roles step result holds; null when it was cancelled. */
+function rolesOf(result: AdjustOutcome | RolesEnd): readonly RoleSpec[] | null {
+  return result.kind === 'cancelled' ? null : result.roles
 }
 
 /** The fallback sentence that ends the line init prints when the described structure cannot be used. */
@@ -730,7 +757,7 @@ describe('adjustLoop', () => {
 
   test('one typed change per answer until Done adjusting: drop and add', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'add docs "Docs writer"', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles, ALL_INSTALLED)
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, ALL_INSTALLED))
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
@@ -739,16 +766,22 @@ describe('adjustLoop', () => {
 
   test('rename and framework change one role and keep the others', async () => {
     const run = memIo(memWorld({}), ['rename be api "API"', 'framework qa gsd', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles, ALL_INSTALLED)
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, ALL_INSTALLED))
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
     expect(adjusted?.find(role => role.id === 'api')?.title).toBe('API')
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
     expect(adjusted?.filter(role => role.framework !== undefined)).toHaveLength(1)
   })
 
+  test('Done adjusting gives the adjusted roles, which the roles question still has to confirm', async () => {
+    const run = memIo(memWorld({}), ['drop fe', 'Done adjusting'])
+    const kept = roles.filter(role => role.id !== 'fe')
+    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles: kept })
+  })
+
   test('a line it cannot read and a change it cannot apply each print an exact message', async () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'Done adjusting'])
-    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual(roles)
+    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles })
     expect(run.logged).toEqual([
       'Could not read that change: delete fe. Use add, drop, rename or framework.',
       'no role "zz"',
@@ -764,16 +797,30 @@ describe('adjustLoop', () => {
     expect(shown).not.toContain('Changes from the scan:')
   })
 
-  test('a dismissed adjust question cancels, and after 30 rounds the current roles are kept', async () => {
-    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles, ALL_INSTALLED)).toBeNull()
-    const run = memIo(memWorld({}), Array.from({ length: 31 }, () => 'delete fe'))
-    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual(roles)
-    expect(run.asked).toHaveLength(30)
+  test('a dismissed adjust question cancels the step with its reason (A1)', async () => {
+    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles, ALL_INSTALLED)).toEqual({
+      kind: 'cancelled',
+      reason: ADJUST_DISMISSED_REASON,
+    })
+    expect(ADJUST_DISMISSED_REASON).toBe('The Adjust question was dismissed.')
+  })
+
+  test('after 30 answers without Done adjusting the roles so far go back with a note, not accepted (A1)', async () => {
+    const answers = ['drop fe', ...Array.from({ length: 30 }, () => 'delete fe')]
+    const run = memIo(memWorld({}), answers)
+    const kept = roles.filter(role => role.id !== 'fe')
+    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles: kept })
+    expect(run.asked).toHaveLength(MAX_ADJUST_ROUNDS)
+    expect(MAX_ADJUST_ROUNDS).toBe(30)
+    expect(run.logged.at(-1)).toBe(ADJUST_ROUNDS_NOTE)
+    expect(ADJUST_ROUNDS_NOTE).toBe(
+      'Adjust took 30 answers without "Done adjusting": showing the roles as they are now.',
+    )
   })
 
   test('Adjust refuses a framework not installed, names the installed ones, and the role keeps its own', async () => {
     const run = memIo(memWorld({}), ['framework qa superpowers', 'Done adjusting'])
-    expect(await adjustLoop(run.io, roles, ['gsd', 'none'])).toEqual(roles)
+    expect(await adjustLoop(run.io, roles, ['gsd', 'none'])).toEqual({ kind: 'adjusted', roles })
     expect(run.logged).toEqual([
       'Cannot set qa to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
         'qa keeps its framework.',
@@ -782,14 +829,14 @@ describe('adjustLoop', () => {
 
   test('Adjust applies an installed framework; a role it does not know gets the unknown-role message', async () => {
     const run = memIo(memWorld({}), ['framework qa gsd', 'framework nosuch superpowers', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles, ['gsd', 'none'])
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, ['gsd', 'none']))
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
     expect(run.logged).toEqual(['no role "nosuch"'])
   })
 
   test('none is always installed, so a role can always be set to the built-in fallback', async () => {
     const run = memIo(memWorld({}), ['framework qa none', 'framework be gsd', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles, ['none'])
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, ['none']))
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('none')
     expect(adjusted?.find(role => role.id === 'be')?.framework).toBeUndefined()
     expect(run.logged).toEqual([
@@ -827,7 +874,7 @@ describe('rolesStep', () => {
 
   test('Use these roles returns the proposed roles, after the proposal lines are logged', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.logged).toEqual([proposalLines(proposal.roles, proposal.changes).join('\n')])
     expect(run.asked).toEqual([ROLES_QUESTION])
     expect(run.specs[0]).toEqual({ options: ['Use these roles', 'Adjust them', 'Describe my own structure'] })
@@ -839,7 +886,7 @@ describe('rolesStep', () => {
   test('a described structure goes through the model twice and is used after Use these roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', DESCRIBED_REPLY] }), answers)
-    const roles = await rolesStep(run.io, proposal, ALL_INSTALLED)
+    const roles = rolesOf(await rolesStep(run.io, proposal, ALL_INSTALLED))
     expect(run.prompts).toHaveLength(2)
     expect(run.prompts[1]).toContain('the reply is not JSON')
     expect(roles).toEqual(DESCRIBED_ROLES)
@@ -853,7 +900,7 @@ describe('rolesStep', () => {
   test('three invalid replies print why and ask the roles question again with the template roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', 'not json', 'not json'] }), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.prompts).toHaveLength(3)
     const reason = run.logged[1]
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
@@ -865,7 +912,7 @@ describe('rolesStep', () => {
   test('Use the template instead goes back to the roles question with no model call', async () => {
     const answers = ['Describe my own structure', '  ', 'Use the template instead', 'Use these roles']
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.prompts).toEqual([])
     expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
@@ -888,24 +935,66 @@ describe('rolesStep', () => {
     const full = proposeRoles(FULL_SCAN)
     const answers = ['Adjust them', 'drop fe', 'add docs "Docs writer"', 'Done adjusting', 'Use these roles']
     const run = memIo(memWorld({}), answers)
-    const roles = await rolesStep(run.io, full, ALL_INSTALLED)
+    const roles = rolesOf(await rolesStep(run.io, full, ALL_INSTALLED))
     expect(roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     expect(run.logged.at(-1)).toContain('Docs writer (docs)')
   })
 
-  test('a dismissed dialog at any point of the step returns null', async () => {
-    const scripts = [[], ['Adjust them'], ['Describe my own structure'], ['Describe my own structure', 'Cancel init']]
-    for (const answers of scripts) {
-      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, ALL_INSTALLED)).toBeNull()
+  test('a dismissal at any point of the step cancels it with the reason of that question (A1)', async () => {
+    const scripts: readonly (readonly [readonly string[], string])[] = [
+      [[], ROLES_DISMISSED_REASON],
+      [['Adjust them'], ADJUST_DISMISSED_REASON],
+      [['Describe my own structure'], DESCRIBE_CANCELLED_REASON],
+      [['Describe my own structure', 'Cancel init'], DESCRIBE_CANCELLED_REASON],
+    ]
+    for (const [answers, reason] of scripts) {
+      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, ALL_INSTALLED)).toEqual({
+        kind: 'cancelled',
+        reason,
+      })
     }
+    expect(ROLES_DISMISSED_REASON).toBe('The roles question was dismissed or not answered.')
+    expect(DESCRIBE_CANCELLED_REASON).toBe('The describe question was dismissed or cancelled.')
   })
 
-  test('after 10 rounds of the roles question the current roles are kept', async () => {
+  test('described roles in the 10th round are never used: the step cancels after 10 roles questions (A1)', async () => {
+    const rounds = Array.from({ length: 9 }, () => ['Adjust them', 'Done adjusting']).flat()
+    const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), [...rounds, 'Describe my own structure', DESCRIPTION])
+    const result = await rolesStep(run.io, proposal, ALL_INSTALLED)
+    expect(result).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
+    expect(rolesOf(result)).toBeNull()
+    expect(run.prompts).toHaveLength(1)
+    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
+    expect(MAX_ROLE_ROUNDS).toBe(10)
+    expect(ROLE_ROUNDS_REASON).toBe(
+      'The roles question was asked 10 times without "Use these roles": nothing was chosen.',
+    )
+  })
+
+  test('a 10th round of Adjust them and Done adjusting cancels too: no cap ever accepts the roles (A1)', async () => {
     const answers = Array.from({ length: 11 }, () => ['Adjust them', 'Done adjusting']).flat()
     const run = memIo(memWorld({}), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(10)
+  })
+
+  test('the Adjust cap shows the roles so far and asks the roles question again; Use these roles accepts', async () => {
+    const full = proposeRoles(FULL_SCAN)
+    const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe'), 'Use these roles']
+    const run = memIo(memWorld({}), answers)
+    const kept = full.roles.filter(role => role.id !== 'fe')
+    expect(await rolesStep(run.io, full, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: kept })
+    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
+    const noteAt = run.logged.indexOf(ADJUST_ROUNDS_NOTE)
+    expect(noteAt > 0 && run.logged[noteAt + 1] === proposalLines(kept, full.changes).join('\n')).toBe(true)
+  })
+
+  test('the Adjust cap is not acceptance: a dismissed roles question after it cancels the step', async () => {
+    const full = proposeRoles(FULL_SCAN)
+    const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe')]
+    const run = memIo(memWorld({}), answers)
+    expect(await rolesStep(run.io, full, ALL_INSTALLED)).toEqual({ kind: 'cancelled', reason: ROLES_DISMISSED_REASON })
   })
 })
 
