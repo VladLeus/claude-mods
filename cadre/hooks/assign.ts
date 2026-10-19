@@ -417,11 +417,12 @@ export function parseModelEffort(answer: string): { readonly model: string; read
 }
 
 /**
- * The line init prints for a typed model and effort parseModelEffort refuses (A4): the answer, cleaned and capped so it
- * cannot add a line or hide text, then an example pair and every model and effort a role may use.
+ * The line init prints for a typed model and effort parseModelEffort refuses (A4): the answer, trimmed like every
+ * parser reads it, then cleaned and capped so it cannot add a line or hide text, then an example pair and every model
+ * and effort a role may use.
  */
 export function modelEffortRefusal(answer: string): string {
-  const typed = clean(answer, MAX_SHOWN_NAME_CHARS)
+  const typed = clean(answer.trim(), MAX_SHOWN_NAME_CHARS)
 
   return (
     `Cannot use ${typed}: type a model and an effort, such as opus + high. ` +
