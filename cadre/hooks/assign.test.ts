@@ -21,6 +21,7 @@ import {
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
+  modelEffortRefusal,
   NONE_OPTION,
   parseEnvNames,
   parseModelEffort,
@@ -652,10 +653,14 @@ describe('answer parsers', () => {
     expect(parseModelEffort('opus  +  xhigh')).toEqual({ model: 'opus', effort: 'xhigh' })
   })
 
-  test('parseModelEffort takes a model of 24 letters and hyphens at most and refuses a longer one', () => {
-    expect(parseModelEffort(`${'a'.repeat(24)} low`)).toEqual({ model: 'a'.repeat(24), effort: 'low' })
-    expect(parseModelEffort(`${'a'.repeat(25)} low`)).toBeNull()
-    expect(parseModelEffort('my-alias high')).toEqual({ model: 'my-alias', effort: 'high' })
+  test('parseModelEffort takes only a family alias: a typo, an effort or any other word is refused (A4)', () => {
+    expect(parseModelEffort('sonet + high')).toBeNull()
+    expect(parseModelEffort('high high')).toBeNull()
+    expect(parseModelEffort('none + low')).toBeNull()
+    expect(parseModelEffort('my-alias high')).toBeNull()
+    expect(parseModelEffort(`${'a'.repeat(24)} low`)).toBeNull()
+    expect(parseModelEffort('haiku+low')).toEqual({ model: 'haiku', effort: 'low' })
+    expect(parseModelEffort('OPUS+max')).toEqual({ model: 'opus', effort: 'max' })
   })
 
   test('parseModelEffort refuses a pinned model id, which has digits', () => {
@@ -678,6 +683,21 @@ describe('answer parsers', () => {
     expect(parseModelEffort('opus medium high')).toBeNull()
     expect(parseModelEffort('opus++medium')).toBeNull()
     expect(parseModelEffort('-opus medium')).toBeNull()
+  })
+
+  test('modelEffortRefusal names the answer, an example pair, every model and every effort (A4)', () => {
+    expect(modelEffortRefusal('sonet + high')).toBe(
+      'Cannot use sonet + high: type a model and an effort, such as opus + high. ' +
+        'Models: opus, sonnet, haiku, fable. Efforts: low, medium, high, xhigh, max.',
+    )
+  })
+
+  test('modelEffortRefusal shows the answer cleaned and capped, so it cannot add a line or hide text (A4)', () => {
+    const refusal = (shown: string): string =>
+      `Cannot use ${shown}: type a model and an effort, such as opus + high. ` +
+      'Models: opus, sonnet, haiku, fable. Efforts: low, medium, high, xhigh, max.'
+    expect(modelEffortRefusal(`so${BIDI_OVERRIDE}net\nhigh`)).toBe(refusal('sonethigh'))
+    expect(modelEffortRefusal('x'.repeat(61))).toBe(refusal(`${'x'.repeat(59)}…`))
   })
 
   test('parseEnvNames keeps the scanned names, sorted and once each, whatever the order and separators', () => {

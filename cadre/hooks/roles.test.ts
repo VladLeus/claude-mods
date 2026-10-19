@@ -18,10 +18,12 @@ import {
   EMPTY_CARRY,
   HUMAN_FALLBACK,
   isAutopilotDuration,
+  isModelName,
   MAX_DESCRIPTION_CHARS,
   MAX_PROPOSAL_ERRORS,
   MAX_PURPOSE_CHARS,
   MAX_ROLES,
+  MODEL_ALIASES,
   NO_FRONTEND_REASON,
   NO_SOURCE_REASON,
   NO_TESTS_REASON,
@@ -1309,6 +1311,7 @@ const BAD_FIELDS: readonly (readonly [string, Record<string, unknown>])[] = [
   ['a model with a digit', { model: 'opus4' }],
   ['a model in capitals', { model: 'Opus' }],
   ['a pinned model id', { model: 'claude-opus-4-5' }],
+  ['a typo of a family alias', { model: 'sonet' }],
   ['a model of 25 letters', { model: 'a'.repeat(25) }],
   ['a model that is not text', { model: 5 }],
   ['an unknown effort', { effort: 'ultra' }],
@@ -1408,9 +1411,9 @@ describe('parseRoleJson', () => {
   test('values at the edge of each rule are accepted', () => {
     const edges: Record<string, unknown>[] = [
       { model: 'haiku' },
-      { model: 'a' },
-      { model: 'a-b' },
-      { model: 'a'.repeat(24) },
+      { model: 'opus' },
+      { model: 'sonnet' },
+      { model: 'fable' },
       { autopilot: autopilotWith({ threshold: 1 }) },
       { autopilot: autopilotWith({ threshold: 95 }) },
       { autopilot: autopilotWith({ duration: '4H' }) },
@@ -1510,6 +1513,41 @@ describe('isAutopilotDuration', () => {
 
     for (const text of refusals) {
       expect([text, isAutopilotDuration(text)]).toEqual([text, false])
+    }
+  })
+})
+
+describe('isModelName (A4)', () => {
+  test('MODEL_ALIASES are the four family aliases, in this order, and frozen', () => {
+    expect(MODEL_ALIASES).toEqual(['opus', 'sonnet', 'haiku', 'fable'])
+    expect(Object.isFrozen(MODEL_ALIASES)).toBe(true)
+  })
+
+  test('each family alias is a model name', () => {
+    for (const alias of ['opus', 'sonnet', 'haiku', 'fable']) {
+      expect([alias, isModelName(alias)]).toEqual([alias, true])
+    }
+  })
+
+  test('a typo, an effort, a pinned or full model id and any other word are refused', () => {
+    const refusals = [
+      'claude-opus-4-5',
+      'claude-sonnet-4-5-20250929',
+      'sonet',
+      'high',
+      'none',
+      'default',
+      'opusplan',
+      'opus4',
+      'Opus',
+      'claude-',
+      'claude-Opus-4',
+      'claude-opus-5-5[1m]',
+      `claude-${'a'.repeat(60)}`,
+    ]
+
+    for (const text of refusals) {
+      expect([text, isModelName(text)]).toEqual([text, false])
     }
   })
 })
