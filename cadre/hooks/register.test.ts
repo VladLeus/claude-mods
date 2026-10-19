@@ -4,6 +4,7 @@ import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import {
+  FRAMEWORK_QUESTION_PREFIX,
   GIT_POLICY_DISMISSED_REASON,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
@@ -1232,12 +1233,23 @@ function noFrameworkWorld(over: Partial<World> = {}): World {
   }
 }
 
-/** The four framework worlds of the matrix, each with the name its tests carry. */
-const FRAMEWORK_WORLDS: readonly (readonly [string, () => World])[] = [
-  ['GSD only', gsdOnlyWorld],
-  ['superpowers only', superpowersOnlyWorld],
-  ['ambiguous', initWorld],
-  ['no framework', noFrameworkWorld],
+/**
+ * What only one framework world shows in its `init --dry-run`, so a fixture that drifts into another world fails (B2):
+ * how many `.planning/config.json` hunk rows its plan holds, how often the framework question is asked, and a text its
+ * scope cards log that names the chosen adapter, or null when no card text is checked.
+ */
+type WorldExpect = {
+  readonly hunks: number
+  readonly frameworkAsks: number
+  readonly card: string | null
+}
+
+/** The four framework worlds of the matrix, each with the name its tests carry and what only that world shows. */
+const FRAMEWORK_WORLDS: readonly (readonly [string, () => World, WorldExpect])[] = [
+  ['GSD only', gsdOnlyWorld, { hunks: 2, frameworkAsks: 0, card: null }],
+  ['superpowers only', superpowersOnlyWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: superpowers;' }],
+  ['ambiguous', initWorld, { hunks: 2, frameworkAsks: 1, card: null }],
+  ['no framework', noFrameworkWorld, { hunks: 0, frameworkAsks: 0, card: 'framework: built-in;' }],
 ]
 
 /**
@@ -1311,7 +1323,7 @@ function isAllowedRow(row: PlanRow): boolean {
 }
 
 describe('Phase 2 faked-host matrix', () => {
-  for (const [name, build] of FRAMEWORK_WORLDS) {
+  for (const [name, build, expected] of FRAMEWORK_WORLDS) {
     test(`${name}: init and init --dry-run print one plan and write nothing (PLAN-02, D-82)`, async ($, on) => {
       const log = newLog()
       fakeHost(on, build(), log)
@@ -1332,6 +1344,18 @@ describe('Phase 2 faked-host matrix', () => {
       expect(rows.filter(row => !isAllowedRow(row))).toEqual([])
       expect(rows.some(row => row.path.startsWith('.cadre/'))).toBe(true)
       expect(rows.some(row => row.path === '.gitignore')).toBe(true)
+    })
+
+    test(`${name}: the world is the one it claims: hunks, framework question, card (B2)`, async ($, on) => {
+      const log = newLog()
+      fakeHost(on, build(), log)
+      const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
+      const hunks = planRows(dry).filter(row => row.kind === 'hunk' && row.path === '.planning/config.json')
+      expect(hunks.length).toBe(expected.hunks)
+      const frameworkAsks = log.asks.filter(ask => ask.startsWith(`ask ${FRAMEWORK_QUESTION_PREFIX}`))
+      expect(frameworkAsks.length).toBe(expected.frameworkAsks)
+      if (expected.card === null) return
+      expect(log.logs.join('\n')).toContain(expected.card)
     })
   }
 
