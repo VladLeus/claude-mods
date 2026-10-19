@@ -557,9 +557,9 @@ type HookEntry = { readonly type: 'command'; readonly command: string; readonly 
  * The hooks of the role: the user's hooks whose script the role carries, never the context monitor (D-62), with the
  * matcher and the timeout the user's settings give them, so a hook still runs only on the tools its owner set. Each
  * event holds one group per matcher, as `{ [event]: [{ matcher, hooks: [{ type: 'command', command, timeout }] }] }`;
- * a group with a null matcher has no `matcher` key and a hook with a null timeout no `timeout` key. The events, and
- * the groups of an event, come in the order they are first seen, and the commands of a group in the order given. Null
- * when no hook is left.
+ * a group with a null or empty matcher has no `matcher` key; the engine treats both as every tool. A hook with a null
+ * timeout has no `timeout` key. The events, and the groups of an event, come in the order they are first seen, and the
+ * commands of a group in the order given. Null when no hook is left.
  */
 function carriedHooks(role: RoleSpec, user: LaunchUser): Record<string, unknown> | null {
   const wanted = new Set(role.carry.hooks)
@@ -567,10 +567,11 @@ function carriedHooks(role: RoleSpec, user: LaunchUser): Record<string, unknown>
   for (const hook of user.hooks) {
     if (!wanted.has(hook.script) || isContextMonitor(hook.script)) continue
     const groups = events.get(hook.event) ?? new Map<string | null, HookEntry[]>()
-    const list = groups.get(hook.matcher) ?? []
+    const matcher = hook.matcher === '' ? null : hook.matcher
+    const list = groups.get(matcher) ?? []
     const entry: HookEntry = { type: 'command', command: hook.command }
     list.push(hook.timeout === null ? entry : { ...entry, timeout: hook.timeout })
-    groups.set(hook.matcher, list)
+    groups.set(matcher, list)
     events.set(hook.event, groups)
   }
   if (events.size === 0) return null
