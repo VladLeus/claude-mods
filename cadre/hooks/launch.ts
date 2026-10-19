@@ -26,6 +26,8 @@ export const RUNTIME_SETTINGS_KEYS: readonly string[] = Object.freeze([
 export type LaunchUser = {
   /** The git top level, as a realpath. */
   readonly root: string
+  /** The git top level as the session gave it, before the realpath; equal to `root` when no link is in the way. */
+  readonly givenRoot: string
   readonly home: string
   /** CLAUDE_CONFIG_DIR when it is set, else `<home>/.claude`. */
   readonly userDir: string
@@ -44,8 +46,10 @@ export type LaunchUser = {
   readonly claudeMd: readonly string[]
   /** `<userDir>/CLAUDE.md` first, then the files it imports as the caller resolved them; empty with no global file. */
   readonly globalClaudeMd: readonly string[]
-  /** File names in this repo's auto-memory folder. */
+  /** File names in the auto-memory folder of `root`. */
   readonly memoryFiles: readonly string[]
+  /** File names in the auto-memory folder of `givenRoot`. */
+  readonly givenMemoryFiles: readonly string[]
   /** Folder names in `<userDir>/skills`. */
   readonly userSkills: readonly string[]
   /** File names without `.md` in `<userDir>/agents`. */
@@ -371,21 +375,38 @@ function globalLinks(id: string, user: LaunchUser): LinkSet {
   return { links, warnings }
 }
 
+/** The folder where the engine keeps the auto-memory files of a project root: `<userDir>/projects/<mangled>/memory`. */
+function projectMemoryDir(user: LaunchUser, root: string): string {
+  return `${user.userDir}/projects/${mangledProjectDir(root)}/memory`
+}
+
 /**
- * The links for the auto-memory files of this repo: each points at the file in the user's
- * `projects/<mangled root>/memory` folder, where the engine keeps them. A file with an unsafe name (isSafeFileName) is
- * not linked and is named in a warning. The names are taken once each, in sorted order.
+ * The links for the auto-memory files of this repo. The engine keeps them in the user's
+ * `projects/<mangled root>/memory` folder, and the scan lists both such folders, that of the root as a realpath and
+ * that of the root as given (a checkout opened through a link). Each name is linked to the file in the folder that
+ * listed it; a name both folders list is linked once, to the realpath folder, so no link points at a folder that did
+ * not list its name. A file with an unsafe name (isSafeFileName) is not linked and is named in one warning. The links
+ * come in name order.
  */
 function memoryLinks(id: string, user: LaunchUser): LinkSet {
-  const folder = `${user.userDir}/projects/${mangledProjectDir(user.root)}/memory`
+  const sources: readonly (readonly [string, readonly string[]])[] = [
+    [projectMemoryDir(user, user.root), user.memoryFiles],
+    [projectMemoryDir(user, user.givenRoot), user.givenMemoryFiles],
+  ]
+  const targets = new Map<string, string>()
+  for (const [folder, names] of sources) {
+    for (const name of names) {
+      if (!targets.has(name)) targets.set(name, `${folder}/${name}`)
+    }
+  }
   const links: OverlayLink[] = []
   const warnings: string[] = []
-  for (const name of sortedUnique(user.memoryFiles)) {
+  for (const [name, target] of [...targets].sort(([a], [b]) => compareText(a, b))) {
     if (!isSafeFileName(name)) {
       warnings.push(`memory file ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
       continue
     }
-    links.push({ path: `${runtimeDir(user, id)}/instructions/memory/${name}`, target: `${folder}/${name}` })
+    links.push({ path: `${runtimeDir(user, id)}/instructions/memory/${name}`, target })
   }
 
   return { links, warnings }
