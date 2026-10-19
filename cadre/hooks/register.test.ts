@@ -911,7 +911,8 @@ describe('cadre init with a faked host', () => {
     const modelAt = log.asks.indexOf('ask Model and effort for all roles?')
     const policyAt = log.asks.indexOf(POLICY_ASK)
     expect(hunkAts).toHaveLength(2)
-    expect(modelAt >= 0 && hunkAts.every(at => at > modelAt && at < policyAt)).toBe(true)
+    expect(modelAt).not.toBe(-1)
+    expect(hunkAts.map(at => at > modelAt && at < policyAt)).toEqual([true, true])
     expect(hunkAts.map(at => (log.asks[at] ?? '').split('\n')[0])).toEqual([
       'ask .planning/config.json: mode',
       'ask .planning/config.json: workflow.text_mode',
