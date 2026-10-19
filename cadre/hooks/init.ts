@@ -2144,17 +2144,23 @@ function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id:
   return manifest.files.filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
 }
 
+/** What regen planned for one role: the file plan, and the scan warnings of the run its reply prints (A4). */
+type RegenPlanned = {
+  readonly plan: Plan
+  readonly warnings: readonly string[]
+}
+
 /**
- * The file plan of regen for one role (D-68, PLAN-04). Every listed role is compiled as init compiles it, on its own
- * framework or the repo default and attended by the current config (attendedByConfig), so the index lists the whole
- * team; desiredFiles gives only that role's files, its launcher and the index. Exactly the paths planReadPaths names
- * are read, and buildPlan classifies them against the disk and the last manifest, carrying every other entry
- * (carriedEntries). No `.gitignore` block and no hunk is planned. ~/.claude.json is read only when cadre.json records
- * the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. Without a manifest read in full regen
- * cannot keep the other roles' entries, so it refuses (A2), as the scan read it: REGEN_NO_MANIFEST when it is not
- * there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid. The role's role.json is the input,
- * so it gets no op and the new manifest records the hash of `roleJson`, the text on disk (A5); the next init
- * normalises it.
+ * The file plan of regen for one role (D-68, PLAN-04), with the scan warnings of the run (scanWarnings, A4). Every
+ * listed role is compiled as init compiles it, on its own framework or the repo default and attended by the current
+ * config (attendedByConfig), so the index lists the whole team; desiredFiles gives only that role's files, its
+ * launcher and the index. Exactly the paths planReadPaths names are read, and buildPlan classifies them against the
+ * disk and the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is
+ * planned. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init
+ * compiled from it stay. Without a manifest read in full regen cannot keep the other roles' entries, so it refuses
+ * (A2), as the scan read it: REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is
+ * too large or is not valid. The role's role.json is the input, so it gets no op and the new manifest records the hash
+ * of `roleJson`, the text on disk (A5); the next init normalises it.
  */
 async function regenPlan(
   io: InitIo,
@@ -2165,7 +2171,7 @@ async function regenPlan(
     readonly roleJson: string
     readonly locations: InitLocations
   },
-): Promise<RegenRead<Plan>> {
+): Promise<RegenRead<RegenPlanned>> {
   const { id, state, roles, roleJson, locations } = input
   const gathered = await gatherScans(io, locations, state.readUserMcp)
   const { manifest, manifestState } = gathered.repo.cadre
@@ -2191,14 +2197,18 @@ async function regenPlan(
     cadreVersion: (await io.cadreVersion()) ?? 'unknown',
   })
 
-  return { kind: 'ok', value: plan }
+  return { kind: 'ok', value: { plan, warnings: scanWarnings(locations, gathered) } }
 }
 
-/** The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, then the dry-run or D-44 note. */
-function regenReplyText(plan: Plan, id: string, dryRun: boolean): string {
+/**
+ * The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, one `warning:` line for each scan
+ * warning, between the plan and the note as init prints them (scanWarningLines, A4), then the dry-run or D-44 note.
+ */
+function regenReplyText(planned: RegenPlanned, id: string, dryRun: boolean): string {
   const command = dryRun ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
+  const note = dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE
 
-  return [command, ...renderPlan(plan), dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE].join('\n')
+  return [command, ...renderPlan(planned.plan), ...scanWarningLines(planned.warnings), note].join('\n')
 }
 
 /**
@@ -2209,9 +2219,10 @@ function regenReplyText(plan: Plan, id: string, dryRun: boolean): string {
  * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
  * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by the scan
  * regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
- * (REGEN_BAD_MANIFEST, A2). Otherwise it replies with the plan of that one role (regenPlan) and the note that nothing
- * was written. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies
- * init compiled from it stay. Plain regen and --dry-run differ only in the first and the last line.
+ * (REGEN_BAD_MANIFEST, A2). Otherwise it replies with the plan of that one role (regenPlan), a `warning:` line for each
+ * scan warning and the note that nothing was written (regenReplyText); the warnings are in the reply, so it still asks
+ * and logs nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP
+ * denies init compiled from it stay. Plain regen and --dry-run differ only in the first and the last line.
  */
 export async function runRegen(
   io: InitIo,
