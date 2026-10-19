@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, FrameworkId, InitIo, PortStat, RepoScan, RoleChange, RoleSpec, SetupScan } from '../types'
+import type {
+  Choice,
+  Detection,
+  DetectStatus,
+  Facts,
+  FrameworkId,
+  InitIo,
+  PortStat,
+  RepoScan,
+  RoleChange,
+  RoleSpec,
+  SetupScan,
+  UnsupportedId,
+} from '../types'
+import { detectAll } from './adapters'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
   ADJUST_OPTIONS,
@@ -26,6 +40,7 @@ import {
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
   initGuard,
+  installedFrameworks,
   MAX_PROPOSE_ATTEMPTS,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
@@ -489,6 +504,14 @@ const DESCRIBED_ROLES = rolesFromProposal([
 /** The person's description the describe tests type. */
 const DESCRIPTION = 'we have a BE and a docs writer'
 
+/** Every framework installed, so an Adjust line may set a role to any of them. */
+const ALL_INSTALLED: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+
+/** A detection of one framework or marker with this status, as detectAll gives it. */
+function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detection {
+  return { id, name: id, status, version: null, evidence: [] }
+}
+
 /** The fallback sentence that ends the line init prints when the described structure cannot be used. */
 const FALLBACK_END = 'Using the template proposal; you can still adjust it.'
 
@@ -606,7 +629,7 @@ describe('adjustLoop', () => {
 
   test('one typed change per answer until Done adjusting: drop and add', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'add docs "Docs writer"', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles)
+    const adjusted = await adjustLoop(run.io, roles, ALL_INSTALLED)
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
@@ -615,7 +638,7 @@ describe('adjustLoop', () => {
 
   test('rename and framework change one role and keep the others', async () => {
     const run = memIo(memWorld({}), ['rename be api "API"', 'framework qa gsd', 'Done adjusting'])
-    const adjusted = await adjustLoop(run.io, roles)
+    const adjusted = await adjustLoop(run.io, roles, ALL_INSTALLED)
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
     expect(adjusted?.find(role => role.id === 'api')?.title).toBe('API')
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
@@ -624,7 +647,7 @@ describe('adjustLoop', () => {
 
   test('a line it cannot read and a change it cannot apply each print an exact message', async () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'Done adjusting'])
-    expect(await adjustLoop(run.io, roles)).toEqual(roles)
+    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual(roles)
     expect(run.logged).toEqual([
       'Could not read that change: delete fe. Use add, drop, rename or framework.',
       'no role "zz"',
@@ -633,7 +656,7 @@ describe('adjustLoop', () => {
 
   test('Show the roles prints the current roles and asks again', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'Show the roles', 'Done adjusting'])
-    await adjustLoop(run.io, roles)
+    await adjustLoop(run.io, roles, ALL_INSTALLED)
     const [shown] = run.logged
     expect(shown?.startsWith('Proposed roles:\n')).toBe(true)
     expect(shown).not.toContain('FE (fe)')
@@ -641,10 +664,51 @@ describe('adjustLoop', () => {
   })
 
   test('a dismissed adjust question cancels, and after 30 rounds the current roles are kept', async () => {
-    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles)).toBeNull()
+    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles, ALL_INSTALLED)).toBeNull()
     const run = memIo(memWorld({}), Array.from({ length: 31 }, () => 'delete fe'))
-    expect(await adjustLoop(run.io, roles)).toEqual(roles)
+    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual(roles)
     expect(run.asked).toHaveLength(30)
+  })
+
+  test('Adjust refuses a framework not installed, names the installed ones, and the role keeps its own', async () => {
+    const run = memIo(memWorld({}), ['framework qa superpowers', 'Done adjusting'])
+    expect(await adjustLoop(run.io, roles, ['gsd', 'none'])).toEqual(roles)
+    expect(run.logged).toEqual([
+      'Cannot set qa to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
+        'qa keeps its framework.',
+    ])
+  })
+
+  test('Adjust applies an installed framework; a role it does not know gets the unknown-role message', async () => {
+    const run = memIo(memWorld({}), ['framework qa gsd', 'framework nosuch superpowers', 'Done adjusting'])
+    const adjusted = await adjustLoop(run.io, roles, ['gsd', 'none'])
+    expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
+    expect(run.logged).toEqual(['no role "nosuch"'])
+  })
+
+  test('none is always installed, so a role can always be set to the built-in fallback', async () => {
+    const run = memIo(memWorld({}), ['framework qa none', 'framework be gsd', 'Done adjusting'])
+    const adjusted = await adjustLoop(run.io, roles, ['none'])
+    expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('none')
+    expect(adjusted?.find(role => role.id === 'be')?.framework).toBeUndefined()
+    expect(run.logged).toEqual([
+      'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.',
+    ])
+  })
+
+  test('installedFrameworks lists the supported ones in use or installed, in SUPPORTED_IDS order, then none', () => {
+    expect(installedFrameworks([])).toEqual(['none'])
+    expect(installedFrameworks([detection('superpowers', 'installed'), detection('gsd', 'in-use')])).toEqual([
+      'gsd',
+      'superpowers',
+      'none',
+    ])
+    expect(installedFrameworks([detection('gsd', 'not-found'), detection('superpowers', 'in-use')])).toEqual([
+      'superpowers',
+      'none',
+    ])
+    expect(installedFrameworks([detection('aidlc', 'unsupported'), detection('gsd', 'not-found')])).toEqual(['none'])
+    expect(installedFrameworks(detectAll(AMBIGUOUS_FACTS))).toEqual(['gsd', 'superpowers', 'none'])
   })
 
   test('the adjust question gives an example of each change', () => {
@@ -662,7 +726,7 @@ describe('rolesStep', () => {
 
   test('Use these roles returns the proposed roles, after the proposal lines are logged', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
-    expect(await rolesStep(run.io, proposal)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
     expect(run.logged).toEqual([proposalLines(proposal.roles, proposal.changes).join('\n')])
     expect(run.asked).toEqual([ROLES_QUESTION])
     expect(run.specs[0]).toEqual({ options: ['Use these roles', 'Adjust them', 'Describe my own structure'] })
@@ -674,7 +738,7 @@ describe('rolesStep', () => {
   test('a described structure goes through the model twice and is used after Use these roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', DESCRIBED_REPLY] }), answers)
-    const roles = await rolesStep(run.io, proposal)
+    const roles = await rolesStep(run.io, proposal, ALL_INSTALLED)
     expect(run.prompts).toHaveLength(2)
     expect(run.prompts[1]).toContain('the reply is not JSON')
     expect(roles).toEqual(DESCRIBED_ROLES)
@@ -688,7 +752,7 @@ describe('rolesStep', () => {
   test('three invalid replies print why and ask the roles question again with the template roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', 'not json', 'not json'] }), answers)
-    expect(await rolesStep(run.io, proposal)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
     expect(run.prompts).toHaveLength(3)
     const reason = run.logged[1]
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
@@ -700,7 +764,7 @@ describe('rolesStep', () => {
   test('Use the template instead goes back to the roles question with no model call', async () => {
     const answers = ['Describe my own structure', '  ', 'Use the template instead', 'Use these roles']
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
-    expect(await rolesStep(run.io, proposal)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
     expect(run.prompts).toEqual([])
     expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
@@ -713,7 +777,7 @@ describe('rolesStep', () => {
     const run = memIo(world, ['Describe my own structure', DESCRIPTION, 'Use these roles'])
     const gathered = await gatherScans(run.io, DEFAULT_LOCATIONS, false)
     expect(gathered.setup.mcp.map(server => server.name)).toEqual(['sentry'])
-    await rolesStep(run.io, proposeRoles(gathered.repo))
+    await rolesStep(run.io, proposeRoles(gathered.repo), ALL_INSTALLED)
     expect(run.prompts).toHaveLength(1)
     expect(run.prompts[0]).toContain(JSON.stringify(DESCRIPTION))
     expect(leaks(run.prompts.join('\n'), ['sentry', '/repo', '/home/u'])).toEqual([])
@@ -723,7 +787,7 @@ describe('rolesStep', () => {
     const full = proposeRoles(FULL_SCAN)
     const answers = ['Adjust them', 'drop fe', 'add docs "Docs writer"', 'Done adjusting', 'Use these roles']
     const run = memIo(memWorld({}), answers)
-    const roles = await rolesStep(run.io, full)
+    const roles = await rolesStep(run.io, full, ALL_INSTALLED)
     expect(roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     expect(run.logged.at(-1)).toContain('Docs writer (docs)')
@@ -732,14 +796,14 @@ describe('rolesStep', () => {
   test('a dismissed dialog at any point of the step returns null', async () => {
     const scripts = [[], ['Adjust them'], ['Describe my own structure'], ['Describe my own structure', 'Cancel init']]
     for (const answers of scripts) {
-      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal)).toBeNull()
+      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, ALL_INSTALLED)).toBeNull()
     }
   })
 
   test('after 10 rounds of the roles question the current roles are kept', async () => {
     const answers = Array.from({ length: 11 }, () => ['Adjust them', 'Done adjusting']).flat()
     const run = memIo(memWorld({}), answers)
-    expect(await rolesStep(run.io, proposal)).toEqual(proposal.roles)
+    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual(proposal.roles)
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(10)
   })
 })
@@ -917,6 +981,24 @@ describe('runInit framework and recommendations', () => {
     expect(recommended === undefined).toBe(false)
     expect(recommended).not.toContain('- GSD for all roles')
     expect(recommended).not.toContain('- superpowers for all roles')
+  })
+
+  test('in init an Adjust framework that the repo does not have installed is refused (A5)', async () => {
+    const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
+    const answers = [
+      'No, skip it',
+      'Adjust them',
+      'framework security superpowers',
+      'Done adjusting',
+      'Use these roles',
+      'Commit definitions (default)',
+    ]
+    const run = memIo(gitWorld({ facts: { facts: gsdOnly, gsdUserDir: null } }), answers)
+    await runInit(run.io, { dryRun: true })
+    expect(run.logged).toContain(
+      'Cannot set security to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
+        'security keeps its framework.',
+    )
   })
 
   test('a dismissed framework question cancels init', async () => {
