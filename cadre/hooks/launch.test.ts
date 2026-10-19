@@ -744,6 +744,19 @@ describe('instructionPlan', () => {
     ])
   })
 
+  test('a global file keeps its name behind the number, even a hidden name or one with a space', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md'] })
+    const global = ['/home/u/.claude/CLAUDE.md', '/home/u/.claude/.rules.md', '/home/u/my notes.md']
+    const plan = instructionPlan(role, user({ globalClaudeMd: global }))
+
+    expect(plan.links.map(link => link.path)).toEqual([
+      `${linkDir('global')}/01-CLAUDE.md`,
+      `${linkDir('global')}/02-.rules.md`,
+      `${linkDir('global')}/03-my notes.md`,
+    ])
+    expect(plan.warnings).toEqual([])
+  })
+
   test('the memory group links each memory file of this repo to its folder under projects (D-100)', () => {
     const role = templateRole('pm', { instructions: ['auto-memory'] })
     const plan = instructionPlan(role, user({ memoryFiles: ['MEMORY.md', 'b.md'] }))
@@ -791,6 +804,24 @@ describe('instructionPlan', () => {
 
     expect(plan.links).toEqual([])
     expect(plan.warnings).toEqual(['memory file evil.md has an unsafe name: not linked'])
+  })
+
+  test('a memory name of 255 characters is linked and one of 256 is not', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const fits = `${'a'.repeat(252)}.md`
+    const tooLong = `${'a'.repeat(253)}.md`
+    const plan = instructionPlan(role, user({ memoryFiles: [fits, tooLong] }))
+
+    expect(plan.links.map(link => link.path)).toEqual([`${linkDir('memory')}/${fits}`])
+    expect(plan.warnings).toHaveLength(1)
+  })
+
+  test('a memory name with a space is linked: only a slash, a leading dot or hidden characters are refused', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const plan = instructionPlan(role, user({ memoryFiles: ['my memory.md'] }))
+
+    expect(plan.links.map(link => link.target)).toEqual(['/home/u/.claude/projects/-repo/memory/my memory.md'])
+    expect(plan.warnings).toEqual([])
   })
 
   test('a memory file listed twice is linked once', () => {
