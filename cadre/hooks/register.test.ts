@@ -898,7 +898,7 @@ describe('cadre init with a faked host', () => {
     const lines = out.text.split('\n')
     expect(lines[lines.indexOf(policyLine('definitions')) + 1]).toBe('Launchers start in: the git root')
     expect(out.text).not.toContain('new worktrees')
-    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
     const launchAsk = log.asks[log.asks.indexOf(POLICY_ASK) + 1] ?? ''
     expect(launchAsk.startsWith('ask Where should the role launchers start')).toBe(true)
@@ -912,7 +912,9 @@ describe('cadre init with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text.split('\n')[0]).toBe('cadre init')
     expect(out.text).toContain('Git policy: commit definitions')
-    expect(out.text.endsWith('Applying this plan arrives in a later cadre version; nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe(
+      'Applying this plan arrives in a later cadre version; nothing was written.',
+    )
     expect(out.text).not.toContain('Dry run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.ops).not.toContain('process.run')
@@ -975,7 +977,7 @@ describe('cadre init with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
     expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
-    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
   test('a typed word the policy parser knows counts, with the same reply as the label', async ($, on) => {
@@ -1121,7 +1123,7 @@ describe('cadre init with a faked host', () => {
     expect(guardAt >= 0 && guardAt < log.ops.indexOf('fs.list /repo')).toBe(true)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.ops.filter(op => op === 'process.run').length <= 1).toBe(true)
-    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
   test('the init port never reads a folder: a folder the scans probe is checked and left unread', async ($, on) => {
@@ -1311,8 +1313,8 @@ describe('Phase 2 faked-host matrix', () => {
       const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
       expect(plain).toContain('File plan:')
       expect(dry).toContain('File plan:')
-      expect(plain.endsWith('Applying this plan arrives in a later cadre version; nothing was written.')).toBe(true)
-      expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
+      expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
+      expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
       expect(middleLines(dry)).toEqual(middleLines(plain))
       expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
       expect(log.runs).toEqual([])
@@ -1354,8 +1356,8 @@ describe('Phase 2 faked-host matrix', () => {
       expect(reply.split('\n').some(line => line.includes('.cadre/be/'))).toBe(true)
       expect(reply.split('\n').filter(line => line.includes('.cadre/pm/'))).toEqual([])
     }
-    expect(plain.endsWith('Applying this plan arrives in a later cadre version; nothing was written.')).toBe(true)
-    expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
+    expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
@@ -1406,7 +1408,7 @@ describe('Phase 2 faked-host matrix', () => {
     const out = await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })
     expect(out.text).not.toBe(NOT_INTERACTIVE_REPLY)
     expect(out.text).toContain('File plan:')
-    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
@@ -1444,7 +1446,7 @@ describe('Phase 2 faked-host matrix', () => {
     const log = newLog()
     fakeHost(on, world, log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
     expect(leaks(`${out.text}\n${log.logs.join('\n')}`, [...SECRET_FIXTURES, '/home/u'])).toEqual([])
   })
