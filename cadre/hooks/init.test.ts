@@ -31,7 +31,7 @@ import type {
 } from '../types'
 import { detectAll } from './adapters'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
-import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import { desiredFiles } from './generate'
 import { sha256Hex } from './hash'
 import {
@@ -3335,6 +3335,14 @@ describe('runRegen', () => {
     return BE_PLAN_HEADS.some(head => path.startsWith(head))
   }
 
+  /** BE's role.json, repo-relative: the input of regen of BE, which plans no op for it (A5). */
+  const BE_ROLE_PATH = '.cadre/be/role.json'
+
+  /** Whether regen of BE plans an op for this path: a path it may plan other than BE's own role.json (A5). */
+  function isBeOpPath(path: string): boolean {
+    return isBePlanPath(path) && path !== BE_ROLE_PATH
+  }
+
   /** The reply of `/cadre regen be` in `world`, a dry run unless told otherwise. */
   async function regenBe(world: MemWorld, dryRun = true): Promise<string> {
     return runRegen(memIo(world, {}).io, { id: 'be', dryRun })
@@ -3437,8 +3445,10 @@ describe('runRegen', () => {
     ]
     for (const [roles, text] of cases) expect(await regenBe(await regenWorld(roles, { framework: null }))).toBe(text)
     const framed = team.map(role => withFramework(role, 'none'))
-    const kinds = opKinds(await regenBe(await regenWorld(framed, { framework: null })))
-    expect(kinds.get('.cadre/be/role.json')).toBe('leave')
+    const reply = await regenBe(await regenWorld(framed, { framework: null }))
+    const kinds = opKinds(reply)
+    expect([kinds.get(BE_ROLE_PATH), kinds.get('.cadre/be/ROLE.md')]).toEqual([undefined, 'leave'])
+    expect(reply).not.toContain(BE_ROLE_PATH)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
 
@@ -3483,15 +3493,17 @@ describe('runRegen', () => {
   test('a valid setup asks and logs nothing, reads no ~/.claude.json or .gitignore, and plans only BE', async () => {
     const linear = '{"mcpServers":{"linear":{"command":"x"}}}'
     const run = memIo(withFiles(await regenWorld(), { '/home/u/.claude.json': linear }), {})
-    const kinds = opKinds(await runRegen(run.io, { id: 'be', dryRun: false }))
+    const reply = await runRegen(run.io, { id: 'be', dryRun: false })
+    const kinds = opKinds(reply)
     expect(run.asked).toEqual([])
     expect(run.logged).toEqual([])
     expect(run.reads).not.toContain('/home/u/.claude.json')
     expect(run.reads).not.toContain('/repo/.gitignore')
     const planned = (await plannedFiles(gitWorld(), team)).map(file => file.path)
-    const expected = [...planned.filter(isBePlanPath), '.cadre/manifest.json'].sort(compareText)
+    const expected = [...planned.filter(isBeOpPath), '.cadre/manifest.json'].sort(compareText)
     expect([...kinds.keys()]).toEqual(expected)
-    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(5)
+    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(4)
+    expect(reply).not.toContain(BE_ROLE_PATH)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
 
@@ -3523,7 +3535,7 @@ describe('runRegen', () => {
     expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
     expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
     const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
-    const files = (await plannedFiles(gitWorld(), team)).filter(file => isBePlanPath(file.path))
+    const files = (await plannedFiles(gitWorld(), team)).filter(file => isBeOpPath(file.path))
     const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
     expect(dry.slice(1, -1)).toEqual(renderPlan({ ops: ops.sort((a, b) => compareText(a.path, b.path)), warnings: [] }))
   })
@@ -3532,16 +3544,34 @@ describe('runRegen', () => {
     const edited: RoleSpec = { ...templateRole('be'), model: 'sonnet', effort: 'high' }
     const before = await plannedFiles(gitWorld(), team)
     const after = await plannedFiles(gitWorld(), [edited, templateRole('pm')])
-    const world = withFiles(await regenWorld(), { [BE_ROLE]: textOf(after, '.cadre/be/role.json') })
+    const world = withFiles(await regenWorld(), { [BE_ROLE]: textOf(after, BE_ROLE_PATH) })
     const kinds = opKinds(await regenBe(world))
-    const isKept = (file: DesiredFile): boolean =>
-      file.path === '.cadre/be/role.json' || textOf(before, file.path) === file.content
+    const isKept = (file: DesiredFile): boolean => textOf(before, file.path) === file.content
     const expected = after
-      .filter(file => isBePlanPath(file.path))
+      .filter(file => isBeOpPath(file.path))
       .map(file => [file.path, isKept(file) ? 'leave' : 'change'])
     expect([...kinds.entries()].filter(([path]) => path !== '.cadre/manifest.json')).toEqual(expected)
     expect([kinds.get('.cadre/bin/be'), kinds.get('.cadre/INDEX.md')]).toEqual(['change', 'change'])
     expect(kinds.get('.cadre/manifest.json')).toBe('change')
+  })
+
+  test('a role.json edited by hand is the input: no op, no conflict, its disk hash in the manifest (A5)', async () => {
+    const files = await plannedFiles(gitWorld(), team)
+    const world = await regenWorld()
+    const stored: unknown = JSON.parse(world.files[BE_ROLE] ?? '')
+    if (!isObject(stored)) throw new Error("BE's role.json is not an object")
+    const edited = JSON.stringify({ ...stored, note: 'edited by hand' }, null, 4)
+    expect(parseRoleJson(edited)?.id).toBe('be')
+    const reply = await regenBe(withFiles(world, { [BE_ROLE]: edited }))
+    const kinds = opKinds(reply)
+    const paths = [...files.map(file => file.path).filter(isBeOpPath), '.cadre/manifest.json'].sort(compareText)
+    expect([...kinds.keys()]).toEqual(paths)
+    expect([...kinds.entries()].filter(([, kind]) => kind !== 'leave')).toEqual([['.cadre/manifest.json', 'change']])
+    expect(reply).not.toContain(BE_ROLE_PATH)
+    const recorded = files.map(file => (file.path === BE_ROLE_PATH ? { ...file, content: edited } : file))
+    const kept = opKinds(await regenBe(withFiles(world, { [BE_ROLE]: edited, [MANIFEST]: await manifestOf(recorded) })))
+    expect(kept.get('.cadre/manifest.json')).toBe('leave')
+    expect([...kept.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
 
   test('a GSD role is attended while .planning/config.json is not at the required values (D-70, D-72)', async () => {
