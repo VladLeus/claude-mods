@@ -1517,6 +1517,27 @@ describe('assignmentStep', () => {
     await assignmentStep(memIo(memWorld({}), ['All roles', 'All roles']).io, roles, setup)
     expect(JSON.stringify(roles)).toBe(before)
   })
+
+  test('a second run with None takes sentry and the codex skills away, and the table names stay (A3)', async () => {
+    const first = valueOf(await assignmentStep(memIo(memWorld({}), ['All roles', 'All roles']).io, roles, setup))
+    expect(first.map(role => role.mcp.includes('sentry'))).toEqual(roles.map(() => true))
+    const again = valueOf(await assignmentStep(memIo(memWorld({}), ['None', 'None']).io, first, setup))
+    expect(again.map(role => [role.id, role.mcp, role.skills])).toEqual([
+      ['pm', ['jira'], []],
+      ['tl', ['jira'], []],
+      ['be', [], []],
+      ['fe', [], []],
+      ['qa', [], []],
+      ['security', [], ['security-review']],
+    ])
+  })
+
+  test('a narrower second answer leaves an asked server on the roles it names only (A3)', async () => {
+    const first = valueOf(await assignmentStep(memIo(memWorld({}), ['All roles', 'None']).io, roles, setup))
+    const again = valueOf(await assignmentStep(memIo(memWorld({}), ['be', 'None']).io, first, setup))
+    expect(again.filter(role => role.mcp.includes('sentry')).map(role => role.id)).toEqual(['be'])
+    expect(roleIn(again, 'tl').mcp).toEqual(['jira'])
+  })
 })
 
 describe('memoryStep', () => {
