@@ -1,6 +1,13 @@
-import type { CadreState, CompiledScope, DesiredFile, FrameworkId, RoleSpec } from '../types'
-import { compareText } from './facts'
+import type { CadreState, CompiledScope, DesiredFile, FrameworkAdapter, FrameworkId, RoleSpec } from '../types'
+import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
+import { BUILTIN_ADAPTER } from './builtin'
+import { clean, compareText } from './facts'
+import { GSD_ADAPTER } from './gsd'
+import { MAX_ROLE_CHARS } from './kickoff'
 import { stableJson } from './plan'
+import { MAX_PURPOSE_CHARS } from './roles'
+import { scopeCardLines } from './scope'
+import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 /** The most characters the role line of a kickoff may have (D-79). */
 export const ROLE_LINE_MAX = 200
@@ -77,6 +84,184 @@ export function mcpText(scope: CompiledScope): string {
   return stableJson(scope.mcp)
 }
 
+/** The adapter each framework is driven with: where a role's framework name and its kickoff text come from. */
+const ADAPTER_OF: Readonly<Record<FrameworkId, FrameworkAdapter>> = Object.freeze({
+  gsd: GSD_ADAPTER,
+  superpowers: SUPERPOWERS_ADAPTER,
+  none: BUILTIN_ADAPTER,
+})
+
+/** The line ROLE.md adds after the framework line of an attended role. It is no card rule, so it never repeats one. */
+const ATTENDED_LINE =
+  'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
+
+/**
+ * The text of `.cadre/<id>/ROLE.md`, the file `--append-system-prompt-file` gives the session; it is never named
+ * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
+ * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
+ * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
+ * "Handoffs" (the folder autopilot accepts, D-79) and "Scope" (the lines of the scope card, ROLE-06). The title and
+ * the purpose come from outside, so they are cleaned.
+ */
+export function roleMdText(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+  const { card } = scope
+  const adapter = ADAPTER_OF[framework]
+  const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })
+  const model = `Model: ${role.model} + ${role.effort}.`
+  const lines = [
+    `# ${clean(role.title, MAX_ROLE_CHARS)} (cadre role ${role.id})`,
+    '',
+    clean(role.purpose, MAX_PURPOSE_CHARS),
+    '',
+    `Framework: ${adapter.name}. ${model} Permission mode: ${role.permissionMode}.`,
+    ...(card.isAttended ? [ATTENDED_LINE] : []),
+    '',
+    '## How you work',
+    '',
+    kickoff,
+    '',
+    '## Decisions',
+    '',
+    ...card.chain.map(line => `- ${line}`),
+    '',
+    '## Handoffs',
+    '',
+    `Write every handoff under thoughts/shared/handoffs/${role.id}/ (autopilot's handoff path).`,
+    '',
+    '## Scope',
+    '',
+    ...scopeCardLines(card),
+  ]
+
+  return `${lines.join('\n')}\n`
+}
+
+/** A word a shell reads as itself without quotes: letters, digits and `_ . / = : @ + -`. */
+const BARE_WORD = /^[A-Za-z0-9_./=:@+-]+$/
+
+/**
+ * A word as one shell word (T-02-27): left bare when it holds only letters, digits and `_ . / = : @ + -`, else in
+ * single quotes with each single quote written as `'\''`. The empty word is `''`. A shell reads every character
+ * inside single quotes as itself, so a quoted word cannot split, expand or start a command.
+ */
+export function shQuote(word: string): string {
+  if (BARE_WORD.test(word)) return word
+
+  return `'${word.replaceAll("'", "'\\''")}'`
+}
+
+/** The repo-relative path of a file in the folder of a role. */
+function rolePath(id: string, name: string): string {
+  return `.cadre/${id}/${name}`
+}
+
+/**
+ * The text of the launcher `.cadre/bin/<id>`, provisional until Phase 3 (Pitfall 8): it goes to the git top level and
+ * execs claude with the flags of the compiled scope, each one shell-quoted, then `--` and the kickoff text read from
+ * kickoff.txt. The flags come only from compileScope and the title never reaches the script; the role id, which is a
+ * slug, is quoted in the path and cleaned in the comments, so a hostile one cannot add a command either. Phase 3 adds
+ * the claude version check and renders the `.runtime/` folder before the session starts.
+ */
+export function launcherText(role: RoleSpec, scope: CompiledScope): string {
+  const id = clean(role.id)
+  const flags = scope.flags.map(flag => shQuote(flag)).join(' ')
+  const kickoff = shQuote(rolePath(role.id, 'kickoff.txt'))
+  const lines = [
+    '#!/bin/sh',
+    `# cadre launcher for role ${id}. Provisional (Phase 2): Phase 3 adds the claude version check`,
+    `# and renders .cadre/${id}/.runtime/ before it starts the session.`,
+    'set -eu',
+    'cd "$(git rev-parse --show-toplevel)"',
+    `exec claude ${flags} -- "$(cat ${kickoff})"`,
+  ]
+
+  return `${lines.join('\n')}\n`
+}
+
+/** The most MCP server names the scope cell of the index lists before it counts the rest. */
+const MAX_INDEX_NAMES = 12
+
+/** The most characters of one server name the index shows; a name a role.json holds is at most 100. */
+const MAX_NAME_CHARS = 100
+
+/** The lines above the rows of the index (D-69). */
+const INDEX_HEAD: readonly string[] = [
+  '# cadre roles',
+  '',
+  'Generated by cadre from the role definitions. Edit .cadre/<id>/role.json and run /cadre regen <id>.',
+  '',
+  '| Role | Purpose | Framework | Model | Scope | Launcher | Handoffs |',
+  '| --- | --- | --- | --- | --- | --- | --- |',
+]
+
+/** Text for a table cell: cleaned and capped, with every pipe escaped so it stays one cell. */
+function cell(text: string, maxChars: number): string {
+  return clean(text, maxChars).replaceAll('|', '\\|')
+}
+
+/** Server names for a cell: `none` when there are none, else the first MAX_INDEX_NAMES and `+N more` for the rest. */
+function namesCell(names: readonly string[]): string {
+  if (names.length === 0) return 'none'
+  const listed = names.slice(0, MAX_INDEX_NAMES).map(name => cell(name, MAX_NAME_CHARS))
+  const rest = names.length - listed.length
+
+  return (rest > 0 ? [...listed, `+${rest} more`] : listed).join(', ')
+}
+
+/** How many skills a role can run: the handoff skills, the start skills of its framework and its own (D-77). */
+function skillCount(role: RoleSpec, framework: FrameworkId): number {
+  return new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[framework], ...role.skills]).size
+}
+
+/** The one-line scope of a role: its Bash, the MCP servers it is given and how many skills it can run. */
+function scopeSummary(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+  const bash = role.hasBash ? 'sandboxed Bash' : 'no Bash'
+
+  return `${bash}; MCP: ${namesCell(scope.mcp.servers)}; skills: ${skillCount(role, framework)}`
+}
+
+/** One row of the index table. */
+function indexRow(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
+  const cells = [
+    `${cell(role.title, MAX_ROLE_CHARS)} (${role.id})`,
+    cell(role.purpose, MAX_PURPOSE_CHARS),
+    ADAPTER_OF[framework].name,
+    `${role.model} + ${role.effort}`,
+    scopeSummary(role, scope, framework),
+    `.cadre/bin/${role.id}`,
+    `thoughts/shared/handoffs/${role.id}/`,
+  ]
+
+  return `| ${cells.join(' | ')} |`
+}
+
+/**
+ * The text of `.cadre/INDEX.md` (D-69): a static table with one row per role, in role order, built from the definitions
+ * alone, so it hashes stably. A row shows the title and id, the purpose, the framework, the model and effort, a
+ * one-line scope, the launcher and the handoff folder; it has no date and no count. A pipe in a title or a purpose is
+ * escaped. A role with no scope or no framework has no row.
+ */
+export function indexMdText(
+  roles: readonly RoleSpec[],
+  scopes: ReadonlyMap<string, CompiledScope>,
+  frameworks: ReadonlyMap<string, FrameworkId>,
+): string {
+  const rows = roles.flatMap(role => {
+    const scope = scopes.get(role.id)
+    const framework = frameworks.get(role.id)
+    if (scope === undefined || framework === undefined) return []
+
+    return [indexRow(role, scope, framework)]
+  })
+
+  return `${[...INDEX_HEAD, ...rows].join('\n')}\n`
+}
+
+/** The text of `.cadre/cadre.json`: the repo state (D-89) as stable JSON, which regen and the ignore block read. */
+export function cadreJsonText(state: CadreState): string {
+  return stableJson(state)
+}
+
 /** What desiredFiles generates from. */
 export type GenerateInput = {
   /** Every role of the team, in role order: the index lists them all. */
@@ -97,26 +282,6 @@ const INDEX_PATH = '.cadre/INDEX.md'
 /** The repo-relative path of the repo state file. */
 const STATE_PATH = '.cadre/cadre.json'
 
-/** The repo-relative path of a file in the folder of a role. */
-function rolePath(id: string, name: string): string {
-  return `.cadre/${id}/${name}`
-}
-
-/** The first line of ROLE.md, until Task 2 writes the whole document. */
-function roleMdDraft(role: RoleSpec): string {
-  return `# ${role.title} (cadre role ${role.id})\n`
-}
-
-/** The first lines of the launcher, until Task 2 writes the whole script. */
-function launcherDraft(role: RoleSpec): string {
-  return `#!/bin/sh\n# cadre launcher for role ${role.id}\n`
-}
-
-/** The first line of the index, until Task 2 writes the whole table. */
-function indexDraft(): string {
-  return '# cadre roles\n'
-}
-
 /**
  * The files of one role: the five in its folder and its launcher. A role with no scope or no framework gives none, so
  * nothing is generated from a half-known role.
@@ -130,11 +295,11 @@ function roleFiles(
 
   return [
     { path: rolePath(role.id, 'role.json'), content: roleJsonText(role), mode: 'file' },
-    { path: rolePath(role.id, 'ROLE.md'), content: roleMdDraft(role), mode: 'file' },
+    { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope, framework), mode: 'file' },
     { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
-    { path: `.cadre/bin/${role.id}`, content: launcherDraft(role), mode: 'exec' },
+    { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope), mode: 'exec' },
   ]
 }
 
@@ -149,8 +314,8 @@ export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, frameworks, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
   const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), frameworks.get(role.id)))
-  files.push({ path: INDEX_PATH, content: indexDraft(), mode: 'file' })
-  if (only === null) files.push({ path: STATE_PATH, content: stableJson(state), mode: 'file' })
+  files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes, frameworks), mode: 'file' })
+  if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
 
   return files.sort((a, b) => compareText(a.path, b.path))
 }
