@@ -1,8 +1,7 @@
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
- * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role, but its grammar arrives in plan
- * 02-13 and the parser does not give it before then. Any other input is help with the input echoed back as unknown.
- * Phase 2 writes nothing on any path.
+ * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json. Any other
+ * input is help with the input echoed back as unknown. Phase 2 writes nothing on any path.
  */
 export type CadreCommand =
   | {
