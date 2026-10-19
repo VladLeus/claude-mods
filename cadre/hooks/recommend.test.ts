@@ -21,7 +21,6 @@ import {
   hunkQuestion,
   INSTALL_COMMANDS,
   isAttendedFromConfig,
-  isGsdAttended,
   isUnmetHunk,
   NOT_SET_TEXT,
   parseHunkAnswer,
@@ -497,33 +496,6 @@ describe('tool commands and attended', () => {
     expect(Object.isFrozen(TOOL_SCRIPTS)).toBe(true)
   })
 
-  test('a required hunk that is accepted and runnable leaves the roles unattended', () => {
-    expect(isGsdAttended([op({})])).toBe(false)
-  })
-
-  test('a declined required hunk makes the roles attended', () => {
-    expect(isGsdAttended([op({ isAccepted: false })])).toBe(true)
-  })
-
-  test('a required hunk that cadre cannot run makes the roles attended, though it was accepted', () => {
-    expect(isGsdAttended([op({ isRunnable: false })])).toBe(true)
-  })
-
-  test('an optional hunk never makes the roles attended, declined or not runnable', () => {
-    expect(isGsdAttended([op({ isRequired: false, isAccepted: false })])).toBe(false)
-    expect(isGsdAttended([op({ isRequired: false, isRunnable: false })])).toBe(false)
-  })
-
-  test('one open required hunk among accepted ones is enough', () => {
-    const hunks = [op({}), op({ key: 'workflow.text_mode', isAccepted: false }), op({ isRequired: false })]
-
-    expect(isGsdAttended(hunks)).toBe(true)
-  })
-
-  test('no hunks leave the roles unattended (empty edge)', () => {
-    expect(isGsdAttended([])).toBe(false)
-  })
-
   test('isUnmetHunk is true exactly for a required hunk that was declined or cannot run (B5)', () => {
     const cases: readonly (readonly [boolean, boolean, boolean, boolean])[] = [
       [true, true, true, false],
@@ -539,20 +511,6 @@ describe('tool commands and attended', () => {
     for (const [isRequired, isAccepted, isRunnable, isUnmet] of cases) {
       const flags = [isRequired, isAccepted, isRunnable]
       expect([...flags, isUnmetHunk(op({ isRequired, isAccepted, isRunnable }))]).toEqual([...flags, isUnmet])
-    }
-  })
-
-  test('isGsdAttended is whether any hunk is unmet (B5)', () => {
-    const lists: readonly (readonly HunkOp[])[] = [
-      [],
-      [op({})],
-      [op({ isAccepted: false })],
-      [op({ isRequired: false, isRunnable: false }), op({})],
-      [op({}), op({ key: 'workflow.text_mode', isRunnable: false })],
-    ]
-
-    for (const hunks of lists) {
-      expect(isGsdAttended(hunks)).toBe(hunks.some(isUnmetHunk))
     }
   })
 

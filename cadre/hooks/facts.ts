@@ -23,8 +23,8 @@ export const MAX_READ_BYTES = 256 * 1024
 const MAX_NAME_CHARS = 255
 /** Code points a settings key keeps; a plugin key reads as `name@marketplace`. The setup scan shares it. */
 export const MAX_KEY_CHARS = 120
-/** Code points a hook event name keeps. The setup scan shares it. */
-export const MAX_EVENT_CHARS = 60
+/** Code points a hook event name keeps. */
+const MAX_EVENT_CHARS = 60
 /** Code points a version text keeps; longer text is not a version. */
 const MAX_VERSION_CHARS = 40
 /** Code points a host warning keeps, the ellipsis included. */

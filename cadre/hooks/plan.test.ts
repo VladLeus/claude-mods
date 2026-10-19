@@ -16,7 +16,6 @@ import { compareText } from './facts'
 import { sha256Hex } from './hash'
 import {
   buildPlan,
-  chunkLines,
   classifyFile,
   gitignoreLines,
   hasThoughtsIgnore,
@@ -33,6 +32,7 @@ import {
   stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
+import { chunkLines } from './render'
 import { parseManifest } from './scan'
 import { BIDI_OVERRIDE } from './testkit'
 
@@ -507,7 +507,7 @@ describe('renderPlan', () => {
     expect(lines).toEqual([
       'File plan:',
       `  create    ${ROLE}`,
-      `Warning: ${warning}`,
+      `warning: ${warning}`,
       'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks',
     ])
   })
@@ -523,7 +523,7 @@ describe('renderPlan', () => {
       '            xy',
       '  hunk      .planning/config.json  mode: interactive -> yolo  (required, accepted)',
       '            run: runme',
-      'Warning: w',
+      'warning: w',
       'Summary: 0 create, 0 change, 0 leave, 1 conflict, 1 hunks (1 accepted)',
     ])
   })

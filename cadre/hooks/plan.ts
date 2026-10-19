@@ -536,12 +536,9 @@ export function renderPlan(plan: Plan): string[] {
     rows.push(...fileRows(op))
     counts[op.kind] += 1
   }
-  const warnings = plan.warnings.map(warning => `Warning: ${reportText(warning)}`)
+  const warnings = plan.warnings.map(warning => `warning: ${reportText(warning)}`)
   const hunkCount = hunks === 0 ? '0 hunks' : `${hunks} hunks (${accepted} accepted)`
   const kinds = `${counts.create} create, ${counts.change} change, ${counts.leave} leave, ${counts.conflict} conflict`
 
   return ['File plan:', ...rows, ...warnings, `Summary: ${kinds}, ${hunkCount}`]
 }
-
-/** chunkLines lives in render.ts beside the other report helpers; this keeps the import from './plan' working. */
-export { chunkLines } from './render'

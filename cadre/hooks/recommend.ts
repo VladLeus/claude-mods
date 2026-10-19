@@ -278,14 +278,6 @@ export function isUnmetHunk(hunk: HunkOp): boolean {
 }
 
 /**
- * Whether the answered hunks leave the GSD roles attended (ROLE-04): any unmet hunk (isUnmetHunk) means a person is
- * still needed. An optional hunk never does, and no hunks do not.
- */
-export function isGsdAttended(hunks: readonly HunkOp[]): boolean {
-  return hunks.some(isUnmetHunk)
-}
-
-/**
  * Whether the roles of a framework are attended by its current config alone, without asking (regen, D-70, D-72): a
  * required proposal among those the adapter offers (autonomyHunks, A5) is still offered, that is, not yet at its
  * target. A config that cannot be read never equals a target, so it attends the roles too (fail closed). With no
