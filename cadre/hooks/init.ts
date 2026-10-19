@@ -478,11 +478,28 @@ export const ADJUST_OPTIONS: readonly string[] = Object.freeze(ADJUST_CHOICES.ma
 /** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
 export const MAX_PROPOSE_ATTEMPTS = 3
 
-/** The most rounds of the roles question; after them the roles shown are used. */
-const MAX_ROLE_ROUNDS = 10
+/** The most times the roles question is asked; the round after them cancels, so no roles are taken unconfirmed (A1). */
+export const MAX_ROLE_ROUNDS = 10
 
-/** The most answers the Adjust loop takes; after them the roles as adjusted so far are used. */
-const MAX_ADJUST_ROUNDS = 30
+/** The most answers the Adjust loop takes; after them it shows the roles so far and goes back to the roles question. */
+export const MAX_ADJUST_ROUNDS = 30
+
+/** Why the roles step cancels once the roles question was asked MAX_ROLE_ROUNDS times (A1). */
+export const ROLE_ROUNDS_REASON =
+  `The roles question was asked ${MAX_ROLE_ROUNDS} times without "Use these roles": nothing was chosen.`
+
+/** The note the Adjust loop prints at its cap, before it goes back to the roles question with the roles so far (A1). */
+export const ADJUST_ROUNDS_NOTE =
+  `Adjust took ${MAX_ADJUST_ROUNDS} answers without "Done adjusting": showing the roles as they are now.`
+
+/** Why the roles step cancels when the roles question is dismissed or never answered with a listed choice (A1). */
+export const ROLES_DISMISSED_REASON = 'The roles question was dismissed or not answered.'
+
+/** Why the roles step cancels when the Adjust question is dismissed (A1). */
+export const ADJUST_DISMISSED_REASON = 'The Adjust question was dismissed.'
+
+/** Why the roles step cancels when the describe question is dismissed or `Cancel init` is chosen there (A1). */
+export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or cancelled.'
 
 /** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
 const ROLE_LABEL_WIDTH = 24
@@ -630,22 +647,32 @@ function adjusted(
 }
 
 /**
- * The Adjust loop (D-47): one typed change per answer, add, drop, rename or framework, until `Done adjusting`. A line
- * it cannot read, a change applyAdjust refuses, or a framework outside `installed` (A5) prints its exact message and
- * the loop goes on; `Show the roles` prints the roles as they are now. A dismissed dialog is null. After
- * MAX_ADJUST_ROUNDS answers the roles adjusted so far are used. The roles it is given are never changed.
+ * What the Adjust loop gives (A1): the roles as adjusted, which are no choice yet, since the roles question still has
+ * to confirm them, or why the loop was cancelled.
+ */
+export type AdjustOutcome =
+  | { readonly kind: 'adjusted'; readonly roles: readonly RoleSpec[] }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/**
+ * The Adjust loop (D-47): one typed change per answer, add, drop, rename or framework, until `Done adjusting`, which
+ * gives the roles as adjusted. A line it cannot read, a change applyAdjust refuses, or a framework outside
+ * `installed` (A5) prints its exact message and the loop goes on; `Show the roles` prints the roles as they are now.
+ * A dismissed dialog cancels with ADJUST_DISMISSED_REASON. After MAX_ADJUST_ROUNDS answers it prints
+ * ADJUST_ROUNDS_NOTE and gives the roles adjusted so far, so the roles question asks about them again: a cap is never
+ * an acceptance (A1). The roles it is given are never changed.
  */
 export async function adjustLoop(
   io: InitIo,
   roles: readonly RoleSpec[],
   installed: readonly FrameworkId[],
-): Promise<readonly RoleSpec[] | null> {
+): Promise<AdjustOutcome> {
   let current = roles
   for (let round = 0; round < MAX_ADJUST_ROUNDS; round += 1) {
     const answer = await askOnce(io, ADJUST_QUESTION, { options: ADJUST_OPTIONS })
-    if (answer === null) return null
+    if (answer === null) return { kind: 'cancelled', reason: ADJUST_DISMISSED_REASON }
     const choice = labelled(ADJUST_CHOICES, answer)
-    if (choice === 'done') return current
+    if (choice === 'done') return { kind: 'adjusted', roles: current }
     if (choice === 'show') {
       logLines(io, roleLines(current))
       continue
@@ -657,8 +684,9 @@ export async function adjustLoop(
     }
     current = result.roles
   }
+  logLines(io, [ADJUST_ROUNDS_NOTE])
 
-  return current
+  return { kind: 'adjusted', roles: current }
 }
 
 /** The answer to the roles question, or null when it names none of the three, so it is asked again. */
@@ -666,55 +694,108 @@ function parseRolesChoice(answer: string): RolesChoice | null {
   return labelled(ROLES_CHOICES, answer)
 }
 
-/** The roles the roles question shows, with the scan changes behind them; a described structure has none. */
-type Shown = {
-  readonly roles: readonly RoleSpec[]
-  readonly changes: readonly RoleChange[]
+/**
+ * The state of the roles step (A1, D-40, D-83):
+ * - `proposed`: the roles, with the scan changes behind them (none for a described structure), are shown and the
+ *   roles question is asked.
+ * - `adjusting`: the Adjust loop runs on those roles.
+ * - `describing`: the person describes a structure of their own.
+ * - `accepted`: the person answered `Use these roles` for the roles shown; the only state that holds a choice.
+ * - `cancelled`: the step ended with nothing chosen, and `reason` says why.
+ */
+export type RolesState =
+  | { readonly kind: 'proposed'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
+  | { readonly kind: 'adjusting'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
+  | { readonly kind: 'describing' }
+  | { readonly kind: 'accepted'; readonly roles: readonly RoleSpec[] }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/** The roles step cancelled with a reason. */
+function rolesCancelled(reason: string): RolesState {
+  return { kind: 'cancelled', reason }
 }
 
-/** The roles shown after the Adjust loop, with the same scan changes; null when the loop was cancelled. */
-async function adjustShown(io: InitIo, shown: Shown, installed: readonly FrameworkId[]): Promise<Shown | null> {
-  const roles = await adjustLoop(io, shown.roles, installed)
+/** After `proposed`: the roles are shown and asked about; only `Use these roles` accepts them. */
+async function afterProposed(
+  io: InitIo,
+  state: Extract<RolesState, { readonly kind: 'proposed' }>,
+): Promise<RolesState> {
+  logLines(io, proposalLines(state.roles, state.changes))
+  const choice = await askChoice(io, ROLES_QUESTION, { options: ROLES_OPTIONS }, parseRolesChoice)
+  if (choice === null) return rolesCancelled(ROLES_DISMISSED_REASON)
+  if (choice === 'use') return { kind: 'accepted', roles: state.roles }
+  if (choice === 'adjust') return { kind: 'adjusting', roles: state.roles, changes: state.changes }
 
-  return roles === null ? null : { roles, changes: shown.changes }
+  return { kind: 'describing' }
+}
+
+/** After `adjusting`: the adjusted roles are proposed again with the same scan changes, or the step is cancelled. */
+async function afterAdjusting(
+  io: InitIo,
+  state: Extract<RolesState, { readonly kind: 'adjusting' }>,
+  installed: readonly FrameworkId[],
+): Promise<RolesState> {
+  const outcome = await adjustLoop(io, state.roles, installed)
+  if (outcome.kind === 'cancelled') return rolesCancelled(outcome.reason)
+
+  return { kind: 'proposed', roles: outcome.roles, changes: state.changes }
 }
 
 /**
- * The roles shown after the Describe path: the described roles, or the template proposal when the person goes back
- * to it or the model's roles could not be used, in which case the reason is printed first. Null when cancelled.
+ * After `describing`: the described roles are proposed with no scan changes; going back to the template, or roles the
+ * model could not give (its reason printed first), proposes the template again; a dismissal or `Cancel init` cancels.
  */
-async function describeShown(io: InitIo, proposal: RoleProposal): Promise<Shown | null> {
+async function afterDescribing(io: InitIo, proposal: RoleProposal): Promise<RolesState> {
   const described = await describeStep(io)
-  if (described === null) return null
-  if (described.kind === 'roles') return { roles: described.roles, changes: [] }
+  if (described === null) return rolesCancelled(DESCRIBE_CANCELLED_REASON)
+  if (described.kind === 'roles') return { kind: 'proposed', roles: described.roles, changes: [] }
   if (described.kind === 'fallback') logLines(io, [described.message])
 
-  return proposal
+  return { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
+}
+
+/** The state after one step of the roles step; an end state stays as it is. */
+async function nextState(
+  io: InitIo,
+  state: RolesState,
+  proposal: RoleProposal,
+  installed: readonly FrameworkId[],
+): Promise<RolesState> {
+  switch (state.kind) {
+    case 'proposed':
+      return afterProposed(io, state)
+    case 'adjusting':
+      return afterAdjusting(io, state, installed)
+    case 'describing':
+      return afterDescribing(io, proposal)
+    case 'accepted':
+    case 'cancelled':
+      return state
+  }
 }
 
 /**
- * The roles step (ROLE-01, ROLE-02, D-46, D-47): prints the roles with the scan changes behind them and asks `Use
- * these roles?`. `Use these roles` takes the roles shown; `Adjust them` runs adjustLoop on them with the frameworks
- * `installed` for the repo; `Describe my own structure` runs describeStep. After either, the roles are shown and
- * asked about again. A dismissed dialog anywhere is null (D-45). After MAX_ROLE_ROUNDS rounds the roles shown are used.
+ * The roles step (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83), as the states of RolesState. It starts at `proposed`
+ * with the proposal and shows the roles with the scan changes behind them under `Use these roles?`. `Adjust them`
+ * runs adjustLoop with the frameworks `installed` for the repo and `Describe my own structure` runs describeStep;
+ * either goes back to `proposed`. Only the answer `Use these roles` gives roles (`accepted`): a dismissal anywhere
+ * cancels with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals cancels with
+ * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used.
  */
 export async function rolesStep(
   io: InitIo,
   proposal: RoleProposal,
   installed: readonly FrameworkId[],
-): Promise<readonly RoleSpec[] | null> {
-  let shown: Shown = proposal
-  for (let round = 0; round < MAX_ROLE_ROUNDS; round += 1) {
-    logLines(io, proposalLines(shown.roles, shown.changes))
-    const choice = await askChoice(io, ROLES_QUESTION, { options: ROLES_OPTIONS }, parseRolesChoice)
-    if (choice === null) return null
-    if (choice === 'use') return shown.roles
-    const next = choice === 'adjust' ? await adjustShown(io, shown, installed) : await describeShown(io, proposal)
-    if (next === null) return null
-    shown = next
+): Promise<Extract<RolesState, { readonly kind: 'accepted' | 'cancelled' }>> {
+  let state: RolesState = { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
+  let rounds = 0
+  for (;;) {
+    if (state.kind === 'accepted' || state.kind === 'cancelled') return state
+    const isPastCap = state.kind === 'proposed' && rounds === MAX_ROLE_ROUNDS
+    if (isPastCap) return { kind: 'cancelled', reason: ROLE_ROUNDS_REASON }
+    if (state.kind === 'proposed') rounds += 1
+    state = await nextState(io, state, proposal, installed)
   }
-
-  return shown.roles
 }
 
 /** The framework names the framework questions show; none of them is marked as a default (D-07). */
@@ -863,7 +944,8 @@ function initReply(policy: GitPolicy, dryRun: boolean): string {
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
  * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
  * (frameworkStep), prints the recommendations (ROLE-03), asks the git policy, and ends with the note that nothing was
- * written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED (D-45).
+ * written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step
+ * prints its reason first, and only roles the person accepted reach the steps after it (A1).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -878,10 +960,14 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
 
   const detections = detectAll(gathered.facts.facts)
-  const proposed = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
-  if (proposed === null) return INIT_CANCELLED
+  const chosen = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
+  if (chosen.kind === 'cancelled') {
+    logLines(io, [chosen.reason])
 
-  const framed = await frameworkStep(io, chooseFramework(detections, null), proposed)
+    return INIT_CANCELLED
+  }
+
+  const framed = await frameworkStep(io, chooseFramework(detections, null), chosen.roles)
   if (framed === null) return INIT_CANCELLED
 
   const { roles, repoDefault } = framed
