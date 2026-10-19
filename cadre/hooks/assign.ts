@@ -264,11 +264,42 @@ export function classifySkills(
   return { assigned, groups: groupByPlugin(asked) }
 }
 
-/** The question for a group of skills the table does not decide. The label is cleaned and cut to 60 code points. */
-export function skillGroupQuestion(group: SkillGroup): string {
+/**
+ * How often the history scan saw the skills of a group in recent sessions: the sum of the counts of its names, where a
+ * name the scan did not see counts 0. It is a hint for the order and the wording of the question only (D-59).
+ */
+export function groupUses(group: SkillGroup, counts: ReadonlyMap<string, number>): number {
+  return group.names.reduce((sum, name) => sum + (counts.get(name) ?? 0), 0)
+}
+
+/**
+ * The skill groups busiest first by groupUses; groups with equal uses keep the order they are given in, which is the
+ * order classifySkills gives (by label, the user's own skills last). With no counts that order is unchanged, and the
+ * list given is never changed (D-59).
+ */
+export function orderGroupsByUse(groups: readonly SkillGroup[], counts: ReadonlyMap<string, number>): SkillGroup[] {
+  return groups
+    .map((group, at) => ({ group, at, uses: groupUses(group, counts) }))
+    .sort((a, b) => b.uses - a.uses || a.at - b.at)
+    .map(ranked => ranked.group)
+}
+
+/** How often a skill group was used, as the question shows it: ` (used <n> times in recent sessions)`, or nothing. */
+function usesText(uses: number | undefined): string {
+  if (uses === undefined || uses === 0) return ''
+
+  return ` (used ${uses} ${uses === 1 ? 'time' : 'times'} in recent sessions)`
+}
+
+/**
+ * The question for a group of skills the table does not decide. The label is cleaned and cut to 60 code points. With
+ * `uses` from the history scan, the question says how often the group was used in recent sessions (D-59); with no
+ * uses, or 0, it is worded as without the scan.
+ */
+export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
   const label = clean(group.label, MAX_SHOWN_NAME_CHARS)
 
-  return `Which roles get ${label} skills (${group.names.length})? ${ROLE_ANSWER_HINT}`
+  return `Which roles get ${label} skills (${group.names.length})?${usesText(uses)} ${ROLE_ANSWER_HINT}`
 }
 
 /** Records a role id under the lowercase form of a name, unless the name is blank or an earlier role holds it. */

@@ -36,11 +36,13 @@ import {
   classifyMcp,
   classifySkills,
   envQuestion,
+  groupUses,
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
   NONE_OPTION,
+  orderGroupsByUse,
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
@@ -64,6 +66,7 @@ import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { desiredFiles } from './generate'
 import { sha256Hex } from './hash'
 import { historyStep } from './history'
+import type { HistoryScan } from './history'
 import { buildPlan, gitignoreLines, planReadPaths, renderPlan } from './plan'
 import {
   attendedNote,
@@ -1193,19 +1196,27 @@ async function askAssignments(
  * QA, or none)", answered with None, All roles or a typed list of role ids or titles; an answer that names any other
  * role is asked again (parseRoleList, T-02-33). The step decides the whole list of each name it asks about: every
  * role first loses those names, then each name joins the `mcp` or `skills` list of the roles its answer names
- * (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3). Only an
- * answer to every question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the
- * cancel reason ASSIGNMENT_DISMISSED_REASON (A1). The roles it is given never change.
+ * (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3). With
+ * `hints`, the command and skill counts of the history scan, the skill groups are asked busiest first and each
+ * question says how often its group was used (orderGroupsByUse, skillGroupQuestion); without hints, or with none
+ * that count, the questions and their order are the same as without the scan (D-59). Only an answer to every
+ * question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the cancel reason
+ * ASSIGNMENT_DISMISSED_REASON (A1). The roles it is given never change.
  */
 export async function assignmentStep(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
+  hints?: ReadonlyMap<string, number>,
 ): Promise<StepResult<readonly RoleSpec[]>> {
   const mcp = classifyMcp(setup.mcp, roles)
   const skills = classifySkills(setup.skills, roles)
+  const counts = hints ?? new Map<string, number>()
   const serverItems = mcp.unknown.map(name => ({ question: mcpQuestion(name), names: [name] }))
-  const groupItems = skills.groups.map(group => ({ question: skillGroupQuestion(group), names: group.names }))
+  const groupItems = orderGroupsByUse(skills.groups, counts).map(group => ({
+    question: skillGroupQuestion(group, groupUses(group, counts)),
+    names: group.names,
+  }))
   const servers = await askAssignments(io, roles, serverItems)
   if (servers === null) return cancelled(ASSIGNMENT_DISMISSED_REASON)
   const grouped = await askAssignments(io, roles, groupItems)
@@ -1772,8 +1783,9 @@ export const REVIEW_HINT = 'To change something else, type one of: duration, mod
  * What one init run holds in memory while the person reviews the plan (D-43, D-45, D-82): where it runs and what the
  * scans gave, the ~/.claude.json consent answer the scans were gathered with (cadre.json records it, A1), what the
  * roles and framework steps are asked with (the installed frameworks, the framework choice and the template proposal
- * with its scan changes), and every answer so far, the accepted team's scan changes included, so Change roles shows
- * those again (A6). It is never written or kept after the run; a go-back gives a new Draft.
+ * with its scan changes), the history hints the skill questions are asked with (D-59), and every answer so far, the
+ * accepted team's scan changes included, so Change roles shows those again (A6). It is never written or kept after
+ * the run; a go-back gives a new Draft.
  */
 export type Draft = {
   readonly locations: InitLocations
@@ -1782,6 +1794,8 @@ export type Draft = {
   readonly installed: readonly FrameworkId[]
   readonly choice: Choice
   readonly proposal: RoleProposal
+  /** The command and skill counts of the history scan, empty when it was skipped: hints only (D-59). */
+  readonly hints: ReadonlyMap<string, number>
   readonly duration: string
   readonly roles: readonly RoleSpec[]
   /** The scan changes shown with the accepted roles: the template's, or none for a described structure (A6). */
@@ -1792,8 +1806,11 @@ export type Draft = {
   readonly launchStart: LaunchStart
 }
 
-/** The parts of a Draft that the scans, and the consent answer they were gathered with, fix for the whole run. */
-type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'installed' | 'choice' | 'proposal'>
+/**
+ * The parts of a Draft that the scans, the consent answer they were gathered with and the history hints fix for the
+ * whole run.
+ */
+type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'installed' | 'choice' | 'proposal' | 'hints'>
 
 /**
  * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
@@ -1808,9 +1825,9 @@ function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult
 
 /**
  * The per-role steps after the duration (D-52, D-53, D-60, D-63, ROLE-04), in this order: model and effort
- * (modelStep), MCP servers and skills (assignmentStep), instructions and memories (memoryStep), carried settings
- * (carryStep), then the autonomy hunks of the frameworks the roles run on (hunkStep). The first cancelled step ends it
- * with its reason (A1).
+ * (modelStep), MCP servers and skills with the history hints (assignmentStep), instructions and memories
+ * (memoryStep), carried settings (carryStep), then the autonomy hunks of the frameworks the roles run on (hunkStep).
+ * The first cancelled step ends it with its reason (A1).
  */
 async function perRoleSteps(
   io: InitIo,
@@ -1821,7 +1838,7 @@ async function perRoleSteps(
   const { gathered, locations } = base
   const modelled = await modelStep(io, roles)
   if (modelled.kind === 'cancelled') return modelled
-  const assigned = await assignmentStep(io, modelled.value, gathered.setup)
+  const assigned = await assignmentStep(io, modelled.value, gathered.setup, base.hints)
   if (assigned.kind === 'cancelled') return assigned
   const instructed = await memoryStep(io, assigned.value, gathered.setup)
   if (instructed.kind === 'cancelled') return instructed
@@ -1888,7 +1905,10 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
     case 'model':
       return mapped(await modelStep(io, roles), modelled => ({ ...draft, roles: modelled }))
     case 'assignments':
-      return mapped(await assignmentStep(io, roles, gathered.setup), assigned => ({ ...draft, roles: assigned }))
+      return mapped(await assignmentStep(io, roles, gathered.setup, draft.hints), assigned => ({
+        ...draft,
+        roles: assigned,
+      }))
     case 'memory':
       return mapped(await memoryStep(io, roles, gathered.setup), instructed => ({ ...draft, roles: instructed }))
     case 'env':
@@ -1954,6 +1974,13 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<P
   return cancelled(REVIEW_ROUNDS_REASON)
 }
 
+/** The history scan as hints for the skill questions: each name with its count; none when the scan was skipped. */
+function historyHints(history: HistoryScan | 'skipped'): ReadonlyMap<string, number> {
+  if (history === 'skipped') return new Map()
+
+  return new Map(history.counts.map((entry): [string, number] => [entry.name, entry.count]))
+}
+
 /** The reply of a cancelled step: its reason as its own line, the one place a cancel reason is printed (A1). */
 function cancelReply(io: InitIo, reason: string): string {
   logLines(io, [reason])
@@ -1999,6 +2026,7 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
     installed: installedFrameworks(detections),
     choice: chooseFramework(detections, null),
     proposal,
+    hints: historyHints(history.value),
   }
   const team = await teamStep(io, base, proposal, null)
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
