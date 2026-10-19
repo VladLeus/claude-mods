@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, PortStat, RepoScan, RoleChange, SetupScan } from '../types'
+import type { Choice, Facts, FrameworkId, InitIo, PortStat, RepoScan, RoleChange, RoleSpec, SetupScan } from '../types'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
   ADJUST_OPTIONS,
@@ -13,6 +13,12 @@ import {
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
   describeStep,
+  FRAMEWORK_ALL_QUESTION,
+  FRAMEWORK_LABELS,
+  FRAMEWORK_QUESTION_PREFIX,
+  frameworkReason,
+  frameworkRoleQuestion,
+  frameworkStep,
   gatherScans,
   GIT_POLICY_OPTIONS,
   INIT_CANCELLED,
@@ -28,16 +34,19 @@ import {
   portProbeOf,
   portTextOf,
   proposalLines,
+  resolvedFramework,
   ROLES_OPTIONS,
   ROLES_QUESTION,
   rolesStep,
   runInit,
   scanSummaryLines,
 } from './init'
+import { recommend, recommendationLines } from './recommend'
+import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
 import { scanSetup } from './setup'
-import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from './testkit'
+import { DEFAULT_LOCATIONS, EMPTY_FACTS, entry, leaks, memIo, memWorld } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
@@ -732,6 +741,189 @@ describe('rolesStep', () => {
     const run = memIo(memWorld({}), answers)
     expect(await rolesStep(run.io, proposal)).toEqual(proposal.roles)
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(10)
+  })
+})
+
+/** A role with its framework set, as the framework step or an Adjust override sets it. */
+function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
+  return { ...role, framework }
+}
+
+/** The framework options when GSD and superpowers are offered: SUPPORTED_IDS order, then the built-in fallback. */
+const BOTH_OPTIONS = ['GSD', 'superpowers', 'none (built-in)']
+
+/** Facts where GSD (.planning/) and superpowers (docs/superpowers/) are both in use, so the choice is ambiguous. */
+const AMBIGUOUS_FACTS: Facts = {
+  ...EMPTY_FACTS,
+  repoEntries: [
+    { name: '.planning', kind: 'dir', isLink: false },
+    { name: 'docs', kind: 'dir', isLink: false },
+  ],
+  docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+}
+
+describe('frameworkStep', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+  const ambiguous: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+  const installedOnly: Choice = { kind: 'installed-only', ids: ['gsd'] }
+  const AMBIGUOUS_QUESTION = 'Which framework do the roles use? (asked because more than one framework is in use)'
+  const INSTALLED_QUESTION =
+    'Which framework do the roles use? (asked because none is in use here, but some are installed for you)'
+
+  test('the framework labels and the question texts are fixed, with no option marked as a default', () => {
+    expect(FRAMEWORK_LABELS).toEqual({ gsd: 'GSD', superpowers: 'superpowers', none: 'none (built-in)' })
+    expect(Object.isFrozen(FRAMEWORK_LABELS)).toBe(true)
+    expect(FRAMEWORK_QUESTION_PREFIX).toBe('Which framework do the roles use?')
+    expect(FRAMEWORK_ALL_QUESTION).toBe('Framework for all roles?')
+    expect(frameworkRoleQuestion('Team Lead')).toBe('Framework for Team Lead?')
+  })
+
+  test('frameworkReason says why the question is asked, and what a choice that asks nothing found', () => {
+    expect(frameworkReason(ambiguous)).toBe('more than one framework is in use')
+    expect(frameworkReason(installedOnly)).toBe('none is in use here, but some are installed for you')
+    const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+    expect(frameworkReason(chosen)).toBe('only gsd is in use')
+    expect(frameworkReason({ kind: 'unsupported', ids: ['aidlc'] })).toBe(
+      'only frameworks cadre does not support were found',
+    )
+    expect(frameworkReason({ kind: 'none' })).toBe('no framework was found')
+  })
+
+  test('with one framework in use nothing is asked, overrides stay, and that framework is the default', async () => {
+    const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+    const overridden = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const run = memIo(memWorld({}), {})
+    expect(await frameworkStep(run.io, chosen, overridden)).toEqual({ roles: overridden, repoDefault: 'gsd' })
+    expect(await frameworkStep(run.io, chosen, roles)).toEqual({ roles, repoDefault: 'gsd' })
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
+  })
+
+  test('ambiguous: Same for all roles asks once more and gives every role that framework, no default', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'superpowers'])
+    expect(await frameworkStep(run.io, ambiguous, roles)).toEqual({
+      roles: roles.map(role => withFramework(role, 'superpowers')),
+      repoDefault: null,
+    })
+    expect(run.asked).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
+    expect(run.specs).toEqual([{ options: ['Same for all roles', 'Per role'] }, { options: BOTH_OPTIONS }])
+  })
+
+  test('ambiguous: Per role asks each role in role order with the two frameworks and none', async () => {
+    const run = memIo(memWorld({}), ['Per role', 'GSD', 'none (built-in)', 'superpowers'])
+    const result = await frameworkStep(run.io, ambiguous, roles)
+    expect(result?.roles.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
+    expect(result?.repoDefault).toBeNull()
+    expect(run.asked).toEqual([
+      AMBIGUOUS_QUESTION,
+      'Framework for PM?',
+      'Framework for Team Lead?',
+      'Framework for Security?',
+    ])
+    const each = { options: BOTH_OPTIONS }
+    expect(run.specs.slice(1)).toEqual([each, each, each])
+  })
+
+  test('installed-only asks with the installed framework and none, and says why it asks', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
+    const result = await frameworkStep(run.io, installedOnly, roles)
+    expect(result?.roles.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
+    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
+    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'] })
+  })
+
+  test('a typed framework that is not offered is asked again; a typed id that is offered counts', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'superpowers', ' NONE '])
+    const result = await frameworkStep(run.io, installedOnly, roles)
+    expect(result?.roles.map(role => role.framework)).toEqual(['none', 'none', 'none'])
+    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION, FRAMEWORK_ALL_QUESTION])
+  })
+
+  test('a dismissed framework question is never a choice: the step is cancelled', async () => {
+    const scripts = [[], ['Same for all roles'], ['Per role', 'GSD'], ['what', 'ever', 'else']]
+    for (const answers of scripts) {
+      expect(await frameworkStep(memIo(memWorld({}), answers).io, ambiguous, roles)).toBeNull()
+    }
+  })
+
+  test('unsupported and none ask nothing and give the built-in default; unsupported says what was found', async () => {
+    const unsupported: Choice = { kind: 'unsupported', ids: ['aidlc'] }
+    const run = memIo(memWorld({}), {})
+    expect(await frameworkStep(run.io, unsupported, roles)).toEqual({ roles, repoDefault: 'none' })
+    expect(run.logged).toEqual([choiceLine(unsupported)])
+    const none = memIo(memWorld({}), {})
+    expect(await frameworkStep(none.io, { kind: 'none' }, roles)).toEqual({ roles, repoDefault: 'none' })
+    expect(none.asked).toEqual([])
+    expect(none.logged).toEqual([])
+  })
+
+  test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', async () => {
+    const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
+    const run = memIo(memWorld({}), ['Per role', 'GSD', 'GSD', 'GSD'])
+    await frameworkStep(run.io, reversed, roles)
+    const each = { options: BOTH_OPTIONS }
+    expect(run.specs.slice(1)).toEqual([each, each, each])
+    for (const spec of run.specs) {
+      expect(spec.options.length >= 2 && spec.options.length <= 4).toBe(true)
+      expect(spec.options.some(option => option.includes('(default)'))).toBe(false)
+    }
+  })
+
+  test("resolvedFramework is the role's own framework, else the repo default, else none", () => {
+    const [role] = roles
+    if (role === undefined) throw new Error('no template role')
+    expect(resolvedFramework(withFramework(role, 'superpowers'), 'gsd')).toBe('superpowers')
+    expect(resolvedFramework(role, 'gsd')).toBe('gsd')
+    expect(resolvedFramework(role, null)).toBe('none')
+  })
+})
+
+describe('runInit framework and recommendations', () => {
+  test('with nothing detected no framework is asked and the GSD and superpowers lines print first', async () => {
+    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(run.asked.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(false)
+    const at = events.findIndex(event => event.startsWith('log Recommendations (print-only; nothing is installed):\n'))
+    expect(at >= 0 && at < events.indexOf('ask Git policy for .cadre/?')).toBe(true)
+    expect(events[at]).toContain('\n- GSD for all roles: ')
+    expect(events[at]).toContain('\n- superpowers for all roles: ')
+  })
+
+  test('the recommendations are those of recommend for the roles on the built-in framework', async () => {
+    const run = memIo(gitWorld(), RUN_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const scan = await scanRepo(memIo(gitWorld(), {}).io, '/repo')
+    const ctx = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
+    const setup = await scanSetup(memIo(gitWorld(), {}).io, ctx, false)
+    const roles = proposeRoles(scan).roles
+    const frameworks = roles.map((): FrameworkId => 'none')
+    const expected = recommendationLines(recommend({ roles, frameworks, scan, setup }), roles)
+    expect(run.logged).toContain(expected.join('\n'))
+  })
+
+  test('with two frameworks in use the framework question follows the roles; no framework is recommended', async () => {
+    const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), RUN_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const rolesAt = events.indexOf(`ask ${ROLES_QUESTION}`)
+    const frameworkAt = events.indexOf(
+      'ask Which framework do the roles use? (asked because more than one framework is in use)',
+    )
+    expect(rolesAt >= 0 && frameworkAt > rolesAt).toBe(true)
+    expect(events[frameworkAt + 1]).toBe(`ask ${FRAMEWORK_ALL_QUESTION}`)
+    const recommended = run.logged.find(text => text.startsWith('Recommendations'))
+    expect(recommended === undefined).toBe(false)
+    expect(recommended).not.toContain('- GSD for all roles')
+    expect(recommended).not.toContain('- superpowers for all roles')
+  })
+
+  test('a dismissed framework question cancels init', async () => {
+    const kept = Object.entries(RUN_ANSWERS).filter(([key]) => !key.startsWith('Which framework'))
+    const answers = Object.fromEntries(kept)
+    const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
   })
 })
 
