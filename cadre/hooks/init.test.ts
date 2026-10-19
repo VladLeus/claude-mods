@@ -1372,6 +1372,7 @@ describe('durationStep', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const recommendedAt = events.findIndex(event => event.startsWith('log Recommendations'))
+    expect(recommendedAt).not.toBe(-1)
     expect(events.indexOf(`ask ${DURATION_QUESTION}`) > recommendedAt).toBe(true)
     expect(run.asked.filter(question => question === DURATION_QUESTION)).toHaveLength(1)
     const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
@@ -1470,6 +1471,15 @@ describe('modelStep', () => {
     expect(roles.every(role => role.autopilot.threshold === AUTOPILOT_THRESHOLD)).toBe(true)
     expect(AUTOPILOT_THRESHOLD).toBe(65)
     expect(JSON.stringify(roles)).toBe(before)
+  })
+
+  test('Same for all roles gives all five roles the threshold 65, and no init question asks it (B3)', async () => {
+    const all = valueOf(await modelStep(memIo(memWorld({}), ['Same for all roles', 'opus + high']).io, roles))
+    expect(all.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security'])
+    expect(all.map(role => role.autopilot.threshold)).toEqual(all.map(() => AUTOPILOT_THRESHOLD))
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.asked.filter(question => /threshold/i.test(question))).toEqual([])
   })
 
   test('a dismissal or unlisted answer at any model question cancels with the reason, no roles (A1)', async () => {
