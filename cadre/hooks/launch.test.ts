@@ -2,6 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, RoleSpec, ScopeContext, SetupScan, TemplateRoleId } from '../types'
 import {
+  claudeMdImports,
+  instructionPlan,
   launchPlan,
   lintRuntimeDenyPattern,
   memorySlug,
@@ -13,6 +15,7 @@ import {
 import type { LaunchUser } from './launch'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { compileScope } from './scope'
+import { BIDI_OVERRIDE } from './testkit'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
@@ -558,5 +561,303 @@ describe('runtimeDeny', () => {
 
     expect(result.deny.filter(entry => lintRuntimeDenyPattern(entry) !== null)).toEqual([])
     expect(result.deny).toContain('Read(//repo/docs/**)')
+  })
+})
+
+/** The CLAUDE.md files the engine loads for the fixture repo: its own, the one in `.claude` and an ancestor's. */
+const CHAIN = ['/repo/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/home/u/work/CLAUDE.md']
+
+/** The folder the instruction links of the PM are created in, for the group `global` or `memory`. */
+function linkDir(group: 'global' | 'memory'): string {
+  return `/repo/.cadre/pm/.runtime/instructions/${group}`
+}
+
+describe('claudeMdImports', () => {
+  const imports = (text: string): string[] => claudeMdImports(text, '/home/u/.claude', '/home/u')
+
+  test('it finds the files a CLAUDE.md imports, resolved against its folder and the home, sorted', () => {
+    const text = 'See @~/notes/a.md and @./b.md\n`@./code.md`\n@../c.md\nmail me@x.org\n@d.md'
+
+    expect(imports(text)).toEqual([
+      '/home/u/.claude/b.md',
+      '/home/u/.claude/d.md',
+      '/home/u/c.md',
+      '/home/u/notes/a.md',
+    ])
+  })
+
+  test('an absolute path is kept, and a dot or dot-dot segment is resolved away', () => {
+    expect(imports('@/etc/x/../y.md and @/opt/./z.txt')).toEqual(['/etc/y.md', '/opt/z.txt'])
+  })
+
+  test('a path given twice, in any spelling, is listed once', () => {
+    expect(imports('@./b.md @b.md @./x/../b.md\n@~/../u/.claude/b.md')).toEqual(['/home/u/.claude/b.md'])
+  })
+
+  test('a .. segment cannot climb above the root of the file system', () => {
+    expect(imports('@../../../../../x.md')).toEqual(['/x.md'])
+  })
+
+  test('a bare name needs .md, while a path that starts with ~/, ./, ../ or / needs no extension', () => {
+    expect(imports('@README @notes.md @docs/x.md @./dir/file @~/f.txt @/abs/g')).toEqual([
+      '/abs/g',
+      '/home/u/.claude/dir/file',
+      '/home/u/.claude/docs/x.md',
+      '/home/u/.claude/notes.md',
+      '/home/u/f.txt',
+    ])
+  })
+
+  test('an import inside an inline code span, a double-backtick span or a fenced block is ignored', () => {
+    const text = [
+      'Use `@./a.md` to import.',
+      '```markdown',
+      '@./b.md',
+      '```',
+      'Also ``x @./c.md y`` here and @./d.md.',
+    ].join('\n')
+
+    expect(imports(text)).toEqual(['/home/u/.claude/d.md'])
+  })
+
+  test('a backtick that closes nothing is plain text and hides no import', () => {
+    expect(imports('it`s here\n@./a.md')).toEqual(['/home/u/.claude/a.md'])
+  })
+
+  test('a fence of four backticks is not closed by a fence of three inside it', () => {
+    expect(imports('````\n```\n@./a.md\n```\n````\n@./b.md')).toEqual(['/home/u/.claude/b.md'])
+  })
+
+  test('an e-mail address, and a word with an @ inside it, are not imports', () => {
+    expect(imports('write to me@x.md or a@b.md, c.d@e.md')).toEqual([])
+  })
+
+  test('a mark right before the @, such as a parenthesis or a quote, makes it plain text', () => {
+    expect(imports('(@./a.md) "@./b.md" see @./c.md')).toEqual(['/home/u/.claude/c.md'])
+  })
+
+  test('a sentence mark after the path is not part of it', () => {
+    expect(imports('see @./b.md, then @./c.md. And @./d.md)')).toEqual([
+      '/home/u/.claude/b.md',
+      '/home/u/.claude/c.md',
+      '/home/u/.claude/d.md',
+    ])
+  })
+
+  test('a heading, a flag, a folder and a lone mark are not imports', () => {
+    expect(imports('@#section @-flag @./dir/ @/ @. @.. @')).toEqual([])
+  })
+
+  test('a token after a tab or at the very start of the text counts', () => {
+    expect(imports('@./a.md\n\t@./b.md')).toEqual(['/home/u/.claude/a.md', '/home/u/.claude/b.md'])
+  })
+
+  test('text with no import, and empty text, give nothing', () => {
+    expect(imports('')).toEqual([])
+    expect(imports('# Notes\n\nNothing is imported here.')).toEqual([])
+  })
+
+  test('no result holds a . or .. segment, whatever the spelling', () => {
+    const found = imports('@./a/./b.md @../../../c.md @~/./d/../e.md @/f/../../g.md @h/./i.md')
+
+    expect(found).toHaveLength(5)
+    expect(found.filter(path => /(^|\/)\.{1,2}(\/|$)/.test(path))).toEqual([])
+  })
+
+  test('many backtick runs that close nothing are plain text and hide no import', () => {
+    const runs = Array.from({ length: 300 }, (_, index) => '`'.repeat(index + 1)).join(' ')
+
+    expect(imports(`${runs}\n@./a.md`)).toEqual(['/home/u/.claude/a.md'])
+  })
+})
+
+describe('instructionPlan', () => {
+  test('without the project CLAUDE.md group every CLAUDE.md of the loaded chain is excluded, sorted (P11)', () => {
+    const plan = instructionPlan(templateRole('pm'), user({ claudeMd: CHAIN }))
+
+    expect(plan.claudeMdExcludes).toEqual(['/home/u/work/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/repo/CLAUDE.md'])
+    expect(plan.links).toEqual([])
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('with the project CLAUDE.md group nothing is excluded: the chain loads by itself (P11)', () => {
+    const role = templateRole('pm', { instructions: ['project-claude-md'] })
+
+    expect(instructionPlan(role, user({ claudeMd: CHAIN })).claudeMdExcludes).toEqual([])
+  })
+
+  test('the excludes list each file once, whatever order and repeats the chain comes in', () => {
+    const claudeMd = [...[...CHAIN].reverse(), ...CHAIN]
+    const plan = instructionPlan(templateRole('pm'), user({ claudeMd }))
+
+    expect(plan.claudeMdExcludes).toEqual(['/home/u/work/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/repo/CLAUDE.md'])
+  })
+
+  test('the global CLAUDE.md group links the file and its imports, numbered in the order given', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md'] })
+    const global = ['/home/u/.claude/CLAUDE.md', '/home/u/notes/a.md']
+    const plan = instructionPlan(role, user({ globalClaudeMd: global }))
+
+    expect(plan.links).toEqual([
+      { path: `${linkDir('global')}/01-CLAUDE.md`, target: '/home/u/.claude/CLAUDE.md' },
+      { path: `${linkDir('global')}/02-a.md`, target: '/home/u/notes/a.md' },
+    ])
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('two global files with the same name do not clash: the number tells them apart', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md'] })
+    const global = ['/home/u/.claude/CLAUDE.md', '/home/u/a/notes.md', '/home/u/b/notes.md']
+    const plan = instructionPlan(role, user({ globalClaudeMd: global }))
+
+    expect(plan.links.map(link => link.path)).toEqual([
+      `${linkDir('global')}/01-CLAUDE.md`,
+      `${linkDir('global')}/02-notes.md`,
+      `${linkDir('global')}/03-notes.md`,
+    ])
+    expect(plan.links.map(link => link.target)).toEqual(global)
+  })
+
+  test('with no global file the group plans no link and no warning', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md'] })
+
+    expect(instructionPlan(role, user({ globalClaudeMd: [] }))).toEqual({
+      claudeMdExcludes: [],
+      links: [],
+      warnings: [],
+    })
+  })
+
+  test('a global file whose name is empty or has hidden characters is not linked and the number is kept', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md'] })
+    const hidden = `/home/u/x/a${BIDI_OVERRIDE}b.md`
+    const global = ['/home/u/.claude/CLAUDE.md', hidden, '/home/u/x/', '/c.md']
+    const plan = instructionPlan(role, user({ globalClaudeMd: global }))
+
+    expect(plan.links.map(link => link.path)).toEqual([
+      `${linkDir('global')}/01-CLAUDE.md`,
+      `${linkDir('global')}/04-c.md`,
+    ])
+    expect(plan.warnings).toEqual([
+      'global file ab.md has an unsafe name: not linked',
+      'global file  has an unsafe name: not linked',
+    ])
+  })
+
+  test('the memory group links each memory file of this repo to its folder under projects (D-100)', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const plan = instructionPlan(role, user({ memoryFiles: ['MEMORY.md', 'b.md'] }))
+
+    expect(plan.links).toEqual([
+      {
+        path: `${linkDir('memory')}/MEMORY.md`,
+        target: '/home/u/.claude/projects/-repo/memory/MEMORY.md',
+      },
+      { path: `${linkDir('memory')}/b.md`, target: '/home/u/.claude/projects/-repo/memory/b.md' },
+    ])
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('the memory folder is named after the mangled root and lies in the config dir of the user', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const plan = instructionPlan(role, user({ root: '/w/my repo', userDir: '/cfg', memoryFiles: ['x.md'] }))
+
+    expect(plan.links).toEqual([
+      {
+        path: '/w/my repo/.cadre/pm/.runtime/instructions/memory/x.md',
+        target: '/cfg/projects/-w-my-repo/memory/x.md',
+      },
+    ])
+  })
+
+  test('a memory name with a slash, a .. segment or a leading dot is not linked and warns', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const names = ['../x.md', '.hidden.md', '..', 'a/b.md', 'a..b.md', 'ok.md', '']
+    const plan = instructionPlan(role, user({ memoryFiles: names }))
+
+    expect(plan.links.map(link => link.path)).toEqual([`${linkDir('memory')}/a..b.md`, `${linkDir('memory')}/ok.md`])
+    expect(plan.warnings).toEqual([
+      'memory file  has an unsafe name: not linked',
+      'memory file .. has an unsafe name: not linked',
+      'memory file ../x.md has an unsafe name: not linked',
+      'memory file .hidden.md has an unsafe name: not linked',
+      'memory file a/b.md has an unsafe name: not linked',
+    ])
+  })
+
+  test('a memory name with hidden characters is not linked, and the warning shows it cleaned', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const plan = instructionPlan(role, user({ memoryFiles: [`ev${BIDI_OVERRIDE}il.md`] }))
+
+    expect(plan.links).toEqual([])
+    expect(plan.warnings).toEqual(['memory file evil.md has an unsafe name: not linked'])
+  })
+
+  test('a memory file listed twice is linked once', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+
+    expect(instructionPlan(role, user({ memoryFiles: ['b.md', 'b.md'] })).links).toHaveLength(1)
+  })
+
+  test('a role without the global or memory group gets no link of that group, whatever exists on disk', () => {
+    const files = { globalClaudeMd: ['/home/u/.claude/CLAUDE.md'], memoryFiles: ['MEMORY.md'] }
+    const none = instructionPlan(templateRole('pm'), user(files))
+    const onlyGlobal = instructionPlan(templateRole('pm', { instructions: ['global-claude-md'] }), user(files))
+    const onlyMemory = instructionPlan(templateRole('pm', { instructions: ['auto-memory'] }), user(files))
+    const onlyProject = instructionPlan(templateRole('pm', { instructions: ['project-claude-md'] }), user(files))
+
+    expect(none.links).toEqual([])
+    expect(onlyProject.links).toEqual([])
+    expect(onlyGlobal.links.map(link => link.path)).toEqual([`${linkDir('global')}/01-CLAUDE.md`])
+    expect(onlyMemory.links.map(link => link.path)).toEqual([`${linkDir('memory')}/MEMORY.md`])
+  })
+
+  test('the links of both groups are sorted by path and lie in the instructions folder of the role', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory', 'global-claude-md'] })
+    const launcher = user({ globalClaudeMd: ['/home/u/.claude/CLAUDE.md'], memoryFiles: ['MEMORY.md'] })
+    const paths = instructionPlan(role, launcher).links.map(link => link.path)
+
+    expect(paths).toEqual([`${linkDir('global')}/01-CLAUDE.md`, `${linkDir('memory')}/MEMORY.md`])
+    expect(paths.filter(path => !path.startsWith('/repo/.cadre/pm/.runtime/instructions/'))).toEqual([])
+  })
+
+  test('launchPlan puts the excludes into the settings and appends the links and the warnings', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md', 'auto-memory'], carry: CARRY_ALL })
+    const scope = compileScope(role, context())
+    const launcher = carrier({
+      claudeMd: CHAIN,
+      globalClaudeMd: ['/home/u/.claude/CLAUDE.md'],
+      memoryFiles: ['MEMORY.md', '.bad.md'],
+    })
+    const plan = launchPlan(role, scope, launcher)
+
+    expect(plan.settings.claudeMdExcludes).toEqual([
+      '/home/u/work/CLAUDE.md',
+      '/repo/.claude/CLAUDE.md',
+      '/repo/CLAUDE.md',
+    ])
+    expect(plan.links).toEqual([
+      { path: `${linkDir('global')}/01-CLAUDE.md`, target: '/home/u/.claude/CLAUDE.md' },
+      { path: `${linkDir('memory')}/MEMORY.md`, target: '/home/u/.claude/projects/-repo/memory/MEMORY.md' },
+    ])
+    expect(plan.warnings).toEqual(['memory file .bad.md has an unsafe name: not linked'])
+  })
+
+  test('launchPlan lists the warnings of the denies before those of the instructions', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const scope = compileScope(role, context())
+    const plan = launchPlan(role, scope, user({ root: '/w/a(b)', memoryFiles: ['../x.md'] }))
+
+    expect(plan.warnings).toEqual([
+      'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth',
+      'memory file ../x.md has an unsafe name: not linked',
+    ])
+  })
+
+  test('a role given the project CLAUDE.md has no exclude in its settings', () => {
+    const role = templateRole('pm', { instructions: ['project-claude-md'] })
+    const plan = launchPlan(role, compileScope(role, context()), user({ claudeMd: CHAIN }))
+
+    expect(plan.settings.claudeMdExcludes).toEqual([])
   })
 })
