@@ -55,12 +55,24 @@ type World = {
    * valid when a later plan adds questions; a question no prefix matches is dismissed, as Esc does.
    */
   readonly answers: Readonly<Record<string, string>>
+  /** What `clock.now` answers, in epoch milliseconds. */
+  readonly now: number
+  /** What `session.id` answers. */
+  readonly sessionId: string
+  /** What `fs.ancestors` answers, unvalidated. */
+  readonly ancestors: unknown
+  /** What `command.list` answers, unvalidated. */
+  readonly commands: unknown
+  /** What `tool.list` answers, unvalidated. */
+  readonly tools: unknown
+  /** The model's replies in order; once they run out, `model.complete` answers that the model gave no text. */
+  readonly replies: readonly string[]
 }
 
 /**
  * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
- * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, and the
- * option labels each dialog showed.
+ * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
+ * option labels each dialog showed, and each text the plugin logged to the transcript.
  */
 type HostLog = {
   readonly ops: string[]
@@ -68,6 +80,7 @@ type HostLog = {
   readonly cwds: string[]
   readonly asks: string[]
   readonly askOptions: string[][]
+  readonly logs: string[]
 }
 
 /**
@@ -89,7 +102,7 @@ const FORBIDDEN_OPS: readonly string[] = [
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
-  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [] }
+  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [] }
 }
 
 /**
@@ -126,8 +139,49 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     surfaces: ['terminal'],
     denySurfaces: false,
     answers: {},
+    now: 1_000_000,
+    sessionId: 's1',
+    ancestors: [],
+    commands: [],
+    tools: [],
+    replies: [],
     ...over,
   }
+}
+
+/**
+ * The answers a whole /cadre init run needs, by question prefix (the longest prefix wins). Each entry answers a
+ * question init asks now or a later step adds; a question no entry matches is dismissed.
+ */
+const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
+  'Read ~/.claude.json': 'No, skip it',
+  'Use these roles?': 'Use these roles',
+  'Which framework do the roles use': 'Same for all roles',
+  'Framework for': 'GSD',
+  'Autopilot duration': '4h',
+  'Model and effort: same': 'Same for all roles',
+  'Model and effort for': 'opus + medium',
+  'Which roles get': 'None',
+  'Which env variables': 'None',
+  '.planning/config.json:': 'Accept',
+  'Git policy': 'Commit definitions (default)',
+  'Review the plan': 'Confirm',
+  "Scan this repo's session history": 'No, skip it',
+})
+
+/** The INIT_ANSWERS without the answer for one question prefix, so that question is dismissed. */
+function answersWithout(prefix: string): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== prefix))
+}
+
+/**
+ * The ambiguous repo of ambiguousWorld inside a git repo (`/repo/.git` is a folder), with every init question answered
+ * by INIT_ANSWERS. Pass `over` to change one part of it.
+ */
+function initWorld(over: Partial<World> = {}): World {
+  const base = ambiguousWorld()
+
+  return { ...base, dirs: [...base.dirs, '/repo/.git'], answers: INIT_ANSWERS, ...over }
 }
 
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
@@ -137,12 +191,21 @@ function hasPath(world: World, path: string): boolean {
 
 /**
  * Answers the host ops `/cadre detect` and `/cadre init` may use from `world` and logs each fs, process and settings
- * op into `log`; a dialog is answered from `world.answers` and logged as an ask. Every forbidden op is answered with a
- * refusal, so a call to one would show up in the log and fail its call.
+ * op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript text is kept in
+ * `log.logs`. The model answers `world.replies` in order. Every forbidden op is answered with a refusal, so a call to
+ * one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
   on('session.surfaces', async () => (world.denySurfaces ? { deny: 'no surfaces' } : { value: world.surfaces }))
+  on('session.id', async () => ({ value: world.sessionId }))
+  on('session.model', async () => ({ value: 'opus' }))
+  on('clock.now', async () => ({ value: world.now }))
+  on('ui.log', async (_$, e) => {
+    log.logs.push(e.text)
+
+    return { value: undefined }
+  })
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const asked = e.questions[0]
     const question = asked?.question ?? ''
@@ -152,6 +215,22 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     if (answer === undefined) return { deny: 'dismissed' }
 
     return { result: { questions: e.questions, answers: { [question]: answer } } }
+  })
+  on('command.list', async () => ({ value: world.commands }))
+  on('tool.list', async () => ({ value: world.tools }))
+  let nextReply = 0
+  on('model.complete', async () => {
+    const text = world.replies[nextReply]
+    nextReply += 1
+    const usage = { input_tokens: 1, output_tokens: 1 }
+    if (text === undefined) return { value: { isAnswered: false, reason: 'no-text', usage } }
+
+    return { value: { isAnswered: true, text, usage } }
+  })
+  on('fs.ancestors', async () => {
+    log.ops.push('fs.ancestors')
+
+    return { value: world.ancestors }
   })
   on('env.get', async (_$, e) => ({ value: world.env[e.name] }))
   on('fs.exists', async (_$, e) => {
@@ -791,7 +870,7 @@ describe('cadre init with a faked host', () => {
 
   test('init --dry-run asks the git policy and ends with the dry-run note', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit definitions (default)' } }), log)
+    fakeHost(on, initWorld(), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n')[0]).toBe('cadre init --dry-run')
     expect(out.text).toContain('Git policy: commit definitions')
@@ -804,7 +883,7 @@ describe('cadre init with a faked host', () => {
 
   test('plain init prints the same reply but ends with the apply-later note', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit definitions (default)' } }), log)
+    fakeHost(on, initWorld(), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text.split('\n')[0]).toBe('cadre init')
     expect(out.text).toContain('Git policy: commit definitions')
@@ -815,14 +894,14 @@ describe('cadre init with a faked host', () => {
   })
 
   test('commit all prints its own policy line and no worktree line', async ($, on) => {
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit all' } }), newLog())
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: commit all (only per-user rendered files in .cadre/*/.runtime/ ignored)')
     expect(out.text).not.toContain('new worktrees')
   })
 
   test('ignoring all of .cadre/ adds the line that role definitions will not exist in new worktrees', async ($, on) => {
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Ignore all of .cadre/' } }), newLog())
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Ignore all of .cadre/' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
     expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
@@ -830,7 +909,7 @@ describe('cadre init with a faked host', () => {
   })
 
   test('a typed word the policy parser knows counts, with the same reply as the label', async ($, on) => {
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': ' Ignore ' } }), newLog())
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': ' Ignore ' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
     expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
@@ -838,7 +917,7 @@ describe('cadre init with a faked host', () => {
 
   test('the dialog shows the three policies in the fixed order, default first', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit all' } }), log)
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const at = log.asks.indexOf(POLICY_ASK)
     expect(at >= 0).toBe(true)
@@ -847,7 +926,7 @@ describe('cadre init with a faked host', () => {
 
   test('in claude -p (no surfaces) init answers the refusal before any fs, settings or process op', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ surfaces: [] }), log)
+    fakeHost(on, initWorld({ surfaces: [] }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(NOT_INTERACTIVE_REPLY)
     expect(log.ops).toEqual([])
@@ -856,7 +935,7 @@ describe('cadre init with a faked host', () => {
 
   test('a host that cannot say whether anyone is there is treated as non-interactive', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ denySurfaces: true }), log)
+    fakeHost(on, initWorld({ denySurfaces: true }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text).toBe(NOT_INTERACTIVE_REPLY)
     expect(log.ops).toEqual([])
@@ -865,7 +944,7 @@ describe('cadre init with a faked host', () => {
 
   test('a session root the host refuses stops init before any read or question', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ denyRoot: true }), log)
+    fakeHost(on, initWorld({ denyRoot: true }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text).toBe('cadre init could not read the session root, so it stopped before reading anything.')
     expect(log.ops).toEqual([])
@@ -874,7 +953,7 @@ describe('cadre init with a faked host', () => {
 
   test('a session at the home folder is refused with the init wording before any read or question', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ root: '/home/u' }), log)
+    fakeHost(on, initWorld({ root: '/home/u' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
     expect(out.text).toContain('cadre init needs a repo root other than your home folder')
@@ -886,7 +965,7 @@ describe('cadre init with a faked host', () => {
 
   test('a session in a folder that contains the home folder is refused the same way', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ root: '/home' }), log)
+    fakeHost(on, initWorld({ root: '/home' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
     expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
@@ -895,7 +974,7 @@ describe('cadre init with a faked host', () => {
 
   test('a symlinked repo root that lands in the home folder is refused by init too', async ($, on) => {
     const log = newLog()
-    const linked = ambiguousWorld({ root: '/link/repo', realPaths: { '/link/repo': '/home/u', '/home/u': '/home/u' } })
+    const linked = initWorld({ root: '/link/repo', realPaths: { '/link/repo': '/home/u', '/home/u': '/home/u' } })
     fakeHost(on, linked, log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
@@ -905,7 +984,7 @@ describe('cadre init with a faked host', () => {
 
   test('a session at the file system root is refused with the init wording, even with no HOME', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ root: '/', env: {}, realPaths: { '/': '/' } }), log)
+    fakeHost(on, initWorld({ root: '/', env: {}, realPaths: { '/': '/' } }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(INIT_FILE_SYSTEM_ROOT_REPLY)
     expect(out.text).toContain('cadre init needs a repo root other than the file system root (/)')
@@ -916,7 +995,7 @@ describe('cadre init with a faked host', () => {
 
   test('detect at the home folder still answers the detect wording, byte for byte', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ root: '/home/u' }), log)
+    fakeHost(on, initWorld({ root: '/home/u' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toBe(HOME_ROOT_REPLY)
     expect(out.text).toContain('cadre detect needs a repo root other than your home folder')
@@ -926,7 +1005,7 @@ describe('cadre init with a faked host', () => {
 
   test('a dismissed dialog cancels with the fixed text and never the host rejection text', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld(), log)
+    fakeHost(on, initWorld({ answers: answersWithout('Git policy') }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe('init cancelled, nothing written')
     expect(out.text).not.toContain('dismissed')
@@ -936,7 +1015,7 @@ describe('cadre init with a faked host', () => {
 
   test('an answer that is not a listed choice is asked again, three asks in all, then init cancels', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'whatever' } }), log)
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'whatever' } }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(3)
     expect(out.text).toBe('init cancelled, nothing written')
@@ -944,7 +1023,7 @@ describe('cadre init with a faked host', () => {
 
   test('no mutating host op and no process call is made by init or init --dry-run', async ($, on) => {
     const log = newLog()
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit definitions (default)' } }), log)
+    fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init' })
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
@@ -953,9 +1032,39 @@ describe('cadre init with a faked host', () => {
   })
 
   test('two init runs with the same answers give identical text', async ($, on) => {
-    fakeHost(on, ambiguousWorld({ answers: { 'Git policy': 'Commit all' } }), newLog())
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())
     const first = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const second = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(second.text).toBe(first.text)
+  })
+
+  test('init guards before it scans, asks the ~/.claude.json consent first and logs both scans', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.asks[0]?.startsWith('ask Read ~/.claude.json for MCP server names?')).toBe(true)
+    const lines = log.logs.flatMap(text => text.split('\n'))
+    expect(lines.some(line => line.startsWith('Repo scan (read-only):'))).toBe(true)
+    expect(lines).toContain('User setup (names only):')
+    const guardAt = log.ops.indexOf('fs.exists /home/u/.claude/autopilot/s1.json')
+    expect(guardAt >= 0 && guardAt < log.ops.indexOf('fs.list /repo')).toBe(true)
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(log.ops.filter(op => op === 'process.run').length <= 1).toBe(true)
+    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+  })
+
+  test('the init port never reads a folder: a folder the scans probe is checked and left unread', async ($, on) => {
+    const log = newLog()
+    const folders = ['/repo/.cadre', '/home/u/.claude/agents']
+    const world = initWorld({ dirs: [...initWorld().dirs, ...folders] })
+    fakeHost(on, world, log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    for (const folder of folders) {
+      expect(log.ops).toContain(`fs.exists ${folder}`)
+      expect(log.ops.some(op => op.startsWith(`fs.stat ${folder} `))).toBe(true)
+    }
+    const known = [...Object.keys(world.listings), ...world.dirs]
+    const read = log.ops.filter(op => op.startsWith('fs.read ')).map(op => op.slice('fs.read '.length))
+    expect(read.filter(path => known.includes(path))).toEqual([])
   })
 })
