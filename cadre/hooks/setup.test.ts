@@ -15,7 +15,17 @@ import {
   scanSetup,
 } from './setup'
 import type { SetupContext } from './setup'
-import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, entry, leaks, memIo, memWorld, SECRET_FIXTURES } from './testkit'
+import {
+  ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
+  entry,
+  leaks,
+  memIo,
+  memWorld,
+  SECRET_FIXTURES,
+  secretUserSettings,
+  secretWorld,
+} from './testkit'
 import type { MemWorld } from './testkit'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
@@ -23,33 +33,6 @@ const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', 
 
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
-
-/** User settings that hold a secret in every place a value can sit: env, the status line and two hook commands. */
-function secretUserSettings(): Record<string, unknown> {
-  return {
-    env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'x' },
-    autoCompactWindow: 800000,
-    statusLine: {
-      type: 'command',
-      command: '/home/u/.claude/hooks/gsd-statusline.js --t Bearer FAKE-TOKEN-0123',
-    },
-    hooks: {
-      PreToolUse: [
-        {
-          hooks: [
-            { command: 'SECRET=SENTINEL_SECRET_VALUE node /home/u/.claude/hooks/gsd-secret-read-guard.js' },
-            { command: '/home/u/bin/my-hook.sh --key ghp_FAKEFAKEFAKEFAKEFAKE' },
-          ],
-        },
-      ],
-    },
-  }
-}
-
-/** A world whose user settings are the secret ones and whose project and local settings are empty. */
-function secretWorld(): MemWorld {
-  return memWorld({ settings: { user: secretUserSettings(), project: {}, local: {} } })
-}
 
 /** A world whose three settings sources are the given ones. */
 function settingsWorld(user: unknown, project: unknown = {}, local: unknown = {}): MemWorld {
