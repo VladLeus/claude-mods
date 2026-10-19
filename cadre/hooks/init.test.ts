@@ -64,7 +64,7 @@ import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
 import { scanSetup } from './setup'
-import { DEFAULT_LOCATIONS, EMPTY_FACTS, entry, leaks, memIo, memWorld } from './testkit'
+import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, EMPTY_FACTS, entry, leaks, memIo, memWorld } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
@@ -336,8 +336,8 @@ describe('scanSummaryLines', () => {
       '  existing .cadre/: none',
       'User setup (names only):',
       '  plugins: 0',
-      '  skills: 0; MCP servers: none; agents: 0',
-      '  CLAUDE.md files: none; global ~/.claude/CLAUDE.md: no; memories: 0',
+      '  skills: 0; agents: 0; MCP servers: none',
+      '  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none',
     ])
   })
 
@@ -401,9 +401,41 @@ describe('scanSummaryLines', () => {
       memoryFiles: ['a.md', 'b.md', 'c.md'],
     })
     expect(scanSummaryLines(repoScan(), setup).slice(5)).toEqual([
-      '  plugins: 10 (a@m, b@m, c@m, d@m, e@m, f@m, g@m, h@m)',
-      '  skills: 3; MCP servers: jira, sentry; agents: 2',
-      '  CLAUDE.md files: ~/work/CLAUDE.md, <repo>/CLAUDE.md; global ~/.claude/CLAUDE.md: yes; memories: 3',
+      '  plugins: 10 (a@m, b@m, c@m, d@m, e@m, f@m, g@m, h@m, i@m, j@m)',
+      '  skills: 3; agents: 2; MCP servers: jira, sentry',
+      '  global ~/.claude/CLAUDE.md: yes; memories: 3; CLAUDE.md files: ~/work/CLAUDE.md, <repo>/CLAUDE.md',
+    ])
+  })
+
+  test('long setup lists keep their counts first and show 12 names, then count the rest (B2)', () => {
+    const names = (prefix: string, count: number): string[] =>
+      Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, '0')}`)
+    const plugins = names('plugin-', 30).map(name => `${name}@claude-plugins-official`)
+    const servers = names('server-', 20)
+    const claudeMd = names('<repo>/pkg', 15).map(name => `${name}/CLAUDE.md`)
+    const setup = setupScan({
+      plugins,
+      mcp: servers.map(name => ({ name, source: 'session' })),
+      claudeMd,
+      hasGlobalClaudeMd: true,
+      memoryFiles: ['a.md'],
+    })
+    const first12 = (list: readonly string[]): string => list.slice(0, 12).join(', ')
+    expect(scanSummaryLines(repoScan(), setup).slice(5)).toEqual([
+      `  plugins: 30 (${first12(plugins)}, +18 more)`,
+      `  skills: 0; agents: 0; MCP servers: ${first12(servers)}, +8 more`,
+      `  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: ${first12(claudeMd)}, +3 more`,
+    ])
+  })
+
+  test('a long or hidden-character name in a setup list is cleaned and capped, and the counts stay in front', () => {
+    const long = `a${BIDI_OVERRIDE}b${'x'.repeat(300)}`
+    const setup = setupScan({ plugins: [long], mcp: [{ name: long, source: 'session' }], claudeMd: [long] })
+    const shownName = `ab${'x'.repeat(107)}…`
+    expect(scanSummaryLines(repoScan(), setup).slice(5)).toEqual([
+      `  plugins: 1 (${shownName})`,
+      `  skills: 0; agents: 0; MCP servers: ${shownName}`,
+      `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${shownName}`,
     ])
   })
 })
