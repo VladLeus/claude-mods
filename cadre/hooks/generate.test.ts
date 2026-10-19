@@ -6,13 +6,15 @@ import type {
   DesiredFile,
   FrameworkAdapter,
   FrameworkId,
+  McpRef,
   RoleSpec,
   ScopeContext,
   SetupScan,
+  SkillRef,
   TemplateRoleId,
 } from '../types'
 import { BUILTIN_ADAPTER } from './builtin'
-import { compareText } from './facts'
+import { compareText, isObject } from './facts'
 import {
   asciiLine,
   cadreJsonText,
@@ -30,11 +32,11 @@ import {
 } from './generate'
 import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
-import { stableJson } from './plan'
+import { isSafeOpPath, stableJson } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { compileScope, scopeCardLines } from './scope'
+import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
-import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
+import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks, SECRET_FIXTURES } from './testkit'
 
 /** The template role with this id, as init builds it: nothing assigned, every other field a default. */
 function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
@@ -940,5 +942,253 @@ describe('launcher', () => {
     }
 
     expect(problems).toEqual([])
+  })
+})
+
+/** An MCP server the live session lists. */
+function session(name: string): McpRef {
+  return { name, source: 'session' }
+}
+
+/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
+function skillRef(name: string, plugin: string | null = null): SkillRef {
+  return { name, plugin }
+}
+
+/**
+ * What a scan of the secret world kept, as names only: the env names and hook basenames of the secret settings beside
+ * the scanned servers, skills, agents and plugins. The values of that world are the SECRET_FIXTURES, which a scan never
+ * keeps and a generated file must never hold.
+ */
+const WORLD_SETUP: SetupScan = {
+  plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
+  skills: [
+    skillRef('my-skill'),
+    skillRef('gsd-health'),
+    skillRef('create-handoff-doc'),
+    skillRef('codex:rescue', 'codex'),
+    skillRef('superpowers:brainstorming', 'superpowers'),
+    skillRef('autopilot', 'autopilot'),
+  ],
+  mcp: [session('jira'), session('playwright'), session('github'), session('autopilot'), session('sentry')],
+  isMcpPartial: false,
+  agents: ['gsd-planner', 'my-agent'],
+  claudeMd: ['<repo>/CLAUDE.md', '~/.claude/CLAUDE.md'],
+  hasGlobalClaudeMd: true,
+  memoryFiles: ['~/.claude/projects/-repo/memory/MEMORY.md'],
+  settingsKeys: [{ source: 'user', keys: ['autoCompactWindow', 'env', 'hooks', 'statusLine'] }],
+  hooks: [
+    { script: 'gsd-secret-read-guard.js', event: 'PreToolUse', source: 'user' },
+    { script: 'my-hook.sh', event: 'PreToolUse', source: 'user' },
+  ],
+  carry: { autoCompactWindow: 800000, hasStatusLine: true, isGsdStatusline: true, envNames: ['API_KEY', 'JIRA_URL'] },
+  warnings: [],
+}
+
+/** The ways a template role may be assigned names: nothing, or every scanned server, skill, hook and env name. */
+const WORLD_ASSIGNMENTS: readonly (readonly [string, (role: RoleSpec) => RoleSpec])[] = [
+  ['nothing assigned', role => role],
+  [
+    'everything assigned',
+    role => ({
+      ...role,
+      mcp: WORLD_SETUP.mcp.map(ref => ref.name),
+      skills: WORLD_SETUP.skills.map(item => item.name),
+      instructions: ['global-claude-md', 'auto-memory', 'project-claude-md'],
+      carry: {
+        autoCompactWindow: true,
+        statusLine: true,
+        env: WORLD_SETUP.carry.envNames,
+        hooks: WORLD_SETUP.hooks.map(item => item.script),
+      },
+    }),
+  ],
+]
+
+/** The contexts the matrix runs: the merged MCP route unattended, and the strict route attended. */
+const WORLD_CONTEXTS: readonly (readonly [string, Partial<ScopeContext>])[] = [
+  ['merged', { mcpRoute: 'merged' }],
+  ['strict and attended', { mcpRoute: 'strict', isAttended: true }],
+]
+
+/** The input init gives desiredFiles for the six template roles in one framework, with the secret world scanned. */
+function worldInput(
+  framework: FrameworkId,
+  assign: (role: RoleSpec) => RoleSpec,
+  over: Partial<ScopeContext>,
+): GenerateInput {
+  const team = TEMPLATE_ROLES.map(assign)
+  const world: Partial<ScopeContext> = { setup: WORLD_SETUP, codeDirs: ['autopilot', 'cadre'], ...over }
+
+  return {
+    roles: team,
+    scopes: new Map(team.map((role): [string, CompiledScope] => [role.id, scopeOf(role, framework, team, world)])),
+    frameworks: new Map(team.map((role): [string, FrameworkId] => [role.id, framework])),
+    state: stateOf(team, framework),
+    only: null,
+  }
+}
+
+/** A check of the files init wants for one matrix input: its problems as messages, empty when there are none. */
+type FilesCheck = (input: GenerateInput, files: readonly DesiredFile[]) => string[]
+
+/** Every problem a check finds over the matrix of frameworks, assignments and contexts, with where it was found. */
+function worldProblems(check: FilesCheck): string[] {
+  const problems: string[] = []
+  for (const framework of FRAMEWORKS) {
+    for (const [assignment, assign] of WORLD_ASSIGNMENTS) {
+      for (const [context, over] of WORLD_CONTEXTS) {
+        const input = worldInput(framework, assign, over)
+        const where = `${framework} / ${assignment} / ${context}`
+        problems.push(...check(input, desiredFiles(input)).map(problem => `${where}: ${problem}`))
+      }
+    }
+  }
+
+  return problems
+}
+
+/** What no committed file may hold (PLAN-05): a secret, the start of an absolute user path, or a variable reference. */
+const FORBIDDEN_TEXT: readonly string[] = [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS, '${']
+
+/** The ways a desired file holds forbidden text, as messages. */
+function contentProblems(file: DesiredFile): string[] {
+  return leaks(file.content, FORBIDDEN_TEXT).map(needle => `${file.path} holds ${needle}`)
+}
+
+/** The ways the path of a desired file breaks PLAN-06 (D-50), as messages. */
+function pathProblems(file: DesiredFile): string[] {
+  const segments = file.path.toLowerCase().split('/')
+  const problems: string[] = []
+  if (!isSafeOpPath(file.path)) problems.push(`${file.path} is not a safe op path`)
+  if (/(?:claude|agents)\.md$/.test(file.path.toLowerCase())) problems.push(`${file.path} is a CLAUDE.md or AGENTS.md`)
+  if (segments.includes('.claude')) problems.push(`${file.path} is under a .claude folder`)
+  if (segments.includes('.runtime')) problems.push(`${file.path} is in a .runtime folder`)
+
+  return problems
+}
+
+/** The problems with the text of an mcp.json: it must hold exactly the schema and the sorted server names (D-93). */
+function mcpFileProblems(path: string, content: string): string[] {
+  const parsed: unknown = JSON.parse(content)
+  if (!isObject(parsed)) return [`${path} is not an object`]
+  const problems: string[] = []
+  if (Object.keys(parsed).sort(compareText).join(',') !== 'schema,servers') problems.push(`${path} has other keys`)
+  if (parsed.schema !== 1) problems.push(`${path} has schema ${JSON.stringify(parsed.schema)}`)
+  const servers = parsed.servers
+  const isNames = Array.isArray(servers) && servers.every(name => typeof name === 'string')
+  if (!isNames) return [...problems, `${path} servers are not a list of names`]
+  if (servers.join(',') !== [...servers].sort(compareText).join(',')) problems.push(`${path} servers are not sorted`)
+
+  return problems
+}
+
+/** The problems with the text of a settings.json: only the three template keys, and no infra tool blocked. */
+function settingsFileProblems(path: string, content: string, scope: CompiledScope, framework: FrameworkId): string[] {
+  const parsed = JSON.parse(content)
+  const keys = Object.keys(parsed).sort(compareText).join(',')
+  const problems: string[] = []
+  if (keys !== 'enabledPlugins,permissions,sandbox') problems.push(`${path} has the keys ${keys}`)
+  problems.push(...infraViolations({ ...scope, settings: parsed }, framework).map(problem => `${path}: ${problem}`))
+
+  return problems
+}
+
+/** The mcp.json problems of every role of an input. */
+const mcpFilesCheck: FilesCheck = (input, files) =>
+  input.roles.flatMap(role => {
+    const path = `.cadre/${role.id}/mcp.json`
+    const content = contentOf(files, path)
+
+    return content === undefined ? [`${path} is missing`] : mcpFileProblems(path, content)
+  })
+
+/** The settings.json problems of every role of an input. */
+const settingsFilesCheck: FilesCheck = (input, files) =>
+  input.roles.flatMap(role => {
+    const path = `.cadre/${role.id}/settings.json`
+    const content = contentOf(files, path)
+    const scope = input.scopes.get(role.id)
+    const framework = input.frameworks.get(role.id)
+    if (content === undefined || scope === undefined || framework === undefined) return [`${path} is missing`]
+
+    return settingsFileProblems(path, content, scope, framework)
+  })
+
+describe('generated file properties', () => {
+  test('the matrix is six roles, three frameworks, two assignments and two contexts of 38 files each', () => {
+    let runs = 0
+    const sizes = new Set<number>()
+    worldProblems((_input, files) => {
+      runs += 1
+      sizes.add(files.length)
+
+      return []
+    })
+
+    expect(runs).toBe(3 * 2 * 2)
+    expect(Array.from(sizes)).toEqual([6 * 6 + 2])
+    expect(WORLD_ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing assigned', 'everything assigned'])
+  })
+
+  test('no generated file holds a secret, an absolute user path or a variable reference (PLAN-05)', () => {
+    expect(worldProblems((_input, files) => files.flatMap(contentProblems))).toEqual([])
+  })
+
+  test('every generated path is a safe op path, and none is a CLAUDE.md, an AGENTS.md, in .claude or .runtime', () => {
+    expect(worldProblems((_input, files) => files.flatMap(pathProblems))).toEqual([])
+  })
+
+  test('every mcp.json holds exactly the schema and a sorted list of server names (D-93)', () => {
+    expect(worldProblems(mcpFilesCheck)).toEqual([])
+  })
+
+  test('every settings.json has only the three template keys and passes the ISO-04 checker, parsed back (D-84)', () => {
+    expect(worldProblems(settingsFilesCheck)).toEqual([])
+  })
+
+  test('the content check finds a secret, an absolute user path and a variable reference', () => {
+    const bad = (content: string): DesiredFile => ({ path: '.cadre/be/ROLE.md', content, mode: 'file' })
+
+    expect(contentProblems(bad(`key ${SECRET_FIXTURES[0]}`))).toHaveLength(1)
+    expect(contentProblems(bad('cd /Users/alice/repo'))).toEqual(['.cadre/be/ROLE.md holds /Users/'])
+    expect(contentProblems(bad('/home/u/.claude'))).toEqual(['.cadre/be/ROLE.md holds /home/'])
+    expect(contentProblems(bad('${HOME}/x'))).toEqual(['.cadre/be/ROLE.md holds ${'])
+    expect(contentProblems(bad('fine'))).toEqual([])
+  })
+
+  test('the path check finds a path outside .cadre, a CLAUDE.md, an AGENTS.md, a .claude and a .runtime folder', () => {
+    const at = (path: string): DesiredFile => ({ path, content: '', mode: 'file' })
+
+    expect(pathProblems(at('CLAUDE.md')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/be/CLAUDE.md')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/be/agents.md')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/.claude/settings.json')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/be/.runtime/settings.json')).length > 0).toBe(true)
+    expect(pathProblems(at('../outside'))).toContain('../outside is not a safe op path')
+    expect(pathProblems(at('.cadre/be/ROLE.md'))).toEqual([])
+  })
+
+  test('the json checks find an extra key, a bad schema, an unsorted list, a blocked tool and a missing plugin', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', [be])
+    const mcp = (value: unknown): string[] => mcpFileProblems('mcp.json', JSON.stringify(value))
+    const settings = (value: unknown): string[] => settingsFileProblems('s.json', JSON.stringify(value), scope, 'gsd')
+    const good = scope.settings
+    const deny = [...good.permissions.deny, 'mcp__autopilot__wait_for']
+
+    expect(mcp({ schema: 1, servers: ['a', 'b'] })).toEqual([])
+    expect(mcp({ schema: 1, servers: ['a'], env: {} })).toEqual(['mcp.json has other keys'])
+    expect(mcp({ schema: 2, servers: [] })).toEqual(['mcp.json has schema 2'])
+    expect(mcp({ schema: 1, servers: ['b', 'a'] })).toEqual(['mcp.json servers are not sorted'])
+    expect(mcp({ schema: 1, servers: [1] })).toEqual(['mcp.json servers are not a list of names'])
+    expect(settings(good)).toEqual([])
+    expect(settings({ ...good, autoCompactWindow: 800000 })).toEqual([
+      's.json has the keys autoCompactWindow,enabledPlugins,permissions,sandbox',
+    ])
+    expect(settings({ ...good, permissions: { ...good.permissions, deny } })).toEqual([
+      's.json: deny entry mcp__autopilot__wait_for would block an infra tool',
+    ])
+    expect(settings({ ...good, enabledPlugins: {} }).length > 0).toBe(true)
   })
 })
