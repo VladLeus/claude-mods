@@ -501,8 +501,8 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
 /**
  * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan and of the
  * setup scan, then the guard-source warning of the setup (guardSourceWarnings, A2), in that order, each text once where
- * it first comes. Init prints them right after the scan summary, and 02-13's final review shows the same list again
- * next to the plan.
+ * it first comes. Init prints them right after the scan summary, and the final review (reviewStep) shows the same list
+ * again next to the plan.
  */
 export function scanWarnings(locations: InitLocations, gathered: Gathered): string[] {
   const all = [
@@ -870,9 +870,10 @@ async function nextState(
 
 /**
  * The roles step (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83), as the states of RolesState. It starts at `proposed`
- * with the proposal and shows the roles with the scan changes behind them under `Use these roles?`. `Adjust them`
- * runs adjustLoop with the frameworks `installed` for the repo and `Describe my own structure` runs describeStep;
- * either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an accepted StepResult: a
+ * with `start`, the proposal's roles unless the final review passes the current team, and shows them with the scan
+ * changes behind the proposal under `Use these roles?`. `Adjust them` runs adjustLoop with the frameworks `installed`
+ * for the repo and `Describe my own structure` runs describeStep, whose template answer goes back to the proposal
+ * itself; either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an accepted StepResult: a
  * dismissal anywhere is cancelled with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals with
  * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used (A1).
  */
@@ -880,8 +881,9 @@ export async function rolesStep(
   io: InitIo,
   proposal: RoleProposal,
   installed: readonly FrameworkId[],
+  start: readonly RoleSpec[] = proposal.roles,
 ): Promise<StepResult<readonly RoleSpec[]>> {
-  let state: RolesState = { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
+  let state: RolesState = { kind: 'proposed', roles: start, changes: proposal.changes }
   let rounds = 0
   for (;;) {
     if (state.kind === 'accepted') return accepted(state.roles)
@@ -1675,6 +1677,245 @@ export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart,
   ].join('\n')
 }
 
+/** The final review question (D-43): the person confirms the plan shown or goes back to change one item. */
+export const REVIEW_QUESTION = 'Review the plan above. Confirm it, or go back to change one item.'
+
+/**
+ * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
+ * them every per-role step), the git policy, the launcher start, the duration, the model and effort, the MCP and skill
+ * assignments, the instructions and memories, the carried env names, or the hunks.
+ */
+export type ReviewItem =
+  | 'confirm'
+  | 'roles'
+  | 'policy'
+  | 'launch'
+  | 'duration'
+  | 'model'
+  | 'assignments'
+  | 'memory'
+  | 'env'
+  | 'hunks'
+
+/** Each review button with what it picks, in the order the dialog shows them (D-43, A2). */
+const REVIEW_CHOICES: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'Confirm', value: 'confirm' },
+  { label: 'Change roles', value: 'roles' },
+  { label: 'Change git policy', value: 'policy' },
+  { label: 'Change launcher start', value: 'launch' },
+])
+
+/** The review buttons: Confirm first, then the three items that have a button of their own (D-43, A2). */
+export const REVIEW_OPTIONS: readonly string[] = Object.freeze(REVIEW_CHOICES.map(entry => entry.label))
+
+/** Each item word a person may type under "Other", with the item it goes back to; mcp and skills mean assignments. */
+const REVIEW_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'roles', value: 'roles' },
+  { label: 'git policy', value: 'policy' },
+  { label: 'launcher start', value: 'launch' },
+  { label: 'duration', value: 'duration' },
+  { label: 'model', value: 'model' },
+  { label: 'assignments', value: 'assignments' },
+  { label: 'mcp', value: 'assignments' },
+  { label: 'skills', value: 'assignments' },
+  { label: 'memory', value: 'memory' },
+  { label: 'env', value: 'env' },
+  { label: 'hunks', value: 'hunks' },
+])
+
+/**
+ * The item an answer to the review question picks, else null, so it is asked again: a button label or an item word,
+ * trimmed and in any case (D-43). Any other answer, a sentence around a word included, is no choice.
+ */
+export function parseReviewItem(answer: string): ReviewItem | null {
+  return labelled(REVIEW_CHOICES, answer) ?? labelled(REVIEW_WORDS, answer)
+}
+
+/** The most times the review question is asked; the round after them cancels, so no plan is taken unconfirmed (A1). */
+export const MAX_REVIEW_ROUNDS = 10
+
+/** Why init cancels when the review question is dismissed or never answered with a button or an item (A1, D-45). */
+export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not answered.'
+
+/** Why init cancels once the review question was asked MAX_REVIEW_ROUNDS times without Confirm (A1). */
+export const REVIEW_ROUNDS_REASON =
+  `The review question was asked ${MAX_REVIEW_ROUNDS} times without "Confirm": nothing was chosen.`
+
+/** The last line of the review summary: the items a person may type to go back to one that has no button (D-43). */
+export const REVIEW_HINT = 'To change something else, type one of: duration, model, assignments, memory, env, hunks.'
+
+/**
+ * What one init run holds in memory while the person reviews the plan (D-43, D-45, D-82): where it runs and what the
+ * scans gave, what the roles and framework steps are asked with (the installed frameworks, the framework choice and
+ * the template proposal with its scan changes), and every answer so far. It is never written or kept after the run;
+ * a go-back gives a new Draft.
+ */
+type Draft = {
+  readonly locations: InitLocations
+  readonly gathered: Gathered
+  readonly installed: readonly FrameworkId[]
+  readonly choice: Choice
+  readonly proposal: RoleProposal
+  readonly duration: string
+  readonly roles: readonly RoleSpec[]
+  readonly repoDefault: FrameworkId | null
+  readonly hunks: readonly HunkOp[]
+  readonly policy: GitPolicy
+  readonly launchStart: LaunchStart
+}
+
+/** The parts of a Draft that the scans fix for the whole run. */
+type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'installed' | 'choice' | 'proposal'>
+
+/** What the role steps decide: the duration, the roles with every per-role answer, the repo default and the hunks. */
+type Team = Pick<Draft, 'duration' | 'roles' | 'repoDefault' | 'hunks'>
+
+/** A step result with its value turned into another; a cancelled result stays cancelled with its reason (A1). */
+function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult<U> {
+  return result.kind === 'cancelled' ? result : accepted(apply(result.value))
+}
+
+/**
+ * The per-role steps after the duration (D-52, D-53, D-60, D-63, ROLE-04), in this order: model and effort
+ * (modelStep), MCP servers and skills (assignmentStep), instructions and memories (memoryStep), carried settings
+ * (carryStep), then the autonomy hunks of the frameworks the roles run on (hunkStep). The first cancelled step ends it
+ * with its reason (A1).
+ */
+async function perRoleSteps(
+  io: InitIo,
+  base: DraftBase,
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+): Promise<StepResult<Omit<Team, 'duration'>>> {
+  const { gathered, locations } = base
+  const modelled = await modelStep(io, roles)
+  if (modelled.kind === 'cancelled') return modelled
+  const assigned = await assignmentStep(io, modelled.value, gathered.setup)
+  if (assigned.kind === 'cancelled') return assigned
+  const instructed = await memoryStep(io, assigned.value, gathered.setup)
+  if (instructed.kind === 'cancelled') return instructed
+  const carried = await carryStep(io, instructed.value, gathered.setup)
+  if (carried.kind === 'cancelled') return carried
+  const team = carried.value
+  const hunks = await hunkStep(io, { roles: team, repoDefault, gathered, locations })
+
+  return mapped(hunks, answered => ({ roles: team, repoDefault, hunks: answered }))
+}
+
+/**
+ * The role steps from the roles question to the hunks (ROLE-01 to ROLE-05, D-43): the roles (rolesStep from `start`,
+ * with the scan changes behind the proposal), their frameworks (frameworkStep), the recommendations for that team
+ * (ROLE-03), the duration, asked when `duration` is null and else kept for every role (D-51), then perRoleSteps. Init
+ * runs it once from the proposal; Change roles runs it again from the current team with the duration it has. The
+ * first cancelled step ends it with its reason (A1).
+ */
+async function teamStep(
+  io: InitIo,
+  base: DraftBase,
+  start: readonly RoleSpec[],
+  duration: string | null,
+): Promise<StepResult<Team>> {
+  const { gathered } = base
+  const chosen = await rolesStep(io, base.proposal, base.installed, start)
+  if (chosen.kind === 'cancelled') return chosen
+  const framed = await frameworkStep(io, base.choice, chosen.value)
+  if (framed.kind === 'cancelled') return framed
+  const { roles, repoDefault } = framed.value
+  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
+  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+  logLines(io, recommendationLines(recommendations, roles))
+  const asked = duration === null ? await durationStep(io) : accepted(duration)
+  if (asked.kind === 'cancelled') return asked
+  const kept = asked.value
+  const steps = await perRoleSteps(io, base, withDuration(roles, kept), repoDefault)
+
+  return mapped(steps, decided => ({ duration: kept, ...decided }))
+}
+
+/**
+ * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
+ * Change roles every role step from the current team with the duration kept (teamStep). The duration, model,
+ * assignment, memory and env steps run again on the current roles and decide the whole list they ask about (A3), so a
+ * narrower answer takes a name away. A cancelled step ends the review with its reason (A1).
+ */
+async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confirm'>): Promise<StepResult<Draft>> {
+  const { gathered, locations, roles } = draft
+  switch (item) {
+    case 'roles':
+      return mapped(await teamStep(io, draft, roles, draft.duration), team => ({ ...draft, ...team }))
+    case 'policy':
+      return mapped(await gitPolicyStep(io), policy => ({ ...draft, policy }))
+    case 'launch':
+      return mapped(await launchStartStep(io, locations.root), launchStart => ({ ...draft, launchStart }))
+    case 'duration':
+      return mapped(await durationStep(io), duration => ({ ...draft, duration, roles: withDuration(roles, duration) }))
+    case 'model':
+      return mapped(await modelStep(io, roles), modelled => ({ ...draft, roles: modelled }))
+    case 'assignments':
+      return mapped(await assignmentStep(io, roles, gathered.setup), assigned => ({ ...draft, roles: assigned }))
+    case 'memory':
+      return mapped(await memoryStep(io, roles, gathered.setup), instructed => ({ ...draft, roles: instructed }))
+    case 'env':
+      return mapped(await carryStep(io, roles, gathered.setup), carried => ({ ...draft, roles: carried }))
+    case 'hunks': {
+      const hunks = await hunkStep(io, { roles, repoDefault: draft.repoDefault, gathered, locations })
+
+      return mapped(hunks, answered => ({ ...draft, hunks: answered }))
+    }
+  }
+}
+
+/**
+ * The summary the review shows before its question (D-43): the role titles and ids, every scope card, the file plan
+ * with its hunks and warnings as renderPlan prints them (so neither is printed twice), the scan warnings of the run,
+ * kept for this review, and REVIEW_HINT last.
+ */
+function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
+  return [
+    'Roles:',
+    ...draft.roles.map(role => `  ${role.title} (${role.id})`),
+    ...cardLines(draft.roles, scopes),
+    ...renderPlan(plan),
+    ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
+    REVIEW_HINT,
+  ]
+}
+
+/**
+ * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), plans the files (planStep),
+ * prints the summary (reviewLines) and asks REVIEW_QUESTION with REVIEW_OPTIONS; an item word may be typed under
+ * "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with. A go-back
+ * re-asks that one item (goBack), and the next round shows the summary again. A dismissal, MAX_ASKS answers it cannot
+ * read, or a cancelled go-back step is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS
+ * times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). Nothing is
+ * written.
+ */
+export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<PlanResult>> {
+  let current = draft
+  for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
+    const scopes = scopesFor(current.roles, current.repoDefault, current.gathered, current.hunks)
+    const planned = await planStep(io, {
+      roles: current.roles,
+      repoDefault: current.repoDefault,
+      policy: current.policy,
+      launchStart: current.launchStart,
+      scopes,
+      hunks: current.hunks,
+      repo: current.gathered.repo,
+      locations: current.locations,
+    })
+    logLines(io, reviewLines(current, scopes, planned.plan))
+    const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
+    if (item === null) return cancelled(REVIEW_DISMISSED_REASON)
+    if (item === 'confirm') return accepted(planned)
+    const changed = await goBack(io, current, item)
+    if (changed.kind === 'cancelled') return changed
+    current = changed.value
+  }
+
+  return cancelled(REVIEW_ROUNDS_REASON)
+}
+
 /** The reply of a cancelled step: its reason as its own line, the one place a cancel reason is printed (A1). */
 function cancelReply(io: InitIo, reason: string): string {
   logLines(io, [reason])
@@ -1684,16 +1925,16 @@ function cancelReply(io: InitIo, reason: string): string {
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
- * (consentStep), runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
- * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
- * (durationStep) and each role's model and effort (modelStep), gives the MCP servers and skills to roles
- * (assignmentStep), asks which roles get each instruction and memory group (memoryStep) and which env names they carry
- * (carryStep), and asks each autonomy hunk one by one when a role's framework offers them (hunkStep). It then compiles
- * every role's scope and prints the scope cards (scopesFor, cardLines, ROLE-06), asks the git policy (gitPolicyStep)
- * and then, once for the repo, where the launchers start (launchStartStep), plans the files (planStep) and replies with
- * the plan and the note that nothing was written (initReplyText; D-44, D-82). Every step gives a StepResult (A1):
- * runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its own line and
- * answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it.
+ * (consentStep), runs the scans and prints them with their warnings, then runs the role steps (teamStep): the roles
+ * and their frameworks, the recommendations (ROLE-03), the autopilot duration once for every role, each role's model
+ * and effort, the MCP servers and skills, the instruction and memory groups, the carried env names, and the autonomy
+ * hunks of the frameworks in use. It then prints every role's scope card (scopesFor, cardLines, ROLE-06), asks the git
+ * policy (gitPolicyStep) and then, once for the repo, where the launchers start (launchStartStep), shows the one final
+ * review with the exact file plan, where the person confirms or goes back to change one item (reviewStep, D-43), and
+ * replies with the confirmed plan and the note that nothing was written (initReplyText; D-44, D-82). Every step gives
+ * a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as
+ * its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it. Every
+ * answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1707,37 +1948,19 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
 
   const detections = detectAll(gathered.facts.facts)
-  const chosen = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
-  if (chosen.kind === 'cancelled') return cancelReply(io, chosen.reason)
+  const proposal = proposeRoles(gathered.repo)
+  const base: DraftBase = {
+    locations: guard.locations,
+    gathered,
+    installed: installedFrameworks(detections),
+    choice: chooseFramework(detections, null),
+    proposal,
+  }
+  const team = await teamStep(io, base, proposal.roles, null)
+  if (team.kind === 'cancelled') return cancelReply(io, team.reason)
 
-  const framed = await frameworkStep(io, chooseFramework(detections, null), chosen.value)
-  if (framed.kind === 'cancelled') return cancelReply(io, framed.reason)
-
-  const { roles, repoDefault } = framed.value
-  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-  logLines(io, recommendationLines(recommendations, roles))
-
-  const duration = await durationStep(io)
-  if (duration.kind === 'cancelled') return cancelReply(io, duration.reason)
-
-  const modelled = await modelStep(io, withDuration(roles, duration.value))
-  if (modelled.kind === 'cancelled') return cancelReply(io, modelled.reason)
-
-  const assigned = await assignmentStep(io, modelled.value, gathered.setup)
-  if (assigned.kind === 'cancelled') return cancelReply(io, assigned.reason)
-
-  const instructed = await memoryStep(io, assigned.value, gathered.setup)
-  if (instructed.kind === 'cancelled') return cancelReply(io, instructed.reason)
-
-  const carried = await carryStep(io, instructed.value, gathered.setup)
-  if (carried.kind === 'cancelled') return cancelReply(io, carried.reason)
-
-  const hunks = await hunkStep(io, { roles: carried.value, repoDefault, gathered, locations: guard.locations })
-  if (hunks.kind === 'cancelled') return cancelReply(io, hunks.reason)
-
-  const scopes = scopesFor(carried.value, repoDefault, gathered, hunks.value)
-  logLines(io, cardLines(carried.value, scopes))
+  const { roles, repoDefault, hunks } = team.value
+  logLines(io, cardLines(roles, scopesFor(roles, repoDefault, gathered, hunks)))
 
   const policy = await gitPolicyStep(io)
   if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
@@ -1745,16 +1968,10 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const launch = await launchStartStep(io, guard.locations.root)
   if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
 
-  const { plan } = await planStep(io, {
-    roles: carried.value,
-    repoDefault,
-    policy: policy.value,
-    launchStart: launch.value,
-    scopes,
-    hunks: hunks.value,
-    repo: gathered.repo,
-    locations: guard.locations,
-  })
+  const reviewed = await reviewStep(io, { ...base, ...team.value, policy: policy.value, launchStart: launch.value })
+  if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
 
-  return initReplyText(plan, policy.value, launch.value, options.dryRun)
+  const { plan, state } = reviewed.value
+
+  return initReplyText(plan, state.gitPolicy, state.launchStart, options.dryRun)
 }
