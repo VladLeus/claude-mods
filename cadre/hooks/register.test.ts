@@ -1397,6 +1397,7 @@ describe('Phase 2 faked-host matrix', () => {
     }
     expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(middleLines(dry)).toEqual(middleLines(plain))
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
