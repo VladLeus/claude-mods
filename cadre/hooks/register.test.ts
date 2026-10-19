@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, NOT_INTERACTIVE_REPLY } from './init'
-import { answerFor, entry } from './testkit'
+import { answerFor, entry, INIT_ANSWERS } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -148,27 +148,6 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     ...over,
   }
 }
-
-/**
- * The answers a whole /cadre init run needs, by question prefix (the longest prefix wins). Each entry answers a
- * question init asks now or a later step adds; a question no entry matches is dismissed.
- */
-const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
-  'Read ~/.claude.json': 'No, skip it',
-  'Use these roles?': 'Use these roles',
-  'Which framework do the roles use': 'Same for all roles',
-  'Framework for': 'GSD',
-  'Autopilot duration': '4h',
-  'Model and effort: same': 'Same for all roles',
-  'Model and effort for': 'opus + medium',
-  'Which roles get': 'None',
-  'Which env variables': 'None',
-  '.planning/config.json:': 'Accept',
-  'Git policy': 'Commit definitions (default)',
-  'Where should the role launchers start': 'Git root of this repo',
-  'Review the plan': 'Confirm',
-  "Scan this repo's session history": 'No, skip it',
-})
 
 /** The INIT_ANSWERS without the answer for one question prefix, so that question is dismissed. */
 function answersWithout(prefix: string): Readonly<Record<string, string>> {
