@@ -118,19 +118,23 @@ function commandNames(line: string): string[] {
   return Array.from(line.matchAll(COMMAND_MARKER), match => (match[1] ?? '').replace(/^\//, ''))
 }
 
-/** The skills of one transcript line when it holds a Skill tool call; none otherwise. */
+/**
+ * The skills of one transcript line when it holds a Skill tool call, each name once: the host writes the input of one
+ * call twice on its line, in the tool_use block and in `wireToolInputs` (WR-01). None otherwise.
+ */
 function skillNames(line: string): string[] {
   if (!line.includes(SKILL_CALL)) return []
 
-  return Array.from(line.matchAll(SKILL_NAME), match => match[1] ?? '')
+  return Array.from(new Set(Array.from(line.matchAll(SKILL_NAME), match => match[1] ?? '')))
 }
 
 /**
  * The command and skill names of one transcript, with how often each is used (SCAN-03): a slash command from each
  * `<command-name>` marker, without its leading `/`, and a skill from each `"skill":"<name>"` on a line that holds a
- * Skill tool call (`"name":"Skill"`). The text is scanned line by line with these two patterns and never parsed as
- * JSON (Pitfall 5). A name is lowercased in ASCII and kept only when it then fits HISTORY_NAME_PATTERN, so a name with
- * any other character is dropped, and each exact name counts apart. Nothing else of the text is kept.
+ * Skill tool call (`"name":"Skill"`), each skill name once per line, since one call writes its input twice on its line
+ * (WR-01). The text is scanned line by line with these two patterns and never parsed as JSON (Pitfall 5). A name is
+ * lowercased in ASCII and kept only when it then fits HISTORY_NAME_PATTERN, so a name with any other character is
+ * dropped, and each exact name counts apart. Nothing else of the text is kept.
  */
 export function countNames(text: string): ReadonlyMap<string, number> {
   const counts = new Map<string, number>()
