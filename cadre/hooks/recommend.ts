@@ -26,9 +26,6 @@ export const UNKNOWN_CONFIG_TEXT = `unknown (could not read ${GSD_CONFIG_FILE})`
 /** Code points of a config value that a hunk shows; a longer value is cut with an ellipsis (T-02-22). */
 const MAX_VALUE_CHARS = 80
 
-/** The settings key whose hunk is optional: it is offered only when gsd-statusline is the statusline (D-70). */
-const CONTEXT_WARNINGS_KEY = 'hooks.context_warnings'
-
 /** A config key's value as the text a hunk shows: set, with its text, or not set. */
 type ConfigValue = { readonly state: 'set'; readonly text: string } | { readonly state: 'not-set' }
 
@@ -103,17 +100,10 @@ function beforeText(source: ConfigSource, key: string): string {
   return found.state === 'set' ? found.text : NOT_SET_TEXT
 }
 
-/** One change to offer: the proposal, and the value `.planning/config.json` holds for its key now, as text. */
+/** One change to offer: the proposal, and the value its config file holds for its key now, as text. */
 export type HunkCandidate = {
   readonly proposal: SettingProposal
   readonly before: string
-}
-
-/** Whether a proposal is asked: autonomy requires it, or it is the optional context_warnings under gsd-statusline. */
-function isOffered(proposal: SettingProposal, isGsdStatusline: boolean): boolean {
-  if (proposal.isRequired) return true
-
-  return proposal.key === CONTEXT_WARNINGS_KEY && isGsdStatusline
 }
 
 /**
@@ -131,21 +121,16 @@ function isAtTarget(source: ConfigSource, proposal: SettingProposal): boolean {
 }
 
 /**
- * The hunks to ask, in the order of the proposals (D-70). A proposal is offered when autonomy requires it, or when it
- * is the optional `hooks.context_warnings` and gsd-statusline is the statusline. One whose raw config value already
- * equals its target, compared as JSON, is a no-op and is not offered: a boolean false equals the target `false`, and
- * the string "false" does not (A2). The before text comes from the config read alone: an unreadable config never
- * equals a target, so every required proposal is offered then (fail closed). No process runs.
+ * The hunks to ask, in the order of the proposals (D-70). Which proposals to offer is the framework adapter's call
+ * (autonomyHunks, A5), so every proposal given is offered, unless its raw config value already equals its target,
+ * compared as JSON: such a no-op is not offered. A boolean false equals the target `false`, and the string "false"
+ * does not (A2). The before text comes from the config read alone: an unreadable config never equals a target, so
+ * every proposal is offered then (fail closed). No process runs.
  */
-export function hunkCandidates(
-  proposals: readonly SettingProposal[],
-  config: PortRead,
-  isGsdStatusline: boolean,
-): HunkCandidate[] {
+export function hunkCandidates(proposals: readonly SettingProposal[], config: PortRead): HunkCandidate[] {
   const source = configSource(config)
   const candidates: HunkCandidate[] = []
   for (const proposal of proposals) {
-    if (!isOffered(proposal, isGsdStatusline)) continue
     if (isAtTarget(source, proposal)) continue
     candidates.push({ proposal, before: beforeText(source, proposal.key) })
   }
@@ -302,16 +287,12 @@ export function isGsdAttended(hunks: readonly HunkOp[]): boolean {
 
 /**
  * Whether the GSD roles are attended by the current config alone, without asking (regen, D-70, D-72): a required
- * proposal is still offered, that is, not yet at its target. A config that cannot be read never equals a target, so it
- * attends the roles too (fail closed). With no required proposal, as for superpowers and the built-in fallback, nothing
- * is attended.
+ * proposal among those the adapter offers (autonomyHunks, A5) is still offered, that is, not yet at its target. A
+ * config that cannot be read never equals a target, so it attends the roles too (fail closed). With no required
+ * proposal, as for superpowers and the built-in fallback, nothing is attended.
  */
-export function isGsdAttendedFromConfig(
-  proposals: readonly SettingProposal[],
-  config: PortRead,
-  isGsdStatusline: boolean,
-): boolean {
-  return hunkCandidates(proposals, config, isGsdStatusline).some(candidate => candidate.proposal.isRequired)
+export function isGsdAttendedFromConfig(proposals: readonly SettingProposal[], config: PortRead): boolean {
+  return hunkCandidates(proposals, config).some(candidate => candidate.proposal.isRequired)
 }
 
 /** Names joined for a sentence: `a`, `a and b`, `a, b and c`. */

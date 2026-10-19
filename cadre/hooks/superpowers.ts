@@ -239,5 +239,7 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
     'No config file: autonomy comes only from the kickoff text. ' +
     'Chat gates end a turn with no tool call, and autopilot pauses after 2 such turns, ' +
     'so the kickoff pre-answers every gate.',
+  /** superpowers has no config file to change, so it offers no autonomy hunks (A5). */
+  autonomyHunks: () => null,
   kickoffText: superpowersKickoffText,
 })

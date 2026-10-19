@@ -133,7 +133,7 @@ function onlyInUse(id: FrameworkId): Choice {
  */
 export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = [
   'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
-  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText',
+  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
 ]
 
 /** The adapter ids a framework may declare: the supported ones and the built-in fallback. */
@@ -182,6 +182,7 @@ const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<strin
   humanGates: adapter => isFilledArray(adapter.humanGates),
   autonomy: hasAutonomy,
   kickoffText: adapter => typeof adapter.kickoffText === 'function',
+  autonomyHunks: adapter => typeof adapter.autonomyHunks === 'function',
 }
 
 /**

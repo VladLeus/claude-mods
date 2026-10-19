@@ -20,7 +20,7 @@ import type {
   ScanKind,
   SetupScan,
 } from '../types'
-import { detectAll } from './adapters'
+import { ADAPTERS, detectAll } from './adapters'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -53,7 +53,6 @@ import {
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
-import { GSD_AUTONOMY, GSD_CONFIG_FILE } from './gsd'
 import {
   attendedNote,
   hunkCandidates,
@@ -65,6 +64,7 @@ import {
   recommendationLines,
   resolveToolCommand,
 } from './recommend'
+import type { HunkCandidate } from './recommend'
 import { cardList, choiceLine, chunkLines, pad, reportText, shown } from './render'
 import {
   applyAdjust,
@@ -1321,14 +1321,17 @@ export function provenUserDir(initFacts: InitFacts): string | null {
 export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answered.'
 
 /**
- * The autonomy hunk step (ROLE-04, D-70, D-71, D-72). With no role on GSD (resolvedFramework) nothing is read or asked
- * and there are no hunks. Otherwise `.planning/config.json` is read through readRepoFile, so a file that links out of
- * the repo is unknown and never read, and each hunk hunkCandidates offers is asked one by one, in GSD_AUTONOMY order
- * under `Hunk <i> of <n>`, as its before and after with Accept or Decline (hunkQuestion, parseHunkAnswer). Each op
- * records the answer, the exact command and whether cadre can run it, which only a proven user-level GSD allows
- * (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is declined or cannot run, the GSD
- * roles stay attended (isUnmetHunk) and the attended note names those keys. A dismissal, or MAX_ASKS answers that
- * are neither Accept nor Decline, gives the cancel reason HUNK_DISMISSED_REASON, so no hunk counts as accepted (A1).
+ * The autonomy hunk step (ROLE-04, D-70, D-71, D-72). The framework adapters decide the file and the proposals (A5):
+ * for each adapter in ADAPTERS order whose framework a role runs on (resolvedFramework), autonomyHunks(setup) gives
+ * the config file its hunks change and the proposals to offer, or null when the framework has no config file to
+ * change. Each such file is read through readRepoFile, so a file that links out of the repo is unknown and never read.
+ * When no adapter offers a hunk, nothing is asked and there are no hunks. Otherwise each hunk hunkCandidates offers is
+ * asked one by one, in that order under `Hunk <i> of <n>`, as its before and after with Accept or Decline
+ * (hunkQuestion, parseHunkAnswer). Each op records the answer, the exact command and whether cadre can run it, which
+ * only a proven user-level GSD allows (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is
+ * declined or cannot run (isUnmetHunk), the roles stay attended and the attended note names those keys. A dismissal,
+ * or MAX_ASKS answers that are neither Accept nor Decline, gives the cancel reason HUNK_DISMISSED_REASON, so no hunk
+ * counts as accepted (A1).
  */
 export async function hunkStep(
   io: InitIo,
@@ -1340,10 +1343,17 @@ export async function hunkStep(
   },
 ): Promise<StepResult<readonly HunkOp[]>> {
   const { roles, repoDefault, gathered, locations } = input
-  if (!roles.some(role => resolvedFramework(role, repoDefault) === 'gsd')) return accepted([])
+  const inUse = roles.map(role => resolvedFramework(role, repoDefault))
+  const candidates: HunkCandidate[] = []
+  for (const adapter of ADAPTERS) {
+    if (!inUse.includes(adapter.id)) continue
+    const offered = adapter.autonomyHunks(gathered.setup)
+    if (offered === null) continue
+    const config = await readRepoFile(io, locations.root, offered.file, MAX_READ_BYTES)
+    candidates.push(...hunkCandidates(offered.proposals, config))
+  }
+  if (candidates.length === 0) return accepted([])
 
-  const config = await readRepoFile(io, locations.root, GSD_CONFIG_FILE, MAX_READ_BYTES)
-  const candidates = hunkCandidates(GSD_AUTONOMY, config, gathered.setup.carry.isGsdStatusline)
   const gsd = {
     userDir: provenUserDir(gathered.facts),
     home: locations.home,
