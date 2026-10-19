@@ -1022,7 +1022,14 @@ function manifestText(files: readonly unknown[], over: Readonly<Record<string, u
 
 /** A `.cadre/cadre.json` as JSON text; `over` replaces or adds fields. */
 function stateText(over: Readonly<Record<string, unknown>> = {}): string {
-  const state = { schema: 1, cadreVersion: '0.2.0', framework: 'gsd', gitPolicy: 'definitions', roles: ['be'] }
+  const state = {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'gsd',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+  }
 
   return JSON.stringify({ ...state, ...over })
 }
@@ -1177,7 +1184,35 @@ describe('parseCadreState', () => {
       framework: 'gsd',
       gitPolicy: 'definitions',
       roles: ['be', 'security'],
+      launchStart: { kind: 'git-root' },
     })
+  })
+
+  test('the launch start is read back: the git root, the folder it is run from, or a folder in the repo (A2)', () => {
+    const starts = [{ kind: 'git-root' }, { kind: 'here' }, { kind: 'dir', path: 'apps/web' }]
+    expect(starts.map(launchStart => parseCadreState(stateText({ launchStart }))?.launchStart)).toEqual(starts)
+  })
+
+  test('a missing launch start or one of an unknown kind makes the state null (A2)', () => {
+    const withoutStart = { schema: 1, cadreVersion: '0.2.0', framework: 'gsd', gitPolicy: 'definitions', roles: [] }
+    expect(parseCadreState(JSON.stringify(withoutStart))).toBeNull()
+    for (const launchStart of [null, 'git-root', {}, { kind: 'root' }, { kind: 'GIT-ROOT' }, [], 1]) {
+      expect(parseCadreState(stateText({ launchStart }))).toBeNull()
+    }
+  })
+
+  test('a dir launch start whose path isSafeRelativePath refuses, or is no string, makes the state null (A2)', () => {
+    for (const path of ['../x', '/abs', 'a b', '${HOME}', '', 'a/../b', 'apps/', 5, null]) {
+      expect(parseCadreState(stateText({ launchStart: { kind: 'dir', path } }))).toBeNull()
+    }
+    expect(parseCadreState(stateText({ launchStart: { kind: 'dir' } }))).toBeNull()
+  })
+
+  test('a field inside the launch start that the contract does not name is dropped (A2)', () => {
+    const git = parseCadreState(stateText({ launchStart: { kind: 'git-root', path: 'x', extra: 1 } }))
+    const dir = parseCadreState(stateText({ launchStart: { kind: 'dir', path: 'apps/web', extra: 1 } }))
+    expect(git?.launchStart).toEqual({ kind: 'git-root' })
+    expect(dir?.launchStart).toEqual({ kind: 'dir', path: 'apps/web' })
   })
 
   test('every framework, a null framework, every git policy and no roles are valid', () => {
@@ -1198,6 +1233,7 @@ describe('parseCadreState', () => {
       framework: 'gsd',
       gitPolicy: 'definitions',
       roles: ['be'],
+      launchStart: { kind: 'git-root' },
     })
   })
 
@@ -1257,7 +1293,14 @@ describe('existing .cadre', () => {
   const MANIFEST = manifestText([BE_FILE])
   const STATE = stateText()
   const PARSED_MANIFEST = { schema: 1, cadreVersion: '0.2.0', files: [BE_FILE] }
-  const PARSED_STATE = { schema: 1, cadreVersion: '0.2.0', framework: 'gsd', gitPolicy: 'definitions', roles: ['be'] }
+  const PARSED_STATE = {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'gsd',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+  }
 
   /** The scan of a repo whose `.cadre` holds these files; a name in `files` is listed. */
   function cadreScan(files: Readonly<Record<string, string>>, over: Partial<MemWorld> = {}): Promise<RepoScan> {
