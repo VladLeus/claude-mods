@@ -1,5 +1,6 @@
 import type {
   AdapterFact,
+  AutonomyHunks,
   Detection,
   Facts,
   FrameworkAdapter,
@@ -8,6 +9,7 @@ import type {
   KickoffContext,
   RepoEntry,
   SettingProposal,
+  SetupScan,
 } from '../types'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
@@ -229,6 +231,21 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
   },
 ])
 
+/** The settings key whose GSD proposal is optional: it is offered only when gsd-statusline is the statusline (D-70). */
+const CONTEXT_WARNINGS_KEY = 'hooks.context_warnings'
+
+/**
+ * The GSD autonomy hunks for one user setup (A5, D-70): GSD_CONFIG_FILE, and the GSD_AUTONOMY proposals to offer in
+ * their order. Every required proposal is offered; the optional `hooks.context_warnings` only when gsd-statusline is
+ * the statusline, since only then do the gsd-context-monitor warnings conflict with the autopilot handoff.
+ */
+export function gsdAutonomyHunks(setup: SetupScan): AutonomyHunks {
+  const isOffered = (proposal: SettingProposal): boolean =>
+    proposal.isRequired || (proposal.key === CONTEXT_WARNINGS_KEY && setup.carry.isGsdStatusline)
+
+  return { file: GSD_CONFIG_FILE, proposals: GSD_AUTONOMY.filter(isOffered) }
+}
+
 /** The last line of every GSD kickoff: the done answer autopilot waits for once the phase verifies. */
 const DONE_LINE =
   'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.'
@@ -296,6 +313,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   humanGates: GSD_GATES,
   autonomy: GSD_AUTONOMY,
   autonomyNote: null,
+  autonomyHunks: gsdAutonomyHunks,
   kickoffText: gsdKickoffText,
   roleFacts: gsdHookFacts,
 })

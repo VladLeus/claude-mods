@@ -116,5 +116,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   humanGates: BUILTIN_GATES,
   autonomy: Object.freeze([]),
   autonomyNote: 'No framework config: autonomy comes from the kickoff text alone.',
+  /** The built-in fallback has no config file to change, so it offers no autonomy hunks (A5). */
+  autonomyHunks: () => null,
   kickoffText: builtinKickoffText,
 })

@@ -204,6 +204,15 @@ export type SettingProposal = {
   readonly isRequired: boolean
 }
 
+/**
+ * The autonomy hunks of one framework for one user setup (A5): the repo-relative config file the hunks change, and
+ * the proposals to offer for that setup.
+ */
+export type AutonomyHunks = {
+  readonly file: string
+  readonly proposals: readonly SettingProposal[]
+}
+
 /** One fact an adapter adds to the detection output, such as the GSD hooks it found. */
 export type AdapterFact = {
   readonly name: string
@@ -244,6 +253,8 @@ export type FrameworkAdapter = {
   readonly humanGates: readonly Gate[]
   readonly autonomy: readonly SettingProposal[]
   readonly autonomyNote: string | null
+  /** The autonomy hunks init offers for a user setup (A5); null when the framework has no config file to change. */
+  readonly autonomyHunks: (setup: SetupScan) => AutonomyHunks | null
   readonly kickoffText: (ctx: KickoffContext) => string
   /** Facts the adapter adds to the detection output, such as GSD's hooks. Optional. */
   readonly roleFacts?: (facts: Facts) => readonly AdapterFact[]
