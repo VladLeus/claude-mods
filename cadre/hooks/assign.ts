@@ -265,11 +265,20 @@ export function classifySkills(
 }
 
 /**
- * How often the history scan saw the skills of a group in recent sessions: the sum of the counts of its names, where a
- * name the scan did not see counts 0. It is a hint for the order and the wording of the question only (D-59).
+ * A name with only A-Z lowercased, every other character as it is: the form the history scan keeps a name in, so the
+ * scan and the skill hints share one rule and a skill name in any ASCII case finds its count (D-59, WR-02).
+ */
+export function asciiLower(name: string): string {
+  return name.replace(/[A-Z]/g, letter => letter.toLowerCase())
+}
+
+/**
+ * How often the history scan saw the skills of a group in recent sessions: the sum of the counts of its names, each
+ * looked up in the form the scan keeps names in (asciiLower), where a name the scan did not see counts 0. It is a hint
+ * for the order and the wording of the question only (D-59).
  */
 export function groupUses(group: SkillGroup, counts: ReadonlyMap<string, number>): number {
-  return group.names.reduce((sum, name) => sum + (counts.get(name) ?? 0), 0)
+  return group.names.reduce((sum, name) => sum + (counts.get(asciiLower(name)) ?? 0), 0)
 }
 
 /**

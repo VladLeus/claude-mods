@@ -1,4 +1,5 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
+import { asciiLower } from './assign'
 import { compareText } from './facts'
 import { askChoice } from './init'
 import type { StepResult } from './init'
@@ -106,9 +107,12 @@ export async function listSessions(
   return { sessions: files.sort(newestFirst).slice(0, HISTORY_MAX_SESSIONS), total: files.length }
 }
 
-/** A marker value as a kept name: A-Z lowercased, then kept only when it fits HISTORY_NAME_PATTERN; else null. */
+/**
+ * A marker value as a kept name: A-Z lowercased by asciiLower, the rule the skill hints look a name up with, then kept
+ * only when it fits HISTORY_NAME_PATTERN; else null.
+ */
 function keptName(value: string): string | null {
-  const name = value.replace(/[A-Z]/g, letter => letter.toLowerCase())
+  const name = asciiLower(value)
 
   return HISTORY_NAME_PATTERN.test(name) ? name : null
 }
