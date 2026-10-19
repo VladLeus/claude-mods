@@ -97,6 +97,7 @@ import {
   MAX_ADJUST_ROUNDS,
   MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
+  MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
   MEMORY_DISMISSED_REASON,
   memoryStep,
@@ -105,6 +106,7 @@ import {
   modelStep,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
+  parseReviewItem,
   planStep,
   pluginVersionOf,
   policyLine,
@@ -114,6 +116,11 @@ import {
   provenUserDir,
   PROVISIONAL_MCP_ROUTE,
   resolvedFramework,
+  REVIEW_DISMISSED_REASON,
+  REVIEW_HINT,
+  REVIEW_OPTIONS,
+  REVIEW_QUESTION,
+  REVIEW_ROUNDS_REASON,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_OPTIONS,
@@ -125,7 +132,7 @@ import {
   scanWarnings,
   scopesFor,
 } from './init'
-import type { AdjustOutcome, Gathered, StepResult } from './init'
+import type { AdjustOutcome, Gathered, ReviewItem, StepResult } from './init'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
@@ -2272,7 +2279,7 @@ function dismissedAt(world: MemWorld, prefix: string, question: string, reason: 
 }
 
 describe('runInit cancel reasons (A1)', () => {
-  test('a dismissal at each of the eleven steps cancels init and prints its reason once, last of all', async () => {
+  test('a dismissal at each of the twelve steps cancels init and prints its reason once, last of all', async () => {
     const gsd = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const sentryNone = { 'Which roles get the sentry': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
@@ -2298,6 +2305,7 @@ describe('runInit cancel reasons (A1)', () => {
         LAUNCH_START_QUESTION,
         LAUNCH_START_DISMISSED_REASON,
       ),
+      dismissedAt(gitWorld(), 'Review the plan', REVIEW_QUESTION, REVIEW_DISMISSED_REASON),
     ]
     for (const { world, answers, question, reason } of cases) {
       const run = memIo(world, answers)
@@ -2893,5 +2901,327 @@ describe('init plan', () => {
     expect(events.some(event => event.startsWith('log Scope card: PM (pm)'))).toBe(true)
     expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
     expect(Object.keys(run.io).filter(key => /write|append|remove|delete|mkdir|rename/i.test(key))).toEqual([])
+  })
+})
+
+/** A git repo at /repo whose scan proposes all six template roles; `over` changes the fields it names. */
+function fullWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({ dirs: { '/repo/.git': [], ...FULL_DIRS }, files: { ...FULL_FILES }, ...over })
+}
+
+/** `world` with these files on disk under /repo, beside the files it has. */
+function withDisk(world: MemWorld, files: readonly DesiredFile[]): MemWorld {
+  return { ...world, files: { ...world.files, ...onDisk(files) } }
+}
+
+/** The longest of the keys the question starts with; undefined when none does. */
+function longestKey(keys: readonly string[], question: string): string | undefined {
+  return keys.filter(key => question.startsWith(key)).sort((a, b) => b.length - a.length)[0]
+}
+
+/**
+ * A port over `world` that answers by question prefix, the longest prefix winning, as INIT_ANSWERS does. A list
+ * answers its questions in turn and its last answer repeats; a null in it dismisses that ask, and so does a question no
+ * prefix matches.
+ */
+function queuedIo(world: MemWorld, answers: Readonly<Record<string, string | readonly (string | null)[]>>): MemRun {
+  const run = memIo(world, {})
+  const used = new Map<string, number>()
+  const nextAnswer = (question: string): string | null => {
+    const key = longestKey(Object.keys(answers), question)
+    if (key === undefined) return null
+    const value = answers[key]
+    if (value === undefined) return null
+    if (typeof value === 'string') return value
+    const turn = used.get(key) ?? 0
+    used.set(key, turn + 1)
+
+    return value[Math.min(turn, value.length - 1)] ?? null
+  }
+  const io: InitIo = {
+    ...run.io,
+    ask: async (question, spec) => {
+      run.asked.push(question)
+      run.specs.push(spec)
+      const answer = nextAnswer(question)
+      if (answer === null) throw new Error('dismissed')
+
+      return answer
+    },
+  }
+
+  return { ...run, io }
+}
+
+/** The questions asked after the first ask of `question` and before its second. */
+function between(asked: readonly string[], question: string): string[] {
+  const first = asked.indexOf(question)
+  const second = asked.indexOf(question, first + 1)
+  if (first === -1 || second === -1) throw new Error(`${question} was not asked twice`)
+
+  return asked.slice(first + 1, second)
+}
+
+/** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
+function everyStepWorld(): MemWorld {
+  return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
+}
+
+describe('reviewStep', () => {
+  test('the review question, its four buttons, the hint and the round cap are fixed (D-43, A2)', () => {
+    expect(REVIEW_QUESTION).toBe('Review the plan above. Confirm it, or go back to change one item.')
+    expect(REVIEW_OPTIONS).toEqual(['Confirm', 'Change roles', 'Change git policy', 'Change launcher start'])
+    expect(Object.isFrozen(REVIEW_OPTIONS)).toBe(true)
+    expect(REVIEW_HINT).toBe('To change something else, type one of: duration, model, assignments, memory, env, hunks.')
+    expect(MAX_REVIEW_ROUNDS).toBe(10)
+    expect(REVIEW_DISMISSED_REASON).toBe('The review question was dismissed or not answered.')
+    expect(REVIEW_ROUNDS_REASON).toBe('The review question was asked 10 times without "Confirm": nothing was chosen.')
+  })
+
+  test('parseReviewItem reads a button or a typed item, trimmed and in any case; anything else is null', () => {
+    const cases: readonly (readonly [string, ReviewItem | null])[] = [
+      ['Confirm', 'confirm'],
+      [' confirm ', 'confirm'],
+      ['Change roles', 'roles'],
+      ['roles', 'roles'],
+      ['Change git policy', 'policy'],
+      ['GIT POLICY', 'policy'],
+      ['Change launcher start', 'launch'],
+      ['launcher start', 'launch'],
+      ['duration', 'duration'],
+      ['Model', 'model'],
+      ['assignments', 'assignments'],
+      ['mcp', 'assignments'],
+      ['skills', 'assignments'],
+      ['memory', 'memory'],
+      ['env', 'env'],
+      [' hunks', 'hunks'],
+      ['', null],
+      ['yes', null],
+      ['policy', null],
+      ['change the model', null],
+    ]
+    for (const [answer, item] of cases) expect([answer, parseReviewItem(answer)]).toEqual([answer, item])
+  })
+
+  test('before the question init prints one summary: roles, cards, plan, scan warnings, then the hint', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
+    const world = fullWorld({ locations })
+    const run = memIo(world, INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const gathered = await gatherScans(memIo(world, {}).io, locations, false)
+    const team = proposeRoles(gathered.repo).roles
+    const scopes = scopesFor(team, 'none', gathered, [])
+    const { plan } = await planStep(memIo(world, {}).io, {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes,
+      hunks: [],
+      repo: gathered.repo,
+      locations,
+    })
+    const expected = [
+      'Roles:',
+      ...team.map(role => `  ${role.title} (${role.id})`),
+      ...cardLines(team, scopes),
+      ...renderPlan(plan),
+      ...scanWarningLines(scanWarnings(locations, gathered)),
+      REVIEW_HINT,
+    ]
+    expect(team).toHaveLength(6)
+    expect(expected).toContain('warning: the root was given through a link')
+    const summary = loggedFrom(events, 'Roles:', REVIEW_QUESTION)
+    expect(summary.join('\n')).toBe(expected.join('\n'))
+    expect(summary.length > 1).toBe(true)
+    expect(summary.every(text => text.length <= 2000)).toBe(true)
+    expect(run.specs[run.asked.indexOf(REVIEW_QUESTION)]).toEqual({ options: REVIEW_OPTIONS })
+  })
+
+  test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Review the plan': ['git policy', 'Confirm'],
+      'Git policy': ['Commit definitions (default)', 'Ignore all of .cadre/'],
+    })
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([GIT_POLICY_QUESTION])
+    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
+    expect(run.logged.filter(text => text.startsWith('Roles:'))).toHaveLength(2)
+    const team = await defaultRoles(gitWorld())
+    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), team, { gitPolicy: 'ignore' }), 'ignore')
+    expect(reply.split('\n')).toEqual([
+      'cadre init --dry-run',
+      ...renderPlan(plan),
+      policyLine('ignore'),
+      'Launchers start in: the git root',
+      IGNORE_ALL_NOTE,
+      DRY_RUN_NOTE,
+    ])
+  })
+
+  test('model re-asks only the model questions, and the plan takes the new answer', async () => {
+    const team = await defaultRoles(gitWorld())
+    const files = await plannedFiles(
+      gitWorld(),
+      team.map((role): RoleSpec => ({ ...role, model: 'sonnet', effort: 'high' })),
+    )
+    const run = queuedIo(withDisk(gitWorld(), files), {
+      ...INIT_ANSWERS,
+      'Review the plan': ['model', 'Confirm'],
+      'Model and effort for': ['opus + medium', 'sonnet + high'],
+    })
+    const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+  })
+
+  test('duration re-asks only the duration, and every role takes it', async () => {
+    const team = await defaultRoles(gitWorld())
+    const files = await plannedFiles(
+      gitWorld(),
+      team.map((role): RoleSpec => ({ ...role, autopilot: { ...role.autopilot, duration: '90m' } })),
+    )
+    const run = queuedIo(withDisk(gitWorld(), files), {
+      ...INIT_ANSWERS,
+      'Review the plan': ['duration', 'Confirm'],
+      'Autopilot duration': ['4h', '90m'],
+    })
+    const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([DURATION_QUESTION])
+    expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
+  })
+
+  test('each typed item re-asks only its own questions, in the order init first asked them', async () => {
+    const first = memIo(everyStepWorld(), INIT_ANSWERS)
+    await runInit(first.io, { dryRun: true })
+    const firstPass = first.asked.slice(first.asked.indexOf(ROLES_QUESTION), first.asked.indexOf(GIT_POLICY_QUESTION))
+    const assignments = ['Which roles get the sentry', 'Which roles get codex']
+    const cases: readonly (readonly [string, readonly string[]])[] = [
+      ['duration', [DURATION_QUESTION]],
+      ['model', ['Model and effort']],
+      ['assignments', assignments],
+      ['mcp', assignments],
+      ['skills', assignments],
+      ['memory', ['Which roles get your global', 'Which roles get the auto-memories', 'Which roles get the project']],
+      ['env', ['Which env variables']],
+      ['hunks', ['.planning/config.json: ']],
+    ]
+    for (const [word, prefixes] of cases) {
+      const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': [word, 'Confirm'] })
+      expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+      const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
+      expect(expected.length > 0).toBe(true)
+      expect([word, between(run.asked, REVIEW_QUESTION)]).toEqual([word, expected])
+    }
+  })
+
+  test('Change roles re-asks the roles and every per-role step, and prints the recommendations again', async () => {
+    const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': ['Change roles', 'Confirm'] })
+    await runInit(run.io, { dryRun: true })
+    const firstPass = run.asked.slice(run.asked.indexOf(ROLES_QUESTION), run.asked.indexOf(GIT_POLICY_QUESTION))
+    expect(firstPass).toContain(DURATION_QUESTION)
+    expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
+    expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
+    expect(run.logged.filter(text => text.startsWith('Recommendations'))).toHaveLength(2)
+    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
+    expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
+  })
+
+  test('Change roles starts from the current team, so an earlier Adjust stays', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Adjust them', 'Use these roles'],
+      'Adjust the roles': ['drop security', 'Done adjusting'],
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+    const proposals = run.logged.filter(text => text.startsWith('Proposed roles:'))
+    expect(proposals).toHaveLength(3)
+    expect(proposals.at(-1)).not.toContain('Security (security)')
+    expect(run.asked.filter(question => question === ADJUST_QUESTION)).toHaveLength(2)
+    expect([...kinds.keys()].filter(path => path.startsWith('.cadre/security/'))).toEqual([])
+    expect(kinds.get('.cadre/pm/role.json')).toBe('create')
+  })
+
+  test('Describe then Use the template instead still gives the template after Change roles', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Adjust them', 'Use these roles', 'Describe my own structure', 'Use these roles'],
+      'Adjust the roles': ['drop security', 'Done adjusting'],
+      'Describe your role structure': 'Use the template instead',
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+    expect(run.asked.filter(question => question === DESCRIBE_QUESTION)).toHaveLength(1)
+    expect(kinds.get('.cadre/security/role.json')).toBe('create')
+  })
+
+  test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
+    for (const word of ['Change launcher start', 'launcher start']) {
+      const run = queuedIo(gitWorld(), {
+        ...INIT_ANSWERS,
+        'Review the plan': [word, 'Confirm'],
+        'Where should the role launchers start': ['Git root of this repo', 'The folder I run it from'],
+      })
+      const lines = (await runInit(run.io, { dryRun: true })).split('\n')
+      expect(between(run.asked, REVIEW_QUESTION)).toEqual([LAUNCH_START_QUESTION])
+      const startLine = lines[lines.indexOf(policyLine('definitions')) + 1]
+      expect(startLine).toBe('Launchers start in: the folder they are run from')
+    }
+  })
+
+  test(`after ${MAX_REVIEW_ROUNDS} review rounds without Confirm init cancels with the reason (A1)`, async () => {
+    const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'model' })
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(run.asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS + 1)
+    expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
+  })
+
+  test('a dismissed review, or three answers it cannot read, cancels init with the reason (A1)', async () => {
+    const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
+    const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe' })
+    expect(await runInit(unread.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(unread.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_ASKS)
+    expect(unread.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
+  })
+
+  test("a go-back step that is dismissed cancels init with that step's reason, printed once (A1)", async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Review the plan': ['model', 'Confirm'],
+      'Model and effort: same': ['Same for all roles', null],
+    })
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
+    expect(run.logged.filter(text => text === MODEL_DISMISSED_REASON)).toHaveLength(1)
+  })
+
+  test('one answer script gives init and --dry-run the same lines but the first and the last (PLAN-02)', async () => {
+    const answers = {
+      ...INIT_ANSWERS,
+      'Review the plan': ['git policy', 'Confirm'],
+      'Git policy': ['Commit all', 'Ignore all of .cadre/'],
+    }
+    const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
+    const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false })).split('\n')
+    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    expect(dry.slice(1, -1)).toContain('File plan:')
+    expect(dry.slice(1, -1)).toContain(policyLine('ignore'))
+  })
+
+  test('a cancelled run keeps nothing: the next run on the same port starts fresh (D-45, D-82)', async () => {
+    const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': [null, 'Confirm'] })
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    const askedBefore = run.asked.length
+    const again = await runInit(run.io, { dryRun: true })
+    expect(run.asked[askedBefore]).toBe(CLAUDE_JSON_QUESTION)
+    expect(again).toBe(await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true }))
   })
 })
