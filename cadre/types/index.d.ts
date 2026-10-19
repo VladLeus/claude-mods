@@ -490,6 +490,15 @@ export type Manifest = {
   readonly files: readonly ManifestEntry[]
 }
 
+/**
+ * Where a role launcher starts its session (A2): at the git root, in the folder it is run from, or in a folder of the
+ * repo. `path` is repo-relative and passes isSafeRelativePath.
+ */
+export type LaunchStart =
+  | { readonly kind: 'git-root' }
+  | { readonly kind: 'here' }
+  | { readonly kind: 'dir'; readonly path: string }
+
 /** `.cadre/cadre.json`: the repo-level answers regen and the ignore block need (D-89). */
 export type CadreState = {
   readonly schema: 1
@@ -498,6 +507,8 @@ export type CadreState = {
   readonly framework: FrameworkId | null
   readonly gitPolicy: GitPolicy
   readonly roles: readonly string[]
+  /** Where every role launcher of the repo starts its session; init asks it once per repo (A2). */
+  readonly launchStart: LaunchStart
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */

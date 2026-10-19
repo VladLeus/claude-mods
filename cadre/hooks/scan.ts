@@ -3,6 +3,7 @@ import type {
   EntryKind,
   GitPolicy,
   InitIo,
+  LaunchStart,
   Manifest,
   ManifestEntry,
   PortEntry,
@@ -333,10 +334,25 @@ export function parseManifest(text: string): Manifest | null {
 }
 
 /**
+ * A launch start as `.cadre/cadre.json` holds it (A2), or null when it is not one: an object of kind `git-root` or
+ * `here`, kept as its kind alone, or of kind `dir` with a string path that isSafeRelativePath takes. A field the
+ * contract does not name is dropped.
+ */
+function launchStartOf(value: unknown): LaunchStart | null {
+  if (!isObject(value)) return null
+  const { kind, path } = value
+  if (kind === 'git-root' || kind === 'here') return { kind }
+  if (kind !== 'dir' || typeof path !== 'string' || !isSafeRelativePath(path)) return null
+
+  return { kind: 'dir', path }
+}
+
+/**
  * The text of `.cadre/cadre.json` as the repo state, or null when it is not one (T-02-12): JSON with schema 1, a cadre
- * version, a framework that is gsd, superpowers, none or null, a git policy, and a list of role ids that are each a
- * usable role id (isRoleId: a slug, not reserved) and are not listed twice. A field the contract does not name is
- * dropped.
+ * version, a framework that is gsd, superpowers, none or null, a git policy, a list of role ids that are each a
+ * usable role id (isRoleId: a slug, not reserved) and are not listed twice, and a launch start (launchStartOf). A
+ * missing or invalid launch start makes the state null (fail closed: no cadre.json is in the wild yet, Phase 3 writes
+ * the first). A field the contract does not name is dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value
@@ -344,6 +360,8 @@ export function parseCadreState(text: string): CadreState | null {
   const { framework, gitPolicy, roles } = value
   if (framework !== null && !isFrameworkId(framework)) return null
   if (!isGitPolicy(gitPolicy) || !Array.isArray(roles)) return null
+  const launchStart = launchStartOf(value.launchStart)
+  if (launchStart === null) return null
 
   const ids: string[] = []
   for (const role of roles) {
@@ -351,7 +369,7 @@ export function parseCadreState(text: string): CadreState | null {
     ids.push(role)
   }
 
-  return { schema: 1, cadreVersion: value.cadreVersion, framework, gitPolicy, roles: ids }
+  return { schema: 1, cadreVersion: value.cadreVersion, framework, gitPolicy, roles: ids, launchStart }
 }
 
 /** One `.cadre/` file as the scan reports it: its state, and its parsed value when it is present. */
