@@ -35,6 +35,7 @@ import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import { desiredFiles } from './generate'
 import { sha256Hex } from './hash'
+import { HISTORY_DISMISSED_REASON, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -676,7 +677,8 @@ describe('runInit', () => {
       'warning: a settings file could not be read',
     ])
     expect(events[1]).toBe(`log ${[...summary, ...warnings].join('\n')}`)
-    expect(events[2]?.startsWith('log Proposed roles:\n')).toBe(true)
+    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
+    expect(events[3]?.startsWith('log Proposed roles:\n')).toBe(true)
   })
 
   test('with no scan warning nothing is added after the scan summary', async () => {
@@ -704,8 +706,9 @@ describe('runInit', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const proposal = proposeRoles(await scanRepo(memIo(gitWorld(), {}).io, '/repo'))
-    expect(events[2]).toBe(`log ${proposalLines(proposal.roles, proposal.changes).join('\n')}`)
-    expect(events[3]).toBe(`ask ${ROLES_QUESTION}`)
+    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
+    expect(events[3]).toBe(`log ${proposalLines(proposal.roles, proposal.changes).join('\n')}`)
+    expect(events[4]).toBe(`ask ${ROLES_QUESTION}`)
   })
 
   test('a dismissed roles question cancels init and prints why', async () => {
@@ -725,6 +728,62 @@ describe('runInit', () => {
     expect(run.asked.filter(question => question !== ROLES_QUESTION && question !== ADJUST_QUESTION)).toEqual([
       CLAUDE_JSON_QUESTION,
     ])
+  })
+})
+
+/** The session folder of the fixture repo /repo for the fixture user /home/u. */
+const HISTORY_DIR = '/home/u/.claude/projects/-repo'
+
+/** The history question's prefix, as INIT_ANSWERS answers it. */
+const HISTORY_PREFIX = "Scan this repo's session history"
+
+/** A git repo at /repo with one session transcript that runs /gsd-plan-phase; `over` changes the fields it names. */
+function historyGitWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({
+    dirs: { '/repo/.git': [], [HISTORY_DIR]: [{ ...entry('a.jsonl'), mtimeMs: 1 }] },
+    files: { [`${HISTORY_DIR}/a.jsonl`]: '<command-name>/gsd-plan-phase</command-name>' },
+    ...over,
+  })
+}
+
+describe('runInit history step (SCAN-03, D-59)', () => {
+  test('the history question follows the scan summary and comes before the roles; No reads nothing', async () => {
+    const run = memIo(historyGitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
+    expect(events[1]?.startsWith('log Repo scan (read-only):\n')).toBe(true)
+    expect(events[2]).toBe(`ask ${historyQuestion(1)}`)
+    expect(events[3]?.startsWith('log Proposed roles:\n')).toBe(true)
+    expect(events[4]).toBe(`ask ${ROLES_QUESTION}`)
+    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
+    expect(run.logged.join('\n')).not.toContain('Session history')
+  })
+
+  test('with Yes the names and counts are logged after the question and before the roles', async () => {
+    const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(events[2]).toBe(`ask ${historyQuestion(1)}`)
+    expect(events[3]).toBe('log Session history (names and counts only):\n  gsd-plan-phase  1')
+    expect(events[4]?.startsWith('log Proposed roles:\n')).toBe(true)
+    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([`${HISTORY_DIR}/a.jsonl`])
+  })
+
+  test('a dismissed history question cancels init, prints why and asks nothing after it (A1)', async () => {
+    const run = memIo(historyGitWorld(), answersWithout(HISTORY_PREFIX))
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.asked).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
+    expect(run.logged.at(-1)).toBe(HISTORY_DISMISSED_REASON)
+    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
+  })
+
+  test('with no session history init logs the note right after the summary and asks no history question', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
+    expect(run.asked.filter(question => question.startsWith(HISTORY_PREFIX))).toEqual([])
   })
 })
 
