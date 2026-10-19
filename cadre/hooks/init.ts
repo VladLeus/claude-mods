@@ -1749,7 +1749,10 @@ export function parseReviewItem(answer: string): ReviewItem | null {
   return labelled(REVIEW_CHOICES, answer) ?? labelled(REVIEW_WORDS, answer)
 }
 
-/** The most times the review question is asked; the round after them cancels, so no plan is taken unconfirmed (A1). */
+/**
+ * The most times the review question is asked, so no plan is taken unconfirmed (A1). A go-back picked at the last one
+ * cancels at once, asking nothing more, so no answer is asked for and then thrown away (A3).
+ */
 export const MAX_REVIEW_ROUNDS = 10
 
 /** Why init cancels when the review question is dismissed or never answered with a button or an item (A1, D-45). */
@@ -1907,8 +1910,8 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with. A go-back
  * re-asks that one item (goBack), and the next round shows the summary again. A dismissal, MAX_ASKS answers it cannot
  * read, or a cancelled go-back step is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS
- * times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). Nothing is
- * written.
+ * times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back
+ * picked at the last round cancels at once and asks none of that item's questions (A3). Nothing is written.
  */
 export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<PlanResult>> {
   let current = draft
@@ -1929,6 +1932,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<P
     const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
     if (item === null) return cancelled(REVIEW_DISMISSED_REASON)
     if (item === 'confirm') return accepted(planned)
+    if (round === MAX_REVIEW_ROUNDS - 1) break
     const changed = await goBack(io, current, item)
     if (changed.kind === 'cancelled') return changed
     current = changed.value
