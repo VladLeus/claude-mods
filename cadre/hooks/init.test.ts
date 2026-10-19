@@ -3238,7 +3238,16 @@ describe('reviewStep', () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'model' })
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS + 1)
+    expect(run.asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
+  })
+
+  test('a go-back picked at the last review round cancels at once and asks none of its questions (A3)', async () => {
+    const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'git policy' })
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
