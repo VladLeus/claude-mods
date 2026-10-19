@@ -265,6 +265,15 @@ describe('launch render', () => {
     expect(text).not.toContain('"k"')
   })
 
+  test('the env holds the carried names in name order, whatever order the role lists them', () => {
+    const role = templateRole('pm', { carry: { ...CARRY_ALL, env: ['ZED', 'JIRA_URL', 'ALPHA'] } })
+    const scope = compileScope(role, context())
+    const env = { ZED: 'z', JIRA_URL: 'https://j', ALPHA: 'a' }
+    const plan = launchPlan(role, scope, carrier({ env }))
+
+    expect(Object.keys(plan.settings.env ?? {})).toEqual(['ALPHA', 'JIRA_URL', 'ZED'])
+  })
+
   test('a carried env name the user has no value for is left out, and so is an empty env', () => {
     const role = templateRole('pm', { carry: { ...CARRY_ALL, env: ['JIRA_URL', 'MISSING'] } })
     const scope = compileScope(role, context())
@@ -973,6 +982,16 @@ describe('overlayLinks', () => {
     ])
   })
 
+  test('a name that is both unsafe and absent from the user is reported as unsafe, never looked up', () => {
+    const result = overlayLinks('pm', { skills: ['../x'], agents: ['a b'] }, user())
+
+    expect(result.links).toEqual([])
+    expect(result.warnings).toEqual([
+      'skill ../x has an unsafe name: not linked',
+      'agent a b has an unsafe name: not linked',
+    ])
+  })
+
   test('a name is plain up to 80 characters; an empty name and a name of 81 are not', () => {
     const fits = 'a'.repeat(80)
     const names = ['', fits, 'a'.repeat(81)]
@@ -1029,6 +1048,23 @@ describe('overlayLinks', () => {
       'Code dir * has an unusual name and is not denied',
       'memory file .bad.md has an unsafe name: not linked',
       ...sortedUnique(FRAMEWORK_START_SKILLS.gsd).map(notFound),
+    ])
+  })
+
+  test('a hostile long name is cleaned and cut to 110 characters wherever a warning shows it', () => {
+    const name = `a${BIDI_OVERRIDE}b${'x'.repeat(300)}`
+    const shown = `ab${'x'.repeat(107)}…`
+    const role = templateRole('pm', { skills: [name], instructions: ['global-claude-md', 'auto-memory'] })
+    const scope = withDeny(compileScope(role, context()), `Read(/${name}/**)`)
+    const launcher = carrier({ codeDirs: [name], globalClaudeMd: [`/home/u/x/${name}`], memoryFiles: [name] })
+    const plan = launchPlan(role, scope, launcher)
+
+    expect(plan.warnings).toEqual([
+      `Code dir ${shown} has an unusual name and is not denied`,
+      `Read(/ab${'x'.repeat(101)}… was not emitted: single leading / matches nothing (P13)`,
+      `global file ${shown} has an unsafe name: not linked`,
+      `memory file ${shown} has an unsafe name: not linked`,
+      `skill ${shown} has an unsafe name: not linked`,
     ])
   })
 
