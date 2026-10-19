@@ -520,6 +520,11 @@ export type CadreState = {
   readonly roles: readonly string[]
   /** Where every role launcher of the repo starts its session; init asks it once per repo (A2). */
   readonly launchStart: LaunchStart
+  /**
+   * Whether the person who ran init allowed reading ~/.claude.json for MCP server names (D-58). Regen reads
+   * ~/.claude.json only when it is true, so the MCP denies init compiled from it are kept (A1).
+   */
+  readonly readUserMcp: boolean
 }
 
 /** What the repo scan found (SCAN-01): a separate type beside the frozen Facts (D-88). */

@@ -350,9 +350,10 @@ function launchStartOf(value: unknown): LaunchStart | null {
 /**
  * The text of `.cadre/cadre.json` as the repo state, or null when it is not one (T-02-12): JSON with schema 1, a cadre
  * version, a framework that is gsd, superpowers, none or null, a git policy, a list of role ids that are each a
- * usable role id (isRoleId: a slug, not reserved) and are not listed twice, and a launch start (launchStartOf). A
- * missing or invalid launch start makes the state null (fail closed: no cadre.json is in the wild yet, Phase 3 writes
- * the first). A field the contract does not name is dropped.
+ * usable role id (isRoleId: a slug, not reserved) and are not listed twice, a launch start (launchStartOf), and
+ * whether init may read ~/.claude.json (a boolean; missing or any other value makes the state null, fail closed, A1).
+ * A missing or invalid launch start makes the state null (fail closed: no cadre.json is in the wild yet, Phase 3
+ * writes the first). A field the contract does not name is dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value
@@ -362,6 +363,7 @@ export function parseCadreState(text: string): CadreState | null {
   if (!isGitPolicy(gitPolicy) || !Array.isArray(roles)) return null
   const launchStart = launchStartOf(value.launchStart)
   if (launchStart === null) return null
+  if (typeof value.readUserMcp !== 'boolean') return null
 
   const ids: string[] = []
   for (const role of roles) {
@@ -369,7 +371,15 @@ export function parseCadreState(text: string): CadreState | null {
     ids.push(role)
   }
 
-  return { schema: 1, cadreVersion: value.cadreVersion, framework, gitPolicy, roles: ids, launchStart }
+  return {
+    schema: 1,
+    cadreVersion: value.cadreVersion,
+    framework,
+    gitPolicy,
+    roles: ids,
+    launchStart,
+    readUserMcp: value.readUserMcp,
+  }
 }
 
 /** One `.cadre/` file as the scan reports it: its state, and its parsed value when it is present. */

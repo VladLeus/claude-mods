@@ -1627,7 +1627,8 @@ async function readPaths(io: InitIo, root: string, paths: readonly string[]): Pr
 /**
  * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
- * desiredFiles gives every file from it. Exactly the paths planReadPaths names (each file, the copy beside it and the
+ * desiredFiles gives every file from it; the repo state also records the consent answer, so regen knows whether it
+ * may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the
  * manifest) and the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never
  * read. buildPlan classifies each file against the disk and the last manifest the scan read, then adds the ignore
  * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has) and the hunks.
@@ -1644,9 +1645,10 @@ export async function planStep(
     readonly hunks: readonly HunkOp[]
     readonly repo: RepoScan
     readonly locations: InitLocations
+    readonly readUserMcp: boolean
   },
 ): Promise<PlanResult> {
-  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations } = input
+  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp } = input
   const cadreVersion = (await io.cadreVersion()) ?? 'unknown'
   const state: CadreState = {
     schema: 1,
@@ -1655,6 +1657,7 @@ export async function planStep(
     gitPolicy: policy,
     roles: roles.map(role => role.id),
     launchStart,
+    readUserMcp,
   }
   const desired = desiredFiles({ roles, scopes, state, only: null })
   const disk = await readPaths(io, locations.root, planReadPaths(desired))
@@ -1760,13 +1763,15 @@ export const REVIEW_HINT = 'To change something else, type one of: duration, mod
 
 /**
  * What one init run holds in memory while the person reviews the plan (D-43, D-45, D-82): where it runs and what the
- * scans gave, what the roles and framework steps are asked with (the installed frameworks, the framework choice and
- * the template proposal with its scan changes), and every answer so far. It is never written or kept after the run;
- * a go-back gives a new Draft.
+ * scans gave, the ~/.claude.json consent answer the scans were gathered with (cadre.json records it, A1), what the
+ * roles and framework steps are asked with (the installed frameworks, the framework choice and the template proposal
+ * with its scan changes), and every answer so far. It is never written or kept after the run; a go-back gives a new
+ * Draft.
  */
 type Draft = {
   readonly locations: InitLocations
   readonly gathered: Gathered
+  readonly readUserMcp: boolean
   readonly installed: readonly FrameworkId[]
   readonly choice: Choice
   readonly proposal: RoleProposal
@@ -1778,8 +1783,8 @@ type Draft = {
   readonly launchStart: LaunchStart
 }
 
-/** The parts of a Draft that the scans fix for the whole run. */
-type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'installed' | 'choice' | 'proposal'>
+/** The parts of a Draft that the scans, and the consent answer they were gathered with, fix for the whole run. */
+type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'installed' | 'choice' | 'proposal'>
 
 /** What the role steps decide: the duration, the roles with every per-role answer, the repo default and the hunks. */
 type Team = Pick<Draft, 'duration' | 'roles' | 'repoDefault' | 'hunks'>
@@ -1917,6 +1922,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<P
       hunks: current.hunks,
       repo: current.gathered.repo,
       locations: current.locations,
+      readUserMcp: current.readUserMcp,
     })
     logLines(io, reviewLines(current, scopes, planned.plan))
     const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
@@ -1966,6 +1972,7 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const base: DraftBase = {
     locations: guard.locations,
     gathered,
+    readUserMcp: consent.value,
     installed: installedFrameworks(detections),
     choice: chooseFramework(detections, null),
     proposal,
@@ -2116,7 +2123,8 @@ function carriedEntries(manifest: Manifest | null, desired: readonly DesiredFile
  * framework or the repo default and attended by the current config (attendedByConfig), so the index lists the whole
  * team; desiredFiles gives only that role's files, its launcher and the index. Exactly the paths planReadPaths names
  * are read, and buildPlan classifies them against the disk and the last manifest, carrying every other entry
- * (carriedEntries). No `.gitignore` block and no hunk is planned, and ~/.claude.json is never read.
+ * (carriedEntries). No `.gitignore` block and no hunk is planned. ~/.claude.json is read only when cadre.json records
+ * the consent (readUserMcp, A1), so the MCP denies init compiled from it stay.
  */
 async function regenPlan(
   io: InitIo,
@@ -2128,7 +2136,7 @@ async function regenPlan(
   },
 ): Promise<Plan> {
   const { id, state, roles, locations } = input
-  const gathered = await gatherScans(io, locations, false)
+  const gathered = await gatherScans(io, locations, state.readUserMcp)
   const frameworks = roles.map(role => resolvedFramework(role, state.framework))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
   const scopes = compileAll(roles, state.framework, gathered, attended)
@@ -2161,8 +2169,9 @@ function regenReplyText(plan: Plan, id: string, dryRun: boolean): string {
  * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
  * cadre.json order, that is missing, not valid or holds another id (regenBadRole); and, when the repo has no default
  * framework, the first listed role with none of its own (regenNeedsFramework, D-73). Otherwise it replies with the plan
- * of that one role (regenPlan) and the note that nothing was written. Plain regen and --dry-run differ only in the
- * first and the last line.
+ * of that one role (regenPlan) and the note that nothing was written. ~/.claude.json is read only when cadre.json
+ * records the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. Plain regen and --dry-run
+ * differ only in the first and the last line.
  */
 export async function runRegen(
   io: InitIo,
