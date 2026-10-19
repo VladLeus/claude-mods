@@ -53,13 +53,13 @@ import {
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
-import { GSD_AUTONOMY } from './gsd'
+import { GSD_AUTONOMY, GSD_CONFIG_FILE } from './gsd'
 import {
   attendedNote,
   hunkCandidates,
   hunkOp,
   hunkQuestion,
-  isGsdAttended,
+  isUnmetHunk,
   parseHunkAnswer,
   recommend,
   recommendationLines,
@@ -1317,9 +1317,6 @@ export function provenUserDir(initFacts: InitFacts): string | null {
   return isProven ? initFacts.gsdUserDir : null
 }
 
-/** The repo-relative GSD config the autonomy hunks change; its values are read statically (D-70). */
-const GSD_CONFIG_PATH = '.planning/config.json'
-
 /** Why init cancels when a hunk question is dismissed or never answered with Accept or Decline (A1, ROLE-04). */
 export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answered.'
 
@@ -1330,7 +1327,7 @@ export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answe
  * under `Hunk <i> of <n>`, as its before and after with Accept or Decline (hunkQuestion, parseHunkAnswer). Each op
  * records the answer, the exact command and whether cadre can run it, which only a proven user-level GSD allows
  * (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is declined or cannot run, the GSD
- * roles stay attended (isGsdAttended) and the attended note names those keys. A dismissal, or MAX_ASKS answers that
+ * roles stay attended (isUnmetHunk) and the attended note names those keys. A dismissal, or MAX_ASKS answers that
  * are neither Accept nor Decline, gives the cancel reason HUNK_DISMISSED_REASON, so no hunk counts as accepted (A1).
  */
 export async function hunkStep(
@@ -1345,7 +1342,7 @@ export async function hunkStep(
   const { roles, repoDefault, gathered, locations } = input
   if (!roles.some(role => resolvedFramework(role, repoDefault) === 'gsd')) return accepted([])
 
-  const config = await readRepoFile(io, locations.root, GSD_CONFIG_PATH, MAX_READ_BYTES)
+  const config = await readRepoFile(io, locations.root, GSD_CONFIG_FILE, MAX_READ_BYTES)
   const candidates = hunkCandidates(GSD_AUTONOMY, config, gathered.setup.carry.isGsdStatusline)
   const gsd = {
     userDir: provenUserDir(gathered.facts),
@@ -1360,8 +1357,7 @@ export async function hunkStep(
     if (isAccepted === null) return cancelled(HUNK_DISMISSED_REASON)
     hunks.push(hunkOp(candidate, isAccepted, resolveToolCommand(candidate.proposal.write, gsd)))
   }
-  // The keys of the hunks that each leave the GSD roles attended on their own.
-  const unmet = hunks.filter(hunk => isGsdAttended([hunk])).map(hunk => hunk.key)
+  const unmet = hunks.filter(isUnmetHunk).map(hunk => hunk.key)
   if (unmet.length > 0) logLines(io, [attendedNote(unmet)])
 
   return accepted(hunks)

@@ -13,14 +13,15 @@ import type {
 } from '../types'
 import { isSecurityReviewSkill } from './assign'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
+import { GSD_CONFIG_FILE } from './gsd'
 import { reportText } from './render'
 import { standsFor } from './roles'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */
 export const NOT_SET_TEXT = 'not set (GSD default)'
 
-/** The before text when `.planning/config.json` cannot be read or is not a JSON object: the value is not known. */
-export const UNKNOWN_CONFIG_TEXT = 'unknown (could not read .planning/config.json)'
+/** The before text when GSD_CONFIG_FILE cannot be read or is not a JSON object: the value is not known. */
+export const UNKNOWN_CONFIG_TEXT = `unknown (could not read ${GSD_CONFIG_FILE})`
 
 /** Code points of a config value that a hunk shows; a longer value is cut with an ellipsis (T-02-22). */
 const MAX_VALUE_CHARS = 80
@@ -284,11 +285,19 @@ export function resolveToolCommand(
 }
 
 /**
- * Whether the answered hunks leave the GSD roles attended (ROLE-04): a required hunk that was declined, or that cadre
- * cannot run (repo-local GSD only), means a person is still needed. An optional hunk never does, and no hunks do not.
+ * Whether one answered hunk leaves the GSD roles attended on its own (ROLE-04, B5): it is required, and it was declined
+ * or cadre cannot run it (repo-local GSD only). An optional hunk is never unmet.
+ */
+export function isUnmetHunk(hunk: HunkOp): boolean {
+  return hunk.isRequired && (!hunk.isAccepted || !hunk.isRunnable)
+}
+
+/**
+ * Whether the answered hunks leave the GSD roles attended (ROLE-04): any unmet hunk (isUnmetHunk) means a person is
+ * still needed. An optional hunk never does, and no hunks do not.
  */
 export function isGsdAttended(hunks: readonly HunkOp[]): boolean {
-  return hunks.some(hunk => hunk.isRequired && (!hunk.isAccepted || !hunk.isRunnable))
+  return hunks.some(isUnmetHunk)
 }
 
 /**
