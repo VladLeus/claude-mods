@@ -10,9 +10,10 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
+import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from './assign'
-import { clean, compareText, sortedUnique } from './facts'
-import { reportText } from './render'
+import { compareText, sortedUnique } from './facts'
+import { cardList, reportText, shown } from './render'
 import { chainLines } from './roles'
 
 /**
@@ -32,12 +33,6 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
  * characters of the SHA-256 of its git common dir.
  */
 export const MEMORY_PATTERN = '<config dir>/cadre/<repo>-<hash8>/'
-
-/** The most code points of a scanned name that a card rule shows. A scanned name is data, not text to trust. */
-const MAX_SHOWN_CHARS = 110
-
-/** The most names one card list shows before it counts the rest. */
-const MAX_CARD_LIST = 12
 
 /** What a top-level code folder must look like for a path rule to be written: no glob character, space or paren. */
 const SAFE_DIR_PATTERN = /^[A-Za-z0-9._-]+$/
@@ -69,18 +64,6 @@ const INFRA_DENY_TARGETS: readonly string[] = Object.freeze([
 
 /** The launcher flag that turns off slash commands, and with them the handoff skills and the start skills (S1, S4). */
 const DISABLE_SLASH_FLAG = '--disable-slash-commands'
-
-/** The framework names a card shows. */
-const FRAMEWORK_NAMES: Readonly<Record<FrameworkId, string>> = Object.freeze({
-  gsd: 'GSD',
-  superpowers: 'superpowers',
-  none: 'built-in',
-})
-
-/** A scanned name or pattern as a card rule shows it: unsafe characters removed and the length capped. */
-function shown(text: string): string {
-  return clean(text, MAX_SHOWN_CHARS)
-}
 
 /** One line of the scope card. */
 function rule(text: string, enforcement: Enforcement): ScopeRule {
@@ -598,26 +581,13 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
 }
 
 /**
- * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
- * `+N more`. A rule passes each scanned name through `shown` first, so a long name or list never runs past the 240 code
- * points a card line keeps and loses the fixed text after it (B6).
- */
-function cardList(names: readonly string[]): string {
-  if (names.length === 0) return 'none'
-  const rest = names.length - MAX_CARD_LIST
-  if (rest <= 0) return names.join(', ')
-
-  return [...names.slice(0, MAX_CARD_LIST), `+${rest} more`].join(', ')
-}
-
-/**
  * The lines of a scope card, as init shows it and ROLE.md holds it (ROLE-06): the title, the framework with the model,
  * effort and permission mode, the skills and MCP servers, what the role was not given, the hooks loaded and not loaded,
  * each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the memory folder. Every line passes
  * through reportText, so a hostile value cannot add a line or hide text.
  */
 export function scopeCardLines(card: ScopeCard): string[] {
-  const framework = FRAMEWORK_NAMES[card.framework]
+  const framework = adapterOf(card.framework).name
   const lines = [
     `Scope card: ${card.title} (${card.roleId})`,
     `  framework: ${framework}; model: ${card.model} + ${card.effort}; permission mode: ${card.permissionMode}`,

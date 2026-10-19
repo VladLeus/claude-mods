@@ -1,13 +1,12 @@
-import type { CadreState, CompiledScope, DesiredFile, FrameworkAdapter, FrameworkId, RoleSpec } from '../types'
+import type { CadreState, CompiledScope, DesiredFile, FrameworkId, RoleSpec } from '../types'
+import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
-import { BUILTIN_ADAPTER } from './builtin'
 import { clean, compareText } from './facts'
-import { GSD_ADAPTER } from './gsd'
 import { MAX_ROLE_CHARS } from './kickoff'
 import { stableJson } from './plan'
+import { cardList } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
-import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 /** The most characters the role line of a kickoff may have (D-79). */
 export const ROLE_LINE_MAX = 200
@@ -84,13 +83,6 @@ export function mcpText(scope: CompiledScope): string {
   return stableJson(scope.mcp)
 }
 
-/** The adapter each framework is driven with: where a role's framework name and its kickoff text come from. */
-const ADAPTER_OF: Readonly<Record<FrameworkId, FrameworkAdapter>> = Object.freeze({
-  gsd: GSD_ADAPTER,
-  superpowers: SUPERPOWERS_ADAPTER,
-  none: BUILTIN_ADAPTER,
-})
-
 /** The line ROLE.md adds after the framework line of an attended role. It is no card rule, so it never repeats one. */
 const ATTENDED_LINE =
   'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
@@ -105,7 +97,7 @@ const ATTENDED_LINE =
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string {
   const { card } = scope
-  const adapter = ADAPTER_OF[framework]
+  const adapter = adapterOf(framework)
   const kickoff = adapter.kickoffText({ title: role.title, roleId: role.id, specPath: null })
   const model = `Model: ${role.model} + ${role.effort}.`
   const lines = [
@@ -178,9 +170,6 @@ export function launcherText(role: RoleSpec, scope: CompiledScope): string {
   return `${lines.join('\n')}\n`
 }
 
-/** The most MCP server names the scope cell of the index lists before it counts the rest. */
-const MAX_INDEX_NAMES = 12
-
 /** The most characters of one server name the index shows; a name a role.json holds is at most 100. */
 const MAX_NAME_CHARS = 100
 
@@ -199,13 +188,9 @@ function cell(text: string, maxChars: number): string {
   return clean(text, maxChars).replaceAll('|', '\\|')
 }
 
-/** Server names for a cell: `none` when there are none, else the first MAX_INDEX_NAMES and `+N more` for the rest. */
+/** Server names for a cell, each as a cell shows it, listed as a scope card lists names (cardList). */
 function namesCell(names: readonly string[]): string {
-  if (names.length === 0) return 'none'
-  const listed = names.slice(0, MAX_INDEX_NAMES).map(name => cell(name, MAX_NAME_CHARS))
-  const rest = names.length - listed.length
-
-  return (rest > 0 ? [...listed, `+${rest} more`] : listed).join(', ')
+  return cardList(names.map(name => cell(name, MAX_NAME_CHARS)))
 }
 
 /** How many skills a role can run: the handoff skills, the start skills of its framework and its own (D-77). */
@@ -225,7 +210,7 @@ function indexRow(role: RoleSpec, scope: CompiledScope, framework: FrameworkId):
   const cells = [
     `${cell(role.title, MAX_ROLE_CHARS)} (${role.id})`,
     cell(role.purpose, MAX_PURPOSE_CHARS),
-    ADAPTER_OF[framework].name,
+    adapterOf(framework).name,
     `${role.model} + ${role.effort}`,
     scopeSummary(role, scope, framework),
     `.cadre/bin/${role.id}`,
