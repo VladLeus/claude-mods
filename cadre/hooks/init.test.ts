@@ -6,7 +6,9 @@ import type {
   DetectStatus,
   Facts,
   FrameworkId,
+  GsdFact,
   HookScript,
+  InitFacts,
   InitIo,
   LaunchStart,
   PortStat,
@@ -50,6 +52,8 @@ import {
   gatherScans,
   GIT_POLICY_OPTIONS,
   GIT_POLICY_QUESTION,
+  HUNK_DISMISSED_REASON,
+  hunkStep,
   IGNORE_ALL_NOTE,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
@@ -82,6 +86,7 @@ import {
   portProbeOf,
   portTextOf,
   proposalLines,
+  provenUserDir,
   resolvedFramework,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
@@ -94,7 +99,7 @@ import {
   scanWarnings,
 } from './init'
 import type { AdjustOutcome, Gathered, RolesState } from './init'
-import { recommend, recommendationLines } from './recommend'
+import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
 import { AUTOPILOT_THRESHOLD, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
@@ -1641,6 +1646,244 @@ describe('carryStep', () => {
     const before = JSON.stringify(roles)
     await carryStep(memIo(memWorld({}), ['All of them']).io, roles, twoNames)
     expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+/** A user-level GSD at ~/.claude/gsd-core whose identity is proven, as detection reports it. */
+const PROVEN_USER_GSD: GsdFact = {
+  location: 'user',
+  dir: '~/.claude/gsd-core',
+  version: '1.16.0',
+  identity: 'proven',
+  runtimeIdentityTried: false,
+}
+
+/** The detect facts of a user whose GSD at ~/.claude/gsd-core is proven, with its raw dir. */
+const PROVEN_FACTS: InitFacts = {
+  facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
+  gsdUserDir: '/home/u/.claude/gsd-core',
+}
+
+describe('provenUserDir', () => {
+  test('the raw user-level GSD dir when the facts prove the user GSD', () => {
+    expect(provenUserDir(PROVEN_FACTS)).toBe('/home/u/.claude/gsd-core')
+  })
+
+  test('null for an unproven user GSD, a proven repo copy alone, or no raw dir', () => {
+    const unproven: readonly GsdFact['identity'][] = ['absent', 'unknown']
+    for (const identity of unproven) {
+      const facts = { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity }] }
+      expect(provenUserDir({ ...PROVEN_FACTS, facts })).toBeNull()
+    }
+    const repoCopy: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    expect(provenUserDir({ ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [repoCopy] } })).toBeNull()
+    expect(provenUserDir({ ...PROVEN_FACTS, gsdUserDir: null })).toBeNull()
+    expect(provenUserDir({ facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' })).toBeNull()
+  })
+})
+
+describe('hunkStep', () => {
+  /** PM, Team Lead and Security on the repo default framework: a repo with no source keeps them. */
+  const roles = proposeRoles(repoScan()).roles
+  const CONFIG = '/repo/.planning/config.json'
+  const USER_TOOL = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs'
+  const REPO_TOOL = 'node .claude/gsd-core/bin/gsd-tools.cjs'
+  const AT_TARGETS = '{"mode":"yolo","workflow":{"text_mode":false}}'
+  const BUTTONS = ['Accept', 'Decline']
+
+  /** A world whose `.planning/config.json` holds this text. */
+  function configWorld(text: string): MemWorld {
+    return memWorld({ files: { [CONFIG]: text } })
+  }
+
+  /** What the scans gave: these detect facts, an empty repo scan, and gsd-statusline as the statusline or not. */
+  function gatheredOf(facts: InitFacts, isGsdStatusline = false): Gathered {
+    const carry = { autoCompactWindow: null, hasStatusLine: isGsdStatusline, isGsdStatusline, envNames: [] }
+
+    return { facts, repo: repoScan(), setup: emptySetupScan({ carry }) }
+  }
+
+  /** The step input for these roles on the repo default `repoDefault`, at the fixture locations. */
+  function input(
+    repoDefault: FrameworkId | null,
+    gathered: Gathered,
+    list: readonly RoleSpec[] = roles,
+  ): Parameters<typeof hunkStep>[1] {
+    return { roles: list, repoDefault, gathered, locations: DEFAULT_LOCATIONS }
+  }
+
+  test('with no role on GSD nothing is read or asked, no hunk is given and nothing is attended', async () => {
+    const onSuperpowers = roles.map(role => withFramework(role, 'superpowers'))
+    const defaults: readonly (FrameworkId | null)[] = ['superpowers', 'none', null]
+    for (const repoDefault of defaults) {
+      for (const list of [roles, onSuperpowers]) {
+        const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', 'Accept'])
+        expect(await hunkStep(run.io, input(repoDefault, gatheredOf(PROVEN_FACTS), list))).toEqual([])
+        expect(run.asked).toEqual([])
+        expect(run.reads).toEqual([])
+        expect(run.logged).toEqual([])
+      }
+    }
+    const run = memIo(configWorld('{"mode":"interactive"}'), [])
+    expect(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS), onSuperpowers))).toEqual([])
+    expect(run.asked).toEqual([])
+  })
+
+  test('a GSD role asks each hunk in turn, Hunk 1 of 2 then Hunk 2 of 2, and each op records the answer', async () => {
+    const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', 'Decline'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(run.asked.map(question => question.split('\n')[0])).toEqual([
+      '.planning/config.json: mode',
+      '.planning/config.json: workflow.text_mode',
+    ])
+    expect(run.specs).toEqual([
+      { options: BUTTONS, header: 'Hunk 1 of 2' },
+      { options: BUTTONS, header: 'Hunk 2 of 2' },
+    ])
+    const hunk = { kind: 'hunk', file: '.planning/config.json', isRequired: true, isRunnable: true }
+    expect(hunks).toEqual([
+      {
+        ...hunk,
+        key: 'mode',
+        before: '"interactive"',
+        after: '"yolo"',
+        isAccepted: true,
+        command: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+      },
+      {
+        ...hunk,
+        key: 'workflow.text_mode',
+        before: NOT_SET_TEXT,
+        after: 'false',
+        isAccepted: false,
+        command: `${USER_TOOL} config-set workflow.text_mode false`,
+      },
+    ])
+  })
+
+  test('a declined required hunk leaves the GSD roles attended, and the note names its key', async () => {
+    const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', 'Decline'])
+    await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(run.logged).toEqual([attendedNote(['workflow.text_mode'])])
+    expect(run.logged).toEqual([
+      'attended: GSD needs a person until workflow.text_mode is set as proposed',
+    ])
+  })
+
+  test('both accepted with a proven user GSD: runnable, and nothing is attended', async () => {
+    const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', ' accept '])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(hunks?.map(hunk => [hunk.isAccepted, hunk.isRunnable])).toEqual([
+      [true, true],
+      [true, true],
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test('with no proven user GSD the hunks show the repo command, cannot run, and attend when accepted', async () => {
+    const unproven: InitFacts = {
+      facts: { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity: 'unknown' }] },
+      gsdUserDir: '/home/u/.claude/gsd-core',
+    }
+    for (const facts of [unproven, { facts: EMPTY_FACTS, gsdUserDir: null }]) {
+      const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', 'Accept'])
+      const hunks = await hunkStep(run.io, input('gsd', gatheredOf(facts)))
+      expect(hunks?.map(hunk => [hunk.isAccepted, hunk.isRunnable, hunk.command])).toEqual([
+        [true, false, `${REPO_TOOL} config-set mode yolo`],
+        [true, false, `${REPO_TOOL} config-set workflow.text_mode false`],
+      ])
+      expect(run.logged).toEqual([attendedNote(['mode', 'workflow.text_mode'])])
+    }
+  })
+
+  test('a config already at the targets asks nothing and attends nothing', async () => {
+    const run = memIo(configWorld(AT_TARGETS), [])
+    expect(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))).toEqual([])
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
+  })
+
+  test('the optional context_warnings hunk comes only under gsd-statusline; declining it attends nothing', async () => {
+    const quiet = memIo(configWorld(AT_TARGETS), [])
+    expect(await hunkStep(quiet.io, input('gsd', gatheredOf(PROVEN_FACTS, false)))).toEqual([])
+    const run = memIo(configWorld(AT_TARGETS), ['Decline'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS, true)))
+    expect(run.specs).toEqual([{ options: BUTTONS, header: 'Hunk 1 of 1' }])
+    expect(hunks?.map(hunk => [hunk.key, hunk.isRequired, hunk.isAccepted])).toEqual([
+      ['hooks.context_warnings', false, false],
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test('the ordering edge: three hunks come in GSD_AUTONOMY order under Hunk 1 of 3 to Hunk 3 of 3', async () => {
+    const run = memIo(configWorld('{}'), ['Accept', 'Accept', 'Accept'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS, true)))
+    expect(hunks?.map(hunk => hunk.key)).toEqual(['mode', 'workflow.text_mode', 'hooks.context_warnings'])
+    expect(run.specs.map(spec => spec.header)).toEqual(['Hunk 1 of 3', 'Hunk 2 of 3', 'Hunk 3 of 3'])
+  })
+
+  test('one role on GSD is enough, by its own framework or by the repo default', async () => {
+    const tlOnGsd = roles.map(role => withFramework(role, role.id === 'tl' ? 'gsd' : 'superpowers'))
+    const own = memIo(configWorld('{}'), ['Accept', 'Accept'])
+    expect(await hunkStep(own.io, input(null, gatheredOf(PROVEN_FACTS), tlOnGsd))).toHaveLength(2)
+    const tlOff = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
+    const byDefault = memIo(configWorld('{}'), ['Accept', 'Accept'])
+    expect(await hunkStep(byDefault.io, input('gsd', gatheredOf(PROVEN_FACTS), tlOff))).toHaveLength(2)
+  })
+
+  test('the config is read through readRepoFile: a link out of the repo is unknown and never read', async () => {
+    const world = memWorld({ files: { [CONFIG]: AT_TARGETS }, realPaths: { [CONFIG]: '/elsewhere/config.json' } })
+    const run = memIo(world, ['Accept', 'Accept'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(hunks?.map(hunk => hunk.before)).toEqual([UNKNOWN_CONFIG_TEXT, UNKNOWN_CONFIG_TEXT])
+    expect(run.reads).not.toContain(CONFIG)
+  })
+
+  test('a missing config file offers both required hunks as not set', async () => {
+    const run = memIo(memWorld({}), ['Decline', 'Decline'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(hunks?.map(hunk => [hunk.key, hunk.before, hunk.isAccepted])).toEqual([
+      ['mode', NOT_SET_TEXT, false],
+      ['workflow.text_mode', NOT_SET_TEXT, false],
+    ])
+    expect(run.logged).toEqual([attendedNote(['mode', 'workflow.text_mode'])])
+  })
+
+  test('only Accept accepts: an answer that is neither Accept nor Decline is asked again', async () => {
+    const run = memIo(configWorld('{}'), ['yes', 'Accept', 'DECLINE'])
+    const hunks = await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
+    expect(hunks?.map(hunk => hunk.isAccepted)).toEqual([true, false])
+    expect(run.asked).toHaveLength(3)
+  })
+
+  test('a dismissal or three unlisted answers cancel with the reason; no earlier Accept is kept (A1)', async () => {
+    for (const answers of [[], ['Accept'], ['yes', 'ok', 'sure']]) {
+      const run = memIo(configWorld('{}'), answers)
+      expect(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))).toBeNull()
+      expect(run.logged).toEqual([HUNK_DISMISSED_REASON])
+    }
+    expect(HUNK_DISMISSED_REASON).toBe('A hunk question was dismissed or not answered.')
+  })
+
+  test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
+    const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const policyAt = run.asked.indexOf(GIT_POLICY_QUESTION)
+    const [env, ...hunks] = run.asked.slice(policyAt - 3, policyAt).map(question => question.split('\n')[0])
+    expect(env?.startsWith('Which env variables do roles carry?')).toBe(true)
+    expect(hunks).toEqual(['.planning/config.json: mode', '.planning/config.json: workflow.text_mode'])
+    expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
+  })
+
+  test('init with no role on GSD asks no hunk, and a dismissed hunk cancels init with its reason', async () => {
+    const plain = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(plain.io, { dryRun: true })
+    expect(plain.asked.some(question => question.startsWith('.planning/config.json:'))).toBe(false)
+    expect(plain.logged.some(text => text.startsWith('attended:'))).toBe(false)
+    const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const dismissed = memIo(world, answersWithout('.planning/config.json:'))
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(dismissed.logged.at(-1)).toBe(HUNK_DISMISSED_REASON)
   })
 })
 
