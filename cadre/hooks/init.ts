@@ -29,7 +29,7 @@ import {
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { recommend, recommendationLines } from './recommend'
-import { choiceLine, chunkLines, pad, reportText } from './render'
+import { cardList, choiceLine, chunkLines, pad, reportText, shown } from './render'
 import {
   applyAdjust,
   parseAdjust,
@@ -345,9 +345,6 @@ export async function gatherScans(
   return { facts, repo, setup }
 }
 
-/** The most plugin names the summary shows; the count before them gives the total. */
-const MAX_SUMMARY_PLUGINS = 8
-
 /** The line the summary adds when the walk stopped at the entry cap. */
 const TRUNCATED_LINE = `  truncated: the scan stopped after ${MAX_SCAN_ENTRIES} entries; later files were not scanned`
 
@@ -368,22 +365,24 @@ function cadreSummary(cadre: RepoScan['cadre']): string {
   return `${cadre.dir} (manifest ${cadre.manifestState})`
 }
 
-/** The plugin count, with the first MAX_SUMMARY_PLUGINS names when there are any. */
+/** The plugin count, with their names listed as a card lists names when there are any. */
 function pluginSummary(plugins: readonly string[]): string {
   if (plugins.length === 0) return '0'
 
-  return `${plugins.length} (${plugins.slice(0, MAX_SUMMARY_PLUGINS).join(', ')})`
+  return `${plugins.length} (${cardList(plugins.map(shown))})`
 }
 
 /**
  * The scans as init prints them before any role question (SCAN-01, SCAN-02): the repo part (stack, frontend, backend,
  * tests, E2E, an existing `.cadre/`, and a line when the walk stopped at the entry cap), then the user setup as names
- * and counts only. No setting value, file content or warning is part of it.
+ * and counts only. Each setup line gives its counts first and its name list last, and a list shows 12 names cleaned and
+ * capped, then counts the rest, so a long list never pushes a count past the 240 code points a line keeps (B2). No
+ * setting value, file content or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
   const stack = `stack: ${namesOrNone(repo.languages)}`
   const sides = `frontend: ${findingLabels(repo, 'fe')}; backend: ${findingLabels(repo, 'be')}`
-  const mcp = namesOrNone(setup.mcp.map(server => server.name))
+  const mcp = cardList(setup.mcp.map(server => shown(server.name)))
   const globalMd = setup.hasGlobalClaudeMd ? 'yes' : 'no'
 
   return [
@@ -394,9 +393,9 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
     ...(repo.isTruncated ? [TRUNCATED_LINE] : []),
     'User setup (names only):',
     `  plugins: ${pluginSummary(setup.plugins)}`,
-    `  skills: ${setup.skills.length}; MCP servers: ${mcp}; agents: ${setup.agents.length}`,
-    `  CLAUDE.md files: ${namesOrNone(setup.claudeMd)}; global ~/.claude/CLAUDE.md: ${globalMd}; ` +
-      `memories: ${setup.memoryFiles.length}`,
+    `  skills: ${setup.skills.length}; agents: ${setup.agents.length}; MCP servers: ${mcp}`,
+    `  global ~/.claude/CLAUDE.md: ${globalMd}; memories: ${setup.memoryFiles.length}; ` +
+      `CLAUDE.md files: ${cardList(setup.claudeMd.map(shown))}`,
   ]
 }
 
