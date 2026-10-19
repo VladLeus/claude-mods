@@ -7,6 +7,7 @@ import type {
   FileOp,
   FrameworkAdapter,
   FrameworkId,
+  LaunchStart,
   McpRef,
   RoleSpec,
   ScopeContext,
@@ -498,7 +499,7 @@ describe('desiredFiles', () => {
     const scope = scopeOf(be, 'gsd', [pm, be])
 
     expect(contentOf(files, '.cadre/be/ROLE.md')).toBe(roleMdText(be, scope))
-    expect(contentOf(files, '.cadre/bin/be')).toBe(launcherText(be, scope))
+    expect(contentOf(files, '.cadre/bin/be')).toBe(launcherText(be, scope, input.state.launchStart))
     expect(contentOf(files, '.cadre/INDEX.md')).toBe(indexMdText(input.roles, input.scopes))
     expect(contentOf(files, '.cadre/cadre.json')).toBe(cadreJsonText(input.state))
   })
@@ -781,9 +782,37 @@ describe('role documents', () => {
 const BARE_SHELL_CHAR = /[A-Za-z0-9_./=:@+-]/
 
 /**
+ * The index just past the `)` that closes a command substitution whose text starts at `start`, right after its `$(`.
+ * Single-quoted spans, double-quoted spans and backslash escapes inside it are read as such, so a `)` inside quotes
+ * does not close it; -1 when nothing closes it.
+ */
+function substitutionEnd(line: string, start: number): number {
+  let quote = ''
+  for (let index = start; index < line.length; index++) {
+    const char = line.charAt(index)
+    if (quote !== '') {
+      if (char === quote) quote = ''
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      continue
+    }
+    if (char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === ')') return index + 1
+  }
+
+  return -1
+}
+
+/**
  * The words a POSIX shell reads from a line, for the quoting shapes the launcher uses: bare words of plain characters,
- * single-quoted spans, a backslash before a single quote, and double-quoted spans read to the next double quote. It
- * throws on any other character outside quotes, so a metacharacter left bare fails the test that reads the line.
+ * single-quoted spans, a backslash before a single quote, and double-quoted spans read to the next double quote, a
+ * `$(...)` command substitution inside one kept as its text. It throws on any other character outside quotes and on a
+ * substitution nothing closes, so a metacharacter left bare fails the test that reads the line.
  */
 function shellWords(line: string): string[] {
   const words: string[] = []
@@ -791,6 +820,13 @@ function shellWords(line: string): string[] {
   let quote = ''
   for (let index = 0; index < line.length; index++) {
     const char = line.charAt(index)
+    if (quote === '"' && char === '$' && line.charAt(index + 1) === '(') {
+      const end = substitutionEnd(line, index + 2)
+      if (end === -1) throw new Error(`an unclosed $( in ${line}`)
+      word = `${word ?? ''}${line.slice(index, end)}`
+      index = end - 1
+      continue
+    }
     if (quote !== '') {
       if (char === quote) quote = ''
       else word = `${word ?? ''}${char}`
@@ -838,18 +874,48 @@ function execWords(launcher: string): string[] {
   return shellWords(launcher.slice(start + 1).replace(/\n$/, ''))
 }
 
-/** The flags of the BE role on the merged route, in launcher order. */
+/** The launcher flags whose value is a repo-relative path, which the launcher anchors at the repo root (A2). */
+const PATH_FLAG_NAMES: readonly string[] = ['--settings', '--append-system-prompt-file', '--add-dir', '--mcp-config']
+
+/** The flags as the shell reader reads them from a launcher: the value of each path flag as `$root/<value>`. */
+function anchoredFlags(flags: readonly string[]): string[] {
+  return flags.map((flag, index) => (PATH_FLAG_NAMES.includes(flags[index - 1] ?? '') ? `$root/${flag}` : flag))
+}
+
+/** Every place a launcher can start its session (A2). */
+const LAUNCH_STARTS: readonly LaunchStart[] = [
+  { kind: 'git-root' },
+  { kind: 'here' },
+  { kind: 'dir', path: 'apps/web' },
+]
+
+/** The flags of the BE role on the merged route, in launcher order, each path anchored at the repo root. */
 const BE_FLAGS = [
   '--setting-sources project',
-  '--settings .cadre/be/.runtime/settings.json',
-  '--append-system-prompt-file .cadre/be/ROLE.md',
+  '--settings "$root"/.cadre/be/.runtime/settings.json',
+  '--append-system-prompt-file "$root"/.cadre/be/ROLE.md',
   '--name cadre-be',
   '--model opus',
   '--effort medium',
   '--permission-mode auto',
-  '--add-dir .cadre/be/.runtime/overlay',
-  '--mcp-config .cadre/be/.runtime/mcp.json',
+  '--add-dir "$root"/.cadre/be/.runtime/overlay',
+  '--mcp-config "$root"/.cadre/be/.runtime/mcp.json',
 ].join(' ')
+
+/** The line that finds the repo from the launcher's own folder, so a run from another folder cannot misfire (A2). */
+const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
+
+/** The first lines of the BE launcher: the shebang, the two comment lines, set -eu and the root line. */
+const BE_HEAD: readonly string[] = [
+  '#!/bin/sh',
+  '# cadre launcher for role be. Provisional (Phase 2): Phase 3 adds the claude version check',
+  '# and renders .cadre/be/.runtime/ before it starts the session.',
+  'set -eu',
+  ROOT_LINE,
+]
+
+/** The exec line of the BE launcher on the merged route: the flags, `--` and the kickoff read at the repo root. */
+const BE_EXEC = `exec claude ${BE_FLAGS} -- "$(cat "$root"/.cadre/be/kickoff.txt)"`
 
 /** Words a shell would treat as more than one word, a command or a substitution if they were left bare. */
 const HOSTILE_WORDS: readonly string[] = [
@@ -899,111 +965,154 @@ describe('launcher', () => {
     expect(isRefused('a;b')).toBe(true)
     expect(isRefused('$(x)')).toBe(true)
     expect(isRefused("'open")).toBe(true)
+    expect(isRefused('"$(cat x"')).toBe(true)
     expect(isRefused("a 'b c' d\\'e \"f g\"")).toBe(false)
     expect(shellWords("a 'b c' d\\'e \"f g\"")).toEqual(['a', 'b c', "d'e", 'f g'])
+    expect(shellWords('"$root"/\'a b\' "$(cat "$root"/\'x)y\')"')).toEqual(["$root/a b", '$(cat "$root"/\'x)y\')'])
   })
 
-  test('the launcher of the BE is the shebang, two comment lines, set -eu, cd to the top level and exec claude', () => {
+  test('the git-root launcher of the BE finds its repo from its own folder, goes to its top and execs claude', () => {
     const be = templateRole('be')
 
-    expect(launcherText(be, scopeOf(be, 'gsd', [be]))).toBe(
-      [
-        '#!/bin/sh',
-        '# cadre launcher for role be. Provisional (Phase 2): Phase 3 adds the claude version check',
-        '# and renders .cadre/be/.runtime/ before it starts the session.',
-        'set -eu',
-        'cd "$(git rev-parse --show-toplevel)"',
-        `exec claude ${BE_FLAGS} -- "$(cat .cadre/be/kickoff.txt)"`,
-        '',
-      ].join('\n'),
+    expect(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' })).toBe(
+      [...BE_HEAD, 'cd -- "$root"', BE_EXEC, ''].join('\n'),
     )
   })
 
-  test('the words of the exec line are claude, the flags of the scope one by one, --, and the kickoff text', () => {
-    for (const framework of FRAMEWORKS) {
-      for (const role of TEMPLATE_ROLES) {
-        const scope = scopeOf(role, framework, TEMPLATE_ROLES)
+  test('the here launcher finds its repo the same way and starts in the folder it is run from: no cd line', () => {
+    const be = templateRole('be')
 
-        expect(execWords(launcherText(role, scope))).toEqual([
-          'exec',
-          'claude',
-          ...scope.flags,
-          '--',
-          `$(cat .cadre/${role.id}/kickoff.txt)`,
-        ])
+    expect(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' })).toBe([...BE_HEAD, BE_EXEC, ''].join('\n'))
+  })
+
+  test('the dir launcher goes to its folder under the repo root, the path shell-quoted', () => {
+    const be = templateRole('be')
+    const scope = scopeOf(be, 'gsd', [be])
+
+    expect(launcherText(be, scope, { kind: 'dir', path: 'apps/web' })).toBe(
+      [...BE_HEAD, 'cd -- "$root"/apps/web', BE_EXEC, ''].join('\n'),
+    )
+    expect(launcherText(be, scope, { kind: 'dir', path: "a b/it's" }).split('\n')[5]).toBe(
+      `cd -- "$root"/'a b/it'\\''s'`,
+    )
+  })
+
+  test('in every mode the words are claude, the flags with each path anchored at the repo, --, and the kickoff', () => {
+    for (const start of LAUNCH_STARTS) {
+      for (const framework of FRAMEWORKS) {
+        for (const role of TEMPLATE_ROLES) {
+          const scope = scopeOf(role, framework, TEMPLATE_ROLES)
+
+          expect(execWords(launcherText(role, scope, start))).toEqual([
+            'exec',
+            'claude',
+            ...anchoredFlags(scope.flags),
+            '--',
+            `$(cat "$root"/.cadre/${role.id}/kickoff.txt)`,
+          ])
+        }
       }
     }
+  })
+
+  test('the value of each path flag is one word at the repo root, and no other flag word is anchored', () => {
+    const be = templateRole('be')
+    const words = execWords(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' }))
+
+    expect(words.filter(word => word.startsWith('$root/'))).toEqual([
+      '$root/.cadre/be/.runtime/settings.json',
+      '$root/.cadre/be/ROLE.md',
+      '$root/.cadre/be/.runtime/overlay',
+      '$root/.cadre/be/.runtime/mcp.json',
+    ])
   })
 
   test('on the strict MCP route the last flag word is --strict-mcp-config, before the --', () => {
     const be = templateRole('be')
     const scope = scopeOf(be, 'gsd', [be], { mcpRoute: 'strict' })
-    const words = execWords(launcherText(be, scope))
+    const words = execWords(launcherText(be, scope, { kind: 'git-root' }))
 
-    expect(words.slice(-3)).toEqual(['--strict-mcp-config', '--', '$(cat .cadre/be/kickoff.txt)'])
+    expect(words.slice(-3)).toEqual(['--strict-mcp-config', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
   })
 
-  test('a flag that holds a space, a quote or a dollar stays one word', () => {
+  test('a flag that holds a space, a quote or a dollar stays one word, anchored or not', () => {
     const be = templateRole('be')
     const scope = scopeOf(be, 'gsd', [be])
-    const hostile: CompiledScope = { ...scope, flags: [...scope.flags, '--add-dir', "x y'$(z);`"] }
+    const hostileWord = "x y'$(z);`"
+    const flags = [...scope.flags, '--add-dir', hostileWord, '--name', hostileWord]
+    const hostile: CompiledScope = { ...scope, flags }
 
-    expect(execWords(launcherText(be, hostile))).toEqual([
+    expect(execWords(launcherText(be, hostile, { kind: 'git-root' }))).toEqual([
       'exec',
       'claude',
-      ...scope.flags,
+      ...anchoredFlags(scope.flags),
       '--add-dir',
-      "x y'$(z);`",
+      `$root/${hostileWord}`,
+      '--name',
+      hostileWord,
       '--',
-      '$(cat .cadre/be/kickoff.txt)',
+      '$(cat "$root"/.cadre/be/kickoff.txt)',
     ])
   })
 
   test('a role id with a space, a quote or a dollar cannot add a command', () => {
     const id = "x y'$(z);`"
     const role = templateRole('be', { id })
-    const text = launcherText(role, scopeOf(role, 'gsd', [role]))
+    const text = launcherText(role, scopeOf(role, 'gsd', [role]), { kind: 'git-root' })
     const lines = text.split('\n')
     const kickoffPath = `.cadre/${id}/kickoff.txt`
 
-    expect(lines).toHaveLength(7)
+    expect(lines).toHaveLength(8)
     expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
-    expect(lines.slice(3, 5)).toEqual(['set -eu', 'cd "$(git rev-parse --show-toplevel)"'])
-    expect(execWords(text).slice(-2)).toEqual(['--', `$(cat ${shQuote(kickoffPath)})`])
+    expect(lines.slice(3, 5)).toEqual(['set -eu', ROOT_LINE])
+    expect(execWords(text).slice(-2)).toEqual(['--', `$(cat "$root"/${shQuote(kickoffPath)})`])
   })
 
   test('a role id with a line break cannot leave the comment lines or the quotes', () => {
     const id = 'x\nrm -rf ~'
     const role = templateRole('be', { id })
-    const text = launcherText(role, scopeOf(role, 'gsd', [role]))
+    const text = launcherText(role, scopeOf(role, 'gsd', [role]), { kind: 'git-root' })
     const lines = text.split('\n')
 
-    expect(lines.slice(0, 5).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'c'])
+    expect(lines.slice(0, 6).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'r', 'c'])
     expect(lines[1]).toBe(
       '# cadre launcher for role xrm -rf ~. Provisional (Phase 2): Phase 3 adds the claude version check',
     )
-    expect(execWords(text)).toContain(`.cadre/${id}/.runtime/settings.json`)
+    expect(execWords(text)).toContain(`$root/.cadre/${id}/.runtime/settings.json`)
   })
 
   test('a title never reaches the launcher', () => {
     const be = templateRole('be', { title: '$(evil) `x`; rm -rf ~' })
-    const text = launcherText(be, scopeOf(be, 'gsd', [be]))
+    const text = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' })
 
     expect(text).not.toContain('evil')
     expect(text).not.toContain('rm -rf')
   })
 
-  test('the launcher holds no absolute user path and no variable reference, whatever the role and framework', () => {
+  test('the launcher holds no absolute user path and no variable reference, whatever role, framework and start', () => {
     const problems: string[] = []
-    for (const framework of FRAMEWORKS) {
-      for (const role of TEMPLATE_ROLES) {
-        const text = launcherText(role, scopeOf(role, framework, TEMPLATE_ROLES))
-        const found = leaks(text, [...ABSOLUTE_PATH_MARKERS, '${'])
-        problems.push(...found.map(needle => `${framework} / ${role.id}: ${needle}`))
+    for (const start of LAUNCH_STARTS) {
+      for (const framework of FRAMEWORKS) {
+        for (const role of TEMPLATE_ROLES) {
+          const text = launcherText(role, scopeOf(role, framework, TEMPLATE_ROLES), start)
+          const found = leaks(text, [...ABSOLUTE_PATH_MARKERS, '${'])
+          problems.push(...found.map(needle => `${start.kind} / ${framework} / ${role.id}: ${needle}`))
+        }
       }
     }
 
     expect(problems).toEqual([])
+  })
+
+  test('desiredFiles writes the launcher with the launch start of the repo state (A2)', () => {
+    const be = templateRole('be')
+    const input = inputOf([be], 'gsd')
+    const start: LaunchStart = { kind: 'dir', path: 'apps/web' }
+    const files = desiredFiles({ ...input, state: { ...input.state, launchStart: start } })
+    const launcher = contentOf(files, '.cadre/bin/be') ?? ''
+
+    expect(launcher).toBe(launcherText(be, scopeOf(be, 'gsd', [be]), start))
+    expect(launcher.split('\n')).toContain('cd -- "$root"/apps/web')
   })
 })
 
