@@ -166,12 +166,13 @@ export function memorySlug(gitCommonDir: string, hashHex: string): string {
 }
 
 /**
- * The absolute memory folder of a role (D-20, D-91): `<home>/.claude/cadre/<slug>/<id>`, the folder the scope card
- * promises. It is absolute because the engine ignores a repo-relative `autoMemoryDirectory` (spike S2). The role id is
- * a validated slug, so it is safe in a path.
+ * The absolute memory folder of a role (D-20, D-91): `<userDir>/cadre/<slug>/<id>`, the folder the scope card names.
+ * It follows CLAUDE_CONFIG_DIR as userDir does, so it is `~/.claude/cadre/...` only when that is not set. It is
+ * absolute because the engine ignores a repo-relative `autoMemoryDirectory` (spike S2). The role id is a validated
+ * slug, so it is safe in a path.
  */
 export function roleMemoryDir(user: LaunchUser, id: string): string {
-  return `${user.home}/.claude/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
+  return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
 }
 
 /**

@@ -27,10 +27,11 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
 ])
 
 /**
- * The memory folder pattern a card shows (D-91). Phase 3 renders the real folder at launch: `<repo>` is the repo's
- * folder name and `<hash8>` the first 8 hex characters of the SHA-256 of its git common dir.
+ * The memory folder pattern a card shows (D-91). Phase 3 renders the real folder at launch: `<config dir>` is
+ * CLAUDE_CONFIG_DIR when it is set, else ~/.claude, `<repo>` is the repo's folder name and `<hash8>` the first 8 hex
+ * characters of the SHA-256 of its git common dir.
  */
-export const MEMORY_PATTERN = '~/.claude/cadre/<repo>-<hash8>/'
+export const MEMORY_PATTERN = '<config dir>/cadre/<repo>-<hash8>/'
 
 /** The most code points of a scanned name that a card rule shows. A scanned name is data, not text to trust. */
 const MAX_SHOWN_CHARS = 110
@@ -628,7 +629,7 @@ export function scopeCardLines(card: ScopeCard): string[] {
     ...card.rules.map(item => `    [${item.enforcement}] ${item.text}`),
     '  decisions:',
     ...card.chain.map(line => `    ${line}`),
-    `  memory: ${card.memoryPattern} (rendered at launch)`,
+    `  memory: ${card.memoryPattern} (rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)`,
   ]
 
   return lines.map(reportText)
