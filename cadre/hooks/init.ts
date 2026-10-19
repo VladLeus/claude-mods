@@ -18,7 +18,7 @@ import type {
   SetupScan,
 } from '../types'
 import { detectAll } from './adapters'
-import { PER_ROLE, SAME_FOR_ALL } from './assign'
+import { MODEL_EFFORT_OPTIONS, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from './assign'
 import {
   clean,
   detectRefusal,
@@ -34,6 +34,7 @@ import { recommend, recommendationLines } from './recommend'
 import { cardList, choiceLine, chunkLines, pad, reportText, shown } from './render'
 import {
   applyAdjust,
+  isAutopilotDuration,
   parseAdjust,
   parseProposal,
   PROPOSE_SYSTEM,
@@ -838,21 +839,21 @@ export function frameworkReason(choice: Choice): string {
   }
 }
 
-/** How the framework question is answered: once for every role, or role by role (D-86). */
-type FrameworkMode = 'same' | 'each'
+/** How the framework or the model question is answered: once for every role, or role by role (D-86). */
+type AnswerMode = 'same' | 'each'
 
-/** The answers to the first framework question, `Same for all roles` first (D-86). */
-const FRAMEWORK_MODES: readonly Labelled<FrameworkMode>[] = Object.freeze([
+/** The answers to the first framework or model question, `Same for all roles` first (D-86). */
+const ANSWER_MODES: readonly Labelled<AnswerMode>[] = Object.freeze([
   { label: SAME_FOR_ALL, value: 'same' },
   { label: PER_ROLE, value: 'each' },
 ])
 
-/** The buttons of the first framework question. */
-const FRAMEWORK_MODE_OPTIONS: readonly string[] = Object.freeze(FRAMEWORK_MODES.map(entry => entry.label))
+/** The buttons of the first framework or model question. */
+const ANSWER_MODE_OPTIONS: readonly string[] = Object.freeze(ANSWER_MODES.map(entry => entry.label))
 
-/** The answer to the first framework question, or null when it names neither, so it is asked again. */
-function parseFrameworkMode(answer: string): FrameworkMode | null {
-  return labelled(FRAMEWORK_MODES, answer)
+/** The answer to the first framework or model question, or null when it names neither, so it is asked again. */
+function parseAnswerMode(answer: string): AnswerMode | null {
+  return labelled(ANSWER_MODES, answer)
 }
 
 /** The framework an answer names among `allowed`, by its label or its id, trimmed and in any case; else null. */
@@ -888,7 +889,7 @@ async function askFrameworks(
   const spec = { options: allowed.map(id => FRAMEWORK_LABELS[id]) }
   const parse = (answer: string): FrameworkId | null => parseFramework(answer, allowed)
   const question = `${FRAMEWORK_QUESTION_PREFIX} (asked because ${frameworkReason(choice)})`
-  const mode = await askChoice(io, question, { options: FRAMEWORK_MODE_OPTIONS }, parseFrameworkMode)
+  const mode = await askChoice(io, question, { options: ANSWER_MODE_OPTIONS }, parseAnswerMode)
   if (mode === null) return null
   if (mode === 'same') {
     const framework = await askChoice(io, FRAMEWORK_ALL_QUESTION, spec, parse)
@@ -931,6 +932,92 @@ export async function frameworkStep(io: InitIo, choice: Choice, roles: readonly 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
 export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
   return role.framework ?? repoDefault ?? 'none'
+}
+
+/** Prints why a step was cancelled and gives null, so runInit answers INIT_CANCELLED (A1, D-45). */
+function cancelled(io: InitIo, reason: string): null {
+  logLines(io, [reason])
+
+  return null
+}
+
+/** The question init asks once for every role: how long each autopilot run lasts (D-51). */
+export const DURATION_QUESTION = 'Autopilot duration for roles?'
+
+/** The duration buttons, 4h first; any other duration is typed under "Other" (D-51). */
+export const DURATION_OPTIONS: readonly string[] = Object.freeze(['4h', '2h', '8h'])
+
+/** Why init cancels when the duration question is dismissed or never answered with a duration (A1, D-45). */
+export const DURATION_DISMISSED_REASON = 'The autopilot duration question was dismissed or not answered.'
+
+/** A duration answer, trimmed and lowercased, when it is in autopilot's grammar (isAutopilotDuration); else null. */
+function parseDuration(answer: string): string | null {
+  const duration = answer.trim().toLowerCase()
+
+  return isAutopilotDuration(duration) ? duration : null
+}
+
+/**
+ * The duration question (D-51), asked once for every role: 4h, 2h or 8h, or any duration typed under "Other". Only an
+ * answer in autopilot's grammar, above zero and at most 168 hours, is a duration; any other is asked again, MAX_ASKS
+ * asks in all. A dismissal, or MAX_ASKS answers that are no duration, prints DURATION_DISMISSED_REASON and gives null,
+ * so nothing is taken (A1). The context threshold is never asked: every role keeps AUTOPILOT_THRESHOLD (D-87).
+ */
+export async function durationStep(io: InitIo): Promise<string | null> {
+  const duration = await askChoice(io, DURATION_QUESTION, { options: DURATION_OPTIONS }, parseDuration)
+
+  return duration === null ? cancelled(io, DURATION_DISMISSED_REASON) : duration
+}
+
+/** The roles with this autopilot duration; every other autopilot value, the threshold included, stays as it was. */
+function withDuration(roles: readonly RoleSpec[], duration: string): RoleSpec[] {
+  return roles.map(role => ({ ...role, autopilot: { ...role.autopilot, duration } }))
+}
+
+/** The first model question: one answer for every role or one per role, `Same for all roles` first (D-52, D-86). */
+export const MODEL_MODE_QUESTION = 'Model and effort: same for all roles, or per role?'
+
+/** The one model question after `Same for all roles` (D-86). */
+const MODEL_ALL_QUESTION = 'Model and effort for all roles?'
+
+/** The model question for one role, by its title, after `Per role` (D-52). */
+function modelRoleQuestion(title: string): string {
+  return `Model and effort for ${title}?`
+}
+
+/** Why init cancels when a model and effort question is dismissed or never answered with a listed pair (A1). */
+export const MODEL_DISMISSED_REASON = 'A model and effort question was dismissed or not answered.'
+
+/** The role with its model family alias and its effort set. */
+function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): RoleSpec {
+  return { ...role, model: choice.model, effort: choice.effort }
+}
+
+/**
+ * The model and effort step (D-52, D-86): `Same for all roles` or `Per role`, then `opus + medium`, `sonnet + medium`
+ * or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role order. Each role
+ * stores a model family alias, never a pinned model id, and an effort (parseModelEffort). Only an answer to every
+ * question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, prints MODEL_DISMISSED_REASON
+ * and gives null, so no role keeps a model the person did not finish choosing (A1). The roles it is given never change.
+ */
+export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<readonly RoleSpec[] | null> {
+  const spec = { options: MODEL_EFFORT_OPTIONS }
+  const mode = await askChoice(io, MODEL_MODE_QUESTION, { options: ANSWER_MODE_OPTIONS }, parseAnswerMode)
+  if (mode === null) return cancelled(io, MODEL_DISMISSED_REASON)
+  if (mode === 'same') {
+    const choice = await askChoice(io, MODEL_ALL_QUESTION, spec, parseModelEffort)
+
+    return choice === null ? cancelled(io, MODEL_DISMISSED_REASON) : roles.map(role => withModel(role, choice))
+  }
+
+  const modelled: RoleSpec[] = []
+  for (const role of roles) {
+    const choice = await askChoice(io, modelRoleQuestion(role.title), spec, parseModelEffort)
+    if (choice === null) return cancelled(io, MODEL_DISMISSED_REASON)
+    modelled.push(withModel(role, choice))
+  }
+
+  return modelled
 }
 
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
@@ -1073,10 +1160,11 @@ function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): stri
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
  * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
- * (frameworkStep), prints the recommendations (ROLE-03), asks the git policy and then, once for the repo, where the
- * launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or
- * unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step or launcher start prints its reason
- * first, and only roles the person accepted reach the steps after it (A1).
+ * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
+ * (durationStep) and each role's model and effort (modelStep), asks the git policy and then, once for the repo, where
+ * the launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or
+ * unlisted answer cancels with INIT_CANCELLED (D-45); a cancelled roles step, per-role step or launcher start prints
+ * its reason first, and only roles the person accepted reach the steps after it (A1).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1105,6 +1193,12 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
   logLines(io, recommendationLines(recommendations, roles))
+
+  const duration = await durationStep(io)
+  if (duration === null) return INIT_CANCELLED
+
+  const modelled = await modelStep(io, withDuration(roles, duration))
+  if (modelled === null) return INIT_CANCELLED
 
   const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
   if (policy === null) return INIT_CANCELLED
