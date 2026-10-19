@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
+import { cadreJsonText, roleJsonText } from './generate'
 import {
   GIT_POLICY_DISMISSED_REASON,
   INIT_FILE_SYSTEM_ROOT_REPLY,
@@ -8,7 +9,8 @@ import {
   NOT_INTERACTIVE_REPLY,
   policyLine,
 } from './init'
-import { answerFor, entry, INIT_ANSWERS } from './testkit'
+import { stableJson } from './plan'
+import { answerFor, entry, INIT_ANSWERS, templateRole } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -168,6 +170,35 @@ function initWorld(over: Partial<World> = {}): World {
   const base = ambiguousWorld()
 
   return { ...base, dirs: [...base.dirs, '/repo/.git'], answers: INIT_ANSWERS, ...over }
+}
+
+/**
+ * The repo of initWorld after an init of one BE role on the built-in default: the `.cadre/` folder with its cadre.json,
+ * BE's role.json and an empty manifest (B3). Pass `over` to change one part of it.
+ */
+function regenHostWorld(over: Partial<World> = {}): World {
+  const base = initWorld()
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  })
+
+  return {
+    ...base,
+    dirs: [...base.dirs, '/repo/.cadre'],
+    files: {
+      ...base.files,
+      '/repo/.cadre/cadre.json': state,
+      '/repo/.cadre/be/role.json': roleJsonText(templateRole('be')),
+      '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: [] }),
+    },
+    ...over,
+  }
 }
 
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
@@ -1102,5 +1133,46 @@ describe('cadre init with a faked host', () => {
     const known = [...Object.keys(world.listings), ...world.dirs]
     const read = log.ops.filter(op => op.startsWith('fs.read ')).map(op => op.slice('fs.read '.length))
     expect(read.filter(path => known.includes(path))).toEqual([])
+  })
+})
+
+describe('cadre regen with a faked host', () => {
+  test('regen be --dry-run replies with the plan of BE and asks nothing (B3, D-68)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld(), log)
+    const reply = (await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text
+    const lines = reply.split('\n')
+    expect([lines[0], lines.at(-1)]).toEqual(['cadre regen be --dry-run', 'Dry run: nothing was written.'])
+    expect(reply).not.toBe(NOT_INTERACTIVE_REPLY)
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('in claude -p, or on a host that cannot say who is there, regen replies the same (B3, D-99)', async ($, on) => {
+    const log = newLog()
+    let surfaces: readonly string[] = ['terminal']
+    let denySurfaces = false
+    // The fake host reads both at each call, so one host answers as a terminal, as claude -p, then not at all.
+    const world: World = {
+      ...regenHostWorld(),
+      get surfaces() {
+        return surfaces
+      },
+      get denySurfaces() {
+        return denySurfaces
+      },
+    }
+    fakeHost(on, world, log)
+    const regen = async (): Promise<string> =>
+      (await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text
+    const terminal = await regen()
+    surfaces = []
+    const print = await regen()
+    denySurfaces = true
+    const unknown = await regen()
+    expect(terminal.split('\n')[0]).toBe('cadre regen be --dry-run')
+    expect([print, unknown]).toEqual([terminal, terminal])
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 })
