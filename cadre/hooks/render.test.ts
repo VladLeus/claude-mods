@@ -3,18 +3,22 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import { BUILTIN_ADAPTER } from './builtin'
+import { clean } from './facts'
 import { GSD_GATES } from './gsd'
 import {
   adaptersReportLines,
+  cardList,
   choiceLine,
   chunkLines,
   detectReportLines,
   detectText,
   pad,
   reportText,
+  shown,
   STATUS_LABEL,
 } from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
+import { BIDI_OVERRIDE } from './testkit'
 
 /** The superpowers plugin key this repo enables. */
 const SUPERPOWERS_KEY = 'superpowers@claude-plugins-official'
@@ -187,6 +191,34 @@ describe('reportText', () => {
 
   test('unsafe characters are removed before the text is shown', () => {
     expect(reportText('x\u202Ey')).toBe('xy')
+  })
+})
+
+describe('shown and cardList', () => {
+  test('shown is a scanned name cleaned and capped at 110 code points, the last one an ellipsis', () => {
+    const long = 'x'.repeat(200)
+
+    expect(shown(long)).toBe(clean(long, 110))
+    expect(shown(long)).toBe(`${'x'.repeat(109)}…`)
+    expect(shown('x'.repeat(110))).toBe('x'.repeat(110))
+  })
+
+  test('shown removes a hidden character from a name', () => {
+    expect(shown(`a${BIDI_OVERRIDE}b`)).toBe('ab')
+  })
+
+  test('cardList is none for no names and lists up to 12 names as they are', () => {
+    const twelve = Array.from({ length: 12 }, (_, index) => `n${index + 1}`)
+
+    expect(cardList([])).toBe('none')
+    expect(cardList(['a'])).toBe('a')
+    expect(cardList(twelve)).toBe(twelve.join(', '))
+  })
+
+  test('cardList of more than 12 names lists the first 12, then counts the rest', () => {
+    const names = Array.from({ length: 15 }, (_, index) => `n${index + 1}`)
+
+    expect(cardList(names)).toBe([...names.slice(0, 12), '+3 more'].join(', '))
   })
 })
 

@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ADAPTERS } from './adapters'
+import { adapterOf, ADAPTERS } from './adapters'
+import { BUILTIN_ADAPTER } from './builtin'
 import { gateProblems, isDecisionType, missingFields, REQUIRED_FIELDS } from './framework'
+import { GSD_ADAPTER } from './gsd'
+import { SUPERPOWERS_ADAPTER } from './superpowers'
 
 describe('ADAPTERS', () => {
   test('lists GSD, superpowers and the built-in fallback in that order', () => {
@@ -32,6 +35,20 @@ describe('ADAPTERS', () => {
       expect(Object.isFrozen(adapter.locations.plan)).toBe(true)
       expect(Object.isFrozen(adapter.doneSignal)).toBe(true)
     }
+  })
+})
+
+describe('adapterOf', () => {
+  test('gives the adapter of each framework: GSD, superpowers, and the built-in fallback for none', () => {
+    expect(adapterOf('gsd').name).toBe('GSD')
+    expect(adapterOf('gsd')).toBe(GSD_ADAPTER)
+    expect(adapterOf('superpowers')).toBe(SUPERPOWERS_ADAPTER)
+    expect(adapterOf('none')).toBe(BUILTIN_ADAPTER)
+  })
+
+  test('gives for each id the adapter ADAPTERS lists with it', () => {
+    expect(ADAPTERS.map(adapter => adapterOf(adapter.id))).toEqual([...ADAPTERS])
+    expect(ADAPTERS.map(adapter => adapterOf(adapter.id).name)).toEqual(['GSD', 'superpowers', 'built-in'])
   })
 })
 
