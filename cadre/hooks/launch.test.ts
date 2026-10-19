@@ -119,8 +119,16 @@ const USER_HOOKS = [
     event: 'PreToolUse',
     script: 'gsd-secret-read-guard.js',
     command: 'node /home/u/.claude/hooks/gsd-secret-read-guard.js',
+    matcher: null,
+    timeout: null,
   },
-  { event: 'PostToolUse', script: 'gsd-context-monitor.js', command: 'node /home/u/m.js' },
+  {
+    event: 'PostToolUse',
+    script: 'gsd-context-monitor.js',
+    command: 'node /home/u/m.js',
+    matcher: null,
+    timeout: null,
+  },
 ]
 
 /** The skills every role on GSD has in its overlay: the handoff skills and the start skills of GSD. */
@@ -336,7 +344,13 @@ describe('launch render', () => {
     const carry = { ...CARRY_ALL, hooks: ['gsd-secret-read-guard.js', ...names] }
     const role = templateRole('be', { carry })
     const scope = compileScope(role, context())
-    const monitors = names.map((script, index) => ({ event: 'Stop', script, command: `node /home/u/m${index}.js` }))
+    const monitors = names.map((script, index) => ({
+      event: 'Stop',
+      script,
+      command: `node /home/u/m${index}.js`,
+      matcher: null,
+      timeout: null,
+    }))
     const plan = launchPlan(role, scope, carrier({ hooks: [...USER_HOOKS, ...monitors] }))
     const text = JSON.stringify(plan.settings.hooks)
 
@@ -350,10 +364,10 @@ describe('launch render', () => {
     const role = templateRole('be', { carry })
     const scope = compileScope(role, context())
     const hooks = [
-      { event: 'PreToolUse', script: 'a.js', command: 'node /h/a.js' },
-      { event: 'PostToolUse', script: 'b.js', command: 'node /h/b.js' },
-      { event: 'PreToolUse', script: 'c.js', command: 'node /h/c.js' },
-      { event: 'PreToolUse', script: 'd.js', command: 'node /h/d.js' },
+      { event: 'PreToolUse', script: 'a.js', command: 'node /h/a.js', matcher: null, timeout: null },
+      { event: 'PostToolUse', script: 'b.js', command: 'node /h/b.js', matcher: null, timeout: null },
+      { event: 'PreToolUse', script: 'c.js', command: 'node /h/c.js', matcher: null, timeout: null },
+      { event: 'PreToolUse', script: 'd.js', command: 'node /h/d.js', matcher: null, timeout: null },
     ]
     const rendered = launchPlan(role, scope, carrier({ hooks })).settings.hooks
 
@@ -369,6 +383,63 @@ describe('launch render', () => {
       PostToolUse: [{ hooks: [{ type: 'command', command: 'node /h/b.js' }] }],
     })
     expect(Object.keys(rendered ?? {})).toEqual(['PreToolUse', 'PostToolUse'])
+  })
+
+  test('carried hooks keep their matcher and timeout: one group per event and matcher, in the order given (A7)', () => {
+    const carry = { ...CARRY_ALL, hooks: ['a.js', 'b.js', 'c.js', 'd.js'] }
+    const role = templateRole('be', { carry })
+    const scope = compileScope(role, context())
+    const hooks = [
+      { event: 'PreToolUse', script: 'a.js', command: 'node /h/a.js', matcher: 'Read|Grep', timeout: 30 },
+      { event: 'PreToolUse', script: 'b.js', command: 'node /h/b.js', matcher: 'Bash', timeout: null },
+      { event: 'PreToolUse', script: 'c.js', command: 'node /h/c.js', matcher: 'Read|Grep', timeout: null },
+      { event: 'Stop', script: 'd.js', command: 'node /h/d.js', matcher: null, timeout: null },
+    ]
+    const rendered = launchPlan(role, scope, carrier({ hooks })).settings.hooks
+
+    expect(rendered).toEqual({
+      PreToolUse: [
+        {
+          matcher: 'Read|Grep',
+          hooks: [
+            { type: 'command', command: 'node /h/a.js', timeout: 30 },
+            { type: 'command', command: 'node /h/c.js' },
+          ],
+        },
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /h/b.js' }] },
+      ],
+      Stop: [{ hooks: [{ type: 'command', command: 'node /h/d.js' }] }],
+    })
+  })
+
+  test('a group without a matcher has no matcher key, and a hook without a timeout no timeout key', () => {
+    const carry = { ...CARRY_ALL, hooks: ['a.js', 'b.js'] }
+    const role = templateRole('be', { carry })
+    const scope = compileScope(role, context())
+    const hooks = [
+      { event: 'Stop', script: 'a.js', command: 'node /h/a.js', matcher: null, timeout: null },
+      { event: 'Stop', script: 'b.js', command: 'node /h/b.js', matcher: '', timeout: 0 },
+    ]
+    const rendered = launchPlan(role, scope, carrier({ hooks })).settings.hooks
+
+    expect(JSON.stringify(rendered)).toBe(
+      JSON.stringify({
+        Stop: [
+          { hooks: [{ type: 'command', command: 'node /h/a.js' }] },
+          { matcher: '', hooks: [{ type: 'command', command: 'node /h/b.js', timeout: 0 }] },
+        ],
+      }),
+    )
+  })
+
+  test('the context monitor is never rendered, whatever matcher or timeout it has (D-62)', () => {
+    const carry = { ...CARRY_ALL, hooks: ['gsd-context-monitor.js'] }
+    const role = templateRole('be', { carry })
+    const scope = compileScope(role, context())
+    const monitor = { event: 'PostToolUse', script: 'gsd-context-monitor.js', command: 'node /home/u/m.js' }
+    const hooks = [{ ...monitor, matcher: '*', timeout: 9 }]
+
+    expect(Object.keys(launchPlan(role, scope, carrier({ hooks })).settings)).not.toContain('hooks')
   })
 
   test('renderRuntimeSettings puts the given CLAUDE.md excludes into the settings', () => {
