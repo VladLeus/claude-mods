@@ -6,7 +6,7 @@ Three Claude Code mods (plugins of function hooks) in one local marketplace, `lo
 |---|---|---|
 | `agent-fleet` | `/fleet` | A pane with every running session that has the mod: context fill, working/idle, subagents and workflow agents, who messages whom, cost, and an autopilot badge. `/fleet` toggles it. |
 | `autopilot` | `/autopilot`, `/away`, `/back`, `/ask-user` | Runs a session on its own for a set time with a fixed role. At a context threshold it writes a handoff, clears itself and resumes from the handoff, instead of auto-compacting. Respects the permission mode, defers blocked actions, watches token limits, works with `/goal`. With asking on (`--ask-user` or `/ask-user on`), while you are away it queues its critical questions and asks them one by one when you are back. |
-| `cadre` | `/cadre detect` | Read-only: shows which dev framework this repo uses (GSD, superpowers, none, or detected but unsupported such as AI-DLC), with the evidence, and with `--adapters` the contract cadre would drive each framework with. First step of cadre, which will split a repo into narrow-scope role sessions. |
+| `cadre` | `/cadre detect`, `/cadre init`, `/cadre regen` | Read-only in this version: shows which dev framework this repo uses, then a guided init that scans the repo and your setup (names only), proposes narrow-scope roles, and prints each role's scope card and the exact file plan, writing nothing. Apply and launch come in a later version. |
 
 Function-hook mods are early access: you need a recent Claude Code (built and tested on 2.1.295).
 
@@ -122,11 +122,29 @@ These tell the session whether it may ask you now. They only work when you type 
 ## cadre
 
 ```bash
-/cadre detect             # which dev framework this repo uses, with the evidence
-/cadre detect --adapters  # also the contract cadre would drive each framework with
+/cadre detect                # which dev framework this repo uses, with the evidence
+/cadre detect --adapters     # also the contract cadre would drive each framework with
+/cadre init                  # guided setup: scan, roles, scope cards and the exact file plan (writes nothing)
+/cadre init --dry-run        # the same, ending "Dry run: nothing was written."
+/cadre regen <id>            # re-render one role from its role.json and print that role's plan (writes nothing)
+/cadre regen <id> --dry-run  # the same, ending "Dry run: nothing was written."
 ```
 
-`detect` is read-only and writes nothing. A framework is in use when the repo has its artifacts: `.planning/` for GSD, `docs/superpowers/` or `.superpowers/` for superpowers. It is installed when a user-level install is found, not found when neither is present, and unsupported when `aidlc/`, `_bmad/` or `.specify/` is there. With more than one framework in use it says "ambiguous", and `/cadre init` (coming later) asks which one to use. It never runs code from the repo it inspects. cadre is installable from a release tag once one contains it; until then, install it from a clone as in Develop them above. cadre's `register.tsx` is tested against a faked host in `claude plugin test cadre`.
+`detect` is read-only and writes nothing. A framework is in use when the repo has its artifacts: `.planning/` for GSD, `docs/superpowers/` or `.superpowers/` for superpowers. It is installed when a user-level install is found, not found when neither is present, and unsupported when `aidlc/`, `_bmad/` or `.specify/` is there. With more than one framework in use it says "ambiguous", and `/cadre init` asks which one each role uses. It never runs code from the repo it inspects. cadre is installable from a release tag once one contains it; until then, install it from a clone as in Develop them above. cadre's `register.tsx` is tested against a faked host in `claude plugin test cadre`.
+
+`init` and `regen` print a plan and write nothing in this version: applying the plan and launching the roles come in a later version. `/cadre init` refuses in `claude -p` (nobody can be asked), inside an active autopilot run in the same session, outside the git top level, and at or above your home folder. It asks before it reads `~/.claude.json` (MCP server names only) and before it scans session history (names and counts only). It proposes narrow-scope roles from a template (PM, Team Lead, BE, FE, QA, Security) adjusted by what the scan finds; you can use them, adjust them or describe your own structure. It asks the framework per role when more than one is in use, or when none is in use but some are installed. A free-text role structure goes to the model with no tools, and the reply is validated before anything uses it. Framework config changes (GSD `mode: yolo`, `workflow.text_mode: false`) are shown as before/after hunks that you accept one by one. The git policy is commit definitions (the default), commit all, or ignore all of `.cadre/`, with the ignore lines kept in a marked `# >>> cadre` block in `.gitignore`. The launcher start (asked once for the repo) is the git root, the folder a launcher is run from, or a folder you type; a launcher must be run by its own path, because a copy or link outside the repo fails closed. A scope card lists the role's framework, model and permission mode, the skills and MCP servers it gets and the ones it does not, the hooks loaded, each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the memory folder `<config dir>/cadre/<repo>-<hash8>/<id>`, where `<config dir>` is `CLAUDE_CONFIG_DIR`, else `~/.claude`.
+
+Before the reply, init shows the roles, each scope card, the file plan and the scan warnings, then asks to review: **Confirm**, **Change roles**, **Change git policy** or **Change launcher start**. Typing `duration`, `model`, `assignments` (or `mcp`, `skills`), `memory`, `env` or `hunks` goes back to that one item. The question is asked at most 10 times; after 10 rounds without Confirm init logs `The review question was asked 10 times without "Confirm": nothing was chosen.` and a dismissed review logs `The review question was dismissed or not answered.` Either way the reply is `init cancelled, nothing written`. Plain `init` and `init --dry-run` print the same plan, the git policy line and the launcher line; they differ only in the first line (`cadre init` or `cadre init --dry-run`) and the last (`Applying this plan arrives in a later cadre version; nothing was written.` or `Dry run: nothing was written.`).
+
+`/cadre regen <id>` re-renders one role from `.cadre/<id>/role.json` and the current scans, and plans only that role's folder, its launcher, `INDEX.md` and the manifest; every other manifest entry is kept as it is. It asks nothing, so it also runs in `claude -p`. It reads `~/.claude.json` only when init was allowed to, which `.cadre/cadre.json` records as `readUserMcp`. Its reply is the command, the file plan, one `warning:` line for each scan warning and the closing note. It refuses with one of these:
+
+- `cadre regen needs .cadre/cadre.json from /cadre init: run /cadre init first.`
+- `.cadre/cadre.json is not valid: fix it, or run /cadre init again.`
+- `no role <id> in .cadre/cadre.json (roles: ...)`
+- `.cadre/<id>/role.json is missing or not valid: fix it, or run /cadre init again.`
+- `role <id> has no framework and this repo has no default: set "framework" in .cadre/<id>/role.json to gsd, superpowers or none, then run /cadre regen <id> again.`
+- `.cadre/manifest.json is missing, so regen cannot keep the other roles' files: run /cadre init again.`
+- `.cadre/manifest.json is not valid, so regen cannot keep the other roles' files: run /cadre init again.`
 
 ## Contributing
 

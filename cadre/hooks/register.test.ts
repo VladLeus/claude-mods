@@ -14,7 +14,7 @@ import {
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
-import { answerFor, entry, INIT_ANSWERS, templateRole } from './testkit'
+import { answerFor, entry, INIT_ANSWERS, leaks, SECRET_FIXTURES, secretUserSettings, templateRole } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -1405,5 +1405,34 @@ describe('Phase 2 faked-host matrix', () => {
     expect(out.text).toBe(NOT_INTERACTIVE_REPLY)
     expect(log.ops).toEqual([])
     expect(log.asks).toEqual([])
+  })
+
+  test('no secret or home path reaches the reply or a log line, consent given (SCAN-02, PLAN-05)', async ($, on) => {
+    const [apiKey, bearer, token, sentinel] = SECRET_FIXTURES
+    const mcpJson = { mcpServers: { linear: { command: 'npx', env: { LINEAR_API_KEY: apiKey } } } }
+    const claudeJson = {
+      mcpServers: { sentry: { command: 'npx', env: { SENTRY_TOKEN: token } } },
+      oauthAccount: { emailAddress: bearer, accessToken: apiKey },
+    }
+    const base = initWorld()
+    const world = initWorld({
+      settings: { user: secretUserSettings(), project: {}, local: {} },
+      files: {
+        ...base.files,
+        '/repo/.mcp.json': JSON.stringify(mcpJson),
+        '/home/u/.claude.json': JSON.stringify(claudeJson),
+      },
+      ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: sentinel, parts: [] }],
+      answers: { ...INIT_ANSWERS, 'Read ~/.claude.json': 'Yes, read names only' },
+    })
+    // The world holds every fixture, so a clean reply means the scans dropped them, not that they were never there.
+    const held = JSON.stringify([world.settings, world.files, world.ancestors])
+    expect(leaks(held, SECRET_FIXTURES)).toEqual([...SECRET_FIXTURES])
+    const log = newLog()
+    fakeHost(on, world, log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
+    expect(log.ops).toContain('fs.read /home/u/.claude.json')
+    expect(leaks(`${out.text}\n${log.logs.join('\n')}`, [...SECRET_FIXTURES, '/home/u'])).toEqual([])
   })
 })
