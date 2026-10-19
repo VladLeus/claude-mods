@@ -115,6 +115,11 @@ import {
   proposalLines,
   provenUserDir,
   PROVISIONAL_MCP_ROUTE,
+  REGEN_BAD_STATE,
+  REGEN_NO_STATE,
+  regenBadRole,
+  regenNeedsFramework,
+  regenNoRole,
   resolvedFramework,
   REVIEW_DISMISSED_REASON,
   REVIEW_HINT,
@@ -127,6 +132,7 @@ import {
   ROLES_QUESTION,
   rolesStep,
   runInit,
+  runRegen,
   scanSummaryLines,
   scanWarningLines,
   scanWarnings,
@@ -3223,5 +3229,233 @@ describe('reviewStep', () => {
     const again = await runInit(run.io, { dryRun: true })
     expect(run.asked[askedBefore]).toBe(CLAUDE_JSON_QUESTION)
     expect(again).toBe(await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true }))
+  })
+})
+
+describe('runRegen', () => {
+  /** BE and PM on the repo default, in the order cadre.json lists them. */
+  const team = [templateRole('be'), templateRole('pm')]
+  /** The repo state file of the fixtures. */
+  const STATE = '/repo/.cadre/cadre.json'
+  /** BE's role.json in the fixtures. */
+  const BE_ROLE = '/repo/.cadre/be/role.json'
+  /** PM's role.json in the fixtures. */
+  const PM_ROLE = '/repo/.cadre/pm/role.json'
+  /** The heads of the paths regen of BE may plan: its folder, its launcher, the index and the manifest (D-68). */
+  const BE_PLAN_HEADS = ['.cadre/be/', '.cadre/bin/be', '.cadre/INDEX.md', '.cadre/manifest.json']
+
+  /**
+   * `base` with what init leaves on disk for `roles` and the state `over`: every planned file, their manifest (which
+   * also lists `extra`, files that are not planned) and the `.cadre/` folder.
+   */
+  async function regenWorld(
+    roles: readonly RoleSpec[] = team,
+    over: Partial<CadreState> = {},
+    base: MemWorld = gitWorld(),
+    extra: readonly DesiredFile[] = [],
+  ): Promise<MemWorld> {
+    const files = await plannedFiles(base, roles, over)
+    const manifest = await manifestOf([...files, ...extra])
+
+    return {
+      ...base,
+      dirs: { ...base.dirs, '/repo/.cadre': [] },
+      files: { ...base.files, ...onDisk(files), '/repo/.cadre/manifest.json': manifest },
+    }
+  }
+
+  /** `world` with these absolute paths holding these texts, beside the files it has. */
+  function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
+    return { ...world, files: { ...world.files, ...files } }
+  }
+
+  /** `world` without the file at this absolute path. */
+  function without(world: MemWorld, path: string): MemWorld {
+    return { ...world, files: Object.fromEntries(Object.entries(world.files).filter(([key]) => key !== path)) }
+  }
+
+  /** Whether regen of BE may plan this path (BE_PLAN_HEADS). */
+  function isBePlanPath(path: string): boolean {
+    return BE_PLAN_HEADS.some(head => path.startsWith(head))
+  }
+
+  /** The reply of `/cadre regen be` in `world`, a dry run unless told otherwise. */
+  async function regenBe(world: MemWorld, dryRun = true): Promise<string> {
+    return runRegen(memIo(world, {}).io, { id: 'be', dryRun })
+  }
+
+  /** The text of the planned file at this repo-relative path; empty when none is planned there. */
+  function textOf(files: readonly DesiredFile[], path: string): string {
+    return files.find(file => file.path === path)?.content ?? ''
+  }
+
+  test('each refusal has its fixed text, and the unknown-id refusal names the listed roles or none (D-68)', () => {
+    expect(REGEN_NO_STATE).toBe('cadre regen needs .cadre/cadre.json from /cadre init: run /cadre init first.')
+    expect(REGEN_BAD_STATE).toBe('.cadre/cadre.json is not valid: fix it, or run /cadre init again.')
+    expect(regenNoRole('qa', ['be', 'pm'])).toBe('no role qa in .cadre/cadre.json (roles: be, pm)')
+    expect(regenNoRole('qa', [])).toBe('no role qa in .cadre/cadre.json (roles: none)')
+    expect(regenBadRole('be')).toBe('.cadre/be/role.json is missing or not valid: fix it, or run /cadre init again.')
+    expect(regenNeedsFramework('be')).toBe(
+      'role be has no framework and this repo has no default: set "framework" in .cadre/be/role.json to gsd, ' +
+        'superpowers or none, then run /cadre regen be again.',
+    )
+  })
+
+  test('the guard runs first, in the regen wording, before any read or question', async () => {
+    const world = await regenWorld()
+    const run = memIo({ ...world, locations: { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' } }, {})
+    expect(await runRegen(run.io, { id: 'be', dryRun: false })).toBe(commandRefusal(HOME_ROOT_REPLY, 'regen'))
+    expect(run.reads).toEqual([])
+    expect(run.asked).toEqual([])
+  })
+
+  test('with no .cadre/cadre.json regen asks for /cadre init first, and asks nothing', async () => {
+    for (const world of [gitWorld(), without(await regenWorld(), STATE)]) {
+      const run = memIo(world, {})
+      expect(await runRegen(run.io, { id: 'be', dryRun: true })).toBe(REGEN_NO_STATE)
+      expect(run.asked).toEqual([])
+    }
+  })
+
+  test('a cadre.json that cannot be read, is too large or is not valid state refuses (T-02-36)', async () => {
+    const world = await regenWorld()
+    const state = stateOf(team)
+    const worlds: readonly MemWorld[] = [
+      withFiles(world, { [STATE]: '{' }),
+      withFiles(world, { [STATE]: stableJson({ ...state, schema: 2 }) }),
+      withFiles(world, { [STATE]: stableJson({ ...state, roles: ['be', 'be'] }) }),
+      withFiles(world, { [STATE]: stableJson({ ...state, launchStart: { kind: 'dir', path: '../x' } }) }),
+      withFiles(world, { [STATE]: 'x'.repeat(MAX_READ_BYTES + 1) }),
+      { ...world, unknownPaths: [STATE] },
+      { ...world, realPaths: { [STATE]: '/elsewhere/cadre.json' } },
+    ]
+    for (const [index, bad] of worlds.entries()) {
+      const run = memIo(bad, {})
+      expect([index, await runRegen(run.io, { id: 'be', dryRun: true })]).toEqual([index, REGEN_BAD_STATE])
+      expect(run.asked).toEqual([])
+    }
+  })
+
+  test('a stored launcher folder that is not a folder inside the repo makes cadre.json not valid (A2)', async () => {
+    const start: LaunchStart = { kind: 'dir', path: 'apps/web' }
+    const world = await regenWorld(team, { launchStart: start })
+    const folder = '/repo/apps/web'
+    const linked = { ...world, dirs: { ...world.dirs, [folder]: [] }, realPaths: { [folder]: '/elsewhere/web' } }
+    for (const bad of [world, withFiles(world, { [folder]: 'a file' }), linked]) {
+      expect(await regenBe(bad)).toBe(REGEN_BAD_STATE)
+    }
+    const kinds = opKinds(await regenBe({ ...world, dirs: { ...world.dirs, [folder]: [] } }))
+    expect(kinds.get('.cadre/bin/be')).toBe('leave')
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test('an id cadre.json does not list refuses, naming the roles it lists', async () => {
+    const run = memIo(await regenWorld(), {})
+    expect(await runRegen(run.io, { id: 'qa', dryRun: false })).toBe('no role qa in .cadre/cadre.json (roles: be, pm)')
+    expect(run.asked).toEqual([])
+  })
+
+  test('a missing or invalid role.json, or one naming another id, refuses for the first such role', async () => {
+    const world = await regenWorld()
+    const pmText = world.files[PM_ROLE] ?? ''
+    expect(parseRoleJson(pmText)?.id).toBe('pm')
+    const cases: readonly (readonly [MemWorld, string])[] = [
+      [without(world, BE_ROLE), regenBadRole('be')],
+      [withFiles(world, { [BE_ROLE]: '{"schema":1,"id":"be"}' }), regenBadRole('be')],
+      [withFiles(world, { [BE_ROLE]: pmText }), regenBadRole('be')],
+      [{ ...world, unknownPaths: [BE_ROLE] }, regenBadRole('be')],
+      [withFiles(world, { [PM_ROLE]: 'not json' }), regenBadRole('pm')],
+      [withFiles(world, { [BE_ROLE]: 'not json', [PM_ROLE]: 'not json' }), regenBadRole('be')],
+    ]
+    for (const [index, [bad, text]] of cases.entries()) expect([index, await regenBe(bad)]).toEqual([index, text])
+  })
+
+  test('with no repo default, the first role in cadre.json order with no framework refuses, naming it', async () => {
+    const cases: readonly (readonly [readonly RoleSpec[], string])[] = [
+      [team, regenNeedsFramework('be')],
+      [[withFramework(templateRole('be'), 'gsd'), templateRole('pm')], regenNeedsFramework('pm')],
+    ]
+    for (const [roles, text] of cases) expect(await regenBe(await regenWorld(roles, { framework: null }))).toBe(text)
+    const framed = team.map(role => withFramework(role, 'none'))
+    const kinds = opKinds(await regenBe(await regenWorld(framed, { framework: null })))
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test('a valid setup asks and logs nothing, reads no ~/.claude.json or .gitignore, and plans only BE', async () => {
+    const linear = '{"mcpServers":{"linear":{"command":"x"}}}'
+    const run = memIo(withFiles(await regenWorld(), { '/home/u/.claude.json': linear }), {})
+    const kinds = opKinds(await runRegen(run.io, { id: 'be', dryRun: false }))
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
+    expect(run.reads).not.toContain('/home/u/.claude.json')
+    expect(run.reads).not.toContain('/repo/.gitignore')
+    const planned = (await plannedFiles(gitWorld(), team)).map(file => file.path)
+    const expected = [...planned.filter(isBePlanPath), '.cadre/manifest.json'].sort(compareText)
+    expect([...kinds.keys()]).toEqual(expected)
+    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(5)
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test('every manifest entry outside BE, its launcher and the index is carried, with no op (D-68)', async () => {
+    const dropped: DesiredFile = { path: '.cadre/qa/role.json', content: 'an old role\n', mode: 'file' }
+    const kinds = opKinds(await regenBe(await regenWorld(team, {}, gitWorld(), [dropped])))
+    expect([...kinds.keys()].filter(path => !isBePlanPath(path))).toEqual([])
+    expect(kinds.get('.cadre/manifest.json')).toBe('leave')
+  })
+
+  test('the reply is the command, the plan and the note; --dry-run changes only the first and last line', async () => {
+    const world = await regenWorld()
+    const plain = (await regenBe(world, false)).split('\n')
+    const dry = (await regenBe(world, true)).split('\n')
+    expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
+    expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
+    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
+    const files = (await plannedFiles(gitWorld(), team)).filter(file => isBePlanPath(file.path))
+    const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
+    expect(dry.slice(1, -1)).toEqual(renderPlan({ ops: ops.sort((a, b) => compareText(a.path, b.path)), warnings: [] }))
+  })
+
+  test('an edited BE role.json is re-rendered: BE, the index and the manifest change, and PM has no op', async () => {
+    const edited: RoleSpec = { ...templateRole('be'), model: 'sonnet', effort: 'high' }
+    const before = await plannedFiles(gitWorld(), team)
+    const after = await plannedFiles(gitWorld(), [edited, templateRole('pm')])
+    const world = withFiles(await regenWorld(), { [BE_ROLE]: textOf(after, '.cadre/be/role.json') })
+    const kinds = opKinds(await regenBe(world))
+    const isKept = (file: DesiredFile): boolean =>
+      file.path === '.cadre/be/role.json' || textOf(before, file.path) === file.content
+    const expected = after
+      .filter(file => isBePlanPath(file.path))
+      .map(file => [file.path, isKept(file) ? 'leave' : 'change'])
+    expect([...kinds.entries()].filter(([path]) => path !== '.cadre/manifest.json')).toEqual(expected)
+    expect([kinds.get('.cadre/bin/be'), kinds.get('.cadre/INDEX.md')]).toEqual(['change', 'change'])
+    expect(kinds.get('.cadre/manifest.json')).toBe('change')
+  })
+
+  test('a GSD role is attended while .planning/config.json is not at the required values (D-70, D-72)', async () => {
+    const config = '/repo/.planning/config.json'
+    const cases: readonly (readonly [string | null, string])[] = [
+      ['{"mode":"yolo","workflow":{"text_mode":false}}', 'leave'],
+      [null, 'change'],
+      ['{"mode":"interactive","workflow":{"text_mode":false}}', 'change'],
+    ]
+    for (const [text, kind] of cases) {
+      const base = text === null ? gitWorld() : withFiles(gitWorld(), { [config]: text })
+      const kinds = opKinds(await regenBe(await regenWorld(team, { framework: 'gsd' }, base)))
+      expect([text, kinds.get('.cadre/be/ROLE.md')]).toEqual([text, kind])
+    }
+  })
+
+  test('in claude -p regen gives the same reply as in a terminal session and asks nothing (D-99)', async () => {
+    const world = await regenWorld()
+    const interactive = await regenBe(world)
+    for (const isInteractive of [false, null]) {
+      const run = memIo({ ...world, interactive: isInteractive }, {})
+      const reply = await runRegen(run.io, { id: 'be', dryRun: true })
+      expect(reply).toBe(interactive)
+      expect(reply.split('\n')[0]).toBe('cadre regen be --dry-run')
+      expect(run.asked).toEqual([])
+      expect(reply).not.toContain(NOT_INTERACTIVE_REPLY)
+    }
   })
 })

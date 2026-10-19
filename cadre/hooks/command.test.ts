@@ -115,6 +115,28 @@ describe('parseCommand', () => {
     expect(parseCommand('init --adapters')).toEqual({ kind: 'help', unknown: 'init --adapters' })
   })
 
+  test('regen with one role id is the regen of that role (D-68)', () => {
+    expect(parseCommand('regen be')).toEqual({ kind: 'regen', id: 'be', dryRun: false })
+    expect(parseCommand('regen a-1')).toEqual({ kind: 'regen', id: 'a-1', dryRun: false })
+  })
+
+  test('--dry-run with regen, in any case and on either side of the id, is the regen dry run', () => {
+    expect(parseCommand('regen be --dry-run')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+    expect(parseCommand('REGEN be --DRY-RUN')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+    expect(parseCommand('  Regen   --Dry-Run   be ')).toEqual({ kind: 'regen', id: 'be', dryRun: true })
+  })
+
+  test('regen without exactly one role id, or with an id that is not a slug, is unknown input (D-48)', () => {
+    const inputs = ['regen', 'regen Be', 'regen ../x', 'regen be x', 'regen --dry-run', 'regen be --force']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`regen ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `regen ${'a'.repeat(25)}` })
+  })
+
+  test('a word that only starts with regen is unknown input, not the regen', () => {
+    expect(parseCommand('regenerate be')).toEqual({ kind: 'help', unknown: 'regenerate be' })
+    expect(parseCommand('regen-be')).toEqual({ kind: 'help', unknown: 'regen-be' })
+  })
+
   test('an unknown subcommand is echoed back as unknown input', () => {
     expect(parseCommand('start')).toEqual({ kind: 'help', unknown: 'start' })
   })
@@ -165,20 +187,29 @@ describe('visibleText', () => {
 const ROW_INDENT = 2
 
 describe('helpText', () => {
-  test('without unknown input it lists the detect and init commands and no unknown line', () => {
+  test('without unknown input it lists the detect, init and regen commands and no unknown line', () => {
     const text = helpText(null)
     expect(text).toContain('/cadre detect')
     expect(text).toContain('/cadre detect --adapters')
     expect(text).toContain('/cadre init')
     expect(text).toContain('/cadre init --dry-run')
+    expect(text).toContain('/cadre regen <id>')
+    expect(text).toContain('/cadre regen <id> --dry-run')
     expect(text).not.toContain('Unknown')
   })
 
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
-    expect(rows).toHaveLength(4)
+    expect(rows).toHaveLength(6)
     const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
-    expect(commands).toEqual(['/cadre detect', '/cadre detect --adapters', '/cadre init', '/cadre init --dry-run'])
+    expect(commands).toEqual([
+      '/cadre detect',
+      '/cadre detect --adapters',
+      '/cadre init',
+      '/cadre init --dry-run',
+      '/cadre regen <id>',
+      '/cadre regen <id> --dry-run',
+    ])
     const descriptionColumn = ROW_INDENT + COMMAND_COLUMN
     for (const row of rows) {
       expect(row.slice(descriptionColumn - 1, descriptionColumn)).toBe(' ')
@@ -190,6 +221,12 @@ describe('helpText', () => {
     const text = helpText(null)
     expect(text).toContain('guided setup: scan, propose roles, show the file plan (writes nothing yet)')
     expect(text).toContain('the same guided flow; prints the plan and writes nothing')
+  })
+
+  test('the regen rows say what they do and that nothing is written yet', () => {
+    const text = helpText(null)
+    expect(text).toContain('re-render one role from its role.json (writes nothing yet)')
+    expect(text).toContain("print that role's plan and write nothing")
   })
 
   test('with unknown input the first line names it as an unknown subcommand', () => {
