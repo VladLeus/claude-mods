@@ -330,3 +330,54 @@ export const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Review the plan': 'Confirm',
   "Scan this repo's session history": 'No, skip it',
 })
+
+/**
+ * User settings that hold a fake secret in every place a value can sit (B6): the env values of API_KEY
+ * (sk-FAKE-SECRET-0123456789) and JIRA_URL (Bearer FAKE-TOKEN-0123), the gsd-statusline command (a bearer token and the
+ * home path), and two PreToolUse hook commands: the GSD secret read guard (SENTINEL_SECRET_VALUE and the home path) and
+ * a hook of the user's own (ghp_FAKEFAKEFAKEFAKEFAKE and the home path). A scan keeps only their names.
+ */
+export function secretUserSettings(): Record<string, unknown> {
+  return {
+    env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'Bearer FAKE-TOKEN-0123' },
+    autoCompactWindow: 800000,
+    statusLine: { type: 'command', command: '/home/u/.claude/hooks/gsd-statusline.js --t Bearer FAKE-TOKEN-0123' },
+    hooks: {
+      PreToolUse: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'SECRET=SENTINEL_SECRET_VALUE node /home/u/.claude/hooks/gsd-secret-read-guard.js',
+            },
+            { type: 'command', command: '/home/u/bin/my-hook.sh --key ghp_FAKEFAKEFAKEFAKEFAKE' },
+          ],
+        },
+      ],
+    },
+  }
+}
+
+/**
+ * A git repo at /repo whose user setup holds a fake secret wherever a value can sit (B6): the user settings of
+ * secretUserSettings (the env values, the gsd-statusline command and two hook commands), the description of the
+ * sentry MCP tool (sk-FAKE-SECRET-0123456789), the description of the codex:rescue skill (Bearer FAKE-TOKEN-0123), and
+ * the text of the project CLAUDE.md (SENTINEL_SECRET_VALUE), of the global ~/.claude/CLAUDE.md
+ * (sk-FAKE-SECRET-0123456789) and of the auto-memory notes.md (ghp_FAKEFAKEFAKEFAKEFAKE). The project and local
+ * settings are empty. The scans keep the names: sentry, the codex skill, the three instruction groups, the env names
+ * API_KEY and JIRA_URL, autoCompactWindow, the statusline and the two hook scripts. `over` changes the fields it names.
+ */
+export function secretWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({
+    settings: { user: secretUserSettings(), project: {}, local: {} },
+    tools: [{ name: 'mcp__sentry__issues', description: 'sk-FAKE-SECRET-0123456789', mcp: true }],
+    commands: [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Bearer FAKE-TOKEN-0123' }],
+    ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: 'SENTINEL_SECRET_VALUE', parts: [] }],
+    dirs: { '/repo/.git': [], '/home/u/.claude/projects/-repo/memory': [entry('notes.md')] },
+    files: {
+      '/home/u/.claude/CLAUDE.md': 'sk-FAKE-SECRET-0123456789',
+      '/home/u/.claude/projects/-repo/memory/notes.md': 'ghp_FAKEFAKEFAKEFAKEFAKE',
+    },
+    ...over,
+  })
+}

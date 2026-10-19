@@ -123,6 +123,7 @@ import {
   memIo,
   memWorld,
   SECRET_FIXTURES,
+  secretWorld,
   session,
   skillRef,
 } from './testkit'
@@ -1676,34 +1677,6 @@ describe('memoryStep', () => {
   })
 })
 
-/**
- * A git repo whose user setup holds a fake secret wherever a value can sit: env values, the status line and a hook
- * command in the user settings, an MCP tool and a skill description, the text of the global CLAUDE.md, of the project
- * CLAUDE.md and of an auto-memory. The scans keep the names: sentry, the codex skill, the three instruction groups,
- * the env names API_KEY and JIRA_URL, autoCompactWindow, the status line and the secret read guard.
- */
-function secretWorld(): MemWorld {
-  const guard = { type: 'command', command: 'T=SENTINEL_SECRET_VALUE node /h/gsd-secret-read-guard.js' }
-  const user = {
-    env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'Bearer FAKE-TOKEN-0123' },
-    autoCompactWindow: 800000,
-    statusLine: { type: 'command', command: 'node /home/u/bin/line.js --token ghp_FAKEFAKEFAKEFAKEFAKE' },
-    hooks: { PreToolUse: [{ hooks: [guard] }] },
-  }
-
-  return gitWorld({
-    settings: { user, project: {}, local: {} },
-    tools: [{ name: 'mcp__sentry__issues', description: 'sk-FAKE-SECRET-0123456789', mcp: true }],
-    commands: [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Bearer FAKE-TOKEN-0123' }],
-    ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: 'SENTINEL_SECRET_VALUE', parts: [] }],
-    dirs: { '/repo/.git': [], '/home/u/.claude/projects/-repo/memory': [entry('notes.md')] },
-    files: {
-      '/home/u/.claude/CLAUDE.md': 'sk-FAKE-SECRET-0123456789',
-      '/home/u/.claude/projects/-repo/memory/notes.md': 'ghp_FAKEFAKEFAKEFAKEFAKE',
-    },
-  })
-}
-
 describe('carryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
   /** The carry facts of user settings with two env variables and nothing else. */
@@ -2035,9 +2008,13 @@ describe('hunkStep', () => {
     const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
     const policyAt = run.asked.indexOf(GIT_POLICY_QUESTION)
-    const [env, ...hunks] = run.asked.slice(policyAt - 3, policyAt).map(question => question.split('\n')[0])
+    const [env, ...hunks] = run.asked.slice(policyAt - 4, policyAt).map(question => question.split('\n')[0])
     expect(env?.startsWith('Which env variables do roles carry?')).toBe(true)
-    expect(hunks).toEqual(['.planning/config.json: mode', '.planning/config.json: workflow.text_mode'])
+    expect(hunks).toEqual([
+      '.planning/config.json: mode',
+      '.planning/config.json: workflow.text_mode',
+      '.planning/config.json: hooks.context_warnings',
+    ])
     expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
   })
 
