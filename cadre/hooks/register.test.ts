@@ -1286,8 +1286,14 @@ function middleLines(reply: string): string[] {
   return reply.split('\n').slice(1, -1)
 }
 
+/** One op row of the file plan in a reply: the op kind (create, change, leave, conflict or hunk) and its path. */
+type PlanRow = {
+  readonly kind: string
+  readonly path: string
+}
+
 /** The kind and the path of every op row in the file plan of a reply: two spaces, the op kind, then the path. */
-function planRows(reply: string): { readonly kind: string; readonly path: string }[] {
+function planRows(reply: string): PlanRow[] {
   return reply.split('\n').flatMap(line => {
     const [, kind, path] = /^ {2}(create|change|leave|conflict|hunk) +(\S+)/.exec(line) ?? []
     if (kind === undefined || path === undefined) return []
@@ -1297,7 +1303,7 @@ function planRows(reply: string): { readonly kind: string; readonly path: string
 }
 
 /** Whether a plan row names a path a plan may touch (PLAN-06): in `.cadre/`, the root `.gitignore` or a GSD hunk. */
-function isAllowedRow(row: { readonly kind: string; readonly path: string }): boolean {
+function isAllowedRow(row: PlanRow): boolean {
   if (row.path.startsWith('.cadre/')) return true
   if (row.path === '.gitignore') return true
 
