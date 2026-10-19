@@ -228,8 +228,10 @@ describe('launch render', () => {
         deny: [
           'Bash',
           'Edit(//repo/cadre/**)',
-          'Read(./.env)',
-          'Read(./.env.*)',
+          'Read(//repo/**/.env)',
+          'Read(//repo/**/.env.*)',
+          'Read(//repo/.env)',
+          'Read(//repo/.env.*)',
           'Read(//repo/cadre/**)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
@@ -495,28 +497,33 @@ describe('runtimeDeny', () => {
     expect(lintRuntimeDenyPattern('mcp__jira')).toBeNull()
   })
 
-  test('the any-depth code dir denies are replaced by exact ones, and the secret and Bash denies stay', () => {
-    const role = templateRole('pm')
-    const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
-    const launcher = user({ codeDirs: ['cadre', 'pm', 'src', 'thoughts'] })
+  test(
+    'the any-depth code dir and .env denies are replaced by exact ones, and the home-folder and Bash denies stay',
+    () => {
+      const role = templateRole('pm')
+      const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
+      const launcher = user({ codeDirs: ['cadre', 'pm', 'src', 'thoughts'] })
 
-    expect(runtimeDeny(role, scope, launcher)).toEqual({
-      deny: [
-        'Bash',
-        'Edit(//repo/cadre/**)',
-        'Edit(//repo/pm/**)',
-        'Edit(//repo/src/**)',
-        'Read(./.env)',
-        'Read(./.env.*)',
-        'Read(//repo/cadre/**)',
-        'Read(//repo/pm/**)',
-        'Read(//repo/src/**)',
-        'Read(~/.aws/**)',
-        'Read(~/.ssh/**)',
-      ],
-      warnings: [],
-    })
-  })
+      expect(runtimeDeny(role, scope, launcher)).toEqual({
+        deny: [
+          'Bash',
+          'Edit(//repo/cadre/**)',
+          'Edit(//repo/pm/**)',
+          'Edit(//repo/src/**)',
+          'Read(//repo/**/.env)',
+          'Read(//repo/**/.env.*)',
+          'Read(//repo/.env)',
+          'Read(//repo/.env.*)',
+          'Read(//repo/cadre/**)',
+          'Read(//repo/pm/**)',
+          'Read(//repo/src/**)',
+          'Read(~/.aws/**)',
+          'Read(~/.ssh/**)',
+        ],
+        warnings: [],
+      })
+    },
+  )
 
   test('a dir the template had to skip for its name is denied exactly, since an exact pattern hits one folder', () => {
     const role = templateRole('pm')
@@ -673,6 +680,34 @@ describe('runtimeDeny', () => {
     expect(missed.warnings).toEqual([])
     expect(coveredPrefixes(none.deny)).toEqual(['/repo/cadre/', '/repo/src/', '/repo/cadre/', '/repo/src/'])
   })
+
+  test(
+    'the .env denies are rendered absolute at the repo root and at any depth under it, ' +
+      'and the template keeps them relative (A2)',
+    () => {
+      const role = templateRole('pm')
+      const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
+      const launcher = user({ codeDirs: ['cadre'] })
+      const result = runtimeDeny(role, scope, launcher)
+      const be = templateRole('be')
+      const bashDeny = runtimeDeny(be, compileScope(be, context({ codeDirs: ['cadre'] })), launcher).deny
+
+      expect(result.deny).toContain('Read(//repo/.env)')
+      expect(result.deny).toContain('Read(//repo/.env.*)')
+      expect(result.deny).toContain('Read(//repo/**/.env)')
+      expect(result.deny).toContain('Read(//repo/**/.env.*)')
+      expect(result.deny).toContain('Read(~/.aws/**)')
+      expect(result.deny).toContain('Read(~/.ssh/**)')
+      expect(result.deny).not.toContain('Read(./.env)')
+      expect(result.deny).not.toContain('Read(./.env.*)')
+      expect(scope.settings.permissions.deny).toContain('Read(./.env)')
+      expect(scope.settings.permissions.deny).toContain('Read(./.env.*)')
+      expect(result.warnings).toEqual([])
+      expect(bashDeny).toContain('Read(./.env)')
+      expect(bashDeny).toContain('Read(./.env.*)')
+      expect(bashDeny).not.toContain('Read(//repo/.env)')
+    },
+  )
 
   test('every deny of the result passes the runtime lint', () => {
     const role = templateRole('pm')

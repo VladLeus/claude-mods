@@ -1,7 +1,7 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, isChangedByClean, sortedUnique } from './facts'
 import { shown } from './render'
-import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths } from './scope'
+import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from './scope'
 import { mangledProjectDir } from './setup'
 
 /**
@@ -123,6 +123,17 @@ const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
  */
 const CODE_DIR_DENY = /^(?:Read|Edit)\(\.\/([^/]+)\/\*\*\)$/
 
+/** The start of a template Read deny anchored at the session's cwd. */
+const RELATIVE_READ_PREFIX = 'Read(./'
+
+/**
+ * The template's secret denies that are anchored at the session's cwd, the two repo .env rules; a launcher that starts
+ * in a sub-folder or elsewhere would miss the root's files (A2, P13).
+ */
+const RELATIVE_SECRET_DENY: readonly string[] = Object.freeze(
+  SECRET_READ_DENY.filter(entry => entry.startsWith(RELATIVE_READ_PREFIX)),
+)
+
 /** A rule on a tool that takes a path, with an absolute `//` argument. */
 const ABSOLUTE_RULE = /^(?:Edit|NotebookEdit|Read|Write)\((\/\/[\s\S]*)\)$/
 
@@ -217,16 +228,30 @@ function lintedDeny(entries: readonly string[], warnings: readonly string[]): De
 }
 
 /**
+ * The repo .env read denies made absolute (A2, P13): each at the repo root and at any depth under it, so the deny
+ * holds wherever the launcher starts.
+ */
+function absoluteSecretDeny(root: string): string[] {
+  return RELATIVE_SECRET_DENY.flatMap(entry => {
+    const name = entry.slice(RELATIVE_READ_PREFIX.length, -1)
+
+    return [`Read(//${root}/${name})`, `Read(//${root}/**/${name})`]
+  })
+}
+
+/**
  * The deny list of a role at launch (ROLE-05, D-84, P13). A role with Bash keeps the denies of its template, which hold
  * no code dir. For a role without Bash, the template's any-depth code-dir denies (`Read(./x/**)` matches every folder
  * named x) are replaced by exact absolute ones, `Read(//<root>/<dir>/**)` and `Edit(//<root>/<dir>/**)`, which hit
  * that one folder and no other, for every code dir the launch scan names and every dir a template code-dir deny names,
- * so a folder the launch scan missed keeps its deny (fail closed). A dir is skipped when `<root>/<dir>/` is a prefix of
- * one of the role's own paths (`.cadre/<id>/`, `.planning/`, `thoughts/shared/handoffs/<id>/`; compared without letter
- * case, as a file system may ignore it), so those stay readable (D-80); a dir with an unusual name (`isSafeDir`) is
- * skipped with a warning. A root a rule cannot hold keeps the template's denies and warns. The result is sorted and
- * once each, and an entry that fails `lintRuntimeDenyPattern` is dropped with a warning, so no deny can block an infra
- * tool.
+ * so a folder the launch scan missed keeps its deny (fail closed). The template's two repo .env denies (`Read(./.env)`,
+ * `Read(./.env.*)`), anchored at the cwd, are replaced the same way by `Read(//<root>/.env)`, `Read(//<root>/.env.*)`,
+ * `Read(//<root>/**\/.env)` and `Read(//<root>/**\/.env.*)`; the ~/ denies stay as written (A2). A dir is skipped when
+ * `<root>/<dir>/` is a prefix of one of the role's own paths (`.cadre/<id>/`, `.planning/`,
+ * `thoughts/shared/handoffs/<id>/`; compared without letter case, as a file system may ignore it), so those stay
+ * readable (D-80); a dir with an unusual name (`isSafeDir`) is skipped with a warning. A root a rule cannot hold keeps
+ * the template's denies and warns. The result is sorted and once each, and an entry that fails
+ * `lintRuntimeDenyPattern` is dropped with a warning, so no deny can block an infra tool.
  */
 export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const template = scope.settings.permissions.deny
@@ -248,7 +273,14 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
     .filter(dir => !isSafeDir(dir))
     .map(dir => `Code dir ${shown(dir)} has an unusual name and is not denied`)
 
-  return lintedDeny([...template.filter(entry => !CODE_DIR_DENY.test(entry)), ...exact], unusual)
+  return lintedDeny(
+    [
+      ...template.filter(entry => !CODE_DIR_DENY.test(entry) && !RELATIVE_SECRET_DENY.includes(entry)),
+      ...exact,
+      ...absoluteSecretDeny(user.root.slice(1)),
+    ],
+    unusual,
+  )
 }
 
 /** A run of backticks in a text: where it starts, and where it ends (exclusive). */
