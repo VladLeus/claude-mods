@@ -38,6 +38,7 @@ const HASH = `1a2b3c4d${'0'.repeat(56)}`
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
   return {
     root: '/repo',
+    givenRoot: '/repo',
     home: '/home/u',
     userDir: '/home/u/.claude',
     gitCommonDir: '/repo/.git',
@@ -49,6 +50,7 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
     claudeMd: [],
     globalClaudeMd: [],
     memoryFiles: [],
+    givenMemoryFiles: [],
     userSkills: [],
     userAgents: [],
     codeDirs: [],
@@ -809,6 +811,73 @@ describe('instructionPlan', () => {
         target: '/cfg/projects/-w-my-repo/memory/x.md',
       },
     ])
+  })
+
+  test('each memory is linked to the project folder that lists it, the realpath folder first (A6)', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const launcher = user({
+      root: '/w/real',
+      givenRoot: '/w/link',
+      memoryFiles: ['a.md'],
+      givenMemoryFiles: ['a.md', 'b.md'],
+    })
+    const plan = instructionPlan(role, launcher)
+
+    expect(plan.links).toEqual([
+      {
+        path: '/w/real/.cadre/pm/.runtime/instructions/memory/a.md',
+        target: '/home/u/.claude/projects/-w-real/memory/a.md',
+      },
+      {
+        path: '/w/real/.cadre/pm/.runtime/instructions/memory/b.md',
+        target: '/home/u/.claude/projects/-w-link/memory/b.md',
+      },
+    ])
+    expect(plan.warnings).toEqual([])
+  })
+
+  test('with no link in the way each memory is linked once, to the realpath folder', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const plan = instructionPlan(role, user({ memoryFiles: ['a.md', 'b.md'], givenMemoryFiles: ['b.md', 'a.md'] }))
+
+    expect(plan.links).toEqual([
+      { path: `${linkDir('memory')}/a.md`, target: '/home/u/.claude/projects/-repo/memory/a.md' },
+      { path: `${linkDir('memory')}/b.md`, target: '/home/u/.claude/projects/-repo/memory/b.md' },
+    ])
+  })
+
+  test('no memory link points at a folder that did not list its name', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const real = '/home/u/.claude/projects/-w-real/memory/'
+    const given = '/home/u/.claude/projects/-w-link/memory/'
+    const lists: readonly Pick<LaunchUser, 'memoryFiles' | 'givenMemoryFiles'>[] = [
+      { memoryFiles: ['a.md'], givenMemoryFiles: ['b.md'] },
+      { memoryFiles: [], givenMemoryFiles: ['a.md', 'b.md'] },
+      { memoryFiles: ['a.md', 'b.md'], givenMemoryFiles: [] },
+      { memoryFiles: ['b.md', 'c.md'], givenMemoryFiles: ['a.md', 'b.md'] },
+    ]
+    const cases = lists.map(list => ({
+      list,
+      links: instructionPlan(role, user({ root: '/w/real', givenRoot: '/w/link', ...list })).links,
+    }))
+    const isListed = (target: string, list: Pick<LaunchUser, 'memoryFiles' | 'givenMemoryFiles'>): boolean => {
+      const name = target.slice(target.lastIndexOf('/') + 1)
+      if (target === `${real}${name}`) return list.memoryFiles.includes(name)
+
+      return target === `${given}${name}` && list.givenMemoryFiles.includes(name) && !list.memoryFiles.includes(name)
+    }
+
+    expect(cases.flatMap(({ list, links }) => links.filter(link => !isListed(link.target, list)))).toEqual([])
+    expect(cases.map(({ links }) => links.length)).toEqual([2, 2, 2, 3])
+  })
+
+  test('an unsafe memory name both folders list is warned about once and not linked', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const launcher = user({ givenRoot: '/w/link', memoryFiles: ['../x.md'], givenMemoryFiles: ['../x.md'] })
+    const plan = instructionPlan(role, launcher)
+
+    expect(plan.links).toEqual([])
+    expect(plan.warnings).toEqual(['memory file ../x.md has an unsafe name: not linked'])
   })
 
   test('a memory name with a slash, a .. segment or a leading dot is not linked and warns', () => {
