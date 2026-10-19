@@ -131,6 +131,9 @@ const BARE_MARKDOWN = /^[A-Za-z0-9_.]\S*\.md$/i
 /** The most code points a file name may have to be linked. */
 const MAX_NAME_CHARS = 255
 
+/** A skill or agent name that may become a link name: a plain name of 1 to 80 characters (T-02-46). */
+const SAFE_OVERLAY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
+
 /**
  * The folder name of a repo's role memory (D-91): the name of the folder that holds the git common dir, then `-` and
  * the first 8 hex characters of the hash of the common dir, so two repos with the same name do not share memory. Every
@@ -411,6 +414,59 @@ export function instructionPlan(
   }
 }
 
+/** Whether a skill or agent name may become a link name: a plain name, and no `..` segment (T-02-46). */
+function isSafeOverlayName(name: string): boolean {
+  return SAFE_OVERLAY_NAME.test(name) && !name.split('/').includes('..')
+}
+
+/**
+ * The links for one kind of overlay entry, in name order, once each. A name that is not a plain name is not linked and
+ * is named in a warning, even when the user has it, and so is a name the user does not have. `extension` is added to
+ * the name in the link path and in the target (an agent is a `.md` file, a skill is a folder).
+ */
+function overlayGroup(
+  kind: 'skill' | 'agent',
+  names: readonly string[],
+  have: readonly string[],
+  linkDir: string,
+  targetDir: string,
+  extension: string,
+): LinkSet {
+  const links: OverlayLink[] = []
+  const warnings: string[] = []
+  for (const name of sortedUnique(names)) {
+    if (!isSafeOverlayName(name)) {
+      warnings.push(`${kind} ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      continue
+    }
+    if (!have.includes(name)) {
+      warnings.push(`${kind} ${name} was not found in your user ${kind}s: not linked`)
+      continue
+    }
+    links.push({ path: `${linkDir}/${name}${extension}`, target: `${targetDir}/${name}${extension}` })
+  }
+
+  return { links, warnings }
+}
+
+/**
+ * The links that build the role's overlay (spike S4 V3): each overlay skill is linked to `<userDir>/skills/<name>`
+ * under `.runtime/overlay/.claude/skills/`, and each overlay agent to `<userDir>/agents/<name>.md` under
+ * `.runtime/overlay/.claude/agents/`. Under `--setting-sources project` a user-level skill or agent is absent unless an
+ * `--add-dir` overlay links it. A skill named `plugin:skill` never reaches the overlay, as compileScope enables its
+ * plugin instead. The links are sorted by path, the warnings list the skills before the agents, and a name that is not
+ * found among the user's, or is not a safe name, is not linked.
+ */
+export function overlayLinks(id: string, overlay: CompiledScope['overlay'], user: LaunchUser): LinkSet {
+  const base = `${runtimeDir(user, id)}/overlay/.claude`
+  const userSkills = `${user.userDir}/skills`
+  const userAgents = `${user.userDir}/agents`
+  const skills = overlayGroup('skill', overlay.skills, user.userSkills, `${base}/skills`, userSkills, '')
+  const agents = overlayGroup('agent', overlay.agents, user.userAgents, `${base}/agents`, userAgents, '.md')
+
+  return { links: sortedLinks([...skills.links, ...agents.links]), warnings: [...skills.warnings, ...agents.warnings] }
+}
+
 /** The window value when the role carries it and the user has one; null otherwise. */
 function carriedWindow(role: RoleSpec, user: LaunchUser): number | null {
   return role.carry.autoCompactWindow ? user.autoCompactWindow : null
@@ -499,17 +555,19 @@ export function renderRuntimeSettings(
 
 /**
  * The launch half of D-66 for one role (D-98): from the role, its compiled scope and the launching user's facts it
- * returns the runtime settings, the symlinks to create (sorted by path) and the warnings to show, in the order of the
- * steps: denies, then instructions. It is pure: it reads nothing, writes nothing and keeps nothing between calls, so
- * Phase 3 only gathers the facts and writes the result under `.cadre/<id>/.runtime/`.
+ * returns the runtime settings, the symlinks to create (the instruction and memory links and the overlay links, sorted
+ * by path, all under `<root>/.cadre/<id>/.runtime/`) and the warnings to show, in the order of the steps: denies,
+ * instructions, overlay. It is pure: it reads nothing, writes nothing and keeps nothing between calls, so Phase 3 only
+ * gathers the facts and writes the result under `.cadre/<id>/.runtime/`.
  */
 export function launchPlan(role: RoleSpec, scope: CompiledScope, user: LaunchUser): LaunchPlan {
   const deny = runtimeDeny(role, scope, user)
   const instructions = instructionPlan(role, user)
+  const overlay = overlayLinks(role.id, scope.overlay, user)
 
   return {
     settings: renderRuntimeSettings(role, scope, user, instructions.claudeMdExcludes),
-    links: sortedLinks(instructions.links),
-    warnings: [...deny.warnings, ...instructions.warnings],
+    links: sortedLinks([...instructions.links, ...overlay.links]),
+    warnings: [...deny.warnings, ...instructions.warnings, ...overlay.warnings],
   }
 }
