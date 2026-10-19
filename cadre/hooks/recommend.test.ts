@@ -20,8 +20,8 @@ import {
   hunkOp,
   hunkQuestion,
   INSTALL_COMMANDS,
+  isAttendedFromConfig,
   isGsdAttended,
-  isGsdAttendedFromConfig,
   isUnmetHunk,
   NOT_SET_TEXT,
   parseHunkAnswer,
@@ -559,36 +559,36 @@ describe('tool commands and attended', () => {
   test('from the config: the roles are unattended when every required value is at its target', () => {
     const atTargets = configText('{"mode":"yolo","workflow":{"text_mode":false}}')
 
-    expect(isGsdAttendedFromConfig(REQUIRED, atTargets)).toBe(false)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets)).toBe(false)
+    expect(isAttendedFromConfig(REQUIRED, atTargets)).toBe(false)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, atTargets)).toBe(false)
   })
 
   test('from the config: the roles are attended when a required value differs or is not set', () => {
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"interactive"}'))).toBe(true)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"yolo"}'))).toBe(true)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"workflow":{"text_mode":true}}'))).toBe(true)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"interactive"}'))).toBe(true)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"yolo"}'))).toBe(true)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, configText('{"workflow":{"text_mode":true}}'))).toBe(true)
     const stringFalse = configText('{"mode":"yolo","workflow":{"text_mode":"false"}}')
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, stringFalse)).toBe(true)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, stringFalse)).toBe(true)
   })
 
   test('from the config: a missing, unreadable or unusable config attends the roles (fail closed)', () => {
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, ABSENT)).toBe(true)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, ABSENT)).toBe(true)
 
     for (const config of UNUSABLE) {
-      expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config)).toBe(true)
+      expect(isAttendedFromConfig(GSD_AUTONOMY, config)).toBe(true)
     }
   })
 
   test('from the config: no proposals attend nothing, whatever the config is (empty edge)', () => {
-    expect(isGsdAttendedFromConfig([], UNREADABLE)).toBe(false)
-    expect(isGsdAttendedFromConfig([], ABSENT)).toBe(false)
-    expect(isGsdAttendedFromConfig([], configText('{"mode":"interactive"}'))).toBe(false)
+    expect(isAttendedFromConfig([], UNREADABLE)).toBe(false)
+    expect(isAttendedFromConfig([], ABSENT)).toBe(false)
+    expect(isAttendedFromConfig([], configText('{"mode":"interactive"}'))).toBe(false)
   })
 
   test('from the config: an unmet optional proposal alone attends nothing', () => {
     const config = configText('{"mode":"yolo","workflow":{"text_mode":false},"hooks":{"context_warnings":true}}')
 
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config)).toBe(false)
+    expect(isAttendedFromConfig(GSD_AUTONOMY, config)).toBe(false)
   })
 
   test('attendedNote lists the keys and says what the roles wait for', () => {
