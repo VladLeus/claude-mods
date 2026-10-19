@@ -7,6 +7,7 @@ import type {
   Facts,
   FrameworkId,
   InitIo,
+  LaunchStart,
   PortStat,
   RepoScan,
   RoleChange,
@@ -30,6 +31,7 @@ import {
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
   describeStep,
+  DRY_RUN_NOTE,
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
@@ -38,13 +40,25 @@ import {
   frameworkStep,
   gatherScans,
   GIT_POLICY_OPTIONS,
+  GIT_POLICY_QUESTION,
+  IGNORE_ALL_NOTE,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
   initGuard,
   installedFrameworks,
+  LAUNCH_DIR_CANCELLED_REASON,
+  LAUNCH_DIR_OPTIONS,
+  LAUNCH_DIR_QUESTION,
+  LAUNCH_DIR_ROUNDS_REASON,
+  LAUNCH_START_DISMISSED_REASON,
+  LAUNCH_START_OPTIONS,
+  LAUNCH_START_QUESTION,
+  launchLine,
+  launchStartStep,
   MAX_ADJUST_ROUNDS,
+  MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
   MAX_ROLE_ROUNDS,
   NOT_INTERACTIVE_REPLY,
@@ -93,6 +107,7 @@ const RUN_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Which env variables': 'None',
   '.planning/config.json:': 'Accept',
   'Git policy': 'Commit definitions (default)',
+  'Where should the role launchers start': 'Git root of this repo',
   'Review the plan': 'Confirm',
   "Scan this repo's session history": 'No, skip it',
 })
@@ -1196,6 +1211,162 @@ describe('runInit framework and recommendations', () => {
     const answers = Object.fromEntries(kept)
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+  })
+})
+
+/** The world of the launcher folder tests: apps/web is a folder, a file, a linked folder and nothing else. */
+const FOLDER_WORLD = memWorld({
+  dirs: { '/repo/apps/web': [], '/repo/apps/linked': [] },
+  files: { '/repo/apps/readme.md': 'x' },
+  realPaths: { '/repo/apps/linked': '/elsewhere/linked' },
+})
+
+/** The line init logs for a launcher folder it cannot use. */
+function cannotUse(answer: string, problem: string): string {
+  return `Cannot use ${answer}: ${problem}.`
+}
+
+/** The problem with a folder path isSafeRelativePath refuses. */
+const UNSAFE_FOLDER = 'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /'
+
+/** The problem with a folder that does not stat as a plain folder of the repo. */
+const NOT_A_FOLDER = 'it is not a folder in this repo'
+
+/** What launchStartStep gives for the folder apps/web of the repo. */
+const APPS_WEB = { kind: 'chosen', start: { kind: 'dir', path: 'apps/web' } }
+
+describe('launchStartStep', () => {
+  test('the launcher start question is asked once for the repo with three options, none preselected', () => {
+    expect(LAUNCH_START_QUESTION).toBe(
+      'Where should the role launchers start their sessions? (asked once for this repo)',
+    )
+    expect(LAUNCH_START_OPTIONS).toEqual([
+      'Git root of this repo',
+      'The folder I run it from',
+      'Another folder in this repo',
+    ])
+    expect(Object.isFrozen(LAUNCH_START_OPTIONS)).toBe(true)
+    expect(LAUNCH_DIR_QUESTION).toBe(
+      'Type the folder the launchers start in, relative to the repo root (for example apps/web).',
+    )
+    expect(LAUNCH_DIR_OPTIONS).toEqual(['Cancel init'])
+    expect(Object.isFrozen(LAUNCH_DIR_OPTIONS)).toBe(true)
+  })
+
+  test('the git root and the folder it is run from are chosen by label or word, trimmed and in any case', async () => {
+    const cases: readonly (readonly [string, LaunchStart])[] = [
+      ['Git root of this repo', { kind: 'git-root' }],
+      [' git root ', { kind: 'git-root' }],
+      ['The folder I run it from', { kind: 'here' }],
+      ['IN HERE', { kind: 'here' }],
+    ]
+    for (const [answer, start] of cases) {
+      const run = memIo(memWorld({}), [answer])
+      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'chosen', start })
+      expect(run.asked).toEqual([LAUNCH_START_QUESTION])
+      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS })
+    }
+  })
+
+  test('another folder asks for it, and a plain folder of the repo is chosen, one trailing slash dropped', async () => {
+    for (const first of ['Another folder in this repo', 'other']) {
+      for (const folder of ['apps/web', 'apps/web/', ' apps/web ']) {
+        const run = memIo(FOLDER_WORLD, [first, folder])
+        expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
+        expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION])
+        expect(run.specs[1]).toEqual({ options: ['Cancel init'] })
+        expect(run.logged).toEqual([])
+      }
+    }
+  })
+
+  test('a folder that is not safe, not there, a file or a link is refused with why, and asked again', async () => {
+    const bad = ['../x', '/etc', 'a b', '${HOME}', 'missing', 'apps/readme.md', 'apps/linked']
+    for (const answer of bad) {
+      const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
+      expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
+      const problem = ['missing', 'apps/readme.md', 'apps/linked'].includes(answer) ? NOT_A_FOLDER : UNSAFE_FOLDER
+      expect(run.logged).toEqual([cannotUse(answer, problem)])
+      expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+    }
+  })
+
+  test('a refused folder is shown cleaned and capped in the line that says why', async () => {
+    const answer = `a${BIDI_OVERRIDE} ${'x'.repeat(200)}`
+    const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
+    await launchStartStep(run.io, '/repo')
+    expect(run.logged).toEqual([cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)])
+  })
+
+  test(`${MAX_ASKS} unusable folders cancel with the rounds reason, and nothing was chosen`, async () => {
+    const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b', 'apps/web'])
+    expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON })
+    expect(run.asked.filter(question => question === LAUNCH_DIR_QUESTION)).toHaveLength(MAX_ASKS)
+    expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
+  })
+
+  test('Cancel init or a dismissal at the folder question cancels with its reason', async () => {
+    for (const answers of [['other', 'Cancel init'], ['other', ' cancel INIT '], ['other']]) {
+      const run = memIo(FOLDER_WORLD, answers)
+      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON })
+    }
+    expect(LAUNCH_DIR_CANCELLED_REASON).toBe('The launcher folder question was dismissed or cancelled.')
+  })
+
+  test('a dismissed or never answered start question cancels with its reason', async () => {
+    for (const answers of [[], ['somewhere', 'else', 'again']]) {
+      const run = memIo(memWorld({}), answers)
+      expect(await launchStartStep(run.io, '/repo')).toEqual({
+        kind: 'cancelled',
+        reason: LAUNCH_START_DISMISSED_REASON,
+      })
+    }
+    expect(LAUNCH_START_DISMISSED_REASON).toBe('The launcher start question was dismissed or not answered.')
+  })
+
+  test('launchLine says where the launchers start', () => {
+    expect(launchLine({ kind: 'git-root' })).toBe('Launchers start in: the git root')
+    expect(launchLine({ kind: 'here' })).toBe('Launchers start in: the folder they are run from')
+    expect(launchLine({ kind: 'dir', path: 'apps/web' })).toBe('Launchers start in: apps/web/ under the git root')
+  })
+
+  test('init asks where launchers start once, right after the git policy, and names it after the policy', async () => {
+    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(run.asked[run.asked.indexOf(GIT_POLICY_QUESTION) + 1]).toBe(LAUNCH_START_QUESTION)
+    expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
+    expect(reply.split('\n')).toEqual([
+      'cadre init --dry-run',
+      policyLine('definitions'),
+      'Launchers start in: the git root',
+      DRY_RUN_NOTE,
+    ])
+  })
+
+  test('a folder chosen in init is named in the reply, before the worktree line of the ignore policy', async () => {
+    const answers = {
+      ...RUN_ANSWERS,
+      'Git policy': 'Ignore all of .cadre/',
+      'Where should the role launchers start': 'Another folder in this repo',
+      'Type the folder the launchers start in': 'apps/web/',
+    }
+    const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
+    const reply = await runInit(run.io, { dryRun: false })
+    expect(reply.split('\n').slice(1, 4)).toEqual([
+      policyLine('ignore'),
+      'Launchers start in: apps/web/ under the git root',
+      IGNORE_ALL_NOTE,
+    ])
+  })
+
+  test('a cancelled launcher start prints why and cancels init', async () => {
+    const answers = Object.fromEntries(
+      Object.entries(RUN_ANSWERS).filter(([key]) => key !== 'Where should the role launchers start'),
+    )
+    const run = memIo(gitWorld(), answers)
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.asked.at(-1)).toBe(LAUNCH_START_QUESTION)
+    expect(run.logged.at(-1)).toBe(LAUNCH_START_DISMISSED_REASON)
   })
 })
 

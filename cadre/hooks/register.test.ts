@@ -165,6 +165,7 @@ const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Which env variables': 'None',
   '.planning/config.json:': 'Accept',
   'Git policy': 'Commit definitions (default)',
+  'Where should the role launchers start': 'Git root of this repo',
   'Review the plan': 'Confirm',
   "Scan this repo's session history": 'No, skip it',
 })
@@ -874,9 +875,12 @@ describe('cadre init with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n')[0]).toBe('cadre init --dry-run')
     expect(out.text).toContain('Git policy: commit definitions')
+    expect(out.text.split('\n')[2]).toBe('Launchers start in: the git root')
     expect(out.text).not.toContain('new worktrees')
     expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
     expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
+    const launchAsk = log.asks[log.asks.indexOf(POLICY_ASK) + 1] ?? ''
+    expect(launchAsk.startsWith('ask Where should the role launchers start')).toBe(true)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.ops).not.toContain('process.run')
   })
