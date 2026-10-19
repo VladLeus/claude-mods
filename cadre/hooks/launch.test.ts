@@ -197,6 +197,18 @@ describe('launch render', () => {
     expect(memorySlug('/.git', HASH)).toBe('repo-1a2b3c4d')
   })
 
+  test('memorySlug names a bare repo and a submodule after their own folder, one trailing .git removed (B7)', () => {
+    expect(memorySlug('/srv/repo.git', HASH)).toBe('repo-1a2b3c4d')
+    expect(memorySlug('/srv/repo.git/', HASH)).toBe('repo-1a2b3c4d')
+    expect(memorySlug('/super/.git/modules/sub', HASH)).toBe('sub-1a2b3c4d')
+    expect(memorySlug('/srv/x.git.git', HASH)).toBe('x.git-1a2b3c4d')
+  })
+
+  test('memorySlug names the root folder, or an empty common dir, repo', () => {
+    expect(memorySlug('/', HASH)).toBe('repo-1a2b3c4d')
+    expect(memorySlug('', HASH)).toBe('repo-1a2b3c4d')
+  })
+
   test('roleMemoryDir is the absolute memory folder of the role under the home folder (D-20, D-91, S2)', () => {
     expect(roleMemoryDir(user(), 'pm')).toBe('/home/u/.claude/cadre/repo-1a2b3c4d/pm')
     expect(roleMemoryDir(user({ gitCommonDir: '/w/main/.git', root: '/w/wt' }), 'be')).toBe(
