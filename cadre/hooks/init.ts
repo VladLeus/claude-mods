@@ -63,6 +63,7 @@ import {
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { desiredFiles } from './generate'
 import { sha256Hex } from './hash'
+import { historyStep } from './history'
 import { buildPlan, gitignoreLines, planReadPaths, renderPlan } from './plan'
 import {
   attendedNote,
@@ -1962,16 +1963,18 @@ function cancelReply(io: InitIo, reason: string): string {
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
- * (consentStep), runs the scans and prints them with their warnings, then runs the role steps (teamStep): the roles
- * and their frameworks, the recommendations (ROLE-03), the autopilot duration once for every role, each role's model
- * and effort, the MCP servers and skills, the instruction and memory groups, the carried env names, and the autonomy
- * hunks of the frameworks in use. It then prints every role's scope card (scopesFor, cardLines, ROLE-06), asks the git
- * policy (gitPolicyStep) and then, once for the repo, where the launchers start (launchStartStep), shows the one final
- * review with the exact file plan, where the person confirms or goes back to change one item (reviewStep, D-43), and
- * replies with the confirmed plan and the note that nothing was written (initReplyText; D-44, D-82). Every step gives
- * a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as
- * its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it. Every
- * answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * (consentStep), runs the scans and prints them with their warnings, then runs the history step (historyStep), which
+ * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
+ * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the autopilot duration once for every
+ * role, each role's model and effort, the MCP servers and skills, the instruction and memory groups, the carried env
+ * names, and the autonomy hunks of the frameworks in use. It then prints every role's scope card (scopesFor,
+ * cardLines, ROLE-06), asks the git policy (gitPolicyStep) and then, once for the repo, where the launchers start
+ * (launchStartStep), shows the one final review with the exact file plan, where the person confirms or goes back to
+ * change one item (reviewStep, D-43), and replies with the confirmed plan and the note that nothing was written
+ * (initReplyText; D-44, D-82). Every step gives a StepResult (A1): runInit checks its kind before it uses the value,
+ * and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so only values the
+ * person accepted reach the steps after it. Every answer lives in memory for this one run, and nothing is kept for
+ * the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1983,6 +1986,9 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const gathered = await gatherScans(io, guard.locations, consent.value)
   const warnings = scanWarningLines(scanWarnings(guard.locations, gathered))
   logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
+
+  const history = await historyStep(io, guard.locations)
+  if (history.kind === 'cancelled') return cancelReply(io, history.reason)
 
   const detections = detectAll(gathered.facts.facts)
   const proposal = proposeRoles(gathered.repo)
