@@ -3111,7 +3111,7 @@ describe('reviewStep', () => {
     expect(expected).toContain('warning: the root was given through a link')
     const summary = loggedFrom(events, 'Roles:', REVIEW_QUESTION)
     expect(summary.join('\n')).toBe(expected.join('\n'))
-    expect(summary.length > 1).toBe(true)
+    expect(summary.slice(1)).not.toHaveLength(0)
     expect(summary.every(text => text.length <= 2000)).toBe(true)
     expect(run.specs[run.asked.indexOf(REVIEW_QUESTION)]).toEqual({ options: REVIEW_OPTIONS })
   })
@@ -3189,7 +3189,7 @@ describe('reviewStep', () => {
       const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': [word, 'Confirm'] })
       expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
       const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
-      expect(expected.length > 0).toBe(true)
+      expect(expected).not.toHaveLength(0)
       expect([word, between(run.asked, REVIEW_QUESTION)]).toEqual([word, expected])
     }
   })
