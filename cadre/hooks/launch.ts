@@ -40,8 +40,17 @@ export type LaunchUser = {
   readonly statusLine: unknown
   /** The `env` block of the user's settings. Only the names a role carries are ever rendered from it. */
   readonly env: Readonly<Record<string, string>>
-  /** The user's hooks: the event, the script basename and the whole command, which may hold absolute paths. */
-  readonly hooks: readonly { readonly event: string; readonly script: string; readonly command: string }[]
+  /**
+   * The user's hooks: the event, the script basename, the whole command, which may hold absolute paths, the matcher of
+   * the settings group the hook is in (null when the group has none) and its timeout in seconds (null when unset).
+   */
+  readonly hooks: readonly {
+    readonly event: string
+    readonly script: string
+    readonly command: string
+    readonly matcher: string | null
+    readonly timeout: number | null
+  }[]
   /** The CLAUDE.md files the engine loads for the root: the root's, `.claude/CLAUDE.md` and every ancestor's. */
   readonly claudeMd: readonly string[]
   /** `<userDir>/CLAUDE.md` first, then the files it imports as the caller resolved them; empty with no global file. */
@@ -518,23 +527,37 @@ function isContextMonitor(script: string): boolean {
   return script.toLowerCase().startsWith(CONTEXT_MONITOR_PREFIX)
 }
 
+/** One carried hook command as the settings hold it; `timeout` only when the user set one. */
+type HookEntry = { readonly type: 'command'; readonly command: string; readonly timeout?: number }
+
 /**
- * The hooks of the role: the user's hooks whose script the role carries, never the context monitor (D-62), as
- * `{ [event]: [{ hooks: [{ type: 'command', command }] }] }`. The events come in the order they are first seen, and the
- * commands of an event in the order given. Null when no hook is left.
+ * The hooks of the role: the user's hooks whose script the role carries, never the context monitor (D-62), with the
+ * matcher and the timeout the user's settings give them, so a hook still runs only on the tools its owner set. Each
+ * event holds one group per matcher, as `{ [event]: [{ matcher, hooks: [{ type: 'command', command, timeout }] }] }`;
+ * a group with a null matcher has no `matcher` key and a hook with a null timeout no `timeout` key. The events, and
+ * the groups of an event, come in the order they are first seen, and the commands of a group in the order given. Null
+ * when no hook is left.
  */
 function carriedHooks(role: RoleSpec, user: LaunchUser): Record<string, unknown> | null {
   const wanted = new Set(role.carry.hooks)
-  const commands = new Map<string, { readonly type: string; readonly command: string }[]>()
+  const events = new Map<string, Map<string | null, HookEntry[]>>()
   for (const hook of user.hooks) {
     if (!wanted.has(hook.script) || isContextMonitor(hook.script)) continue
-    const list = commands.get(hook.event) ?? []
-    list.push({ type: 'command', command: hook.command })
-    commands.set(hook.event, list)
+    const groups = events.get(hook.event) ?? new Map<string | null, HookEntry[]>()
+    const list = groups.get(hook.matcher) ?? []
+    const entry: HookEntry = { type: 'command', command: hook.command }
+    list.push(hook.timeout === null ? entry : { ...entry, timeout: hook.timeout })
+    groups.set(hook.matcher, list)
+    events.set(hook.event, groups)
   }
-  if (commands.size === 0) return null
+  if (events.size === 0) return null
 
-  return Object.fromEntries(Array.from(commands, ([event, list]): [string, unknown] => [event, [{ hooks: list }]]))
+  return Object.fromEntries(
+    Array.from(events, ([event, groups]): [string, unknown] => [
+      event,
+      Array.from(groups, ([matcher, hooks]) => (matcher === null ? { hooks } : { matcher, hooks })),
+    ]),
+  )
 }
 
 /** The key and value as one settings entry, or nothing when the value is null or undefined. */
