@@ -466,9 +466,12 @@ export function instructionPlan(
   }
 }
 
-/** Whether a skill or agent name may become a link name: a plain name, and no `..` segment (T-02-46). */
+/**
+ * Whether a skill or agent name may become a link name: a plain name (T-02-46). The pattern has no `/` and starts with
+ * a letter or digit, so it alone rules out a `..` segment.
+ */
 function isSafeOverlayName(name: string): boolean {
-  return SAFE_OVERLAY_NAME.test(name) && !name.split('/').includes('..')
+  return SAFE_OVERLAY_NAME.test(name)
 }
 
 /**
@@ -587,19 +590,13 @@ function entryIf(key: string, value: unknown): [string, unknown][] {
   return value === null || value === undefined ? [] : [[key, value]]
 }
 
-/**
- * The runtime settings of a role: the launch half of D-66. Phase 3 writes the result to
- * `.cadre/<id>/.runtime/settings.json`; Phase 2 never writes it. It holds the template's plugins and sandbox, the
- * permissions with the deny list of `runtimeDeny`, the absolute memory folder of the role (D-91), the given CLAUDE.md
- * excludes, and the values the role carries from the user's settings: the compact window, the status line, the env
- * values for its env names, and its hooks (D-60, D-62, D-84). A key is added only from RUNTIME_SETTINGS_KEYS, in that
- * order, so a value of any other name or key never appears.
- */
-export function renderRuntimeSettings(
+/** The settings of renderRuntimeSettings with the deny list given, so a caller that has it computes it only once. */
+function settingsFor(
   role: RoleSpec,
   scope: CompiledScope,
   user: LaunchUser,
   claudeMdExcludes: readonly string[],
+  deny: readonly string[],
 ): Readonly<Record<string, unknown>> {
   const entries: [string, unknown][] = [
     ...entryIf('autoCompactWindow', carriedWindow(role, user)),
@@ -608,15 +605,29 @@ export function renderRuntimeSettings(
     ['enabledPlugins', { ...scope.settings.enabledPlugins }],
     ...entryIf('env', carriedEnv(role, user)),
     ...entryIf('hooks', carriedHooks(role, user)),
-    [
-      'permissions',
-      { defaultMode: scope.settings.permissions.defaultMode, deny: [...runtimeDeny(role, scope, user).deny] },
-    ],
+    ['permissions', { defaultMode: scope.settings.permissions.defaultMode, deny: [...deny] }],
     ['sandbox', { enabled: scope.settings.sandbox.enabled }],
     ...entryIf('statusLine', carriedStatusLine(role, user)),
   ]
 
-  return Object.fromEntries(entries.filter(([key]) => RUNTIME_SETTINGS_KEYS.includes(key)))
+  return Object.fromEntries(entries)
+}
+
+/**
+ * The runtime settings of a role: the launch half of D-66. Phase 3 writes the result to
+ * `.cadre/<id>/.runtime/settings.json`; Phase 2 never writes it. It holds the template's plugins and sandbox, the
+ * permissions with the deny list of `runtimeDeny`, the absolute memory folder of the role (D-91), the given CLAUDE.md
+ * excludes, and the values the role carries from the user's settings: the compact window, the status line, the env
+ * values for its env names, and its hooks (D-60, D-62, D-84). Every key is one of RUNTIME_SETTINGS_KEYS, in that
+ * order, so a value of any other name or key never appears.
+ */
+export function renderRuntimeSettings(
+  role: RoleSpec,
+  scope: CompiledScope,
+  user: LaunchUser,
+  claudeMdExcludes: readonly string[],
+): Readonly<Record<string, unknown>> {
+  return settingsFor(role, scope, user, claudeMdExcludes, runtimeDeny(role, scope, user).deny)
 }
 
 /**
@@ -632,7 +643,7 @@ export function launchPlan(role: RoleSpec, scope: CompiledScope, user: LaunchUse
   const overlay = overlayLinks(role.id, scope.overlay, user)
 
   return {
-    settings: renderRuntimeSettings(role, scope, user, instructions.claudeMdExcludes),
+    settings: settingsFor(role, scope, user, instructions.claudeMdExcludes, deny.deny),
     links: sortedLinks([...instructions.links, ...overlay.links]),
     warnings: [...deny.warnings, ...instructions.warnings, ...overlay.warnings],
   }
