@@ -1,4 +1,4 @@
-import type { CadreState, CompiledScope, DesiredFile, FrameworkId, RoleSpec } from '../types'
+import type { CadreState, CompiledScope, DesiredFile, FrameworkId, LaunchStart, RoleSpec } from '../types'
 import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { clean, compareText } from './facts'
@@ -148,23 +148,54 @@ function rolePath(id: string, name: string): string {
   return `.cadre/${id}/${name}`
 }
 
+/** The launcher flags whose value is a repo-relative path, which the launcher writes anchored at the repo root (A2). */
+const PATH_FLAGS: readonly string[] = Object.freeze([
+  '--settings',
+  '--append-system-prompt-file',
+  '--add-dir',
+  '--mcp-config',
+])
+
+/** The line that finds the repo from the launcher's own folder: under `set -eu` a failed git stops the script (A2). */
+const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
+
+/** A repo-relative path as one shell word anchored at the repo root the launcher found: `"$root"/<quoted path>`. */
+function rootWord(path: string): string {
+  return `"$root"/${shQuote(path)}`
+}
+
+/** The line that goes to where the session starts: the git root, a folder under it, or none to stay where it is run. */
+function startLines(start: LaunchStart): string[] {
+  if (start.kind === 'here') return []
+  if (start.kind === 'dir') return [`cd -- ${rootWord(start.path)}`]
+
+  return ['cd -- "$root"']
+}
+
 /**
- * The text of the launcher `.cadre/bin/<id>`, provisional until Phase 3 (Pitfall 8): it goes to the git top level and
- * execs claude with the flags of the compiled scope, each one shell-quoted, then `--` and the kickoff text read from
- * kickoff.txt. The flags come only from compileScope and the title never reaches the script; the role id, which is a
- * slug, is quoted in the path and cleaned in the comments, so a hostile one cannot add a command either. Phase 3 adds
- * the claude version check and renders the `.runtime/` folder before the session starts.
+ * The text of the launcher `.cadre/bin/<id>`, provisional until Phase 3 (Pitfall 8). It finds the repo from its own
+ * folder (`dirname -- "$0"`), never from the folder it is run from, so a launcher run from another repo or outside any
+ * repo cannot start another repo's role: under `set -eu` a failed git stops it. It then goes where `start` says (the
+ * git root, a folder under it, or nowhere for `here`) and execs claude with the flags of the compiled scope, each one
+ * shell-quoted, the value after a path flag (PATH_FLAGS) and the kickoff read anchored at the repo root, since in
+ * `here` and `dir` the session starts outside the git top level, where the repo-relative paths of compileScope would
+ * miss. The flags come only from compileScope and the title never reaches the script; the role id, which is a slug, is
+ * quoted in the paths and cleaned in the comments, so a hostile one cannot add a command either. Phase 3 adds the
+ * claude version check and renders the `.runtime/` folder before the session starts.
  */
-export function launcherText(role: RoleSpec, scope: CompiledScope): string {
+export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
-  const flags = scope.flags.map(flag => shQuote(flag)).join(' ')
-  const kickoff = shQuote(rolePath(role.id, 'kickoff.txt'))
+  const flags = scope.flags
+    .map((flag, index) => (PATH_FLAGS.includes(scope.flags[index - 1] ?? '') ? rootWord(flag) : shQuote(flag)))
+    .join(' ')
+  const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
   const lines = [
     '#!/bin/sh',
     `# cadre launcher for role ${id}. Provisional (Phase 2): Phase 3 adds the claude version check`,
     `# and renders .cadre/${id}/.runtime/ before it starts the session.`,
     'set -eu',
-    'cd "$(git rev-parse --show-toplevel)"',
+    ROOT_LINE,
+    ...startLines(start),
     `exec claude ${flags} -- "$(cat ${kickoff})"`,
   ]
 
@@ -255,7 +286,7 @@ export type GenerateInput = {
    * (`card.framework`). A role with no scope is skipped.
    */
   readonly scopes: ReadonlyMap<string, CompiledScope>
-  /** The repo state init writes as `.cadre/cadre.json`. */
+  /** The repo state init writes as `.cadre/cadre.json`; its `launchStart` is where every launcher starts (A2). */
   readonly state: CadreState
   /** The id of the one role regen re-renders; null for init, which generates every role and the repo state. */
   readonly only: string | null
@@ -268,10 +299,11 @@ const INDEX_PATH = '.cadre/INDEX.md'
 const STATE_PATH = '.cadre/cadre.json'
 
 /**
- * The files of one role: the five in its folder and its launcher, each with the framework its scope was compiled for.
- * A role with no scope gives none, so nothing is generated from a half-known role.
+ * The files of one role: the five in its folder and its launcher, each with the framework its scope was compiled for,
+ * the launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
+ * role.
  */
-function roleFiles(role: RoleSpec, scope: CompiledScope | undefined): DesiredFile[] {
+function roleFiles(role: RoleSpec, scope: CompiledScope | undefined, start: LaunchStart): DesiredFile[] {
   if (scope === undefined) return []
 
   return [
@@ -280,21 +312,21 @@ function roleFiles(role: RoleSpec, scope: CompiledScope | undefined): DesiredFil
     { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
-    { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope), mode: 'exec' },
+    { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope, start), mode: 'exec' },
   ]
 }
 
 /**
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
- * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/` and its launcher `.cadre/bin/<id>`, then
- * `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. With `only` set (regen, D-68) just that role's files and
- * the index are given, since the index lists every role. Generation is pure: it holds no state between calls, so two
- * runs cannot interleave, and it never changes its input.
+ * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/` and its launcher `.cadre/bin/<id>`, which starts where
+ * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. With `only` set (regen,
+ * D-68) just that role's files and the index are given, since the index lists every role. Generation is pure: it holds
+ * no state between calls, so two runs cannot interleave, and it never changes its input.
  */
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
-  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id)))
+  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart))
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
   if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
 
