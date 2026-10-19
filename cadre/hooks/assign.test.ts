@@ -700,6 +700,14 @@ describe('answer parsers', () => {
     expect(modelEffortRefusal('x'.repeat(61))).toBe(refusal(`${'x'.repeat(59)}…`))
   })
 
+  test('modelEffortRefusal shows the answer trimmed, as every parser reads it (B1)', () => {
+    expect(modelEffortRefusal('  sonet + high ')).toBe(modelEffortRefusal('sonet + high'))
+    expect(modelEffortRefusal('  sonet + high ')).toBe(
+      'Cannot use sonet + high: type a model and an effort, such as opus + high. ' +
+        'Models: opus, sonnet, haiku, fable. Efforts: low, medium, high, xhigh, max.',
+    )
+  })
+
   test('parseEnvNames keeps the scanned names, sorted and once each, whatever the order and separators', () => {
     const scanned = ['API_KEY', 'JIRA_URL', 'TOKEN']
 
