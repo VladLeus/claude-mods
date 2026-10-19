@@ -3378,6 +3378,7 @@ describe('runRegen', () => {
     for (const [roles, text] of cases) expect(await regenBe(await regenWorld(roles, { framework: null }))).toBe(text)
     const framed = team.map(role => withFramework(role, 'none'))
     const kinds = opKinds(await regenBe(await regenWorld(framed, { framework: null })))
+    expect(kinds.get('.cadre/be/role.json')).toBe('leave')
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
 
