@@ -1,21 +1,35 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, RoleSpec, ScopeContext, SetupScan, TemplateRoleId } from '../types'
+import type {
+  CompiledScope,
+  FrameworkId,
+  HookScript,
+  McpRef,
+  RoleSpec,
+  ScopeContext,
+  SettingsTemplate,
+  SetupScan,
+  SkillRef,
+  TemplateRoleId,
+} from '../types'
+import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
+import { isObject, sortedUnique } from './facts'
 import {
   claudeMdImports,
   instructionPlan,
   launchPlan,
   lintRuntimeDenyPattern,
   memorySlug,
+  overlayLinks,
   renderRuntimeSettings,
   roleMemoryDir,
   RUNTIME_SETTINGS_KEYS,
   runtimeDeny,
 } from './launch'
-import type { LaunchUser } from './launch'
+import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { compileScope } from './scope'
-import { BIDI_OVERRIDE } from './testkit'
+import { compileScope, infraViolations, roleOwnPaths } from './scope'
+import { BIDI_OVERRIDE, leaks, SECRET_FIXTURES } from './testkit'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
@@ -890,5 +904,512 @@ describe('instructionPlan', () => {
     const plan = launchPlan(role, compileScope(role, context()), user({ claudeMd: CHAIN }))
 
     expect(plan.settings.claudeMdExcludes).toEqual([])
+  })
+})
+
+describe('overlayLinks', () => {
+  const OVERLAY = '/repo/.cadre/pm/.runtime/overlay/.claude'
+
+  test('each overlay skill and agent is linked to the user folder it lives in, sorted by path (S4 V3)', () => {
+    const overlay = { skills: ['create-handoff-doc', 'gsd-autonomous', 'resume-handoff-doc'], agents: ['gsd-planner'] }
+    const launcher = user({ userSkills: overlay.skills, userAgents: ['gsd-planner'] })
+
+    expect(overlayLinks('pm', overlay, launcher)).toEqual({
+      links: [
+        { path: `${OVERLAY}/agents/gsd-planner.md`, target: '/home/u/.claude/agents/gsd-planner.md' },
+        { path: `${OVERLAY}/skills/create-handoff-doc`, target: '/home/u/.claude/skills/create-handoff-doc' },
+        { path: `${OVERLAY}/skills/gsd-autonomous`, target: '/home/u/.claude/skills/gsd-autonomous' },
+        { path: `${OVERLAY}/skills/resume-handoff-doc`, target: '/home/u/.claude/skills/resume-handoff-doc' },
+      ],
+      warnings: [],
+    })
+  })
+
+  test('the targets lie in the config dir of the user, and the links under the role folder of the repo', () => {
+    const overlay = { skills: ['a'], agents: ['b'] }
+    const launcher = user({ root: '/w/my repo', userDir: '/cfg', userSkills: ['a'], userAgents: ['b'] })
+    const result = overlayLinks('be', overlay, launcher)
+
+    expect(result.links).toEqual([
+      {
+        path: '/w/my repo/.cadre/be/.runtime/overlay/.claude/agents/b.md',
+        target: '/cfg/agents/b.md',
+      },
+      {
+        path: '/w/my repo/.cadre/be/.runtime/overlay/.claude/skills/a',
+        target: '/cfg/skills/a',
+      },
+    ])
+  })
+
+  test('a skill the user does not have is not linked and warns', () => {
+    const result = overlayLinks('pm', { skills: ['a', 'b'], agents: [] }, user({ userSkills: ['a'] }))
+
+    expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/skills/a`])
+    expect(result.warnings).toEqual(['skill b was not found in your user skills: not linked'])
+  })
+
+  test('an agent the user does not have is not linked and warns', () => {
+    const result = overlayLinks('pm', { skills: [], agents: ['a', 'b'] }, user({ userAgents: ['b'] }))
+
+    expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/agents/b.md`])
+    expect(result.warnings).toEqual(['agent a was not found in your user agents: not linked'])
+  })
+
+  test('a name that is not a plain name is not linked and warns, even when the user lists it', () => {
+    const unsafe = ['../x', '.hidden', 'a b', 'a/../b', 'codex:rescue']
+    const names = [...unsafe, 'ok']
+    const result = overlayLinks('pm', { skills: names, agents: names }, user({ userSkills: names, userAgents: names }))
+
+    expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/agents/ok.md`, `${OVERLAY}/skills/ok`])
+    expect(result.warnings).toEqual([
+      ...unsafe.map(name => `skill ${name} has an unsafe name: not linked`),
+      ...unsafe.map(name => `agent ${name} has an unsafe name: not linked`),
+    ])
+  })
+
+  test('a name is plain up to 80 characters; an empty name and a name of 81 are not', () => {
+    const fits = 'a'.repeat(80)
+    const names = ['', fits, 'a'.repeat(81)]
+    const result = overlayLinks('pm', { skills: names, agents: [] }, user({ userSkills: names }))
+
+    expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/skills/${fits}`])
+    expect(result.warnings).toHaveLength(2)
+  })
+
+  test('a hidden character in a name is refused, and the warning shows the name cleaned', () => {
+    const name = `ev${BIDI_OVERRIDE}il`
+    const result = overlayLinks('pm', { skills: [name], agents: [] }, user({ userSkills: [name] }))
+
+    expect(result.links).toEqual([])
+    expect(result.warnings).toEqual(['skill evil has an unsafe name: not linked'])
+  })
+
+  test('the warnings list the skills before the agents, each in name order', () => {
+    const result = overlayLinks('pm', { skills: ['s2', 's1'], agents: ['a2', 'a1'] }, user())
+
+    expect(result.warnings).toEqual([
+      'skill s1 was not found in your user skills: not linked',
+      'skill s2 was not found in your user skills: not linked',
+      'agent a1 was not found in your user agents: not linked',
+      'agent a2 was not found in your user agents: not linked',
+    ])
+  })
+
+  test('a name given twice is linked once, and an empty overlay plans nothing', () => {
+    const twice = overlayLinks('pm', { skills: ['a', 'a'], agents: [] }, user({ userSkills: ['a'] }))
+
+    expect(twice.links).toHaveLength(1)
+    expect(overlayLinks('pm', { skills: [], agents: [] }, user())).toEqual({ links: [], warnings: [] })
+  })
+
+  test('launchPlan links the instructions and the overlay together, sorted by path, and warns in step order', () => {
+    const role = templateRole('pm', { instructions: ['global-claude-md', 'auto-memory'] })
+    const scope = compileScope(role, context())
+    const launcher = user({
+      codeDirs: ['*'],
+      globalClaudeMd: ['/home/u/.claude/CLAUDE.md'],
+      memoryFiles: ['.bad.md'],
+      userSkills: [...INFRA_SKILLS],
+    })
+    const plan = launchPlan(role, scope, launcher)
+    const notFound = (name: string): string => `skill ${name} was not found in your user skills: not linked`
+
+    expect(plan.links.map(link => link.path)).toEqual([
+      '/repo/.cadre/pm/.runtime/instructions/global/01-CLAUDE.md',
+      `${OVERLAY}/skills/create-handoff-doc`,
+      `${OVERLAY}/skills/resume-handoff-doc`,
+    ])
+    expect(plan.warnings).toEqual([
+      'Code dir * has an unusual name and is not denied',
+      'memory file .bad.md has an unsafe name: not linked',
+      ...FRAMEWORK_START_SKILLS.gsd.map(notFound),
+    ])
+  })
+
+  test('launchPlan links the overlay skills and the gsd agents for a user who has them all', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context({ setup: setup({ agents: ['gsd-planner', 'my-agent'] }) }))
+    const launcher = user({
+      userSkills: [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS.gsd],
+      userAgents: ['gsd-planner', 'my-agent'],
+    })
+    const plan = launchPlan(role, scope, launcher)
+
+    expect(plan.warnings).toEqual([])
+    expect(plan.links.filter(link => link.path.includes('/agents/')).map(link => link.target)).toEqual([
+      '/home/u/.claude/agents/gsd-planner.md',
+    ])
+    expect(plan.links.filter(link => link.path.includes('/skills/'))).toHaveLength(scope.overlay.skills.length)
+  })
+})
+
+/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
+function skill(name: string, plugin: string | null = null): SkillRef {
+  return { name, plugin }
+}
+
+/** An MCP server the live session lists. */
+function session(name: string): McpRef {
+  return { name, source: 'session' }
+}
+
+/** A hook script the user's settings register. */
+function hook(script: string): HookScript {
+  return { script, event: 'PostToolUse', source: 'user' }
+}
+
+/** The three frameworks the launch properties run. */
+const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+
+/** What the matrix scans: the superpowers and codex plugins, user and plugin skills, five MCP servers (one infra). */
+const MATRIX_SETUP: SetupScan = setup({
+  plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
+  skills: [
+    skill('my-skill'),
+    skill('gsd-health'),
+    skill('gsd-plan-phase'),
+    skill('create-handoff-doc'),
+    skill('resume-handoff-doc'),
+    skill('codex:rescue', 'codex'),
+    skill('superpowers:brainstorming', 'superpowers'),
+    skill('autopilot', 'autopilot'),
+  ],
+  mcp: [session('jira'), session('playwright'), session('github'), session('autopilot'), session('sentry')],
+  agents: ['gsd-planner', 'gsd-executor', 'my-agent'],
+  hooks: [hook('gsd-secret-read-guard.js'), hook('gsd-context-monitor.js')],
+})
+
+/** The six template roles and a custom role with no base. */
+const MATRIX_ROLES: readonly RoleSpec[] = [
+  ...ROLE_TEMPLATE.map(row => roleFromTemplate(row)),
+  templateRole('tl', { id: 'ops', title: 'Ops', basedOn: null }),
+]
+
+/** The role with every scanned name, every instruction group and everything it can carry. */
+function assignEverything(role: RoleSpec): RoleSpec {
+  return {
+    ...role,
+    mcp: MATRIX_SETUP.mcp.map(ref => ref.name),
+    skills: MATRIX_SETUP.skills.map(item => item.name),
+    instructions: ['global-claude-md', 'auto-memory', 'project-claude-md'],
+    carry: {
+      autoCompactWindow: true,
+      statusLine: true,
+      env: ['JIRA_URL'],
+      hooks: ['gsd-secret-read-guard.js', 'gsd-context-monitor.js'],
+    },
+  }
+}
+
+/** The ways a role may be assigned: nothing, or everything. */
+const ASSIGNMENTS: readonly (readonly [string, (role: RoleSpec) => RoleSpec])[] = [
+  ['nothing', role => role],
+  ['everything', assignEverything],
+]
+
+/** Every skill name the matrix overlays could hold, so the user of the matrix has all of them. */
+const MATRIX_SKILLS: readonly string[] = sortedUnique([
+  ...INFRA_SKILLS,
+  ...FRAMEWORK_START_SKILLS.gsd,
+  ...FRAMEWORK_START_SKILLS.superpowers,
+  ...FRAMEWORK_START_SKILLS.none,
+  ...MATRIX_SETUP.skills.map(item => item.name),
+])
+
+/**
+ * The launching user of the matrix: everything to carry, every overlay name, the whole CLAUDE.md chain, global files,
+ * memory files, and one decoy env value for each secret fixture under a name no role carries.
+ */
+const MATRIX_USER: LaunchUser = user({
+  autoCompactWindow: 800000,
+  statusLine: { type: 'command', command: '/home/u/x.js' },
+  env: {
+    JIRA_URL: 'https://j',
+    ...Object.fromEntries(SECRET_FIXTURES.map((value, index) => [`DECOY_${index}`, value])),
+  },
+  hooks: USER_HOOKS,
+  claudeMd: CHAIN,
+  globalClaudeMd: ['/home/u/.claude/CLAUDE.md', '/home/u/notes/a.md'],
+  memoryFiles: ['MEMORY.md', 'b.md'],
+  userSkills: MATRIX_SKILLS,
+  userAgents: MATRIX_SETUP.agents,
+  codeDirs: ['.planning', 'cadre', 'pm', 'src', 'thoughts'],
+})
+
+/** The scope of a role in a framework, with the matrix setup and the code dirs the scan found at init. */
+function matrixScope(role: RoleSpec, framework: FrameworkId): CompiledScope {
+  const codeDirs = ['.planning', 'cadre', 'pm', 'src', 'thoughts']
+
+  return compileScope(role, context({ framework, setup: MATRIX_SETUP, codeDirs, roles: MATRIX_ROLES }))
+}
+
+/** Whether a value is a list of strings. */
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+/** The deny list of rendered settings; empty when they hold none. */
+function denyOf(settings: Readonly<Record<string, unknown>>): string[] {
+  const permissions = settings.permissions
+  if (!isObject(permissions)) return []
+  const deny = permissions.deny
+
+  return isStringList(deny) ? deny : []
+}
+
+/** The template keys of rendered settings, as the ISO-04 checker reads them; null when one has the wrong shape. */
+function templateOf(settings: Readonly<Record<string, unknown>>, scope: CompiledScope): SettingsTemplate | null {
+  const { enabledPlugins, permissions, sandbox } = settings
+  if (!isObject(enabledPlugins) || !isObject(permissions) || !isObject(sandbox)) return null
+  const deny = permissions.deny
+  const enabled = sandbox.enabled
+  if (!isStringList(deny) || typeof enabled !== 'boolean') return null
+  const entries = Object.entries(enabledPlugins)
+  const flags = entries.filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
+  if (flags.length !== entries.length) return null
+
+  return {
+    enabledPlugins: Object.fromEntries(flags),
+    permissions: { defaultMode: scope.settings.permissions.defaultMode, deny },
+    sandbox: { enabled },
+  }
+}
+
+/** The command of the context monitor among the user's hooks, which no plan may render (D-62). */
+const MONITOR_COMMAND = '/home/u/m.js'
+
+/** Whether the plan renders the context monitor hook, which no plan may (D-62). */
+function isMonitorRendered(plan: LaunchPlan): boolean {
+  return JSON.stringify(plan.settings.hooks ?? null).includes(MONITOR_COMMAND)
+}
+
+/** Whether a path has a `..` segment. */
+function hasDotDot(path: string): boolean {
+  return path.split('/').includes('..')
+}
+
+/**
+ * Every problem one launch plan has, as messages (empty when none): a link outside `<root>/.cadre/<id>/.runtime/`, a
+ * link with a `..` segment or a relative target, a link planned twice, a settings key outside RUNTIME_SETTINGS_KEYS, an
+ * env name the role does not carry, a deny the runtime lint refuses, an exact deny that covers an own folder of the
+ * role, a secret fixture anywhere in the plan, the context monitor hook (D-62), an infra violation in the template keys
+ * of the runtime settings (D-77), and a warning (the user of the matrix has everything, so none is expected).
+ */
+function launchProblems(plan: LaunchPlan, role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string[] {
+  const runtime = `/repo/.cadre/${role.id}/.runtime/`
+  const deny = denyOf(plan.settings)
+  const covered = coveredPrefixes(deny).map(prefix => prefix.toLowerCase())
+  const own = roleOwnPaths(role.id).map(path => `/repo/${path}`)
+  const template = templateOf(plan.settings, scope)
+  const env = isObject(plan.settings.env) ? Object.keys(plan.settings.env) : []
+  const paths = plan.links.map(link => link.path)
+
+  return [
+    ...paths.filter(path => !path.startsWith(runtime)).map(path => `link ${path} is outside ${runtime}`),
+    ...plan.links
+      .filter(link => hasDotDot(link.path) || hasDotDot(link.target) || !link.target.startsWith('/'))
+      .map(link => `link ${link.path} has a .. segment or a relative target`),
+    ...paths.filter((path, index) => paths.indexOf(path) !== index).map(path => `link ${path} is planned twice`),
+    ...Object.keys(plan.settings)
+      .filter(key => !RUNTIME_SETTINGS_KEYS.includes(key))
+      .map(key => `settings key ${key} is not allowed`),
+    ...env.filter(name => !role.carry.env.includes(name)).map(name => `env ${name} is not carried by the role`),
+    ...deny.flatMap(entry => {
+      const message = lintRuntimeDenyPattern(entry)
+
+      return message === null ? [] : [`deny ${entry} fails the lint: ${message}`]
+    }),
+    ...own.flatMap(path =>
+      covered.filter(prefix => path.toLowerCase().startsWith(prefix)).map(prefix => `deny covers ${prefix} of ${path}`),
+    ),
+    ...leaks(JSON.stringify(plan), SECRET_FIXTURES).map(secret => `the plan holds the secret ${secret}`),
+    ...(isMonitorRendered(plan) ? ['the context monitor hook is rendered'] : []),
+    ...(template === null
+      ? ['the runtime settings do not hold the template keys']
+      : infraViolations({ ...scope, settings: template }, framework)),
+    ...plan.warnings.map(warning => `warning: ${warning}`),
+  ]
+}
+
+/** Every problem the properties find over the matrix, each with the combination that has it. */
+function matrixProblems(): string[] {
+  const problems: string[] = []
+  for (const framework of FRAMEWORKS) {
+    for (const base of MATRIX_ROLES) {
+      for (const [label, assign] of ASSIGNMENTS) {
+        const role = assign(base)
+        const scope = matrixScope(role, framework)
+        const plan = launchPlan(role, scope, MATRIX_USER)
+        const found = launchProblems(plan, role, scope, framework)
+        problems.push(...found.map(problem => `${framework} / ${role.id} / ${label}: ${problem}`))
+      }
+    }
+  }
+
+  return problems
+}
+
+/** The PM of the matrix with everything assigned on GSD: its scope, its launch plan and no problem. */
+function pmCase(): { readonly role: RoleSpec; readonly scope: CompiledScope; readonly plan: LaunchPlan } {
+  const role = assignEverything(templateRole('pm'))
+  const scope = matrixScope(role, 'gsd')
+
+  return { role, scope, plan: launchPlan(role, scope, MATRIX_USER) }
+}
+
+/** The plan with one more deny entry; the plan itself is never changed. */
+function withDenyEntry(plan: LaunchPlan, entry: string): LaunchPlan {
+  const permissions = plan.settings.permissions
+  const base = isObject(permissions) ? permissions : {}
+
+  return { ...plan, settings: { ...plan.settings, permissions: { ...base, deny: [...denyOf(plan.settings), entry] } } }
+}
+
+/** The plan with one more link. */
+function withLink(plan: LaunchPlan, link: OverlayLink): LaunchPlan {
+  return { ...plan, links: [...plan.links, link] }
+}
+
+/** The plan with one settings key set to a value. */
+function withSetting(plan: LaunchPlan, key: string, value: unknown): LaunchPlan {
+  return { ...plan, settings: { ...plan.settings, [key]: value } }
+}
+
+describe('launch properties', () => {
+  test('every role, framework and assignment of the matrix gives a plan without a problem (ISO-04, D-77, D-84)', () => {
+    expect(matrixProblems()).toEqual([])
+  })
+
+  test('the matrix is not empty: seven roles, three frameworks, two assignment sets, and links to check', () => {
+    const plans = FRAMEWORKS.flatMap(framework =>
+      MATRIX_ROLES.flatMap(base =>
+        ASSIGNMENTS.map(([, assign]) => {
+          const role = assign(base)
+
+          return launchPlan(role, matrixScope(role, framework), MATRIX_USER)
+        }),
+      ),
+    )
+
+    expect(MATRIX_ROLES.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'fe', 'qa', 'security', 'ops'])
+    expect(FRAMEWORKS).toHaveLength(3)
+    expect(ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing', 'everything'])
+    expect(plans).toHaveLength(42)
+    expect(plans.filter(plan => plan.links.length === 0)).toEqual([])
+  })
+
+  test('the plan of a role with everything holds instruction links, overlay skills and agents under .runtime', () => {
+    const { plan } = pmCase()
+    const paths = plan.links.map(link => link.path)
+
+    expect(paths.filter(path => path.includes('/.runtime/instructions/global/'))).toHaveLength(2)
+    expect(paths.filter(path => path.includes('/.runtime/instructions/memory/'))).toHaveLength(2)
+    expect(paths.filter(path => path.includes('/.runtime/overlay/.claude/agents/'))).toHaveLength(2)
+    expect(paths.filter(path => path.includes('/.runtime/overlay/.claude/skills/')).length > 0).toBe(true)
+    expect(paths).toEqual([...paths].sort())
+  })
+
+  test('the clean plan has no problem, so each mutation below changes the verdict', () => {
+    const { role, scope, plan } = pmCase()
+
+    expect(launchProblems(plan, role, scope, 'gsd')).toEqual([])
+    expect(coveredPrefixes(denyOf(plan.settings))).toContain('/repo/src/')
+  })
+
+  test('mutation: a deny of the autopilot server in the runtime settings is caught and named', () => {
+    const { role, scope, plan } = pmCase()
+    const problems = launchProblems(withDenyEntry(plan, 'mcp__autopilot'), role, scope, 'gsd').join('\n')
+
+    expect(problems).toContain('deny mcp__autopilot fails the lint')
+    expect(problems).toContain('mcp__autopilot')
+    expect(launchProblems(plan, role, scope, 'gsd')).toEqual([])
+  })
+
+  test('mutation: a link to a path outside .runtime is caught and named', () => {
+    const { role, scope, plan } = pmCase()
+    const link = { path: '/repo/.cadre/pm/elsewhere/x', target: '/home/u/.claude/skills/x' }
+    const problems = launchProblems(withLink(plan, link), role, scope, 'gsd')
+
+    expect(problems).toEqual(['link /repo/.cadre/pm/elsewhere/x is outside /repo/.cadre/pm/.runtime/'])
+  })
+
+  test('mutation: a link with a .. segment, a relative target, or planned twice is caught', () => {
+    const { role, scope, plan } = pmCase()
+    const runtime = '/repo/.cadre/pm/.runtime/overlay/.claude/skills'
+    const up = withLink(plan, { path: `${runtime}/../../x`, target: '/home/u/x' })
+    const relative = withLink(plan, { path: `${runtime}/y`, target: 'skills/y' })
+    const twice = withLink(plan, plan.links[0] ?? { path: '', target: '' })
+
+    expect(launchProblems(up, role, scope, 'gsd')).toHaveLength(1)
+    expect(launchProblems(relative, role, scope, 'gsd')).toHaveLength(1)
+    expect(launchProblems(twice, role, scope, 'gsd').join('\n')).toContain('is planned twice')
+  })
+
+  test('mutation: a key outside the allow-list in the settings is caught and named', () => {
+    const { role, scope, plan } = pmCase()
+
+    expect(launchProblems(withSetting(plan, 'model', 'opus'), role, scope, 'gsd')).toEqual([
+      'settings key model is not allowed',
+    ])
+  })
+
+  test('mutation: a secret value anywhere in the plan is caught and named', () => {
+    const { role, scope, plan } = pmCase()
+    const secret = SECRET_FIXTURES[0] ?? ''
+    const problems = launchProblems(withSetting(plan, 'env', { DECOY_0: secret }), role, scope, 'gsd')
+
+    expect(problems).toContain(`the plan holds the secret ${secret}`)
+    expect(problems).toContain('env DECOY_0 is not carried by the role')
+  })
+
+  test('mutation: an exact deny that covers an own folder of the role is caught', () => {
+    const { role, scope, plan } = pmCase()
+    const handoffs = launchProblems(withDenyEntry(plan, 'Read(//repo/thoughts/**)'), role, scope, 'gsd')
+    const planning = launchProblems(withDenyEntry(plan, 'Edit(//repo/.PLANNING/**)'), role, scope, 'gsd')
+
+    expect(handoffs).toEqual(['deny covers /repo/thoughts/ of /repo/thoughts/shared/handoffs/pm/'])
+    expect(planning).toEqual(['deny covers /repo/.planning/ of /repo/.planning/'])
+  })
+
+  test('mutation: a single-slash deny and a deny with a .. segment are caught by the lint', () => {
+    const { role, scope, plan } = pmCase()
+    const single = launchProblems(withDenyEntry(plan, 'Read(/repo/src/**)'), role, scope, 'gsd')
+    const dotdot = launchProblems(withDenyEntry(plan, 'Read(//repo/../src/**)'), role, scope, 'gsd')
+
+    expect(single).toEqual(['deny Read(/repo/src/**) fails the lint: single leading / matches nothing (P13)'])
+    expect(dotdot).toEqual([
+      'deny Read(//repo/../src/**) fails the lint: a .. segment is not allowed in an absolute pattern',
+    ])
+  })
+
+  test('mutation: an infra plugin switched off in the runtime settings is caught by the ISO-04 checker', () => {
+    const { role, scope, plan } = pmCase()
+    const plugins = isObject(plan.settings.enabledPlugins) ? plan.settings.enabledPlugins : {}
+    const off = withSetting(plan, 'enabledPlugins', { ...plugins, 'autopilot@local-mods': false })
+
+    expect(launchProblems(off, role, scope, 'gsd')).toEqual(['infra plugin autopilot@local-mods is not enabled'])
+  })
+
+  test('mutation: runtime settings without the template keys are caught', () => {
+    const { role, scope, plan } = pmCase()
+    const bare = { ...plan, settings: { autoMemoryDirectory: '/home/u/.claude/cadre/x/pm' } }
+
+    expect(launchProblems(bare, role, scope, 'gsd')).toEqual(['the runtime settings do not hold the template keys'])
+  })
+
+  test('mutation: the context monitor hook rendered into the settings is caught', () => {
+    const { role, scope, plan } = pmCase()
+    const monitor = { Stop: [{ hooks: [{ type: 'command', command: `node ${MONITOR_COMMAND}` }] }] }
+
+    expect(launchProblems(withSetting(plan, 'hooks', monitor), role, scope, 'gsd')).toEqual([
+      'the context monitor hook is rendered',
+    ])
+  })
+
+  test('mutation: a warning in the plan is a problem for the matrix user, who has everything', () => {
+    const { role, scope, plan } = pmCase()
+
+    expect(launchProblems({ ...plan, warnings: ['x'] }, role, scope, 'gsd')).toEqual(['warning: x'])
   })
 })
