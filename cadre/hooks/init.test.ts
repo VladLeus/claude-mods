@@ -3320,6 +3320,14 @@ describe('runRegen', () => {
     }
   }
 
+  /**
+   * A git repo at /repo whose root lists as empty, so its scans give no warning (A4); gitWorld's root cannot be listed,
+   * which the repo scan warns about. `over` changes the fields it names.
+   */
+  function listedWorld(over: Partial<MemWorld> = {}): MemWorld {
+    return gitWorld({ dirs: { '/repo/.git': [], '/repo': [] }, ...over })
+  }
+
   /** `world` with these absolute paths holding these texts, beside the files it has. */
   function withFiles(world: MemWorld, files: Readonly<Record<string, string>>): MemWorld {
     return { ...world, files: { ...world.files, ...files } }
@@ -3528,16 +3536,40 @@ describe('runRegen', () => {
   })
 
   test('the reply is the command, the plan and the note; --dry-run changes only the first and last line', async () => {
-    const world = await regenWorld()
+    // The root lists, so the scans give no warning and the reply has no warning line (A4).
+    const world = await regenWorld(team, {}, listedWorld())
     const plain = (await regenBe(world, false)).split('\n')
     const dry = (await regenBe(world, true)).split('\n')
     expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
     expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
     const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
-    const files = (await plannedFiles(gitWorld(), team)).filter(file => isBeOpPath(file.path))
+    const files = (await plannedFiles(listedWorld(), team)).filter(file => isBeOpPath(file.path))
     const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
     expect(dry.slice(1, -1)).toEqual(renderPlan({ ops: ops.sort((a, b) => compareText(a.path, b.path)), warnings: [] }))
+  })
+
+  test('the reply shows each scan warning between the file plan and the note, as init prints it (A4)', async () => {
+    const world = await regenWorld(team, {}, listedWorld())
+    const plain = (await regenBe(world)).split('\n')
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
+    const run = memIo({ ...world, locations }, {})
+    const lines = (await runRegen(run.io, { id: 'be', dryRun: true })).split('\n')
+    expect(lines).toEqual([...plain.slice(0, -1), 'warning: the root was given through a link', DRY_RUN_NOTE])
+    expect(run.asked).toEqual([])
+    expect(run.logged).toEqual([])
+  })
+
+  test('a secret read guard only in local settings is warned about right before the note (A4)', async () => {
+    const local = listedWorld({ settings: { user: {}, project: {}, local: GUARD_SETTINGS } })
+    const world = await regenWorld(team, {}, local)
+    const run = memIo(world, {})
+    const dry = (await runRegen(run.io, { id: 'be', dryRun: true })).split('\n')
+    const plain = (await regenBe(world, false)).split('\n')
+    expect(dry.slice(-2)).toEqual([`warning: ${GUARD_SOURCE_WARNING}`, DRY_RUN_NOTE])
+    expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
+    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    expect(run.logged).toEqual([])
   })
 
   test('an edited BE role.json is re-rendered: BE, the index and the manifest change, and PM has no op', async () => {
