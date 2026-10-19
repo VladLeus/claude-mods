@@ -112,6 +112,7 @@ import { AUTOPILOT_THRESHOLD, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } 
 import { autopilotReply, scanRepo } from './scan'
 import { scanSetup } from './setup'
 import {
+  ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
@@ -1773,7 +1774,7 @@ describe('carryStep', () => {
     const run = memIo(secretWorld(), { ...INIT_ANSWERS, 'Which env variables': 'All of them' })
     await runInit(run.io, { dryRun: true })
     expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(6)
-    expect(leaks([...run.asked, ...run.logged].join('\n'), SECRET_FIXTURES)).toEqual([])
+    expect(leaks([...run.asked, ...run.logged].join('\n'), [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 
   test('the roles it is given are never changed', async () => {
@@ -2016,6 +2017,12 @@ describe('hunkStep', () => {
       '.planning/config.json: hooks.context_warnings',
     ])
     expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
+    expect(leaks([...run.asked, ...run.logged].join('\n'), [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+    const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, INIT_ANSWERS)
+    await runInit(proven.io, { dryRun: true })
+    expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
+    const provenText = [...proven.asked, ...proven.logged].join('\n')
+    expect(leaks(provenText, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 
   test('init with no role on GSD asks no hunk, and a dismissed hunk cancels init with its reason', async () => {
