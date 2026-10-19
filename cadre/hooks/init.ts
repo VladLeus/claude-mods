@@ -2006,6 +2006,21 @@ export const REGEN_NO_STATE = 'cadre regen needs .cadre/cadre.json from /cadre i
  */
 export const REGEN_BAD_STATE = '.cadre/cadre.json is not valid: fix it, or run /cadre init again.'
 
+/**
+ * The reply when `.cadre/manifest.json` is not there (A2): regen cannot keep the manifest entries of the other roles
+ * without it, so it refuses; init plans every role again and rebuilds the whole manifest.
+ */
+export const REGEN_NO_MANIFEST =
+  ".cadre/manifest.json is missing, so regen cannot keep the other roles' files: run /cadre init again."
+
+/**
+ * The reply when `.cadre/manifest.json` cannot be read, is too large or is not a valid manifest (A2): regen cannot keep
+ * the manifest entries of the other roles from it, so it refuses; init plans every role again and rebuilds the whole
+ * manifest.
+ */
+export const REGEN_BAD_MANIFEST =
+  ".cadre/manifest.json is not valid, so regen cannot keep the other roles' files: run /cadre init again."
+
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
   return `no role ${id} in .cadre/cadre.json (roles: ${namesOrNone(roles)})`
@@ -2109,13 +2124,12 @@ function isRolePath(path: string, id: string): boolean {
 
 /**
  * The manifest entries regen keeps as they are (D-68): every entry of the last manifest that this run does not
- * generate and that is not in the role's folder or its launcher, so the other roles and cadre.json keep theirs. With
- * no manifest read in full there are none.
+ * generate and that is not in the role's folder or its launcher, so the other roles and cadre.json keep theirs.
  */
-function carriedEntries(manifest: Manifest | null, desired: readonly DesiredFile[], id: string): ManifestEntry[] {
+function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id: string): ManifestEntry[] {
   const generated = new Set(desired.map(file => file.path))
 
-  return (manifest?.files ?? []).filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
+  return manifest.files.filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
 }
 
 /**
@@ -2124,7 +2138,9 @@ function carriedEntries(manifest: Manifest | null, desired: readonly DesiredFile
  * team; desiredFiles gives only that role's files, its launcher and the index. Exactly the paths planReadPaths names
  * are read, and buildPlan classifies them against the disk and the last manifest, carrying every other entry
  * (carriedEntries). No `.gitignore` block and no hunk is planned. ~/.claude.json is read only when cadre.json records
- * the consent (readUserMcp, A1), so the MCP denies init compiled from it stay.
+ * the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. Without a manifest read in full regen
+ * cannot keep the other roles' entries, so it refuses (A2), as the scan read it: REGEN_NO_MANIFEST when it is not
+ * there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid.
  */
 async function regenPlan(
   io: InitIo,
@@ -2134,16 +2150,16 @@ async function regenPlan(
     readonly roles: readonly RoleSpec[]
     readonly locations: InitLocations
   },
-): Promise<Plan> {
+): Promise<RegenRead<Plan>> {
   const { id, state, roles, locations } = input
   const gathered = await gatherScans(io, locations, state.readUserMcp)
+  const { manifest, manifestState } = gathered.repo.cadre
+  if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
   const frameworks = roles.map(role => resolvedFramework(role, state.framework))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
   const scopes = compileAll(roles, state.framework, gathered, attended)
   const desired = desiredFiles({ roles, scopes, state, only: id })
-  const { manifest, manifestState } = gathered.repo.cadre
-
-  return buildPlan({
+  const plan = await buildPlan({
     desired,
     disk: await readPaths(io, locations.root, planReadPaths(desired)),
     manifest,
@@ -2153,6 +2169,8 @@ async function regenPlan(
     hunks: [],
     cadreVersion: (await io.cadreVersion()) ?? 'unknown',
   })
+
+  return { kind: 'ok', value: plan }
 }
 
 /** The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, then the dry-run or D-44 note. */
@@ -2167,11 +2185,12 @@ function regenReplyText(plan: Plan, id: string, dryRun: boolean): string {
  * guard (initGuard in the regen wording) never asks whether anyone is there. It then refuses with an exact reply, in
  * this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be read or is not valid, its stored
  * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
- * cadre.json order, that is missing, not valid or holds another id (regenBadRole); and, when the repo has no default
- * framework, the first listed role with none of its own (regenNeedsFramework, D-73). Otherwise it replies with the plan
- * of that one role (regenPlan) and the note that nothing was written. ~/.claude.json is read only when cadre.json
- * records the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. Plain regen and --dry-run
- * differ only in the first and the last line.
+ * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
+ * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by the scan
+ * regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
+ * (REGEN_BAD_MANIFEST, A2). Otherwise it replies with the plan of that one role (regenPlan) and the note that nothing
+ * was written. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies
+ * init compiled from it stay. Plain regen and --dry-run differ only in the first and the last line.
  */
 export async function runRegen(
   io: InitIo,
@@ -2192,7 +2211,8 @@ export async function runRegen(
   const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
   if (unframed !== undefined) return regenNeedsFramework(unframed.id)
 
-  const plan = await regenPlan(io, { id: options.id, state, roles, locations })
+  const planned = await regenPlan(io, { id: options.id, state, roles, locations })
+  if (planned.kind === 'refuse') return planned.text
 
-  return regenReplyText(plan, options.id, options.dryRun)
+  return regenReplyText(planned.value, options.id, options.dryRun)
 }
