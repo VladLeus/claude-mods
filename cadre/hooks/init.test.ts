@@ -12,7 +12,6 @@ import type {
   RepoScan,
   RoleChange,
   RoleSpec,
-  SetupScan,
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
@@ -85,32 +84,22 @@ import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
 import { scanSetup } from './setup'
-import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, EMPTY_FACTS, entry, leaks, memIo, memWorld } from './testkit'
+import {
+  BIDI_OVERRIDE,
+  DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
+  entry,
+  FRAMEWORKS,
+  INIT_ANSWERS,
+  leaks,
+  memIo,
+  memWorld,
+} from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
-
-/**
- * Answers for every question init asks, by question prefix (the longest prefix wins), the same set the faked-host
- * tests use, so a flow test survives questions that later steps add.
- */
-const RUN_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
-  'Read ~/.claude.json': 'No, skip it',
-  'Use these roles?': 'Use these roles',
-  'Which framework do the roles use': 'Same for all roles',
-  'Framework for': 'GSD',
-  'Autopilot duration': '4h',
-  'Model and effort: same': 'Same for all roles',
-  'Model and effort for': 'opus + medium',
-  'Which roles get': 'None',
-  'Which env variables': 'None',
-  '.planning/config.json:': 'Accept',
-  'Git policy': 'Commit definitions (default)',
-  'Where should the role launchers start': 'Git root of this repo',
-  'Review the plan': 'Confirm',
-  "Scan this repo's session history": 'No, skip it',
-})
 
 /** A session in the git repo /repo: its `.git` folder is there, and `over` changes the fields it names. */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
@@ -160,25 +149,6 @@ function repoScan(over: Partial<RepoScan> = {}): RepoScan {
     hasSource: false,
     isTruncated: false,
     cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
-    warnings: [],
-    ...over,
-  }
-}
-
-/** A user setup that holds nothing; `over` changes the fields it names. */
-function setupScan(over: Partial<SetupScan> = {}): SetupScan {
-  return {
-    plugins: [],
-    skills: [],
-    mcp: [],
-    isMcpPartial: false,
-    agents: [],
-    claudeMd: [],
-    hasGlobalClaudeMd: false,
-    memoryFiles: [],
-    settingsKeys: [],
-    hooks: [],
-    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
     warnings: [],
     ...over,
   }
@@ -351,7 +321,7 @@ describe('gatherScans', () => {
 
 describe('scanSummaryLines', () => {
   test('an empty repo and setup are summed up with none and zero for every part', () => {
-    expect(scanSummaryLines(repoScan(), setupScan())).toEqual([
+    expect(scanSummaryLines(repoScan(), emptySetupScan())).toEqual([
       'Repo scan (read-only):',
       '  stack: none; frontend: none; backend: none',
       '  tests: none; E2E: none',
@@ -377,7 +347,7 @@ describe('scanSummaryLines', () => {
       ],
       hasSource: true,
     })
-    const lines = scanSummaryLines(repo, setupScan())
+    const lines = scanSummaryLines(repo, emptySetupScan())
     expect(lines[1]).toBe('  stack: JavaScript, TypeScript; frontend: next, react; backend: express')
     expect(lines[2]).toBe('  tests: JS/TS test files, vitest; E2E: Playwright config')
   })
@@ -391,22 +361,22 @@ describe('scanSummaryLines', () => {
       stateState: 'absent',
     })
     const shown = (dir: 'present' | 'unknown', manifestState: 'present' | 'absent' | 'unknown'): string | undefined =>
-      scanSummaryLines(repoScan({ cadre: cadre(dir, manifestState) }), setupScan())[3]
+      scanSummaryLines(repoScan({ cadre: cadre(dir, manifestState) }), emptySetupScan())[3]
     expect(shown('present', 'present')).toBe('  existing .cadre/: present (manifest present)')
     expect(shown('present', 'absent')).toBe('  existing .cadre/: present (manifest absent)')
     expect(shown('unknown', 'unknown')).toBe('  existing .cadre/: unknown (manifest unknown)')
   })
 
   test('a scan that stopped at the entry cap says so after the .cadre/ line', () => {
-    const lines = scanSummaryLines(repoScan({ isTruncated: true }), setupScan())
+    const lines = scanSummaryLines(repoScan({ isTruncated: true }), emptySetupScan())
     expect(lines[4]).toBe('  truncated: the scan stopped after 2000 entries; later files were not scanned')
     expect(lines[5]).toBe('User setup (names only):')
-    expect(scanSummaryLines(repoScan(), setupScan())).toHaveLength(8)
+    expect(scanSummaryLines(repoScan(), emptySetupScan())).toHaveLength(8)
   })
 
   test('the setup part counts plugins, skills, agents and memories and names MCP servers and CLAUDE.md files', () => {
     const plugins = ['a@m', 'b@m', 'c@m', 'd@m', 'e@m', 'f@m', 'g@m', 'h@m', 'i@m', 'j@m']
-    const setup = setupScan({
+    const setup = emptySetupScan({
       plugins,
       skills: [
         { name: 'security-review', plugin: null },
@@ -435,7 +405,7 @@ describe('scanSummaryLines', () => {
     const plugins = names('plugin-', 30).map(name => `${name}@claude-plugins-official`)
     const servers = names('server-', 20)
     const claudeMd = names('<repo>/pkg', 15).map(name => `${name}/CLAUDE.md`)
-    const setup = setupScan({
+    const setup = emptySetupScan({
       plugins,
       mcp: servers.map(name => ({ name, source: 'session' })),
       claudeMd,
@@ -452,7 +422,7 @@ describe('scanSummaryLines', () => {
 
   test('a long or hidden-character name in a setup list is cleaned and capped, and the counts stay in front', () => {
     const long = `a${BIDI_OVERRIDE}b${'x'.repeat(300)}`
-    const setup = setupScan({ plugins: [long], mcp: [{ name: long, source: 'session' }], claudeMd: [long] })
+    const setup = emptySetupScan({ plugins: [long], mcp: [{ name: long, source: 'session' }], claudeMd: [long] })
     const shownName = `ab${'x'.repeat(107)}…`
     expect(scanSummaryLines(repoScan(), setup).slice(5)).toEqual([
       `  plugins: 1 (${shownName})`,
@@ -467,7 +437,7 @@ function gatheredWith(facts: readonly string[], repo: readonly string[], setup: 
   return {
     facts: { facts: { ...EMPTY_FACTS, warnings: facts }, gsdUserDir: null },
     repo: repoScan({ warnings: repo }),
-    setup: setupScan({ warnings: setup }),
+    setup: emptySetupScan({ warnings: setup }),
   }
 }
 
@@ -503,14 +473,14 @@ describe('scanWarnings', () => {
 
 describe('runInit', () => {
   test('a guard that refuses ends init with its text before any question or scan', async () => {
-    const run = memIo(memWorld({}), RUN_ANSWERS)
+    const run = memIo(memWorld({}), INIT_ANSWERS)
     expect(await runInit(run.io, { dryRun: true })).toBe('cadre init needs a git repo: run git init first')
     expect(run.asked).toEqual([])
     expect(run.listed).toEqual([])
   })
 
   test('after the guard the first question is the ~/.claude.json consent with its two options', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(run.asked[0]).toBe(CLAUDE_JSON_QUESTION)
     expect(CLAUDE_JSON_QUESTION).toBe(
@@ -523,10 +493,10 @@ describe('runInit', () => {
 
   test('No, skip it leaves ~/.claude.json unread and Yes, read names only reads it once', async () => {
     const files = { '/home/u/.claude.json': '{"mcpServers":{"linear":{}}}' }
-    const declined = memIo(gitWorld({ files }), RUN_ANSWERS)
+    const declined = memIo(gitWorld({ files }), INIT_ANSWERS)
     await runInit(declined.io, { dryRun: true })
     expect(declined.reads).not.toContain('/home/u/.claude.json')
-    const allowed = memIo(gitWorld({ files }), { ...RUN_ANSWERS, 'Read ~/.claude.json': 'Yes, read names only' })
+    const allowed = memIo(gitWorld({ files }), { ...INIT_ANSWERS, 'Read ~/.claude.json': 'Yes, read names only' })
     await runInit(allowed.io, { dryRun: true })
     expect(allowed.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
   })
@@ -540,7 +510,7 @@ describe('runInit', () => {
   })
 
   test('right after the consent init logs the repo scan and the user setup, before the next question', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
@@ -551,7 +521,7 @@ describe('runInit', () => {
   test('init prints every scan warning right after the scan summary, in the same entry, before the roles', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const facts = { facts: { ...EMPTY_FACTS, warnings: ['a settings file could not be read'] }, gsdUserDir: null }
-    const run = memIo(gitWorld({ locations, facts }), RUN_ANSWERS)
+    const run = memIo(gitWorld({ locations, facts }), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(gitWorld({ locations, facts }), {}).io, locations, false)
@@ -567,7 +537,7 @@ describe('runInit', () => {
 
   test('with no scan warning nothing is added after the scan summary', async () => {
     const listable = gitWorld({ dirs: { '/repo/.git': [], '/repo': [] } })
-    const run = memIo(listable, RUN_ANSWERS)
+    const run = memIo(listable, INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
@@ -576,7 +546,7 @@ describe('runInit', () => {
   })
 
   test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const proposal = proposeRoles(await scanRepo(memIo(gitWorld(), {}).io, '/repo'))
@@ -585,7 +555,7 @@ describe('runInit', () => {
   })
 
   test('a dismissed roles question cancels init and prints why', async () => {
-    const answers = Object.fromEntries(Object.entries(RUN_ANSWERS).filter(([key]) => key !== 'Use these roles?'))
+    const answers = Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== 'Use these roles?'))
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.asked).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
@@ -593,7 +563,7 @@ describe('runInit', () => {
   })
 
   test('a roles step that hits its round cap prints the reason as its own line and asks nothing after it', async () => {
-    const answers = { ...RUN_ANSWERS, 'Use these roles?': 'Adjust them', 'Adjust the roles': 'Done adjusting' }
+    const answers = { ...INIT_ANSWERS, 'Use these roles?': 'Adjust them', 'Adjust the roles': 'Done adjusting' }
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.logged.at(-1)).toBe(ROLE_ROUNDS_REASON)
@@ -638,9 +608,6 @@ const DESCRIBED_ROLES = rolesFromProposal([
 
 /** The person's description the describe tests type. */
 const DESCRIPTION = 'we have a BE and a docs writer'
-
-/** Every framework installed, so an Adjust line may set a role to any of them. */
-const ALL_INSTALLED: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
 
 /** A detection of one framework or marker with this status, as detectAll gives it. */
 function detection(id: FrameworkId | UnsupportedId, status: DetectStatus): Detection {
@@ -772,7 +739,7 @@ describe('adjustLoop', () => {
 
   test('one typed change per answer until Done adjusting: drop and add', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'add docs "Docs writer"', 'Done adjusting'])
-    const adjusted = rolesOf(await adjustLoop(run.io, roles, ALL_INSTALLED))
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, FRAMEWORKS))
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
@@ -781,7 +748,7 @@ describe('adjustLoop', () => {
 
   test('rename and framework change one role and keep the others', async () => {
     const run = memIo(memWorld({}), ['rename be api "API"', 'framework qa gsd', 'Done adjusting'])
-    const adjusted = rolesOf(await adjustLoop(run.io, roles, ALL_INSTALLED))
+    const adjusted = rolesOf(await adjustLoop(run.io, roles, FRAMEWORKS))
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'api', 'fe', 'qa', 'security'])
     expect(adjusted?.find(role => role.id === 'api')?.title).toBe('API')
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
@@ -791,12 +758,12 @@ describe('adjustLoop', () => {
   test('Done adjusting gives the adjusted roles, which the roles question still has to confirm', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'Done adjusting'])
     const kept = roles.filter(role => role.id !== 'fe')
-    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles: kept })
+    expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
   })
 
   test('a line it cannot read and a change it cannot apply each print an exact message', async () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'Done adjusting'])
-    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles })
+    expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles })
     expect(run.logged).toEqual([
       'Could not read that change: delete fe. Use add, drop, rename or framework.',
       'no role "zz"',
@@ -805,7 +772,7 @@ describe('adjustLoop', () => {
 
   test('Show the roles prints the current roles and asks again', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'Show the roles', 'Done adjusting'])
-    await adjustLoop(run.io, roles, ALL_INSTALLED)
+    await adjustLoop(run.io, roles, FRAMEWORKS)
     const [shown] = run.logged
     expect(shown?.startsWith('Proposed roles:\n')).toBe(true)
     expect(shown).not.toContain('FE (fe)')
@@ -813,7 +780,7 @@ describe('adjustLoop', () => {
   })
 
   test('a dismissed adjust question cancels the step with its reason (A1)', async () => {
-    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles, ALL_INSTALLED)).toEqual({
+    expect(await adjustLoop(memIo(memWorld({}), ['drop fe']).io, roles, FRAMEWORKS)).toEqual({
       kind: 'cancelled',
       reason: ADJUST_DISMISSED_REASON,
     })
@@ -824,7 +791,7 @@ describe('adjustLoop', () => {
     const answers = ['drop fe', ...Array.from({ length: 30 }, () => 'delete fe')]
     const run = memIo(memWorld({}), answers)
     const kept = roles.filter(role => role.id !== 'fe')
-    expect(await adjustLoop(run.io, roles, ALL_INSTALLED)).toEqual({ kind: 'adjusted', roles: kept })
+    expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
     expect(run.asked).toHaveLength(MAX_ADJUST_ROUNDS)
     expect(MAX_ADJUST_ROUNDS).toBe(30)
     expect(run.logged.at(-1)).toBe(ADJUST_ROUNDS_NOTE)
@@ -889,7 +856,7 @@ describe('rolesStep', () => {
 
   test('Use these roles returns the proposed roles, after the proposal lines are logged', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.logged).toEqual([proposalLines(proposal.roles, proposal.changes).join('\n')])
     expect(run.asked).toEqual([ROLES_QUESTION])
     expect(run.specs[0]).toEqual({ options: ['Use these roles', 'Adjust them', 'Describe my own structure'] })
@@ -901,7 +868,7 @@ describe('rolesStep', () => {
   test('a described structure goes through the model twice and is used after Use these roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', DESCRIBED_REPLY] }), answers)
-    const roles = rolesOf(await rolesStep(run.io, proposal, ALL_INSTALLED))
+    const roles = rolesOf(await rolesStep(run.io, proposal, FRAMEWORKS))
     expect(run.prompts).toHaveLength(2)
     expect(run.prompts[1]).toContain('the reply is not JSON')
     expect(roles).toEqual(DESCRIBED_ROLES)
@@ -915,7 +882,7 @@ describe('rolesStep', () => {
   test('three invalid replies print why and ask the roles question again with the template roles', async () => {
     const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
     const run = memIo(memWorld({ replies: ['not json', 'not json', 'not json'] }), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.prompts).toHaveLength(3)
     const reason = run.logged[1]
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
@@ -927,7 +894,7 @@ describe('rolesStep', () => {
   test('Use the template instead goes back to the roles question with no model call', async () => {
     const answers = ['Describe my own structure', '  ', 'Use the template instead', 'Use these roles']
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: proposal.roles })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', roles: proposal.roles })
     expect(run.prompts).toEqual([])
     expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
@@ -940,7 +907,7 @@ describe('rolesStep', () => {
     const run = memIo(world, ['Describe my own structure', DESCRIPTION, 'Use these roles'])
     const gathered = await gatherScans(run.io, DEFAULT_LOCATIONS, false)
     expect(gathered.setup.mcp.map(server => server.name)).toEqual(['sentry'])
-    await rolesStep(run.io, proposeRoles(gathered.repo), ALL_INSTALLED)
+    await rolesStep(run.io, proposeRoles(gathered.repo), FRAMEWORKS)
     expect(run.prompts).toHaveLength(1)
     expect(run.prompts[0]).toContain(JSON.stringify(DESCRIPTION))
     expect(leaks(run.prompts.join('\n'), ['sentry', '/repo', '/home/u'])).toEqual([])
@@ -950,7 +917,7 @@ describe('rolesStep', () => {
     const full = proposeRoles(FULL_SCAN)
     const answers = ['Adjust them', 'drop fe', 'add docs "Docs writer"', 'Done adjusting', 'Use these roles']
     const run = memIo(memWorld({}), answers)
-    const roles = rolesOf(await rolesStep(run.io, full, ALL_INSTALLED))
+    const roles = rolesOf(await rolesStep(run.io, full, FRAMEWORKS))
     expect(roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     expect(run.logged.at(-1)).toContain('Docs writer (docs)')
@@ -964,7 +931,7 @@ describe('rolesStep', () => {
       [['Describe my own structure', 'Cancel init'], DESCRIBE_CANCELLED_REASON],
     ]
     for (const [answers, reason] of scripts) {
-      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, ALL_INSTALLED)).toEqual({
+      expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, FRAMEWORKS)).toEqual({
         kind: 'cancelled',
         reason,
       })
@@ -976,7 +943,7 @@ describe('rolesStep', () => {
   test('described roles in the 10th round are never used: the step cancels after 10 roles questions (A1)', async () => {
     const rounds = Array.from({ length: 9 }, () => ['Adjust them', 'Done adjusting']).flat()
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), [...rounds, 'Describe my own structure', DESCRIPTION])
-    const result = await rolesStep(run.io, proposal, ALL_INSTALLED)
+    const result = await rolesStep(run.io, proposal, FRAMEWORKS)
     expect(result).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
     expect(rolesOf(result)).toBeNull()
     expect(run.prompts).toHaveLength(1)
@@ -990,7 +957,7 @@ describe('rolesStep', () => {
   test('a 10th round of Adjust them and Done adjusting cancels too: no cap ever accepts the roles (A1)', async () => {
     const answers = Array.from({ length: 11 }, () => ['Adjust them', 'Done adjusting']).flat()
     const run = memIo(memWorld({}), answers)
-    expect(await rolesStep(run.io, proposal, ALL_INSTALLED)).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
+    expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(10)
   })
 
@@ -999,7 +966,7 @@ describe('rolesStep', () => {
     const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe'), 'Use these roles']
     const run = memIo(memWorld({}), answers)
     const kept = full.roles.filter(role => role.id !== 'fe')
-    expect(await rolesStep(run.io, full, ALL_INSTALLED)).toEqual({ kind: 'accepted', roles: kept })
+    expect(await rolesStep(run.io, full, FRAMEWORKS)).toEqual({ kind: 'accepted', roles: kept })
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     const noteAt = run.logged.indexOf(ADJUST_ROUNDS_NOTE)
     expect(noteAt > 0 && run.logged[noteAt + 1] === proposalLines(kept, full.changes).join('\n')).toBe(true)
@@ -1009,7 +976,7 @@ describe('rolesStep', () => {
     const full = proposeRoles(FULL_SCAN)
     const answers = ['Adjust them', 'drop fe', ...Array.from({ length: 29 }, () => 'delete fe')]
     const run = memIo(memWorld({}), answers)
-    expect(await rolesStep(run.io, full, ALL_INSTALLED)).toEqual({ kind: 'cancelled', reason: ROLES_DISMISSED_REASON })
+    expect(await rolesStep(run.io, full, FRAMEWORKS)).toEqual({ kind: 'cancelled', reason: ROLES_DISMISSED_REASON })
   })
 })
 
@@ -1150,7 +1117,7 @@ describe('frameworkStep', () => {
 
 describe('runInit framework and recommendations', () => {
   test('with nothing detected no framework is asked and the GSD and superpowers lines print first', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(run.asked.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(false)
@@ -1161,7 +1128,7 @@ describe('runInit framework and recommendations', () => {
   })
 
   test('the recommendations are those of recommend for the roles on the built-in framework', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
     const scan = await scanRepo(memIo(gitWorld(), {}).io, '/repo')
     const ctx = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
@@ -1173,7 +1140,7 @@ describe('runInit framework and recommendations', () => {
   })
 
   test('with two frameworks in use the framework question follows the roles; no framework is recommended', async () => {
-    const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), RUN_ANSWERS)
+    const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const rolesAt = events.indexOf(`ask ${ROLES_QUESTION}`)
@@ -1207,7 +1174,7 @@ describe('runInit framework and recommendations', () => {
   })
 
   test('a dismissed framework question cancels init', async () => {
-    const kept = Object.entries(RUN_ANSWERS).filter(([key]) => !key.startsWith('Which framework'))
+    const kept = Object.entries(INIT_ANSWERS).filter(([key]) => !key.startsWith('Which framework'))
     const answers = Object.fromEntries(kept)
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
@@ -1331,7 +1298,7 @@ describe('launchStartStep', () => {
   })
 
   test('init asks where launchers start once, right after the git policy, and names it after the policy', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const run = memIo(gitWorld(), INIT_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
     expect(run.asked[run.asked.indexOf(GIT_POLICY_QUESTION) + 1]).toBe(LAUNCH_START_QUESTION)
     expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
@@ -1345,7 +1312,7 @@ describe('launchStartStep', () => {
 
   test('a folder chosen in init is named in the reply, before the worktree line of the ignore policy', async () => {
     const answers = {
-      ...RUN_ANSWERS,
+      ...INIT_ANSWERS,
       'Git policy': 'Ignore all of .cadre/',
       'Where should the role launchers start': 'Another folder in this repo',
       'Type the folder the launchers start in': 'apps/web/',
@@ -1361,7 +1328,7 @@ describe('launchStartStep', () => {
 
   test('a cancelled launcher start prints why and cancels init', async () => {
     const answers = Object.fromEntries(
-      Object.entries(RUN_ANSWERS).filter(([key]) => key !== 'Where should the role launchers start'),
+      Object.entries(INIT_ANSWERS).filter(([key]) => key !== 'Where should the role launchers start'),
     )
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)

@@ -1,15 +1,22 @@
 import type {
   AskSpec,
   Facts,
+  FrameworkId,
   InitFacts,
   InitIo,
   InitLocations,
+  McpRef,
   PortEntry,
   PortRead,
   PortStat,
+  RoleSpec,
   SettingsSource,
+  SetupScan,
+  SkillRef,
+  TemplateRoleId,
 } from '../types'
 import { utf8Bytes } from './facts'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 
 /**
  * Support for the Phase 2 tests, not a test itself: it is deliberately not named `*.test.ts`, so `claude plugin test`
@@ -258,3 +265,68 @@ export const ABSOLUTE_PATH_MARKERS: readonly string[] = Object.freeze(['/Users/'
 export function leaks(text: string, needles: readonly string[]): string[] {
   return needles.filter(needle => text.includes(needle))
 }
+
+/** The template role with this id, as init builds it: nothing assigned, every other field a default. */
+export function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
+  const row = ROLE_TEMPLATE.find(candidate => candidate.id === id)
+  if (row === undefined) throw new Error(`no template role ${id}`)
+
+  return { ...roleFromTemplate(row), ...over }
+}
+
+/**
+ * A setup scan that found nothing; `over` changes the fields it names. A new SetupScan field is added here once, for
+ * every test that builds a scan.
+ */
+export function emptySetupScan(over: Partial<SetupScan> = {}): SetupScan {
+  return {
+    plugins: [],
+    skills: [],
+    mcp: [],
+    isMcpPartial: false,
+    agents: [],
+    claudeMd: [],
+    hasGlobalClaudeMd: false,
+    memoryFiles: [],
+    settingsKeys: [],
+    hooks: [],
+    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+    warnings: [],
+    ...over,
+  }
+}
+
+/** The three frameworks a role can run, in the order the property tests run them. */
+export const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
+
+/** An MCP server the live session lists. */
+export function session(name: string): McpRef {
+  return { name, source: 'session' }
+}
+
+/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
+export function skillRef(name: string, plugin: string | null = null): SkillRef {
+  return { name, plugin }
+}
+
+/**
+ * The answers a whole /cadre init run needs, by question prefix (the longest prefix wins). Each entry answers a
+ * question init asks now or a later step adds; a question no entry matches is dismissed. A new init question adds its
+ * prefix here, once, for the init and the faked-host flow tests.
+ */
+export const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
+  'Read ~/.claude.json': 'No, skip it',
+  'Use these roles?': 'Use these roles',
+  'Which framework do the roles use': 'Same for all roles',
+  'Framework for': 'GSD',
+  'Autopilot duration': '4h',
+  'Model and effort: same': 'Same for all roles',
+  'Model and effort for': 'opus + medium',
+  'Which roles get': 'None',
+  'Which env variables': 'None',
+  '.planning/config.json:': 'Accept',
+  'Git policy': 'Commit definitions (default)',
+  'Where should the role launchers start': 'Git root of this repo',
+  'Review the plan': 'Confirm',
+  "Scan this repo's session history": 'No, skip it',
+})

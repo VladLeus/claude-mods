@@ -4,13 +4,10 @@ import type {
   CompiledScope,
   FrameworkId,
   HookScript,
-  McpRef,
   RoleSpec,
   ScopeContext,
   SettingsTemplate,
   SetupScan,
-  SkillRef,
-  TemplateRoleId,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { isObject, sortedUnique } from './facts'
@@ -29,7 +26,16 @@ import {
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { compileScope, infraViolations, roleOwnPaths } from './scope'
-import { BIDI_OVERRIDE, leaks, SECRET_FIXTURES } from './testkit'
+import {
+  BIDI_OVERRIDE,
+  emptySetupScan,
+  FRAMEWORKS,
+  leaks,
+  SECRET_FIXTURES,
+  session,
+  skillRef,
+  templateRole,
+} from './testkit'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
@@ -58,38 +64,11 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
   }
 }
 
-/** The template role with this id, as init builds it: nothing assigned, every other field a default. */
-function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
-  const row = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (row === undefined) throw new Error(`no template role ${id}`)
-
-  return { ...roleFromTemplate(row), ...over }
-}
-
-/** A setup scan that found nothing; `over` changes the fields it names. */
-function setup(over: Partial<SetupScan> = {}): SetupScan {
-  return {
-    plugins: [],
-    skills: [],
-    mcp: [],
-    isMcpPartial: false,
-    agents: [],
-    claudeMd: [],
-    hasGlobalClaudeMd: false,
-    memoryFiles: [],
-    settingsKeys: [],
-    hooks: [],
-    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
-    warnings: [],
-    ...over,
-  }
-}
-
 /** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
 function context(over: Partial<ScopeContext> = {}): ScopeContext {
   return {
     framework: 'gsd',
-    setup: setup(),
+    setup: emptySetupScan(),
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
@@ -1257,7 +1236,7 @@ describe('overlayLinks', () => {
 
   test('launchPlan links the overlay skills and the gsd agents for a user who has them all', () => {
     const role = templateRole('be')
-    const scope = compileScope(role, context({ setup: setup({ agents: ['gsd-planner', 'my-agent'] }) }))
+    const scope = compileScope(role, context({ setup: emptySetupScan({ agents: ['gsd-planner', 'my-agent'] }) }))
     const launcher = user({
       userSkills: [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS.gsd],
       userAgents: ['gsd-planner', 'my-agent'],
@@ -1272,36 +1251,23 @@ describe('overlayLinks', () => {
   })
 })
 
-/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
-function skill(name: string, plugin: string | null = null): SkillRef {
-  return { name, plugin }
-}
-
-/** An MCP server the live session lists. */
-function session(name: string): McpRef {
-  return { name, source: 'session' }
-}
-
 /** A hook script the user's settings register. */
 function hook(script: string): HookScript {
   return { script, event: 'PostToolUse', source: 'user' }
 }
 
-/** The three frameworks the launch properties run. */
-const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
-
 /** What the matrix scans: the superpowers and codex plugins, user and plugin skills, five MCP servers (one infra). */
-const MATRIX_SETUP: SetupScan = setup({
+const MATRIX_SETUP: SetupScan = emptySetupScan({
   plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
   skills: [
-    skill('my-skill'),
-    skill('gsd-health'),
-    skill('gsd-plan-phase'),
-    skill('create-handoff-doc'),
-    skill('resume-handoff-doc'),
-    skill('codex:rescue', 'codex'),
-    skill('superpowers:brainstorming', 'superpowers'),
-    skill('autopilot', 'autopilot'),
+    skillRef('my-skill'),
+    skillRef('gsd-health'),
+    skillRef('gsd-plan-phase'),
+    skillRef('create-handoff-doc'),
+    skillRef('resume-handoff-doc'),
+    skillRef('codex:rescue', 'codex'),
+    skillRef('superpowers:brainstorming', 'superpowers'),
+    skillRef('autopilot', 'autopilot'),
   ],
   mcp: [session('jira'), session('playwright'), session('github'), session('autopilot'), session('sentry')],
   agents: ['gsd-planner', 'gsd-executor', 'my-agent'],

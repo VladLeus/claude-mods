@@ -8,12 +8,9 @@ import type {
   FrameworkAdapter,
   FrameworkId,
   LaunchStart,
-  McpRef,
   RoleSpec,
   ScopeContext,
   SetupScan,
-  SkillRef,
-  TemplateRoleId,
 } from '../types'
 import { BUILTIN_ADAPTER } from './builtin'
 import { compareText, isObject } from './facts'
@@ -39,39 +36,20 @@ import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } f
 import { parseCadreState } from './scan'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
-import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks, SECRET_FIXTURES } from './testkit'
-
-/** The template role with this id, as init builds it: nothing assigned, every other field a default. */
-function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
-  const row = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (row === undefined) throw new Error(`no template role ${id}`)
-
-  return { ...roleFromTemplate(row), ...over }
-}
+import {
+  ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
+  emptySetupScan,
+  FRAMEWORKS,
+  leaks,
+  SECRET_FIXTURES,
+  session,
+  skillRef,
+  templateRole,
+} from './testkit'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
-
-/** The three frameworks a role can run. */
-const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
-
-/** A setup scan that found nothing. */
-function emptySetup(): SetupScan {
-  return {
-    plugins: [],
-    skills: [],
-    mcp: [],
-    isMcpPartial: false,
-    agents: [],
-    claudeMd: [],
-    hasGlobalClaudeMd: false,
-    memoryFiles: [],
-    settingsKeys: [],
-    hooks: [],
-    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
-    warnings: [],
-  }
-}
 
 /**
  * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
@@ -85,7 +63,7 @@ function scopeOf(
 ): CompiledScope {
   const ctx: ScopeContext = {
     framework,
-    setup: emptySetup(),
+    setup: emptySetupScan(),
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
@@ -1115,16 +1093,6 @@ describe('launcher', () => {
     expect(launcher.split('\n')).toContain('cd -- "$root"/apps/web')
   })
 })
-
-/** An MCP server the live session lists. */
-function session(name: string): McpRef {
-  return { name, source: 'session' }
-}
-
-/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
-function skillRef(name: string, plugin: string | null = null): SkillRef {
-  return { name, plugin }
-}
 
 /**
  * What a scan of the secret world kept, as names only: the env names and hook basenames of the secret settings beside

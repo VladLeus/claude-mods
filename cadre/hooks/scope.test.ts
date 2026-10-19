@@ -4,70 +4,39 @@ import type {
   CompiledScope,
   FrameworkId,
   HookScript,
-  McpRef,
   McpRoute,
   PermissionMode,
   RoleSpec,
   ScopeContext,
   ScopeRule,
   SetupScan,
-  SkillRef,
-  TemplateRoleId,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import type { ChainRole } from './roles'
 import { compileScope, infraViolations, isSafeDir, lintDenyPattern, roleOwnPaths, scopeCardLines } from './scope'
-import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, leaks } from './testkit'
-
-/** The template role with this id, as init builds it: nothing assigned, every other field a default. */
-function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): RoleSpec {
-  const row = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (row === undefined) throw new Error(`no template role ${id}`)
-
-  return { ...roleFromTemplate(row), ...over }
-}
-
-/** A setup scan that found nothing; `over` changes the fields it names. */
-function setup(over: Partial<SetupScan> = {}): SetupScan {
-  return {
-    plugins: [],
-    skills: [],
-    mcp: [],
-    agents: [],
-    claudeMd: [],
-    hasGlobalClaudeMd: false,
-    memoryFiles: [],
-    settingsKeys: [],
-    hooks: [],
-    carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
-    isMcpPartial: false,
-    warnings: [],
-    ...over,
-  }
-}
+import {
+  ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
+  emptySetupScan,
+  FRAMEWORKS,
+  leaks,
+  session,
+  skillRef,
+  templateRole,
+} from './testkit'
 
 /** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
 function context(over: Partial<ScopeContext> = {}): ScopeContext {
   return {
     framework: 'gsd',
-    setup: setup(),
+    setup: emptySetupScan(),
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
     roles: ['pm', 'tl'],
     ...over,
   }
-}
-
-/** An MCP server the live session lists. */
-function session(name: string): McpRef {
-  return { name, source: 'session' }
-}
-
-/** A skill or plugin command the scan listed; `plugin` is null for a user or project skill. */
-function skill(name: string, plugin: string | null = null): SkillRef {
-  return { name, plugin }
 }
 
 /** A hook script the user's settings register. */
@@ -151,7 +120,7 @@ const PM_FLAGS: readonly string[] = [
 
 describe('compileScope', () => {
   test('the PM gets the infra plugins, no sandbox, and a sorted deny list of Bash, code dirs, secrets and MCP', () => {
-    const ctx = context({ setup: setup({ mcp: [session('jira')] }), codeDirs: ['cadre'] })
+    const ctx = context({ setup: emptySetupScan({ mcp: [session('jira')] }), codeDirs: ['cadre'] })
     const scope = compileScope(templateRole('pm'), ctx)
 
     expect(scope.settings).toEqual({
@@ -189,14 +158,14 @@ describe('compileScope', () => {
 
   test('a PM given the jira server does not deny it and lists it in the MCP file', () => {
     const pm = templateRole('pm', { mcp: ['jira'] })
-    const scope = compileScope(pm, context({ setup: setup({ mcp: [session('jira')] }), codeDirs: ['cadre'] }))
+    const scope = compileScope(pm, context({ setup: emptySetupScan({ mcp: [session('jira')] }), codeDirs: ['cadre'] }))
 
     expect(scope.settings.permissions.deny).not.toContain('mcp__jira')
     expect(scope.mcp).toEqual({ schema: 1, servers: ['jira'] })
   })
 
   test('the autopilot server is never denied, whether or not the scan lists it', () => {
-    const scanned = setup({ mcp: [session('autopilot'), session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('autopilot'), session('jira')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
     const deny = scope.settings.permissions.deny
 
@@ -208,7 +177,7 @@ describe('compileScope', () => {
   })
 
   test('the MCP file and the deny list are sorted and once each', () => {
-    const scanned = setup({ mcp: [session('zeta'), session('alpha'), session('zeta'), session('mid')] })
+    const scanned = emptySetupScan({ mcp: [session('zeta'), session('alpha'), session('zeta'), session('mid')] })
     const role = templateRole('pm', { mcp: ['mid', 'beta', 'beta'] })
     const scope = compileScope(role, context({ setup: scanned }))
 
@@ -261,7 +230,7 @@ describe('compileScope', () => {
   })
 
   test('the overlay holds the handoff skills and the GSD start skills sorted, and the gsd agents of the setup', () => {
-    const scanned = setup({ agents: ['gsd-planner', 'my-agent', 'gsd-executor', 'gsd-planner'] })
+    const scanned = emptySetupScan({ agents: ['gsd-planner', 'my-agent', 'gsd-executor', 'gsd-planner'] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
 
     expect(scope.overlay.skills).toEqual([
@@ -334,7 +303,7 @@ describe('compileScope', () => {
   })
 
   test('no part of the result holds an absolute user path', () => {
-    const scanned = setup({ mcp: [session('jira')], plugins: ['superpowers@claude-plugins-official'] })
+    const scanned = emptySetupScan({ mcp: [session('jira')], plugins: ['superpowers@claude-plugins-official'] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned, codeDirs: ['cadre', 'src'] }))
 
     expect(leaks(JSON.stringify(scope), ABSOLUTE_PATH_MARKERS)).toEqual([])
@@ -342,7 +311,7 @@ describe('compileScope', () => {
 
   test('every call returns a fresh value and keeps no state', () => {
     const role = templateRole('pm')
-    const ctx = context({ setup: setup({ mcp: [session('jira')] }), codeDirs: ['cadre'] })
+    const ctx = context({ setup: emptySetupScan({ mcp: [session('jira')] }), codeDirs: ['cadre'] })
     const first = compileScope(role, ctx)
     const second = compileScope(role, ctx)
 
@@ -440,7 +409,7 @@ describe('scope rules', () => {
   })
 
   test('a superpowers role enables every scanned superpowers plugin key and no other plugin', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       plugins: ['superpowers@my-market', 'codex@openai-codex', 'superpowers@claude-plugins-official'],
     })
     const scope = compileScope(templateRole('be'), context({ framework: 'superpowers', setup: scanned }))
@@ -456,9 +425,9 @@ describe('scope rules', () => {
   })
 
   test('a role given a plugin skill enables that plugin and keeps the skill off the overlay', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       plugins: ['codex@openai-codex', 'superpowers@claude-plugins-official'],
-      skills: [skill('codex:rescue', 'codex')],
+      skills: [skillRef('codex:rescue', 'codex')],
     })
     const role = templateRole('be', { skills: ['codex:rescue'] })
     const scope = compileScope(role, context({ framework: 'none', setup: scanned }))
@@ -474,7 +443,7 @@ describe('scope rules', () => {
   })
 
   test('a role given a user skill links it into the overlay and enables no plugin', () => {
-    const scanned = setup({ plugins: ['codex@openai-codex'] })
+    const scanned = emptySetupScan({ plugins: ['codex@openai-codex'] })
     const role = templateRole('be', { skills: ['my-skill'] })
     const scope = compileScope(role, context({ framework: 'none', setup: scanned }))
 
@@ -484,7 +453,7 @@ describe('scope rules', () => {
   })
 
   test('a role with no MCP servers and no skills still has the infra, handoff and start skills', () => {
-    const scanned = setup({ plugins: ['superpowers@claude-plugins-official'] })
+    const scanned = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
     const frameworks: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
     const missing: string[] = []
     for (const framework of frameworks) {
@@ -506,16 +475,16 @@ describe('scope rules', () => {
   })
 
   test('the card lists the scanned skills a role does not have; its handoff and start skills count as given', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       skills: [
-        skill('my-skill'),
-        skill('other-skill'),
-        skill('gsd-plan-phase'),
-        skill('gsd-health'),
-        skill('create-handoff-doc'),
-        skill('resume-handoff-doc'),
-        skill('codex:rescue', 'codex'),
-        skill('other-skill', 'extra'),
+        skillRef('my-skill'),
+        skillRef('other-skill'),
+        skillRef('gsd-plan-phase'),
+        skillRef('gsd-health'),
+        skillRef('create-handoff-doc'),
+        skillRef('resume-handoff-doc'),
+        skillRef('codex:rescue', 'codex'),
+        skillRef('other-skill', 'extra'),
       ],
     })
     const role = templateRole('pm', { skills: ['my-skill'] })
@@ -528,13 +497,13 @@ describe('scope rules', () => {
   })
 
   test('the skills of an enabled plugin, the infra plugins included, are not listed as not given', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       plugins: ['superpowers@claude-plugins-official'],
       skills: [
-        skill('autopilot', 'autopilot'),
-        skill('fleet', 'agent-fleet'),
-        skill('superpowers:systematic-debugging', 'superpowers'),
-        skill('codex:rescue', 'codex'),
+        skillRef('autopilot', 'autopilot'),
+        skillRef('fleet', 'agent-fleet'),
+        skillRef('superpowers:systematic-debugging', 'superpowers'),
+        skillRef('codex:rescue', 'codex'),
       ],
     })
     const forSuperpowers = compileScope(templateRole('be'), context({ framework: 'superpowers', setup: scanned }))
@@ -545,7 +514,7 @@ describe('scope rules', () => {
   })
 
   test('the card lists the scanned MCP servers a role was not given, without autopilot, sorted and once each', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       mcp: [session('zeta'), session('autopilot'), session('jira'), session('zeta'), session('alpha')],
     })
     const card = compileScope(templateRole('pm', { mcp: ['jira'] }), context({ setup: scanned })).card
@@ -555,7 +524,7 @@ describe('scope rules', () => {
   })
 
   test('the card lists the hooks the role loads and the other scanned hook scripts, sorted', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       hooks: [
         hook('gsd-statusline.js'),
         hook('gsd-secret-read-guard.js'),
@@ -632,7 +601,7 @@ describe('scope rules', () => {
 
   test('an MCP server with a dot, a colon or another character is denied by its engine tool name', () => {
     const names = ['my.server', 'plugin:context7:context7', 'good-one_2']
-    const scope = compileScope(templateRole('pm'), context({ setup: setup({ mcp: names.map(session) }) }))
+    const scope = compileScope(templateRole('pm'), context({ setup: emptySetupScan({ mcp: names.map(session) }) }))
     const denied = 'Scanned MCP servers not given are denied: good-one_2, my.server, plugin:context7:context7'
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([
@@ -645,14 +614,14 @@ describe('scope rules', () => {
   })
 
   test('a character outside letters, digits, _ and - becomes _ in the tool name, a hidden one included', () => {
-    const scanned = setup({ mcp: [session(`ev${BIDI_OVERRIDE}il`), session('a@b')] })
+    const scanned = emptySetupScan({ mcp: [session(`ev${BIDI_OVERRIDE}il`), session('a@b')] })
     const deny = compileScope(templateRole('pm'), context({ setup: scanned })).settings.permissions.deny
 
     expect(deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__a_b', 'mcp__ev_il'])
   })
 
   test('a server whose tool name is that of a server the role has is not denied, and the card says so', () => {
-    const scanned = setup({ mcp: [session('my.server'), session('my_server'), session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('my.server'), session('my_server'), session('jira')] })
     const forUnderscore = compileScope(templateRole('pm', { mcp: ['my_server'] }), context({ setup: scanned }))
     const forDot = compileScope(templateRole('pm', { mcp: ['my.server'] }), context({ setup: scanned }))
     const dotted = 'MCP server my.server shares its tool name with a server this role has and is not denied'
@@ -666,7 +635,7 @@ describe('scope rules', () => {
   })
 
   test('a deny the lint refuses is dropped and the card names it, so a bug cannot ship a broken deny', () => {
-    const scanned = setup({ mcp: [session('autopilot__wait_for'), session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('autopilot__wait_for'), session('jira')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
     const wait = 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)'
 
@@ -676,7 +645,7 @@ describe('scope rules', () => {
   })
 
   test('a server whose name only starts like the autopilot server is denied, with no refusal on the card', () => {
-    const scanned = setup({ mcp: [session('a'), session('auto'), session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('a'), session('auto'), session('jira')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([
@@ -689,7 +658,7 @@ describe('scope rules', () => {
   })
 
   test('every MCP server given leaves nothing to deny, and the rule says so', () => {
-    const scanned = setup({ mcp: [session('jira'), session('autopilot')] })
+    const scanned = emptySetupScan({ mcp: [session('jira'), session('autopilot')] })
     const scope = compileScope(templateRole('pm', { mcp: ['jira'] }), context({ setup: scanned }))
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([])
@@ -700,7 +669,7 @@ describe('scope rules', () => {
   })
 
   test('the MCP deny rule is hard on the strict route and best effort on the merged one, with or without names', () => {
-    const scanned = setup({ mcp: [session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('jira')] })
     const denied = 'Scanned MCP servers not given are denied: jira'
     const nothing = 'No other scanned MCP servers to deny'
     const labelOf = (role: RoleSpec, mcpRoute: McpRoute, text: string): string | undefined =>
@@ -713,7 +682,7 @@ describe('scope rules', () => {
   })
 
   test('a partial MCP scan adds a none rule after the MCP rules, and a full scan adds none', () => {
-    const partial = compileScope(templateRole('pm'), context({ setup: setup({ isMcpPartial: true }) }))
+    const partial = compileScope(templateRole('pm'), context({ setup: emptySetupScan({ isMcpPartial: true }) }))
     const full = compileScope(templateRole('pm'), context())
     const texts = partial.card.rules.map(candidate => candidate.text)
 
@@ -831,7 +800,7 @@ describe('scope rules', () => {
   })
 
   test('the label of every rule is fixed: only what the engine enforces is hard, a pattern is best effort', () => {
-    const scanned = setup({ mcp: [session('jira'), session('my.server'), session('autopilot__wait_for')] })
+    const scanned = emptySetupScan({ mcp: [session('jira'), session('my.server'), session('autopilot__wait_for')] })
     const role = templateRole('pm', { permissionMode: 'bypassPermissions' })
     const ctx = context({ isAttended: true, mcpRoute: 'strict', setup: scanned, codeDirs: ['cadre', 'pm', '*'] })
 
@@ -858,7 +827,7 @@ describe('scope rules', () => {
   })
 
   test('a role with Bash has the labels of its rules fixed too', () => {
-    const scanned = setup({ mcp: [session('jira')] })
+    const scanned = emptySetupScan({ mcp: [session('jira')] })
     const scope = compileScope(templateRole('be'), context({ setup: scanned, codeDirs: ['src'] }))
 
     expect(scope.card.rules).toEqual([
@@ -882,7 +851,7 @@ function numbered(prefix: string, count: number): string[] {
 describe('card rule lists', () => {
   test('the MCP deny rule names 12 servers and then counts the rest', () => {
     const names = numbered('mcp-', 15)
-    const scope = compileScope(templateRole('pm'), context({ setup: setup({ mcp: names.map(session) }) }))
+    const scope = compileScope(templateRole('pm'), context({ setup: emptySetupScan({ mcp: names.map(session) }) }))
     const text = `Scanned MCP servers not given are denied: ${names.slice(0, 12).join(', ')}, +3 more`
 
     expect(ruleOf(scope, text)?.enforcement).toBe('best-effort')
@@ -890,7 +859,7 @@ describe('card rule lists', () => {
   })
 
   test('the MCP deny rule shows a scanned name cleaned', () => {
-    const scanned = setup({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
+    const scanned = emptySetupScan({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
 
     expect(ruleOf(scope, 'Scanned MCP servers not given are denied: evil')?.enforcement).toBe('best-effort')
@@ -908,7 +877,7 @@ describe('card rule lists', () => {
 
   test('the plugins rule names 12 plugin keys and then counts the rest', () => {
     const plugins = numbered('p', 12)
-    const scanned = setup({ plugins: plugins.map(name => `${name}@m`) })
+    const scanned = emptySetupScan({ plugins: plugins.map(name => `${name}@m`) })
     const role = templateRole('pm', { skills: plugins.map(name => `${name}:s`) })
     const scope = compileScope(role, context({ setup: scanned }))
     const shownKeys = [
@@ -1012,9 +981,9 @@ describe('lintDenyPattern', () => {
 
 describe('scopeCardLines', () => {
   test('the card of a PM lists framework, skills, MCP, not given, hooks, rules, decisions and memory', () => {
-    const scanned = setup({
+    const scanned = emptySetupScan({
       mcp: [session('jira')],
-      skills: [skill('my-skill')],
+      skills: [skillRef('my-skill')],
       hooks: [hook('gsd-context-monitor.js'), hook('gsd-secret-read-guard.js')],
     })
     const role = templateRole('pm', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
@@ -1045,7 +1014,7 @@ describe('scopeCardLines', () => {
   })
 
   test('the lists show the skills and MCP servers the role has', () => {
-    const scanned = setup({ mcp: [session('jira'), session('github')] })
+    const scanned = emptySetupScan({ mcp: [session('jira'), session('github')] })
     const role = templateRole('tl', { mcp: ['github', 'jira'], skills: ['my-skill', 'codex:rescue'] })
     const lines = scopeCardLines(compileScope(role, context({ setup: scanned })).card)
 
@@ -1071,7 +1040,7 @@ describe('scopeCardLines', () => {
 
   test('a list longer than 12 names shows 12 and then how many more', () => {
     const names = Array.from({ length: 15 }, (_, index) => `skill-${String(index).padStart(2, '0')}`)
-    const scanned = setup({ skills: names.map(name => skill(name)) })
+    const scanned = emptySetupScan({ skills: names.map(name => skillRef(name)) })
     const card = compileScope(templateRole('pm'), context({ setup: scanned })).card
     const line = scopeCardLines(card).find(candidate => candidate.startsWith('  not given:'))
 
@@ -1104,7 +1073,7 @@ describe('scopeCardLines', () => {
   })
 
   test('a name from the scan is cleaned where it is shown', () => {
-    const scanned = setup({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
+    const scanned = emptySetupScan({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
     const lines = scopeCardLines(compileScope(templateRole('pm'), context({ setup: scanned })).card)
 
     expect(lines.filter(line => line.startsWith('  not given:'))).toEqual(['  not given: skills: none; MCP: evil'])
@@ -1130,21 +1099,18 @@ describe('scopeCardLines', () => {
   })
 })
 
-/** The three frameworks the ISO-04 matrix runs. */
-const FRAMEWORKS: readonly FrameworkId[] = ['gsd', 'superpowers', 'none']
-
 /** What the matrix scans: the superpowers and codex plugins, user and plugin skills, five MCP servers (one infra). */
-const MATRIX_SETUP: SetupScan = setup({
+const MATRIX_SETUP: SetupScan = emptySetupScan({
   plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
   skills: [
-    skill('my-skill'),
-    skill('gsd-health'),
-    skill('gsd-plan-phase'),
-    skill('create-handoff-doc'),
-    skill('resume-handoff-doc'),
-    skill('codex:rescue', 'codex'),
-    skill('superpowers:brainstorming', 'superpowers'),
-    skill('autopilot', 'autopilot'),
+    skillRef('my-skill'),
+    skillRef('gsd-health'),
+    skillRef('gsd-plan-phase'),
+    skillRef('create-handoff-doc'),
+    skillRef('resume-handoff-doc'),
+    skillRef('codex:rescue', 'codex'),
+    skillRef('superpowers:brainstorming', 'superpowers'),
+    skillRef('autopilot', 'autopilot'),
   ],
   mcp: [session('jira'), session('playwright'), session('github'), session('autopilot'), session('sentry')],
   agents: ['gsd-planner', 'gsd-executor', 'my-agent'],
