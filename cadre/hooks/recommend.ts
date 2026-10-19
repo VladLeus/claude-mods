@@ -168,6 +168,14 @@ const REQUIRED_NOTE = 'Required for unattended GSD roles.'
 const OPTIONAL_NOTE = 'Optional.'
 
 /**
+ * The target of a proposal as hunk text, the way a before shows a value: the target parsed as JSON (the text itself
+ * when it is not JSON), so a string reads JSON-quoted and a boolean or number as itself (A2).
+ */
+function targetText(proposal: SettingProposal): string {
+  return valueText(parseJsonValue(proposal.to)?.value ?? proposal.to)
+}
+
+/**
  * The dialog for one hunk (ROLE-04): the file and key, the before and after values, why, and whether autonomy requires
  * it, under the header `Hunk <index> of <total>` with the buttons Accept and Decline. `index` counts from 1 in the
  * order of the candidates. GSD has three proposals at most, so the header stays within the 12-character chip a dialog
@@ -182,7 +190,7 @@ export function hunkQuestion(
   const question = [
     `${reportText(proposal.file)}: ${reportText(proposal.key)}`,
     `  before: ${reportText(before)}`,
-    `  after:  ${reportText(proposal.to)}`,
+    `  after:  ${reportText(targetText(proposal))}`,
     `Why: ${reportText(proposal.why)}`,
     proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE,
   ].join('\n')
@@ -203,9 +211,11 @@ export function parseHunkAnswer(answer: string): boolean | null {
 }
 
 /**
- * The plan's op for one asked hunk: the change, what the person answered, and the command in display form.
- * `isAccepted` is exactly the answer, never inferred from `isRequired`. `isRunnable` is true only when the command
- * resolved to an argv; without one (repo-local GSD only) cadre does not run it and the person runs `command` (D-72).
+ * The plan's op for one asked hunk: the change, what the person answered, and the command in display form. `before`
+ * and `after` are display text, a string JSON-quoted and a boolean or number as itself, so the plan reads
+ * `mode: "interactive" -> "yolo"`; the write runs `command`, never that text. `isAccepted` is exactly the answer,
+ * never inferred from `isRequired`. `isRunnable` is true only when the command resolved to an argv; without one
+ * (repo-local GSD only) cadre does not run it and the person runs `command` (D-72).
  */
 export function hunkOp(
   candidate: HunkCandidate,
@@ -219,7 +229,7 @@ export function hunkOp(
     file: proposal.file,
     key: proposal.key,
     before,
-    after: proposal.to,
+    after: targetText(proposal),
     isRequired: proposal.isRequired,
     isAccepted,
     isRunnable: resolved.argv !== null,
