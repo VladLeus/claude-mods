@@ -717,7 +717,7 @@ describe('rolesStep', () => {
     const roles = await rolesStep(run.io, full)
     expect(roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
-    expect(run.logged.at(-1)).toContain('docs (docs)')
+    expect(run.logged.at(-1)).toContain('Docs writer (docs)')
   })
 
   test('a dismissed dialog at any point of the step returns null', async () => {
