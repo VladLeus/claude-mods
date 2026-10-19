@@ -411,21 +411,27 @@ describe('launch render', () => {
     })
   })
 
-  test('a group without a matcher has no matcher key, and a hook without a timeout no timeout key', () => {
-    const carry = { ...CARRY_ALL, hooks: ['a.js', 'b.js'] }
+  test('null and empty matchers share one group with no matcher key, in order, and a null timeout has no key', () => {
+    const carry = { ...CARRY_ALL, hooks: ['a.js', 'b.js', 'c.js'] }
     const role = templateRole('be', { carry })
     const scope = compileScope(role, context())
     const hooks = [
-      { event: 'Stop', script: 'a.js', command: 'node /h/a.js', matcher: null, timeout: null },
-      { event: 'Stop', script: 'b.js', command: 'node /h/b.js', matcher: '', timeout: 0 },
+      { event: 'Stop', script: 'a.js', command: 'node /h/a.js', matcher: '', timeout: 0 },
+      { event: 'Stop', script: 'b.js', command: 'node /h/b.js', matcher: null, timeout: null },
+      { event: 'Stop', script: 'c.js', command: 'node /h/c.js', matcher: '', timeout: null },
     ]
     const rendered = launchPlan(role, scope, carrier({ hooks })).settings.hooks
 
     expect(JSON.stringify(rendered)).toBe(
       JSON.stringify({
         Stop: [
-          { hooks: [{ type: 'command', command: 'node /h/a.js' }] },
-          { matcher: '', hooks: [{ type: 'command', command: 'node /h/b.js', timeout: 0 }] },
+          {
+            hooks: [
+              { type: 'command', command: 'node /h/a.js', timeout: 0 },
+              { type: 'command', command: 'node /h/b.js' },
+              { type: 'command', command: 'node /h/c.js' },
+            ],
+          },
         ],
       }),
     )
