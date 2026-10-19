@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, GsdFact, RepoEntry } from '../types'
+import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../types'
 import { gateProblems, missingFields } from './framework'
 import {
   detectGsd,
@@ -9,11 +9,13 @@ import {
   GSD_CONFIG_FILE,
   GSD_GATES,
   GSD_HOOK_NOTES,
+  gsdAutonomyHunks,
   gsdHookFacts,
   gsdKickoffText,
 } from './gsd'
 import { DONE_MARKER_LINE } from './kickoff'
 import { adaptersReportLines } from './render'
+import { emptySetupScan } from './testkit'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -445,6 +447,33 @@ describe('GSD_AUTONOMY', () => {
         'only when gsd-statusline is the statusline: ' +
         'gsd-context-monitor warnings conflict with the autopilot handoff',
     )
+  })
+})
+
+/** The carry facts of user settings with a statusline: gsd-statusline, or another one. */
+function statuslineCarry(isGsdStatusline: boolean): SetupScan['carry'] {
+  return { autoCompactWindow: null, hasStatusLine: true, isGsdStatusline, envNames: [] }
+}
+
+describe('gsdAutonomyHunks (A5)', () => {
+  test('without gsd-statusline it names the GSD config file and offers the two required proposals', () => {
+    const required = { file: GSD_CONFIG_FILE, proposals: GSD_AUTONOMY.filter(setting => setting.isRequired) }
+
+    expect(gsdAutonomyHunks(emptySetupScan())).toEqual(required)
+    expect(gsdAutonomyHunks(emptySetupScan({ carry: statuslineCarry(false) }))).toEqual(required)
+    expect(required.proposals.map(setting => setting.key)).toEqual(['mode', 'workflow.text_mode'])
+  })
+
+  test('with gsd-statusline as the statusline the optional context_warnings comes third, in GSD_AUTONOMY order', () => {
+    expect(gsdAutonomyHunks(emptySetupScan({ carry: statuslineCarry(true) }))).toEqual({
+      file: GSD_CONFIG_FILE,
+      proposals: [...GSD_AUTONOMY],
+    })
+  })
+
+  test('the GSD adapter gives its autonomy hunks through gsdAutonomyHunks', () => {
+    expect(GSD_ADAPTER.autonomyHunks).toBe(gsdAutonomyHunks)
+    expect(GSD_ADAPTER.autonomyHunks(emptySetupScan())?.file).toBe('.planning/config.json')
   })
 })
 

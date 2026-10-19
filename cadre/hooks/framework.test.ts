@@ -80,6 +80,7 @@ function adapter(over: Partial<FrameworkAdapter>): FrameworkAdapter {
     humanGates: [gate({ id: 'g1' })],
     autonomy: [],
     autonomyNote: 'none needed',
+    autonomyHunks: () => null,
     kickoffText: () => 'k',
     ...over,
   }
@@ -99,7 +100,7 @@ const SETTING: SettingProposal = {
 /** Every required field, in the order missingFields must report them. */
 const ALL_FIELDS = [
   'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
-  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText',
+  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
 ]
 
 describe('DECISION_TYPES and UNSUPPORTED_MARKERS', () => {
@@ -380,6 +381,18 @@ describe('missingFields', () => {
 
   test('a non-empty autonomy list is complete without a note', () => {
     expect(missingFields(adapter({ autonomy: [SETTING], autonomyNote: null }))).toEqual([])
+  })
+
+  test('an adapter with no autonomyHunks, or one that is not a function, misses autonomyHunks (A5)', () => {
+    const without = Object.fromEntries(Object.entries(adapter({})).filter(([field]) => field !== 'autonomyHunks'))
+
+    expect(missingFields(without)).toEqual(['autonomyHunks'])
+    expect(missingFields({ ...adapter({}), autonomyHunks: null })).toEqual(['autonomyHunks'])
+    expect(missingFields({ ...adapter({}), autonomyHunks: { file: 'f', proposals: [] } })).toEqual(['autonomyHunks'])
+  })
+
+  test('REQUIRED_FIELDS ends with autonomyHunks, so a new field is reported after the earlier ones (A5)', () => {
+    expect(REQUIRED_FIELDS.at(-1)).toBe('autonomyHunks')
   })
 })
 

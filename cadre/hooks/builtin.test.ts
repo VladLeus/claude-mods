@@ -4,6 +4,7 @@ import type { Detection, Facts, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './builtin'
 import { DONE_MARKER_LINE } from './kickoff'
+import { emptySetupScan } from './testkit'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -304,5 +305,11 @@ describe('BUILTIN_ADAPTER', () => {
   test('it has no autonomy settings, and its note says why', () => {
     expect(BUILTIN_ADAPTER.autonomy).toEqual([])
     expect(BUILTIN_ADAPTER.autonomyNote).toBe('No framework config: autonomy comes from the kickoff text alone.')
+  })
+
+  test('it has no config file to change, so it gives no autonomy hunks for any setup (A5)', () => {
+    const carry = { autoCompactWindow: 800000, hasStatusLine: true, isGsdStatusline: true, envNames: ['API_KEY'] }
+    expect(BUILTIN_ADAPTER.autonomyHunks(emptySetupScan())).toBeNull()
+    expect(BUILTIN_ADAPTER.autonomyHunks(emptySetupScan({ carry }))).toBeNull()
   })
 })

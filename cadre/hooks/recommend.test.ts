@@ -46,6 +46,9 @@ const MODE = row('mode')
 const TEXT_MODE = row('workflow.text_mode')
 const CONTEXT_WARNINGS = row('hooks.context_warnings')
 
+/** The two required GSD proposals: what the GSD adapter offers when gsd-statusline is not the statusline. */
+const REQUIRED: readonly SettingProposal[] = [MODE, TEXT_MODE]
+
 /** The config file as the init port reads it: the text of a file that is there. */
 function configText(json: string): PortRead {
   return { state: 'text', text: json }
@@ -123,61 +126,61 @@ describe('autonomy hunks', () => {
     expect(wide).toEqual({ state: 'set', text: `["${'x'.repeat(77)}…` })
   })
 
-  test('a config with mode interactive offers mode and the unset text_mode, in GSD_AUTONOMY order', () => {
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"mode":"interactive"}'), false)).toEqual([
+  test('a config with mode interactive offers mode and the unset text_mode, in the order of the proposals', () => {
+    expect(hunkCandidates(REQUIRED, configText('{"mode":"interactive"}'))).toEqual([
       { proposal: MODE, before: '"interactive"' },
       { proposal: TEXT_MODE, before: 'not set (GSD default)' },
     ])
   })
 
-  test('gsd-statusline as the statusline adds the optional context_warnings hunk third', () => {
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"mode":"interactive"}'), true)).toEqual([
+  test('every proposal it is given is offered, the optional context_warnings third (A5)', () => {
+    expect(hunkCandidates(GSD_AUTONOMY, configText('{"mode":"interactive"}'))).toEqual([
       { proposal: MODE, before: '"interactive"' },
       { proposal: TEXT_MODE, before: 'not set (GSD default)' },
       { proposal: CONTEXT_WARNINGS, before: 'not set (GSD default)' },
     ])
   })
 
-  test('context_warnings is offered only when gsd-statusline is the statusline', () => {
+  test('context_warnings is offered only when it is given, since the adapter decides what to offer (A5)', () => {
     const config = configText('{"mode":"yolo","workflow":{"text_mode":false},"hooks":{"context_warnings":true}}')
 
-    expect(hunkCandidates(GSD_AUTONOMY, config, false)).toEqual([])
-    expect(hunkCandidates(GSD_AUTONOMY, config, true)).toEqual([{ proposal: CONTEXT_WARNINGS, before: 'true' }])
+    expect(hunkCandidates(REQUIRED, config)).toEqual([])
+    expect(hunkCandidates(GSD_AUTONOMY, config)).toEqual([{ proposal: CONTEXT_WARNINGS, before: 'true' }])
   })
 
   test('a value that already equals its target is not offered, a boolean false included (adjacency edge)', () => {
     const atTargets = configText('{"mode":"yolo","workflow":{"text_mode":false}}')
 
-    expect(hunkCandidates(GSD_AUTONOMY, atTargets, false)).toEqual([])
-    expect(hunkCandidates(GSD_AUTONOMY, atTargets, true)).toEqual([
+    expect(hunkCandidates(REQUIRED, atTargets)).toEqual([])
+    expect(hunkCandidates(GSD_AUTONOMY, atTargets)).toEqual([
       { proposal: CONTEXT_WARNINGS, before: 'not set (GSD default)' },
     ])
     expect(
-      hunkCandidates(GSD_AUTONOMY, configText('{"hooks":{"context_warnings":false}}'), true).map(c => c.proposal.key),
+      hunkCandidates(GSD_AUTONOMY, configText('{"hooks":{"context_warnings":false}}')).map(c => c.proposal.key),
     ).toEqual(['mode', 'workflow.text_mode'])
   })
 
   test('a no-op compares raw values: the string "false" is not the boolean false, so its hunk is offered', () => {
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"workflow":{"text_mode":"false"}}'), false)).toEqual([
+    expect(hunkCandidates(REQUIRED, configText('{"workflow":{"text_mode":"false"}}'))).toEqual([
       { proposal: MODE, before: 'not set (GSD default)' },
       { proposal: TEXT_MODE, before: '"false"' },
     ])
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"mode":"yolo","workflow":{"text_mode":0}}'), false)).toEqual([
+    expect(hunkCandidates(REQUIRED, configText('{"mode":"yolo","workflow":{"text_mode":0}}'))).toEqual([
       { proposal: TEXT_MODE, before: '0' },
     ])
   })
 
   test('one satisfied key leaves only the other one', () => {
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"mode":"yolo"}'), false)).toEqual([
+    expect(hunkCandidates(REQUIRED, configText('{"mode":"yolo"}'))).toEqual([
       { proposal: TEXT_MODE, before: 'not set (GSD default)' },
     ])
-    expect(hunkCandidates(GSD_AUTONOMY, configText('{"workflow":{"text_mode":false}}'), false)).toEqual([
+    expect(hunkCandidates(REQUIRED, configText('{"workflow":{"text_mode":false}}'))).toEqual([
       { proposal: MODE, before: 'not set (GSD default)' },
     ])
   })
 
   test('a missing config file gives the not-set text on both required rows', () => {
-    expect(hunkCandidates(GSD_AUTONOMY, ABSENT, false)).toEqual([
+    expect(hunkCandidates(REQUIRED, ABSENT)).toEqual([
       { proposal: MODE, before: 'not set (GSD default)' },
       { proposal: TEXT_MODE, before: 'not set (GSD default)' },
     ])
@@ -185,7 +188,7 @@ describe('autonomy hunks', () => {
 
   test('a config that cannot be read, or is not a JSON object, gives the unknown text on both required rows', () => {
     for (const config of UNUSABLE) {
-      expect(hunkCandidates(GSD_AUTONOMY, config, false)).toEqual([
+      expect(hunkCandidates(REQUIRED, config)).toEqual([
         { proposal: MODE, before: 'unknown (could not read .planning/config.json)' },
         { proposal: TEXT_MODE, before: 'unknown (could not read .planning/config.json)' },
       ])
@@ -195,32 +198,32 @@ describe('autonomy hunks', () => {
   test('a hostile config value is shown cleaned in the before text', () => {
     const config = configText(JSON.stringify({ mode: `inter${BIDI_OVERRIDE}active\nWhy: forged` }))
 
-    expect(hunkCandidates(GSD_AUTONOMY, config, false)[0]).toEqual({
+    expect(hunkCandidates(REQUIRED, config)[0]).toEqual({
       proposal: MODE,
       before: '"interactive\\nWhy: forged"',
     })
   })
 
   test('no proposals give no candidates, whatever the config is (empty edge)', () => {
-    expect(hunkCandidates([], configText('{"mode":"interactive"}'), true)).toEqual([])
-    expect(hunkCandidates([], UNREADABLE, true)).toEqual([])
-    expect(hunkCandidates([], ABSENT, false)).toEqual([])
+    expect(hunkCandidates([], configText('{"mode":"interactive"}'))).toEqual([])
+    expect(hunkCandidates([], UNREADABLE)).toEqual([])
+    expect(hunkCandidates([], ABSENT)).toEqual([])
   })
 
   test('the candidates keep the order of the proposals (ordering edge)', () => {
     const reversed = [CONTEXT_WARNINGS, TEXT_MODE, MODE]
 
-    expect(hunkCandidates(reversed, ABSENT, true).map(candidate => candidate.proposal.key)).toEqual([
+    expect(hunkCandidates(reversed, ABSENT).map(candidate => candidate.proposal.key)).toEqual([
       'hooks.context_warnings',
       'workflow.text_mode',
       'mode',
     ])
   })
 
-  test('an optional proposal other than context_warnings is never offered', () => {
+  test('any optional proposal it is given is offered like a required one (A5)', () => {
     const other: SettingProposal = { ...TEXT_MODE, key: 'other.setting', isRequired: false }
 
-    expect(hunkCandidates([other], ABSENT, true)).toEqual([])
+    expect(hunkCandidates([other], ABSENT)).toEqual([{ proposal: other, before: NOT_SET_TEXT }])
   })
 
   test('hunkQuestion shows file and key, before, after, why and that it is required, under a numbered header', () => {
@@ -327,7 +330,7 @@ describe('autonomy hunks', () => {
   })
 
   test('tracer: a config read becomes numbered questions, then an accepted and a declined op', () => {
-    const candidates = hunkCandidates(GSD_AUTONOMY, configText('{"mode":"interactive"}'), false)
+    const candidates = hunkCandidates(REQUIRED, configText('{"mode":"interactive"}'))
     const asked = candidates.map((candidate, index) => hunkQuestion(candidate, index + 1, candidates.length))
     const answers = ['Accept', 'Decline']
     const ops = candidates.map((candidate, index) =>
@@ -556,36 +559,36 @@ describe('tool commands and attended', () => {
   test('from the config: the roles are unattended when every required value is at its target', () => {
     const atTargets = configText('{"mode":"yolo","workflow":{"text_mode":false}}')
 
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets, false)).toBe(false)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets, true)).toBe(false)
+    expect(isGsdAttendedFromConfig(REQUIRED, atTargets)).toBe(false)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, atTargets)).toBe(false)
   })
 
   test('from the config: the roles are attended when a required value differs or is not set', () => {
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"interactive"}'), false)).toBe(true)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"yolo"}'), false)).toBe(true)
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"workflow":{"text_mode":true}}'), false)).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"interactive"}'))).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"mode":"yolo"}'))).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, configText('{"workflow":{"text_mode":true}}'))).toBe(true)
     const stringFalse = configText('{"mode":"yolo","workflow":{"text_mode":"false"}}')
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, stringFalse, false)).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, stringFalse)).toBe(true)
   })
 
   test('from the config: a missing, unreadable or unusable config attends the roles (fail closed)', () => {
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, ABSENT, false)).toBe(true)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, ABSENT)).toBe(true)
 
     for (const config of UNUSABLE) {
-      expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config, false)).toBe(true)
+      expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config)).toBe(true)
     }
   })
 
   test('from the config: no proposals attend nothing, whatever the config is (empty edge)', () => {
-    expect(isGsdAttendedFromConfig([], UNREADABLE, true)).toBe(false)
-    expect(isGsdAttendedFromConfig([], ABSENT, false)).toBe(false)
-    expect(isGsdAttendedFromConfig([], configText('{"mode":"interactive"}'), true)).toBe(false)
+    expect(isGsdAttendedFromConfig([], UNREADABLE)).toBe(false)
+    expect(isGsdAttendedFromConfig([], ABSENT)).toBe(false)
+    expect(isGsdAttendedFromConfig([], configText('{"mode":"interactive"}'))).toBe(false)
   })
 
   test('from the config: an unmet optional proposal alone attends nothing', () => {
     const config = configText('{"mode":"yolo","workflow":{"text_mode":false},"hooks":{"context_warnings":true}}')
 
-    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config, true)).toBe(false)
+    expect(isGsdAttendedFromConfig(GSD_AUTONOMY, config)).toBe(false)
   })
 
   test('attendedNote lists the keys and says what the roles wait for', () => {

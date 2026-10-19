@@ -4,6 +4,7 @@ import type { Detection, Facts, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
 import { DONE_MARKER_LINE } from './kickoff'
 import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
+import { emptySetupScan } from './testkit'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {
@@ -488,5 +489,11 @@ describe('SUPERPOWERS_ADAPTER', () => {
         'Chat gates end a turn with no tool call, and autopilot pauses after 2 such turns, ' +
         'so the kickoff pre-answers every gate.',
     )
+  })
+
+  test('it has no config file to change, so it gives no autonomy hunks for any setup (A5)', () => {
+    const carry = { autoCompactWindow: 800000, hasStatusLine: true, isGsdStatusline: true, envNames: ['API_KEY'] }
+    expect(SUPERPOWERS_ADAPTER.autonomyHunks(emptySetupScan())).toBeNull()
+    expect(SUPERPOWERS_ADAPTER.autonomyHunks(emptySetupScan({ carry }))).toBeNull()
   })
 })
