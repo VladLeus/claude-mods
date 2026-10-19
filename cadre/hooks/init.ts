@@ -1,5 +1,7 @@
 import type {
   AskSpec,
+  Choice,
+  FrameworkId,
   GitPolicy,
   InitFacts,
   InitIo,
@@ -13,6 +15,8 @@ import type {
   ScanKind,
   SetupScan,
 } from '../types'
+import { detectAll } from './adapters'
+import { PER_ROLE, SAME_FOR_ALL } from './assign'
 import {
   clean,
   detectRefusal,
@@ -22,7 +26,9 @@ import {
   MAX_READ_BYTES,
   utf8Bytes,
 } from './facts'
-import { chunkLines, pad, reportText } from './render'
+import { chooseFramework, SUPPORTED_IDS } from './framework'
+import { recommend, recommendationLines } from './recommend'
+import { choiceLine, chunkLines, pad, reportText } from './render'
 import {
   applyAdjust,
   parseAdjust,
@@ -644,6 +650,138 @@ export async function rolesStep(io: InitIo, proposal: RoleProposal): Promise<rea
   return shown.roles
 }
 
+/** The framework names the framework questions show; none of them is marked as a default (D-07). */
+export const FRAMEWORK_LABELS: Readonly<Record<FrameworkId, string>> = Object.freeze({
+  gsd: 'GSD',
+  superpowers: 'superpowers',
+  none: 'none (built-in)',
+})
+
+/** The start of DET-03's framework question; the reason it is asked follows in brackets (D-73). */
+export const FRAMEWORK_QUESTION_PREFIX = 'Which framework do the roles use?'
+
+/** The one follow-up question after `Same for all roles` (D-86). */
+export const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
+
+/** The framework question for one role, by its title, after `Per role` (D-73). */
+export function frameworkRoleQuestion(title: string): string {
+  return `Framework for ${title}?`
+}
+
+/**
+ * Why init asks which framework the roles use (D-73): more than one framework is in use, or none is but some are
+ * installed for the user (D-29). For a choice init asks nothing about, the text says what the choice found.
+ */
+export function frameworkReason(choice: Choice): string {
+  switch (choice.kind) {
+    case 'ambiguous':
+      return 'more than one framework is in use'
+    case 'installed-only':
+      return 'none is in use here, but some are installed for you'
+    case 'chosen':
+      return choice.reason
+    case 'unsupported':
+      return 'only frameworks cadre does not support were found'
+    case 'none':
+      return 'no framework was found'
+  }
+}
+
+/** How the framework question is answered: once for every role, or role by role (D-86). */
+type FrameworkMode = 'same' | 'each'
+
+/** The answers to the first framework question, `Same for all roles` first (D-86). */
+const FRAMEWORK_MODES: readonly Labelled<FrameworkMode>[] = Object.freeze([
+  { label: SAME_FOR_ALL, value: 'same' },
+  { label: PER_ROLE, value: 'each' },
+])
+
+/** The buttons of the first framework question. */
+const FRAMEWORK_MODE_OPTIONS: readonly string[] = Object.freeze(FRAMEWORK_MODES.map(entry => entry.label))
+
+/** The answer to the first framework question, or null when it names neither, so it is asked again. */
+function parseFrameworkMode(answer: string): FrameworkMode | null {
+  return labelled(FRAMEWORK_MODES, answer)
+}
+
+/** The framework an answer names among `allowed`, by its label or its id, trimmed and in any case; else null. */
+function parseFramework(answer: string, allowed: readonly FrameworkId[]): FrameworkId | null {
+  const wanted = answer.trim().toLowerCase()
+
+  return allowed.find(id => id === wanted || FRAMEWORK_LABELS[id].toLowerCase() === wanted) ?? null
+}
+
+/** The role with its framework set. */
+function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
+  return { ...role, framework }
+}
+
+/** What the framework step decided: the roles, each with its framework when it was asked, and the repo default. */
+type Framed = {
+  readonly roles: readonly RoleSpec[]
+  readonly repoDefault: FrameworkId | null
+}
+
+/**
+ * DET-03's question for an ambiguous or installed-only choice (D-73, D-86): the reason, then `Same for all roles` or
+ * `Per role`, then the framework once for every role or for each role in role order. The options are the frameworks
+ * of the choice in SUPPORTED_IDS order, then `none (built-in)`, with nothing preselected (D-07). Every role stores its
+ * answer and there is no repo default. A dismissed question is null, never a choice (D-45).
+ */
+async function askFrameworks(
+  io: InitIo,
+  choice: Extract<Choice, { readonly kind: 'ambiguous' | 'installed-only' }>,
+  roles: readonly RoleSpec[],
+): Promise<Framed | null> {
+  const allowed: readonly FrameworkId[] = [...SUPPORTED_IDS.filter(id => choice.ids.includes(id)), 'none']
+  const spec = { options: allowed.map(id => FRAMEWORK_LABELS[id]) }
+  const parse = (answer: string): FrameworkId | null => parseFramework(answer, allowed)
+  const question = `${FRAMEWORK_QUESTION_PREFIX} (asked because ${frameworkReason(choice)})`
+  const mode = await askChoice(io, question, { options: FRAMEWORK_MODE_OPTIONS }, parseFrameworkMode)
+  if (mode === null) return null
+  if (mode === 'same') {
+    const framework = await askChoice(io, FRAMEWORK_ALL_QUESTION, spec, parse)
+
+    return framework === null ? null : { roles: roles.map(role => withFramework(role, framework)), repoDefault: null }
+  }
+
+  const framed: RoleSpec[] = []
+  for (const role of roles) {
+    const framework = await askChoice(io, frameworkRoleQuestion(role.title), spec, parse)
+    if (framework === null) return null
+    framed.push(withFramework(role, framework))
+  }
+
+  return { roles: framed, repoDefault: null }
+}
+
+/**
+ * The framework step (DET-03, D-73, D-17). With exactly one framework in use nothing is asked: the roles keep
+ * `framework` absent (an Adjust override stays) and that framework is the repo default. An ambiguous or installed-only
+ * choice is asked (askFrameworks), so every role stores its framework and there is no repo default. Unsupported and
+ * none ask nothing and give the built-in default; unsupported prints what was found. Null when a question is dismissed.
+ */
+export async function frameworkStep(io: InitIo, choice: Choice, roles: readonly RoleSpec[]): Promise<Framed | null> {
+  switch (choice.kind) {
+    case 'chosen':
+      return { roles, repoDefault: choice.id }
+    case 'ambiguous':
+    case 'installed-only':
+      return askFrameworks(io, choice, roles)
+    case 'unsupported':
+      logLines(io, [choiceLine(choice)])
+
+      return { roles, repoDefault: 'none' }
+    case 'none':
+      return { roles, repoDefault: 'none' }
+  }
+}
+
+/** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
+export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
+  return role.framework ?? repoDefault ?? 'none'
+}
+
 /** The reply of a finished run: what was asked for, the git policy, and the note that nothing was written. */
 function initReply(policy: GitPolicy, dryRun: boolean): string {
   return [
@@ -656,8 +794,9 @@ function initReply(policy: GitPolicy, dryRun: boolean): string {
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
- * runs the scans and prints them, takes the roles (rolesStep), asks the git policy, and ends with the note that
- * nothing was written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED (D-45).
+ * runs the scans and prints them, takes the roles (rolesStep) and their frameworks (frameworkStep), prints the
+ * recommendations (ROLE-03), asks the git policy, and ends with the note that nothing was written (D-44, D-82). A
+ * dismissed or unlisted answer cancels with INIT_CANCELLED (D-45).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -670,8 +809,16 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const gathered = await gatherScans(io, guard.locations, isClaudeJsonAllowed)
   logLines(io, scanSummaryLines(gathered.repo, gathered.setup))
 
-  const roles = await rolesStep(io, proposeRoles(gathered.repo))
-  if (roles === null) return INIT_CANCELLED
+  const proposed = await rolesStep(io, proposeRoles(gathered.repo))
+  if (proposed === null) return INIT_CANCELLED
+
+  const framed = await frameworkStep(io, chooseFramework(detectAll(gathered.facts.facts), null), proposed)
+  if (framed === null) return INIT_CANCELLED
+
+  const { roles, repoDefault } = framed
+  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
+  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+  logLines(io, recommendationLines(recommendations, roles))
 
   const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
   if (policy === null) return INIT_CANCELLED
