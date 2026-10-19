@@ -204,8 +204,16 @@ describe('launch render', () => {
     )
   })
 
-  test('roleMemoryDir stays under <home>/.claude/cadre, as the scope card promises, even with a config dir', () => {
-    expect(roleMemoryDir(user({ userDir: '/cfg' }), 'pm')).toBe('/home/u/.claude/cadre/repo-1a2b3c4d/pm')
+  test('roleMemoryDir follows the config dir of the user (CLAUDE_CONFIG_DIR, else ~/.claude), as the card says', () => {
+    expect(roleMemoryDir(user({ userDir: '/cfg' }), 'pm')).toBe('/cfg/cadre/repo-1a2b3c4d/pm')
+    expect(roleMemoryDir(user(), 'pm')).toBe('/home/u/.claude/cadre/repo-1a2b3c4d/pm')
+  })
+
+  test('the rendered memory dir lies in the config dir of the user', () => {
+    const role = templateRole('pm')
+    const plan = launchPlan(role, compileScope(role, context()), user({ userDir: '/cfg', userSkills: GSD_SKILLS }))
+
+    expect(plan.settings.autoMemoryDirectory).toBe('/cfg/cadre/repo-1a2b3c4d/pm')
   })
 
   test('launchPlan renders the memory dir, the carried values and exact denies for a PM (D-84, D-91, P13)', () => {

@@ -119,6 +119,14 @@ function skippedRule(dirs: string): string {
   )
 }
 
+/** The last line of the card of a role: its memory folder pattern and where the config dir in it comes from. */
+function memoryLine(id: string): string {
+  return (
+    `  memory: <config dir>/cadre/<repo>-<hash8>/${id}/ ` +
+    '(rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)'
+  )
+}
+
 /** The launcher flags of the PM role on the merged route: model opus, effort medium, mode auto. */
 const PM_FLAGS: readonly string[] = [
   '--setting-sources',
@@ -299,7 +307,7 @@ describe('compileScope', () => {
   test('the card names the memory folder pattern and the decision chain of the team', () => {
     const card = compileScope(templateRole('pm'), context({ roles: ['pm', 'tl'] })).card
 
-    expect(card.memoryPattern).toBe('~/.claude/cadre/<repo>-<hash8>/pm/')
+    expect(card.memoryPattern).toBe('<config dir>/cadre/<repo>-<hash8>/pm/')
     expect(card.chain).toEqual(chainLines(['pm', 'tl']))
   })
 
@@ -1032,7 +1040,7 @@ describe('scopeCardLines', () => {
       '    [none] MCP route: merged (provisional; Phase 3 decides)',
       '  decisions:',
       ...chainLines(['pm', 'tl']).map(line => `    ${line}`),
-      '  memory: ~/.claude/cadre/<repo>-<hash8>/pm/ (rendered at launch)',
+      memoryLine('pm'),
     ])
   })
 
@@ -1118,7 +1126,7 @@ describe('scopeCardLines', () => {
     const decisions = lines.indexOf('  decisions:')
 
     expect(lines.slice(decisions + 1, decisions + 1 + card.chain.length)).toEqual(card.chain.map(line => `    ${line}`))
-    expect(lines[lines.length - 1]).toBe('  memory: ~/.claude/cadre/<repo>-<hash8>/api/ (rendered at launch)')
+    expect(lines[lines.length - 1]).toBe(memoryLine('api'))
   })
 })
 
