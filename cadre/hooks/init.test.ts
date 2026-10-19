@@ -55,7 +55,10 @@ import {
   rolesStep,
   runInit,
   scanSummaryLines,
+  scanWarningLines,
+  scanWarnings,
 } from './init'
+import type { Gathered } from './init'
 import { recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
@@ -405,6 +408,45 @@ describe('scanSummaryLines', () => {
   })
 })
 
+/** What the scans of one run found, with these warnings in each of the three scans. */
+function gatheredWith(facts: readonly string[], repo: readonly string[], setup: readonly string[]): Gathered {
+  return {
+    facts: { facts: { ...EMPTY_FACTS, warnings: facts }, gsdUserDir: null },
+    repo: repoScan({ warnings: repo }),
+    setup: setupScan({ warnings: setup }),
+  }
+}
+
+describe('scanWarnings', () => {
+  test('the warnings of the locations, the facts, the repo scan and the setup scan, in that order', () => {
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['root given through a link'] }
+    const gathered = gatheredWith(['facts a', 'facts b'], ['repo a'], ['setup a'])
+    expect(scanWarnings(locations, gathered)).toEqual([
+      'root given through a link',
+      'facts a',
+      'facts b',
+      'repo a',
+      'setup a',
+    ])
+  })
+
+  test('a warning given twice, in one list or in two, is listed once where it first comes', () => {
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['same', 'loc'] }
+    const gathered = gatheredWith(['facts', 'same'], ['repo', 'facts'], ['repo', 'setup', 'setup'])
+    expect(scanWarnings(locations, gathered)).toEqual(['same', 'loc', 'facts', 'repo', 'setup'])
+  })
+
+  test('with no warning anywhere the list is empty, and so are its lines', () => {
+    expect(scanWarnings(DEFAULT_LOCATIONS, gatheredWith([], [], []))).toEqual([])
+    expect(scanWarningLines([])).toEqual([])
+  })
+
+  test('each warning is one line that starts with warning:', () => {
+    expect(scanWarningLines(['a'])).toEqual(['warning: a'])
+    expect(scanWarningLines(['a', 'b c'])).toEqual(['warning: a', 'warning: b c'])
+  })
+})
+
 describe('runInit', () => {
   test('a guard that refuses ends init with its text before any question or scan', async () => {
     const run = memIo(memWorld({}), RUN_ANSWERS)
@@ -450,6 +492,32 @@ describe('runInit', () => {
     expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
     expect(events[1]?.startsWith('log Repo scan (read-only):\n')).toBe(true)
     expect(events[1]).toContain('\nUser setup (names only):\n')
+  })
+
+  test('init prints every scan warning right after the scan summary, in the same entry, before the roles', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
+    const facts = { facts: { ...EMPTY_FACTS, warnings: ['a settings file could not be read'] }, gsdUserDir: null }
+    const run = memIo(gitWorld({ locations, facts }), RUN_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const gathered = await gatherScans(memIo(gitWorld({ locations, facts }), {}).io, locations, false)
+    const summary = scanSummaryLines(gathered.repo, gathered.setup)
+    const warnings = scanWarningLines(scanWarnings(locations, gathered))
+    expect(warnings.slice(0, 2)).toEqual([
+      'warning: the root was given through a link',
+      'warning: a settings file could not be read',
+    ])
+    expect(events[1]).toBe(`log ${[...summary, ...warnings].join('\n')}`)
+    expect(events[2]?.startsWith('log Proposed roles:\n')).toBe(true)
+  })
+
+  test('with no scan warning nothing is added after the scan summary', async () => {
+    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const gathered = await gatherScans(memIo(gitWorld(), {}).io, DEFAULT_LOCATIONS, false)
+    expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
+    expect(events[1]).toBe(`log ${scanSummaryLines(gathered.repo, gathered.setup).join('\n')}`)
   })
 
   test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
