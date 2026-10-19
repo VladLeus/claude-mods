@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
-import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, NOT_INTERACTIVE_REPLY } from './init'
+import {
+  GIT_POLICY_DISMISSED_REASON,
+  INIT_FILE_SYSTEM_ROOT_REPLY,
+  INIT_HOME_ROOT_REPLY,
+  NOT_INTERACTIVE_REPLY,
+} from './init'
 import { answerFor, entry, INIT_ANSWERS } from './testkit'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
@@ -1036,6 +1041,7 @@ describe('cadre init with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe('init cancelled, nothing written')
     expect(out.text).not.toContain('dismissed')
+    expect(log.logs.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
     expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
