@@ -1,6 +1,8 @@
 import type {
   AskSpec,
+  CadreState,
   Choice,
+  CompiledScope,
   Detection,
   FrameworkId,
   GitPolicy,
@@ -10,6 +12,8 @@ import type {
   InitLocations,
   InstructionGroup,
   LaunchStart,
+  McpRoute,
+  Plan,
   PortRead,
   PortStat,
   RepoScan,
@@ -18,6 +22,7 @@ import type {
   RoleProposal,
   RoleSpec,
   ScanKind,
+  ScopeContext,
   SetupScan,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
@@ -53,6 +58,8 @@ import {
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
+import { desiredFiles } from './generate'
+import { buildPlan, gitignoreLines, planReadPaths, renderPlan } from './plan'
 import {
   attendedNote,
   hunkCandidates,
@@ -88,6 +95,7 @@ import {
   readRepoFile,
   scanRepo,
 } from './scan'
+import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
@@ -1511,12 +1519,155 @@ export async function launchStartStep(io: InitIo, root: string): Promise<StepRes
 }
 
 /**
- * The reply of a finished run: what was asked for, the git policy, where the launchers start, and the note that
- * nothing was written.
+ * The MCP isolation route every scope is compiled for in Phase 2. It is provisional: Phase 3 decides between merged
+ * and strict (D-26, D-78, D-94), and every scope card says so.
  */
-function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): string {
+export const PROVISIONAL_MCP_ROUTE: McpRoute = 'merged'
+
+/**
+ * The frameworks whose roles the answered hunks leave attended (ROLE-04, A5): a framework is attended when its adapter
+ * offers autonomy hunks for this setup and a hunk on that adapter's config file is unmet (isUnmetHunk). A framework
+ * with no config file to change is never attended this way.
+ */
+function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySet<FrameworkId> {
+  const attended = new Set<FrameworkId>()
+  for (const adapter of ADAPTERS) {
+    const offered = adapter.autonomyHunks(setup)
+    if (offered === null) continue
+    if (hunks.some(hunk => hunk.file === offered.file && isUnmetHunk(hunk))) attended.add(adapter.id)
+  }
+
+  return attended
+}
+
+/**
+ * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
+ * (resolvedFramework), with the setup and the code dirs of the scans, the provisional MCP route, the whole team for
+ * the decision chain, and as attended when its framework is in `attended`.
+ */
+function compileAll(
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+  gathered: Gathered,
+  attended: ReadonlySet<FrameworkId>,
+): ReadonlyMap<string, CompiledScope> {
+  return new Map(
+    roles.map((role): [string, CompiledScope] => {
+      const framework = resolvedFramework(role, repoDefault)
+      const context: ScopeContext = {
+        framework,
+        setup: gathered.setup,
+        codeDirs: gathered.repo.codeDirs,
+        isAttended: attended.has(framework),
+        mcpRoute: PROVISIONAL_MCP_ROUTE,
+        roles,
+      }
+
+      return [role.id, compileScope(role, context)]
+    }),
+  )
+}
+
+/**
+ * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-94): compileScope with the role's own
+ * framework or the repo default, the setup and the code dirs of the scans, PROVISIONAL_MCP_ROUTE and the whole team. A
+ * role is attended when an unmet hunk is on its framework's config file (A5). Keyed by role id, in role order.
+ */
+export function scopesFor(
+  roles: readonly RoleSpec[],
+  repoDefault: FrameworkId | null,
+  gathered: Gathered,
+  hunks: readonly HunkOp[],
+): ReadonlyMap<string, CompiledScope> {
+  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks))
+}
+
+/** The scope card lines of every role in role order (scopeCardLines); a role with no scope has none (ROLE-06). */
+export function cardLines(roles: readonly RoleSpec[], scopes: ReadonlyMap<string, CompiledScope>): string[] {
+  return roles.flatMap(role => {
+    const scope = scopes.get(role.id)
+
+    return scope === undefined ? [] : scopeCardLines(scope.card)
+  })
+}
+
+/** What planStep gives: the file plan, and the repo state it was planned with. */
+export type PlanResult = {
+  readonly plan: Plan
+  readonly state: CadreState
+}
+
+/** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
+const GITIGNORE_FILE = '.gitignore'
+
+/** Each repo-relative path read through readRepoFile, one at a time, keyed by the path. */
+async function readPaths(io: InitIo, root: string, paths: readonly string[]): Promise<ReadonlyMap<string, PortRead>> {
+  const disk = new Map<string, PortRead>()
+  for (const path of paths) disk.set(path, await readRepoFile(io, root, path, MAX_READ_BYTES))
+
+  return disk
+}
+
+/**
+ * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
+ * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
+ * desiredFiles gives every file from it. Exactly the paths planReadPaths names (each file, the copy beside it and the
+ * manifest) and the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never
+ * read. buildPlan classifies each file against the disk and the last manifest the scan read, then adds the ignore
+ * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has) and the hunks.
+ * Nothing is written.
+ */
+export async function planStep(
+  io: InitIo,
+  input: {
+    readonly roles: readonly RoleSpec[]
+    readonly repoDefault: FrameworkId | null
+    readonly policy: GitPolicy
+    readonly launchStart: LaunchStart
+    readonly scopes: ReadonlyMap<string, CompiledScope>
+    readonly hunks: readonly HunkOp[]
+    readonly repo: RepoScan
+    readonly locations: InitLocations
+  },
+): Promise<PlanResult> {
+  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations } = input
+  const cadreVersion = (await io.cadreVersion()) ?? 'unknown'
+  const state: CadreState = {
+    schema: 1,
+    cadreVersion,
+    framework: repoDefault,
+    gitPolicy: policy,
+    roles: roles.map(role => role.id),
+    launchStart,
+  }
+  const desired = desiredFiles({ roles, scopes, state, only: null })
+  const disk = await readPaths(io, locations.root, planReadPaths(desired))
+  const gitignore = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
+  const existing = gitignore.state === 'text' ? gitignore.text : null
+  const plan = await buildPlan({
+    desired,
+    disk,
+    manifest: repo.cadre.manifest,
+    manifestState: repo.cadre.manifestState,
+    carried: [],
+    gitignore: { disk: gitignore, lines: gitignoreLines(policy, existing) },
+    hunks,
+    cadreVersion,
+  })
+
+  return { plan, state }
+}
+
+/**
+ * The reply of a finished init (PLAN-01, PLAN-02, D-44): what was asked for, the file plan as renderPlan prints it
+ * (with its warnings, so none is printed twice), the git policy, where the launchers start (A2), the worktree line of
+ * the ignore policy, and the note that nothing was written. Plain init and --dry-run differ only in the first and the
+ * last line.
+ */
+export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart, dryRun: boolean): string {
   return [
     dryRun ? 'cadre init --dry-run' : 'cadre init',
+    ...renderPlan(plan),
     policyLine(policy),
     launchLine(start),
     ...(policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
@@ -1537,12 +1688,12 @@ function cancelReply(io: InitIo, reason: string): string {
  * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
  * (durationStep) and each role's model and effort (modelStep), gives the MCP servers and skills to roles
  * (assignmentStep), asks which roles get each instruction and memory group (memoryStep) and which env names they carry
- * (carryStep), asks each GSD autonomy hunk one by one when a role runs GSD (hunkStep; 02-13 compiles the scopes and
- * the file plan from these roles and hunks), asks the git policy (gitPolicyStep) and then, once for the repo, where
- * the launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). Every step
- * gives a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the
- * reason as its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after
- * it.
+ * (carryStep), and asks each autonomy hunk one by one when a role's framework offers them (hunkStep). It then compiles
+ * every role's scope and prints the scope cards (scopesFor, cardLines, ROLE-06), asks the git policy (gitPolicyStep)
+ * and then, once for the repo, where the launchers start (launchStartStep), plans the files (planStep) and replies with
+ * the plan and the note that nothing was written (initReplyText; D-44, D-82). Every step gives a StepResult (A1):
+ * runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its own line and
+ * answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it.
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -1585,11 +1736,25 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const hunks = await hunkStep(io, { roles: carried.value, repoDefault, gathered, locations: guard.locations })
   if (hunks.kind === 'cancelled') return cancelReply(io, hunks.reason)
 
+  const scopes = scopesFor(carried.value, repoDefault, gathered, hunks.value)
+  logLines(io, cardLines(carried.value, scopes))
+
   const policy = await gitPolicyStep(io)
   if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
 
   const launch = await launchStartStep(io, guard.locations.root)
   if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
 
-  return initReply(policy.value, launch.value, options.dryRun)
+  const { plan } = await planStep(io, {
+    roles: carried.value,
+    repoDefault,
+    policy: policy.value,
+    launchStart: launch.value,
+    scopes,
+    hunks: hunks.value,
+    repo: gathered.repo,
+    locations: guard.locations,
+  })
+
+  return initReplyText(plan, policy.value, launch.value, options.dryRun)
 }
