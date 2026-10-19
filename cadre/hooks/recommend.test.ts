@@ -22,6 +22,7 @@ import {
   INSTALL_COMMANDS,
   isGsdAttended,
   isGsdAttendedFromConfig,
+  isUnmetHunk,
   NOT_SET_TEXT,
   parseHunkAnswer,
   recommend,
@@ -518,6 +519,38 @@ describe('tool commands and attended', () => {
 
   test('no hunks leave the roles unattended (empty edge)', () => {
     expect(isGsdAttended([])).toBe(false)
+  })
+
+  test('isUnmetHunk is true exactly for a required hunk that was declined or cannot run (B5)', () => {
+    const cases: readonly (readonly [boolean, boolean, boolean, boolean])[] = [
+      [true, true, true, false],
+      [true, false, true, true],
+      [true, true, false, true],
+      [true, false, false, true],
+      [false, true, true, false],
+      [false, false, true, false],
+      [false, true, false, false],
+      [false, false, false, false],
+    ]
+
+    for (const [isRequired, isAccepted, isRunnable, isUnmet] of cases) {
+      const flags = [isRequired, isAccepted, isRunnable]
+      expect([...flags, isUnmetHunk(op({ isRequired, isAccepted, isRunnable }))]).toEqual([...flags, isUnmet])
+    }
+  })
+
+  test('isGsdAttended is whether any hunk is unmet (B5)', () => {
+    const lists: readonly (readonly HunkOp[])[] = [
+      [],
+      [op({})],
+      [op({ isAccepted: false })],
+      [op({ isRequired: false, isRunnable: false }), op({})],
+      [op({}), op({ key: 'workflow.text_mode', isRunnable: false })],
+    ]
+
+    for (const hunks of lists) {
+      expect(isGsdAttended(hunks)).toBe(hunks.some(isUnmetHunk))
+    }
   })
 
   test('from the config: the roles are unattended when every required value is at its target', () => {
