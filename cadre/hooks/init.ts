@@ -3,6 +3,7 @@ import type {
   CadreState,
   Choice,
   CompiledScope,
+  DesiredFile,
   Detection,
   FrameworkId,
   GitPolicy,
@@ -12,6 +13,8 @@ import type {
   InitLocations,
   InstructionGroup,
   LaunchStart,
+  Manifest,
+  ManifestEntry,
   McpRoute,
   Plan,
   PortRead,
@@ -65,6 +68,7 @@ import {
   hunkCandidates,
   hunkOp,
   hunkQuestion,
+  isGsdAttendedFromConfig,
   isUnmetHunk,
   parseHunkAnswer,
   recommend,
@@ -78,6 +82,7 @@ import {
   isAutopilotDuration,
   parseAdjust,
   parseProposal,
+  parseRoleJson,
   PROPOSE_SYSTEM,
   proposePrompt,
   proposeRoles,
@@ -92,6 +97,7 @@ import {
   isSafeRelativePath,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
+  parseCadreState,
   readRepoFile,
   scanRepo,
 } from './scan'
@@ -1473,14 +1479,22 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
 }
 
 /**
+ * Whether a repo-relative path is a folder whose real path lies inside the repo (isDirInsideRoot): a link anywhere in
+ * the path that leads out, a file, and a folder whose real path the host could not give are not. The launcher folder
+ * question checks a typed folder with it, and regen checks the folder `.cadre/cadre.json` stores.
+ */
+async function isRepoFolder(io: InitIo, root: string, path: string): Promise<boolean> {
+  return isDirInsideRoot(await io.stat(`${root}/${path}`), root)
+}
+
+/**
  * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath, and
- * the folder's real path must lie inside the repo (isDirInsideRoot), so a link anywhere in the path that leads out is
- * refused, and so is a folder whose real path the host could not give.
+ * it must be a folder inside the repo (isRepoFolder), so a link anywhere in the path that leads out is refused, and so
+ * is a folder whose real path the host could not give.
  */
 async function launchDirProblem(io: InitIo, root: string, path: string): Promise<string | null> {
   if (!isSafeRelativePath(path)) return UNSAFE_LAUNCH_DIR
-  const stat = await io.stat(`${root}/${path}`)
-  if (!isDirInsideRoot(stat, root)) return NOT_A_LAUNCH_DIR
+  if (!(await isRepoFolder(io, root, path))) return NOT_A_LAUNCH_DIR
 
   return null
 }
@@ -1974,4 +1988,202 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   const { plan, state } = reviewed.value
 
   return initReplyText(plan, state.gitPolicy, state.launchStart, options.dryRun)
+}
+
+/** The reply when regen finds no `.cadre/cadre.json`: there is nothing to re-render from until init has run (D-68). */
+export const REGEN_NO_STATE = 'cadre regen needs .cadre/cadre.json from /cadre init: run /cadre init first.'
+
+/**
+ * The reply when `.cadre/cadre.json` is there but cannot be used: it cannot be read, is too large or is not valid repo
+ * state (parseCadreState), or the launcher folder it stores is not a folder inside the repo (T-02-36).
+ */
+export const REGEN_BAD_STATE = '.cadre/cadre.json is not valid: fix it, or run /cadre init again.'
+
+/** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
+export function regenNoRole(id: string, roles: readonly string[]): string {
+  return `no role ${id} in .cadre/cadre.json (roles: ${namesOrNone(roles)})`
+}
+
+/**
+ * The reply when a listed role's role.json is missing, cannot be read, is not valid (parseRoleJson) or holds the id of
+ * another folder (T-02-36).
+ */
+export function regenBadRole(id: string): string {
+  return `.cadre/${id}/role.json is missing or not valid: fix it, or run /cadre init again.`
+}
+
+/** The reply when a role stores no framework and the repo has no default framework to run it on (D-73, D-97d). */
+export function regenNeedsFramework(id: string): string {
+  return (
+    `role ${id} has no framework and this repo has no default: set "framework" in .cadre/${id}/role.json to gsd, ` +
+    `superpowers or none, then run /cadre regen ${id} again.`
+  )
+}
+
+/** The repo-relative path of the repo state regen re-renders from. */
+const CADRE_STATE_FILE = '.cadre/cadre.json'
+
+/** What a regen read gives: the value it found, or the exact reply that refuses the run. */
+type RegenRead<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'refuse'; readonly text: string }
+
+/** A regen read that refuses the run with this reply. */
+function regenRefusal(text: string): RegenRead<never> {
+  return { kind: 'refuse', text }
+}
+
+/**
+ * The repo state regen re-renders from (D-68, T-02-36): `.cadre/cadre.json` read through readRepoFile, so a link out of
+ * the repo is never read, and checked by parseCadreState. A missing file refuses with REGEN_NO_STATE; a file that
+ * cannot be read, is too large or is not valid state refuses with REGEN_BAD_STATE, and so does a stored launcher folder
+ * that is not a folder inside the repo (isRepoFolder).
+ */
+async function regenState(io: InitIo, root: string): Promise<RegenRead<CadreState>> {
+  const read = await readRepoFile(io, root, CADRE_STATE_FILE, MAX_READ_BYTES)
+  if (read.state === 'absent') return regenRefusal(REGEN_NO_STATE)
+  const state = read.state === 'text' ? parseCadreState(read.text) : null
+  if (state === null) return regenRefusal(REGEN_BAD_STATE)
+  const start = state.launchStart
+  if (start.kind === 'dir' && !(await isRepoFolder(io, root, start.path))) return regenRefusal(REGEN_BAD_STATE)
+
+  return { kind: 'ok', value: state }
+}
+
+/**
+ * Every role `.cadre/cadre.json` lists, in its order, read back from `.cadre/<id>/role.json` through readRepoFile and
+ * parseRoleJson (D-68, T-02-36). The first role whose file is missing, cannot be read, is not valid or holds another
+ * id than its folder refuses with regenBadRole, so no role is re-rendered beside a half-known team.
+ */
+async function regenRoles(
+  io: InitIo,
+  root: string,
+  ids: readonly string[],
+): Promise<RegenRead<readonly RoleSpec[]>> {
+  const roles: RoleSpec[] = []
+  for (const id of ids) {
+    const read = await readRepoFile(io, root, `.cadre/${id}/role.json`, MAX_READ_BYTES)
+    const role = read.state === 'text' ? parseRoleJson(read.text) : null
+    if (role === null || role.id !== id) return regenRefusal(regenBadRole(id))
+    roles.push(role)
+  }
+
+  return { kind: 'ok', value: roles }
+}
+
+/**
+ * The frameworks whose roles the current config leaves attended, with no question asked (regen, D-70, D-72, A5): for
+ * each adapter in ADAPTERS order that a role runs on and that offers autonomy hunks for this setup, its config file is
+ * read through readRepoFile, and the framework is attended while a required proposal is not at its target
+ * (isGsdAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
+ */
+async function attendedByConfig(
+  io: InitIo,
+  root: string,
+  frameworks: readonly FrameworkId[],
+  setup: SetupScan,
+): Promise<ReadonlySet<FrameworkId>> {
+  const attended = new Set<FrameworkId>()
+  for (const adapter of ADAPTERS) {
+    if (!frameworks.includes(adapter.id)) continue
+    const offered = adapter.autonomyHunks(setup)
+    if (offered === null) continue
+    const config = await readRepoFile(io, root, offered.file, MAX_READ_BYTES)
+    if (isGsdAttendedFromConfig(offered.proposals, config)) attended.add(adapter.id)
+  }
+
+  return attended
+}
+
+/** Whether a repo-relative path is one of this role's own: in its folder `.cadre/<id>/`, or its launcher. */
+function isRolePath(path: string, id: string): boolean {
+  return path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`
+}
+
+/**
+ * The manifest entries regen keeps as they are (D-68): every entry of the last manifest that this run does not
+ * generate and that is not in the role's folder or its launcher, so the other roles and cadre.json keep theirs. With
+ * no manifest read in full there are none.
+ */
+function carriedEntries(manifest: Manifest | null, desired: readonly DesiredFile[], id: string): ManifestEntry[] {
+  const generated = new Set(desired.map(file => file.path))
+
+  return (manifest?.files ?? []).filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
+}
+
+/**
+ * The file plan of regen for one role (D-68, PLAN-04). Every listed role is compiled as init compiles it, on its own
+ * framework or the repo default and attended by the current config (attendedByConfig), so the index lists the whole
+ * team; desiredFiles gives only that role's files, its launcher and the index. Exactly the paths planReadPaths names
+ * are read, and buildPlan classifies them against the disk and the last manifest, carrying every other entry
+ * (carriedEntries). No `.gitignore` block and no hunk is planned, and ~/.claude.json is never read.
+ */
+async function regenPlan(
+  io: InitIo,
+  input: {
+    readonly id: string
+    readonly state: CadreState
+    readonly roles: readonly RoleSpec[]
+    readonly locations: InitLocations
+  },
+): Promise<Plan> {
+  const { id, state, roles, locations } = input
+  const gathered = await gatherScans(io, locations, false)
+  const frameworks = roles.map(role => resolvedFramework(role, state.framework))
+  const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
+  const scopes = compileAll(roles, state.framework, gathered, attended)
+  const desired = desiredFiles({ roles, scopes, state, only: id })
+  const { manifest, manifestState } = gathered.repo.cadre
+
+  return buildPlan({
+    desired,
+    disk: await readPaths(io, locations.root, planReadPaths(desired)),
+    manifest,
+    manifestState,
+    carried: carriedEntries(manifest, desired, id),
+    gitignore: null,
+    hunks: [],
+    cadreVersion: (await io.cadreVersion()) ?? 'unknown',
+  })
+}
+
+/** The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, then the dry-run or D-44 note. */
+function regenReplyText(plan: Plan, id: string, dryRun: boolean): string {
+  const command = dryRun ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
+
+  return [command, ...renderPlan(plan), dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE].join('\n')
+}
+
+/**
+ * `/cadre regen <id> [--dry-run]` (D-68, D-99). It asks nothing and logs nothing, so it also runs in `claude -p`: its
+ * guard (initGuard in the regen wording) never asks whether anyone is there. It then refuses with an exact reply, in
+ * this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be read or is not valid, its stored
+ * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
+ * cadre.json order, that is missing, not valid or holds another id (regenBadRole); and, when the repo has no default
+ * framework, the first listed role with none of its own (regenNeedsFramework, D-73). Otherwise it replies with the plan
+ * of that one role (regenPlan) and the note that nothing was written. Plain regen and --dry-run differ only in the
+ * first and the last line.
+ */
+export async function runRegen(
+  io: InitIo,
+  options: { readonly id: string; readonly dryRun: boolean },
+): Promise<string> {
+  const guard = await initGuard(io, 'regen')
+  if (guard.kind === 'refuse') return guard.text
+  const { locations } = guard
+
+  const loaded = await regenState(io, locations.root)
+  if (loaded.kind === 'refuse') return loaded.text
+  const state = loaded.value
+  if (!state.roles.includes(options.id)) return regenNoRole(options.id, state.roles)
+
+  const team = await regenRoles(io, locations.root, state.roles)
+  if (team.kind === 'refuse') return team.text
+  const roles = team.value
+  const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
+  if (unframed !== undefined) return regenNeedsFramework(unframed.id)
+
+  const plan = await regenPlan(io, { id: options.id, state, roles, locations })
+
+  return regenReplyText(plan, options.id, options.dryRun)
 }

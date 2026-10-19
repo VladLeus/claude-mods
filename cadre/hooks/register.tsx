@@ -26,7 +26,7 @@ import {
   utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
-import { pluginVersionOf, portProbeOf, portTextOf, runInit } from './init'
+import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import { detectText } from './render'
 
 /** How long the user-level runtime identity call may run before it is given up. */
@@ -392,8 +392,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'cadre',
-      description: 'Split this repo into scope-limited role sessions (Phase 2: detect, init; writes nothing)',
-      argumentHint: 'detect [--adapters] | init [--dry-run]',
+      description: 'Split this repo into scope-limited role sessions (Phase 2: detect, init, regen; writes nothing)',
+      argumentHint: 'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run]',
     })
 
     return next(e)
@@ -409,8 +409,7 @@ export const register: Register = on => {
       case 'init':
         return { text: await runInit(initIoOf($), { dryRun: command.dryRun }) }
       case 'regen':
-        // Plan 02-13 adds regen's grammar and its route; until then the parser never gives this kind.
-        return { text: helpText(null) }
+        return { text: await runRegen(initIoOf($), { id: command.id, dryRun: command.dryRun }) }
       default: {
         const unreachable: never = command
         return unreachable

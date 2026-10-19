@@ -36,6 +36,8 @@ export const USAGE_LINES: readonly string[] = [
   `  ${'/cadre detect --adapters'.padEnd(COMMAND_COLUMN)}also show the contract cadre would drive each framework with`,
   `  ${'/cadre init'.padEnd(COMMAND_COLUMN)}guided setup: scan, propose roles, show the file plan (writes nothing yet)`,
   `  ${'/cadre init --dry-run'.padEnd(COMMAND_COLUMN)}the same guided flow; prints the plan and writes nothing`,
+  `  ${'/cadre regen <id>'.padEnd(COMMAND_COLUMN)}re-render one role from its role.json (writes nothing yet)`,
+  `  ${'/cadre regen <id> --dry-run'.padEnd(COMMAND_COLUMN)}print that role's plan and write nothing`,
 ]
 
 /**
@@ -88,9 +90,21 @@ function initCommand(rest: string): CadreCommand | null {
 }
 
 /**
+ * The regen of one role (D-68), when the arguments after `regen` are one role id that matches ROLE_ID_PATTERN exactly,
+ * with no case folding, and at most `--dry-run` on either side of it; null for anything else (D-48).
+ */
+function regenCommand(rest: string): CadreCommand | null {
+  const dryRun = takeSwitch(rest, 'dry-run')
+  if (!ROLE_ID_PATTERN.test(dryRun.rest)) return null
+
+  return { kind: 'regen', id: dryRun.rest, dryRun: dryRun.isOn }
+}
+
+/**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
- * detection; `init`, optionally with `--dry-run`, is the guided setup; anything else is help with the input
- * echoed back as unknown.
+ * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
+ * `--dry-run`, re-renders that role; anything else, `regen` with no id or with an id that is not a slug included, is
+ * help with the input echoed back as unknown.
  */
 export function parseCommand(args: string): CadreCommand {
   const text = visibleText(args)
@@ -101,6 +115,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const init = /^init(?=\s|$)/i.exec(text)
   if (init) return initCommand(text.slice(init[0].length)) ?? unknownCommand(text)
+
+  const regen = /^regen(?=\s|$)/i.exec(text)
+  if (regen) return regenCommand(text.slice(regen[0].length)) ?? unknownCommand(text)
 
   return unknownCommand(text)
 }
