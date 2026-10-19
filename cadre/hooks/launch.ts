@@ -459,10 +459,10 @@ function overlayGroup(
  */
 export function overlayLinks(id: string, overlay: CompiledScope['overlay'], user: LaunchUser): LinkSet {
   const base = `${runtimeDir(user, id)}/overlay/.claude`
-  const userSkills = `${user.userDir}/skills`
-  const userAgents = `${user.userDir}/agents`
-  const skills = overlayGroup('skill', overlay.skills, user.userSkills, `${base}/skills`, userSkills, '')
-  const agents = overlayGroup('agent', overlay.agents, user.userAgents, `${base}/agents`, userAgents, '.md')
+  const skillsDir = `${user.userDir}/skills`
+  const agentsDir = `${user.userDir}/agents`
+  const skills = overlayGroup('skill', overlay.skills, user.userSkills, `${base}/skills`, skillsDir, '')
+  const agents = overlayGroup('agent', overlay.agents, user.userAgents, `${base}/agents`, agentsDir, '.md')
 
   return { links: sortedLinks([...skills.links, ...agents.links]), warnings: [...skills.warnings, ...agents.warnings] }
 }
