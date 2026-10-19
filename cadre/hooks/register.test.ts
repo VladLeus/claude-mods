@@ -6,6 +6,7 @@ import {
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   NOT_INTERACTIVE_REPLY,
+  policyLine,
 } from './init'
 import { answerFor, entry, INIT_ANSWERS } from './testkit'
 
@@ -859,7 +860,8 @@ describe('cadre init with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n')[0]).toBe('cadre init --dry-run')
     expect(out.text).toContain('Git policy: commit definitions')
-    expect(out.text.split('\n')[2]).toBe('Launchers start in: the git root')
+    const lines = out.text.split('\n')
+    expect(lines[lines.indexOf(policyLine('definitions')) + 1]).toBe('Launchers start in: the git root')
     expect(out.text).not.toContain('new worktrees')
     expect(out.text.endsWith('Dry run: nothing was written.')).toBe(true)
     expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)

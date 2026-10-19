@@ -1,34 +1,50 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  CadreState,
   Choice,
+  CompiledScope,
+  DesiredFile,
   Detection,
   DetectStatus,
+  Effort,
   Facts,
+  FileOp,
   FrameworkId,
+  GitPolicy,
   GsdFact,
   HookScript,
+  HunkOp,
   InitFacts,
   InitIo,
+  InstructionGroup,
   LaunchStart,
+  ManifestEntry,
+  Plan,
   PortStat,
   RepoScan,
   RoleChange,
   RoleSpec,
+  ScopeCard,
+  TemplateRoleId,
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { desiredFiles } from './generate'
+import { sha256Hex } from './hash'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
   ADJUST_QUESTION,
   ADJUST_ROUNDS_NOTE,
   adjustLoop,
+  APPLY_LATER_NOTE,
   askChoice,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
+  cardLines,
   carryStep,
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
@@ -67,6 +83,7 @@ import {
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
   initGuard,
+  initReplyText,
   installedFrameworks,
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_OPTIONS,
@@ -88,12 +105,14 @@ import {
   modelStep,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
+  planStep,
   pluginVersionOf,
   policyLine,
   portProbeOf,
   portTextOf,
   proposalLines,
   provenUserDir,
+  PROVISIONAL_MCP_ROUTE,
   resolvedFramework,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
@@ -104,12 +123,15 @@ import {
   scanSummaryLines,
   scanWarningLines,
   scanWarnings,
+  scopesFor,
 } from './init'
 import type { AdjustOutcome, Gathered, StepResult } from './init'
+import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
-import { AUTOPILOT_THRESHOLD, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
+import { AUTOPILOT_THRESHOLD, parseRoleJson, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
 import { autopilotReply, scanRepo } from './scan'
+import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 import {
   ABSOLUTE_PATH_MARKERS,
@@ -127,6 +149,7 @@ import {
   secretWorld,
   session,
   skillRef,
+  templateRole,
 } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 
@@ -2198,8 +2221,8 @@ describe('launchStartStep', () => {
     const reply = await runInit(run.io, { dryRun: true })
     expect(run.asked[run.asked.indexOf(GIT_POLICY_QUESTION) + 1]).toBe(LAUNCH_START_QUESTION)
     expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
-    expect(reply.split('\n')).toEqual([
-      'cadre init --dry-run',
+    const lines = reply.split('\n')
+    expect(lines.slice(lines.indexOf(policyLine('definitions')))).toEqual([
       policyLine('definitions'),
       'Launchers start in: the git root',
       DRY_RUN_NOTE,
@@ -2215,7 +2238,9 @@ describe('launchStartStep', () => {
     }
     const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
     const reply = await runInit(run.io, { dryRun: false })
-    expect(reply.split('\n').slice(1, 4)).toEqual([
+    const lines = reply.split('\n')
+    const at = lines.indexOf(policyLine('ignore'))
+    expect(lines.slice(at, at + 3)).toEqual([
       policyLine('ignore'),
       'Launchers start in: apps/web/ under the git root',
       IGNORE_ALL_NOTE,
@@ -2451,5 +2476,422 @@ describe('init helpers', () => {
       expect(portTextOf('€€€', MAX)).toEqual({ state: 'text', text: '€€€' })
       expect(portTextOf('abcdefghij', MAX)).toEqual({ state: 'text', text: 'abcdefghij' })
     })
+  })
+})
+
+/** The folders and files of a repo whose scan proposes all six template roles: React and TypeScript with tests. */
+const FULL_DIRS = {
+  '/repo': [entry('package.json'), entry('src', 'dir')],
+  '/repo/src': [entry('a.ts'), entry('a.test.ts')],
+}
+
+/** The package.json of FULL_DIRS: React is a dependency, so FE is kept. */
+const FULL_FILES = { '/repo/package.json': '{"dependencies":{"react":"18.0.0"}}' }
+
+/** The scans of a run in `world`, gathered as init gathers them when ~/.claude.json is not read. */
+async function scansOf(world: MemWorld): Promise<Gathered> {
+  return gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, false)
+}
+
+/** The roles init keeps for `world` with the INIT_ANSWERS defaults: the template proposal of its scan, unchanged. */
+async function defaultRoles(world: MemWorld): Promise<readonly RoleSpec[]> {
+  return proposeRoles((await scansOf(world)).repo).roles
+}
+
+/** The repo state the init fixtures plan: the built-in default, committed definitions, the git root, cadre 0.2.0. */
+function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): CadreState {
+  return {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: roles.map(role => role.id),
+    launchStart: { kind: 'git-root' },
+    ...over,
+  }
+}
+
+/** The files init plans for these roles in `world`: every scope compiled on the state's default, none attended. */
+async function plannedFiles(
+  world: MemWorld,
+  roles: readonly RoleSpec[],
+  over: Partial<CadreState> = {},
+): Promise<DesiredFile[]> {
+  const gathered = await scansOf(world)
+  const state = stateOf(roles, over)
+
+  return desiredFiles({ roles, scopes: scopesFor(roles, state.framework, gathered, []), state, only: null })
+}
+
+/** The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy`. */
+async function emptyDiskPlan(
+  desired: readonly DesiredFile[],
+  policy: GitPolicy,
+  hunks: readonly HunkOp[] = [],
+): Promise<Plan> {
+  return buildPlan({
+    desired,
+    disk: new Map(),
+    manifest: null,
+    manifestState: 'absent',
+    carried: [],
+    gitignore: { disk: { state: 'absent' }, lines: gitignoreLines(policy, null) },
+    hunks,
+    cadreVersion: '0.2.0',
+  })
+}
+
+/** The text of each file at its absolute path under /repo. */
+function onDisk(files: readonly DesiredFile[]): Record<string, string> {
+  return Object.fromEntries(files.map(file => [`/repo/${file.path}`, file.content]))
+}
+
+/** The manifest text a run that generated these files records: their hashes and modes in path order. */
+async function manifestOf(files: readonly DesiredFile[], cadreVersion = '0.2.0'): Promise<string> {
+  const entries: ManifestEntry[] = []
+  for (const file of files) entries.push({ path: file.path, sha256: await sha256Hex(file.content), mode: file.mode })
+
+  return stableJson({ schema: 1, cadreVersion, files: entries.sort((a, b) => compareText(a.path, b.path)) })
+}
+
+/** The kind of the op of each path in the file plan of a reply. */
+function opKinds(reply: string): Map<string, string> {
+  const kinds = new Map<string, string>()
+  for (const line of reply.split('\n')) {
+    const [, kind, path] = /^ {2}(create|change|leave|conflict) +(\S+)/.exec(line) ?? []
+    if (kind !== undefined && path !== undefined) kinds.set(path, kind)
+  }
+
+  return kinds
+}
+
+/** The card of a role's compiled scope; a missing scope stops the test with a clear message. */
+function cardOf(scopes: ReadonlyMap<string, CompiledScope>, id: string): ScopeCard {
+  const scope = scopes.get(id)
+  if (scope === undefined) throw new Error(`no scope for ${id}`)
+
+  return scope.card
+}
+
+/** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */
+function gsdHunk(over: Partial<HunkOp> = {}): HunkOp {
+  return {
+    kind: 'hunk',
+    file: '.planning/config.json',
+    key: 'mode',
+    before: NOT_SET_TEXT,
+    after: '"yolo"',
+    isRequired: true,
+    isAccepted: true,
+    isRunnable: true,
+    command: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+    ...over,
+  }
+}
+
+/** The lines of the log entries from the first one that starts with `head` up to the question `before`. */
+function loggedFrom(events: readonly string[], head: string, before: string): string[] {
+  const from = events.findIndex(event => event.startsWith(`log ${head}`))
+  const to = events.indexOf(`ask ${before}`)
+
+  return events.slice(from, to).flatMap(event => (event.startsWith('log ') ? [event.slice(4)] : []))
+}
+
+describe('init plan', () => {
+  /** The scans of a session with nothing detected, a framework-free team on the built-in default. */
+  const gathered: Gathered = {
+    facts: { facts: EMPTY_FACTS, gsdUserDir: null },
+    repo: repoScan({ codeDirs: ['src'] }),
+    setup: emptySetupScan({ mcp: [session('jira')] }),
+  }
+  /** PM on the repo default, Team Lead on superpowers by its own framework, BE on the repo default. */
+  const roles = [templateRole('pm'), withFramework(templateRole('tl'), 'superpowers'), templateRole('be')]
+
+  test('the provisional MCP route is merged, and the card of every scope says Phase 3 decides it (D-94)', () => {
+    expect(PROVISIONAL_MCP_ROUTE).toBe('merged')
+    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    for (const role of roles) {
+      const card = cardOf(scopes, role.id)
+      expect(card.mcpRoute).toBe('merged')
+      expect(scopeCardLines(card)).toContain('    [none] MCP route: merged (provisional; Phase 3 decides)')
+    }
+  })
+
+  test('scopesFor compiles each role with its framework, the setup, the code dirs and the whole team', () => {
+    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    expect([...scopes.keys()]).toEqual(['pm', 'tl', 'be'])
+    for (const role of roles) {
+      const context = {
+        framework: resolvedFramework(role, 'gsd'),
+        setup: gathered.setup,
+        codeDirs: ['src'],
+        isAttended: false,
+        mcpRoute: PROVISIONAL_MCP_ROUTE,
+        roles,
+      }
+      expect(scopes.get(role.id)).toEqual(compileScope(role, context))
+    }
+  })
+
+  test("a role is attended when an unmet hunk is on its own framework's config file (ROLE-04, A5)", () => {
+    const team = [templateRole('be'), withFramework(templateRole('qa'), 'superpowers')]
+    const attended = (hunks: readonly HunkOp[]): boolean[] => {
+      const scopes = scopesFor(team, 'gsd', gathered, hunks)
+
+      return team.map(role => cardOf(scopes, role.id).isAttended)
+    }
+    expect(attended([])).toEqual([false, false])
+    expect(attended([gsdHunk()])).toEqual([false, false])
+    expect(attended([gsdHunk({ isAccepted: false })])).toEqual([true, false])
+    expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
+    expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
+    expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
+  })
+
+  test("cardLines gives the lines of every role's card in role order, and none for a role with no scope", () => {
+    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    expect(cardLines(roles, scopes)).toEqual(roles.flatMap(role => scopeCardLines(cardOf(scopes, role.id))))
+    expect(cardLines([...roles, templateRole('qa')], scopes)).toEqual(cardLines(roles, scopes))
+  })
+
+  test('planStep plans a create for each planned file, the manifest and .gitignore, then hunks (PLAN-01)', async () => {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(gitWorld())
+    const scopes = scopesFor(team, 'none', scans, [])
+    const hunks = [gsdHunk(), gsdHunk({ key: 'workflow.text_mode', before: 'true', after: 'false' })]
+    const input: Parameters<typeof planStep>[1] = {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes,
+      hunks,
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+    }
+    const result = await planStep(memIo(gitWorld(), {}).io, input)
+    expect(result.state).toEqual(stateOf(team))
+    const desired = desiredFiles({ roles: team, scopes, state: result.state, only: null })
+    expect(result.plan).toEqual(await emptyDiskPlan(desired, 'definitions', hunks))
+    const files = result.plan.ops.filter((op): op is FileOp => op.kind !== 'hunk')
+    const paths = [...desired.map(file => file.path), '.cadre/manifest.json', '.gitignore'].sort(compareText)
+    expect(files.map(op => [op.kind, op.path])).toEqual(paths.map(path => ['create', path]))
+    expect(result.plan.ops.slice(files.length)).toEqual(hunks)
+  })
+
+  test('planStep reads each planned path, the copy beside it and .gitignore through readRepoFile', async () => {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(gitWorld())
+    const scopes = scopesFor(team, 'none', scans, [])
+    const linked = '/repo/.cadre/pm/ROLE.md'
+    const world = gitWorld({ files: { [linked]: 'x' }, realPaths: { [linked]: '/elsewhere/ROLE.md' } })
+    const run = memIo(world, {})
+    const result = await planStep(run.io, {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'all',
+      launchStart: { kind: 'here' },
+      scopes,
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+    })
+    const desired = desiredFiles({ roles: team, scopes, state: result.state, only: null })
+    const paths = [...planReadPaths(desired), '.gitignore'].map(path => `/repo/${path}`)
+    expect(paths.filter(path => path !== linked && !run.reads.includes(path))).toEqual([])
+    expect(run.reads).not.toContain(linked)
+    const op = result.plan.ops.find(item => item.kind !== 'hunk' && item.path === '.cadre/pm/ROLE.md')
+    expect(op?.kind).toBe('conflict')
+    expect(result.state).toEqual(stateOf(team, { gitPolicy: 'all', launchStart: { kind: 'here' } }))
+  })
+
+  test("planStep writes cadre's own version into cadre.json and the manifest, and unknown when it cannot", async () => {
+    const team = await defaultRoles(gitWorld())
+    const scans = await scansOf(gitWorld())
+    const scopes = scopesFor(team, 'none', scans, [])
+    const input: Parameters<typeof planStep>[1] = {
+      roles: team,
+      repoDefault: 'none',
+      policy: 'definitions',
+      launchStart: { kind: 'git-root' },
+      scopes,
+      hunks: [],
+      repo: scans.repo,
+      locations: DEFAULT_LOCATIONS,
+    }
+    const desired = desiredFiles({ roles: team, scopes, state: stateOf(team, { cadreVersion: 'unknown' }), only: null })
+    expect(desired.find(file => file.path === '.cadre/cadre.json')?.content).toContain('"cadreVersion": "unknown"')
+    const files = { '/repo/.cadre/manifest.json': await manifestOf(desired, 'unknown') }
+    const unknown = await planStep(memIo(gitWorld({ cadreVersion: null, files }), {}).io, input)
+    expect(unknown.state.cadreVersion).toBe('unknown')
+    const manifestKind = (plan: Plan): string | undefined =>
+      plan.ops.find(op => op.kind !== 'hunk' && op.path === '.cadre/manifest.json')?.kind
+    expect(manifestKind(unknown.plan)).toBe('leave')
+    const known = await planStep(memIo(gitWorld({ files }), {}).io, input)
+    expect(known.state.cadreVersion).toBe('0.2.0')
+    expect(manifestKind(known.plan)).toBe('change')
+  })
+
+  test('initReplyText puts the plan lines between the command and the policy, the start and the note', async () => {
+    const plan = await emptyDiskPlan([], 'ignore')
+    expect(initReplyText(plan, 'ignore', { kind: 'dir', path: 'apps/web' }, false).split('\n')).toEqual([
+      'cadre init',
+      ...renderPlan(plan),
+      policyLine('ignore'),
+      'Launchers start in: apps/web/ under the git root',
+      IGNORE_ALL_NOTE,
+      APPLY_LATER_NOTE,
+    ])
+    expect(initReplyText(plan, 'definitions', { kind: 'git-root' }, true).split('\n')).toEqual([
+      'cadre init --dry-run',
+      ...renderPlan(plan),
+      policyLine('definitions'),
+      'Launchers start in: the git root',
+      DRY_RUN_NOTE,
+    ])
+  })
+
+  test('init --dry-run replies with the plan of desiredFiles and buildPlan, the policy, start and note', async () => {
+    const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
+    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    expect(reply.split('\n')).toEqual([
+      'cadre init --dry-run',
+      ...renderPlan(plan),
+      policyLine('definitions'),
+      'Launchers start in: the git root',
+      DRY_RUN_NOTE,
+    ])
+  })
+
+  test('plain init gives the same lines as --dry-run but the first and the last (PLAN-02, D-44)', async () => {
+    const dry = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })).split('\n')
+    const plain = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false })).split('\n')
+    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    expect([plain[0], plain.at(-1)]).toEqual(['cadre init', APPLY_LATER_NOTE])
+    expect([dry[0], dry.at(-1)]).toEqual(['cadre init --dry-run', DRY_RUN_NOTE])
+  })
+
+  test("init logs every role's scope card before it asks the git policy (ROLE-06)", async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const team = await defaultRoles(gitWorld())
+    const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), []))
+    const logged = loggedFrom(events, 'Scope card: PM (pm)', GIT_POLICY_QUESTION)
+    expect(logged.join('\n')).toBe(cards.join('\n'))
+    expect(logged.every(text => text.length <= 2000)).toBe(true)
+    const lines = logged.flatMap(text => text.split('\n'))
+    expect(lines.filter(line => line.startsWith('Scope card: '))).toEqual([
+      'Scope card: PM (pm)',
+      'Scope card: Team Lead (tl)',
+      'Scope card: Security (security)',
+    ])
+  })
+
+  test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const disk = {
+      ...onDisk(files),
+      '/repo/.cadre/manifest.json': await manifestOf(files),
+      '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null)) ?? '',
+    }
+    const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
+    const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
+    const kinds = opKinds(reply)
+    expect(kinds.size).toBe(files.length + 2)
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+    expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${files.length + 2} leave, 0 conflict, 0 hunks`)
+  })
+
+  test('a file edited since the last run is a conflict, with the new version planned beside it (D-67)', async () => {
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const disk = {
+      ...onDisk(files),
+      '/repo/.cadre/manifest.json': await manifestOf(files),
+      '/repo/.cadre/pm/ROLE.md': 'edited by hand\n',
+    }
+    const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
+    const kinds = opKinds(await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true }))
+    expect(kinds.get('.cadre/pm/ROLE.md')).toBe('conflict')
+    expect(kinds.get('.cadre/pm/ROLE.md.cadre-new')).toBe('create')
+    expect(kinds.get('.cadre/pm/kickoff.txt')).toBe('leave')
+    expect(kinds.get('.cadre/manifest.json')).toBe('leave')
+  })
+
+  test('every answer reaches the files of every role: duration, model, MCP, memories and carry (B1)', async () => {
+    const base = secretWorld()
+    const world = secretWorld({ dirs: { ...base.dirs, ...FULL_DIRS }, files: { ...base.files, ...FULL_FILES } })
+    const picks: readonly (readonly [TemplateRoleId, string, Effort])[] = [
+      ['pm', 'sonnet', 'high'],
+      ['tl', 'opus', 'max'],
+      ['be', 'sonnet', 'medium'],
+      ['fe', 'haiku', 'low'],
+      ['qa', 'opus', 'high'],
+      ['security', 'fable', 'xhigh'],
+    ]
+    const modelAnswers = Object.fromEntries(
+      picks.map(([id, model, effort]) => [
+        `Model and effort for ${templateRole(id).title} (${id})?`,
+        `${model} + ${effort}`,
+      ]),
+    )
+    const answers = {
+      ...INIT_ANSWERS,
+      'Autopilot duration': '90m',
+      'Model and effort: same': 'Per role',
+      ...modelAnswers,
+      'Which roles get the sentry': 'be, qa',
+      'Which roles get your global': 'pm, tl',
+      'Which roles get the auto-memories': 'be',
+      'Which roles get the project CLAUDE.md': 'All roles',
+      'Which env variables': 'API_KEY',
+    }
+    const carry = { autoCompactWindow: true, statusLine: true, env: ['API_KEY'], hooks: ['gsd-secret-read-guard.js'] }
+    const instructions: Readonly<Record<string, readonly InstructionGroup[]>> = {
+      pm: ['global-claude-md', 'project-claude-md'],
+      tl: ['global-claude-md', 'project-claude-md'],
+      be: ['auto-memory', 'project-claude-md'],
+    }
+    const roles = picks.map(([id, model, effort]): RoleSpec => {
+      const role = templateRole(id)
+
+      return {
+        ...role,
+        model,
+        effort,
+        autopilot: { ...role.autopilot, duration: '90m' },
+        mcp: id === 'be' || id === 'qa' ? ['sentry'] : [],
+        instructions: instructions[id] ?? ['project-claude-md'],
+        carry,
+      }
+    })
+    const files = await plannedFiles(world, roles)
+    const run = memIo({ ...world, files: { ...world.files, ...onDisk(files) } }, answers)
+    const kinds = opKinds(await runInit(run.io, { dryRun: true }))
+    expect(files.map(file => [file.path, kinds.get(file.path)])).toEqual(files.map(file => [file.path, 'leave']))
+    const text = (path: string): string => files.find(file => file.path === path)?.content ?? ''
+    const index = text('.cadre/INDEX.md').split('\n')
+    for (const [id, model, effort] of picks) {
+      expect(text(`.cadre/${id}/kickoff.txt`).startsWith('/autopilot 90m 65 "')).toBe(true)
+      expect(text(`.cadre/bin/${id}`)).toContain(`--model ${model} --effort ${effort}`)
+      const row = index.find(line => line.startsWith(`| ${templateRole(id).title} (${id}) |`))
+      expect(row).toContain(`| ${model} + ${effort} |`)
+      const stored = parseRoleJson(text(`.cadre/${id}/role.json`))
+      expect([stored?.autopilot.duration, stored?.model, stored?.effort]).toEqual(['90m', model, effort])
+      expect([stored?.mcp, stored?.instructions, stored?.carry]).toEqual([
+        id === 'be' || id === 'qa' ? ['sentry'] : [],
+        instructions[id] ?? ['project-claude-md'],
+        carry,
+      ])
+    }
+  })
+
+  test('a dismissed git policy after the cards cancels init; the port has no way to write (D-45)', async () => {
+    const run = memIo(gitWorld(), answersWithout('Git policy'))
+    const { io, events } = withEvents(run)
+    expect(await runInit(io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(events.some(event => event.startsWith('log Scope card: PM (pm)'))).toBe(true)
+    expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
+    expect(Object.keys(run.io).filter(key => /write|append|remove|delete|mkdir|rename/i.test(key))).toEqual([])
   })
 })
