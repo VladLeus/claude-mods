@@ -1,6 +1,7 @@
 import type { CompiledScope, RoleSpec } from '../types'
-import { clean, sortedUnique } from './facts'
+import { clean, compareText, isChangedByClean, sortedUnique } from './facts'
 import { isSafeDir, lintDenyPattern, roleOwnPaths } from './scope'
+import { mangledProjectDir } from './setup'
 
 /**
  * The only settings keys a rendered runtime file may hold (D-84). The render adds a key from this list and nothing
@@ -81,6 +82,15 @@ type DenyResult = {
   readonly warnings: readonly string[]
 }
 
+/** Symlinks to create, and what to tell the person about the names that were not linked. */
+type LinkSet = {
+  readonly links: readonly OverlayLink[]
+  readonly warnings: readonly string[]
+}
+
+/** A group that plans no link and no warning. */
+const NO_LINKS: LinkSet = Object.freeze({ links: Object.freeze([]), warnings: Object.freeze([]) })
+
 /** The most code points of a scanned name that a warning shows. */
 const MAX_SHOWN_CHARS = 110
 
@@ -108,6 +118,18 @@ const UNSAFE_ROOT_WARNING =
 
 /** The script name prefix of the hook that fights autopilot's handoff, which no role ever gets (D-62). */
 const CONTEXT_MONITOR_PREFIX = 'gsd-context-monitor'
+
+/** A token after an `@`: the `@` starts the text or follows white space, and the token runs to the next white space. */
+const IMPORT_TOKEN = /(?:^|\s)@(\S+)/g
+
+/** The characters that end a sentence rather than a path, when they trail an import. */
+const TRAILING_MARKS = /[.,;:!?)\]}>"']+$/
+
+/** A relative import with nothing in front of it: a name or path of plain characters that ends in `.md`. */
+const BARE_MARKDOWN = /^[A-Za-z0-9_.]\S*\.md$/i
+
+/** The most code points a file name may have to be linked. */
+const MAX_NAME_CHARS = 255
 
 /**
  * The folder name of a repo's role memory (D-91): the name of the folder that holds the git common dir, then `-` and
@@ -194,6 +216,199 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
     .map(dir => `Code dir ${clean(dir, MAX_SHOWN_CHARS)} has an unusual name and is not denied`)
 
   return lintedDeny([...template.filter(entry => !CODE_DIR_DENY.test(entry)), ...exact], unusual)
+}
+
+/** A run of backticks in a text: where it starts, and where it ends (exclusive). */
+type BacktickRun = {
+  readonly start: number
+  readonly end: number
+}
+
+/** Every run of backticks in the text, in order. */
+function backtickRuns(text: string): BacktickRun[] {
+  const runs: BacktickRun[] = []
+  let start = text.indexOf('`')
+  while (start !== -1) {
+    let end = start
+    while (text[end] === '`') end += 1
+    runs.push({ start, end })
+    start = text.indexOf('`', end)
+  }
+
+  return runs
+}
+
+/** The index of the next run after `opener` that is as long as it is, which closes the span it opens; -1 for none. */
+function closingRun(runs: readonly BacktickRun[], opener: number): number {
+  const first = runs[opener]
+  if (first === undefined) return -1
+  const length = first.end - first.start
+  for (let next = opener + 1; next < runs.length; next += 1) {
+    const run = runs[next]
+    if (run !== undefined && run.end - run.start === length) return next
+  }
+
+  return -1
+}
+
+/**
+ * The text with every code span and fenced block replaced by a space, as an import inside code is not an import. A run
+ * of backticks opens a span that the next run of the same length closes, so a fence of four backticks holds fences of
+ * three; a run that closes nothing is plain text and hides nothing after it.
+ */
+function withoutCode(text: string): string {
+  const runs = backtickRuns(text)
+  const kept: string[] = []
+  let copied = 0
+  let opener = 0
+  while (opener < runs.length) {
+    const closer = closingRun(runs, opener)
+    const first = runs[opener]
+    const last = runs[closer]
+    if (first === undefined || last === undefined) {
+      opener += 1
+      continue
+    }
+    kept.push(text.slice(copied, first.start), ' ')
+    copied = last.end
+    opener = closer + 1
+  }
+  kept.push(text.slice(copied))
+
+  return kept.join('')
+}
+
+/** The absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it. */
+function resolveSegments(path: string): string {
+  const kept: string[] = []
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue
+    if (part === '..') kept.pop()
+    else kept.push(part)
+  }
+
+  return `/${kept.join('/')}`
+}
+
+/**
+ * The file one import token names, as an absolute path, or null when the token is not an import. A token starts with
+ * `~/` (the home), `/`, `./` or `../` (the folder of the importing file), or is a bare relative path that ends in
+ * `.md`. A sentence mark after the path is not part of it, and a folder is not a file.
+ */
+function importPath(token: string, fileDir: string, home: string): string | null {
+  const path = token.replace(TRAILING_MARKS, '')
+  if (path === '' || path.endsWith('/')) return null
+  if (path.startsWith('~/')) return resolveSegments(`${home}/${path.slice(2)}`)
+  if (path.startsWith('/')) return resolveSegments(path)
+  if (path.startsWith('./') || path.startsWith('../') || BARE_MARKDOWN.test(path)) {
+    return resolveSegments(`${fileDir}/${path}`)
+  }
+
+  return null
+}
+
+/**
+ * The files a CLAUDE.md imports (D-63 group 1), as sorted absolute paths once each. An import is an `@` that starts a
+ * line or follows white space, and a token inside backticks or a fenced block is not one, nor is an `@` inside a word
+ * such as an e-mail address. Paths resolve against the folder of the importing file (`fileDir`) and `~` against `home`,
+ * with every `.` and `..` segment resolved away. It reads nothing: the caller reads each file and calls it again on
+ * what that file imports.
+ */
+export function claudeMdImports(text: string, fileDir: string, home: string): string[] {
+  const found: string[] = []
+  for (const match of withoutCode(text).matchAll(IMPORT_TOKEN)) {
+    const path = importPath(match[1] ?? '', fileDir, home)
+    if (path !== null) found.push(path)
+  }
+
+  return sortedUnique(found)
+}
+
+/** The folder that holds everything the launch creates for a role: `<root>/.cadre/<id>/.runtime`. */
+function runtimeDir(user: LaunchUser, id: string): string {
+  return `${user.root}/.cadre/${id}/.runtime`
+}
+
+/** The links in the order of their paths, as a new array. */
+function sortedLinks(links: readonly OverlayLink[]): OverlayLink[] {
+  return [...links].sort((a, b) => compareText(a.path, b.path))
+}
+
+/** Whether a name is worth showing and linking: not empty, and with no hidden character and not too long. */
+function isCleanName(name: string): boolean {
+  return name !== '' && !isChangedByClean(name, MAX_NAME_CHARS)
+}
+
+/**
+ * Whether a file name may become a link name as it is: it is clean, has no `/`, and does not start with `.`, so it
+ * cannot hold a `..` segment or leave its folder. The name of a memory file becomes the name of its link (T-02-46).
+ */
+function isSafeFileName(name: string): boolean {
+  return isCleanName(name) && !name.includes('/') && !name.startsWith('.')
+}
+
+/**
+ * The links for the global CLAUDE.md and the files it imports, in the order given: each is `<nn>-<name>`, where the
+ * number is the 1-based position in the list, so the order is kept and two files with the same name do not clash. A
+ * file with an empty or hidden-character name is not linked and is named in a warning; the numbers of the others stay.
+ */
+function globalLinks(id: string, user: LaunchUser): LinkSet {
+  const links: OverlayLink[] = []
+  const warnings: string[] = []
+  for (const [index, target] of user.globalClaudeMd.entries()) {
+    const name = target.slice(target.lastIndexOf('/') + 1)
+    if (!isCleanName(name)) {
+      warnings.push(`global file ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      continue
+    }
+    const number = String(index + 1).padStart(2, '0')
+    links.push({ path: `${runtimeDir(user, id)}/instructions/global/${number}-${name}`, target })
+  }
+
+  return { links, warnings }
+}
+
+/**
+ * The links for the auto-memory files of this repo: each points at the file in the user's
+ * `projects/<mangled root>/memory` folder, where the engine keeps them. A file with an unsafe name (isSafeFileName) is
+ * not linked and is named in a warning. The names are taken once each, in sorted order.
+ */
+function memoryLinks(id: string, user: LaunchUser): LinkSet {
+  const folder = `${user.userDir}/projects/${mangledProjectDir(user.root)}/memory`
+  const links: OverlayLink[] = []
+  const warnings: string[] = []
+  for (const name of sortedUnique(user.memoryFiles)) {
+    if (!isSafeFileName(name)) {
+      warnings.push(`memory file ${clean(name, MAX_SHOWN_CHARS)} has an unsafe name: not linked`)
+      continue
+    }
+    links.push({ path: `${runtimeDir(user, id)}/instructions/memory/${name}`, target: `${folder}/${name}` })
+  }
+
+  return { links, warnings }
+}
+
+/**
+ * What a role gets of the user's instructions and memories, from the D-63 answers (D-98). Under
+ * `--setting-sources project` the user-level CLAUDE.md never loads, while the project's and every ancestor's does
+ * (P11). So without the 'project-claude-md' group every CLAUDE.md of the loaded chain is excluded, and with it none
+ * is. The global CLAUDE.md with its imports is linked into `.runtime/instructions/global/` only for
+ * 'global-claude-md', and this repo's memory files into `.runtime/instructions/memory/` only for 'auto-memory': a role
+ * is narrow by default, whatever exists on disk. Delivering the linked files into the session is Phase 3 wiring
+ * (D-100).
+ */
+export function instructionPlan(
+  role: RoleSpec,
+  user: LaunchUser,
+): InstructionPlan & { readonly warnings: readonly string[] } {
+  const globals = role.instructions.includes('global-claude-md') ? globalLinks(role.id, user) : NO_LINKS
+  const memories = role.instructions.includes('auto-memory') ? memoryLinks(role.id, user) : NO_LINKS
+
+  return {
+    claudeMdExcludes: role.instructions.includes('project-claude-md') ? [] : sortedUnique(user.claudeMd),
+    links: sortedLinks([...globals.links, ...memories.links]),
+    warnings: [...globals.warnings, ...memories.warnings],
+  }
 }
 
 /** The window value when the role carries it and the user has one; null otherwise. */
@@ -284,14 +499,17 @@ export function renderRuntimeSettings(
 
 /**
  * The launch half of D-66 for one role (D-98): from the role, its compiled scope and the launching user's facts it
- * returns the runtime settings, the symlinks to create and the warnings to show. It is pure: it reads nothing, writes
- * nothing and keeps nothing between calls, so Phase 3 only gathers the facts and writes the result under
- * `.cadre/<id>/.runtime/`.
+ * returns the runtime settings, the symlinks to create (sorted by path) and the warnings to show, in the order of the
+ * steps: denies, then instructions. It is pure: it reads nothing, writes nothing and keeps nothing between calls, so
+ * Phase 3 only gathers the facts and writes the result under `.cadre/<id>/.runtime/`.
  */
 export function launchPlan(role: RoleSpec, scope: CompiledScope, user: LaunchUser): LaunchPlan {
+  const deny = runtimeDeny(role, scope, user)
+  const instructions = instructionPlan(role, user)
+
   return {
-    settings: renderRuntimeSettings(role, scope, user, []),
-    links: [],
-    warnings: runtimeDeny(role, scope, user).warnings,
+    settings: renderRuntimeSettings(role, scope, user, instructions.claudeMdExcludes),
+    links: sortedLinks(instructions.links),
+    warnings: [...deny.warnings, ...instructions.warnings],
   }
 }
