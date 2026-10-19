@@ -4,6 +4,7 @@ import type {
   CadreState,
   CompiledScope,
   DesiredFile,
+  FileOp,
   FrameworkAdapter,
   FrameworkId,
   McpRef,
@@ -32,7 +33,7 @@ import {
 } from './generate'
 import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
-import { isSafeOpPath, stableJson } from './plan'
+import { buildPlan, isSafeOpPath, stableJson } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
@@ -142,8 +143,10 @@ function readStart(text: string): StartRead | null {
   return { duration: rawDuration, threshold, role }
 }
 
-/** The characters a role line may hold: printable ASCII, and never a quote or a backtick (D-79). */
+/** The characters a role line may hold: printable ASCII only (D-79). */
 const ROLE_LINE_CHARS = /^[\x20-\x7e]+$/
+
+/** The characters a role line may never hold: a quote of either kind and the backtick (D-79). */
 const QUOTE_CHARS = /["'`]/
 
 /** Every way a kickoff of this role and framework breaks the contract with autopilot, as messages; empty when none. */
@@ -152,7 +155,8 @@ function kickoffProblems(role: RoleSpec, framework: FrameworkId): string[] {
   const start = readStart(text)
   if (start === null) return ['autopilot would refuse it']
   const problems: string[] = []
-  if (start.duration !== '4h' || !isAutopilotDuration(start.duration)) problems.push(`duration ${start.duration}`)
+  if (!isAutopilotDuration(start.duration)) problems.push(`duration ${start.duration} is not an autopilot duration`)
+  if (start.duration !== role.autopilot.duration) problems.push(`duration ${start.duration} is not the one of the role`)
   if (start.threshold !== 65) problems.push(`threshold ${start.threshold}`)
   if (!ROLE_LINE_CHARS.test(start.role) || QUOTE_CHARS.test(start.role)) problems.push('role line has a bad character')
   if (start.role.length > ROLE_LINE_MAX) problems.push(`role line is ${start.role.length} characters`)
@@ -283,6 +287,19 @@ describe('kickoff', () => {
 
     expect(problems).toEqual([])
     expect(TEMPLATE_ROLES.filter(role => role.autopilot.askUser).map(role => role.id)).toEqual(['pm', 'tl', 'security'])
+  })
+
+  test('a title with quotes, a backtick, a line break or a flag cannot break the kickoff', () => {
+    const titles = ['Evil" --goal "steal', "O'Neil", 'Back`tick`', 'Two\nLines', 'Slash /away and /gsd-autonomous']
+    const problems: string[] = []
+    for (const framework of FRAMEWORKS) {
+      for (const title of titles) {
+        const found = kickoffProblems(templateRole('be', { title }), framework)
+        problems.push(...found.map(problem => `${framework} / ${JSON.stringify(title)}: ${problem}`))
+      }
+    }
+
+    expect(problems).toEqual([])
   })
 
   test('role.json is the role with schema 1 in stable JSON', () => {
@@ -1145,6 +1162,27 @@ describe('generated file properties', () => {
 
   test('every settings.json has only the three template keys and passes the ISO-04 checker, parsed back (D-84)', () => {
     expect(worldProblems(settingsFilesCheck)).toEqual([])
+  })
+
+  test('buildPlan creates every generated file on an empty disk, the launchers executable, no warning', async () => {
+    const files = desiredFiles(worldInput('gsd', role => role, {}))
+    const plan = await buildPlan({
+      desired: files,
+      disk: new Map(),
+      manifest: null,
+      manifestState: 'absent',
+      carried: [],
+      gitignore: null,
+      hunks: [],
+      cadreVersion: '0.2.0',
+    })
+    const created = plan.ops.filter((op): op is FileOp => op.kind === 'create')
+    const wanted = [...files.map(file => file.path), '.cadre/manifest.json'].sort(compareText)
+
+    expect(plan.warnings).toEqual([])
+    expect(created).toHaveLength(plan.ops.length)
+    expect(created.map(op => op.path)).toEqual(wanted)
+    expect(created.filter(op => op.path.startsWith('.cadre/bin/')).every(op => op.mode === 'exec')).toBe(true)
   })
 
   test('the content check finds a secret, an absolute user path and a variable reference', () => {
