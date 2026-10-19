@@ -1475,7 +1475,7 @@ describe('Phase 2 faked-host matrix', () => {
     const [apiKey, bearer, token, sentinel] = SECRET_FIXTURES
     const mcpJson = { mcpServers: { linear: { command: 'npx', env: { LINEAR_API_KEY: apiKey } } } }
     const claudeJson = {
-      mcpServers: { sentry: { command: 'npx', env: { SENTRY_TOKEN: token } } },
+      mcpServers: { datadog: { command: 'npx', env: { DD_API_KEY: token } } },
       oauthAccount: { emailAddress: bearer, accessToken: apiKey },
     }
     const base = initWorld()
@@ -1499,7 +1499,7 @@ describe('Phase 2 faked-host matrix', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
-    expect(log.logs.join('\n')).toContain('MCP servers: linear, sentry')
+    expect(log.logs.join('\n')).toContain('MCP servers: datadog, linear, sentry')
     expect(log.logs.join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
     const shown = [out.text, ...log.logs, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
