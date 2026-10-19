@@ -512,10 +512,11 @@ describe('runInit', () => {
   })
 
   test('with no scan warning nothing is added after the scan summary', async () => {
-    const run = memIo(gitWorld(), RUN_ANSWERS)
+    const listable = gitWorld({ dirs: { '/repo/.git': [], '/repo': [] } })
+    const run = memIo(listable, RUN_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    const gathered = await gatherScans(memIo(gitWorld(), {}).io, DEFAULT_LOCATIONS, false)
+    const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
     expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
     expect(events[1]).toBe(`log ${scanSummaryLines(gathered.repo, gathered.setup).join('\n')}`)
   })
