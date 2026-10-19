@@ -1774,7 +1774,7 @@ export const REVIEW_HINT = 'To change something else, type one of: duration, mod
  * with its scan changes), and every answer so far, the accepted team's scan changes included, so Change roles shows
  * those again (A6). It is never written or kept after the run; a go-back gives a new Draft.
  */
-type Draft = {
+export type Draft = {
   readonly locations: InitLocations
   readonly gathered: Gathered
   readonly readUserMcp: boolean
