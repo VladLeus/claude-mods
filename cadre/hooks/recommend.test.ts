@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   FrameworkId,
   HunkOp,
-  McpRef,
   PortRead,
   Recommendation,
   RepoScan,
@@ -32,7 +31,7 @@ import {
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
 import type { GsdToolContext, HunkCandidate } from './recommend'
-import { BIDI_OVERRIDE, emptySetupScan, skillRef } from './testkit'
+import { BIDI_OVERRIDE, emptySetupScan, session, skillRef } from './testkit'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
 function row(key: string): SettingProposal {
@@ -626,11 +625,6 @@ function repoScan(over: Partial<RepoScan> = {}): RepoScan {
 /** An E2E finding, as the repo scan records one. */
 const E2E: ScanFinding = { kind: 'e2e', label: 'playwright', evidence: 'playwright.config.ts' }
 
-/** An MCP server of the session, by name. */
-function server(name: string): McpRef {
-  return { name, source: 'session' }
-}
-
 const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in plan, execute, verify loop'
 const PLAYWRIGHT_WHY = 'the FE role has no E2E setup to check its work in a browser'
 const DEVTOOLS_WHY = 'the FE role cannot inspect the running page'
@@ -700,21 +694,21 @@ describe('recommend', () => {
   })
 
   test('an FE role with no E2E finding and no playwright MCP gets the Playwright MCP line', () => {
-    const setup = emptySetupScan({ mcp: [server('chrome-devtools')] })
+    const setup = emptySetupScan({ mcp: [session('chrome-devtools')] })
 
     expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([playwrightFor('fe')])
   })
 
   test('an E2E finding means no Playwright MCP line', () => {
     const scan = repoScan({ findings: [E2E] })
-    const setup = emptySetupScan({ mcp: [server('chrome-devtools')] })
+    const setup = emptySetupScan({ mcp: [session('chrome-devtools')] })
 
     expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([])
   })
 
   test('a playwright MCP server, in any case and inside a longer name, means no Playwright MCP line', () => {
     for (const name of ['playwright', 'Playwright', 'plugin_playwright_playwright', 'my-PLAYWRIGHT-server']) {
-      const setup = emptySetupScan({ mcp: [server(name), server('chrome-devtools')] })
+      const setup = emptySetupScan({ mcp: [session(name), session('chrome-devtools')] })
 
       expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
     }
@@ -722,7 +716,7 @@ describe('recommend', () => {
 
   test('an FE role with no devtools MCP gets the DevTools MCP line, whether E2E was found or not', () => {
     const scan = repoScan({ findings: [E2E] })
-    const setup = emptySetupScan({ mcp: [server('playwright')] })
+    const setup = emptySetupScan({ mcp: [session('playwright')] })
 
     expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([devtoolsFor('fe')])
     expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([devtoolsFor('fe')])
@@ -730,7 +724,7 @@ describe('recommend', () => {
 
   test('a devtools MCP server, in any case and inside a longer name, means no DevTools MCP line', () => {
     for (const name of ['chrome-devtools', 'DevTools', 'devtools-mcp']) {
-      const setup = emptySetupScan({ mcp: [server(name), server('playwright')] })
+      const setup = emptySetupScan({ mcp: [session(name), session('playwright')] })
 
       expect(recommend({ roles: [FE], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
     }
@@ -825,7 +819,7 @@ describe('recommend', () => {
   test('with a framework, E2E, both MCP servers and a security-review skill nothing is recommended', () => {
     const scan = repoScan({ findings: [E2E] })
     const setup = emptySetupScan({
-      mcp: [server('playwright'), server('chrome-devtools')],
+      mcp: [session('playwright'), session('chrome-devtools')],
       skills: [skillRef('security-review')],
     })
 
