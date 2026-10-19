@@ -62,6 +62,7 @@ import {
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { desiredFiles } from './generate'
+import { sha256Hex } from './hash'
 import { buildPlan, gitignoreLines, planReadPaths, renderPlan } from './plan'
 import {
   attendedNote,
@@ -2072,25 +2073,36 @@ async function regenState(io: InitIo, root: string): Promise<RegenRead<CadreStat
   return { kind: 'ok', value: state }
 }
 
+/** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
+function roleJsonPath(id: string): string {
+  return `.cadre/${id}/role.json`
+}
+
+/** The team regen read: every listed role, and the role.json text each was parsed from, keyed by its id (A5). */
+type RegenTeam = {
+  readonly roles: readonly RoleSpec[]
+  readonly texts: ReadonlyMap<string, string>
+}
+
 /**
  * Every role `.cadre/cadre.json` lists, in its order, read back from `.cadre/<id>/role.json` through readRepoFile and
- * parseRoleJson (D-68, T-02-36). The first role whose file is missing, cannot be read, is not valid or holds another
- * id than its folder refuses with regenBadRole, so no role is re-rendered beside a half-known team.
+ * parseRoleJson (D-68, T-02-36), with the exact text each was parsed from (A5). The first role whose file is missing,
+ * cannot be read, is not valid or holds another id than its folder refuses with regenBadRole, so no role is
+ * re-rendered beside a half-known team.
  */
-async function regenRoles(
-  io: InitIo,
-  root: string,
-  ids: readonly string[],
-): Promise<RegenRead<readonly RoleSpec[]>> {
+async function regenRoles(io: InitIo, root: string, ids: readonly string[]): Promise<RegenRead<RegenTeam>> {
   const roles: RoleSpec[] = []
+  const texts = new Map<string, string>()
   for (const id of ids) {
-    const read = await readRepoFile(io, root, `.cadre/${id}/role.json`, MAX_READ_BYTES)
-    const role = read.state === 'text' ? parseRoleJson(read.text) : null
+    const read = await readRepoFile(io, root, roleJsonPath(id), MAX_READ_BYTES)
+    if (read.state !== 'text') return regenRefusal(regenBadRole(id))
+    const role = parseRoleJson(read.text)
     if (role === null || role.id !== id) return regenRefusal(regenBadRole(id))
     roles.push(role)
+    texts.set(id, read.text)
   }
 
-  return { kind: 'ok', value: roles }
+  return { kind: 'ok', value: { roles, texts } }
 }
 
 /**
@@ -2140,7 +2152,9 @@ function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id:
  * (carriedEntries). No `.gitignore` block and no hunk is planned. ~/.claude.json is read only when cadre.json records
  * the consent (readUserMcp, A1), so the MCP denies init compiled from it stay. Without a manifest read in full regen
  * cannot keep the other roles' entries, so it refuses (A2), as the scan read it: REGEN_NO_MANIFEST when it is not
- * there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid.
+ * there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid. The role's role.json is the input,
+ * so it gets no op and the new manifest records the hash of `roleJson`, the text on disk (A5); the next init
+ * normalises it.
  */
 async function regenPlan(
   io: InitIo,
@@ -2148,23 +2162,30 @@ async function regenPlan(
     readonly id: string
     readonly state: CadreState
     readonly roles: readonly RoleSpec[]
+    readonly roleJson: string
     readonly locations: InitLocations
   },
 ): Promise<RegenRead<Plan>> {
-  const { id, state, roles, locations } = input
+  const { id, state, roles, roleJson, locations } = input
   const gathered = await gatherScans(io, locations, state.readUserMcp)
   const { manifest, manifestState } = gathered.repo.cadre
   if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
   const frameworks = roles.map(role => resolvedFramework(role, state.framework))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
   const scopes = compileAll(roles, state.framework, gathered, attended)
-  const desired = desiredFiles({ roles, scopes, state, only: id })
+  const generated = desiredFiles({ roles, scopes, state, only: id })
+  const ownPath = roleJsonPath(id)
+  const desired = generated.filter(file => file.path !== ownPath)
+  const sha256 = await sha256Hex(roleJson)
+  const own = generated
+    .filter(file => file.path === ownPath)
+    .map((file): ManifestEntry => ({ path: file.path, sha256, mode: file.mode }))
   const plan = await buildPlan({
     desired,
     disk: await readPaths(io, locations.root, planReadPaths(desired)),
     manifest,
     manifestState,
-    carried: carriedEntries(manifest, desired, id),
+    carried: [...own, ...carriedEntries(manifest, generated, id)],
     gitignore: null,
     hunks: [],
     cadreVersion: (await io.cadreVersion()) ?? 'unknown',
@@ -2207,11 +2228,14 @@ export async function runRegen(
 
   const team = await regenRoles(io, locations.root, state.roles)
   if (team.kind === 'refuse') return team.text
-  const roles = team.value
+  const { roles } = team.value
   const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
   if (unframed !== undefined) return regenNeedsFramework(unframed.id)
+  const roleJson = team.value.texts.get(options.id)
+  // Fail closed: every listed role was read, so after the id check its text is always there.
+  if (roleJson === undefined) return regenBadRole(options.id)
 
-  const planned = await regenPlan(io, { id: options.id, state, roles, locations })
+  const planned = await regenPlan(io, { id: options.id, state, roles, roleJson, locations })
   if (planned.kind === 'refuse') return planned.text
 
   return regenReplyText(planned.value, options.id, options.dryRun)
