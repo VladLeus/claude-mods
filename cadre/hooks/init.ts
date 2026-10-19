@@ -170,6 +170,19 @@ export function parseGitPolicy(answer: string): GitPolicy | null {
   return labelled(GIT_POLICY_LABELS, answer) ?? labelled(GIT_POLICY_WORDS, answer)
 }
 
+/** Why init cancels when the git policy question is dismissed or not answered (A1, D-45). */
+export const GIT_POLICY_DISMISSED_REASON = 'The git policy question was dismissed or not answered.'
+
+/**
+ * The git policy step (D-65): the policy a label or word names (parseGitPolicy) is accepted. A dismissal, or MAX_ASKS
+ * answers that name no policy, is cancelled with GIT_POLICY_DISMISSED_REASON, never taken as the default (A1, D-45).
+ */
+export async function gitPolicyStep(io: InitIo): Promise<StepResult<GitPolicy>> {
+  const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
+
+  return policy === null ? cancelled(GIT_POLICY_DISMISSED_REASON) : accepted(policy)
+}
+
 /**
  * What the init port answers before it reads a file, or null when the file may be read: `absent` only when the probe
  * says the path is not there, `unknown` when the probe or the stat failed or the stat shows anything but a regular
@@ -289,6 +302,24 @@ function refuse(text: string): GuardResult {
 }
 
 /**
+ * What every init step gives (A1, D-45): only an explicit confirming answer is accepted, with the value it chose; a
+ * dismissal or a cap is cancelled with the reason runInit prints, and holds no value.
+ */
+export type StepResult<T> =
+  | { readonly kind: 'accepted'; readonly value: T }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/** A step result accepted with the value the person confirmed. */
+function accepted<T>(value: T): StepResult<T> {
+  return { kind: 'accepted', value }
+}
+
+/** A step result cancelled with the reason runInit prints; the step itself prints nothing (A1). */
+function cancelled(reason: string): StepResult<never> {
+  return { kind: 'cancelled', reason }
+}
+
+/**
  * The refusal when the session root is not the git top level, or no git repo is above it at all (D-56, D-97b); null
  * when the root is the top level. The walk only stats `.git` and runs no process.
  */
@@ -363,6 +394,20 @@ export const CLAUDE_JSON_OPTIONS: readonly string[] = Object.freeze(CONSENTS.map
 /** Whether a consent answer allows reading ~/.claude.json; null when it names neither answer (D-58). */
 function parseConsent(answer: string): boolean | null {
   return labelled(CONSENTS, answer)
+}
+
+/** Why init cancels when the ~/.claude.json question is dismissed or not answered (A1, D-45). */
+export const CONSENT_DISMISSED_REASON = 'The ~/.claude.json question was dismissed or not answered.'
+
+/**
+ * The ~/.claude.json consent step (D-58): `Yes, read names only` is accepted as true and `No, skip it` as false. A
+ * dismissal, or MAX_ASKS answers that name neither, is cancelled with CONSENT_DISMISSED_REASON, so no answer the
+ * person did not give decides whether the file is read (A1, D-45).
+ */
+export async function consentStep(io: InitIo): Promise<StepResult<boolean>> {
+  const isAllowed = await askChoice(io, CLAUDE_JSON_QUESTION, { options: CLAUDE_JSON_OPTIONS }, parseConsent)
+
+  return isAllowed === null ? cancelled(CONSENT_DISMISSED_REASON) : accepted(isAllowed)
 }
 
 /** What the scans of one run found: the detect facts, the repo scan and the names-only user-setup scan. */
@@ -816,21 +861,22 @@ async function nextState(
  * The roles step (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83), as the states of RolesState. It starts at `proposed`
  * with the proposal and shows the roles with the scan changes behind them under `Use these roles?`. `Adjust them`
  * runs adjustLoop with the frameworks `installed` for the repo and `Describe my own structure` runs describeStep;
- * either goes back to `proposed`. Only the answer `Use these roles` gives roles (`accepted`): a dismissal anywhere
- * cancels with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals cancels with
- * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used.
+ * either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an accepted StepResult: a
+ * dismissal anywhere is cancelled with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals with
+ * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used (A1).
  */
 export async function rolesStep(
   io: InitIo,
   proposal: RoleProposal,
   installed: readonly FrameworkId[],
-): Promise<Extract<RolesState, { readonly kind: 'accepted' | 'cancelled' }>> {
+): Promise<StepResult<readonly RoleSpec[]>> {
   let state: RolesState = { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
   let rounds = 0
   for (;;) {
-    if (state.kind === 'accepted' || state.kind === 'cancelled') return state
+    if (state.kind === 'accepted') return accepted(state.roles)
+    if (state.kind === 'cancelled') return state
     const isPastCap = state.kind === 'proposed' && rounds === MAX_ROLE_ROUNDS
-    if (isPastCap) return { kind: 'cancelled', reason: ROLE_ROUNDS_REASON }
+    if (isPastCap) return cancelled(ROLE_ROUNDS_REASON)
     if (state.kind === 'proposed') rounds += 1
     state = await nextState(io, state, proposal, installed)
   }
@@ -908,71 +954,74 @@ type Framed = {
   readonly repoDefault: FrameworkId | null
 }
 
+/** Why init cancels when a framework question is dismissed or not answered (A1, D-45). */
+export const FRAMEWORK_DISMISSED_REASON = 'A framework question was dismissed or not answered.'
+
 /**
  * DET-03's question for an ambiguous or installed-only choice (D-73, D-86): the reason, then `Same for all roles` or
  * `Per role`, then the framework once for every role or for each role in role order. The options are the frameworks
  * of the choice in SUPPORTED_IDS order, then `none (built-in)`, with nothing preselected (D-07). Every role stores its
- * answer and there is no repo default. A dismissed question is null, never a choice (D-45).
+ * answer and there is no repo default. A dismissed question is cancelled with FRAMEWORK_DISMISSED_REASON, never a
+ * choice (D-45).
  */
 async function askFrameworks(
   io: InitIo,
   choice: Extract<Choice, { readonly kind: 'ambiguous' | 'installed-only' }>,
   roles: readonly RoleSpec[],
-): Promise<Framed | null> {
+): Promise<StepResult<Framed>> {
   const allowed: readonly FrameworkId[] = [...SUPPORTED_IDS.filter(id => choice.ids.includes(id)), 'none']
   const spec = { options: allowed.map(id => FRAMEWORK_LABELS[id]) }
   const parse = (answer: string): FrameworkId | null => parseFramework(answer, allowed)
   const question = `${FRAMEWORK_QUESTION_PREFIX} (asked because ${frameworkReason(choice)})`
   const mode = await askChoice(io, question, { options: ANSWER_MODE_OPTIONS }, parseAnswerMode)
-  if (mode === null) return null
+  if (mode === null) return cancelled(FRAMEWORK_DISMISSED_REASON)
   if (mode === 'same') {
     const framework = await askChoice(io, FRAMEWORK_ALL_QUESTION, spec, parse)
+    if (framework === null) return cancelled(FRAMEWORK_DISMISSED_REASON)
 
-    return framework === null ? null : { roles: roles.map(role => withFramework(role, framework)), repoDefault: null }
+    return accepted({ roles: roles.map(role => withFramework(role, framework)), repoDefault: null })
   }
 
   const framed: RoleSpec[] = []
   for (const role of roles) {
     const framework = await askChoice(io, frameworkRoleQuestion(role.title), spec, parse)
-    if (framework === null) return null
+    if (framework === null) return cancelled(FRAMEWORK_DISMISSED_REASON)
     framed.push(withFramework(role, framework))
   }
 
-  return { roles: framed, repoDefault: null }
+  return accepted({ roles: framed, repoDefault: null })
 }
 
 /**
  * The framework step (DET-03, D-73, D-17). With exactly one framework in use nothing is asked: the roles keep
  * `framework` absent (an Adjust override stays) and that framework is the repo default. An ambiguous or installed-only
  * choice is asked (askFrameworks), so every role stores its framework and there is no repo default. Unsupported and
- * none ask nothing and give the built-in default; unsupported prints what was found. Null when a question is dismissed.
+ * none ask nothing and give the built-in default; unsupported prints what was found. A dismissed question gives the
+ * cancel reason FRAMEWORK_DISMISSED_REASON (A1).
  */
-export async function frameworkStep(io: InitIo, choice: Choice, roles: readonly RoleSpec[]): Promise<Framed | null> {
+export async function frameworkStep(
+  io: InitIo,
+  choice: Choice,
+  roles: readonly RoleSpec[],
+): Promise<StepResult<Framed>> {
   switch (choice.kind) {
     case 'chosen':
-      return { roles, repoDefault: choice.id }
+      return accepted({ roles, repoDefault: choice.id })
     case 'ambiguous':
     case 'installed-only':
       return askFrameworks(io, choice, roles)
     case 'unsupported':
       logLines(io, [choiceLine(choice)])
 
-      return { roles, repoDefault: 'none' }
+      return accepted({ roles, repoDefault: 'none' })
     case 'none':
-      return { roles, repoDefault: 'none' }
+      return accepted({ roles, repoDefault: 'none' })
   }
 }
 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */
 export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | null): FrameworkId {
   return role.framework ?? repoDefault ?? 'none'
-}
-
-/** Prints why a step was cancelled and gives null, so runInit answers INIT_CANCELLED (A1, D-45). */
-function cancelled(io: InitIo, reason: string): null {
-  logLines(io, [reason])
-
-  return null
 }
 
 /** The question init asks once for every role: how long each autopilot run lasts (D-51). */
@@ -994,13 +1043,14 @@ function parseDuration(answer: string): string | null {
 /**
  * The duration question (D-51), asked once for every role: 4h, 2h or 8h, or any duration typed under "Other". Only an
  * answer in autopilot's grammar, above zero and at most 168 hours, is a duration; any other is asked again, MAX_ASKS
- * asks in all. A dismissal, or MAX_ASKS answers that are no duration, prints DURATION_DISMISSED_REASON and gives null,
- * so nothing is taken (A1). The context threshold is never asked: every role keeps AUTOPILOT_THRESHOLD (D-87).
+ * asks in all. A dismissal, or MAX_ASKS answers that are no duration, gives the cancel reason
+ * DURATION_DISMISSED_REASON, so nothing is taken (A1). The context threshold is never asked: every role keeps
+ * AUTOPILOT_THRESHOLD (D-87).
  */
-export async function durationStep(io: InitIo): Promise<string | null> {
+export async function durationStep(io: InitIo): Promise<StepResult<string>> {
   const duration = await askChoice(io, DURATION_QUESTION, { options: DURATION_OPTIONS }, parseDuration)
 
-  return duration === null ? cancelled(io, DURATION_DISMISSED_REASON) : duration
+  return duration === null ? cancelled(DURATION_DISMISSED_REASON) : accepted(duration)
 }
 
 /** The roles with this autopilot duration; every other autopilot value, the threshold included, stays as it was. */
@@ -1031,27 +1081,29 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
  * The model and effort step (D-52, D-86): `Same for all roles` or `Per role`, then `opus + medium`, `sonnet + medium`
  * or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role order. Each role
  * stores a model family alias, never a pinned model id, and an effort (parseModelEffort). Only an answer to every
- * question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, prints MODEL_DISMISSED_REASON
- * and gives null, so no role keeps a model the person did not finish choosing (A1). The roles it is given never change.
+ * question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the cancel reason
+ * MODEL_DISMISSED_REASON, so no role keeps a model the person did not finish choosing (A1). The roles it is given
+ * never change.
  */
-export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<readonly RoleSpec[] | null> {
+export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<readonly RoleSpec[]>> {
   const spec = { options: MODEL_EFFORT_OPTIONS }
   const mode = await askChoice(io, MODEL_MODE_QUESTION, { options: ANSWER_MODE_OPTIONS }, parseAnswerMode)
-  if (mode === null) return cancelled(io, MODEL_DISMISSED_REASON)
+  if (mode === null) return cancelled(MODEL_DISMISSED_REASON)
   if (mode === 'same') {
     const choice = await askChoice(io, MODEL_ALL_QUESTION, spec, parseModelEffort)
+    if (choice === null) return cancelled(MODEL_DISMISSED_REASON)
 
-    return choice === null ? cancelled(io, MODEL_DISMISSED_REASON) : roles.map(role => withModel(role, choice))
+    return accepted(roles.map(role => withModel(role, choice)))
   }
 
   const modelled: RoleSpec[] = []
   for (const role of roles) {
     const choice = await askChoice(io, modelRoleQuestion(role.title), spec, parseModelEffort)
-    if (choice === null) return cancelled(io, MODEL_DISMISSED_REASON)
+    if (choice === null) return cancelled(MODEL_DISMISSED_REASON)
     modelled.push(withModel(role, choice))
   }
 
-  return modelled
+  return accepted(modelled)
 }
 
 /** The buttons of every question on which roles get an item: no role or every role; a list is typed under "Other". */
@@ -1095,24 +1147,24 @@ async function askAssignments(
  * QA, or none)", answered with None, All roles or a typed list of role ids or titles; an answer that names any other
  * role is asked again (parseRoleList, T-02-33). Every name joins the `mcp` or `skills` list of its roles
  * (assignToRoles). Only an answer to every question gives roles: a dismissal, or MAX_ASKS answers it cannot read at
- * one question, prints ASSIGNMENT_DISMISSED_REASON and gives null (A1). The roles it is given never change.
+ * one question, gives the cancel reason ASSIGNMENT_DISMISSED_REASON (A1). The roles it is given never change.
  */
 export async function assignmentStep(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
-): Promise<readonly RoleSpec[] | null> {
+): Promise<StepResult<readonly RoleSpec[]>> {
   const mcp = classifyMcp(setup.mcp, roles)
   const skills = classifySkills(setup.skills, roles)
   const serverItems = mcp.unknown.map(name => ({ question: mcpQuestion(name), names: [name] }))
   const groupItems = skills.groups.map(group => ({ question: skillGroupQuestion(group), names: group.names }))
   const servers = await askAssignments(io, roles, serverItems)
-  if (servers === null) return cancelled(io, ASSIGNMENT_DISMISSED_REASON)
+  if (servers === null) return cancelled(ASSIGNMENT_DISMISSED_REASON)
   const grouped = await askAssignments(io, roles, groupItems)
-  if (grouped === null) return cancelled(io, ASSIGNMENT_DISMISSED_REASON)
+  if (grouped === null) return cancelled(ASSIGNMENT_DISMISSED_REASON)
   const withMcp = assignToRoles(roles, [...mcp.assigned, ...servers], 'mcp')
 
-  return assignToRoles(withMcp, [...skills.assigned, ...grouped], 'skills')
+  return accepted(assignToRoles(withMcp, [...skills.assigned, ...grouped], 'skills'))
 }
 
 /** The instruction groups in the order init asks about them and a role stores them (D-63). */
@@ -1148,28 +1200,30 @@ function groupNames(group: InstructionGroup, setup: SetupScan): readonly string[
  * files and asks which roles get it (memoryQuestion), answered with None, All roles or a typed list of role ids or
  * titles (parseRoleList); a group the scan did not find is not asked. Each role's `instructions` becomes the groups it
  * was given, in that order, so the answers decide the whole list. Only an answer to every question gives roles: a
- * dismissal, or MAX_ASKS answers it cannot read at one question, prints MEMORY_DISMISSED_REASON and gives null (A1).
+ * dismissal, or MAX_ASKS answers it cannot read at one question, gives the cancel reason MEMORY_DISMISSED_REASON (A1).
  * No file is read and no content is shown; the roles it is given never change.
  */
 export async function memoryStep(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
-): Promise<readonly RoleSpec[] | null> {
+): Promise<StepResult<readonly RoleSpec[]>> {
   const parse = (answer: string): readonly string[] | null => parseRoleList(answer, roles)
   const given = new Map<InstructionGroup, readonly string[]>()
   for (const group of INSTRUCTION_ORDER) {
     const names = groupNames(group, setup)
     if (names === null) continue
     const roleIds = await askChoice(io, memoryQuestion(group, names), { options: ROLE_LIST_OPTIONS }, parse)
-    if (roleIds === null) return cancelled(io, MEMORY_DISMISSED_REASON)
+    if (roleIds === null) return cancelled(MEMORY_DISMISSED_REASON)
     given.set(group, roleIds)
   }
 
-  return roles.map(role => ({
-    ...role,
-    instructions: INSTRUCTION_ORDER.filter(group => given.get(group)?.includes(role.id) === true),
-  }))
+  return accepted(
+    roles.map(role => ({
+      ...role,
+      instructions: INSTRUCTION_ORDER.filter(group => given.get(group)?.includes(role.id) === true),
+    })),
+  )
 }
 
 /** The buttons of the env question: no name or every scanned name; names are typed under "Other" (D-60). */
@@ -1198,16 +1252,16 @@ async function carriedEnv(io: InitIo, names: readonly string[]): Promise<readonl
  * names and asks which ones roles carry; with none, nothing is asked. Every role carries the same: the picked names,
  * never a value; `autoCompactWindow` and `statusLine` when the user settings set them; and the GSD secret read guard
  * when settings register it, the one hook carried, so no other hook reaches a role. A dismissal, or MAX_ASKS answers
- * that name no scanned variable, prints ENV_DISMISSED_REASON and gives null (A1). No env or settings value is read,
+ * that name no scanned variable, gives the cancel reason ENV_DISMISSED_REASON (A1). No env or settings value is read,
  * stored or printed (T-02-34); the roles it is given never change.
  */
 export async function carryStep(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
-): Promise<readonly RoleSpec[] | null> {
+): Promise<StepResult<readonly RoleSpec[]>> {
   const env = await carriedEnv(io, setup.carry.envNames)
-  if (env === null) return cancelled(io, ENV_DISMISSED_REASON)
+  if (env === null) return cancelled(ENV_DISMISSED_REASON)
   const guards = setup.hooks.map(hook => hook.script).filter(script => SECRET_READ_GUARD.test(script))
   const carry: RoleCarry = {
     autoCompactWindow: setup.carry.autoCompactWindow !== null,
@@ -1216,7 +1270,7 @@ export async function carryStep(
     hooks: sortedUnique(guards),
   }
 
-  return roles.map(role => ({ ...role, carry }))
+  return accepted(roles.map(role => ({ ...role, carry })))
 }
 
 /**
@@ -1244,7 +1298,7 @@ export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answe
  * records the answer, the exact command and whether cadre can run it, which only a proven user-level GSD allows
  * (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is declined or cannot run, the GSD
  * roles stay attended (isGsdAttended) and the attended note names those keys. A dismissal, or MAX_ASKS answers that
- * are neither Accept nor Decline, prints HUNK_DISMISSED_REASON and gives null, so no hunk counts as accepted (A1).
+ * are neither Accept nor Decline, gives the cancel reason HUNK_DISMISSED_REASON, so no hunk counts as accepted (A1).
  */
 export async function hunkStep(
   io: InitIo,
@@ -1254,9 +1308,9 @@ export async function hunkStep(
     readonly gathered: Gathered
     readonly locations: InitLocations
   },
-): Promise<readonly HunkOp[] | null> {
+): Promise<StepResult<readonly HunkOp[]>> {
   const { roles, repoDefault, gathered, locations } = input
-  if (!roles.some(role => resolvedFramework(role, repoDefault) === 'gsd')) return []
+  if (!roles.some(role => resolvedFramework(role, repoDefault) === 'gsd')) return accepted([])
 
   const config = await readRepoFile(io, locations.root, GSD_CONFIG_PATH, MAX_READ_BYTES)
   const candidates = hunkCandidates(GSD_AUTONOMY, config, gathered.setup.carry.isGsdStatusline)
@@ -1270,14 +1324,14 @@ export async function hunkStep(
   for (const [index, candidate] of candidates.entries()) {
     const { question, spec } = hunkQuestion(candidate, index + 1, candidates.length)
     const isAccepted = await askChoice(io, question, spec, parseHunkAnswer)
-    if (isAccepted === null) return cancelled(io, HUNK_DISMISSED_REASON)
+    if (isAccepted === null) return cancelled(HUNK_DISMISSED_REASON)
     hunks.push(hunkOp(candidate, isAccepted, resolveToolCommand(candidate.proposal.write, gsd)))
   }
   // The keys of the hunks that each leave the GSD roles attended on their own.
   const unmet = hunks.filter(hunk => isGsdAttended([hunk])).map(hunk => hunk.key)
   if (unmet.length > 0) logLines(io, [attendedNote(unmet)])
 
-  return hunks
+  return accepted(hunks)
 }
 
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
@@ -1337,11 +1391,6 @@ const UNSAFE_LAUNCH_DIR = 'use a folder inside this repo: letters, digits, . _ @
 /** The problem with a typed folder whose real path is not a folder inside the repo. */
 const NOT_A_LAUNCH_DIR = 'it is not a folder in this repo'
 
-/** What launchStartStep gives: where the launchers start, or why nothing was chosen. */
-type LaunchStartResult =
-  | { readonly kind: 'chosen'; readonly start: LaunchStart }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
 /** The line of the init reply that says where the role launchers start (A2). */
 export function launchLine(start: LaunchStart): string {
   if (start.kind === 'git-root') return 'Launchers start in: the git root'
@@ -1373,34 +1422,34 @@ async function launchDirProblem(io: InitIo, root: string, path: string): Promise
  * and loses one trailing `/`; one that launchDirProblem refuses is logged with why and asked again, and after MAX_ASKS
  * refused answers nothing is chosen.
  */
-async function launchDirStep(io: InitIo, root: string): Promise<LaunchStartResult> {
+async function launchDirStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
   for (let asked = 0; asked < MAX_ASKS; asked += 1) {
     const answer = await askOnce(io, LAUNCH_DIR_QUESTION, { options: LAUNCH_DIR_OPTIONS })
     const isCancel = answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel'
-    if (isCancel) return { kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON }
+    if (isCancel) return cancelled(LAUNCH_DIR_CANCELLED_REASON)
     const trimmed = answer.trim()
     const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
     const problem = await launchDirProblem(io, root, path)
-    if (problem === null) return { kind: 'chosen', start: { kind: 'dir', path } }
+    if (problem === null) return accepted({ kind: 'dir', path })
     logLines(io, [`Cannot use ${shown(answer)}: ${problem}.`])
   }
 
-  return { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
+  return cancelled(LAUNCH_DIR_ROUNDS_REASON)
 }
 
 /**
  * Where the role launchers start (A2), asked once per repo right after the git policy: `Git root of this repo`, `The
  * folder I run it from`, or `Another folder in this repo`, which asks for a folder relative to the repo root
  * (launchDirStep). The labels and the words `git root`, `in here` and `other` match trimmed and in any case. Only an
- * explicit answer gives a start: a dismissal, an unlisted answer MAX_ASKS times, or no usable folder cancels with a
- * reason, so nothing the person did not confirm is used.
+ * explicit answer gives a start: a dismissal, an unlisted answer MAX_ASKS times, or no usable folder is cancelled with
+ * a reason, so nothing the person did not confirm is used (A1).
  */
-export async function launchStartStep(io: InitIo, root: string): Promise<LaunchStartResult> {
+export async function launchStartStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
   const choice = await askChoice(io, LAUNCH_START_QUESTION, { options: LAUNCH_START_OPTIONS }, parseLaunchChoice)
-  if (choice === null) return { kind: 'cancelled', reason: LAUNCH_START_DISMISSED_REASON }
+  if (choice === null) return cancelled(LAUNCH_START_DISMISSED_REASON)
   if (choice === 'dir') return launchDirStep(io, root)
 
-  return { kind: 'chosen', start: { kind: choice } }
+  return accepted({ kind: choice })
 }
 
 /**
@@ -1417,73 +1466,72 @@ function initReply(policy: GitPolicy, start: LaunchStart, dryRun: boolean): stri
   ].join('\n')
 }
 
+/** The reply of a cancelled step: its reason as its own line, the one place a cancel reason is printed (A1). */
+function cancelReply(io: InitIo, reason: string): string {
+  logLines(io, [reason])
+
+  return INIT_CANCELLED
+}
+
 /**
- * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
- * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
+ * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
+ * (consentStep), runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
  * (frameworkStep), prints the recommendations (ROLE-03), asks the autopilot duration once for every role
  * (durationStep) and each role's model and effort (modelStep), gives the MCP servers and skills to roles
  * (assignmentStep), asks which roles get each instruction and memory group (memoryStep) and which env names they carry
  * (carryStep), asks each GSD autonomy hunk one by one when a role runs GSD (hunkStep; 02-13 compiles the scopes and
- * the file plan from these roles and hunks), asks the git policy and then, once for the repo, where the launchers
- * start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). A dismissed or unlisted answer
- * cancels with INIT_CANCELLED (D-45); a cancelled roles step, per-role step or launcher start prints its reason first,
- * and only roles the person accepted reach the steps after it (A1).
+ * the file plan from these roles and hunks), asks the git policy (gitPolicyStep) and then, once for the repo, where
+ * the launchers start (launchStartStep), and ends with the note that nothing was written (D-44, D-82). Every step
+ * gives a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the
+ * reason as its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after
+ * it.
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
   if (guard.kind === 'refuse') return guard.text
 
-  const consent = { options: CLAUDE_JSON_OPTIONS }
-  const isClaudeJsonAllowed = await askChoice(io, CLAUDE_JSON_QUESTION, consent, parseConsent)
-  if (isClaudeJsonAllowed === null) return INIT_CANCELLED
+  const consent = await consentStep(io)
+  if (consent.kind === 'cancelled') return cancelReply(io, consent.reason)
 
-  const gathered = await gatherScans(io, guard.locations, isClaudeJsonAllowed)
+  const gathered = await gatherScans(io, guard.locations, consent.value)
   const warnings = scanWarningLines(scanWarnings(guard.locations, gathered))
   logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
 
   const detections = detectAll(gathered.facts.facts)
   const chosen = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
-  if (chosen.kind === 'cancelled') {
-    logLines(io, [chosen.reason])
+  if (chosen.kind === 'cancelled') return cancelReply(io, chosen.reason)
 
-    return INIT_CANCELLED
-  }
+  const framed = await frameworkStep(io, chooseFramework(detections, null), chosen.value)
+  if (framed.kind === 'cancelled') return cancelReply(io, framed.reason)
 
-  const framed = await frameworkStep(io, chooseFramework(detections, null), chosen.roles)
-  if (framed === null) return INIT_CANCELLED
-
-  const { roles, repoDefault } = framed
+  const { roles, repoDefault } = framed.value
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
   logLines(io, recommendationLines(recommendations, roles))
 
   const duration = await durationStep(io)
-  if (duration === null) return INIT_CANCELLED
+  if (duration.kind === 'cancelled') return cancelReply(io, duration.reason)
 
-  const modelled = await modelStep(io, withDuration(roles, duration))
-  if (modelled === null) return INIT_CANCELLED
+  const modelled = await modelStep(io, withDuration(roles, duration.value))
+  if (modelled.kind === 'cancelled') return cancelReply(io, modelled.reason)
 
-  const assigned = await assignmentStep(io, modelled, gathered.setup)
-  if (assigned === null) return INIT_CANCELLED
+  const assigned = await assignmentStep(io, modelled.value, gathered.setup)
+  if (assigned.kind === 'cancelled') return cancelReply(io, assigned.reason)
 
-  const instructed = await memoryStep(io, assigned, gathered.setup)
-  if (instructed === null) return INIT_CANCELLED
+  const instructed = await memoryStep(io, assigned.value, gathered.setup)
+  if (instructed.kind === 'cancelled') return cancelReply(io, instructed.reason)
 
-  const carried = await carryStep(io, instructed, gathered.setup)
-  if (carried === null) return INIT_CANCELLED
+  const carried = await carryStep(io, instructed.value, gathered.setup)
+  if (carried.kind === 'cancelled') return cancelReply(io, carried.reason)
 
-  const hunks = await hunkStep(io, { roles: carried, repoDefault, gathered, locations: guard.locations })
-  if (hunks === null) return INIT_CANCELLED
+  const hunks = await hunkStep(io, { roles: carried.value, repoDefault, gathered, locations: guard.locations })
+  if (hunks.kind === 'cancelled') return cancelReply(io, hunks.reason)
 
-  const policy = await askChoice(io, GIT_POLICY_QUESTION, { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
-  if (policy === null) return INIT_CANCELLED
+  const policy = await gitPolicyStep(io)
+  if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
 
   const launch = await launchStartStep(io, guard.locations.root)
-  if (launch.kind === 'cancelled') {
-    logLines(io, [launch.reason])
+  if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
 
-    return INIT_CANCELLED
-  }
-
-  return initReply(policy, launch.start, options.dryRun)
+  return initReply(policy.value, launch.value, options.dryRun)
 }
