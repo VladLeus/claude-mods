@@ -1,17 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec } from '../types'
+import type { AskSpec, TemplateRoleId } from '../types'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
+  emptySetupScan,
   entry,
+  FRAMEWORKS,
+  INIT_ANSWERS,
   leaks,
   link,
   memIo,
   memWorld,
   SECRET_FIXTURES,
+  session,
+  skillRef,
+  templateRole,
   ZERO_WIDTH_SPACE,
 } from './testkit'
 
@@ -259,5 +266,79 @@ describe('testkit', () => {
       'SENTINEL_SECRET_VALUE',
     ])
     expect(ABSOLUTE_PATH_MARKERS).toEqual(['/Users/', '/home/', '/private/'])
+  })
+})
+
+/** Whether calling `run` throws. */
+function throws(run: () => unknown): boolean {
+  try {
+    run()
+  } catch {
+    return true
+  }
+
+  return false
+}
+
+describe('shared fixtures', () => {
+  test('templateRole is the template role as init builds it, and over changes the fields it names', () => {
+    const row = ROLE_TEMPLATE.find(candidate => candidate.id === 'pm')
+    if (row === undefined) throw new Error('no template row pm')
+    expect(templateRole('pm')).toEqual(roleFromTemplate(row))
+    expect(templateRole('be', { hasBash: false }).hasBash).toBe(false)
+    expect(templateRole('be', { hasBash: false }).id).toBe('be')
+  })
+
+  test('templateRole refuses an id that is no template role', () => {
+    const unknownId: TemplateRoleId = JSON.parse('"nobody"')
+    expect(throws(() => templateRole(unknownId))).toBe(true)
+    expect(throws(() => templateRole('qa'))).toBe(false)
+  })
+
+  test('emptySetupScan has every list empty and every flag false, and over changes the fields it names', () => {
+    expect(emptySetupScan()).toEqual({
+      plugins: [],
+      skills: [],
+      mcp: [],
+      isMcpPartial: false,
+      agents: [],
+      claudeMd: [],
+      hasGlobalClaudeMd: false,
+      memoryFiles: [],
+      settingsKeys: [],
+      hooks: [],
+      carry: { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] },
+      warnings: [],
+    })
+    expect(emptySetupScan({ plugins: ['a@m'] }).plugins).toEqual(['a@m'])
+    expect(emptySetupScan({ plugins: ['a@m'] }).skills).toEqual([])
+  })
+
+  test('FRAMEWORKS lists the three frameworks; session and skillRef build an MCP server and a skill', () => {
+    expect(FRAMEWORKS).toEqual(['gsd', 'superpowers', 'none'])
+    expect(session('x')).toEqual({ name: 'x', source: 'session' })
+    expect(skillRef('s')).toEqual({ name: 's', plugin: null })
+    expect(skillRef('rescue', 'codex')).toEqual({ name: 'rescue', plugin: 'codex' })
+  })
+
+  test('INIT_ANSWERS answers every question of a whole init run by prefix, and is frozen', () => {
+    expect(INIT_ANSWERS).toEqual({
+      'Read ~/.claude.json': 'No, skip it',
+      'Use these roles?': 'Use these roles',
+      'Which framework do the roles use': 'Same for all roles',
+      'Framework for': 'GSD',
+      'Autopilot duration': '4h',
+      'Model and effort: same': 'Same for all roles',
+      'Model and effort for': 'opus + medium',
+      'Which roles get': 'None',
+      'Which env variables': 'None',
+      '.planning/config.json:': 'Accept',
+      'Git policy': 'Commit definitions (default)',
+      'Where should the role launchers start': 'Git root of this repo',
+      'Review the plan': 'Confirm',
+      "Scan this repo's session history": 'No, skip it',
+    })
+    expect(Object.keys(INIT_ANSWERS)).toHaveLength(14)
+    expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
   })
 })
