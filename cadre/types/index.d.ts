@@ -623,7 +623,10 @@ export type ScopeCard = {
   readonly hooks: { readonly loaded: readonly string[]; readonly notLoaded: readonly string[] }
   readonly rules: readonly ScopeRule[]
   readonly chain: readonly string[]
-  /** The memory dir pattern shown on the card; Phase 3 renders it (D-91). */
+  /**
+   * The memory dir pattern shown on the card, `<config dir>/cadre/<repo>-<hash8>/<id>/`, where `<config dir>` is
+   * CLAUDE_CONFIG_DIR when it is set, else ~/.claude; Phase 3 renders it (D-91).
+   */
   readonly memoryPattern: string
   readonly mcpRoute: McpRoute
 }
