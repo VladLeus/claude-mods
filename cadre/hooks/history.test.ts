@@ -139,8 +139,8 @@ describe('history scan', () => {
     const text = [
       '<command-name>/GSD-Plan-Phase</command-name>',
       '<command-name>/gsd-plan-phase</command-name><command-name>/gsd-plan</command-name>',
-      '<command-name>/café</command-name>',
-      '<command-name>/Kelvin</command-name>',
+      '<command-name>/caf\u00e9</command-name>',
+      '<command-name>/\u212Aelvin</command-name>',
       '<command-name>//twice</command-name>',
       '<command-name>/-dash-first</command-name>',
       '<command-name></command-name>',
