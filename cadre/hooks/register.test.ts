@@ -1308,7 +1308,6 @@ describe('Phase 2 faked-host matrix', () => {
       const log = newLog()
       fakeHost(on, build(), log)
       const plain = (await $.command.run({ command: 'cadre', args: 'init' })).text
-      const runsAfterPlain = log.runs.length
       const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
       expect(plain).toContain('File plan:')
       expect(dry).toContain('File plan:')
@@ -1316,8 +1315,7 @@ describe('Phase 2 faked-host matrix', () => {
       expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
       expect(middleLines(dry)).toEqual(middleLines(plain))
       expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-      expect(runsAfterPlain <= 1).toBe(true)
-      expect(log.runs.length - runsAfterPlain <= 1).toBe(true)
+      expect(log.runs).toEqual([])
     })
 
     test(`${name}: every path of the init plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)`, async ($, on) => {
@@ -1329,11 +1327,27 @@ describe('Phase 2 faked-host matrix', () => {
     })
   }
 
+  test(
+    'GSD only with a runtime-proven install: init --dry-run makes only the one identity call (D-82)',
+    async ($, on) => {
+      const log = newLog()
+      const world = gsdOnlyWorld({
+        denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+        runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+      })
+      fakeHost(on, world, log)
+      const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
+      expect(log.runs).toEqual([['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'runtime-identity', '--raw']])
+      expect(log.cwds).toEqual(['/home/u/.claude/gsd-core'])
+      expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+      expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    },
+  )
+
   test('regen be, with and without --dry-run, asks nothing and plans no path of PM (D-68, D-82)', async ($, on) => {
     const log = newLog()
     fakeHost(on, await regenMatrixWorld(), log)
     const plain = (await $.command.run({ command: 'cadre', args: 'regen be' })).text
-    const runsAfterPlain = log.runs.length
     const dry = (await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text
     for (const reply of [plain, dry]) {
       expect(reply).toContain('File plan:')
@@ -1344,8 +1358,7 @@ describe('Phase 2 faked-host matrix', () => {
     expect(dry.endsWith('Dry run: nothing was written.')).toBe(true)
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(runsAfterPlain <= 1).toBe(true)
-    expect(log.runs.length - runsAfterPlain <= 1).toBe(true)
+    expect(log.runs).toEqual([])
   })
 
   test('every path of the regen plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)', async ($, on) => {
