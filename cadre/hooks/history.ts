@@ -4,7 +4,7 @@ import { compareText } from './facts'
 import { askChoice } from './init'
 import type { StepResult } from './init'
 import { listingState } from './scan'
-import { mangledProjectDir } from './setup'
+import { mangledProjectDir, userDirOf } from './setup'
 
 /** The most sessions the history scan reads: the newest by modification time (D-59). */
 export const HISTORY_MAX_SESSIONS = 50
@@ -257,13 +257,6 @@ export function historyLines(scan: HistoryScan): string[] {
     .map(entry => `  ${entry.name}  ${entry.count}`)
 
   return [HISTORY_HEADING, ...(rows.length === 0 ? ['  none'] : rows), ...noteLines(scan)]
-}
-
-/** The user folder: CLAUDE_CONFIG_DIR when it is set, else `<home>/.claude`; null with neither, as in setup.ts. */
-function userDirOf(locations: InitLocations): string | null {
-  if (locations.configDir !== null) return locations.configDir
-
-  return locations.home === null ? null : `${locations.home}/.claude`
 }
 
 /** Logs a note and gives the skipped result: nothing was asked and no transcript was read. */

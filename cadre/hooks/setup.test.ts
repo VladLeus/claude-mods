@@ -13,6 +13,7 @@ import {
   projectSettings,
   projectToolServers,
   scanSetup,
+  userDirOf,
 } from './setup'
 import type { SetupContext } from './setup'
 import {
@@ -1095,6 +1096,13 @@ describe('setup consent and instructions', () => {
     expect(mangledProjectDir('/caf\u00E9')).toBe('-caf-')
     expect(mangledProjectDir('abc123')).toBe('abc123')
     expect(mangledProjectDir('')).toBe('')
+  })
+
+  test('userDirOf is CLAUDE_CONFIG_DIR when it is set, else <home>/.claude, and null with neither (IN-02)', () => {
+    expect(userDirOf({ ...CTX, configDir: '/cfg' })).toBe('/cfg')
+    expect(userDirOf({ ...CTX, configDir: '/cfg', home: null })).toBe('/cfg')
+    expect(userDirOf(CTX)).toBe('/home/u/.claude')
+    expect(userDirOf({ ...CTX, home: null })).toBeNull()
   })
 
   test('memoryFiles are the .md files of the memory folder of this repo, sorted, with their extension', async () => {

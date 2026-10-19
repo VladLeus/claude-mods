@@ -379,10 +379,11 @@ export function mangledProjectDir(path: string): string {
 }
 
 /**
- * The folder the user-level sources live in: CLAUDE_CONFIG_DIR when it is set, else `<home>/.claude`; null when there
- * is neither.
+ * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, else
+ * `<home>/.claude`; null when there is neither. The setup scan and the history scan both take it from here, so the two
+ * never disagree on it (IN-02).
  */
-function userDirOf(ctx: SetupContext): string | null {
+export function userDirOf(ctx: { readonly configDir: string | null; readonly home: string | null }): string | null {
   if (ctx.configDir !== null) return ctx.configDir
 
   return ctx.home === null ? null : `${ctx.home}/.claude`
