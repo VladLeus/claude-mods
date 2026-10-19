@@ -400,6 +400,27 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
   ]
 }
 
+/**
+ * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan and of the
+ * setup scan, in that order, each text once where it first comes. Init prints them right after the scan summary, and
+ * 02-13's final review shows the same list again next to the plan.
+ */
+export function scanWarnings(locations: InitLocations, gathered: Gathered): string[] {
+  const all = [
+    ...locations.warnings,
+    ...gathered.facts.facts.warnings,
+    ...gathered.repo.warnings,
+    ...gathered.setup.warnings,
+  ]
+
+  return Array.from(new Set(all))
+}
+
+/** The scan warnings as init prints them, one `warning: <text>` line each; nothing when there are none. */
+export function scanWarningLines(warnings: readonly string[]): string[] {
+  return warnings.map(warning => `warning: ${warning}`)
+}
+
 /** The roles question init asks after it shows the proposal (D-46). */
 export const ROLES_QUESTION = 'Use these roles?'
 
@@ -834,9 +855,9 @@ function initReply(policy: GitPolicy, dryRun: boolean): string {
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent,
- * runs the scans and prints them, takes the roles (rolesStep) and their frameworks (frameworkStep), prints the
- * recommendations (ROLE-03), asks the git policy, and ends with the note that nothing was written (D-44, D-82). A
- * dismissed or unlisted answer cancels with INIT_CANCELLED (D-45).
+ * runs the scans and prints them with their warnings, takes the roles (rolesStep) and their frameworks
+ * (frameworkStep), prints the recommendations (ROLE-03), asks the git policy, and ends with the note that nothing was
+ * written (D-44, D-82). A dismissed or unlisted answer cancels with INIT_CANCELLED (D-45).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -847,7 +868,8 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   if (isClaudeJsonAllowed === null) return INIT_CANCELLED
 
   const gathered = await gatherScans(io, guard.locations, isClaudeJsonAllowed)
-  logLines(io, scanSummaryLines(gathered.repo, gathered.setup))
+  const warnings = scanWarningLines(scanWarnings(guard.locations, gathered))
+  logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
 
   const detections = detectAll(gathered.facts.facts)
   const proposed = await rolesStep(io, proposeRoles(gathered.repo), installedFrameworks(detections))
