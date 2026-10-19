@@ -1156,6 +1156,19 @@ describe('overlayLinks', () => {
     ])
   })
 
+  test('pin: a name with a .. segment or a slash is refused, and dots inside a plain name are kept (B5)', () => {
+    const names = ['..', '../x', 'x/..', 'a/../b', 'a..b', 'v1.2']
+    const result = overlayLinks('pm', { skills: names, agents: [] }, user({ userSkills: names }))
+
+    expect(result.links.map(link => link.path)).toEqual([`${OVERLAY}/skills/a..b`, `${OVERLAY}/skills/v1.2`])
+    expect(result.warnings).toEqual([
+      'skill .. has an unsafe name: not linked',
+      'skill ../x has an unsafe name: not linked',
+      'skill a/../b has an unsafe name: not linked',
+      'skill x/.. has an unsafe name: not linked',
+    ])
+  })
+
   test('a name that is both unsafe and absent from the user is reported as unsafe, never looked up', () => {
     const result = overlayLinks('pm', { skills: ['../x'], agents: ['a b'] }, user())
 
@@ -1465,6 +1478,30 @@ function matrixProblems(): string[] {
   return problems
 }
 
+/** One combination of the matrix: its label, the role, its scope, the launching user and the launch plan. */
+type MatrixCase = {
+  readonly label: string
+  readonly role: RoleSpec
+  readonly scope: CompiledScope
+  readonly launcher: LaunchUser
+  readonly plan: LaunchPlan
+}
+
+/** Every combination of the matrix (framework, role, assignment) for a launching user. */
+function matrixCases(launcher: LaunchUser): MatrixCase[] {
+  return FRAMEWORKS.flatMap(framework =>
+    MATRIX_ROLES.flatMap(base =>
+      ASSIGNMENTS.map(([label, assign]) => {
+        const role = assign(base)
+        const scope = matrixScope(role, framework)
+        const plan = launchPlan(role, scope, launcher)
+
+        return { label: `${framework} / ${role.id} / ${label}`, role, scope, launcher, plan }
+      }),
+    ),
+  )
+}
+
 /** The PM of the matrix with everything assigned on GSD: its scope, its launch plan and no problem. */
 function pmCase(): { readonly role: RoleSpec; readonly scope: CompiledScope; readonly plan: LaunchPlan } {
   const role = assignEverything(templateRole('pm'))
@@ -1512,6 +1549,38 @@ describe('launch properties', () => {
     expect(ASSIGNMENTS.map(([label]) => label)).toEqual(['nothing', 'everything'])
     expect(plans).toHaveLength(42)
     expect(plans.filter(plan => plan.links.length === 0)).toEqual([])
+  })
+
+  test('pin: every matrix plan holds the deny of runtimeDeny and starts its warnings with those of it (B4)', () => {
+    const unusual: LaunchUser = { ...MATRIX_USER, codeDirs: [...MATRIX_USER.codeDirs, '*'] }
+    const results = [...matrixCases(MATRIX_USER), ...matrixCases(unusual)].map(item => {
+      const deny = runtimeDeny(item.role, item.scope, item.launcher)
+      const leading = item.plan.warnings.slice(0, deny.warnings.length)
+
+      return {
+        label: item.label,
+        isSameDeny: JSON.stringify(denyOf(item.plan.settings)) === JSON.stringify(deny.deny),
+        isLedByDeny: JSON.stringify(leading) === JSON.stringify(deny.warnings),
+        hasWarnings: deny.warnings.length > 0,
+      }
+    })
+
+    expect(results.filter(result => !result.isSameDeny || !result.isLedByDeny).map(result => result.label)).toEqual([])
+    expect(results.filter(result => result.hasWarnings).length > 0).toBe(true)
+    expect(results).toHaveLength(84)
+  })
+
+  test('pin: a plan that carries everything holds every allowed settings key, in the order of the list (B4)', () => {
+    const keys = FRAMEWORKS.flatMap(framework =>
+      MATRIX_ROLES.map(base => {
+        const role = assignEverything(base)
+
+        return Object.keys(launchPlan(role, matrixScope(role, framework), MATRIX_USER).settings)
+      }),
+    )
+
+    expect(keys).toHaveLength(21)
+    expect(keys).toEqual(keys.map(() => RUNTIME_SETTINGS_KEYS))
   })
 
   test('the plan of a role with everything holds instruction links, overlay skills and agents under .runtime', () => {
