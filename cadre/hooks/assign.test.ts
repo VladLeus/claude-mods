@@ -675,6 +675,16 @@ describe('history hints', () => {
     expect(orderGroupsByUse(GROUPS, new Map([['my-skill', 9]]))).toEqual([OWN, ALPHA, CODEX])
     expect(JSON.stringify(GROUPS)).toBe(before)
   })
+
+  test('groupUses finds the count of a skill name with capital letters under its lowercase form (WR-02)', () => {
+    const mixed: SkillGroup = { label: 'your own', plugin: null, names: ['MySkill'] }
+    expect(groupUses(mixed, new Map([['myskill', 10]]))).toBe(10)
+  })
+
+  test('orderGroupsByUse puts a busy group first when its skill name has capital letters (WR-02)', () => {
+    const mixed: SkillGroup = { label: 'your own', plugin: null, names: ['MySkill'] }
+    expect(orderGroupsByUse([ALPHA, CODEX, mixed], new Map([['myskill', 10]]))).toEqual([mixed, ALPHA, CODEX])
+  })
 })
 
 /** The question memoryQuestion words for the auto-memories, with `shown` between the brackets. */
