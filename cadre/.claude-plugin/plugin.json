@@ -1,6 +1,6 @@
 {
   "name": "cadre",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Split a repo into narrow-scope role sessions; Phase 2: detect, guided init and regen that print the plan and write nothing",
   "author": { "name": "VladLeus", "url": "https://github.com/VladLeus" },
   "types": "./types/index.d.ts"
