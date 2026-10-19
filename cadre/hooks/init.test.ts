@@ -1188,6 +1188,11 @@ const FOLDER_WORLD = memWorld({
   realPaths: { '/repo/apps/linked': '/elsewhere/linked' },
 })
 
+/** The port of a run whose stat of `path` answers `stat`; the stat of any other path is the run's own. */
+function withStat(run: MemRun, path: string, stat: PortStat): InitIo {
+  return { ...run.io, stat: async asked => (asked === path ? stat : run.io.stat(asked)) }
+}
+
 /** The line init logs for a launcher folder it cannot use. */
 function cannotUse(answer: string, problem: string): string {
   return `Cannot use ${answer}: ${problem}.`
@@ -1196,7 +1201,7 @@ function cannotUse(answer: string, problem: string): string {
 /** The problem with a folder path isSafeRelativePath refuses. */
 const UNSAFE_FOLDER = 'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /'
 
-/** The problem with a folder that does not stat as a plain folder of the repo. */
+/** The problem with a folder whose real path is not a folder inside the repo. */
 const NOT_A_FOLDER = 'it is not a folder in this repo'
 
 /** What launchStartStep gives for the folder apps/web of the repo. */
@@ -1247,7 +1252,7 @@ describe('launchStartStep', () => {
     }
   })
 
-  test('a folder that is not safe, not there, a file or a link is refused with why, and asked again', async () => {
+  test('an unsafe or missing folder, a file or a link out of the repo is refused with why, asked again', async () => {
     const bad = ['../x', '/etc', 'a b', '${HOME}', 'missing', 'apps/readme.md', 'apps/linked']
     for (const answer of bad) {
       const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
@@ -1256,6 +1261,31 @@ describe('launchStartStep', () => {
       expect(run.logged).toEqual([cannotUse(answer, problem)])
       expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
     }
+  })
+
+  test('a folder reached through a linked parent that leaves the repo is refused, and asked again', async () => {
+    const run = memIo(FOLDER_WORLD, ['other', 'vendor/ui', 'apps/web'])
+    const outside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/elsewhere/vendor/ui' }
+    expect(await launchStartStep(withStat(run, '/repo/vendor/ui', outside), '/repo')).toEqual(APPS_WEB)
+    expect(run.logged).toEqual([cannotUse('vendor/ui', NOT_A_FOLDER)])
+    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+  })
+
+  test('a folder whose stat has no real path is refused, and asked again', async () => {
+    const run = memIo(FOLDER_WORLD, ['other', 'apps/unresolved', 'apps/web'])
+    const unresolved: PortStat = { kind: 'dir', size: 0, isLink: false }
+    expect(await launchStartStep(withStat(run, '/repo/apps/unresolved', unresolved), '/repo')).toEqual(APPS_WEB)
+    expect(run.logged).toEqual([cannotUse('apps/unresolved', NOT_A_FOLDER)])
+    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+  })
+
+  test('a folder whose real path lies inside the repo is still chosen', async () => {
+    const run = memIo(FOLDER_WORLD, ['other', 'packages/api'])
+    const inside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/repo/packages/api' }
+    const chosen = { kind: 'chosen', start: { kind: 'dir', path: 'packages/api' } }
+    expect(await launchStartStep(withStat(run, '/repo/packages/api', inside), '/repo')).toEqual(chosen)
+    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION])
+    expect(run.logged).toEqual([])
   })
 
   test('a refused folder is shown cleaned and capped in the line that says why', async () => {
