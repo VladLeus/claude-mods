@@ -31,6 +31,7 @@ import {
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
+  modelEffortRefusal,
   NONE_OPTION,
   parseEnvNames,
   parseModelEffort,
@@ -1084,19 +1085,36 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
 }
 
 /**
+ * Asks one model and effort question at most MAX_ASKS times (D-52, A4): a dismissal gives null at once and an answer
+ * parseModelEffort reads is the choice; any other answer prints modelEffortRefusal and is asked again. After MAX_ASKS
+ * refused answers it gives null, so a cap is never a choice (A1).
+ */
+async function askModelEffort(io: InitIo, question: string): Promise<Pick<RoleSpec, 'model' | 'effort'> | null> {
+  for (let asked = 0; asked < MAX_ASKS; asked += 1) {
+    const answer = await askOnce(io, question, { options: MODEL_EFFORT_OPTIONS })
+    if (answer === null) return null
+    const choice = parseModelEffort(answer)
+    if (choice !== null) return choice
+    logLines(io, [modelEffortRefusal(answer)])
+  }
+
+  return null
+}
+
+/**
  * The model and effort step (D-52, D-86): `Same for all roles` or `Per role`, then `opus + medium`, `sonnet + medium`
  * or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role order. Each role
- * stores a model family alias, never a pinned model id, and an effort (parseModelEffort). Only an answer to every
- * question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the cancel reason
+ * stores opus, sonnet, haiku or fable, never a pinned model id, and an effort (parseModelEffort, A4); a typed pair it
+ * cannot read prints modelEffortRefusal and is asked again (askModelEffort). Only an answer to every question gives
+ * roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the cancel reason
  * MODEL_DISMISSED_REASON, so no role keeps a model the person did not finish choosing (A1). The roles it is given
  * never change.
  */
 export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<readonly RoleSpec[]>> {
-  const spec = { options: MODEL_EFFORT_OPTIONS }
   const mode = await askChoice(io, MODEL_MODE_QUESTION, { options: ANSWER_MODE_OPTIONS }, parseAnswerMode)
   if (mode === null) return cancelled(MODEL_DISMISSED_REASON)
   if (mode === 'same') {
-    const choice = await askChoice(io, MODEL_ALL_QUESTION, spec, parseModelEffort)
+    const choice = await askModelEffort(io, MODEL_ALL_QUESTION)
     if (choice === null) return cancelled(MODEL_DISMISSED_REASON)
 
     return accepted(roles.map(role => withModel(role, choice)))
@@ -1104,7 +1122,7 @@ export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise
 
   const modelled: RoleSpec[] = []
   for (const role of roles) {
-    const choice = await askChoice(io, modelRoleQuestion(role), spec, parseModelEffort)
+    const choice = await askModelEffort(io, modelRoleQuestion(role))
     if (choice === null) return cancelled(MODEL_DISMISSED_REASON)
     modelled.push(withModel(role, choice))
   }

@@ -688,10 +688,18 @@ export function isAutopilotDuration(text: string): boolean {
 }
 
 /**
- * A model family alias such as `opus`: lowercase letters and dashes, 24 characters at most, never a pinned id with a
- * digit (D-52, OQ 8). A role.json and a typed model answer are both checked against it.
+ * The model family aliases a role may name (D-52, OQ 8, A4): each resolves to the latest model of its family, so a
+ * role never pins a model id. A role.json and a typed model answer are both checked against them (isModelName).
  */
-export const MODEL_PATTERN = /^[a-z][a-z-]{0,23}$/
+export const MODEL_ALIASES: readonly string[] = Object.freeze(['opus', 'sonnet', 'haiku', 'fable'])
+
+/**
+ * Whether text names a model a role may use (A4): exactly one of MODEL_ALIASES, which resolves to the latest model of
+ * its family. Anything else, a typo or a pinned model id such as `claude-opus-4-5`, is refused here.
+ */
+export function isModelName(text: string): boolean {
+  return MODEL_ALIASES.includes(text)
+}
 
 /**
  * An MCP server, skill or command name as a role.json lists it: a letter or digit, then up to 99 more letters, digits
@@ -777,7 +785,7 @@ function settingsOf(value: Record<string, unknown>): Pick<RoleSpec, 'model' | 'e
   const model = value.model
   const effort = EFFORTS.find(candidate => candidate === value.effort)
   const permissionMode = PERMISSION_MODES.find(candidate => candidate === value.permissionMode)
-  if (typeof model !== 'string' || !MODEL_PATTERN.test(model)) return null
+  if (typeof model !== 'string' || !isModelName(model)) return null
   if (effort === undefined || permissionMode === undefined) return null
 
   return { model, effort, permissionMode }

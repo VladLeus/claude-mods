@@ -1,7 +1,7 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { clean, compareText, sortedUnique } from './facts'
 import { freezeRows } from './freeze'
-import { EFFORTS, MODEL_PATTERN, standsFor } from './roles'
+import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
@@ -403,16 +403,30 @@ function isEffort(text: string): text is Effort {
 
 /**
  * Reads a typed answer such as `opus + medium`, `sonnet high` or `haiku+low` into a model family alias and an effort,
- * in any case (D-52). The model must look like a family alias, so a pinned model id such as `claude-opus-5-5`, which
- * has digits, is refused and a role keeps following the latest model of its family (OQ 8). The effort must be one of
- * EFFORTS. Anything else, a model alone included, gives null so the question is asked again (T-02-19).
+ * in any case (D-52). The model must be opus, sonnet, haiku or fable (isModelName, A4), so a typo, an effort word or a
+ * pinned model id such as `claude-opus-5-5` is refused and a role keeps following the latest model of its family
+ * (OQ 8). The effort must be one of EFFORTS. Anything else, a model alone included, gives null so the question is
+ * asked again (T-02-19).
  */
 export function parseModelEffort(answer: string): { readonly model: string; readonly effort: Effort } | null {
   const [model, effort, ...rest] = answer.trim().toLowerCase().split(MODEL_EFFORT_SEPARATOR)
   if (model === undefined || effort === undefined || rest.length > 0) return null
-  if (!MODEL_PATTERN.test(model) || !isEffort(effort)) return null
+  if (!isModelName(model) || !isEffort(effort)) return null
 
   return { model, effort }
+}
+
+/**
+ * The line init prints for a typed model and effort parseModelEffort refuses (A4): the answer, cleaned and capped so it
+ * cannot add a line or hide text, then an example pair and every model and effort a role may use.
+ */
+export function modelEffortRefusal(answer: string): string {
+  const typed = clean(answer, MAX_SHOWN_NAME_CHARS)
+
+  return (
+    `Cannot use ${typed}: type a model and an effort, such as opus + high. ` +
+    `Models: ${MODEL_ALIASES.join(', ')}. Efforts: ${EFFORTS.join(', ')}.`
+  )
 }
 
 /** The button that carries every scanned env variable name. A typed answer of the same words, or `all`, counts too. */
