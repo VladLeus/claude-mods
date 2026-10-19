@@ -898,6 +898,28 @@ describe('cadre init with a faked host', () => {
     expect(order).toEqual(prefixes.map((_, index) => index))
   })
 
+  test('a GSD repo with no config file asks two hunks after the model questions, before the policy', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const hunkAts = log.asks.flatMap((ask, at) => (ask.startsWith('ask .planning/config.json:') ? [at] : []))
+    const modelAt = log.asks.indexOf('ask Model and effort for all roles?')
+    const policyAt = log.asks.indexOf(POLICY_ASK)
+    expect(hunkAts).toHaveLength(2)
+    expect(modelAt >= 0 && hunkAts.every(at => at > modelAt && at < policyAt)).toBe(true)
+    expect(hunkAts.map(at => (log.asks[at] ?? '').split('\n')[0])).toEqual([
+      'ask .planning/config.json: mode',
+      'ask .planning/config.json: workflow.text_mode',
+    ])
+    expect(hunkAts.map(at => log.askOptions[at])).toEqual([
+      ['Accept', 'Decline'],
+      ['Accept', 'Decline'],
+    ])
+    expect(log.logs.some(text => text.includes('attended:'))).toBe(false)
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(log.runs).toEqual([])
+  })
+
   test('commit all prints its own policy line and no worktree line', async ($, on) => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
