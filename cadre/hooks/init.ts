@@ -1169,9 +1169,11 @@ async function askAssignments(
  * question (classifyMcp, classifySkills), and infra servers and handoff and framework skills are never asked about.
  * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", answered with None, All roles or a typed list of role ids or titles; an answer that names any other
- * role is asked again (parseRoleList, T-02-33). Every name joins the `mcp` or `skills` list of its roles
- * (assignToRoles). Only an answer to every question gives roles: a dismissal, or MAX_ASKS answers it cannot read at
- * one question, gives the cancel reason ASSIGNMENT_DISMISSED_REASON (A1). The roles it is given never change.
+ * role is asked again (parseRoleList, T-02-33). The step decides the whole list of each name it asks about: every
+ * role first loses those names, then each name joins the `mcp` or `skills` list of the roles its answer names
+ * (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3). Only an
+ * answer to every question gives roles: a dismissal, or MAX_ASKS answers it cannot read at one question, gives the
+ * cancel reason ASSIGNMENT_DISMISSED_REASON (A1). The roles it is given never change.
  */
 export async function assignmentStep(
   io: InitIo,
@@ -1186,7 +1188,14 @@ export async function assignmentStep(
   if (servers === null) return cancelled(ASSIGNMENT_DISMISSED_REASON)
   const grouped = await askAssignments(io, roles, groupItems)
   if (grouped === null) return cancelled(ASSIGNMENT_DISMISSED_REASON)
-  const withMcp = assignToRoles(roles, [...mcp.assigned, ...servers], 'mcp')
+  const asked = new Set([...mcp.unknown])
+  const askedSkills = new Set(skills.groups.flatMap(group => group.names))
+  const unasked = roles.map(role => ({
+    ...role,
+    mcp: role.mcp.filter(name => !asked.has(name)),
+    skills: role.skills.filter(name => !askedSkills.has(name)),
+  }))
+  const withMcp = assignToRoles(unasked, [...mcp.assigned, ...servers], 'mcp')
 
   return accepted(assignToRoles(withMcp, [...skills.assigned, ...grouped], 'skills'))
 }
