@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskSpec, TemplateRoleId } from '../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { scanSetup } from './setup'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -16,6 +17,8 @@ import {
   memIo,
   memWorld,
   SECRET_FIXTURES,
+  secretUserSettings,
+  secretWorld,
   session,
   skillRef,
   templateRole,
@@ -340,5 +343,36 @@ describe('shared fixtures', () => {
     })
     expect(Object.keys(INIT_ANSWERS)).toHaveLength(14)
     expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
+  })
+
+  test('secretWorld scans to the carry facts, hook names and settings key names of its settings (B6)', async () => {
+    const ctx = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
+    const scan = await scanSetup(memIo(secretWorld(), []).io, ctx, false)
+    expect(scan.carry).toEqual({
+      autoCompactWindow: 800000,
+      hasStatusLine: true,
+      isGsdStatusline: true,
+      envNames: ['API_KEY', 'JIRA_URL'],
+    })
+    expect(scan.hooks).toEqual([
+      { script: 'gsd-secret-read-guard.js', event: 'PreToolUse', source: 'user' },
+      { script: 'my-hook.sh', event: 'PreToolUse', source: 'user' },
+    ])
+    expect(scan.settingsKeys).toEqual([
+      { source: 'user', keys: ['autoCompactWindow', 'env', 'hooks', 'statusLine'] },
+      { source: 'project', keys: [] },
+      { source: 'local', keys: [] },
+    ])
+  })
+
+  test('secretWorld holds secretUserSettings and every secret fixture; over changes what it names (B6)', () => {
+    const world = secretWorld()
+    expect(world.settings).toEqual({ user: secretUserSettings(), project: {}, local: {} })
+    expect(world.dirs['/repo/.git']).toEqual([])
+    expect(leaks(JSON.stringify(world), SECRET_FIXTURES)).toEqual([...SECRET_FIXTURES])
+    const facts = { facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' }
+    const changed = secretWorld({ facts })
+    expect(changed.facts).toEqual(facts)
+    expect({ ...changed, facts: world.facts }).toEqual(world)
   })
 })
