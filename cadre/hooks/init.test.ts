@@ -4094,8 +4094,8 @@ describe('repoGuard and readTeam', () => {
       const world = text === null ? gitWorld() : gitWorld({ files: { [config]: text } })
       const state = stateOf(team, { framework: 'gsd' })
       const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
-      const attended = team.map(role => cardOf(scopes, role.id).isAttended)
-      expect([text, attended]).toEqual([text, [isAttended, isAttended]])
+      // BE has Bash, so only the config decides; a GSD role without Bash, such as PM, is always attended.
+      expect([text, cardOf(scopes, 'be').isAttended]).toEqual([text, isAttended])
     }
   })
 })

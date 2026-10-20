@@ -696,17 +696,20 @@ export async function findGitTop(
   return { state: 'none' }
 }
 
+/** The cadre commands a refusal is worded for. */
+export type CommandWord = 'init' | 'regen' | 'start' | 'status'
+
 /**
  * The refusal when the session root is not the git top level, naming the top level, else null (D-56). Trailing
  * slashes are ignored when the two are compared, and the top level is shown cleaned and capped at 240 code points.
  */
-export function gitRootRefusal(root: string, top: string, command: 'init' | 'regen'): string | null {
+export function gitRootRefusal(root: string, top: string, command: CommandWord): string | null {
   if (trimSlash(root) === trimSlash(top)) return null
 
   return `run /cadre ${command} from the repo root: ${clean(top, MAX_TOP_CHARS)}`
 }
 
 /** The refusal when no git repo is above the session root, with the wording D-97 fixes. */
-export function notGitRepoReply(command: 'init' | 'regen'): string {
+export function notGitRepoReply(command: CommandWord): string {
   return `cadre ${command} needs a git repo: run git init first`
 }

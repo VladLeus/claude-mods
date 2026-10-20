@@ -1,16 +1,22 @@
 /**
- * The render half of /cadre start (D-102): the ordered steps that write a role's per-launch files into
- * `.cadre/<id>/.runtime/`, from its LaunchPlan (D-98) and the texts of its MCP config and probe expectations. It reads
- * and writes nothing: /cadre start stats and lists the paths renderPaths names, then runs the steps renderSteps gives,
- * in order, through the host. The stamp is always the last step, and the launcher trusts it: it refuses to start when
- * the stamp is missing or older than the role files or a rendered file, so a render that stops part way never starts a
- * session (LNCH-03).
+ * The gather and render halves of /cadre start (D-102).
+ *
+ * The gather half (gatherLaunchUser) reads, through the InitIo and HostIo ports only, the facts about the launching
+ * user that a role launch needs (D-98), and never writes.
+ *
+ * The render half gives the ordered steps that write a role's per-launch files into `.cadre/<id>/.runtime/`, from its
+ * LaunchPlan (D-98) and the texts of its MCP config and probe expectations. It reads and writes nothing: /cadre start
+ * stats and lists the paths renderPaths names, then runs the steps renderSteps gives, in order, through the host. The
+ * stamp is always the last step, and the launcher trusts it: it refuses to start when the stamp is missing or older
+ * than the role files or a rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
-import type { PortEntry, PortStat } from '../types'
+import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortStat } from '../types'
 import { isDirInsideRoot, sortedUnique } from './facts'
-import type { LaunchPlan, OverlayLink } from './launch'
+import { sha256Hex } from './hash'
+import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { reportText } from './render'
+import { userDirOf } from './setup'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
 const SETTINGS_FILE = 'settings.json'
@@ -340,4 +346,89 @@ export function renderArgv(step: RenderStep): readonly string[] | null {
 /** The text of the stamp a render writes last: the cadre version that rendered, on one line. */
 export function stampText(cadreVersion: string): string {
   return `rendered by cadre ${cadreVersion}\n`
+}
+
+/** The argv that asks git for the repo's common dir as an absolute path; it runs at the repo root (D-98, D-91). */
+export const GIT_COMMON_DIR_ARGV: readonly string[] = Object.freeze([
+  'git',
+  'rev-parse',
+  '--path-format=absolute',
+  '--git-common-dir',
+])
+
+/** How long the git run may take before it is given up. */
+const GIT_TIMEOUT_MS = 10_000
+
+/** The refusal when there is no HOME: the role files are rendered from the user's own folder (D-98). */
+export const START_NO_HOME = 'cadre start needs HOME to render the role files, so it stopped.'
+
+/** The refusal when git gives no common dir, which names the role memory folders (D-91). */
+export const START_NO_GIT_DIR =
+  'cadre start could not read the git common dir (git rev-parse failed), so it stopped.'
+
+/** What gatherLaunchUser gives: the launching user's facts with the warnings to show, or the exact refusal. */
+export type LaunchUserRead =
+  | { readonly kind: 'ok'; readonly user: LaunchUser; readonly warnings: readonly string[] }
+  | { readonly kind: 'refuse'; readonly text: string }
+
+/**
+ * The git common dir as git gives it at the repo root: its output without the final line break, which must start
+ * with `/`. Null when the host rejects the run, it exits non-zero or its output is not an absolute path.
+ */
+async function gitCommonDirOf(host: HostIo, root: string): Promise<string | null> {
+  const run = await host.run(GIT_COMMON_DIR_ARGV, { cwd: root, timeoutMs: GIT_TIMEOUT_MS })
+  if (run === null || run.exitCode !== 0) return null
+  if (!run.stdout.startsWith('/')) return null
+
+  return run.stdout.endsWith('\n') ? run.stdout.slice(0, -1) : run.stdout
+}
+
+/**
+ * The launching user's facts (D-98), gathered in the root session through the ports: the repo root as resolved and as
+ * given; the home folder; the user folder (CLAUDE_CONFIG_DIR, else `<home>/.claude`); the git common dir from
+ * GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves it, else as git gave it,
+ * with its SHA-256, which name the role memory folders (roleMemoryDir, D-20, D-91); and the code dirs given. It
+ * refuses with START_NO_HOME when there is no home folder, before any run, and with START_NO_GIT_DIR when git gives no
+ * absolute path.
+ */
+export async function gatherLaunchUser(
+  io: InitIo,
+  host: HostIo,
+  input: {
+    readonly locations: InitLocations
+    readonly launchStart: LaunchStart
+    readonly codeDirs: readonly string[]
+  },
+): Promise<LaunchUserRead> {
+  const { locations } = input
+  const { home } = locations
+  const userDir = userDirOf(locations)
+  if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
+  const commonDir = await gitCommonDirOf(host, locations.root)
+  if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
+  const gitCommonDir = (await io.stat(commonDir))?.realPath ?? commonDir
+
+  return {
+    kind: 'ok',
+    user: {
+      root: locations.root,
+      givenRoot: locations.givenRoot,
+      home,
+      userDir,
+      gitCommonDir,
+      commonDirHash: await sha256Hex(gitCommonDir),
+      autoCompactWindow: null,
+      statusLine: null,
+      env: {},
+      hooks: [],
+      claudeMd: [],
+      globalClaudeMd: [],
+      memoryFiles: [],
+      givenMemoryFiles: [],
+      userSkills: [],
+      userAgents: [],
+      codeDirs: input.codeDirs,
+    },
+    warnings: [],
+  }
 }

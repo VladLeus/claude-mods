@@ -124,6 +124,7 @@ import {
   readRepoFile,
   scanRepo,
 } from './scan'
+import type { CommandWord } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 
@@ -132,8 +133,8 @@ export const NOT_INTERACTIVE_REPLY =
   'cadre init needs an interactive session to ask its questions. ' +
   'Run /cadre init in a terminal session, not with claude -p.'
 
-/** The reply when the session root cannot be read, worded for init or regen: it stops before it reads anything. */
-function rootUnknownReply(command: 'init' | 'regen'): string {
+/** The reply when the session root cannot be read, worded for its command: it stops before it reads anything. */
+function rootUnknownReply(command: CommandWord): string {
   return `cadre ${command} could not read the session root, so it stopped before reading anything.`
 }
 
@@ -142,9 +143,9 @@ export const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')
 
 /**
  * The text of a `/cadre detect` refusal with every `cadre detect` named for `command` instead, so the refusal reads
- * right for init or regen while detect keeps its own constants byte for byte (Pitfall 10).
+ * right for init, regen, start or status while detect keeps its own constants byte for byte (Pitfall 10).
  */
-export function commandRefusal(refusal: string, command: 'init' | 'regen'): string {
+export function commandRefusal(refusal: string, command: CommandWord): string {
   return refusal.replaceAll('cadre detect', `cadre ${command}`)
 }
 
@@ -378,7 +379,7 @@ function cancelled(reason: string): StepResult<never> {
  * The refusal when the session root is not the git top level, or no git repo is above it at all (D-56, D-97b); null
  * when the root is the top level. The walk only stats `.git` and runs no process.
  */
-async function gitTopRefusal(io: InitIo, root: string, command: 'init' | 'regen'): Promise<string | null> {
+async function gitTopRefusal(io: InitIo, root: string, command: CommandWord): Promise<string | null> {
   const found = await findGitTop(io, root)
   if (found.state === 'none') return notGitRepoReply(command)
 
@@ -409,15 +410,12 @@ async function autopilotRefusal(
 }
 
 /**
- * The guard `/cadre init` and `/cadre regen` run before they scan anything (SCAN-04, D-42, D-56). It refuses, in this
- * order: (init only) a session nobody can be asked in, an unreadable session root, the home folder or the file system
- * root, a root with no git repo above it, a root that is not the git top level, an active autopilot run in this
- * session, and an autopilot state that cannot be read. Regen runs in `claude -p` (D-99), so its guard never asks
- * whether anyone is there. Each refusal is worded for its command, and no check after a refusal runs.
+ * The repo checks a cadre command runs before it reads anything (D-36, D-56, D-97b). It refuses, in this order: an
+ * unreadable session root, the home folder or the file system root, a root with no git repo above it, and a root that
+ * is not the git top level. Each refusal is worded for `command`, and no check after a refusal runs. It asks no
+ * question and does not look for an autopilot run: initGuard adds those checks for init and regen.
  */
-export async function initGuard(io: InitIo, command: 'init' | 'regen'): Promise<GuardResult> {
-  if (command === 'init' && (await io.isInteractive()) !== true) return refuse(NOT_INTERACTIVE_REPLY)
-
+export async function repoGuard(io: InitIo, command: CommandWord): Promise<GuardResult> {
   const locations = await io.locations()
   if (locations === null) return refuse(rootUnknownReply(command))
 
@@ -427,10 +425,27 @@ export async function initGuard(io: InitIo, command: 'init' | 'regen'): Promise<
   const gitRefusal = await gitTopRefusal(io, locations.root, command)
   if (gitRefusal !== null) return refuse(gitRefusal)
 
-  const runRefusal = await autopilotRefusal(io, locations.givenHome, command)
+  return { kind: 'ok', locations }
+}
+
+/**
+ * The guard `/cadre init` and `/cadre regen` run before they scan anything (SCAN-04, D-42, D-56). It refuses, in this
+ * order: (init only) a session nobody can be asked in; the repo checks of repoGuard (an unreadable session root, the
+ * home folder or the file system root, a root with no git repo above it, a root that is not the git top level); an
+ * active autopilot run in this session, and an autopilot state that cannot be read. Regen runs in `claude -p` (D-99),
+ * so its guard never asks whether anyone is there. Each refusal is worded for its command, and no check after a
+ * refusal runs.
+ */
+export async function initGuard(io: InitIo, command: 'init' | 'regen'): Promise<GuardResult> {
+  if (command === 'init' && (await io.isInteractive()) !== true) return refuse(NOT_INTERACTIVE_REPLY)
+
+  const guard = await repoGuard(io, command)
+  if (guard.kind === 'refuse') return guard
+
+  const runRefusal = await autopilotRefusal(io, guard.locations.givenHome, command)
   if (runRefusal !== null) return refuse(runRefusal)
 
-  return { kind: 'ok', locations }
+  return guard
 }
 
 /** The ~/.claude.json consent question (D-58): the file holds account data, so it is read only after a yes. */
@@ -2297,8 +2312,16 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   return initReplyText(asWritten.plan, asWritten.state.gitPolicy, asWritten.state.launchStart, applied.value.outcome)
 }
 
+/**
+ * The reply when a command that works from the team finds no `.cadre/cadre.json`, worded for that command: there is
+ * nothing to work from until init has run (D-68).
+ */
+export function noStateReply(command: 'regen' | 'start' | 'status'): string {
+  return `cadre ${command} needs .cadre/cadre.json from /cadre init: run /cadre init first.`
+}
+
 /** The reply when regen finds no `.cadre/cadre.json`: there is nothing to re-render from until init has run (D-68). */
-export const REGEN_NO_STATE = 'cadre regen needs .cadre/cadre.json from /cadre init: run /cadre init first.'
+export const REGEN_NO_STATE = noStateReply('regen')
 
 /**
  * The reply when `.cadre/cadre.json` is there but cannot be used: it cannot be read, is too large or is not valid repo
@@ -2345,8 +2368,8 @@ export function regenNeedsFramework(id: string): string {
 /** The repo-relative path of the repo state regen re-renders from. */
 const CADRE_STATE_FILE = '.cadre/cadre.json'
 
-/** What a regen read gives: the value it found, or the exact reply that refuses the run. */
-type RegenRead<T> =
+/** What a read of regen, /cadre start or /cadre status gives: the value it found, or the exact reply that refuses. */
+export type RegenRead<T> =
   | { readonly kind: 'ok'; readonly value: T }
   | { readonly kind: 'refuse'; readonly text: string }
 
@@ -2356,14 +2379,19 @@ function regenRefusal(text: string): RegenRead<never> {
 }
 
 /**
- * The repo state regen re-renders from (D-68, T-02-36): `.cadre/cadre.json` read through readRepoFile, so a link out of
- * the repo is never read, and checked by parseCadreState. A missing file refuses with REGEN_NO_STATE; a file that
- * cannot be read, is too large or is not valid state refuses with REGEN_BAD_STATE, and so does a stored launcher folder
- * that is not a folder inside the repo (isRepoFolder).
+ * The repo state regen re-renders from, and /cadre start and /cadre status work from (D-68, T-02-36):
+ * `.cadre/cadre.json` read through readRepoFile, so a link out of the repo is never read, and checked by
+ * parseCadreState. A missing file refuses with noStateReply, worded for `command`; a file that cannot be read, is too
+ * large or is not valid state refuses with REGEN_BAD_STATE, and so does a stored launcher folder that is not a folder
+ * inside the repo (isRepoFolder).
  */
-async function regenState(io: InitIo, root: string): Promise<RegenRead<CadreState>> {
+async function regenState(
+  io: InitIo,
+  root: string,
+  command: 'regen' | 'start' | 'status',
+): Promise<RegenRead<CadreState>> {
   const read = await readRepoFile(io, root, CADRE_STATE_FILE, MAX_READ_BYTES)
-  if (read.state === 'absent') return regenRefusal(REGEN_NO_STATE)
+  if (read.state === 'absent') return regenRefusal(noStateReply(command))
   const state = read.state === 'text' ? parseCadreState(read.text) : null
   if (state === null) return regenRefusal(REGEN_BAD_STATE)
   const start = state.launchStart
@@ -2405,10 +2433,49 @@ async function regenRoles(io: InitIo, root: string, ids: readonly string[]): Pro
 }
 
 /**
- * The frameworks whose roles the current config leaves attended, with no question asked (regen, and apply once the
- * hunks ran, D-70, D-72, D-120, A5): for each adapter in ADAPTERS order that a role runs on and that offers autonomy
- * hunks for this setup, its config file is read through readRepoFile, and the framework is attended while a required
- * proposal is not at its target (isAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
+ * The team a command works from (D-68, A5): the repo state of `.cadre/cadre.json`, every role it lists in its order,
+ * read back from the role's role.json, and the exact role.json text each role was parsed from, keyed by role id.
+ */
+export type TeamState = {
+  readonly state: CadreState
+  readonly roles: readonly RoleSpec[]
+  readonly texts: ReadonlyMap<string, string>
+}
+
+/**
+ * The team regen, /cadre start and /cadre status read before they plan or launch anything (D-68, T-02-36). It refuses
+ * with an exact reply in this order, which is runRegen's: no `.cadre/cadre.json` (noStateReply, worded for
+ * `command`); a cadre.json that cannot be read or is not valid, its stored launcher folder included (REGEN_BAD_STATE);
+ * an `id` it does not list (regenNoRole); the first listed role.json, in cadre.json order, that is missing, not valid
+ * or holds another id (regenBadRole); and, when the repo has no default framework, the first listed role with none of
+ * its own (regenNeedsFramework, D-73). It asks nothing and writes nothing.
+ */
+export async function readTeam(
+  io: InitIo,
+  root: string,
+  command: 'regen' | 'start' | 'status',
+  id: string,
+): Promise<RegenRead<TeamState>> {
+  const loaded = await regenState(io, root, command)
+  if (loaded.kind === 'refuse') return loaded
+  const state = loaded.value
+  if (!state.roles.includes(id)) return regenRefusal(regenNoRole(id, state.roles))
+
+  const team = await regenRoles(io, root, state.roles)
+  if (team.kind === 'refuse') return team
+  const { roles, texts } = team.value
+  const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
+  if (unframed !== undefined) return regenRefusal(regenNeedsFramework(unframed.id))
+
+  return { kind: 'ok', value: { state, roles, texts } }
+}
+
+/**
+ * The frameworks whose roles the current config leaves attended, with no question asked (regen and /cadre start
+ * through compileTeam, and apply once the hunks ran, D-70, D-72, D-120, A5): for each adapter in ADAPTERS order that a
+ * role runs on and that offers autonomy hunks for this setup, its config file is read through readRepoFile, and the
+ * framework is attended while a required proposal is not at its target (isAttendedFromConfig). A config that cannot
+ * be read attends the roles (fail closed).
  */
 async function attendedByConfig(
   io: InitIo,
@@ -2426,6 +2493,25 @@ async function attendedByConfig(
   }
 
   return attended
+}
+
+/**
+ * The scans and the compiled scopes of a team, as regen and /cadre start use them (D-68, D-70, D-72): the scans of one
+ * run (gatherScans), which read ~/.claude.json only when cadre.json records the consent (readUserMcp, A1); attended
+ * judged from the config on disk with no question asked (attendedByConfig); and every role compiled on its own
+ * framework or the repo default, for cadre.json's launch start (compileAll, D-122).
+ */
+export async function compileTeam(
+  io: InitIo,
+  locations: InitLocations,
+  state: CadreState,
+  roles: readonly RoleSpec[],
+): Promise<{ readonly gathered: Gathered; readonly scopes: ReadonlyMap<string, CompiledScope> }> {
+  const gathered = await gatherScans(io, locations, state.readUserMcp)
+  const frameworks = roles.map(role => resolvedFramework(role, state.framework))
+  const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
+
+  return { gathered, scopes: compileAll(roles, state.framework, gathered, attended, state.launchStart) }
 }
 
 /** Whether a repo-relative path is one of this role's own: in its folder `.cadre/<id>/`, or its launcher. */
@@ -2457,7 +2543,7 @@ type RegenPlanned = {
 /**
  * The file plan of regen for one role (D-68, PLAN-04), with the scan warnings of the run (scanWarnings, A4). Every
  * listed role is compiled as init compiles it, on its own framework or the repo default and attended by the current
- * config (attendedByConfig), so the index lists the whole team; desiredFiles gives only that role's files, its
+ * config (compileTeam), so the index lists the whole team; desiredFiles gives only that role's files, its
  * launcher and the index. Exactly the paths planReadPaths names are read, and planWithManifest classifies them against
  * the disk and the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is
  * planned. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init
@@ -2478,12 +2564,9 @@ async function regenPlan(
   },
 ): Promise<RegenRead<RegenPlanned>> {
   const { id, state, roles, roleJson, locations } = input
-  const gathered = await gatherScans(io, locations, state.readUserMcp)
+  const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const { manifest, manifestState } = gathered.repo.cadre
   if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
-  const frameworks = roles.map(role => resolvedFramework(role, state.framework))
-  const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
-  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart)
   const generated = desiredFiles({ roles, scopes, state, only: id })
   const ownPath = roleJsonPath(id)
   const desired = generated.filter(file => file.path !== ownPath)
@@ -2529,36 +2612,29 @@ export type RegenOptions =
 
 /**
  * `/cadre regen <id> [--dry-run]` (D-68, D-99). It asks nothing and logs nothing, so it also runs in `claude -p`: its
- * guard (initGuard in the regen wording) never asks whether anyone is there. It then refuses with an exact reply, in
- * this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be read or is not valid, its stored
- * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
- * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
- * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by the scan
- * regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
- * (REGEN_BAD_MANIFEST, A2). Otherwise it plans that one role (regenPlan). --dry-run replies with the plan, a `warning:`
- * line for each scan warning and the note that nothing was written; plain regen writes the plan with no question
- * (D-68): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is (D-67), cadre.json
- * is never among its files, and a manifest the plan keeps as a conflict is not written. It then replies with the plan,
- * the warnings and what the apply did (regenReplyText). The warnings are in the reply, so it still asks and logs
- * nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies
- * init compiled from it stay. Plain regen and --dry-run differ only in the first line and the ending.
+ * guard (initGuard in the regen wording) never asks whether anyone is there. It then reads the team (readTeam) and
+ * refuses with an exact reply, in this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be
+ * read or is not valid, its stored launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole);
+ * the first listed role.json, in cadre.json order, that is missing, not valid or holds another id (regenBadRole); when
+ * the repo has no default framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last,
+ * read by the scan regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or
+ * is not valid (REGEN_BAD_MANIFEST, A2). Otherwise it plans that one role (regenPlan). --dry-run replies with the
+ * plan, a `warning:` line for each scan warning and the note that nothing was written; plain regen writes the plan
+ * with no question (D-68): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is
+ * (D-67), cadre.json is never among its files, and a manifest the plan keeps as a conflict is not written. It then
+ * replies with the plan, the warnings and what the apply did (regenReplyText). The warnings are in the reply, so it
+ * still asks and logs nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1),
+ * so the MCP denies init compiled from it stay. Plain regen and --dry-run differ only in the first line and the ending.
  */
 export async function runRegen(io: InitIo, options: RegenOptions): Promise<string> {
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
 
-  const loaded = await regenState(io, locations.root)
-  if (loaded.kind === 'refuse') return loaded.text
-  const state = loaded.value
-  if (!state.roles.includes(options.id)) return regenNoRole(options.id, state.roles)
-
-  const team = await regenRoles(io, locations.root, state.roles)
+  const team = await readTeam(io, locations.root, 'regen', options.id)
   if (team.kind === 'refuse') return team.text
-  const { roles } = team.value
-  const unframed = state.framework === null ? roles.find(role => role.framework === undefined) : undefined
-  if (unframed !== undefined) return regenNeedsFramework(unframed.id)
-  const roleJson = team.value.texts.get(options.id)
+  const { state, roles, texts } = team.value
+  const roleJson = texts.get(options.id)
   // Fail closed: every listed role was read, so after the id check its text is always there.
   if (roleJson === undefined) return regenBadRole(options.id)
 
