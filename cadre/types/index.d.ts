@@ -448,10 +448,10 @@ export type RunOptions = {
 export type HostEnvName = 'TMUX' | 'TERM_PROGRAM'
 
 /**
- * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo. register.tsx builds it
- * from closures over `$`. InitIo never gets these members, so a path that is given only an InitIo (detect, every
- * --dry-run, every refusal and cancel) cannot write or run (T-03-01). Every member maps a host failure to false or
- * null and never reads an error text.
+ * The write and run port apply and `/cadre start` run through, beside InitIo; `/cadre status` is given its run member
+ * only (`Pick<HostIo, 'run'>`, #63 A3), so it cannot write. register.tsx builds it from closures over `$`. InitIo never
+ * gets these members, so a path that is given only an InitIo (detect, every --dry-run, every refusal and cancel)
+ * cannot write or run (T-03-01). Every member maps a host failure to false or null and never reads an error text.
  */
 export type HostIo = {
   /** Writes the text to an absolute path, creating its parent folders; false when the host refused or failed. */

@@ -1,6 +1,7 @@
 /**
- * `/cadre status <id>` (D-111, D-131, LNCH-06): whether a role's autopilot run is done, running or not started, read
- * only from files on disk, never from what a model says, so the end-to-end check has a done signal it can trust (SC3).
+ * `/cadre status <id>` (D-111, D-131, LNCH-06): whether a role's autopilot run is done, running, stopped, not started
+ * or unknown, read only from files on disk, never from what a model says, so the end-to-end check has a done signal it
+ * can trust (SC3).
  * The session id changes on every autopilot restart, so the role's session is found by its name `cadre-<id>`; then
  * that session's autopilot status file and log are read and reported, with the role's newest handoff and, for a role
  * on the built-in framework, whether its DONE.md marker is there (D-17).
@@ -17,10 +18,12 @@ import type { RunState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
 /**
- * Where a role's autopilot run stands, read from disk (D-111): `done` when autopilot's log ended the run with
- * `finished (done)`; `running` while its status file is on with a fresh beat; `stopped` when the run ended for another
- * reason or is off without a finished line; `not started` when no session is found, or the session has neither a
- * status file nor a log; `unknown` when the status file cannot be read.
+ * Where a role's autopilot run stands, read from disk (D-111): `done` when autopilot's log ended the session's last run
+ * (the lines after its last `started: ` line) with `finished (done)`; `running` while its status file is on with a
+ * fresh beat; `stopped` when that run ended for another reason, was stopped by the person, or is off without an end
+ * line; `not started` when no session is found, or the session has neither a status file nor a log; `unknown` when
+ * the status file cannot be read, when the log of a run that is not active cannot be read or is over LOG_MAX_BYTES,
+ * and when there is no absolute HOME as given or no plain session id to name autopilot's files by.
  */
 export type StatusState = 'done' | 'running' | 'not started' | 'stopped' | 'unknown'
 
@@ -73,6 +76,12 @@ const FINISHED_TEXT = 'finished ('
 
 /** The start of that text when the run ended done, after AUTOPILOT_DONE and the final handoff. */
 const FINISHED_DONE_TEXT = 'finished (done)'
+
+/** The start of the text of the log line autopilot writes when `/autopilot` starts a run: `started: ...`. */
+const STARTED_TEXT = 'started: '
+
+/** The text of the log line autopilot writes when the person stops the run with `/autopilot stop`. */
+const STOPPED_TEXT = 'stopped by the person'
 
 /**
  * One autopilot log line: its stamp, one word, then two spaces and the text, as autopilot's log writes it. The text
@@ -180,7 +189,12 @@ export function transcriptCandidates(entries: readonly PortEntry[]): string[] {
  * (transcriptCandidates), whose title grep exits 0 and gives `cadre-<id>`; a grep the host rejects, or that exits
  * non-zero, gives no title. Null when the folder is not known or cannot be listed, or no transcript has the title.
  */
-async function titledSession(io: InitIo, host: HostIo, folder: string | null, id: string): Promise<string | null> {
+async function titledSession(
+  io: InitIo,
+  host: Pick<HostIo, 'run'>,
+  folder: string | null,
+  id: string,
+): Promise<string | null> {
   if (folder === null) return null
   const entries = await io.list(folder)
   if (entries === null) return null
@@ -201,16 +215,47 @@ type BeatSession = {
 }
 
 /**
- * One parsed fleet beat as a role's session, or null when it is not one: a JSON object whose name is the session name,
- * whose id is a plain session id, whose cwd is an absolute path and, when the start folder is known, that folder
- * (trailing slashes aside), and whose beatAt is a finite number. Every other field is ignored.
+ * Whether an absolute path is one of the roots or below one, trailing slashes aside, on a path-component boundary, so
+ * `/repo2` is not below `/repo`; a path with a `.` or `..` component never is, since it could lead anywhere.
  */
-function beatOf(value: unknown, name: string, startFolder: string | null): BeatSession | null {
+function isInsideRoots(path: string, roots: readonly string[]): boolean {
+  if (path.split('/').some(part => part === '.' || part === '..')) return false
+  const folder = trimSlash(path)
+
+  return roots.some(root => {
+    const top = trimSlash(root)
+
+    return folder === top || folder.startsWith(`${top}/`)
+  })
+}
+
+/**
+ * Whether a beat's cwd is where the role's session starts: the start folder when it is known (trailing slashes
+ * aside), else, for a here start, the repo, a root of `roots` or a folder below one (isInsideRoots, #63 A2), as a
+ * here launcher refuses to run outside its repo.
+ */
+function isStartCwd(cwd: string, startFolder: string | null, roots: readonly string[]): boolean {
+  if (startFolder !== null) return trimSlash(cwd) === trimSlash(startFolder)
+
+  return isInsideRoots(cwd, roots)
+}
+
+/**
+ * One parsed fleet beat as a role's session, or null when it is not one: a JSON object whose name is the session name,
+ * whose id is a plain session id, whose cwd is an absolute path where the session starts (isStartCwd), and whose
+ * beatAt is a finite number. Every other field is ignored.
+ */
+function beatOf(
+  value: unknown,
+  name: string,
+  startFolder: string | null,
+  roots: readonly string[],
+): BeatSession | null {
   if (!isObject(value) || value.name !== name) return null
   const { id, cwd, beatAt } = value
   if (typeof id !== 'string' || !isPlainSessionId(id)) return null
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null
-  if (startFolder !== null && trimSlash(cwd) !== trimSlash(startFolder)) return null
+  if (!isStartCwd(cwd, startFolder, roots)) return null
   if (typeof beatAt !== 'number' || !Number.isFinite(beatAt)) return null
 
   return { sessionId: id, cwd, beatAt }
@@ -219,17 +264,19 @@ function beatOf(value: unknown, name: string, startFolder: string | null): BeatS
 /**
  * The role's session from the fleet beats (D-131), for when no transcript names it: of the beats beatOf takes for the
  * session name `cadre-<id>` and the start folder, the one with the newest beatAt (the first of a tie), as its id and
- * its cwd. For a here start (`startFolder` null) a beat is matched by its name alone, and its cwd tells the folder its
- * session started in. Null when no beat is the role's.
+ * its cwd. For a here start (`startFolder` null) a beat is matched by its name and a cwd at or below one of `roots`
+ * (the repo root and the root as given, #63 A2), and that cwd tells the folder its session started in; `roots` is not
+ * read for another start. Null when no beat is the role's.
  */
 export function beatSessionOf(
   values: readonly unknown[],
   id: string,
   startFolder: string | null,
+  roots: readonly string[],
 ): { readonly sessionId: string; readonly cwd: string } | null {
   let newest: BeatSession | null = null
   for (const value of values) {
-    const beat = beatOf(value, sessionName(id), startFolder)
+    const beat = beatOf(value, sessionName(id), startFolder, roots)
     if (beat === null) continue
     if (newest !== null && beat.beatAt <= newest.beatAt) continue
     newest = beat
@@ -270,12 +317,13 @@ type FoundSession = {
 /**
  * The role's session (D-131): first the title search over the start folder's transcripts under the user folder
  * (titledSession); else the fleet beats under HOME as given, as autopilot and agent-fleet name their folders from it
- * (beatSessionOf). A here start has no known folder, so it has no title search, and its beat's cwd is the folder its
- * session started in. Null when neither finds the session, and with no absolute HOME as given no beat is read.
+ * (beatSessionOf). A here start has no known folder, so it has no title search, and its beat, whose cwd must be in the
+ * repo (the root or the root as given), tells the folder its session started in. Null when neither finds the session,
+ * and with no absolute HOME as given no beat is read.
  */
 async function sessionOf(
   io: InitIo,
-  host: HostIo,
+  host: Pick<HostIo, 'run'>,
   input: { readonly locations: InitLocations; readonly id: string; readonly startFolder: string | null },
 ): Promise<FoundSession | null> {
   const { locations, id, startFolder } = input
@@ -283,7 +331,8 @@ async function sessionOf(
   if (titled !== null) return { sessionId: titled, foundBy: 'title', folder: startFolder }
   const home = locations.givenHome
   if (home === null || !home.startsWith('/')) return null
-  const beat = beatSessionOf(await beatValues(io, home), id, startFolder)
+  const roots = [locations.root, locations.givenRoot]
+  const beat = beatSessionOf(await beatValues(io, home), id, startFolder, roots)
   if (beat === null) return null
 
   return { sessionId: beat.sessionId, foundBy: 'beat', folder: startFolder ?? beat.cwd }
@@ -299,18 +348,20 @@ function logTexts(log: string): string[] {
 }
 
 /**
- * How autopilot's log says the run ended (D-111, T-03-33): the last line whose text after the stamp starts `finished (`
- * decides, `done` for `finished (done)` and `stopped` for any other reason; `none` when no line does. Autopilot
- * flattens line breaks, so one line is one record, and only the start of a text counts: a `finished (done)` inside a
- * text never does.
+ * How autopilot's log says the session's last run ended (D-111, T-03-33, #63 A1). Only the lines after the last one
+ * whose text starts `started: ` count (all of them when there is none, as in a session resumed after a restart), so an
+ * earlier run's `finished (done)` never makes a later run done. Of those, the last whose text starts `finished (` or
+ * is `stopped by the person` decides: `done` for `finished (done)`, `stopped` for any other reason or a stop by the
+ * person; `none` when no line does. Autopilot flattens line breaks, so one line is one record, and only the start of a
+ * text counts: a `finished (done)` or `started: ` inside a text never does.
  */
 export function runOutcomeOf(log: string): 'done' | 'stopped' | 'none' {
-  const finished = logTexts(log)
-    .filter(text => text.startsWith(FINISHED_TEXT))
-    .at(-1)
-  if (finished === undefined) return 'none'
+  const texts = logTexts(log)
+  const lastRun = texts.slice(texts.findLastIndex(text => text.startsWith(STARTED_TEXT)) + 1)
+  const ended = lastRun.filter(text => text.startsWith(FINISHED_TEXT) || text.startsWith(STOPPED_TEXT)).at(-1)
+  if (ended === undefined) return 'none'
 
-  return finished.startsWith(FINISHED_DONE_TEXT) ? 'done' : 'stopped'
+  return ended.startsWith(FINISHED_DONE_TEXT) ? 'done' : 'stopped'
 }
 
 /**
@@ -326,8 +377,8 @@ export function lastLogText(log: string): string | null {
 /**
  * The state of a found session's run (D-111), from what its files say, never from a model: an active run (a status
  * file that is on with a fresh beat) is `running` and an unknown one `unknown`; a run that is off is `done` or
- * `stopped` as its log's last finished line says (runOutcomeOf); with no finished line it is `not started` when there
- * is neither a status file nor a log line, else `stopped`.
+ * `stopped` as its log says the last run ended (runOutcomeOf); with no end line it is `not started` when there is
+ * neither a status file nor a log line, else `stopped`.
  */
 export function statusStateOf(input: {
   readonly runState: RunState
@@ -452,9 +503,14 @@ const NO_SESSION_RUN: RunRead = Object.freeze({ state: 'not started', lastLog: n
  * else its fleet beat. With no session the run is not started; else its state comes from the session's autopilot
  * status file and log (runOf, statusStateOf). The report adds the newest handoff under the folder the session started
  * in, or the start folder when no session was found (handoffOf), and, for a role whose framework (its own, else
- * cadre.json's) is the built-in one, whether its DONE.md marker is there (D-17). It asks nothing and writes nothing.
+ * cadre.json's) is the built-in one, whether its DONE.md marker is there (D-17). It asks nothing and writes nothing:
+ * it is given only the host's run, for the title grep, so it cannot write (T-03-01, #63 A3).
  */
-export async function runStatus(io: InitIo, host: HostIo, options: { readonly id: string }): Promise<string> {
+export async function runStatus(
+  io: InitIo,
+  host: Pick<HostIo, 'run'>,
+  options: { readonly id: string },
+): Promise<string> {
   const { id } = options
   const guard = await repoGuard(io, 'status')
   if (guard.kind === 'refuse') return guard.text

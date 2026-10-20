@@ -401,9 +401,10 @@ function initIoOf($: EngineInterface): InitIo {
 }
 
 /**
- * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo: plain closures over
- * `$`, built only for plain init, plain regen, /cadre start and /cadre status. InitIo never gets these members, so a
- * path that is given only an InitIo (detect, every --dry-run, every refusal and cancel) cannot write or run (T-03-01).
+ * The write and run port apply and `/cadre start` run through, beside InitIo: plain closures over `$`, built only for
+ * plain init, plain regen, /cadre start and /cadre status, which takes its run member only (runStatus is typed
+ * `Pick<HostIo, 'run'>`, #63 A3). InitIo never gets these members, so a path that is given only an InitIo (detect,
+ * every --dry-run, every refusal and cancel) cannot write or run (T-03-01).
  * Every member maps a host failure to false or null and never reads an error text. A run passes its cwd, stdin and env
  * only when given; the env names are string literals, as the host reads only literal names.
  */
