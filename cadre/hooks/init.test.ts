@@ -33,7 +33,7 @@ import type {
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
-import { hunkFailureLine } from './apply'
+import { CONFLICT_OPTIONS, conflictQuestion, hunkFailureLine } from './apply'
 import type { HunkRun } from './apply'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
@@ -4201,6 +4201,110 @@ describe('init apply (D-105)', () => {
     expect(host.writes.length).toBeGreaterThan(0)
     const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+})
+
+/** BE's ROLE.md as a person edited it outside cadre. */
+const EDITED_ROLE = 'edited by hand\n'
+
+/** The Keep mine / Take new question of BE's ROLE.md (D-67). */
+const ROLE_QUESTION = conflictQuestion('.cadre/be/ROLE.md')
+
+/** What the repo after an init holds once BE's ROLE.md was edited: the world, the planned files and BE's ROLE.md. */
+type EditedRole = {
+  readonly world: MemWorld
+  readonly files: readonly DesiredFile[]
+  readonly role: string
+}
+
+/**
+ * The repo of fullWorld after an init with the INIT_ANSWERS defaults: a listed `.cadre/` with every planned file, the
+ * cadre block in the root `.gitignore` and the manifest, except that BE's ROLE.md was edited outside cadre and the
+ * manifest records the hash of an older cadre text for it, so init plans it as the one conflict (D-67).
+ */
+async function editedRoleWorld(): Promise<EditedRole> {
+  const files = await plannedFiles(fullWorld(), await defaultRoles(fullWorld()))
+  const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
+  const older = files.map(file =>
+    file.path === '.cadre/be/ROLE.md' ? { ...file, content: 'older cadre text\n' } : file,
+  )
+  const world = withDisk(fullWorld({ dirs: { '/repo/.git': [], ...FULL_DIRS, '/repo/.cadre': [] } }), files)
+  const edited = {
+    '/repo/.cadre/be/ROLE.md': EDITED_ROLE,
+    '/repo/.cadre/manifest.json': await manifestOf(older),
+    '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null)) ?? '',
+  }
+
+  return { world: { ...world, files: { ...world.files, ...edited } }, files, role }
+}
+
+describe('init apply conflicts (D-67)', () => {
+  test('after Confirm a hand-edited ROLE.md gets one Keep mine / Take new question, and no other', async () => {
+    const { world } = await editedRoleWorld()
+    const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
+    await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
+    const reviewAt = run.asked.indexOf(REVIEW_QUESTION)
+    expect(reviewAt).toBeGreaterThan(0)
+    expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_QUESTION])
+    expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS })
+  })
+
+  test('Take new writes the desired ROLE.md and no copy, and the manifest records its new hash', async () => {
+    const { world, files, role } = await editedRoleWorld()
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const manifest = await manifestOf(files)
+    expect(opKinds(reply).get('.cadre/be/ROLE.md')).toBe('conflict')
+    expect(host.writes).toEqual([
+      { path: '/repo/.cadre/be/ROLE.md', text: role, isWritten: true },
+      { path: '/repo/.cadre/manifest.json', text: manifest, isWritten: true },
+    ])
+    expect(manifest).not.toBe(world.files['/repo/.cadre/manifest.json'])
+    expect(host.calls).toEqual([])
+    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 2 files (0 executable).', NEXT_STEP_NOTE])
+  })
+
+  test('Keep mine leaves ROLE.md, writes only its .cadre-new copy and keeps the manifest', async () => {
+    const { world, role } = await editedRoleWorld()
+    const host = memHost(hostWorld({}))
+    const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Keep mine' })
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    expect(run.asked.at(-1)).toBe(ROLE_QUESTION)
+    expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
+    expect(host.calls).toEqual([])
+    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
+  })
+
+  test(
+    'a dismissed conflict question, or MAX_ASKS answers that are neither, cancels init and writes and runs nothing',
+    async () => {
+      const { world } = await editedRoleWorld()
+      const reason = 'A Keep mine or Take new question was dismissed or not answered.'
+      const cases: readonly (readonly [Readonly<Record<string, string>>, number])[] = [
+        [INIT_ANSWERS, 1],
+        [{ ...INIT_ANSWERS, [ROLE_QUESTION]: 'maybe' }, MAX_ASKS],
+      ]
+      for (const [answers, asks] of cases) {
+        const host = memHost(hostWorld({}))
+        const run = memIo(world, answers)
+        expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(INIT_CANCELLED)
+        expect(run.asked.filter(question => question === ROLE_QUESTION)).toHaveLength(asks)
+        expect(run.logged.at(-1)).toBe(reason)
+        expect([host.writes, host.calls]).toEqual([[], []])
+      }
+    },
+  )
+
+  test('a repo with no conflicted file gets no question after the review question', async () => {
+    const first = memHost(hostWorld({}))
+    await runInit(memIo(fullWorld(), INIT_ANSWERS).io, { dryRun: false, host: first.io })
+    for (const world of [fullWorld(), withWrites(fullWorld(), first.writes)]) {
+      const run = memIo(world, INIT_ANSWERS)
+      await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
+      expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+      expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
+    }
   })
 })
 
