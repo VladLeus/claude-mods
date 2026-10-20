@@ -200,7 +200,7 @@ describe('helpText', () => {
 
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(8)
     const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
     expect(commands).toEqual([
       '/cadre detect',
@@ -209,6 +209,8 @@ describe('helpText', () => {
       '/cadre init --dry-run',
       '/cadre regen <id>',
       '/cadre regen <id> --dry-run',
+      '/cadre start <id>',
+      '/cadre start <id> --terminal',
     ])
     const descriptionColumn = ROW_INDENT + COMMAND_COLUMN
     for (const row of rows) {

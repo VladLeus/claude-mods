@@ -245,6 +245,57 @@ function regenHostWorld(over: Partial<World> = {}): World {
   }
 }
 
+/** The text of BE's launcher in startHostWorld; /cadre start reads only its hash, to compare it with the manifest. */
+const START_LAUNCHER = '#!/bin/sh\n# the launcher of role be\nexit 0\n'
+
+/** The per-launch folder of BE in startHostWorld (D-102). */
+const START_RUNTIME = '/repo/.cadre/be/.runtime'
+
+/** The cadre.json of startHostWorld's BE, listing these roles. */
+function startStateText(roles: readonly string[]): string {
+  return cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles,
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  })
+}
+
+/**
+ * The repo of regenHostWorld after a plain init of BE (D-102, LNCH-04): its cadre.json and role.json, the folder
+ * `.cadre/be` resolving inside the repo, the launcher `.cadre/bin/be` and a manifest whose `.cadre/bin/be` entry holds
+ * the launcher's sha256. `claude --version` gives 2.1.304, git gives the common dir /repo/.git, the two mkdirs of a
+ * render exit 0, and writes are allowed. Pass `over` to change one part of it.
+ */
+async function startHostWorld(over: Partial<World> = {}): Promise<World> {
+  const base = regenHostWorld()
+  const launcher = { path: '.cadre/bin/be', sha256: await sha256Hex(START_LAUNCHER), mode: 'exec' }
+  const done = { exitCode: 0, stdout: '' }
+
+  return {
+    ...base,
+    dirs: [...base.dirs, '/repo/.cadre/be'],
+    files: {
+      ...base.files,
+      '/repo/.cadre/cadre.json': startStateText(['be']),
+      '/repo/.cadre/bin/be': START_LAUNCHER,
+      '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: [launcher] }),
+    },
+    realPaths: { ...base.realPaths, '/repo/.cadre/be': '/repo/.cadre/be' },
+    runResults: {
+      'claude --version': { exitCode: 0, stdout: '2.1.304 (Claude Code)\n' },
+      'git rev-parse --path-format=absolute --git-common-dir': { exitCode: 0, stdout: '/repo/.git\n' },
+      [`/bin/mkdir -p -- ${START_RUNTIME}`]: done,
+      [`/bin/mkdir -p -- ${START_RUNTIME}/overlay`]: done,
+    },
+    isWriteAllowed: true,
+    ...over,
+  }
+}
+
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
 function hasPath(world: World, path: string): boolean {
   return Object.hasOwn(world.listings, path) || world.dirs.includes(path) || Object.hasOwn(world.files, path)
@@ -1312,6 +1363,38 @@ describe('cadre regen with a faked host', () => {
     expect([print, unknown]).toEqual([terminal, terminal])
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+})
+
+describe('cadre start with a faked host', () => {
+  test('start be renders .runtime with the stamp last, then prints the launcher command (D-102)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await startHostWorld(), log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'start be' })).text.split('\n')
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    expect(log.writes).toEqual(written.map(name => `${START_RUNTIME}/${name}`))
+    expect(log.ops.filter(op => op.startsWith('fs.write ')).at(-1)).toBe(`fs.write ${START_RUNTIME}/stamp`)
+    // The n-th process.run op is the n-th run, so the mkdir of .runtime is found among the ops by its run index.
+    const mkdirAt = log.runs.findIndex(run => run.join(' ') === `/bin/mkdir -p -- ${START_RUNTIME}`)
+    const runOps = log.ops.flatMap((op, at) => (op === 'process.run' ? [at] : []))
+    const mkdirOp = runOps[mkdirAt] ?? -1
+    expect(mkdirOp).toBeGreaterThanOrEqual(0)
+    expect(log.ops.findIndex(op => op.startsWith('fs.write '))).toBeGreaterThan(mkdirOp)
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
+    const runAt = lines.indexOf('Run this in a terminal to start role be:')
+    expect(runAt).toBeGreaterThan(1)
+    expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('a cadre.json that does not list the role refuses with the no-role reply and writes nothing', async ($, on) => {
+    const log = newLog()
+    const world = await startHostWorld()
+    fakeHost(on, { ...world, files: { ...world.files, '/repo/.cadre/cadre.json': startStateText(['pm']) } }, log)
+    const out = await $.command.run({ command: 'cadre', args: 'start be' })
+    expect(out.text).toBe(regenNoRole('be', ['pm']))
+    expect(log.writes).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('fs.write ') || op.startsWith('forbidden '))).toEqual([])
   })
 })
 
