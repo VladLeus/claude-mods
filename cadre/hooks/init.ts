@@ -1551,10 +1551,10 @@ export async function launchStartStep(io: InitIo, root: string): Promise<StepRes
 }
 
 /**
- * The MCP isolation route every scope is compiled for in Phase 2. It is provisional: Phase 3 decides between merged
- * and strict (D-26, D-78, D-94), and every scope card says so.
+ * The MCP route of every role (D-104): merged, so /fleet keeps working in role sessions; denied servers are blocked by
+ * tool denies only, which the card labels best-effort (D-124).
  */
-export const PROVISIONAL_MCP_ROUTE: McpRoute = 'merged'
+export const MCP_ROUTE: McpRoute = 'merged'
 
 /**
  * The frameworks whose roles the answered hunks leave attended (ROLE-04, A5): a framework is attended when its adapter
@@ -1574,9 +1574,9 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 
 /**
  * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
- * (resolvedFramework), with the setup and the code dirs of the scans, the provisional MCP route, where the launchers
- * start, so the card tells what loads there (D-122), the whole team for the decision chain, and as attended when its
- * framework is in `attended`.
+ * (resolvedFramework), with the setup and the code dirs of the scans, the MCP route of every role (MCP_ROUTE, D-104),
+ * where the launchers start, so the card tells what loads there (D-122), the whole team for the decision chain, and as
+ * attended when its framework is in `attended`.
  */
 function compileAll(
   roles: readonly RoleSpec[],
@@ -1593,7 +1593,7 @@ function compileAll(
         setup: gathered.setup,
         codeDirs: gathered.repo.codeDirs,
         isAttended: attended.has(framework),
-        mcpRoute: PROVISIONAL_MCP_ROUTE,
+        mcpRoute: MCP_ROUTE,
         launchStart,
         roles,
       }
@@ -1604,10 +1604,10 @@ function compileAll(
 }
 
 /**
- * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-94): compileScope with the role's own
- * framework or the repo default, the setup and the code dirs of the scans, PROVISIONAL_MCP_ROUTE, where the launchers
- * start (D-122) and the whole team. A role is attended when an unmet hunk is on its framework's config file (A5). Keyed
- * by role id, in role order.
+ * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-104): compileScope with the role's own
+ * framework or the repo default, the setup and the code dirs of the scans, MCP_ROUTE, where the launchers start (D-122)
+ * and the whole team. A role is attended when an unmet hunk is on its framework's config file (A5). Keyed by role id,
+ * in role order.
  */
 export function scopesFor(
   roles: readonly RoleSpec[],

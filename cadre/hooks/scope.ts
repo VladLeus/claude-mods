@@ -402,14 +402,17 @@ function unusualDirRules(deny: DenyPlan): ScopeRule[] {
 /**
  * The MCP rules: the scanned servers denied, or that there are none, then the servers left out because they share a
  * tool name with one the role has (A5), and the refused patterns. The first rule is hard only on the strict route; on
- * the merged route a server the scan did not see still loads, so it is best effort (A4).
+ * the merged route a server the scan did not see still loads, so it is best effort (A4), and a tool deny removes only
+ * the tools of a denied server, so the rule adds that its resources and prompts stay reachable (D-124).
  */
 function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
+  const listed = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`
+  const reachable = '; denied servers: tools removed (best-effort); their MCP resources and prompts stay reachable'
   const denied =
     deny.mcp.length === 0
       ? rule('No other scanned MCP servers to deny', enforcement)
-      : rule(`Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`, enforcement)
+      : rule(route === 'merged' ? `${listed}${reachable}` : listed, enforcement)
 
   return [
     denied,
@@ -418,6 +421,16 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
     ),
     ...deny.refused.map(item => rule(`${shown(item.pattern)} was not emitted: ${item.message}`, 'none')),
   ]
+}
+
+/**
+ * The rule that names the MCP route (D-104): merged leaves out --strict-mcp-config, so /fleet works and every MCP deny
+ * is best effort; strict passes the flag. It states the route and enforces nothing, so it is labelled none.
+ */
+function routeRule(route: McpRoute): ScopeRule {
+  if (route === 'strict') return rule('MCP route: strict (--strict-mcp-config)', 'none')
+
+  return rule('MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)', 'none')
 }
 
 /**
@@ -523,7 +536,7 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...attendedRules(role, ctx),
     ...(ctx.launchStart.kind === 'git-root' ? projectMonitorRules(ctx.setup) : []),
     ...startRules(role, ctx.launchStart),
-    rule(`MCP route: ${ctx.mcpRoute} (provisional; Phase 3 decides)`, 'none'),
+    routeRule(ctx.mcpRoute),
   ]
 }
 

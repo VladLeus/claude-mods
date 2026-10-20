@@ -86,6 +86,17 @@ const GSD_NO_BASH_RULE = 'Attended: GSD workflows need Bash; this role runs them
 const PARTIAL_MCP_RULE =
   'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
 
+/** The route rule of a merged scope (D-104): no --strict-mcp-config, so /fleet works; every MCP deny is best effort. */
+const MERGED_ROUTE_RULE = 'MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)'
+
+/** The MCP deny rule on the merged route: the names, then what a tool deny removes and what stays reachable (D-124). */
+function mergedDenied(names: string): string {
+  return (
+    `Scanned MCP servers not given are denied: ${names}; denied servers: tools removed (best-effort); ` +
+    'their MCP resources and prompts stay reachable'
+  )
+}
+
 /** The rule that names the code dirs that are the role's own folders, which no deny ever covers (B7). */
 function ownRule(dirs: string): string {
   return `Reads and edits under ${dirs} are never denied (own folders)`
@@ -603,7 +614,7 @@ describe('scope rules', () => {
             'it conflicts with the autopilot handoff (D-62)',
           enforcement: 'none',
         },
-        { text: 'MCP route: merged (provisional; Phase 3 decides)', enforcement: 'none' },
+        { text: MERGED_ROUTE_RULE, enforcement: 'none' },
       ])
       expect(quiet.card.rules.filter(item => item.text.includes('registered in project settings'))).toEqual([])
     },
@@ -684,7 +695,7 @@ describe('scope rules', () => {
   test('an MCP server with a dot, a colon or another character is denied by its engine tool name', () => {
     const names = ['my.server', 'plugin:context7:context7', 'good-one_2']
     const scope = compileScope(templateRole('pm'), context({ setup: emptySetupScan({ mcp: names.map(session) }) }))
-    const denied = 'Scanned MCP servers not given are denied: good-one_2, my.server, plugin:context7:context7'
+    const denied = mergedDenied('good-one_2, my.server, plugin:context7:context7')
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual([
       'mcp__good-one_2',
@@ -711,7 +722,7 @@ describe('scope rules', () => {
 
     expect(forUnderscore.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(forUnderscore, dotted)).toEqual({ text: dotted, enforcement: 'none' })
-    expect(ruleOf(forUnderscore, 'Scanned MCP servers not given are denied: jira')?.enforcement).toBe('best-effort')
+    expect(ruleOf(forUnderscore, mergedDenied('jira'))?.enforcement).toBe('best-effort')
     expect(forDot.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(forDot, plain)).toEqual({ text: plain, enforcement: 'none' })
   })
@@ -723,7 +734,7 @@ describe('scope rules', () => {
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(scope, wait)).toEqual({ text: wait, enforcement: 'none' })
-    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: jira')?.enforcement).toBe('best-effort')
+    expect(ruleOf(scope, mergedDenied('jira'))?.enforcement).toBe('best-effort')
   })
 
   test('a server whose name only starts like the autopilot server is denied, with no refusal on the card', () => {
@@ -736,7 +747,7 @@ describe('scope rules', () => {
       'mcp__jira',
     ])
     expect(scope.card.rules.filter(candidate => candidate.text.includes('was not emitted'))).toEqual([])
-    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: a, auto, jira')?.enforcement).toBe('best-effort')
+    expect(ruleOf(scope, mergedDenied('a, auto, jira'))?.enforcement).toBe('best-effort')
   })
 
   test('every MCP server given leaves nothing to deny, and the rule says so', () => {
@@ -758,7 +769,7 @@ describe('scope rules', () => {
       ruleOf(compileScope(role, context({ setup: scanned, mcpRoute })), text)?.enforcement
 
     expect(labelOf(templateRole('pm'), 'strict', denied)).toBe('hard')
-    expect(labelOf(templateRole('pm'), 'merged', denied)).toBe('best-effort')
+    expect(labelOf(templateRole('pm'), 'merged', mergedDenied('jira'))).toBe('best-effort')
     expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'strict', nothing)).toBe('hard')
     expect(labelOf(templateRole('pm', { mcp: ['jira'] }), 'merged', nothing)).toBe('best-effort')
   })
@@ -904,7 +915,7 @@ describe('scope rules', () => {
       { text: 'Permission mode: bypassPermissions', enforcement: 'hard' },
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
-      { text: 'MCP route: strict (provisional; Phase 3 decides)', enforcement: 'none' },
+      { text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' },
     ])
   })
 
@@ -916,11 +927,11 @@ describe('scope rules', () => {
       { text: PLUGIN_RULE, enforcement: 'hard' },
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: 'Scanned MCP servers not given are denied: jira', enforcement: 'best-effort' },
+      { text: mergedDenied('jira'), enforcement: 'best-effort' },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
       { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
       { text: 'Permission mode: auto', enforcement: 'hard' },
-      { text: 'MCP route: merged (provisional; Phase 3 decides)', enforcement: 'none' },
+      { text: MERGED_ROUTE_RULE, enforcement: 'none' },
     ])
   })
 })
@@ -934,7 +945,7 @@ describe('card rule lists', () => {
   test('the MCP deny rule names 12 servers and then counts the rest', () => {
     const names = numbered('mcp-', 15)
     const scope = compileScope(templateRole('pm'), context({ setup: emptySetupScan({ mcp: names.map(session) }) }))
-    const text = `Scanned MCP servers not given are denied: ${names.slice(0, 12).join(', ')}, +3 more`
+    const text = mergedDenied(`${names.slice(0, 12).join(', ')}, +3 more`)
 
     expect(ruleOf(scope, text)?.enforcement).toBe('best-effort')
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toHaveLength(15)
@@ -944,7 +955,7 @@ describe('card rule lists', () => {
     const scanned = emptySetupScan({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
 
-    expect(ruleOf(scope, 'Scanned MCP servers not given are denied: evil')?.enforcement).toBe('best-effort')
+    expect(ruleOf(scope, mergedDenied('evil'))?.enforcement).toBe('best-effort')
   })
 
   test('a long code dir name is capped in the denied-dirs rule, so the card line keeps its fixed tail', () => {
@@ -1083,12 +1094,12 @@ describe('scopeCardLines', () => {
       '    [hard] No Bash tool (denied)',
       '    [best-effort] Reads and edits under cadre are denied; the patterns match at any depth',
       '    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied',
-      '    [best-effort] Scanned MCP servers not given are denied: jira',
+      `    [best-effort] ${mergedDenied('jira')}`,
       '    [best-effort] Skills: only the listed skills are linked',
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
       '    [hard] Permission mode: auto',
       `    [none] ${GSD_NO_BASH_RULE}`,
-      '    [none] MCP route: merged (provisional; Phase 3 decides)',
+      `    [none] ${MERGED_ROUTE_RULE}`,
       '  decisions:',
       ...chainLines(['pm', 'tl']).map(line => `    ${line}`),
       memoryLine('pm'),

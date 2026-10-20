@@ -637,7 +637,7 @@ export type ScopeRule = {
   readonly enforcement: Enforcement
 }
 
-/** The MCP isolation route, an open parameter until Phase 3 (D-26, D-78). */
+/** The MCP isolation route; Phase 3 uses merged for every role (D-104), strict stays a parameter. */
 export type McpRoute = 'merged' | 'strict'
 
 /** What compileScope needs beside the role. */
