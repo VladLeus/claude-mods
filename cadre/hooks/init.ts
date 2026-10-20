@@ -7,6 +7,7 @@ import type {
   Detection,
   FrameworkId,
   GitPolicy,
+  HostIo,
   HunkOp,
   InitFacts,
   InitIo,
@@ -29,6 +30,8 @@ import type {
   SetupScan,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
+import { applySteps, applyStatPaths, chmodArgv, chmodProblem, hunkFailureLine, writeProblem } from './apply'
+import type { ApplyStep, HunkRun } from './apply'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -60,6 +63,7 @@ import {
   isObject,
   MAX_READ_BYTES,
   sortedUnique,
+  trimSlash,
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
@@ -67,7 +71,7 @@ import { desiredFiles } from './generate'
 import { sha256Hex } from './hash'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
-import { buildPlan, gitignoreLines, planReadPaths, renderPlan } from './plan'
+import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
   hunkCandidates,
@@ -142,8 +146,18 @@ export const INIT_CANCELLED = 'init cancelled, nothing written'
 /** The last line of the dry-run reply (PLAN-02). */
 export const DRY_RUN_NOTE = 'Dry run: nothing was written.'
 
-/** The last line of the plain init reply in Phase 2: applying the plan arrives with Phase 3 (D-44). */
-export const APPLY_LATER_NOTE = 'Applying this plan arrives in a later cadre version; nothing was written.'
+/** The first applied line when an apply had no step to run: every planned file is already on the disk (D-105). */
+export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to date.'
+
+/** The last line of a plain init or regen reply: what to run next to launch a role from the files written. */
+export const NEXT_STEP_NOTE = 'Next: run /cadre start <id> to launch a role.'
+
+/**
+ * The warning when apply did not write the manifest because a file write before it failed or was refused, so the
+ * manifest never claims a file that is not on the disk (LNCH-01, T-03-18).
+ */
+export const MANIFEST_SKIPPED_NOTE =
+  '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.'
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees (Phase 3.1)"
@@ -1611,10 +1625,16 @@ export function cardLines(roles: readonly RoleSpec[], scopes: ReadonlyMap<string
   })
 }
 
-/** What planStep gives: the file plan, and the repo state it was planned with. */
+/** What planStep gives: the file plan, the repo state it was planned with, and what apply writes it from (D-105). */
 export type PlanResult = {
   readonly plan: Plan
   readonly state: CadreState
+  /** The files the plan was built from: apply writes the text of each one it plans to write. */
+  readonly desired: readonly DesiredFile[]
+  /** The manifest the plan records (planWithManifest): the one apply writes last. */
+  readonly manifest: Manifest
+  /** The merged root `.gitignore` text; null when no block is planned or the block cannot be merged. */
+  readonly gitignore: string | null
 }
 
 /** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
@@ -1634,9 +1654,11 @@ async function readPaths(io: InitIo, root: string, paths: readonly string[]): Pr
  * desiredFiles gives every file from it; the repo state also records the consent answer, so regen knows whether it
  * may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the
  * manifest) and the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never
- * read. buildPlan classifies each file against the disk and the last manifest the scan read, then adds the ignore
- * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has) and the hunks.
- * Nothing is written.
+ * read. planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the
+ * ignore block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has) and the hunks.
+ * The result also holds what apply writes the plan from: the desired files, the manifest the plan records and the
+ * merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be merged, since
+ * the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm (applyConfirmed).
  */
 export async function planStep(
   io: InitIo,
@@ -1665,36 +1687,157 @@ export async function planStep(
   }
   const desired = desiredFiles({ roles, scopes, state, only: null })
   const disk = await readPaths(io, locations.root, planReadPaths(desired))
-  const gitignore = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
-  const existing = gitignore.state === 'text' ? gitignore.text : null
-  const plan = await buildPlan({
+  const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
+  const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
+  const lines = gitignoreLines(policy, existing)
+  const { plan, manifest } = await planWithManifest({
     desired,
     disk,
     manifest: repo.cadre.manifest,
     manifestState: repo.cadre.manifestState,
     carried: [],
-    gitignore: { disk: gitignore, lines: gitignoreLines(policy, existing) },
+    gitignore: { disk: ignoreRead, lines },
     hunks,
     cadreVersion,
   })
+  const isIgnoreReadable = ignoreRead.state === 'text' || ignoreRead.state === 'absent'
+  const gitignore = isIgnoreReadable ? mergeIgnoreBlock(existing, lines) : null
 
-  return { plan, state }
+  return { plan, state, desired, manifest, gitignore }
 }
 
 /**
- * The reply of a finished init (PLAN-01, PLAN-02, D-44): what was asked for, the file plan as renderPlan prints it
- * (with its warnings, so none is printed twice), the git policy, where the launchers start (A2), the worktree line of
- * the ignore policy, and the note that nothing was written. Plain init and --dry-run differ only in the first and the
- * last line.
+ * What one apply did (D-105, LNCH-01). Every path is repo-relative:
+ * - `written`: each path whose write landed, in step order, the `.gitignore` and the manifest included;
+ * - `executable`: each launcher whose chmod ran and exited 0;
+ * - `failed`: each path whose write the host refused or failed;
+ * - `refused`: the writeProblem text of each write that was not tried, because the path or a folder above it is a
+ *   link, not a folder or not inside the repo;
+ * - `notExecutable`: each launcher whose chmod ran but did not exit 0, or could not run;
+ * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
+ * - `hunkFailures`: each framework command that failed (D-106);
+ * - `attended`: the required keys whose failed command made roles attended (D-106);
+ * - `manifestSkipped`: whether the manifest was not written because a write before it failed or was refused.
  */
-export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart, dryRun: boolean): string {
+export type ApplyOutcome = {
+  readonly written: readonly string[]
+  readonly executable: readonly string[]
+  readonly failed: readonly string[]
+  readonly refused: readonly string[]
+  readonly notExecutable: readonly string[]
+  readonly chmodRefusals: readonly string[]
+  readonly hunkFailures: readonly HunkRun[]
+  readonly attended: readonly string[]
+  readonly manifestSkipped: boolean
+}
+
+/** How long one launcher chmod may run before it is given up. */
+const CHMOD_TIMEOUT_MS = 10_000
+
+/**
+ * Runs the steps of a confirmed apply through the host, in order (D-105, LNCH-01). Every path applyStatPaths names is
+ * stat'ed once, through the init port and with resolve, before the first step. A write is tried only when writeProblem
+ * finds no link, non-folder or out-of-repo path on its way (T-03-17), and its path joins `written` only when host.write
+ * says it landed. A chmod runs only on a path in `written`, so only after the write of that same path in this same
+ * apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows links, so a chmod on a path whose write was
+ * refused or failed could change the target of a link planted there, outside the repo (RESEARCH 3.2, T-03-38); such a
+ * launcher is not made executable, and no chmod runs for it at all. A chmod that ran makes its launcher executable
+ * only on exit 0. The manifest is written like any file, but skipped when a write before it failed or was refused, so
+ * it never claims a file that is not on the disk (T-03-18).
+ */
+async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonly ApplyStep[]): Promise<ApplyOutcome> {
+  const base = trimSlash(root)
+  const stats = new Map<string, PortStat | null>()
+  for (const path of applyStatPaths(steps)) stats.set(path, await io.stat(`${base}/${path}`))
+  const written = new Set<string>()
+  const executable: string[] = []
+  const failed: string[] = []
+  const refused: string[] = []
+  const notExecutable: string[] = []
+  const chmodRefusals: string[] = []
+  let manifestSkipped = false
+  for (const step of steps) {
+    if (step.kind === 'chmod') {
+      const problem = chmodProblem(step.path, written)
+      if (problem !== null) {
+        chmodRefusals.push(problem)
+        continue
+      }
+      const run = await host.run(chmodArgv(root, step.path), { timeoutMs: CHMOD_TIMEOUT_MS })
+      if (run !== null && run.exitCode === 0) executable.push(step.path)
+      else notExecutable.push(step.path)
+      continue
+    }
+    if (step.kind === 'manifest' && (failed.length > 0 || refused.length > 0)) {
+      manifestSkipped = true
+      continue
+    }
+    const problem = writeProblem(step.path, stats, root)
+    if (problem !== null) {
+      refused.push(problem)
+      continue
+    }
+    if (await host.write(`${base}/${step.path}`, step.text)) written.add(step.path)
+    else failed.push(step.path)
+  }
+
+  return {
+    written: [...written],
+    executable,
+    failed,
+    refused,
+    notExecutable,
+    chmodRefusals,
+    hunkFailures: [],
+    attended: [],
+    manifestSkipped,
+  }
+}
+
+/**
+ * The lines a plain init or regen reply ends with (D-105, LNCH-01). First `Applied: wrote <n> files (<m>
+ * executable).`, n counting every write that landed (the `.gitignore` and the manifest included) and m the launchers
+ * made executable, or APPLIED_NONE_NOTE when nothing was written and no write failed or was refused. Then one
+ * `warning: ` line for each write writeProblem refused (its text), each write the host failed, each chmod not run (the
+ * chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each framework command that
+ * failed (hunkFailureLine), the attended note when a failure made roles attended, and MANIFEST_SKIPPED_NOTE when the
+ * manifest was skipped. NEXT_STEP_NOTE comes last.
+ */
+export function appliedLines(outcome: ApplyOutcome): string[] {
+  const { written, executable, failed, refused } = outcome
+  const isNothing = written.length === 0 && failed.length === 0 && refused.length === 0
+  const counted = `Applied: wrote ${written.length} files (${executable.length} executable).`
+  const warnings = [
+    ...refused,
+    ...failed.map(path => `could not write ${reportText(path)}`),
+    ...outcome.chmodRefusals,
+    ...outcome.notExecutable.map(path => {
+      const shownPath = reportText(path)
+
+      return `could not make ${shownPath} executable: run chmod 755 ${shownPath}`
+    }),
+    ...outcome.hunkFailures.map(hunkFailureLine),
+    ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
+    ...(outcome.manifestSkipped ? [MANIFEST_SKIPPED_NOTE] : []),
+  ]
+
+  return [isNothing ? APPLIED_NONE_NOTE : counted, ...warnings.map(warning => `warning: ${warning}`), NEXT_STEP_NOTE]
+}
+
+/**
+ * The reply of a finished init (PLAN-01, PLAN-02, D-105): what was asked for, the file plan as renderPlan prints it
+ * (with its warnings, so none is printed twice), the git policy, where the launchers start (A2), the worktree line of
+ * the ignore policy, and last the dry-run note when `applied` is null (--dry-run, nothing was written), else the lines
+ * of what the apply did (appliedLines). Plain init and --dry-run differ only in the first line and that ending.
+ */
+export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart, applied: ApplyOutcome | null): string {
   return [
-    dryRun ? 'cadre init --dry-run' : 'cadre init',
+    applied === null ? 'cadre init --dry-run' : 'cadre init',
     ...renderPlan(plan),
     policyLine(policy),
     launchLine(start),
     ...(policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
-    dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE,
+    ...(applied === null ? [DRY_RUN_NOTE] : appliedLines(applied)),
   ].join('\n')
 }
 
@@ -1793,6 +1936,12 @@ export type Draft = {
   readonly hunks: readonly HunkOp[]
   readonly policy: GitPolicy
   readonly launchStart: LaunchStart
+}
+
+/** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */
+export type Reviewed = {
+  readonly draft: Draft
+  readonly planned: PlanResult
 }
 
 /**
@@ -1929,13 +2078,14 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
 /**
  * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), plans the files (planStep),
  * prints the summary (reviewLines) and asks REVIEW_QUESTION with REVIEW_OPTIONS; an item word may be typed under
- * "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with. A go-back
- * re-asks that one item (goBack), and the next round shows the summary again. A dismissal, MAX_ASKS answers it cannot
- * read, or a cancelled go-back step is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS
- * times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back
- * picked at the last round cancels at once and asks none of that item's questions (A3). Nothing is written.
+ * "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with and the draft it
+ * was built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the summary again. A
+ * dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step is cancelled with its reason, and so is a run
+ * that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm
+ * is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that item's questions (A3).
+ * The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
  */
-export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<PlanResult>> {
+export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
   let current = draft
   for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
     const scopes = scopesFor(current.roles, current.repoDefault, current.gathered, current.hunks, current.launchStart)
@@ -1953,7 +2103,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<P
     logLines(io, reviewLines(current, scopes, planned.plan))
     const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
     if (item === null) return cancelled(REVIEW_DISMISSED_REASON)
-    if (item === 'confirm') return accepted(planned)
+    if (item === 'confirm') return accepted({ draft: current, planned })
     if (round === MAX_REVIEW_ROUNDS - 1) break
     const changed = await goBack(io, current, item)
     if (changed.kind === 'cancelled') return changed
@@ -1978,6 +2128,33 @@ function cancelReply(io: InitIo, reason: string): string {
 }
 
 /**
+ * Writes the plan the person confirmed (D-105, LNCH-01): applySteps plans the steps from it and writeSteps runs them
+ * through the host port, each write checked for links first, a launcher made executable only after its own write
+ * landed, and the manifest last. Confirm is the consent, so nothing more is asked: a conflict keeps the person's file,
+ * as an unanswered conflict does (D-67), and no framework command runs, so hunkFailures and attended stay empty. Like
+ * every init step it gives a StepResult (A1); with no question to ask it is always accepted, with the plan as written
+ * and what the apply did.
+ */
+export async function applyConfirmed(
+  io: InitIo,
+  host: HostIo,
+  reviewed: Reviewed,
+): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
+  const { draft, planned } = reviewed
+  const { plan, desired, manifest, gitignore } = planned
+  const steps = await applySteps({ plan, desired, manifest, gitignore, choices: new Map() })
+  const outcome = await writeSteps(io, host, draft.locations.root, steps)
+
+  return accepted({ planned, outcome })
+}
+
+/**
+ * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
+ * run; plain init writes the plan through `host` after Confirm.
+ */
+export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }
+
+/**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
  * (consentStep), runs the scans and prints them with their warnings, then runs the history step (historyStep), which
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
@@ -1986,13 +2163,14 @@ function cancelReply(io: InitIo, reason: string): string {
  * names, and the autonomy hunks of the frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the
  * repo, where the launchers start (launchStartStep), shows the one final review with every role's scope card for that
  * start (the one place the cards are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person
- * confirms or goes back to change one item (reviewStep, D-43), and replies with the confirmed plan and the note that
- * nothing was written (initReplyText; D-44, D-82). Every step gives a StepResult (A1): runInit checks its kind before
- * it uses the value, and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so
- * only values the person accepted reach the steps after it. Every answer lives in memory for this one run, and nothing
- * is kept for the next (D-45, D-82).
+ * confirms or goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the
+ * note that nothing was written (D-82); plain init writes it (applyConfirmed, D-105), asking nothing more, and replies
+ * with the plan as written and what the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks
+ * its kind before it uses the value, and for a cancelled step prints the reason as its own line and answers
+ * INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it, and nothing is written before
+ * Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
-export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
+export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')
   if (guard.kind === 'refuse') return guard.text
 
@@ -2028,10 +2206,14 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
 
   const reviewed = await reviewStep(io, { ...base, ...team.value, policy: policy.value, launchStart: launch.value })
   if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
+  const { plan, state } = reviewed.value.planned
+  if (options.dryRun) return initReplyText(plan, state.gitPolicy, state.launchStart, null)
 
-  const { plan, state } = reviewed.value
+  const applied = await applyConfirmed(io, options.host, reviewed.value)
+  if (applied.kind === 'cancelled') return cancelReply(io, applied.reason)
+  const asWritten = applied.value.planned
 
-  return initReplyText(plan, state.gitPolicy, state.launchStart, options.dryRun)
+  return initReplyText(asWritten.plan, asWritten.state.gitPolicy, asWritten.state.launchStart, applied.value.outcome)
 }
 
 /** The reply when regen finds no `.cadre/cadre.json`: there is nothing to re-render from until init has run (D-68). */
@@ -2180,23 +2362,29 @@ function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id:
   return manifest.files.filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
 }
 
-/** What regen planned for one role: the file plan, and the scan warnings of the run its reply prints (A4). */
+/**
+ * What regen planned for one role: the file plan, the scan warnings of the run its reply prints (A4), and what apply
+ * writes the plan from: the desired files and the manifest the plan records.
+ */
 type RegenPlanned = {
   readonly plan: Plan
   readonly warnings: readonly string[]
+  readonly desired: readonly DesiredFile[]
+  readonly manifest: Manifest
 }
 
 /**
  * The file plan of regen for one role (D-68, PLAN-04), with the scan warnings of the run (scanWarnings, A4). Every
  * listed role is compiled as init compiles it, on its own framework or the repo default and attended by the current
  * config (attendedByConfig), so the index lists the whole team; desiredFiles gives only that role's files, its
- * launcher and the index. Exactly the paths planReadPaths names are read, and buildPlan classifies them against the
- * disk and the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is
+ * launcher and the index. Exactly the paths planReadPaths names are read, and planWithManifest classifies them against
+ * the disk and the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is
  * planned. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init
  * compiled from it stay. Without a manifest read in full regen cannot keep the other roles' entries, so it refuses
  * (A2), as the scan read it: REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is
  * too large or is not valid. The role's role.json is the input, so it gets no op and the new manifest records the hash
- * of `roleJson`, the text on disk (A5); the next init normalises it.
+ * of `roleJson`, the text on disk (A5); the next init normalises it. It gives the desired files without role.json and
+ * the manifest the plan records, which a plain regen writes.
  */
 async function regenPlan(
   io: InitIo,
@@ -2222,7 +2410,7 @@ async function regenPlan(
   const own = generated
     .filter(file => file.path === ownPath)
     .map((file): ManifestEntry => ({ path: file.path, sha256, mode: file.mode }))
-  const plan = await buildPlan({
+  const planned = await planWithManifest({
     desired,
     disk: await readPaths(io, locations.root, planReadPaths(desired)),
     manifest,
@@ -2232,20 +2420,30 @@ async function regenPlan(
     hunks: [],
     cadreVersion: (await io.cadreVersion()) ?? 'unknown',
   })
+  const warnings = scanWarnings(locations, gathered)
 
-  return { kind: 'ok', value: { plan, warnings: scanWarnings(locations, gathered) } }
+  return { kind: 'ok', value: { plan: planned.plan, warnings, desired, manifest: planned.manifest } }
 }
 
 /**
  * The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, one `warning:` line for each scan
- * warning, between the plan and the note as init prints them (scanWarningLines, A4), then the dry-run or D-44 note.
+ * warning, between the plan and the ending as init prints them (scanWarningLines, A4), then the dry-run note when
+ * `applied` is null (--dry-run, nothing was written), else the lines of what the apply did (appliedLines).
  */
-function regenReplyText(planned: RegenPlanned, id: string, dryRun: boolean): string {
-  const command = dryRun ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
-  const note = dryRun ? DRY_RUN_NOTE : APPLY_LATER_NOTE
+function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
+  const command = applied === null ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
+  const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied)
 
-  return [command, ...renderPlan(planned.plan), ...scanWarningLines(planned.warnings), note].join('\n')
+  return [command, ...renderPlan(planned.plan), ...scanWarningLines(planned.warnings), ...ending].join('\n')
 }
+
+/**
+ * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
+ * write nor run; plain regen writes that plan through `host`.
+ */
+export type RegenOptions =
+  | { readonly id: string; readonly dryRun: true }
+  | { readonly id: string; readonly dryRun: false; readonly host: HostIo }
 
 /**
  * `/cadre regen <id> [--dry-run]` (D-68, D-99). It asks nothing and logs nothing, so it also runs in `claude -p`: its
@@ -2255,15 +2453,15 @@ function regenReplyText(planned: RegenPlanned, id: string, dryRun: boolean): str
  * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
  * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by the scan
  * regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
- * (REGEN_BAD_MANIFEST, A2). Otherwise it replies with the plan of that one role (regenPlan), a `warning:` line for each
- * scan warning and the note that nothing was written (regenReplyText); the warnings are in the reply, so it still asks
- * and logs nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP
- * denies init compiled from it stay. Plain regen and --dry-run differ only in the first and the last line.
+ * (REGEN_BAD_MANIFEST, A2). Otherwise it plans that one role (regenPlan). --dry-run replies with the plan, a `warning:`
+ * line for each scan warning and the note that nothing was written; plain regen writes the plan with no question
+ * (D-68): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is (D-67), cadre.json
+ * is never among its files, and a manifest the plan keeps as a conflict is not written. It then replies with the plan,
+ * the warnings and what the apply did (regenReplyText). The warnings are in the reply, so it still asks and logs
+ * nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies
+ * init compiled from it stay. Plain regen and --dry-run differ only in the first line and the ending.
  */
-export async function runRegen(
-  io: InitIo,
-  options: { readonly id: string; readonly dryRun: boolean },
-): Promise<string> {
+export async function runRegen(io: InitIo, options: RegenOptions): Promise<string> {
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
@@ -2284,6 +2482,11 @@ export async function runRegen(
 
   const planned = await regenPlan(io, { id: options.id, state, roles, roleJson, locations })
   if (planned.kind === 'refuse') return planned.text
+  if (options.dryRun) return regenReplyText(planned.value, options.id, null)
 
-  return regenReplyText(planned.value, options.id, options.dryRun)
+  const { plan, desired, manifest } = planned.value
+  const steps = await applySteps({ plan, desired, manifest, gitignore: null, choices: new Map() })
+  const outcome = await writeSteps(io, options.host, locations.root, steps)
+
+  return regenReplyText(planned.value, options.id, outcome)
 }

@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type {
   GsdReadTarget,
+  HostIo,
   InitIo,
   InitLocations,
   PortRead,
@@ -27,6 +28,7 @@ import {
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
+import type { InitOptions, RegenOptions } from './init'
 import { detectText } from './render'
 
 /** How long the user-level runtime identity call may run before it is given up. */
@@ -388,11 +390,46 @@ function initIoOf($: EngineInterface): InitIo {
   }
 }
 
+/**
+ * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo: plain closures over
+ * `$`, built only for plain init and regen. InitIo never gets these members, so a path that is given only an InitIo
+ * (detect, every --dry-run, every refusal and cancel) cannot write or run (T-03-01). Every member maps a host failure
+ * to false or null and never reads an error text. A run passes its cwd, stdin and env only when given; the env names
+ * are string literals, as the host reads only literal names.
+ */
+function hostIoOf($: EngineInterface): HostIo {
+  return {
+    write: (path, text) => $.fs.write(path, text).then(() => true, () => false),
+    run: async (argv, options) => {
+      const { cwd, stdin, env, timeoutMs } = options
+      const init = {
+        timeoutMs,
+        ...(cwd === undefined ? {} : { cwd }),
+        ...(stdin === undefined ? {} : { stdin }),
+        ...(env === undefined ? {} : { env: { ...env } }),
+      }
+      try {
+        const { exitCode, stdout, stderr } = await $.process.run(argv, init)
+
+        return { exitCode, stdout, stderr }
+      } catch {
+        return null
+      }
+    },
+    env: async name => {
+      const read = name === 'TMUX' ? $.env.get('TMUX') : $.env.get('TERM_PROGRAM')
+      const value = await read.catch(() => null)
+
+      return typeof value === 'string' && value !== '' ? value : null
+    },
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'cadre',
-      description: 'Split this repo into scope-limited role sessions (Phase 2: detect, init, regen; writes nothing)',
+      description: 'Split this repo into scope-limited role sessions: detect, init, regen',
       argumentHint: 'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run]',
     })
 
@@ -406,10 +443,17 @@ export const register: Register = on => {
         return { text: helpText(command.unknown) }
       case 'detect':
         return { text: await detectReply($, command.adapters) }
-      case 'init':
-        return { text: await runInit(initIoOf($), { dryRun: command.dryRun }) }
-      case 'regen':
-        return { text: await runRegen(initIoOf($), { id: command.id, dryRun: command.dryRun }) }
+      case 'init': {
+        const options: InitOptions = command.dryRun ? { dryRun: true } : { dryRun: false, host: hostIoOf($) }
+
+        return { text: await runInit(initIoOf($), options) }
+      }
+      case 'regen': {
+        const { id } = command
+        const options: RegenOptions = command.dryRun ? { id, dryRun: true } : { id, dryRun: false, host: hostIoOf($) }
+
+        return { text: await runRegen(initIoOf($), options) }
+      }
       default: {
         const unreachable: never = command
         return unreachable
