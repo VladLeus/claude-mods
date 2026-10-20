@@ -1,8 +1,9 @@
 /**
  * The gather and render halves of /cadre start (D-102).
  *
- * The gather half (gatherLaunchUser) reads, through the InitIo and HostIo ports only, the facts about the launching
- * user that a role launch needs (D-98), and never writes.
+ * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
+ * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
+ * (readClaudeJson, D-58), from which runtimeMcpText renders a role's MCP config (D-93).
  *
  * The render half gives the ordered steps that write a role's per-launch files into `.cadre/<id>/.runtime/`, from its
  * LaunchPlan (D-98) and the texts of its MCP config and probe expectations. It reads and writes nothing: /cadre start
@@ -10,14 +11,38 @@
  * stamp is always the last step, and the launcher trusts it: it refuses to start when the stamp is missing or older
  * than the role files or a rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
-import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortStat, SettingsSource } from '../types'
-import { isDirInsideRoot, isObject, MAX_READ_BYTES, sortedUnique, SOURCE_ORDER } from './facts'
+import type {
+  HostIo,
+  InitIo,
+  InitLocations,
+  LaunchStart,
+  PortEntry,
+  PortStat,
+  RoleSpec,
+  SettingsSource,
+} from '../types'
+import {
+  isDirInsideRoot,
+  isObject,
+  MAX_READ_BYTES,
+  parseJsonValue,
+  sortedUnique,
+  SOURCE_ORDER,
+  trimSlash,
+} from './facts'
 import { sha256Hex } from './hash'
 import { claudeMdImports } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { reportText } from './render'
-import { claudeMdPathsOf, hookScriptOf, mangledProjectDir, userDirOf } from './setup'
+import {
+  CLAUDE_JSON_MAX_BYTES,
+  claudeJsonPathOf,
+  claudeMdPathsOf,
+  hookScriptOf,
+  mangledProjectDir,
+  userDirOf,
+} from './setup'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
 const SETTINGS_FILE = 'settings.json'
@@ -375,14 +400,14 @@ export type LaunchUserRead =
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
 const CLAUDE_MD_FILES: readonly string[] = Object.freeze(['CLAUDE.md', '.claude/CLAUDE.md'])
 
-/** How many import hops from the global CLAUDE.md are followed, as the engine follows them (D-63). */
+/** How many import hops from the global CLAUDE.md are followed (D-63). */
 const MAX_IMPORT_DEPTH = 5
 
 /** The most files the global CLAUDE.md and its imports give a role. */
 const MAX_GLOBAL_FILES = 20
 
 /** The extension of a memory file and of an agent file. */
-const MARKDOWN = '.md'
+const MARKDOWN_EXTENSION = '.md'
 
 /** The settings sources whose hooks a git-root start renders: it loads the project settings by itself (D-103). */
 const ROOT_HOOK_SOURCES: readonly SettingsSource[] = Object.freeze(['user', 'local'])
@@ -500,9 +525,9 @@ async function globalClaudeMdOf(io: InitIo, userDir: string, home: string): Prom
 /** The names of the regular `.md` files in a folder, sorted; a link, a folder or a listing that fails gives none. */
 async function markdownFiles(io: InitIo, folder: string): Promise<string[]> {
   const entries = (await io.list(folder)) ?? []
-  const files = entries.filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN))
+  const files = entries.filter(entry => entry.kind === 'file' && !entry.isLink)
 
-  return sortedUnique(files.map(entry => entry.name))
+  return sortedUnique(files.map(entry => entry.name).filter(name => name.endsWith(MARKDOWN_EXTENSION)))
 }
 
 /** The `.md` file names of the auto-memory folder the engine keeps for a project root in the user folder (D-100). */
@@ -521,7 +546,7 @@ async function userSkillsOf(io: InitIo, userDir: string): Promise<string[]> {
 async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
   const names = await markdownFiles(io, `${userDir}/agents`)
 
-  return sortedUnique(names.map(name => name.slice(0, -MARKDOWN.length)))
+  return sortedUnique(names.map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
 }
 
 /**
@@ -591,4 +616,88 @@ export async function gatherLaunchUser(
     },
     warnings: [],
   }
+}
+
+/** The warning for a role given MCP servers when cadre.json records no consent to read ~/.claude.json (D-58). */
+const MCP_NOT_READ_WARNING =
+  '~/.claude.json was not read (no consent at init), so the user-scope MCP servers of this role are not rendered'
+
+/** The warning for a server a role is given that ~/.claude.json does not hold; the name is shown cleaned. */
+function mcpNotInFileWarning(name: string): string {
+  return (
+    `MCP server ${reportText(name)} is not in ~/.claude.json: ` +
+    'the role gets it only from the repo .mcp.json or a claude.ai connector'
+  )
+}
+
+/**
+ * The user's `~/.claude.json` as a parsed value (D-93), read only when cadre.json records the consent (readUserMcp,
+ * D-58): without it nothing is read. The file is the one claudeJsonPathOf names, read up to CLAUDE_JSON_MAX_BYTES.
+ * Null when the read is not allowed, there is no user folder, or the file is absent, unreadable, too large or not
+ * JSON. Its values reach only the runtime MCP config (runtimeMcpText), never a reply or a warning.
+ */
+export async function readClaudeJson(io: InitIo, locations: InitLocations, readUserMcp: boolean): Promise<unknown> {
+  if (!readUserMcp) return null
+  const path = claudeJsonPathOf(locations)
+  if (path === null) return null
+  const read = await io.read(path, CLAUDE_JSON_MAX_BYTES)
+  if (read.state !== 'text') return null
+
+  return parseJsonValue(read.text)?.value ?? null
+}
+
+/** The config of a server in the `mcpServers` of a holder, when it is a plain object there; else null. */
+function serverIn(holder: unknown, name: string): Record<string, unknown> | null {
+  if (!isObject(holder) || !isObject(holder.mcpServers)) return null
+  const config = Object.hasOwn(holder.mcpServers, name) ? holder.mcpServers[name] : undefined
+
+  return isObject(config) ? config : null
+}
+
+/** The project entries of `~/.claude.json` for each root form, in the order of `roots`, trailing slashes ignored. */
+function projectEntries(claudeJson: Record<string, unknown>, roots: readonly string[]): unknown[] {
+  const projects = isObject(claudeJson.projects) ? Object.entries(claudeJson.projects) : []
+  const wanted = roots.map(trimSlash).filter(root => root !== '')
+
+  return wanted.flatMap(root => projects.filter(([path]) => trimSlash(path) === root).map(([, project]) => project))
+}
+
+/**
+ * The config of one server in `~/.claude.json`: the project entry of the root as resolved or as given first, then the
+ * top level; null when none of them holds a plain object for it.
+ */
+function serverConfig(claudeJson: unknown, roots: readonly string[], name: string): Record<string, unknown> | null {
+  if (!isObject(claudeJson)) return null
+  for (const project of projectEntries(claudeJson, roots)) {
+    const config = serverIn(project, name)
+    if (config !== null) return config
+  }
+
+  return serverIn(claudeJson, name)
+}
+
+/**
+ * The text of a role's `.runtime/mcp.json` (D-93, LNCH-02): stableJson of `{ mcpServers }` with, for each server the
+ * role is given, in name order, its config from `~/.claude.json` (serverConfig; `roots` holds the repo root as
+ * resolved, then as given). A server it does not find there is left out with one warning that names it. With
+ * `isRead` false, when cadre.json records no consent (D-58), no server is rendered and a role given any gets one
+ * warning that the file was not read. A role given no server gets `{ mcpServers: {} }` and no warning. A warning names
+ * servers only; a config value reaches the text alone, which is written to a runtime file.
+ */
+export function runtimeMcpText(
+  role: RoleSpec,
+  claudeJson: unknown,
+  roots: readonly string[],
+  isRead: boolean,
+): { readonly text: string; readonly warnings: readonly string[] } {
+  const names = sortedUnique(role.mcp)
+  if (names.length === 0) return { text: stableJson({ mcpServers: {} }), warnings: [] }
+  if (!isRead) return { text: stableJson({ mcpServers: {} }), warnings: [MCP_NOT_READ_WARNING] }
+  const found = names.map(name => ({ name, config: serverConfig(claudeJson, roots, name) }))
+  const servers = found.flatMap(({ name, config }): [string, Record<string, unknown>][] =>
+    config === null ? [] : [[name, config]],
+  )
+  const missing = found.filter(({ config }) => config === null).map(({ name }) => mcpNotInFileWarning(name))
+
+  return { text: stableJson({ mcpServers: Object.fromEntries(servers) }), warnings: missing }
 }
