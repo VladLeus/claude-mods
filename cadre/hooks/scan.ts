@@ -72,6 +72,18 @@ export function autopilotStatusPath(home: string, sessionId: string): string | n
 }
 
 /**
+ * The path of a session's autopilot log, `<home>/.claude/autopilot/<id>.log`, beside its status file, with the guards
+ * of autopilotStatusPath: null when the home folder is not an absolute path or the id is not a plain session id, so a
+ * caller never reads some other file in its place (D-111, T-03-34).
+ */
+export function autopilotLogPath(home: string, sessionId: string): string | null {
+  if (!home.startsWith('/')) return null
+  if (!SESSION_ID_PATTERN.test(sessionId)) return null
+
+  return `${trimSlash(home)}/.claude/autopilot/${sessionId}.log`
+}
+
+/**
  * Whether an autopilot run is live in this session, from a read of its status file (SCAN-04, D-42). It fails closed:
  * only an absent file, `isOn: false` or a stale beat is `none`. A file that is unreadable or over the read cap, is not
  * JSON or not an object, or holds a non-boolean `isOn`, or (when on) a `beat` that is not a finite number, is

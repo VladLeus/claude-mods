@@ -7,11 +7,11 @@
  * It reads autopilot's and agent-fleet's files by their on-disk format and never imports either mod. It runs in the
  * root session or in `claude -p`, asks nothing, writes nothing, and runs only `/usr/bin/grep` over a transcript.
  */
-import type { HostIo, InitIo, LaunchStart, PortEntry } from '../types'
-import { clean, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
+import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry } from '../types'
+import { clean, compareText, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
 import { readTeam, repoGuard } from './init'
 import { reportText } from './render'
-import { autopilotRunState, autopilotStatusPath } from './scan'
+import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
 /**
@@ -39,8 +39,17 @@ export type StatusReport = {
   readonly doneMarker: boolean | null
 }
 
+/** The most transcripts of the start folder the title search greps: the newest ones (D-131). */
+export const MAX_TRANSCRIPTS = 20
+
 /** The most UTF-8 bytes of an autopilot log status reads. */
 export const LOG_MAX_BYTES = 4 * 1024 * 1024
+
+/** The most UTF-8 bytes of one fleet beat status reads, the size agent-fleet caps its own beats at. */
+export const BEAT_MAX_BYTES = 64 * 1024
+
+/** The most fleet beats the beat fallback reads: the newest ones (D-131). */
+const MAX_BEATS = 50
 
 /** How long one title grep of a transcript may run, in milliseconds. */
 const TITLE_GREP_TIMEOUT_MS = 5_000
@@ -51,8 +60,8 @@ const LOG_SHOWN_CHARS = 160
 /** The end of a transcript's file name: `<session id>.jsonl`. */
 const TRANSCRIPT_SUFFIX = '.jsonl'
 
-/** The end of an autopilot status file's name: `<session id>.json`; the log beside it ends `.log`. */
-const STATUS_SUFFIX = '.json'
+/** The end of a fleet beat's file name. */
+const BEAT_SUFFIX = '.json'
 
 /** The start of the text of the log line autopilot writes when a run ends: `finished (<reason>): ...`. */
 const FINISHED_TEXT = 'finished ('
@@ -119,29 +128,154 @@ function transcriptFolderOf(userDir: string | null, startFolder: string | null):
   return `${trimSlash(userDir)}/projects/${mangledProjectDir(startFolder)}`
 }
 
-/** The transcripts a listing names: the regular files whose name ends `.jsonl`, in the listing's order. */
-function transcriptNames(entries: readonly PortEntry[]): string[] {
-  return entries
-    .filter(entry => entry.kind === 'file' && entry.name.endsWith(TRANSCRIPT_SUFFIX))
+/**
+ * Whether a text is a plain session id, the only kind autopilot names its files with: one autopilotStatusPath takes,
+ * so the one pattern scan.ts keeps decides, and a transcript or beat that names anything else is never followed
+ * (T-03-34).
+ */
+function isPlainSessionId(text: string): boolean {
+  return autopilotStatusPath('/', text) !== null
+}
+
+/** Whether a listing entry is a regular file and not a link: the only kind of transcript or beat status reads. */
+function isRegularFile(entry: PortEntry): boolean {
+  return entry.kind === 'file' && !entry.isLink
+}
+
+/** The entries newest first by modification time, a tie by name, as a new array. */
+function newestFirst(entries: readonly PortEntry[]): PortEntry[] {
+  return [...entries].sort((a, b) => b.mtimeMs - a.mtimeMs || compareText(a.name, b.name))
+}
+
+/** Whether a file name is a transcript's: a plain session id, then `.jsonl`. */
+function isTranscriptName(name: string): boolean {
+  return name.endsWith(TRANSCRIPT_SUFFIX) && isPlainSessionId(name.slice(0, -TRANSCRIPT_SUFFIX.length))
+}
+
+/**
+ * The transcripts the title search greps (D-131): the names of the regular files, never links, named by a plain
+ * session id and `.jsonl`, newest first by modification time, at most MAX_TRANSCRIPTS of them.
+ */
+export function transcriptCandidates(entries: readonly PortEntry[]): string[] {
+  const transcripts = entries.filter(entry => isRegularFile(entry) && isTranscriptName(entry.name))
+
+  return newestFirst(transcripts)
+    .slice(0, MAX_TRANSCRIPTS)
     .map(entry => entry.name)
 }
 
 /**
- * The session the title search finds in a transcripts folder (D-131): the id of the first transcript whose title grep
- * exits 0 and gives `cadre-<id>`; a grep the host rejects, or that exits non-zero, gives no title. Null when the folder
- * is not known or cannot be listed, or no transcript has the title.
+ * The session the title search finds in a transcripts folder (D-131): the id of the first transcript, newest first
+ * (transcriptCandidates), whose title grep exits 0 and gives `cadre-<id>`; a grep the host rejects, or that exits
+ * non-zero, gives no title. Null when the folder is not known or cannot be listed, or no transcript has the title.
  */
 async function titledSession(io: InitIo, host: HostIo, folder: string | null, id: string): Promise<string | null> {
   if (folder === null) return null
   const entries = await io.list(folder)
   if (entries === null) return null
-  for (const name of transcriptNames(entries)) {
+  for (const name of transcriptCandidates(entries)) {
     const run = await host.run(titleGrepArgv(`${folder}/${name}`), { timeoutMs: TITLE_GREP_TIMEOUT_MS })
     if (run === null || run.exitCode !== 0) continue
     if (customTitleOf(run.stdout) === sessionName(id)) return name.slice(0, -TRANSCRIPT_SUFFIX.length)
   }
 
   return null
+}
+
+/** A fleet beat that is a role's session: the session's id and folder, and when it last beat. */
+type BeatSession = {
+  readonly sessionId: string
+  readonly cwd: string
+  readonly beatAt: number
+}
+
+/**
+ * One parsed fleet beat as a role's session, or null when it is not one: a JSON object whose name is the session name,
+ * whose id is a plain session id, whose cwd is an absolute path and, when the start folder is known, that folder
+ * (trailing slashes aside), and whose beatAt is a finite number. Every other field is ignored.
+ */
+function beatOf(value: unknown, name: string, startFolder: string | null): BeatSession | null {
+  if (!isObject(value) || value.name !== name) return null
+  const { id, cwd, beatAt } = value
+  if (typeof id !== 'string' || !isPlainSessionId(id)) return null
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return null
+  if (startFolder !== null && trimSlash(cwd) !== trimSlash(startFolder)) return null
+  if (typeof beatAt !== 'number' || !Number.isFinite(beatAt)) return null
+
+  return { sessionId: id, cwd, beatAt }
+}
+
+/**
+ * The role's session from the fleet beats (D-131), for when no transcript names it: of the beats beatOf takes for the
+ * session name `cadre-<id>` and the start folder, the one with the newest beatAt (the first of a tie), as its id and
+ * its cwd. For a here start (`startFolder` null) a beat is matched by its name alone, and its cwd tells the folder its
+ * session started in. Null when no beat is the role's.
+ */
+export function beatSessionOf(
+  values: readonly unknown[],
+  id: string,
+  startFolder: string | null,
+): { readonly sessionId: string; readonly cwd: string } | null {
+  let newest: BeatSession | null = null
+  for (const value of values) {
+    const beat = beatOf(value, sessionName(id), startFolder)
+    if (beat === null) continue
+    if (newest !== null && beat.beatAt <= newest.beatAt) continue
+    newest = beat
+  }
+
+  return newest === null ? null : { sessionId: newest.sessionId, cwd: newest.cwd }
+}
+
+/**
+ * The parsed fleet beats under a home folder (D-131): the newest MAX_BEATS regular `.json` files, never links, of
+ * `<home>/.claude/fleet`, each read at most BEAT_MAX_BYTES; a beat that cannot be read or is not JSON is skipped.
+ * Empty when the folder cannot be listed.
+ */
+async function beatValues(io: InitIo, home: string): Promise<unknown[]> {
+  const folder = `${trimSlash(home)}/.claude/fleet`
+  const entries = await io.list(folder)
+  if (entries === null) return []
+  const beats = entries.filter(entry => isRegularFile(entry) && entry.name.endsWith(BEAT_SUFFIX))
+  const values: unknown[] = []
+  for (const entry of newestFirst(beats).slice(0, MAX_BEATS)) {
+    const read = await io.read(`${folder}/${entry.name}`, BEAT_MAX_BYTES)
+    if (read.state !== 'text') continue
+    const parsed = parseJsonValue(read.text)
+    if (parsed === null) continue
+    values.push(parsed.value)
+  }
+
+  return values
+}
+
+/** The session the search found: its id, how it was found, and the folder it started in (null when not known). */
+type FoundSession = {
+  readonly sessionId: string
+  readonly foundBy: 'title' | 'beat'
+  readonly folder: string | null
+}
+
+/**
+ * The role's session (D-131): first the title search over the start folder's transcripts under the user folder
+ * (titledSession); else the fleet beats under HOME as given, as autopilot and agent-fleet name their folders from it
+ * (beatSessionOf). A here start has no known folder, so it has no title search, and its beat's cwd is the folder its
+ * session started in. Null when neither finds the session, and with no absolute HOME as given no beat is read.
+ */
+async function sessionOf(
+  io: InitIo,
+  host: HostIo,
+  input: { readonly locations: InitLocations; readonly id: string; readonly startFolder: string | null },
+): Promise<FoundSession | null> {
+  const { locations, id, startFolder } = input
+  const titled = await titledSession(io, host, transcriptFolderOf(userDirOf(locations), startFolder), id)
+  if (titled !== null) return { sessionId: titled, foundBy: 'title', folder: startFolder }
+  const home = locations.givenHome
+  if (home === null || !home.startsWith('/')) return null
+  const beat = beatSessionOf(await beatValues(io, home), id, startFolder)
+  if (beat === null) return null
+
+  return { sessionId: beat.sessionId, foundBy: 'beat', folder: startFolder ?? beat.cwd }
 }
 
 /** The texts of an autopilot log's lines, in order, after their stamps; a line not `<stamp>  <text>` has none. */
@@ -184,22 +318,18 @@ type RunRead = {
   readonly lastLog: string | null
 }
 
-/** The path of a session's autopilot log, beside its status file: `<id>.log` for `<id>.json`. */
-function logPathOf(statusPath: string): string {
-  return `${statusPath.slice(0, -STATUS_SUFFIX.length)}.log`
-}
-
 /**
  * A found session's run (D-111): its status file judged by autopilotRunState at the host's clock (no clock is not a
  * finite number, so a file that is on is unknown), and its log, at most LOG_MAX_BYTES. The run is done when it is off
- * and the log's last finished line is `finished (done)`; any other run is reported unknown. With no usable status
- * path (no HOME, or an id autopilot would not name a file with) nothing is read and the run is unknown (D-42).
+ * and the log's last finished line is `finished (done)`; any other run is reported unknown. With no usable status or
+ * log path (no HOME, or an id autopilot would not name a file with) nothing is read and the run is unknown (D-42).
  */
 async function runOf(io: InitIo, home: string | null, sessionId: string): Promise<RunRead> {
   const statusPath = home === null ? null : autopilotStatusPath(home, sessionId)
-  if (statusPath === null) return { state: 'unknown', lastLog: null }
+  const logPath = home === null ? null : autopilotLogPath(home, sessionId)
+  if (statusPath === null || logPath === null) return { state: 'unknown', lastLog: null }
   const runState = autopilotRunState(await io.read(statusPath, MAX_READ_BYTES), (await io.now()) ?? Number.NaN)
-  const log = await io.read(logPathOf(statusPath), LOG_MAX_BYTES)
+  const log = await io.read(logPath, LOG_MAX_BYTES)
   const text = log.state === 'text' ? log.text : ''
   const isDone = runState === 'none' && runOutcomeOf(text) === 'done'
 
@@ -232,10 +362,10 @@ export function statusReportText(report: StatusReport): string {
 /**
  * `/cadre status <id>` (D-111, D-131), in the root session or in `claude -p`. It refuses with the shared replies only:
  * repoGuard's, worded for status, then readTeam's (no `.cadre/cadre.json`, an id cadre.json does not list, a role.json
- * that is not valid). Then it looks for the role's session by its name: among the transcripts of the start folder
- * under `<userDir>/projects/`, the first whose title grep (titleGrepArgv, run through the host) gives `cadre-<id>`.
- * With no session the run is not started; else the run is read from the session's autopilot status file and log
- * (runOf). It asks nothing and writes nothing.
+ * that is not valid). Then it looks for the role's session by its name (sessionOf): the newest of the start folder's
+ * transcripts under `<userDir>/projects/` whose title grep (titleGrepArgv, run through the host) gives `cadre-<id>`,
+ * else its fleet beat. With no session the run is not started; else the run is read from the session's autopilot
+ * status file and log (runOf). It asks nothing and writes nothing.
  */
 export async function runStatus(io: InitIo, host: HostIo, options: { readonly id: string }): Promise<string> {
   const { id } = options
@@ -246,12 +376,13 @@ export async function runStatus(io: InitIo, host: HostIo, options: { readonly id
   if (team.kind === 'refuse') return team.text
 
   const startFolder = startFolderOf(locations.root, team.value.state.launchStart)
-  const sessionId = await titledSession(io, host, transcriptFolderOf(userDirOf(locations), startFolder), id)
+  const found = await sessionOf(io, host, { locations, id, startFolder })
   const report = { id, handoff: null, doneMarker: null }
-  if (sessionId === null) {
+  if (found === null) {
     return statusReportText({ ...report, state: 'not started', sessionId: null, foundBy: null, lastLog: null })
   }
+  const { sessionId, foundBy } = found
   const run = await runOf(io, locations.givenHome, sessionId)
 
-  return statusReportText({ ...report, state: run.state, sessionId, foundBy: 'title', lastLog: run.lastLog })
+  return statusReportText({ ...report, state: run.state, sessionId, foundBy, lastLog: run.lastLog })
 }
