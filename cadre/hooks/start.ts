@@ -13,6 +13,7 @@
  * than the role files or a rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
 import type {
+  DesiredFile,
   HostIo,
   InitIo,
   InitLocations,
@@ -33,9 +34,10 @@ import {
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
-import { shQuote } from './generate'
+import { desiredFiles, shQuote } from './generate'
 import { sha256Hex } from './hash'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
+import type { RegenRead } from './init'
 import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, MANIFEST_PATH, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
@@ -806,25 +808,50 @@ export function renderFailedReply(id: string, path: string): string {
 }
 
 /**
- * Why the role's launcher cannot be trusted (LNCH-04, T-03-28), or null. It refuses, in this order: a
- * `.cadre/manifest.json` that is missing, cannot be read or is not a valid manifest (START_NO_MANIFEST); a launcher
- * `.cadre/bin/<id>` the manifest holds no entry for, or that is not there (launcherMissingReply); one that cannot be
- * read as a regular file inside the repo, or whose sha256 differs from its entry (launcherChangedReply). Both are read
- * through readRepoFile, so a link out of the repo is never read.
+ * The text of the role's launcher on disk once it can be trusted (LNCH-04, T-03-28), or the refusal. It refuses, in
+ * this order: a `.cadre/manifest.json` that is missing, cannot be read or is not a valid manifest (START_NO_MANIFEST);
+ * a launcher `.cadre/bin/<id>` the manifest holds no entry for, or that is not there (launcherMissingReply); one that
+ * cannot be read as a regular file inside the repo, or whose sha256 differs from its entry (launcherChangedReply). Both
+ * are read through readRepoFile, so a link out of the repo is never read.
  */
-async function launcherRefusal(io: InitIo, root: string, id: string): Promise<string | null> {
+async function launcherRead(io: InitIo, root: string, id: string): Promise<RegenRead<string>> {
   const manifestRead = await readRepoFile(io, root, MANIFEST_PATH, MAX_READ_BYTES)
   const manifest = manifestRead.state === 'text' ? parseManifest(manifestRead.text) : null
-  if (manifest === null) return START_NO_MANIFEST
+  if (manifest === null) return { kind: 'refuse', text: START_NO_MANIFEST }
   const path = `.cadre/bin/${id}`
   const entry = manifest.files.find(file => file.path === path)
-  if (entry === undefined) return launcherMissingReply(id)
+  if (entry === undefined) return { kind: 'refuse', text: launcherMissingReply(id) }
   const launcher = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (launcher.state === 'absent') return launcherMissingReply(id)
-  if (launcher.state !== 'text') return launcherChangedReply(id)
-  if ((await sha256Hex(launcher.text)) !== entry.sha256) return launcherChangedReply(id)
+  if (launcher.state === 'absent') return { kind: 'refuse', text: launcherMissingReply(id) }
+  if (launcher.state !== 'text') return { kind: 'refuse', text: launcherChangedReply(id) }
+  if ((await sha256Hex(launcher.text)) !== entry.sha256) return { kind: 'refuse', text: launcherChangedReply(id) }
 
-  return null
+  return { kind: 'ok', value: launcher.text }
+}
+
+/**
+ * The warning when the role's launcher on disk, which matches its manifest entry, is not the text this cadre writes
+ * for it today (LNCH-04, #54 A3): an older cadre wrote it, or the setup changed since. It warns and never refuses,
+ * since the launcher is still the one cadre wrote. The name is shown cleaned.
+ */
+function launcherOutdatedWarning(id: string): string {
+  const role = reportText(id)
+
+  return (
+    `.cadre/bin/${role} is not the launcher this cadre writes today (written by an older cadre or for another ` +
+    `setup): run /cadre regen ${role} to update it`
+  )
+}
+
+/**
+ * The launcher warnings of /cadre start (#54 A3): launcherOutdatedWarning when `desired`, the files desiredFiles gives
+ * for the role today, holds a launcher `.cadre/bin/<id>` whose text differs from `onDisk`; none otherwise.
+ */
+function launcherDrift(id: string, onDisk: string, desired: readonly DesiredFile[]): string[] {
+  const today = desired.find(file => file.path === `.cadre/bin/${id}`)
+  if (today === undefined || today.content === onDisk) return []
+
+  return [launcherOutdatedWarning(id)]
 }
 
 /**
@@ -900,7 +927,7 @@ function startReplyText(id: string, root: string, links: number, warnings: reado
 /**
  * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with one exact line, in this order: the
  * repo refusals of repoGuard (in the start wording); the team refusals of readTeam; the launcher refusals of
- * launcherRefusal (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
+ * launcherRead (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
  * before anything else is run; the refusals of gatherLaunchUser; and a render refusal. Otherwise it compiles the team
  * (compileTeam), gathers the launching user and builds the role's LaunchPlan, and renders the role's `.runtime/`: the
  * settings, the MCP config (runtimeMcpText), the probe expectations, the links, the inbox when there is none, and the
@@ -908,9 +935,10 @@ function startReplyText(id: string, root: string, links: number, warnings: reado
  * built for, and every refusal comes before anything is written. Each step then runs through the host in order, and
  * the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to
  * start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them (scanWarnings,
- * #54 A1); every warning of the launch user, the LaunchPlan, the MCP config and the render; and the launcher command
- * (startReplyText). It never runs the launcher, and never starts a background session (D-108). `options.terminal` is
- * not read yet: it is carried for the step that opens a terminal (D-109).
+ * #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the LaunchPlan, the MCP
+ * config and the render; and the launcher command (startReplyText). It never runs the launcher, and never starts a
+ * background session (D-108). `options.terminal` is not read yet: it is carried for the step that opens a terminal
+ * (D-109).
  */
 export async function runStart(
   io: InitIo,
@@ -924,8 +952,8 @@ export async function runStart(
   const team = await readTeam(io, locations.root, 'start', id)
   if (team.kind === 'refuse') return team.text
   const { state, roles } = team.value
-  const launcher = await launcherRefusal(io, locations.root, id)
-  if (launcher !== null) return launcher
+  const launcher = await launcherRead(io, locations.root, id)
+  if (launcher.kind === 'refuse') return launcher.text
   const claude = await claudeRefusal(host)
   if (claude !== null) return claude
 
@@ -955,8 +983,9 @@ export async function runStart(
     if (!(await isStepDone(host, step))) return renderFailedReply(id, repoRelative(user.root, step.path))
   }
   const links = render.steps.filter(step => step.kind === 'link').length
+  const drift = launcherDrift(id, launcher.value, desiredFiles({ roles, scopes, state, only: id }))
   const scan = scanWarnings(locations, gathered)
-  const warnings = [...scan, ...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
+  const warnings = [...scan, ...drift, ...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
 
   return startReplyText(id, user.root, links, warnings)
 }
