@@ -293,23 +293,27 @@ const UNREADABLE_MANIFEST_WARNING =
   'could not read .cadre/manifest.json (treated as unknown): it is kept as is and Phase 3 will not write it'
 
 /**
- * The op for the manifest file. A manifest that could not be read, by the scan (`manifestState` unknown) or on the disk
- * (unknown or too large), is a conflict with a note: it may hold the entries of other roles, so it is kept as it is and
- * Phase 3 will not write it (A6). Any other manifest is compared as plain text, since cadre owns the file: one that is
- * not there is created, the same text is left, and other text is a change.
+ * The op for the manifest file, and the manifest the plan records: schema 1, the cadre version and the entries sorted
+ * by path. A manifest that could not be read, by the scan (`manifestState` unknown) or on the disk (unknown or too
+ * large), is a conflict with a note: it may hold the entries of other roles, so it is kept as it is and Phase 3 will
+ * not write it (A6). Any other manifest is compared as plain text, since cadre owns the file: one that is not there is
+ * created, the same text is left, and other text is a change.
  */
-function manifestOp(input: PlanInput, entries: readonly ManifestEntry[]): FileOp {
+function manifestOp(
+  input: PlanInput,
+  entries: readonly ManifestEntry[],
+): { readonly op: FileOp; readonly manifest: Manifest } {
   const manifest: Manifest = { schema: 1, cadreVersion: input.cadreVersion, files: [...entries].sort(byPath) }
   const read = input.disk.get(MANIFEST_PATH)
   const isUnreadable = read !== undefined && (read.state === 'unknown' || read.state === 'too-large')
   if (input.manifestState === 'unknown' || isUnreadable) {
-    return { kind: 'conflict', path: MANIFEST_PATH, mode: 'file', note: UNREADABLE_MANIFEST_NOTE }
+    return { op: { kind: 'conflict', path: MANIFEST_PATH, mode: 'file', note: UNREADABLE_MANIFEST_NOTE }, manifest }
   }
   const isAbsent = read === undefined || read.state === 'absent'
   const isSame = read !== undefined && read.state === 'text' && read.text === stableJson(manifest)
   const kind: FileOpKind = isAbsent ? 'create' : isSame ? 'leave' : 'change'
 
-  return { kind, path: MANIFEST_PATH, mode: 'file', note: null }
+  return { op: { kind, path: MANIFEST_PATH, mode: 'file', note: null }, manifest }
 }
 
 /** What one part of the plan adds: its file ops and its warnings. */
@@ -477,16 +481,16 @@ function hunkPart(hunks: readonly HunkOp[]): { readonly ops: readonly HunkOp[]; 
   return { ops, warnings }
 }
 
+/** The file plan and the manifest it records, which apply writes last (LNCH-01). */
+export type PlannedFiles = { readonly plan: Plan; readonly manifest: Manifest }
+
 /**
- * The file plan (PLAN-01): one op per desired file, one for the manifest and, when asked, one for the `.gitignore`
- * block, sorted by path, then the framework config hunks in their given order. Every file is hashed once and
- * classified against the disk and the last manifest (D-67); a file the user edited or cadre cannot read is a conflict
- * and is never planned for overwrite (PLAN-04), and so is a manifest cadre cannot read, with a warning (A6). There is
- * no op that deletes. Every path is checked against the PLAN-06 allow-list and the manifest is planned from the hashes
- * with no timestamp, so building the plan again from the same input gives the same plan. Classification uses the disk
- * as read for this run; Phase 3 checks again before it writes.
+ * The file plan buildPlan gives, and the manifest that plan records: schema 1, the cadre version and, sorted by path,
+ * every entry the plan keeps (each desired file that is not a conflict with its new hash, the old entry of a conflict,
+ * the carried and the stale entries). The manifest op compares the stableJson text of this manifest with the disk,
+ * and apply writes that same text, so the plan and the written manifest never differ (LNCH-01).
  */
-export async function buildPlan(input: PlanInput): Promise<Plan> {
+export async function planWithManifest(input: PlanInput): Promise<PlannedFiles> {
   const manifest = input.manifestState === 'present' ? input.manifest : null
   const old = manifest?.files ?? []
   const recorded = new Map(old.map((entry): [string, ManifestEntry] => [entry.path, entry]))
@@ -506,11 +510,24 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
   const hunks = hunkPart(input.hunks)
   entries.push(...kept.entries)
   const manifestFile = manifestOp(input, entries)
-  ops.push(...kept.ops, ...ignore.ops, manifestFile)
+  ops.push(...kept.ops, ...ignore.ops, manifestFile.op)
   warnings.push(...kept.warnings, ...ignore.warnings, ...hunks.warnings)
-  if (manifestFile.kind === 'conflict') warnings.push(UNREADABLE_MANIFEST_WARNING)
+  if (manifestFile.op.kind === 'conflict') warnings.push(UNREADABLE_MANIFEST_WARNING)
 
-  return { ops: [...ops.sort(byPath), ...hunks.ops], warnings }
+  return { plan: { ops: [...ops.sort(byPath), ...hunks.ops], warnings }, manifest: manifestFile.manifest }
+}
+
+/**
+ * The file plan (PLAN-01): one op per desired file, one for the manifest and, when asked, one for the `.gitignore`
+ * block, sorted by path, then the framework config hunks in their given order. Every file is hashed once and
+ * classified against the disk and the last manifest (D-67); a file the user edited or cadre cannot read is a conflict
+ * and is never planned for overwrite (PLAN-04), and so is a manifest cadre cannot read, with a warning (A6). There is
+ * no op that deletes. Every path is checked against the PLAN-06 allow-list and the manifest is planned from the hashes
+ * with no timestamp, so building the plan again from the same input gives the same plan. Classification uses the disk
+ * as read for this run; Phase 3 checks again before it writes. It is the plan of planWithManifest.
+ */
+export async function buildPlan(input: PlanInput): Promise<Plan> {
+  return (await planWithManifest(input)).plan
 }
 
 /** The rows of one file op: the kind and path, `(executable)` for a launcher, and the note under the path. */
