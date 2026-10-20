@@ -10,13 +10,14 @@
  * stamp is always the last step, and the launcher trusts it: it refuses to start when the stamp is missing or older
  * than the role files or a rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
-import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortStat } from '../types'
-import { isDirInsideRoot, sortedUnique } from './facts'
+import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortStat, SettingsSource } from '../types'
+import { isDirInsideRoot, isObject, MAX_READ_BYTES, sortedUnique, SOURCE_ORDER } from './facts'
 import { sha256Hex } from './hash'
+import { claudeMdImports } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { reportText } from './render'
-import { userDirOf } from './setup'
+import { claudeMdPathsOf, hookScriptOf, mangledProjectDir, userDirOf } from './setup'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
 const SETTINGS_FILE = 'settings.json'
@@ -371,6 +372,158 @@ export type LaunchUserRead =
   | { readonly kind: 'ok'; readonly user: LaunchUser; readonly warnings: readonly string[] }
   | { readonly kind: 'refuse'; readonly text: string }
 
+/** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
+const CLAUDE_MD_FILES: readonly string[] = Object.freeze(['CLAUDE.md', '.claude/CLAUDE.md'])
+
+/** How many import hops from the global CLAUDE.md are followed, as the engine follows them (D-63). */
+const MAX_IMPORT_DEPTH = 5
+
+/** The most files the global CLAUDE.md and its imports give a role. */
+const MAX_GLOBAL_FILES = 20
+
+/** The extension of a memory file and of an agent file. */
+const MARKDOWN = '.md'
+
+/** The settings sources whose hooks a git-root start renders: it loads the project settings by itself (D-103). */
+const ROOT_HOOK_SOURCES: readonly SettingsSource[] = Object.freeze(['user', 'local'])
+
+/** One hook of the user's settings as a launch carries it. */
+type LaunchHook = LaunchUser['hooks'][number]
+
+/** The compact window when it is a positive safe integer, else null, as the setup scan keeps it (D-60). */
+function compactWindowOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * The values a role may carry from the user settings (D-60, D-84): `autoCompactWindow` when it is a positive safe
+ * integer, the `statusLine` object as read, and each `env` entry whose value is a string; null, null and {} for a value
+ * that is missing or not of that kind, and for anything but a plain object. Only what a role carries is rendered
+ * (launchPlan), into runtime files, never into a reply.
+ */
+export function launchSettingsOf(user: unknown): Pick<LaunchUser, 'autoCompactWindow' | 'statusLine' | 'env'> {
+  if (!isObject(user)) return { autoCompactWindow: null, statusLine: null, env: {} }
+  const env = isObject(user.env) ? Object.entries(user.env) : []
+
+  return {
+    autoCompactWindow: compactWindowOf(user.autoCompactWindow),
+    statusLine: isObject(user.statusLine) ? user.statusLine : null,
+    env: Object.fromEntries(env.filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+  }
+}
+
+/** A hook timeout in seconds when it is a positive finite number, else null. */
+function timeoutOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
+/** One hook of a settings group as a launch carries it; null when it is not a command hook with a script basename. */
+function launchHookOf(event: string, matcher: string | null, hook: unknown): LaunchHook | null {
+  if (!isObject(hook) || hook.type !== 'command' || typeof hook.command !== 'string') return null
+  const script = hookScriptOf(hook.command)
+  if (script === null) return null
+
+  return { event, script, command: hook.command, matcher, timeout: timeoutOf(hook.timeout) }
+}
+
+/** The command hooks of one settings group, with the group's matcher; none when the group is not of that shape. */
+function groupHooks(event: string, group: unknown): LaunchHook[] {
+  if (!isObject(group) || !Array.isArray(group.hooks)) return []
+  const matcher = typeof group.matcher === 'string' ? group.matcher : null
+
+  return group.hooks.flatMap(hook => launchHookOf(event, matcher, hook) ?? [])
+}
+
+/**
+ * The command hooks under `hooks` of one settings value, as a launch carries them (D-62, D-103): for each event, each
+ * group and each hook of type `command`, in the order the settings give them, the event, the script basename
+ * (hookScriptOf), the whole command, the group's matcher (null when it has none) and the timeout when it is a positive
+ * finite number (else null). A hook with no script basename a role can carry is dropped, and so is anything not of that
+ * shape. The whole command is only ever written to runtime files, never to a reply or a warning.
+ */
+export function launchHooksOf(value: unknown): LaunchUser['hooks'] {
+  if (!isObject(value) || !isObject(value.hooks)) return []
+
+  return Object.entries(value.hooks).flatMap(([event, groups]) =>
+    Array.isArray(groups) ? groups.flatMap(group => groupHooks(event, group)) : [],
+  )
+}
+
+/**
+ * The settings sources whose hooks a launch renders into the runtime settings (D-103): the user and local settings
+ * always, as `--setting-sources project` loads neither, and the project settings only for a `here` or `dir` start,
+ * which loads the project settings of its own folder and not those of the git root (D-122). A git-root start loads
+ * them by itself, so rendering them too would register each project hook twice (RESEARCH Pitfall 9).
+ */
+export function hookSourcesFor(start: LaunchStart): readonly SettingsSource[] {
+  return start.kind === 'git-root' ? ROOT_HOOK_SOURCES : SOURCE_ORDER
+}
+
+/** Whether a path's stat, asked with resolve, shows a regular file. */
+async function isFile(io: InitIo, path: string): Promise<boolean> {
+  return (await io.stat(path))?.kind === 'file'
+}
+
+/** The files a CLAUDE.md imports (claudeMdImports); none when it cannot be read or is over MAX_READ_BYTES. */
+async function importsOf(io: InitIo, path: string, home: string): Promise<string[]> {
+  const read = await io.read(path, MAX_READ_BYTES)
+  if (read.state !== 'text') return []
+
+  return claudeMdImports(read.text, parentOf(path), home)
+}
+
+/**
+ * The global CLAUDE.md and the files it imports (D-63, D-100): `<userDir>/CLAUDE.md` first, then its imports breadth
+ * first through claudeMdImports, each file once, at most MAX_IMPORT_DEPTH hops from the global file and
+ * MAX_GLOBAL_FILES files in all. Only a path whose stat is a regular file is kept, and a file that cannot be read is
+ * kept with no imports. Empty when there is no global file.
+ */
+async function globalClaudeMdOf(io: InitIo, userDir: string, home: string): Promise<string[]> {
+  const found: string[] = []
+  const seen = new Set<string>()
+  let level = [`${userDir}/CLAUDE.md`]
+  for (let depth = 0; depth <= MAX_IMPORT_DEPTH && level.length > 0; depth += 1) {
+    const next: string[] = []
+    for (const path of level) {
+      if (seen.has(path) || found.length === MAX_GLOBAL_FILES) continue
+      seen.add(path)
+      if (!(await isFile(io, path))) continue
+      found.push(path)
+      if (depth < MAX_IMPORT_DEPTH) next.push(...(await importsOf(io, path, home)))
+    }
+    level = next
+  }
+
+  return found
+}
+
+/** The names of the regular `.md` files in a folder, sorted; a link, a folder or a listing that fails gives none. */
+async function markdownFiles(io: InitIo, folder: string): Promise<string[]> {
+  const entries = (await io.list(folder)) ?? []
+  const files = entries.filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN))
+
+  return sortedUnique(files.map(entry => entry.name))
+}
+
+/** The `.md` file names of the auto-memory folder the engine keeps for a project root in the user folder (D-100). */
+async function memoryFilesOf(io: InitIo, userDir: string, root: string): Promise<string[]> {
+  return markdownFiles(io, `${userDir}/projects/${mangledProjectDir(root)}/memory`)
+}
+
+/** The user's skills: the folders and links in `<userDir>/skills`, sorted; a listing that fails gives none. */
+async function userSkillsOf(io: InitIo, userDir: string): Promise<string[]> {
+  const entries = (await io.list(`${userDir}/skills`)) ?? []
+
+  return sortedUnique(entries.filter(entry => entry.kind === 'dir' || entry.isLink).map(entry => entry.name))
+}
+
+/** The user's agents: the regular `.md` files in `<userDir>/agents`, by name without `.md`, sorted. */
+async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
+  const names = await markdownFiles(io, `${userDir}/agents`)
+
+  return sortedUnique(names.map(name => name.slice(0, -MARKDOWN.length)))
+}
+
 /**
  * The git common dir as git gives it at the repo root: its output without the final line break, which must start
  * with `/`. Null when the host rejects the run, it exits non-zero or its output is not an absolute path.
@@ -384,12 +537,19 @@ async function gitCommonDirOf(host: HostIo, root: string): Promise<string | null
 }
 
 /**
- * The launching user's facts (D-98), gathered in the root session through the ports: the repo root as resolved and as
- * given; the home folder; the user folder (CLAUDE_CONFIG_DIR, else `<home>/.claude`); the git common dir from
- * GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves it, else as git gave it,
- * with its SHA-256, which name the role memory folders (roleMemoryDir, D-20, D-91); and the code dirs given. It
- * refuses with START_NO_HOME when there is no home folder, before any run, and with START_NO_GIT_DIR when git gives no
- * absolute path.
+ * The launching user's facts (D-98), gathered in the root session through the ports:
+ * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
+ *   `<home>/.claude`);
+ * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
+ *   it, else as git gave it, with its SHA-256: they name the role memory folders (roleMemoryDir, D-20, D-91);
+ * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
+ *   the launch start (launchHooksOf, D-103);
+ * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the global CLAUDE.md with its imports, the
+ *   `.md` files of the memory folders of the root as resolved and as given, the user's skills and agents, and the code
+ *   dirs given.
+ * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
+ * any run, and with START_NO_GIT_DIR when git gives no absolute path. No setting value, hook command or file text is
+ * ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -407,6 +567,8 @@ export async function gatherLaunchUser(
   const commonDir = await gitCommonDirOf(host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
   const gitCommonDir = (await io.stat(commonDir))?.realPath ?? commonDir
+  const hooks: LaunchHook[] = []
+  for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
 
   return {
     kind: 'ok',
@@ -417,16 +579,14 @@ export async function gatherLaunchUser(
       userDir,
       gitCommonDir,
       commonDirHash: await sha256Hex(gitCommonDir),
-      autoCompactWindow: null,
-      statusLine: null,
-      env: {},
-      hooks: [],
-      claudeMd: [],
-      globalClaudeMd: [],
-      memoryFiles: [],
-      givenMemoryFiles: [],
-      userSkills: [],
-      userAgents: [],
+      ...launchSettingsOf(await io.settings('user')),
+      hooks,
+      claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),
+      globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
+      memoryFiles: await memoryFilesOf(io, userDir, locations.root),
+      givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
+      userSkills: await userSkillsOf(io, userDir),
+      userAgents: await userAgentsOf(io, userDir),
       codeDirs: input.codeDirs,
     },
     warnings: [],

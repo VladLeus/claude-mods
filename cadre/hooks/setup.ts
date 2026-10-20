@@ -117,6 +117,15 @@ function fitsHookCap(script: string): boolean {
   return script.length <= MAX_HOOK_NAME_CHARS
 }
 
+/**
+ * The script a hook command runs, as a role carries it (D-62): the first whole basename HOOK_SCRIPT_PATTERN finds in
+ * the command that fits the role.json cap, so a command that names two scripts is carried under the first; null when
+ * there is none. The rest of the command, which may hold a secret, is not part of it.
+ */
+export function hookScriptOf(command: string): string | null {
+  return command.match(HOOK_SCRIPT_PATTERN)?.find(fitsHookCap) ?? null
+}
+
 /** The value when it is a positive safe integer, else null. */
 function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -352,22 +361,29 @@ export function projectClaudeJson(value: unknown, roots: readonly string[]): Mcp
 }
 
 /**
- * The CLAUDE.md files of a `$.fs.ancestors` answer, in the order the host gave them (the file system root first), each
- * as its display form: `<repo>/CLAUDE.md`, `~/work/CLAUDE.md`, or the cleaned path outside both. Only the folder and
- * the name an entry carries are read, so the text of the files cannot be kept; a name that was not asked for, such as
- * AGENTS.md, is dropped, and a file is listed once. Anything but a list gives [].
+ * The CLAUDE.md files of a `$.fs.ancestors` answer as absolute paths, in the order the host gave them (the file system
+ * root first). Only the folder and the name an entry carries are read, so the text of the files cannot be kept; a name
+ * that was not asked for, such as AGENTS.md, is dropped, and a file is listed once. Anything but a list gives [].
  */
-export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
+export function claudeMdPathsOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
-  const shown = value.flatMap(item => {
+  const paths = value.flatMap(item => {
     if (!isObject(item) || typeof item.dir !== 'string' || typeof item.name !== 'string') return []
     if (!CLAUDE_MD_NAMES.includes(item.name)) return []
-    const path = `${trimSlash(item.dir)}/${item.name}`
 
-    return [displayPath(path, ctx.home, ctx.root, ctx.configDir)]
+    return [`${trimSlash(item.dir)}/${item.name}`]
   })
 
-  return Array.from(new Set(shown))
+  return Array.from(new Set(paths))
+}
+
+/**
+ * The CLAUDE.md files of a `$.fs.ancestors` answer (claudeMdPathsOf), each as its display form: `<repo>/CLAUDE.md`,
+ * `~/work/CLAUDE.md`, or the cleaned path outside both, in the order the host gave them and once each. Anything but a
+ * list gives [].
+ */
+export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
+  return Array.from(new Set(claudeMdPathsOf(value).map(path => displayPath(path, ctx.home, ctx.root, ctx.configDir))))
 }
 
 /**
@@ -592,7 +608,7 @@ async function agentNames(
 }
 
 /** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
-function claudeJsonPathOf(ctx: SetupContext): string | null {
+export function claudeJsonPathOf(ctx: SetupContext): string | null {
   if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
 
   return ctx.home === null ? null : `${ctx.home}/.claude.json`
