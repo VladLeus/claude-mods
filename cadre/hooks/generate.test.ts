@@ -214,7 +214,7 @@ describe('kickoff', () => {
     )
   })
 
-  test('a title of 300 characters gives a role line of at most 200 that still ends with the instruction', () => {
+  test('a title of 300 characters gives a role line of at most ROLE_LINE_MAX that still ends with the instruction', () => {
     const role = templateRole('be', { title: 'T'.repeat(300) })
 
     for (const framework of FRAMEWORKS) {

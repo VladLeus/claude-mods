@@ -8,8 +8,8 @@ import { cardList } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
 
-/** The most characters the role line of a kickoff may have (D-79). */
-export const ROLE_LINE_MAX = 200
+/** The most characters the role line of a kickoff may have (D-79; 220 since the inbox sentence of D-114, decision #32). */
+export const ROLE_LINE_MAX = 220
 
 /** What the role line drops: any character outside printable ASCII, and the quote and backtick characters. */
 const NOT_ROLE_LINE_CHAR = /[^\x20-\x7e]|["'`]/g
@@ -34,10 +34,13 @@ function startText(roleId: string, framework: FrameworkId): string {
   return `the plan in .cadre/${roleId}/.runtime/plan.md`
 }
 
-/** The role line around a title: the title goes in the sentence, the role id in every path (D-48). */
+/**
+ * The role line around a title: the title goes in the sentence, the role id in every path (D-48). The role reads its
+ * ROLE.md and checks its inbox before it starts (D-114: text only, no new command).
+ */
 function roleSentence(role: RoleSpec, framework: FrameworkId, title: string): string {
   const intro = `You are the ${title} role of this repo (cadre role ${role.id}).`
-  const next = `Read .cadre/${role.id}/ROLE.md and start with ${startText(role.id, framework)}.`
+  const next = `Read .cadre/${role.id}/ROLE.md, check your inbox, then start with ${startText(role.id, framework)}.`
 
   return `${intro} ${next}`
 }
@@ -92,9 +95,10 @@ const ATTENDED_LINE =
  * CLAUDE.md or AGENTS.md (D-50). It holds, in this order: the title and id, the purpose, the framework with the model,
  * effort and permission mode, a banner when the card says the role is attended, "How you work" (the kickoff text of
  * the adapter, named with the title and the id), "Decisions" (the chain of the card, which follows basedOn),
- * "Handoffs" (the folder autopilot accepts, D-79) and "Scope" (the lines of the scope card, ROLE-06). The framework is
- * the one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title
- * and the purpose come from outside, so they are cleaned.
+ * "Handoffs" (the folder autopilot accepts, D-79), "Inbox" (the role's inbox file and how to leave a note in another
+ * role's; D-114: text only, no new command) and "Scope" (the lines of the scope card, ROLE-06). The framework is the
+ * one the scope was compiled for (`scope.card.framework`), so the document and the card cannot disagree. The title and
+ * the purpose come from outside, so they are cleaned.
  */
 export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   const { card } = scope
@@ -120,6 +124,13 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
     '## Handoffs',
     '',
     `Write every handoff under thoughts/shared/handoffs/${role.id}/ (autopilot's handoff path).`,
+    '',
+    '## Inbox',
+    '',
+    `Your inbox is .cadre/${role.id}/.runtime/inbox.md, a path from the git root. ` +
+      'Read it when you start and after every restart.',
+    'To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ' +
+      '(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.',
     '',
     '## Scope',
     '',
