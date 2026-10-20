@@ -4308,6 +4308,140 @@ describe('init apply conflicts (D-67)', () => {
   })
 })
 
+/** The argv of the GSD `mode` hunk through the proven user-level GSD of PROVEN_FACTS (D-71). */
+const MODE_RUN = ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo']
+
+/** The `mode` hunk as the person may run it by hand: the user-level GSD dir shown as `~/...` (D-71). */
+const MODE_DISPLAY = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo'
+
+/** The line apply prints when the `mode` hunk failed (D-106). */
+const MODE_FAILED = `warning: the .planning/config.json change mode failed: run it yourself: ${MODE_DISPLAY}`
+
+/** The banner ROLE.md carries under the framework line of an attended role. */
+const ATTENDED_BANNER =
+  'Attended: this role needs a person for some framework steps; the Attended rules under Scope say which.'
+
+/** The chmod calls of the launchers of PM, Security and Team Lead, as the host records them (LNCH-01). */
+const EMPTY_REPO_CHMOD_CALLS = EMPTY_REPO_CHMODS.map(argv => ({ argv, options: { timeoutMs: 10_000 } }))
+
+/**
+ * A git repo at /repo whose user-level GSD is proven (PROVEN_FACTS), so INIT_ANSWERS puts PM, Team Lead and Security on
+ * GSD, and whose `.planning/config.json` already holds workflow.text_mode false, so `mode` is the one hunk init asks;
+ * INIT_ANSWERS accepts it, and cadre can run it.
+ */
+function modeWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const config = { '/repo/.planning/config.json': '{"workflow":{"text_mode":false}}' }
+
+  return gitWorld({ facts: PROVEN_FACTS, files: config, ...over })
+}
+
+describe('init apply hunks (D-120)', () => {
+  test(
+    'an accepted, runnable hunk runs once with cwd at the repo root before any write; exit 0 is no failure',
+    async () => {
+      const host = memHost(hostWorld({}))
+      const { io, events } = withHostEvents(host)
+      const reply = await runInit(memIo(modeWorld(), INIT_ANSWERS).io, { dryRun: false, host: io })
+      expect(host.calls).toEqual([
+        { argv: MODE_RUN, options: { cwd: '/repo', timeoutMs: 30_000 } },
+        ...EMPTY_REPO_CHMOD_CALLS,
+      ])
+      expect(events[0]).toBe(`run ${MODE_RUN.join(' ')}`)
+      expect(events[1]?.startsWith('write ')).toBe(true)
+      const applied = `Applied: wrote ${host.writes.length} files (3 executable).`
+      expect(reply.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+    },
+  )
+
+  test(
+    'a hunk run that exits 1 is reported with the command, attends the GSD roles, and apply still writes',
+    async () => {
+      const failed = { exitCode: 1, stdout: '', stderr: 'denied' }
+      const host = memHost(hostWorld({ runs: [{ argv: MODE_RUN, result: failed }] }))
+      const reply = await runInit(memIo(modeWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+      expect(reply.split('\n').slice(-4)).toEqual([
+        `Applied: wrote ${host.writes.length} files (3 executable).`,
+        MODE_FAILED,
+        `warning: ${attendedNote(['mode'])}`,
+        NEXT_STEP_NOTE,
+      ])
+      expect(reply).not.toContain('denied')
+      expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
+      for (const id of ['pm', 'security', 'tl']) {
+        const role = host.writes.find(write => write.path === `/repo/.cadre/${id}/ROLE.md`)?.text ?? ''
+        expect([id, role.includes(ATTENDED_BANNER)]).toEqual([id, true])
+      }
+    },
+  )
+
+  test('a hunk run the host rejects is a failure the same way (D-106)', async () => {
+    const host = memHost(hostWorld({ runs: [{ argv: MODE_RUN, result: null }] }))
+    const reply = await runInit(memIo(modeWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(lines).toContain(MODE_FAILED)
+    expect(lines).toContain(`warning: ${attendedNote(['mode'])}`)
+    expect(host.calls[0]).toEqual({ argv: MODE_RUN, options: { cwd: '/repo', timeoutMs: 30_000 } })
+  })
+
+  test('a declined hunk is never run, and no failure is reported for it (consent, D-106)', async () => {
+    const host = memHost(hostWorld({}))
+    const answers = { ...INIT_ANSWERS, '.planning/config.json:': 'Decline' }
+    const reply = await runInit(memIo(modeWorld(), answers).io, { dryRun: false, host: host.io })
+    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    expect(reply).not.toContain('failed: run it yourself')
+  })
+
+  test('a repo-local GSD hunk is never run: its command is already in the plan (D-28, D-72)', async () => {
+    const repoCopy: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
+    // GSD is in use and its proven copy is the repo's own; the user-level candidate is not proven, so nothing runs.
+    const facts: InitFacts = {
+      facts: { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }], gsd: [repoCopy] },
+      gsdUserDir: '/home/u/.claude/gsd-core',
+    }
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(modeWorld({ facts }), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    const lines = reply.split('\n').map(line => line.trim())
+    expect(lines).toContain('run: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo')
+    expect(reply).not.toContain('failed: run it yourself')
+  })
+
+  test(
+    'a /repo/.cadre that links out of the repo gets no write under .cadre/, a refused line per path, no manifest',
+    async () => {
+      const dirs = { '/repo/.git': [], '/repo/.cadre': [] }
+      const world = gitWorld({ dirs, realPaths: { '/repo/.cadre': '/elsewhere/cadre' } })
+      const host = memHost(hostWorld({}))
+      const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: host.io })
+      const desired = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+      const reason = 'it or a folder above it is a link, or not inside the repo'
+      const refused = desired.map(file => file.path).sort(compareText)
+      expect(host.writes.map(write => write.path)).toEqual(['/repo/.gitignore'])
+      const lines = reply.split('\n')
+      expect(lines.filter(line => line.startsWith('warning: refused to write '))).toEqual(
+        refused.map(path => `warning: refused to write ${path}: ${reason}`),
+      )
+      expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+      expect(host.calls).toEqual([])
+    },
+  )
+
+  test('a ROLE.md write the host refuses is reported, the other files are still written, and no manifest', async () => {
+    const host = memHost(hostWorld({ writeFails: ['/repo/.cadre/be/ROLE.md'] }))
+    const reply = await runInit(memIo(fullWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const desired = await plannedFiles(fullWorld(), await defaultRoles(fullWorld()))
+    const others = [...desired.map(file => file.path), '.gitignore']
+      .filter(path => path !== '.cadre/be/ROLE.md')
+      .sort(compareText)
+      .map(path => `/repo/${path}`)
+    expect(host.writes.filter(write => write.isWritten).map(write => write.path)).toEqual(others)
+    expect(host.writes.filter(write => !write.isWritten).map(write => write.path)).toEqual(['/repo/.cadre/be/ROLE.md'])
+    const lines = reply.split('\n')
+    expect(lines).toContain('warning: could not write .cadre/be/ROLE.md')
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+  })
+})
+
 describe('regen apply', () => {
   /** BE alone on the built-in default, as `.cadre/cadre.json` lists it. */
   const be = templateRole('be')
