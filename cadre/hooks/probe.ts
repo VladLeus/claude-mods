@@ -5,6 +5,7 @@
  * compiled scope, the value the scope card comes from (D-80), and states the same rules in probeVerdicts for the specs.
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../types'
+import { isObject, parseJsonValue } from './facts'
 import { asciiLine } from './generate'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
@@ -128,7 +129,8 @@ export function probeExpectationsText(expectations: readonly ProbeExpectation[])
 
 /**
  * What the init event of a print-mode start shows (D-112): the names it lists as tools, slash commands and skills, its
- * permission mode, and its auto memory folder; null where it shows none. 03-06 parses it from the stream-json line.
+ * permission mode, and its auto memory folder; null where it shows none. parseInitEvent reads it from the stream-json
+ * output of a probe run.
  */
 export type InitInventory = {
   readonly tools: readonly string[]
@@ -136,6 +138,38 @@ export type InitInventory = {
   readonly skills: readonly string[]
   readonly permissionMode: string | null
   readonly memoryAuto: string | null
+}
+
+/**
+ * The startup inventory in the stream-json output of a probe run (ISO-01, D-112), or null when the output holds no init
+ * event: the first line that holds `"subtype":"init"` and parses to an object of type `system` and subtype `init`. The
+ * init event is not always the first line, since hook and title events can come before it (RESEARCH 2.4). Tools, slash
+ * commands and skills keep their string entries; the permission mode and `memory_paths.auto` are strings or null.
+ * `mcp_servers` is never read: a denied server stays connected and only its tools leave `tools`, so a check on a server
+ * is a check on tools. It is the TypeScript twin of the sh reads of the launcher's `--probe` branch.
+ */
+export function parseInitEvent(output: string): InitInventory | null {
+  const names = (list: unknown): string[] =>
+    Array.isArray(list) ? list.filter((name): name is string => typeof name === 'string') : []
+
+  for (const line of output.split('\n')) {
+    if (!line.includes('"subtype":"init"')) continue
+    const event = parseJsonValue(line)?.value
+    if (!isObject(event) || event.type !== 'system' || event.subtype !== 'init') continue
+
+    const memory = event.memory_paths
+    const auto = isObject(memory) ? memory.auto : null
+
+    return {
+      tools: names(event.tools),
+      slashCommands: names(event.slash_commands),
+      skills: names(event.skills),
+      permissionMode: typeof event.permissionMode === 'string' ? event.permissionMode : null,
+      memoryAuto: typeof auto === 'string' ? auto : null,
+    }
+  }
+
+  return null
 }
 
 /** The verdict on one expectation: the three of ISO-01, and note for a rule labelled none, which is not enforced. */
