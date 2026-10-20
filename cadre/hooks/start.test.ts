@@ -215,13 +215,14 @@ describe('runtime render (D-102)', () => {
   })
 
   test(
-    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders and the five files (#47)',
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the five files and DONE.md',
     () => {
       expect(BE_PLAN.links).toEqual([])
       expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
         stats: [
           ROLE_DIR,
           RUNTIME,
+          `${RUNTIME}/DONE.md`,
           `${RUNTIME}/inbox.md`,
           `${RUNTIME}/instructions`,
           `${RUNTIME}/instructions/global`,
@@ -251,6 +252,7 @@ describe('runtime render (D-102)', () => {
     expect(renderPaths(ROOT, 'be', plan).stats).toEqual([
       ROLE_DIR,
       RUNTIME,
+      `${RUNTIME}/DONE.md`,
       `${RUNTIME}/inbox.md`,
       `${RUNTIME}/instructions`,
       `${RUNTIME}/instructions/global`,
@@ -1537,20 +1539,30 @@ const SHELL_TEXT = 'cd -- /repo && /repo/.cadre/bin/be'
 /** The argv that opens BE in a new Terminal window. */
 const TERMINAL_ARGV = osascript(TERMINAL_LINES, SHELL_TEXT)
 
-/** The argv that opens BE in a new iTerm tab. */
+/** The argv that opens BE in a new iTerm tab, or a new window when none is open. */
 const ITERM_ARGV = osascript(ITERM_LINES, SHELL_TEXT)
 
 /** What a tmux window runs after a launcher that exits non-zero: a note, then a wait for Enter (Pitfall 7). */
 const TMUX_WAIT = "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }"
 
-/** The argv that opens BE in a new tmux window cadre-be at /repo. */
-const TMUX_ARGV = ['tmux', 'new-window', '-n', 'cadre-be', '-c', '/repo', `/repo/.cadre/bin/be || ${TMUX_WAIT}`]
+/** The argv that opens BE in a new tmux window cadre-be at /repo, its command run by /bin/sh whatever tmux's shell. */
+const TMUX_ARGV = [
+  'tmux',
+  'new-window',
+  '-n',
+  'cadre-be',
+  '-c',
+  '/repo',
+  '/bin/sh',
+  '-c',
+  `/repo/.cadre/bin/be || ${TMUX_WAIT}`,
+]
 
 /** The plan that opens BE in a new Terminal window. */
 const TERMINAL_PLAN: TerminalPlan = { kind: 'open', name: 'Terminal window', argv: TERMINAL_ARGV }
 
-/** The plan that opens BE in a new iTerm tab. */
-const ITERM_PLAN: TerminalPlan = { kind: 'open', name: 'iTerm tab', argv: ITERM_ARGV }
+/** The plan that opens BE in a new iTerm tab or window: the script does not say which it made. */
+const ITERM_PLAN: TerminalPlan = { kind: 'open', name: 'iTerm tab or window', argv: ITERM_ARGV }
 
 /** The plan that opens BE in a new tmux window. */
 const TMUX_PLAN: TerminalPlan = { kind: 'open', name: 'tmux window', argv: TMUX_ARGV }
@@ -1665,6 +1677,8 @@ describe('copy and terminal (D-109, D-110)', () => {
       'cadre-be',
       '-c',
       root,
+      '/bin/sh',
+      '-c',
       `${command} || ${TMUX_WAIT}`,
     ])
     expect(quotedCommand).toBe("'/w/my repo'\\''s/.cadre/bin/be'")
@@ -1698,7 +1712,7 @@ describe('copy and terminal (D-109, D-110)', () => {
     expect(tmux.calls.at(-1)).toEqual({ argv: TMUX_ARGV, options: { timeoutMs: 15_000 } })
     expect(lastLines(tmux).at(-1)).toBe('Opened it in a new tmux window.')
     expect(iterm.calls.at(-1)).toEqual({ argv: ITERM_ARGV, options: { timeoutMs: 15_000 } })
-    expect(lastLines(iterm).at(-1)).toBe('Opened it in a new iTerm tab.')
+    expect(lastLines(iterm).at(-1)).toBe('Opened it in a new iTerm tab or window.')
   })
 
   test('an open that cannot run or exits non-zero is said below the copy line; the command stays', async () => {
@@ -1735,5 +1749,51 @@ describe('copy and terminal (D-109, D-110)', () => {
 
     expect(start.order.filter(step => step.startsWith('env ') || step === 'run /usr/bin/uname')).toEqual([])
     expect(start.reply.split('\n').at(-1)).toBe(COPIED_LINE)
+  })
+})
+
+describe('start review fixes (#63)', () => {
+  test('a DONE.md an earlier run left is removed right after the stamp, so a new run has no marker (A6)', () => {
+    const stamp = `${RUNTIME}/stamp`
+    const done = `${RUNTIME}/DONE.md`
+    const steps = renderSteps(input({ stats: rendered({ [stamp]: regular(stamp), [done]: regular(done) }) })).steps
+    const alone = renderSteps(input({ stats: rendered({ [done]: regular(done) }) })).steps
+
+    expect(steps.slice(0, 2)).toEqual([
+      { kind: 'remove', path: stamp },
+      { kind: 'remove', path: done },
+    ])
+    expect(steps.at(-1)).toEqual(STAMP_WRITE)
+    expect(alone[0]).toEqual({ kind: 'remove', path: done })
+    expect(renderArgv({ kind: 'remove', path: done })).toEqual(['/bin/rm', '-f', '--', done])
+  })
+
+  test('a DONE.md link is removed, a DONE.md folder is kept and refuses nothing, none is no removal (A6)', () => {
+    const done = `${RUNTIME}/DONE.md`
+    const removals = (stat: PortStat | null): RenderStep[] =>
+      renderSteps(input({ stats: rendered({ [done]: stat }) })).steps.filter(step => step.kind === 'remove')
+
+    expect(removals(LINK_OUT)).toEqual([{ kind: 'remove', path: done }])
+    expect(removals(DANGLING)).toEqual([{ kind: 'remove', path: done }])
+    expect(removals(folder(done))).toEqual([])
+    expect(removals(null)).toEqual([])
+    expect(renderSteps(input({ stats: rendered({ [done]: folder(done) }) })).refusal).toBeNull()
+  })
+
+  test('/cadre start removes the DONE.md of an earlier run before it makes anything; the stamp is last', async () => {
+    const done = `${RUNTIME}/DONE.md`
+    const start = await startBe(withFile(await appliedWorld(), done, 'what was done and how it was verified\n'))
+
+    expect(start.stats).toContain(done)
+    expect(renderRuns(start)[0]?.argv).toEqual(['/bin/rm', '-f', '--', done])
+    expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
+  })
+
+  test('tmux runs the command through /bin/sh -c, so the wait parses whatever its default shell is (A5)', () => {
+    expect(argvOf(planFor('tmux')).slice(-3)).toEqual(['/bin/sh', '-c', `/repo/.cadre/bin/be || ${TMUX_WAIT}`])
+  })
+
+  test('an iTerm open is named a tab or window, since the script makes a window when none is open', () => {
+    expect(planFor('iterm')).toEqual({ kind: 'open', name: 'iTerm tab or window', argv: ITERM_ARGV })
   })
 })
