@@ -141,12 +141,15 @@ export type InitInventory = {
 }
 
 /**
- * The startup inventory in the stream-json output of a probe run (ISO-01, D-112), or null when the output holds no init
- * event: the first line that holds `"subtype":"init"` and parses to an object of type `system` and subtype `init`. The
- * init event is not always the first line, since hook and title events can come before it (RESEARCH 2.4). Tools, slash
- * commands and skills keep their string entries; the permission mode and `memory_paths.auto` are strings or null.
- * `mcp_servers` is never read: a denied server stays connected and only its tools leave `tools`, so a check on a server
- * is a check on tools. It is the TypeScript twin of the sh reads of the launcher's `--probe` branch.
+ * The startup inventory in the stream-json output of a probe run (ISO-01, D-112), or null. The init event is the first
+ * line that holds `"subtype":"init"` and parses to an object of type `system` and subtype `init`; no other line is
+ * read, and it need not be line 1, since hook and title events can come before it (RESEARCH 2.4). Tools, slash commands
+ * and skills keep their string entries; the permission mode and `memory_paths.auto` are strings or null. Every
+ * malformed shape gives null, and nothing throws: output with no init event (the launcher refuses with exit 1 then), a
+ * truncated line, a JSON array, and an init event whose `tools` is not an array, so no verdict is ever computed from a
+ * guessed inventory (T-03-39). `mcp_servers` is never read: a denied server stays connected and only its tools leave
+ * `tools`, so a check on a server is a check on tools. It is the TypeScript twin of the sh reads of the launcher's
+ * `--probe` branch.
  */
 export function parseInitEvent(output: string): InitInventory | null {
   const names = (list: unknown): string[] =>
@@ -156,6 +159,7 @@ export function parseInitEvent(output: string): InitInventory | null {
     if (!line.includes('"subtype":"init"')) continue
     const event = parseJsonValue(line)?.value
     if (!isObject(event) || event.type !== 'system' || event.subtype !== 'init') continue
+    if (!Array.isArray(event.tools)) return null
 
     const memory = event.memory_paths
     const auto = isObject(memory) ? memory.auto : null
