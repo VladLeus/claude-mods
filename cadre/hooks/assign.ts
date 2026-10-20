@@ -110,8 +110,9 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
 const SECURITY_REVIEW_PATTERN = /(^|[-:])security-review$/i
 
 /**
- * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table and the recommendations
- * share this one rule.
+ * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table uses this rule for its
+ * security-review row; the recommendations no longer do, since they name the claude-security and security-guidance
+ * plugins by their exact keys (decision #39).
  */
 export function isSecurityReviewSkill(name: string): boolean {
   return SECURITY_REVIEW_PATTERN.test(name)
@@ -119,11 +120,13 @@ export function isSecurityReviewSkill(name: string): boolean {
 
 /**
  * Which roles a skill goes to, by its name in any case (D-53), tried in order like MCP_ROLE_ROWS: `security-review`
- * goes to Security, and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the
- * ends of the name), so `redesign` is not a design skill.
+ * goes to Security, so does the installed claude-security skill `claude-security:claude-security` (the whole name,
+ * decision #39), and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the ends
+ * of the name), so `redesign` is not a design skill.
  */
 export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
   { pattern: SECURITY_REVIEW_PATTERN, roles: frozenRoles('security'), label: 'security-review' },
+  { pattern: /^claude-security:claude-security$/i, roles: frozenRoles('security'), label: 'claude-security' },
   {
     pattern: /(^|[-:])(frontend-design|frontend|design|ui-ux|ui-design)([-:]|$)/i,
     roles: frozenRoles('fe'),
