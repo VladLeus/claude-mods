@@ -8,7 +8,9 @@ import { cardList } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
 
-/** The most characters the role line of a kickoff may have (D-79; 220 since the inbox sentence of D-114, decision #32). */
+/**
+ * The most characters the role line of a kickoff may have (D-79; 220 since the inbox sentence of D-114, decision #32).
+ */
 export const ROLE_LINE_MAX = 220
 
 /** What the role line drops: any character outside printable ASCII, and the quote and backtick characters. */
@@ -182,12 +184,16 @@ function rootWord(path: string): string {
   return `"$root"/${shQuote(path)}`
 }
 
-/** The line that goes to where the session starts: the git root, a folder under it, or none to stay where it is run. */
-function startLines(start: LaunchStart): string[] {
-  if (start.kind === 'here') return []
+/**
+ * The one line before the exec: `cd` to the git root or a folder under it, or for a here start a refusal when the
+ * folder it is run from is not under the repo (A3): project settings are read from the start folder (D-122).
+ */
+function startLines(start: LaunchStart, id: string): string[] {
+  if (start.kind === 'git-root') return ['cd -- "$root"']
   if (start.kind === 'dir') return [`cd -- ${rootWord(start.path)}`]
+  const outside = refusal(`cadre: run .cadre/bin/${id} from a folder of its repo`)
 
-  return ['cd -- "$root"']
+  return [`case "$(pwd -P)/" in "$root"/*) ;; *) ${outside} ;; esac`]
 }
 
 /** A message of the launcher on stderr, as one shell word whatever it holds (T-03-07). */
@@ -209,11 +215,9 @@ function runtimeMessage(id: string, problem: string): string {
 }
 
 /**
- * The fixed lines of the launcher checks, which launcherText puts in this order with the lines of the role between
- * them. The first five define `cadre_claude_ok`, which reads `claude --version` through a fixed sed program and passes
- * for 2.1.295 or newer (D-107); it is a function, so its `set --` leaves the launcher's own arguments alone. The last
- * five frame the JSON check (D-129): jq when it is on PATH, else node, else one line saying the rendered files were
- * not checked again, since `/cadre start` checked them when it rendered them.
+ * The lines that define `cadre_claude_ok`, which launcherText puts right after `rt=`. The function reads
+ * `claude --version` through a fixed sed program and passes for 2.1.295 or newer (D-107); it is a function, so its
+ * `set --` leaves the launcher's own arguments alone.
  */
 const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
   'cadre_claude_ok() {',
@@ -222,11 +226,6 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
   '  [ $# -eq 3 ] || return 1',
   '  [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && { [ "$2" -gt 1 ] || { [ "$2" -eq 1 ] && [ "$3" -ge 295 ]; }; }; }',
   '}',
-  'if command -v jq >/dev/null 2>&1; then',
-  'elif command -v node >/dev/null 2>&1; then',
-  'else',
-  `  ${errorLine('cadre: (JSON not re-checked: no jq or node)')}`,
-  'fi',
 ])
 
 /**
@@ -234,13 +233,20 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
  * the folder it is run from, and under `set -eu` a failed git stops it. Before it starts anything it refuses, with one
  * line on stderr and exit 1, when:
  * - `.cadre/<id>/role.json` is not under that repo, as for a launcher linked or copied into another repo (D-119);
+ * - `.cadre/<id>/ROLE.md` or `kickoff.txt` is missing, since a failed `cat` inside the exec line would not stop it
+ *   and claude would start with an empty kickoff;
  * - `claude --version` is missing, unreadable or older than 2.1.295, the engine floor cadre relies on (D-107);
- * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing, or `.cadre/cadre.json` or the role's
- *   role.json, settings.json or mcp.json is newer than it, so a render that stopped part way or that the role files
- *   changed after never starts (D-102); the stamp is checked first, since `-nt` against a missing file is true;
+ * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
+ *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
+ *   starts; or the rendered settings.json or mcp.json is newer than it, which means a render did not finish (D-102).
+ *   The stamp is checked first, since `-nt` against a missing file is true; inbox.md is never compared, other roles
+ *   append to it;
  * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).
+ * - for a `here` start, the folder it is run from (`pwd -P`) is not under the repo, since the engine reads project
+ *   settings from the start folder (D-122) and outside the repo that folder's settings could be any, even the user
+ *   settings. This check sits where the other starts have their `cd` line.
  * It never runs cadre code and never renders `.runtime/` (D-102): it reads only the stamp, those two JSON files and
  * the role files. It then goes where `start` says (D-113) and execs claude with the flags of the compiled scope, for a
  * `here` or `dir` start the git root it found as an added directory (ROOT_DIR_FLAG, D-127; a git-root start adds
@@ -259,9 +265,11 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
   const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
   const stamp = `"$rt"/${RUNTIME_STAMP_FILE}`
   const renderInputs = [STATE_PATH, ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name))]
+  const fresh = [...renderInputs.map(rootWord), '"$rt"/settings.json', '"$rt"/mcp.json'].join(' ')
   const jsonFiles = '"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1'
   const parse = shQuote('for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))')
   const foreign = `cadre: not the repo of role ${id}`
+  const missing = `cadre: .cadre/${id}/ROLE.md or kickoff.txt is missing: run /cadre regen ${id}`
   const unrendered = `${runtimeMessage(id, ' is not rendered')} in the root session of the repo`
   const empty = runtimeMessage(id, 'settings.json or mcp.json is missing or empty')
   const invalid = refusal(runtimeMessage(id, ' holds a file that is not valid JSON'))
@@ -273,20 +281,25 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     'set -eu',
     ROOT_LINE,
     `[ -f ${rootWord(rolePath(role.id, 'role.json'))} ] || ${refusal(foreign)}`,
+    `[ -f ${rootWord(rolePath(role.id, 'ROLE.md'))} ] && [ -f ${kickoff} ] || ${refusal(missing)}`,
     `rt=${rootWord(rolePath(role.id, '.runtime'))}`,
-    ...VERSION_CHECK_LINES.slice(0, 5),
+    ...VERSION_CHECK_LINES,
     `cadre_claude_ok || ${refusal('cadre: needs claude 2.1.295 or newer on PATH (see claude --version)')}`,
     `[ -f ${stamp} ] || ${refusal(unrendered)}`,
-    `for f in ${renderInputs.map(rootWord).join(' ')}; do`,
+    `for f in ${fresh}; do`,
     `  if [ "$f" -nt ${stamp} ]; then ${errorLine(runtimeMessage(id, ' is older than the role files'))}; exit 1; fi`,
     'done',
     `[ -s "$rt"/settings.json ] && [ -s "$rt"/mcp.json ] || ${refusal(empty)}`,
-    ...VERSION_CHECK_LINES.slice(5, 6),
+    // The JSON check (D-129): jq when it is on PATH, else node, else one line that says the files were not
+    // checked again.
+    'if command -v jq >/dev/null 2>&1; then',
     `  jq empty ${jsonFiles} || ${invalid}`,
-    ...VERSION_CHECK_LINES.slice(6, 7),
+    'elif command -v node >/dev/null 2>&1; then',
     `  node -e ${parse} ${jsonFiles} || ${invalid}`,
-    ...VERSION_CHECK_LINES.slice(7),
-    ...startLines(start),
+    'else',
+    `  ${errorLine('cadre: (JSON not re-checked: no jq or node)')}`,
+    'fi',
+    ...startLines(start, id),
     `exec claude ${flags}${rootDir} -- "$(cat ${kickoff})"`,
   ]
 

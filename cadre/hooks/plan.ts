@@ -80,9 +80,10 @@ export const IGNORE_BEGIN = '# >>> cadre'
 export const IGNORE_END = '# <<< cadre'
 
 /**
- * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`. The launcher refuses to start when it is missing
- * or older than the role files, so a render that stopped part way, or one the role files changed after, never starts a
- * session (D-102).
+ * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`. The launcher refuses to start when it is missing,
+ * when the role files are newer than it (they changed after the render), or when the rendered settings.json or
+ * mcp.json is newer than it, which means a render did not finish; so a half-written render never starts a session
+ * (D-102).
  */
 export const RUNTIME_STAMP_FILE = 'stamp'
 
