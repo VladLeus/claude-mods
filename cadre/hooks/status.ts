@@ -2,16 +2,18 @@
  * `/cadre status <id>` (D-111, D-131, LNCH-06): whether a role's autopilot run is done, running or not started, read
  * only from files on disk, never from what a model says, so the end-to-end check has a done signal it can trust (SC3).
  * The session id changes on every autopilot restart, so the role's session is found by its name `cadre-<id>`; then
- * that session's autopilot status file and log are read and reported.
+ * that session's autopilot status file and log are read and reported, with the role's newest handoff and, for a role
+ * on the built-in framework, whether its DONE.md marker is there (D-17).
  *
  * It reads autopilot's and agent-fleet's files by their on-disk format and never imports either mod. It runs in the
  * root session or in `claude -p`, asks nothing, writes nothing, and runs only `/usr/bin/grep` over a transcript.
  */
-import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry } from '../types'
+import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } from '../types'
 import { clean, compareText, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
-import { readTeam, repoGuard } from './init'
+import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
 import { reportText } from './render'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
+import type { RunState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
 /**
@@ -63,17 +65,26 @@ const TRANSCRIPT_SUFFIX = '.jsonl'
 /** The end of a fleet beat's file name. */
 const BEAT_SUFFIX = '.json'
 
+/** The end of a handoff's file name. */
+const HANDOFF_SUFFIX = '.md'
+
 /** The start of the text of the log line autopilot writes when a run ends: `finished (<reason>): ...`. */
 const FINISHED_TEXT = 'finished ('
 
 /** The start of that text when the run ended done, after AUTOPILOT_DONE and the final handoff. */
 const FINISHED_DONE_TEXT = 'finished (done)'
 
-/** One autopilot log line: its stamp, one word, then two spaces and the text, as autopilot's log writes it. */
-const LOG_LINE = /^(\S+) {2}(.*)$/
+/**
+ * One autopilot log line: its stamp, one word, then two spaces and the text, as autopilot's log writes it. The text
+ * takes any character, a line or paragraph separator included, so one line is always one record.
+ */
+const LOG_LINE = /^(\S+) {2}(.*)$/s
 
 /** What the report says in place of autopilot's last log line when the log gave none. */
 const NO_LOG_LINE = 'no log line'
+
+/** The report's line when the built-in DONE.md marker is there, and when it is not (D-17). */
+const DONE_MARKER_LINES = Object.freeze({ present: 'DONE.md: present', absent: 'DONE.md: not written yet' })
 
 /** The name a role's launcher gives its session, and the title its transcript carries: `cadre-<id>`. */
 function sessionName(id: string): string {
@@ -137,7 +148,7 @@ function isPlainSessionId(text: string): boolean {
   return autopilotStatusPath('/', text) !== null
 }
 
-/** Whether a listing entry is a regular file and not a link: the only kind of transcript or beat status reads. */
+/** Whether a listing entry is a regular file, not a link: the only kind of transcript, beat or handoff status uses. */
 function isRegularFile(entry: PortEntry): boolean {
   return entry.kind === 'file' && !entry.isLink
 }
@@ -312,28 +323,90 @@ export function lastLogText(log: string): string | null {
   return last === undefined ? null : clean(last, LOG_SHOWN_CHARS)
 }
 
+/**
+ * The state of a found session's run (D-111), from what its files say, never from a model: an active run (a status
+ * file that is on with a fresh beat) is `running` and an unknown one `unknown`; a run that is off is `done` or
+ * `stopped` as its log's last finished line says (runOutcomeOf); with no finished line it is `not started` when there
+ * is neither a status file nor a log line, else `stopped`.
+ */
+export function statusStateOf(input: {
+  readonly runState: RunState
+  readonly outcome: 'done' | 'stopped' | 'none'
+  readonly hasStatusFile: boolean
+  readonly hasLog: boolean
+}): StatusState {
+  if (input.runState === 'active') return 'running'
+  if (input.runState === 'unknown') return 'unknown'
+  if (input.outcome === 'done') return 'done'
+  if (input.outcome === 'stopped') return 'stopped'
+  if (!input.hasStatusFile && !input.hasLog) return 'not started'
+
+  return 'stopped'
+}
+
 /** What status read of a found session's run: its state and autopilot's last log line. */
 type RunRead = {
   readonly state: StatusState
   readonly lastLog: string | null
 }
 
+/** Whether a read failed or went over its cap, so what the file says cannot be told: never the same as absent. */
+function isUnreadable(read: PortRead): boolean {
+  return read.state === 'unknown' || read.state === 'too-large'
+}
+
 /**
- * A found session's run (D-111): its status file judged by autopilotRunState at the host's clock (no clock is not a
- * finite number, so a file that is on is unknown), and its log, at most LOG_MAX_BYTES. The run is done when it is off
- * and the log's last finished line is `finished (done)`; any other run is reported unknown. With no usable status or
- * log path (no HOME, or an id autopilot would not name a file with) nothing is read and the run is unknown (D-42).
+ * A found session's run (D-111): its status file, read at most MAX_READ_BYTES, judged by autopilotRunState at the
+ * host's clock (no clock is not a finite number, so a file that is on is unknown), and its log, read at most
+ * LOG_MAX_BYTES, then statusStateOf. A log that cannot be read or is over the cap leaves a run that is not active
+ * unknown, since how it ended cannot be told (fail closed). With no usable status or log path (no HOME, or an id
+ * autopilot would not name a file with) nothing is read and the run is unknown (D-42).
  */
 async function runOf(io: InitIo, home: string | null, sessionId: string): Promise<RunRead> {
   const statusPath = home === null ? null : autopilotStatusPath(home, sessionId)
   const logPath = home === null ? null : autopilotLogPath(home, sessionId)
   if (statusPath === null || logPath === null) return { state: 'unknown', lastLog: null }
-  const runState = autopilotRunState(await io.read(statusPath, MAX_READ_BYTES), (await io.now()) ?? Number.NaN)
+  const status = await io.read(statusPath, MAX_READ_BYTES)
+  const runState = autopilotRunState(status, (await io.now()) ?? Number.NaN)
   const log = await io.read(logPath, LOG_MAX_BYTES)
+  if (isUnreadable(log) && runState !== 'active') return { state: 'unknown', lastLog: null }
   const text = log.state === 'text' ? log.text : ''
-  const isDone = runState === 'none' && runOutcomeOf(text) === 'done'
+  const hasStatusFile = status.state !== 'absent'
+  const state = statusStateOf({ runState, outcome: runOutcomeOf(text), hasStatusFile, hasLog: text !== '' })
 
-  return { state: isDone ? 'done' : 'unknown', lastLog: lastLogText(text) }
+  return { state, lastLog: lastLogText(text) }
+}
+
+/**
+ * The newest handoff a role's handoff folder lists: the name of its newest regular `.md` file, never a link, by
+ * modification time (a tie by name); null when there is none.
+ */
+export function newestHandoff(entries: readonly PortEntry[]): string | null {
+  const handoffs = entries.filter(entry => isRegularFile(entry) && entry.name.endsWith(HANDOFF_SUFFIX))
+
+  return newestFirst(handoffs)[0]?.name ?? null
+}
+
+/**
+ * The role's newest handoff under the folder its session started in, where autopilot keeps handoffs, as a path below
+ * that folder: `thoughts/shared/handoffs/<id>/<name>` (newestHandoff). Null when the folder is not known (a here start
+ * with no beat) or cannot be listed, or holds no handoff.
+ */
+async function handoffOf(io: InitIo, folder: string | null, id: string): Promise<string | null> {
+  if (folder === null) return null
+  const handoffs = `thoughts/shared/handoffs/${id}`
+  const entries = await io.list(`${trimSlash(folder)}/${handoffs}`)
+  if (entries === null) return null
+  const name = newestHandoff(entries)
+
+  return name === null ? null : `${handoffs}/${name}`
+}
+
+/** Whether the built-in done marker of the role, `<root>/.cadre/<id>/.runtime/DONE.md`, is a file (D-17). */
+async function hasDoneMarker(io: InitIo, root: string, id: string): Promise<boolean> {
+  const stat = await io.stat(`${trimSlash(root)}/.cadre/${id}/.runtime/DONE.md`)
+
+  return stat !== null && stat.kind === 'file'
 }
 
 /** The report's session line: the session and how it was found, or that none was found under the role's name. */
@@ -345,9 +418,17 @@ function sessionLine(report: StatusReport): string {
   return `session: ${sessionId} (found by ${how})`
 }
 
+/** The report's DONE.md line for a role on the built-in framework; none for a role on another framework (D-17). */
+function doneMarkerLines(doneMarker: boolean | null): string[] {
+  if (doneMarker === null) return []
+
+  return [doneMarker ? DONE_MARKER_LINES.present : DONE_MARKER_LINES.absent]
+}
+
 /**
  * The `/cadre status` reply (D-111): what was asked for, the state, the session and how it was found, autopilot's last
- * log line, and the latest handoff, one per line. The handoff name comes from a listing, so it is shown cleaned.
+ * log line, and the latest handoff, one per line, then, for a role on the built-in framework, whether its DONE.md
+ * marker is there (D-17). The handoff name comes from a listing, so it is shown cleaned.
  */
 export function statusReportText(report: StatusReport): string {
   return [
@@ -356,16 +437,22 @@ export function statusReportText(report: StatusReport): string {
     sessionLine(report),
     `autopilot: ${report.lastLog ?? NO_LOG_LINE}`,
     `latest handoff: ${report.handoff === null ? 'none yet' : reportText(report.handoff)}`,
+    ...doneMarkerLines(report.doneMarker),
   ].join('\n')
 }
+
+/** The run of a role whose session was not found: not started, with no log line (D-111). */
+const NO_SESSION_RUN: RunRead = Object.freeze({ state: 'not started', lastLog: null })
 
 /**
  * `/cadre status <id>` (D-111, D-131), in the root session or in `claude -p`. It refuses with the shared replies only:
  * repoGuard's, worded for status, then readTeam's (no `.cadre/cadre.json`, an id cadre.json does not list, a role.json
  * that is not valid). Then it looks for the role's session by its name (sessionOf): the newest of the start folder's
  * transcripts under `<userDir>/projects/` whose title grep (titleGrepArgv, run through the host) gives `cadre-<id>`,
- * else its fleet beat. With no session the run is not started; else the run is read from the session's autopilot
- * status file and log (runOf). It asks nothing and writes nothing.
+ * else its fleet beat. With no session the run is not started; else its state comes from the session's autopilot
+ * status file and log (runOf, statusStateOf). The report adds the newest handoff under the folder the session started
+ * in, or the start folder when no session was found (handoffOf), and, for a role whose framework (its own, else
+ * cadre.json's) is the built-in one, whether its DONE.md marker is there (D-17). It asks nothing and writes nothing.
  */
 export async function runStatus(io: InitIo, host: HostIo, options: { readonly id: string }): Promise<string> {
   const { id } = options
@@ -374,15 +461,23 @@ export async function runStatus(io: InitIo, host: HostIo, options: { readonly id
   const { locations } = guard
   const team = await readTeam(io, locations.root, 'status', id)
   if (team.kind === 'refuse') return team.text
+  const { state, roles } = team.value
+  const role = roles.find(candidate => candidate.id === id)
+  // Fail closed: readTeam read every role cadre.json lists, the one asked for included, so it is always there.
+  if (role === undefined) return regenBadRole(id)
 
-  const startFolder = startFolderOf(locations.root, team.value.state.launchStart)
+  const startFolder = startFolderOf(locations.root, state.launchStart)
   const found = await sessionOf(io, host, { locations, id, startFolder })
-  const report = { id, handoff: null, doneMarker: null }
-  if (found === null) {
-    return statusReportText({ ...report, state: 'not started', sessionId: null, foundBy: null, lastLog: null })
-  }
-  const { sessionId, foundBy } = found
-  const run = await runOf(io, locations.givenHome, sessionId)
+  const run = found === null ? NO_SESSION_RUN : await runOf(io, locations.givenHome, found.sessionId)
+  const isBuiltin = resolvedFramework(role, state.framework) === 'none'
 
-  return statusReportText({ ...report, state: run.state, sessionId, foundBy, lastLog: run.lastLog })
+  return statusReportText({
+    id,
+    state: run.state,
+    sessionId: found?.sessionId ?? null,
+    foundBy: found?.foundBy ?? null,
+    lastLog: run.lastLog,
+    handoff: await handoffOf(io, found === null ? startFolder : found.folder, id),
+    doneMarker: isBuiltin ? await hasDoneMarker(io, locations.root, id) : null,
+  })
 }
