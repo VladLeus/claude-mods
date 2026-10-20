@@ -1403,6 +1403,27 @@ describe('cadre start with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
+  test('start be --terminal=terminal on macOS copies with pbcopy, then opens Terminal (D-109)', async ($, on) => {
+    const log = newLog()
+    const world = await startHostWorld()
+    const runResults = {
+      ...world.runResults,
+      '/usr/bin/pbcopy': { exitCode: 0, stdout: '' },
+      '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
+    }
+    fakeHost(on, { ...world, runResults }, log)
+    const out = await $.command.run({ command: 'cadre', args: 'start be --terminal=terminal' })
+    expect(log.runs.map(run => run[0]).slice(-3)).toEqual(['/usr/bin/pbcopy', '/usr/bin/uname', '/usr/bin/osascript'])
+    expect(log.runs.at(-1)?.at(-1)).toBe('cd -- /repo && /repo/.cadre/bin/be')
+    // osascript has no scripted answer here, so the host refuses it: the reply says so, below the copied command.
+    expect(out.text.split('\n').slice(-3)).toEqual([
+      '  /repo/.cadre/bin/be',
+      'Copied to the clipboard.',
+      'Could not open a new Terminal window: run the command above yourself.',
+    ])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
   test('a cadre.json that does not list the role refuses with the no-role reply and writes nothing', async ($, on) => {
     const log = newLog()
     const world = await startHostWorld()

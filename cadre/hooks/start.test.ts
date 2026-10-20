@@ -52,8 +52,10 @@ import {
   START_NO_GIT_DIR,
   START_NO_HOME,
   START_NO_MANIFEST,
+  TERMINAL_MAC_ONLY,
+  terminalPlan,
 } from './start'
-import type { LaunchUserRead, RenderInput, RenderStep } from './start'
+import type { LaunchUserRead, RenderInput, RenderStep, TerminalPlan } from './start'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
@@ -1399,11 +1401,14 @@ function pbcopyRule(result: HostRun | null): HostRunRule {
   return { argv: ['/usr/bin/pbcopy'], result }
 }
 
-/** What runStart of BE replied, every run the fake host was asked for, and its writes and runs in one call order. */
+/** What runStart of BE replied, every run the fake host was asked for, and what it was asked, in one call order. */
 type OrderedStart = {
   readonly reply: string
   readonly calls: readonly HostCall[]
-  /** Each write as `write <path>` and each run as `run <first argv word>`, in the order the host was asked. */
+  /**
+   * Each write as `write <path>`, each run as `run <first argv word>` and each variable read as `env <name>`, in the
+   * order the host was asked.
+   */
   readonly order: readonly string[]
 }
 
@@ -1429,6 +1434,11 @@ async function startOrdered(
       order.push(`write ${path}`)
 
       return host.io.write(path, text)
+    },
+    env: async name => {
+      order.push(`env ${name}`)
+
+      return host.io.env(name)
     },
   }
   const reply = await runStart(memIo(await appliedWorld(), {}).io, io, { id: 'be', terminal })
@@ -1485,5 +1495,245 @@ describe('copy the command (D-110)', () => {
     for (const start of [refused, mkdirFailed, writeFailed]) {
       expect(start.calls.map(call => call.argv[0])).not.toContain('/usr/bin/pbcopy')
     }
+  })
+})
+
+/** TMUX as tmux sets it inside a session: `<socket>,<server pid>,<session id>`. */
+const TMUX = '/tmp/tmux-1/default,1,0'
+
+/** The AppleScript lines that open a new Terminal window, each passed to osascript as one -e value (D-126). */
+const TERMINAL_LINES = [
+  'on run argv',
+  'tell application "Terminal"',
+  'activate',
+  'do script (item 1 of argv)',
+  'end tell',
+  'end run',
+]
+
+/** The AppleScript lines that open a new iTerm tab, or a new window when none is open (D-126). */
+const ITERM_LINES = [
+  'on run argv',
+  'tell application "iTerm"',
+  'activate',
+  'if (count of windows) is 0 then',
+  'create window with default profile',
+  'else',
+  'tell current window to create tab with default profile',
+  'end if',
+  'tell current session of current window to write text (item 1 of argv)',
+  'end tell',
+  'end run',
+]
+
+/** The osascript argv that runs these lines, each as one -e value, with the shell text as the last argv item. */
+function osascript(lines: readonly string[], shellText: string): string[] {
+  return ['/usr/bin/osascript', ...lines.flatMap(line => ['-e', line]), shellText]
+}
+
+/** What Terminal.app and iTerm run for BE in /repo: go to the repo root, then run the launcher (D-126). */
+const SHELL_TEXT = 'cd -- /repo && /repo/.cadre/bin/be'
+
+/** The argv that opens BE in a new Terminal window. */
+const TERMINAL_ARGV = osascript(TERMINAL_LINES, SHELL_TEXT)
+
+/** The argv that opens BE in a new iTerm tab. */
+const ITERM_ARGV = osascript(ITERM_LINES, SHELL_TEXT)
+
+/** What a tmux window runs after a launcher that exits non-zero: a note, then a wait for Enter (Pitfall 7). */
+const TMUX_WAIT = "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }"
+
+/** The argv that opens BE in a new tmux window cadre-be at /repo. */
+const TMUX_ARGV = ['tmux', 'new-window', '-n', 'cadre-be', '-c', '/repo', `/repo/.cadre/bin/be || ${TMUX_WAIT}`]
+
+/** The plan that opens BE in a new Terminal window. */
+const TERMINAL_PLAN: TerminalPlan = { kind: 'open', name: 'Terminal window', argv: TERMINAL_ARGV }
+
+/** The plan that opens BE in a new iTerm tab. */
+const ITERM_PLAN: TerminalPlan = { kind: 'open', name: 'iTerm tab', argv: ITERM_ARGV }
+
+/** The plan that opens BE in a new tmux window. */
+const TMUX_PLAN: TerminalPlan = { kind: 'open', name: 'tmux window', argv: TMUX_ARGV }
+
+/** The plan that refuses with this text. */
+function refusal(text: string): TerminalPlan {
+  return { kind: 'refuse', text }
+}
+
+/** The refusal of a bare --terminal when TMUX is unset and TERM_PROGRAM, shown as given here, names no terminal. */
+function unknownTerminal(shown: string): string {
+  return (
+    `--terminal could not tell this terminal (TERM_PROGRAM=${shown}): ` +
+    'use --terminal=terminal, --terminal=iterm or --terminal=tmux, or run the command above yourself.'
+  )
+}
+
+/** The refusal of --terminal with a value it does not take. */
+const INVALID_TERMINAL = '--terminal takes terminal, iterm or tmux: run the command above yourself.'
+
+/** What terminalPlan is given. */
+type TerminalInput = Parameters<typeof terminalPlan>[0]
+
+/** terminalPlan for BE in /repo with this choice, on macOS with TMUX and TERM_PROGRAM unset; `over` changes fields. */
+function planFor(choice: TerminalInput['choice'], over: Partial<TerminalInput> = {}): TerminalPlan {
+  return terminalPlan({
+    choice,
+    tmux: null,
+    termProgram: null,
+    isMacOs: true,
+    id: 'be',
+    root: ROOT,
+    command: '/repo/.cadre/bin/be',
+    ...over,
+  })
+}
+
+/** The argv of a plan that opens a terminal; none for a refusal. */
+function argvOf(plan: TerminalPlan): readonly string[] {
+  return plan.kind === 'open' ? plan.argv : []
+}
+
+/** A fake host rule that answers `uname -s` with this run; null is a run the host refused. */
+function unameRule(result: HostRun | null): HostRunRule {
+  return { argv: ['/usr/bin/uname', '-s'], result }
+}
+
+/** `uname -s` on macOS. */
+const DARWIN = unameRule({ exitCode: 0, stdout: 'Darwin\n', stderr: '' })
+
+/** The last four lines of a reply with --terminal: the run line, the command, the copy line and the terminal line. */
+function lastLines(start: OrderedStart): string[] {
+  return start.reply.split('\n').slice(-4)
+}
+
+describe('copy and terminal (D-109, D-110)', () => {
+  test('off macOS every --terminal refuses with TERMINAL_MAC_ONLY, whatever the variables say (D-132)', () => {
+    const choices: TerminalInput['choice'][] = ['auto', 'terminal', 'iterm', 'tmux', 'invalid']
+
+    expect(TERMINAL_MAC_ONLY).toBe('--terminal works on macOS only: run the command above in a terminal yourself.')
+    for (const choice of choices) {
+      const plan = planFor(choice, { isMacOs: false, tmux: TMUX, termProgram: 'Apple_Terminal' })
+
+      expect([choice, plan]).toEqual([choice, refusal(TERMINAL_MAC_ONLY)])
+    }
+  })
+
+  test('auto opens a tmux window when TMUX is set, over any TERM_PROGRAM; it waits for Enter on a failure', () => {
+    expect(planFor('auto', { tmux: TMUX })).toEqual(TMUX_PLAN)
+    expect(planFor('auto', { tmux: TMUX, termProgram: 'Apple_Terminal' })).toEqual(TMUX_PLAN)
+    expect(planFor('auto', { tmux: TMUX, termProgram: 'iTerm.app' })).toEqual(TMUX_PLAN)
+  })
+
+  test('auto opens a Terminal window for Apple_Terminal and an iTerm tab for iTerm.app, through osascript', () => {
+    expect(planFor('auto', { termProgram: 'Apple_Terminal' })).toEqual(TERMINAL_PLAN)
+    expect(planFor('auto', { termProgram: 'iTerm.app' })).toEqual(ITERM_PLAN)
+  })
+
+  test('auto refuses any other TERM_PROGRAM, shown cleaned, or none; a forced value skips detection', () => {
+    expect(planFor('auto', { termProgram: 'herdr' })).toEqual(refusal(unknownTerminal('herdr')))
+    expect(planFor('auto')).toEqual(refusal(unknownTerminal('unset')))
+    expect(planFor('auto', { termProgram: `her${BIDI_OVERRIDE}dr` })).toEqual(refusal(unknownTerminal('herdr')))
+    expect(planFor('terminal', { termProgram: 'herdr' })).toEqual(TERMINAL_PLAN)
+    expect(planFor('iterm', { termProgram: 'Apple_Terminal' })).toEqual(ITERM_PLAN)
+    expect(planFor('tmux', { termProgram: 'Apple_Terminal' })).toEqual(TMUX_PLAN)
+  })
+
+  test('invalid refuses on macOS, whatever the variables say', () => {
+    expect(planFor('invalid')).toEqual(refusal(INVALID_TERMINAL))
+    expect(planFor('invalid', { tmux: TMUX, termProgram: 'Apple_Terminal' })).toEqual(refusal(INVALID_TERMINAL))
+  })
+
+  test('a root with a space, a quote or a non-ASCII letter: one shell word, only in the last osascript item', () => {
+    const root = `/Users/a b/caf${String.fromCharCode(233)}`
+    const command = launcherCommand(root, 'be')
+    const shellText = `cd -- '${root}' && '${root}/.cadre/bin/be'`
+    const viaOsascript: TerminalInput['choice'][] = ['terminal', 'iterm']
+    const quoted = "/w/my repo's"
+    const quotedCommand = launcherCommand(quoted, 'be')
+
+    expect(command).toBe(`'${root}/.cadre/bin/be'`)
+    for (const choice of viaOsascript) {
+      const argv = argvOf(planFor(choice, { root, command }))
+
+      expect(argv.at(-1)).toBe(shellText)
+      expect(argv.filter(item => item.includes(root))).toEqual([shellText])
+    }
+    expect(argvOf(planFor('tmux', { root, command }))).toEqual([
+      'tmux',
+      'new-window',
+      '-n',
+      'cadre-be',
+      '-c',
+      root,
+      `${command} || ${TMUX_WAIT}`,
+    ])
+    expect(quotedCommand).toBe("'/w/my repo'\\''s/.cadre/bin/be'")
+    expect(argvOf(planFor('terminal', { root: quoted, command: quotedCommand })).at(-1)).toBe(
+      "cd -- '/w/my repo'\\''s' && '/w/my repo'\\''s/.cadre/bin/be'",
+    )
+  })
+
+  test('with --terminal the open runs after the copy, uname and the variables; its line ends the reply', async () => {
+    const start = await startOrdered('terminal', [DARWIN])
+
+    expect(start.order.slice(-6)).toEqual([
+      `write ${RUNTIME}/stamp`,
+      'run /usr/bin/pbcopy',
+      'run /usr/bin/uname',
+      'env TMUX',
+      'env TERM_PROGRAM',
+      'run /usr/bin/osascript',
+    ])
+    expect(start.calls.slice(-2)).toEqual([
+      { argv: ['/usr/bin/uname', '-s'], options: { timeoutMs: 5_000 } },
+      { argv: TERMINAL_ARGV, options: { timeoutMs: 15_000 } },
+    ])
+    expect(lastLines(start)).toEqual([RUN_LINE, COMMAND_LINE, COPIED_LINE, 'Opened it in a new Terminal window.'])
+  })
+
+  test('auto reads TMUX and TERM_PROGRAM from the host: a tmux window, else an iTerm tab', async () => {
+    const tmux = await startOrdered('auto', [DARWIN], { TMUX, TERM_PROGRAM: 'iTerm.app' })
+    const iterm = await startOrdered('auto', [DARWIN], { TERM_PROGRAM: 'iTerm.app' })
+
+    expect(tmux.calls.at(-1)).toEqual({ argv: TMUX_ARGV, options: { timeoutMs: 15_000 } })
+    expect(lastLines(tmux).at(-1)).toBe('Opened it in a new tmux window.')
+    expect(iterm.calls.at(-1)).toEqual({ argv: ITERM_ARGV, options: { timeoutMs: 15_000 } })
+    expect(lastLines(iterm).at(-1)).toBe('Opened it in a new iTerm tab.')
+  })
+
+  test('an open that cannot run or exits non-zero is said below the copy line; the command stays', async () => {
+    const notOpened = 'Could not open a new Terminal window: run the command above yourself.'
+    for (const result of [null, { exitCode: 1, stdout: '', stderr: 'Not authorized to send Apple events (-1743)' }]) {
+      const start = await startOrdered('terminal', [DARWIN, { argv: TERMINAL_ARGV, result }])
+
+      expect(lastLines(start)).toEqual([RUN_LINE, COMMAND_LINE, COPIED_LINE, notOpened])
+    }
+  })
+
+  test('a refusal is printed below the copy line and nothing opens: not macOS, unknown, invalid', async () => {
+    const notMacOs = [
+      unameRule({ exitCode: 0, stdout: 'Linux\n', stderr: '' }),
+      unameRule(null),
+      unameRule({ exitCode: 1, stdout: 'Darwin\n', stderr: '' }),
+    ]
+    for (const rule of notMacOs) {
+      const start = await startOrdered('terminal', [rule])
+
+      expect(lastLines(start)).toEqual([RUN_LINE, COMMAND_LINE, COPIED_LINE, TERMINAL_MAC_ONLY])
+      expect(start.calls.at(-1)?.argv).toEqual(['/usr/bin/uname', '-s'])
+    }
+    const herdr = await startOrdered('auto', [DARWIN], { TERM_PROGRAM: 'herdr' })
+    const invalid = await startOrdered('invalid', [DARWIN, pbcopyRule(null)])
+
+    expect(lastLines(herdr)).toEqual([RUN_LINE, COMMAND_LINE, COPIED_LINE, unknownTerminal('herdr')])
+    expect(lastLines(invalid)).toEqual([RUN_LINE, COMMAND_LINE, NOT_COPIED_LINE, INVALID_TERMINAL])
+    for (const start of [herdr, invalid]) expect(start.calls.at(-1)?.argv).toEqual(['/usr/bin/uname', '-s'])
+  })
+
+  test('without --terminal neither uname nor a variable is asked, and the copy line ends the reply', async () => {
+    const start = await startOrdered('none', [DARWIN], { TMUX, TERM_PROGRAM: 'Apple_Terminal' })
+
+    expect(start.order.filter(step => step.startsWith('env ') || step === 'run /usr/bin/uname')).toEqual([])
+    expect(start.reply.split('\n').at(-1)).toBe(COPIED_LINE)
   })
 })
