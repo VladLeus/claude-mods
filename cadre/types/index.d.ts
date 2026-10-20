@@ -327,6 +327,13 @@ export type PortStat = {
   readonly realPath?: string
 }
 
+/**
+ * A path's stat as apply asks it right before a write (#44): the stat with `resolve`; `absent` when the stat was
+ * refused and the host says the path is not there; `failed` when the stat was refused and the path is there or the
+ * host could not say, so the write is refused (fail closed).
+ */
+export type WriteStat = PortStat | 'absent' | 'failed'
+
 /** A file read through the port: absent, unknown (the read failed), over the cap, or its text (Pitfall 6). */
 export type PortRead =
   | { readonly state: 'absent' }
@@ -376,6 +383,11 @@ export type InitIo = {
   readonly cadreVersion: () => Promise<string | null>
   readonly list: (path: string) => Promise<readonly PortEntry[] | null>
   readonly stat: (path: string) => Promise<PortStat | null>
+  /**
+   * The stat apply asks before a write, and nothing else asks (#44): the stat with `resolve`, and only after a refused
+   * stat whether the path exists; only a clear no is `absent`.
+   */
+  readonly statForWrite: (path: string) => Promise<WriteStat>
   /** `maxBytes` counts UTF-8 bytes. A path that does not lead to a regular file (after links) reads as `unknown`. */
   readonly read: (path: string, maxBytes: number) => Promise<PortRead>
   /** `$.fs.ancestors({ names })` unvalidated. It carries file content, which only setup.ts may project away. */

@@ -18,6 +18,7 @@ import type {
   SetupScan,
   SkillRef,
   TemplateRoleId,
+  WriteStat,
 } from '../types'
 import { utf8Bytes } from './facts'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
@@ -180,6 +181,7 @@ function readOf(world: MemWorld, path: string, maxBytes: number): PortRead {
  * A port over `world` that records what it is asked. With an array of `answers`, `ask` answers in order and rejects
  * with `dismissed` when they run out. With a record, `ask` answers with the value of the longest key the question
  * starts with and rejects with `dismissed` when no key does, so a flow test survives a new question.
+ * statForWrite answers an unknown path failed, a missing one absent, else its stat.
  */
 export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Record<string, string>>): MemRun {
   const asked: string[] = []
@@ -225,6 +227,11 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
       return listOf(world, path)
     },
     stat: async path => statOf(world, path),
+    statForWrite: async path => {
+      if (world.unknownPaths.includes(path)) return 'failed'
+
+      return statOf(world, path) ?? 'absent'
+    },
     read: async (path, maxBytes) => {
       reads.push(path)
 

@@ -28,6 +28,7 @@ import type {
   ScanKind,
   ScopeContext,
   SetupScan,
+  WriteStat,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import { applySteps, applyStatPaths, chmodArgv, chmodProblem, hunkFailureLine, writeProblem } from './apply'
@@ -152,12 +153,19 @@ export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to
 /** The last line of a plain init or regen reply: what to run next to launch a role from the files written. */
 export const NEXT_STEP_NOTE = 'Next: run /cadre start <id> to launch a role.'
 
+/** The start of the manifest-skipped warning; init and regen end it with the command to run again. */
+const MANIFEST_SKIPPED_START = '.cadre/manifest.json was not written because a file above was not written: run '
+
 /**
- * The warning when apply did not write the manifest because a file write before it failed or was refused, so the
- * manifest never claims a file that is not on the disk (LNCH-01, T-03-18).
+ * The warning in an init reply when apply did not write the manifest because a file write before it failed or was
+ * refused, so the manifest never claims a file that is not on the disk (LNCH-01, T-03-18).
  */
-export const MANIFEST_SKIPPED_NOTE =
-  '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.'
+export const MANIFEST_SKIPPED_NOTE = `${MANIFEST_SKIPPED_START}/cadre init again.`
+
+/** The manifest-skipped warning of a regen reply: re-running regen of the role is the narrower fix (A4). */
+function regenManifestSkippedNote(id: string): string {
+  return `${MANIFEST_SKIPPED_START}/cadre regen ${reportText(id)} again.`
+}
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees (Phase 3.1)"
@@ -1711,8 +1719,8 @@ export async function planStep(
  * - `written`: each path whose write landed, in step order, the `.gitignore` and the manifest included;
  * - `executable`: each launcher whose chmod ran and exited 0;
  * - `failed`: each path whose write the host refused or failed;
- * - `refused`: the writeProblem text of each write that was not tried, because the path or a folder above it is a
- *   link, not a folder or not inside the repo;
+ * - `refused`: the writeProblem text of each write that was not tried, because the stat of the path or a folder above
+ *   it failed, the path is a folder, or the path or a folder above it is a link, not a folder or not inside the repo;
  * - `notExecutable`: each launcher whose chmod ran but did not exit 0, or could not run;
  * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
  * - `hunkFailures`: each framework command that failed (D-106);
@@ -1736,19 +1744,19 @@ const CHMOD_TIMEOUT_MS = 10_000
 
 /**
  * Runs the steps of a confirmed apply through the host, in order (D-105, LNCH-01). Every path applyStatPaths names is
- * stat'ed once, through the init port and with resolve, before the first step. A write is tried only when writeProblem
- * finds no link, non-folder or out-of-repo path on its way (T-03-17), and its path joins `written` only when host.write
- * says it landed. A chmod runs only on a path in `written`, so only after the write of that same path in this same
- * apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows links, so a chmod on a path whose write was
- * refused or failed could change the target of a link planted there, outside the repo (RESEARCH 3.2, T-03-38); such a
- * launcher is not made executable, and no chmod runs for it at all. A chmod that ran makes its launcher executable
- * only on exit 0. The manifest is written like any file, but skipped when a write before it failed or was refused, so
- * it never claims a file that is not on the disk (T-03-18).
+ * stat'ed once, through the init port's statForWrite and with resolve, before the first step. A write is tried only
+ * when writeProblem finds no failed stat, link, folder, non-folder or out-of-repo path on its way (T-03-17, #44), and
+ * its path joins `written` only when host.write says it landed. A chmod runs only on a path in `written`, so only after
+ * the write of that same path in this same apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows
+ * links, so a chmod on a path whose write was refused or failed could change the target of a link planted there,
+ * outside the repo (RESEARCH 3.2, T-03-38); such a launcher is not made executable, and no chmod runs for it at all. A
+ * chmod that ran makes its launcher executable only on exit 0. The manifest is written like any file, but skipped when
+ * a write before it failed or was refused, so it never claims a file that is not on the disk (T-03-18).
  */
 async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonly ApplyStep[]): Promise<ApplyOutcome> {
   const base = trimSlash(root)
-  const stats = new Map<string, PortStat | null>()
-  for (const path of applyStatPaths(steps)) stats.set(path, await io.stat(`${base}/${path}`))
+  const stats = new Map<string, WriteStat>()
+  for (const path of applyStatPaths(steps)) stats.set(path, await io.statForWrite(`${base}/${path}`))
   const written = new Set<string>()
   const executable: string[] = []
   const failed: string[] = []
@@ -1795,18 +1803,20 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
 }
 
 /**
- * The lines a plain init or regen reply ends with (D-105, LNCH-01). First `Applied: wrote <n> files (<m>
- * executable).`, n counting every write that landed (the `.gitignore` and the manifest included) and m the launchers
- * made executable, or APPLIED_NONE_NOTE when nothing was written and no write failed or was refused. Then one
- * `warning: ` line for each write writeProblem refused (its text), each write the host failed, each chmod not run (the
- * chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each framework command that
- * failed (hunkFailureLine), the attended note when a failure made roles attended, and MANIFEST_SKIPPED_NOTE when the
- * manifest was skipped. NEXT_STEP_NOTE comes last.
+ * The lines a plain init or regen reply ends with (D-105, LNCH-01). First `Applied: wrote <n> file(s) (<m>
+ * executable).`, `file` when n is 1, n counting every write that landed (the `.gitignore` and the manifest included)
+ * and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no write failed or was
+ * refused. Then one `warning: ` line for each write writeProblem refused (its text), each write the host failed, each
+ * chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each
+ * framework command that failed (hunkFailureLine), the attended note when a failure made roles attended, and
+ * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. NEXT_STEP_NOTE
+ * comes last.
  */
-export function appliedLines(outcome: ApplyOutcome): string[] {
+export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
   const isNothing = written.length === 0 && failed.length === 0 && refused.length === 0
-  const counted = `Applied: wrote ${written.length} files (${executable.length} executable).`
+  const noun = written.length === 1 ? 'file' : 'files'
+  const counted = `Applied: wrote ${written.length} ${noun} (${executable.length} executable).`
   const warnings = [
     ...refused,
     ...failed.map(path => `could not write ${reportText(path)}`),
@@ -1818,7 +1828,7 @@ export function appliedLines(outcome: ApplyOutcome): string[] {
     }),
     ...outcome.hunkFailures.map(hunkFailureLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
-    ...(outcome.manifestSkipped ? [MANIFEST_SKIPPED_NOTE] : []),
+    ...(outcome.manifestSkipped ? [manifestNote] : []),
   ]
 
   return [isNothing ? APPLIED_NONE_NOTE : counted, ...warnings.map(warning => `warning: ${warning}`), NEXT_STEP_NOTE]
@@ -2428,11 +2438,12 @@ async function regenPlan(
 /**
  * The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, one `warning:` line for each scan
  * warning, between the plan and the ending as init prints them (scanWarningLines, A4), then the dry-run note when
- * `applied` is null (--dry-run, nothing was written), else the lines of what the apply did (appliedLines).
+ * `applied` is null (--dry-run, nothing was written), else the lines of what the apply did (appliedLines), with the
+ * regen manifest note (A4).
  */
 function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
   const command = applied === null ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
-  const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied)
+  const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied, regenManifestSkippedNote(id))
 
   return [command, ...renderPlan(planned.plan), ...scanWarningLines(planned.warnings), ...ending].join('\n')
 }

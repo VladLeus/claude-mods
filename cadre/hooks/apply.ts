@@ -17,6 +17,7 @@ import type {
   PortStat,
   SettingProposal,
   SetupScan,
+  WriteStat,
 } from '../types'
 import { ADAPTERS } from './adapters'
 import { compareText, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
@@ -248,38 +249,58 @@ export function applyStatPaths(steps: readonly ApplyStep[]): string[] {
   return sortedUnique(steps.flatMap(step => [...foldersAbove(step.path), step.path]))
 }
 
-/** Whether a folder above a write lets it through: not there yet, or a real folder strictly inside the root. */
-function isSafeFolder(stat: PortStat | null, root: string): boolean {
-  if (stat === null) return true
+/**
+ * Why a write is refused when its target or a folder above it is a link, not the kind it must be, or outside the
+ * repo.
+ */
+const LINK_REASON = 'it or a folder above it is a link, or not inside the repo'
+
+/** Why a write is refused when its target is a real folder (A5). */
+const FOLDER_REASON = 'it is a folder'
+
+/** Why a write is refused when the stat of its target or of a folder above it failed or was not asked (#44). */
+const STAT_FAILED_REASON = 'it or a folder above it could not be checked (a stat failed)'
+
+/**
+ * Whether a folder above a write lets it through: not there yet, or a real folder strictly inside the root; a failed
+ * stat never lets it through.
+ */
+function isSafeFolder(stat: WriteStat, root: string): boolean {
+  if (stat === 'absent') return true
+  if (stat === 'failed') return false
 
   return !stat.isLink && isDirInsideRoot(stat, root)
 }
 
 /** Whether the target of a write lets it through: not there yet, or a regular file strictly inside the root. */
-function isSafeTarget(stat: PortStat | null, root: string): boolean {
-  if (stat === null) return true
+function isSafeTarget(stat: PortStat | 'absent', root: string): boolean {
+  if (stat === 'absent') return true
 
   return !stat.isLink && isFileInsideRoot(stat, root)
 }
 
 /**
- * Why a write must not happen, or null when it may (T-03-13): the target is a link, a folder or a file outside the
- * repo, or a folder above it, below the root, is a link, not a folder, or outside the repo. A path with no stat is not
- * there yet, which is fine: the host creates it. `stats` holds the stat of each path applyStatPaths names, keyed by
- * repo-relative path and asked with resolve, so a realPath is absolute; a path it has no key for counts as not there.
- * The path is cleaned and capped as a report cell is.
+ * Why a write must not happen, or null when it may (T-03-13, #44): a failed stat of the target or of a folder above
+ * it, below the root, refuses it as not checked, and so does a path `stats` has no key for (fail closed); a folder
+ * above that is a link, not a folder or outside the repo refuses it, as does a target that is a link, not a regular
+ * file or outside the repo, except that a target that is a real folder is refused as a folder. An absent path is fine:
+ * the host creates it. `stats` holds the WriteStat of each path applyStatPaths names, keyed by repo-relative path and
+ * asked with resolve, so a realPath is absolute. The path is cleaned and capped as a report cell is.
  */
 export function writeProblem(
   path: string,
-  stats: ReadonlyMap<string, PortStat | null>,
+  stats: ReadonlyMap<string, WriteStat>,
   root: string,
 ): string | null {
-  const isSafe =
-    isSafeTarget(stats.get(path) ?? null, root) &&
-    foldersAbove(path).every(folder => isSafeFolder(stats.get(folder) ?? null, root))
-  if (isSafe) return null
+  const target = stats.get(path) ?? 'failed'
+  const above = foldersAbove(path).map(folder => stats.get(folder) ?? 'failed')
+  const refused = `refused to write ${reportText(path)}: `
+  if (target === 'failed' || above.includes('failed')) return `${refused}${STAT_FAILED_REASON}`
+  if (!above.every(stat => isSafeFolder(stat, root))) return `${refused}${LINK_REASON}`
+  if (target !== 'absent' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
+  if (!isSafeTarget(target, root)) return `${refused}${LINK_REASON}`
 
-  return `refused to write ${reportText(path)}: it or a folder above it is a link, or not inside the repo`
+  return null
 }
 
 /**
@@ -349,7 +370,8 @@ export function hunkRuns(hunks: readonly HunkOp[], setup: SetupScan, gsd: GsdToo
 /**
  * The hunks after their runs (D-106, D-120): each hunk whose key is in `failed` is no longer runnable, so isUnmetHunk
  * makes the roles of its framework attended when it is required and the plan re-judges them before ROLE.md is
- * rendered; every other hunk is kept as it was. The hunks given are not changed.
+ * rendered; every other hunk is kept as it was. The hunks given are not changed. A failure is matched by key, which is
+ * unique while every hunk targets the one GSD config file; key it by file and key once a second hunk file exists.
  */
 export function hunksAfterRuns(hunks: readonly HunkOp[], failed: ReadonlySet<string>): HunkOp[] {
   return hunks.map(hunk => (failed.has(hunk.key) ? { ...hunk, isRunnable: false } : hunk))

@@ -336,7 +336,8 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 /**
  * The port one init run goes through (P8): plain closures over `$`, built here because `$` cannot cross into another
  * file, so the pure modules never see it. Every member except `ask` turns a host failure into null or unknown, never
- * into absent, and none reads an error message. `ask` rejects when the person dismisses the dialog (D-45).
+ * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
+ * message. `ask` rejects when the person dismisses the dialog (D-45).
  */
 function initIoOf($: EngineInterface): InitIo {
   return {
@@ -382,6 +383,13 @@ function initIoOf($: EngineInterface): InitIo {
     },
     list: path => $.fs.list(path).catch(() => null),
     stat: path => $.fs.stat(path, { resolve: true }).catch(() => null),
+    statForWrite: async path => {
+      const stat = await $.fs.stat(path, { resolve: true }).catch(() => null)
+      if (stat !== null) return stat
+      const isThere = await $.fs.exists(path).catch(() => null)
+
+      return isThere === false ? 'absent' : 'failed'
+    },
     read: (path, maxBytes) => portRead($, path, maxBytes),
     ancestors: names => $.fs.ancestors({ names: [...names] }).catch(() => null),
     settings: source => $.settings.read({ source }).catch(() => null),
