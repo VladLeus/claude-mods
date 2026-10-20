@@ -2989,41 +2989,54 @@ describe('init plan', () => {
     expect([dry[0], dry.at(-1)]).toEqual(['cadre init --dry-run', DRY_RUN_NOTE])
   })
 
-  test("init logs every role's scope card before it asks the git policy (ROLE-06)", async () => {
-    const run = memIo(gitWorld(), INIT_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
-    const team = await defaultRoles(gitWorld())
-    const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), [], { kind: 'git-root' }))
-    const logged = loggedFrom(events, 'Scope card: PM (pm)', GIT_POLICY_QUESTION)
-    expect(logged.join('\n')).toBe(cards.join('\n'))
-    expect(logged.every(text => text.length <= 2000)).toBe(true)
-    const lines = logged.flatMap(text => text.split('\n'))
-    expect(lines.filter(line => line.startsWith('Scope card: '))).toEqual([
-      'Scope card: PM (pm)',
-      'Scope card: Team Lead (tl)',
-      'Scope card: Security (security)',
-    ])
-  })
+  test(
+    "init logs every role's scope card once, inside the review after the launch-start question (ROLE-06, A5)",
+    async () => {
+      const run = memIo(gitWorld(), INIT_ANSWERS)
+      const { io, events } = withEvents(run)
+      await runInit(io, { dryRun: true })
+      const team = await defaultRoles(gitWorld())
+      const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), [], { kind: 'git-root' }))
+      const launchAt = events.indexOf(`ask ${LAUNCH_START_QUESTION}`)
+      const rolesAt = events.findIndex(event => event.startsWith('log Roles:'))
+      const pmCards = events.filter(event => event.startsWith('log ') && event.includes('Scope card: PM (pm)'))
+      const summary = loggedFrom(events, 'Roles:', REVIEW_QUESTION)
+      const lines = summary.flatMap(text => text.split('\n'))
+      expect(pmCards).toHaveLength(1)
+      expect(events.indexOf(pmCards[0] ?? '')).toBeGreaterThan(launchAt)
+      expect(events.slice(launchAt + 1, rolesAt).filter(event => event.startsWith('log '))).toEqual([])
+      expect(summary.join('\n')).toContain(
+        ['Roles:', ...team.map(role => `  ${role.title} (${role.id})`), ...cards].join('\n'),
+      )
+      expect(summary.every(text => text.length <= 2000)).toBe(true)
+      expect(lines.filter(line => line.startsWith('Scope card: '))).toEqual([
+        'Scope card: PM (pm)',
+        'Scope card: Team Lead (tl)',
+        'Scope card: Security (security)',
+      ])
+    },
+  )
 
-  test('the review cards of a folder start carry its notes; cards before the git policy do not (D-122)', async () => {
-    const answers = {
-      ...INIT_ANSWERS,
-      'Where should the role launchers start': 'Another folder in this repo',
-      'Type the folder the launchers start in': 'apps/web',
-    }
-    const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
-    const linesOf = (head: string, before: string): string[] =>
-      loggedFrom(events, head, before).flatMap(text => text.split('\n'))
-    const early = linesOf('Scope card: PM (pm)', GIT_POLICY_QUESTION)
-    const review = linesOf('Roles:', REVIEW_QUESTION)
-    const notes = ['do not load: the session starts in', 'Additional directory:', 'follow the start folder']
-    expect(review).toContain('    [none] Additional directory: <git root> (start folder is <git root>/apps/web)')
-    expect(early).toContain('Scope card: PM (pm)')
-    expect(early.filter(line => notes.some(note => line.includes(note)))).toEqual([])
-  })
+  test(
+    'the review cards of a folder start carry its notes, and no card is printed before the review (D-122, A5)',
+    async () => {
+      const answers = {
+        ...INIT_ANSWERS,
+        'Where should the role launchers start': 'Another folder in this repo',
+        'Type the folder the launchers start in': 'apps/web',
+      }
+      const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
+      const { io, events } = withEvents(run)
+      await runInit(io, { dryRun: true })
+      const linesOf = (head: string, before: string): string[] =>
+        loggedFrom(events, head, before).flatMap(text => text.split('\n'))
+      const review = linesOf('Roles:', REVIEW_QUESTION)
+      const rolesAt = events.findIndex(event => event.startsWith('log Roles:'))
+      expect(review).toContain('    [none] Additional directory: <git root> (start folder is <git root>/apps/web)')
+      expect(events.slice(0, rolesAt).filter(event => event.includes('Scope card: '))).toEqual([])
+      expect(review).toContain('Scope card: PM (pm)')
+    },
+  )
 
   test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
     const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
@@ -3141,11 +3154,11 @@ describe('init plan', () => {
     }
   })
 
-  test('a dismissed git policy after the cards cancels init; the port has no way to write (D-45)', async () => {
+  test('a dismissed git policy cancels init before any card; the port has no way to write (D-45, A5)', async () => {
     const run = memIo(gitWorld(), answersWithout('Git policy'))
     const { io, events } = withEvents(run)
     expect(await runInit(io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(events.some(event => event.startsWith('log Scope card: PM (pm)'))).toBe(true)
+    expect(events.filter(event => event.includes('Scope card: '))).toEqual([])
     expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
     expect(Object.keys(run.io).filter(key => /write|append|remove|delete|mkdir|rename/i.test(key))).toEqual([])
   })
@@ -3762,6 +3775,14 @@ describe('runRegen', () => {
     const kinds = opKinds(await regenBe(await regenWorld(team, {}, gitWorld(), [dropped])))
     expect([...kinds.keys()].filter(path => !isBePlanPath(path))).toEqual([])
     expect(kinds.get('.cadre/manifest.json')).toBe('leave')
+  })
+
+  test('a deleted ROLE.md or kickoff.txt of the role is planned as a create by regen (A7, #39)', async () => {
+    expect(opKinds(await regenBe(await regenWorld())).get('.cadre/be/ROLE.md')).toBe('leave')
+    for (const name of ['ROLE.md', 'kickoff.txt']) {
+      const kinds = opKinds(await regenBe(without(await regenWorld(), `/repo/.cadre/be/${name}`)))
+      expect(kinds.get(`.cadre/be/${name}`)).toBe('create')
+    }
   })
 
   test('the reply is the command, the plan and the note; --dry-run changes only the first and last line', async () => {
