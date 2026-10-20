@@ -42,6 +42,8 @@ export const USAGE_LINES: readonly string[] = [
     'its launcher command',
   `  ${'/cadre start <id> --terminal'.padEnd(COMMAND_COLUMN)}also open it in a new Terminal window, ` +
     'iTerm tab or tmux window (macOS)',
+  `  ${'/cadre status <id>'.padEnd(COMMAND_COLUMN)}show from disk whether a role's autopilot run ` +
+    'is done, running or not started',
 ]
 
 /**
@@ -139,11 +141,23 @@ function startCommand(rest: string): CadreCommand | null {
 }
 
 /**
+ * The status of one role (D-111), when the arguments after `status` are exactly one role id that matches
+ * ROLE_ID_PATTERN, with no case folding and no switch; null for anything else (D-48).
+ */
+function statusCommand(rest: string): CadreCommand | null {
+  const id = rest.trim()
+  if (!ROLE_ID_PATTERN.test(id)) return null
+
+  return { kind: 'status', id }
+}
+
+/**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
  * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
  * `--dry-run`, re-renders that role; `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`,
- * renders that role's runtime files and prints its launcher command; anything else, `regen` or `start` with no id or
- * with an id that is not a slug included, is help with the input echoed back as unknown.
+ * renders that role's runtime files and prints its launcher command; `status` with exactly one role id reports that
+ * role's autopilot run from disk; anything else, `regen`, `start` or `status` with no id or with an id that is not a
+ * slug included, is help with the input echoed back as unknown.
  */
 export function parseCommand(args: string): CadreCommand {
   const text = visibleText(args)
@@ -160,6 +174,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const start = /^start(?=\s|$)/i.exec(text)
   if (start) return startCommand(text.slice(start[0].length)) ?? unknownCommand(text)
+
+  const status = /^status(?=\s|$)/i.exec(text)
+  if (status) return statusCommand(text.slice(status[0].length)) ?? unknownCommand(text)
 
   return unknownCommand(text)
 }

@@ -13,7 +13,8 @@ export type TerminalChoice = 'none' | 'auto' | 'terminal' | 'iterm' | 'tmux' | '
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
  * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json;
- * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command.
+ * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command;
+ * `status <id>` reads from disk whether a role's autopilot run is done, running or not started, and writes nothing.
  * Any other input is help with the input echoed back as unknown. Plain init writes the plan after Confirm and plain
  * regen writes the role's plan; --dry-run prints the plan and writes nothing.
  */
@@ -48,6 +49,11 @@ export type CadreCommand =
       readonly id: string
       /** Where `--terminal` asked to open the launcher command; `none` without the switch (D-109). */
       readonly terminal: TerminalChoice
+    }
+  | {
+      readonly kind: 'status'
+      /** The role id, already matched against the role-id slug (D-48). */
+      readonly id: string
     }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */
