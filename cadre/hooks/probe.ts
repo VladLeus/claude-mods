@@ -46,6 +46,20 @@ export function isProbeToken(token: string): boolean {
   return PRINTABLE_TOKEN.test(token) && !UNSAFE_TOKEN_CHAR.test(token)
 }
 
+/** What the text of an expectation ends with when its token is not compared (T-03-10). */
+const UNUSUAL_SUFFIX = ' (not checked: unusual characters)'
+
+/**
+ * An expectation as the file holds it: as it is when its token can be compared (isProbeToken), else not-visible with
+ * the token '' and its text marked as not checked, so an unusual token never reaches the launcher (T-03-10).
+ */
+function written(expectation: ProbeExpectation): ProbeExpectation {
+  if (isProbeToken(expectation.token)) return expectation
+  const { enforcement, text } = expectation
+
+  return { check: 'not-visible', enforcement, text: `${text}${UNUSUAL_SUFFIX}`, token: '' }
+}
+
 /** What the probe prints after the text of a rule for one of its checks. */
 function checkLabel(check: ProbeCheck): string {
   const { kind, token } = check
@@ -70,27 +84,31 @@ function ruleExpectations(rule: ScopeRule): ProbeExpectation[] {
     return [{ check: enforcement === 'none' ? 'note' : 'not-visible', enforcement, text: probeText(text), token: '' }]
   }
 
-  return checks.map(check => ({
-    check: check.kind,
-    enforcement,
-    text: probeText(`${text} [${checkLabel(check)}]`),
-    token: check.token,
-  }))
+  return checks.map(check =>
+    written({
+      check: check.kind,
+      enforcement,
+      text: probeText(`${text} [${checkLabel(check)}]`),
+      token: check.token,
+    }),
+  )
 }
 
 /**
  * The expectations of a role's probe (D-112, D-130), in card rule order: one per check of a rule, as
  * `<rule text> [<check>]` with the rule's label, or for a rule with no check one not-visible expectation (hard or best
  * effort), which the launcher reports best-effort, or one note (none). The last one is the role's memory folder, which
- * the init event shows as `memory_paths.auto` (ISO-03).
+ * the init event shows as `memory_paths.auto` (ISO-03). A check or memory token that fails isProbeToken is never
+ * written as a check: that expectation is not-visible, its token '' and its text ends with
+ * ` (not checked: unusual characters)` (T-03-10).
  */
 export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeExpectation[] {
-  const memory: ProbeExpectation = {
+  const memory = written({
     check: 'memory-path',
     enforcement: 'hard',
     text: probeText(`Memory folder: ${memoryDir} (autoMemoryDirectory)`),
     token: memoryDir,
-  }
+  })
 
   return [...scope.card.rules.flatMap(ruleExpectations), memory]
 }
@@ -124,21 +142,30 @@ export type InitInventory = {
 export type ProbeVerdict = 'enforced' | 'best-effort' | 'violated' | 'note'
 
 /**
- * Whether the inventory shows what an expectation needs, as the launcher's case arm for its check decides: null when
- * the launcher has no arm for the check, which it reports best-effort.
+ * Whether the inventory shows what an expectation needs, as the launcher's case arm for its check decides: a name in
+ * or out of its own list (a prefix for tool-prefix-absent), the permission mode, or the memory folder with or without a
+ * trailing `/`. Null for not-visible, which has no arm, so the launcher reports it best-effort.
  */
 function holds(inventory: InitInventory, expectation: ProbeExpectation): boolean | null {
-  if (expectation.check === 'tool-absent') return !inventory.tools.includes(expectation.token)
+  const { check, token } = expectation
+  if (check === 'tool-absent') return !inventory.tools.includes(token)
+  if (check === 'tool-prefix-absent') return !inventory.tools.some(tool => tool.startsWith(token))
+  if (check === 'tool-present') return inventory.tools.includes(token)
+  if (check === 'command-present') return inventory.slashCommands.includes(token)
+  if (check === 'skill-present') return inventory.skills.includes(token)
+  if (check === 'permission-mode') return inventory.permissionMode === token
+  if (check === 'memory-path') return inventory.memoryAuto === token || inventory.memoryAuto === `${token}/`
 
   return null
 }
 
 /**
- * The verdict on one expectation, as the launcher's sh decides it: violated when its check fails; best-effort when the
- * init event cannot show it, or when the check holds but the rule is not hard; enforced when the check of a hard rule
- * holds.
+ * The verdict on one expectation, as the launcher's sh decides it: note for a note; violated when its check fails;
+ * best-effort when the init event cannot show it, or when the check holds but the rule is not hard; enforced when the
+ * check of a hard rule holds.
  */
 function verdictOf(inventory: InitInventory, expectation: ProbeExpectation): ProbeVerdict {
+  if (expectation.check === 'note') return 'note'
   const isHeld = holds(inventory, expectation)
   if (isHeld === false) return 'violated'
   if (isHeld === null || expectation.enforcement !== 'hard') return 'best-effort'

@@ -928,14 +928,25 @@ describe('scope rules', () => {
       { text: skippedRule('pm'), enforcement: 'best-effort' },
       { text: 'Code dir * has an unusual name and is not denied', enforcement: 'none' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: 'Scanned MCP servers not given are denied: jira, my.server', enforcement: 'hard' },
+      {
+        text: 'Scanned MCP servers not given are denied: jira, my.server',
+        enforcement: 'hard',
+        checks: [
+          { kind: 'tool-prefix-absent', token: 'mcp__jira__' },
+          { kind: 'tool-prefix-absent', token: 'mcp__my_server__' },
+        ],
+      },
       {
         text: 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)',
         enforcement: 'none',
       },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
-      { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
-      { text: 'Permission mode: bypassPermissions', enforcement: 'hard' },
+      { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
+      {
+        text: 'Permission mode: bypassPermissions',
+        enforcement: 'hard',
+        checks: [{ kind: 'permission-mode', token: 'bypassPermissions' }],
+      },
       { text: ATTENDED_RULE, enforcement: 'none' },
       { text: GSD_NO_BASH_RULE, enforcement: 'none' },
       { text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' },
@@ -950,11 +961,15 @@ describe('scope rules', () => {
       { text: PLUGIN_RULE, enforcement: 'hard' },
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
-      { text: mergedDenied('jira'), enforcement: 'best-effort' },
+      {
+        text: mergedDenied('jira'),
+        enforcement: 'best-effort',
+        checks: [{ kind: 'tool-prefix-absent', token: 'mcp__jira__' }],
+      },
       { text: MERGED_REACHABLE_RULE, enforcement: 'best-effort' },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
-      { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
-      { text: 'Permission mode: auto', enforcement: 'hard' },
+      { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
+      { text: 'Permission mode: auto', enforcement: 'hard', checks: [{ kind: 'permission-mode', token: 'auto' }] },
       { text: MERGED_ROUTE_RULE, enforcement: 'none' },
     ])
   })
@@ -1642,11 +1657,15 @@ describe('decided MCP route (D-104, D-124)', () => {
       )
       const listed = 'Scanned MCP servers not given are denied: notion, redmine'
       const texts = merged.card.rules.map(item => item.text)
+      const checks: readonly ProbeCheck[] = [
+        { kind: 'tool-prefix-absent', token: 'mcp__notion__' },
+        { kind: 'tool-prefix-absent', token: 'mcp__redmine__' },
+      ]
 
-      expect(ruleOf(merged, listed)).toEqual({ text: listed, enforcement: 'best-effort' })
+      expect(ruleOf(merged, listed)).toEqual({ text: listed, enforcement: 'best-effort', checks })
       expect(ruleOf(merged, MERGED_REACHABLE_RULE)).toEqual({ text: MERGED_REACHABLE_RULE, enforcement: 'best-effort' })
       expect(texts.indexOf(MERGED_REACHABLE_RULE)).toBe(texts.indexOf(listed) + 1)
-      expect(ruleOf(strict, listed)).toEqual({ text: listed, enforcement: 'hard' })
+      expect(ruleOf(strict, listed)).toEqual({ text: listed, enforcement: 'hard', checks })
       expect(ruleOf(strict, MERGED_REACHABLE_RULE)).toBeUndefined()
       expect(ruleOf(allGiven, MERGED_REACHABLE_RULE)).toBeUndefined()
     },

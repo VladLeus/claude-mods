@@ -15,6 +15,7 @@ import type {
 import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from './assign'
 import { compareText, sortedUnique } from './facts'
+import { freezeRows } from './freeze'
 import { cardList, reportText, shown } from './render'
 import { chainLines } from './roles'
 
@@ -73,6 +74,18 @@ const INFRA_DENY_TARGETS: readonly string[] = Object.freeze([
   ...INFRA_TOOLS,
   ...INFRA_MCP_SERVERS.map(server => `mcp__${server}`),
   ...INFRA_SKILLS.map(name => `Skill(${name})`),
+])
+
+/**
+ * The checks of the infra rule (D-112, D-77): the startup inventory lists the autopilot command, the handoff skills and
+ * autopilot's MCP tools, in that order. The fleet command is not checked: its reading is not stable (D-112).
+ */
+const INFRA_CHECKS: readonly ProbeCheck[] = freezeRows([
+  { kind: 'command-present', token: 'autopilot' },
+  ...INFRA_SKILLS.map((name): ProbeCheck => ({ kind: 'skill-present', token: name })),
+  ...INFRA_TOOLS.filter(name => name.startsWith('mcp__autopilot__')).map(
+    (name): ProbeCheck => ({ kind: 'tool-present', token: name }),
+  ),
 ])
 
 /** The launcher flag that turns off slash commands, and with them the handoff skills and the start skills (S1, S4). */
@@ -413,11 +426,15 @@ const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server d
 
 /**
  * The deny rule of the scanned servers: none to deny, the list, and on the merged route the reachable rule after it.
+ * The probe checks the list for each denied server as no tool whose name starts with `mcp__<server>__` in the startup
+ * inventory: tools only, since a denied server stays connected (D-112, D-124).
  */
 function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
   if (deny.mcp.length === 0) return [rule('No other scanned MCP servers to deny', enforcement)]
-  const listed = rule(`Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`, enforcement)
+  const text = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`
+  const checks = deny.mcp.map((name): ProbeCheck => ({ kind: 'tool-prefix-absent', token: `${mcpToolName(name)}__` }))
+  const listed = checkedRule(text, enforcement, checks)
   if (route === 'strict') return [listed]
 
   return [listed, rule(MCP_REACHABLE_TEXT, 'best-effort')]
@@ -532,9 +549,13 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
 
 /**
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
- * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none (ROLE-06).
+ * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none (ROLE-06). The rules the
+ * startup inventory can prove carry their probe checks (D-112): the Bash rule, the MCP deny list, the infra rule and
+ * the permission mode, which the init event reports for manual as default (RESEARCH 1.1).
  */
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
+  const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
+
   return [
     ...bypassRules(role),
     rule(`Plugins: only ${cardList(plugins.map(shown))} load (--setting-sources project whitelist)`, 'hard'),
@@ -547,8 +568,8 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...mcpRules(deny, ctx.mcpRoute),
     ...partialMcpRules(ctx.setup),
     rule('Skills: only the listed skills are linked', 'best-effort'),
-    rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
-    rule(`Permission mode: ${role.permissionMode}`, 'hard'),
+    checkedRule('Autopilot, agent-fleet and the handoff skills are always available', 'hard', INFRA_CHECKS),
+    checkedRule(`Permission mode: ${role.permissionMode}`, 'hard', [{ kind: 'permission-mode', token: mode }]),
     ...attendedRules(role, ctx),
     ...(ctx.launchStart.kind === 'git-root' ? projectMonitorRules(ctx.setup) : []),
     ...startRules(role, ctx.launchStart),
