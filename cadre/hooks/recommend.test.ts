@@ -627,7 +627,7 @@ const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in pla
 const PLAYWRIGHT_WHY = 'the FE role has no E2E setup to check its work in a browser'
 const DEVTOOLS_WHY = 'the FE role cannot inspect the running page'
 const CLAUDE_SECURITY_WHY =
-  'the Security role has no review skill: claude-security adds one (needs Python 3.9 or newer)'
+  "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)"
 const GUIDANCE_WHY = 'no hooks warn the Security role about risky edits'
 
 const GSD_LINE: Recommendation = { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd }
@@ -899,7 +899,7 @@ describe('recommend', () => {
     })
 
     expect(recommendationLines(lines, FULL_TEAM)).toEqual([
-      'Recommendations (print-only; nothing is installed):',
+      'Recommendations (print-only; init asks before it installs any):',
       '- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop',
       '    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
       '- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop',
@@ -934,7 +934,7 @@ describe('recommend', () => {
     const lines = recommendationLines([hostile], [role('web', 'fe', 'A\nB')])
 
     expect(lines).toEqual([
-      'Recommendations (print-only; nothing is installed):',
+      'Recommendations (print-only; init asks before it installs any):',
       '- Tx for AB: wFAKE',
       '    run: irm -rf',
     ])

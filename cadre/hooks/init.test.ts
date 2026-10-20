@@ -1368,7 +1368,8 @@ describe('runInit framework and recommendations', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(run.asked.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(false)
-    const at = events.findIndex(event => event.startsWith('log Recommendations (print-only; nothing is installed):\n'))
+    const heading = 'log Recommendations (print-only; init asks before it installs any):\n'
+    const at = events.findIndex(event => event.startsWith(heading))
     expect(at >= 0 && at < events.indexOf('ask Git policy for .cadre/?')).toBe(true)
     expect(events[at]).toContain('\n- GSD for all roles: ')
     expect(events[at]).toContain('\n- superpowers for all roles: ')
@@ -5053,6 +5054,10 @@ describe('security plugin review fixes (#69)', () => {
     expect(host.writes.some(write => write.path.startsWith('/repo/.cadre/security/'))).toBe(false)
     expect(reply).not.toContain('Installed ')
   })
+
+  test('the question shows each plugin name cleaned, as every printed key is (B7)', () => {
+    expect(securityInstallQuestion([`x${BIDI_OVERRIDE}\ny@m`])).toBe(`${SECURITY_INSTALL_PREFIX} xy? `)
+  })
 })
 
 /** The argv of the Python check that runs right before the claude-security install (decision #39). */
@@ -5081,11 +5086,14 @@ function pythonNeeds(why: string): string {
   )
 }
 
-/** The reply line of a plugin whose install failed, with the marketplace add first when that failed too. */
+/** The reply line of a plugin whose install failed; when the marketplace add failed too, the add for a missing one. */
 function installFailedLine(key: string, isMarketplaceFailed: boolean): string {
-  const add = isMarketplaceFailed ? 'claude plugin marketplace add anthropics/claude-plugins-official, then ' : ''
+  const add = isMarketplaceFailed
+    ? ' (if the claude-plugins-official marketplace is missing, first run: ' +
+      'claude plugin marketplace add anthropics/claude-plugins-official)'
+    : ''
 
-  return `warning: could not install ${key}: run it yourself: ${add}claude plugin install ${key}`
+  return `warning: could not install ${key}: run it yourself: claude plugin install ${key}${add}`
 }
 
 describe('install checks (decision #39)', () => {

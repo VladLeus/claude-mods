@@ -830,13 +830,15 @@ describe('install runs (decision #39)', () => {
     expect(JSON.stringify(setup)).toBe(before)
   })
 
-  test('installFailureText gives the install command, after the marketplace add when that failed too', () => {
+  test('installFailureText: the install command, and after a failed add the add for a missing marketplace', () => {
     expect(installFailureText(SECURITY_KEY, false)).toBe(
       `could not install ${SECURITY_KEY}: run it yourself: claude plugin install ${SECURITY_KEY}`,
     )
+    // The add may have failed because the marketplace is there already, so it is named as a condition (#69 A3).
     expect(installFailureText(GUIDANCE_KEY, true)).toBe(
-      `could not install ${GUIDANCE_KEY}: run it yourself: ` +
-        `claude plugin marketplace add anthropics/claude-plugins-official, then claude plugin install ${GUIDANCE_KEY}`,
+      `could not install ${GUIDANCE_KEY}: run it yourself: claude plugin install ${GUIDANCE_KEY} ` +
+        '(if the claude-plugins-official marketplace is missing, first run: ' +
+        'claude plugin marketplace add anthropics/claude-plugins-official)',
     )
     expect(installFailureText(`x${BIDI_OVERRIDE}@m`, false)).toBe(
       'could not install x@m: run it yourself: claude plugin install x@m',

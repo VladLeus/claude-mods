@@ -1403,9 +1403,9 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const lines = log.logs.flatMap(text => text.split('\n'))
-    const headingAt = lines.indexOf('Recommendations (print-only; nothing is installed):')
+    const headingAt = lines.indexOf('Recommendations (print-only; init asks before it installs any):')
     const claudeSecurity =
-      '- claude-security for Security: the Security role has no review skill: claude-security adds one ' +
+      "- claude-security for Security: claude-security gives the Security role Anthropic's review skill " +
       '(needs Python 3.9 or newer)'
     const securityAt = lines.indexOf(claudeSecurity)
     expect(headingAt).toBeGreaterThanOrEqual(0)

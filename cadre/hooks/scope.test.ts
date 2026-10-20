@@ -1799,4 +1799,11 @@ describe('security-guidance for Security (decision #39)', () => {
     expect(pluginKeys(compileScope(templateRole('be'), context({ setup: official })))).toEqual(INFRA_KEYS)
     expect(pluginKeys(compileScope(templateRole('security'), context()))).toEqual(INFRA_KEYS)
   })
+
+  test('a BE role given a security-guidance skill enables exactly the official key (#69 B4)', () => {
+    const official = emptySetupScan({ plugins: ['security-guidance@other-market', SECURITY_GUIDANCE_PLUGIN] })
+    const be = compileScope(templateRole('be', { skills: ['security-guidance:x'] }), context({ setup: official }))
+
+    expect(pluginKeys(be)).toEqual([...INFRA_KEYS, SECURITY_GUIDANCE_PLUGIN])
+  })
 })
