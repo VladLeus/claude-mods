@@ -4,6 +4,7 @@ import type {
   CompiledScope,
   FrameworkId,
   HookScript,
+  LaunchStart,
   McpRoute,
   PermissionMode,
   RoleSpec,
@@ -1460,5 +1461,72 @@ describe('ISO-04', () => {
     expect(refused.filter(pattern => infraViolations(withDeny(base, pattern), 'gsd').length === 0)).toEqual([])
     expect(lintDenyPattern(literal)).toBeNull()
     expect(infraViolations(withDeny(base, literal), 'gsd')).toEqual([])
+  })
+})
+
+/** A setup with the hook script lint.sh in project settings and the GSD secret read guard in user settings. */
+const START_SETUP: SetupScan = emptySetupScan({
+  hooks: [hook('lint.sh', 'project'), hook('gsd-secret-read-guard.js')],
+})
+
+/** BE carrying the GSD secret read guard, the one hook a role carries (D-62). */
+const GUARDED_BE: RoleSpec = templateRole('be', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
+
+/** The folder apps/web of the repo as a launch start (A2). */
+const APPS_WEB: LaunchStart = { kind: 'dir', path: 'apps/web' }
+
+/** The three none rules on the card of BE whose launcher starts in `folder` (D-122, D-127, D-113). */
+function startNotes(folder: string): ScopeRule[] {
+  return [
+    `project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`,
+    `Additional directory: <git root> (start folder is ${folder})`,
+    `Handoffs (thoughts/shared/handoffs/be/) and GSD .planning/ follow the start folder ${folder}`,
+  ].map((text): ScopeRule => ({ text, enforcement: 'none' }))
+}
+
+describe('launch start card (D-122)', () => {
+  test('a dir start lists the project hook scripts as not loaded and none as loaded by project settings', () => {
+    const card = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card
+
+    expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: [], notLoaded: ['lint.sh'] })
+  })
+
+  test('a dir start ends the rules, right before the MCP route rule, with the three start notes labelled none', () => {
+    const rules = compileScope(GUARDED_BE, context({ launchStart: APPS_WEB, setup: START_SETUP })).card.rules
+
+    expect(rules.slice(-4, -1)).toEqual(startNotes('<git root>/apps/web'))
+    expect(rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
+  })
+
+  test('a here start names the folder the launcher is run from in all three notes', () => {
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'here' }, setup: START_SETUP })).card
+
+    expect(card.rules.slice(-4, -1)).toEqual(startNotes('the folder the launcher is run from'))
+    expect(card.rules.at(-1)?.text.startsWith('MCP route: ')).toBe(true)
+    expect(card.hooks.loadedByProject).toEqual([])
+  })
+
+  test('a git-root start has no start note and lists the project hook scripts as loaded by project settings', () => {
+    const card = compileScope(GUARDED_BE, context({ launchStart: { kind: 'git-root' }, setup: START_SETUP })).card
+    const notes = [...startNotes('<git root>/apps/web'), ...startNotes('the folder the launcher is run from')]
+
+    expect(card.rules.filter(item => notes.some(note => note.text === item.text))).toEqual([])
+    expect(card.rules.filter(item => item.text.includes('<git root>'))).toEqual([])
+    expect(card.hooks).toEqual({ loaded: ['gsd-secret-read-guard.js'], loadedByProject: ['lint.sh'], notLoaded: [] })
+  })
+
+  test('a context monitor in project settings gets its warning for a git-root start only', () => {
+    const setup = emptySetupScan({ hooks: [hook('gsd-context-monitor.js', 'project')] })
+    const warning =
+      'WARNING: gsd-context-monitor.js is registered in project settings and loads in every role; ' +
+      'it conflicts with the autopilot handoff (D-62)'
+    const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
+    const labels = starts.map(launchStart => {
+      const scope = compileScope(templateRole('be'), context({ launchStart, setup }))
+
+      return ruleOf(scope, warning)?.enforcement
+    })
+
+    expect(labels).toEqual(['none', undefined, undefined])
   })
 })

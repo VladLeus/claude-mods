@@ -3027,6 +3027,25 @@ describe('init plan', () => {
     ])
   })
 
+  test('the review cards of a folder start carry its notes; cards before the git policy do not (D-122)', async () => {
+    const answers = {
+      ...INIT_ANSWERS,
+      'Where should the role launchers start': 'Another folder in this repo',
+      'Type the folder the launchers start in': 'apps/web',
+    }
+    const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const linesOf = (head: string, before: string): string[] =>
+      loggedFrom(events, head, before).flatMap(text => text.split('\n'))
+    const early = linesOf('Scope card: PM (pm)', GIT_POLICY_QUESTION)
+    const review = linesOf('Roles:', REVIEW_QUESTION)
+    const notes = ['do not load: the session starts in', 'Additional directory:', 'follow the start folder']
+    expect(review).toContain('    [none] Additional directory: <git root> (start folder is <git root>/apps/web)')
+    expect(early).toContain('Scope card: PM (pm)')
+    expect(early.filter(line => notes.some(note => line.includes(note)))).toEqual([])
+  })
+
   test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
     const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
     const disk = {
@@ -3645,6 +3664,15 @@ describe('runRegen', () => {
     const kinds = opKinds(await regenBe({ ...world, dirs: { ...world.dirs, [folder]: [] } }))
     expect(kinds.get('.cadre/bin/be')).toBe('leave')
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+  })
+
+  test('regen of a folder start plans the ROLE.md init planned, which names the added git root (D-122)', async () => {
+    const world = await regenWorld(team, { launchStart: { kind: 'dir', path: 'apps/web' } })
+    const kinds = opKinds(await regenBe({ ...world, dirs: { ...world.dirs, '/repo/apps/web': [] } }))
+    expect(world.files['/repo/.cadre/be/ROLE.md']).toContain(
+      '    [none] Additional directory: <git root> (start folder is <git root>/apps/web)\n',
+    )
+    expect(kinds.get('.cadre/be/ROLE.md')).toBe('leave')
   })
 
   test('an id cadre.json does not list refuses, naming the roles it lists', async () => {

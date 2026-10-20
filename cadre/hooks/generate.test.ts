@@ -612,6 +612,13 @@ describe('role documents', () => {
     expect(text).toContain('Scope card: BE (be)\n')
   })
 
+  test('ROLE.md of a role that starts in a folder of the repo says the git root is added (D-127)', () => {
+    const be = templateRole('be')
+    const text = roleMdText(be, scopeOf(be, 'gsd', [be], { launchStart: { kind: 'dir', path: 'apps/web' } }))
+
+    expect(text).toContain('    [none] Additional directory: <git root> (start folder is <git root>/apps/web)\n')
+  })
+
   test('a role with Bash on an unattended team has no banner', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
