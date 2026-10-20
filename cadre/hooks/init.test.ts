@@ -132,6 +132,7 @@ import {
   portTextOf,
   proposalLines,
   provenUserDir,
+  PYTHON_TIMEOUT_MS,
   readTeam,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
@@ -3108,7 +3109,7 @@ describe('init plan', () => {
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
-      '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null)) ?? '',
+      '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
     }
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
@@ -4202,7 +4203,7 @@ describe('init apply (D-105)', () => {
     const host = memHost(hostWorld({}))
     await runInit(run.io, { dryRun: false, host: host.io })
     const desired = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
-    const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null))
+    const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null, true))
     expect(host.writes).toEqual([
       ...desired.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
       { path: '/repo/.gitignore', text: ignore, isWritten: true },
@@ -4400,7 +4401,7 @@ async function editedRoleWorld(): Promise<EditedRole> {
   const edited = {
     '/repo/.cadre/be/ROLE.md': EDITED_ROLE,
     '/repo/.cadre/manifest.json': await manifestOf(older),
-    '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null)) ?? '',
+    '/repo/.gitignore': mergeIgnoreBlock(null, gitignoreLines('definitions', null, true)) ?? '',
   }
 
   return { world: { ...world, files: { ...world.files, ...edited } }, files, role }
@@ -4958,5 +4959,225 @@ describe('security plugin installs (decision #39)', () => {
       expect(quiet.asked.some(question => question.startsWith('Install from claude-plugins-official'))).toBe(false)
       expect(quietHost.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
     }
+  })
+})
+
+/** The argv of the Python check that runs right before the claude-security install (decision #39). */
+const PYTHON_CHECK = ['python3', '--version']
+
+/** The argv that adds Anthropic's official marketplace after a failed install (decision #39). */
+const MARKETPLACE_ADD = ['claude', 'plugin', 'marketplace', 'add', 'anthropics/claude-plugins-official']
+
+/** How the Python check runs: from home, for at most 5 seconds (decision #39, T-03-46). */
+const PYTHON_OPTIONS = { cwd: '/home/u', timeoutMs: 5_000 }
+
+/** How a plugin install or the marketplace add runs: from home, for at most 180 seconds (decision #39, T-03-46). */
+const PLUGIN_OPTIONS = { cwd: '/home/u', timeoutMs: 180_000 }
+
+/** A plugin run that exits 1. */
+const FAILED_RUN = { exitCode: 1, stdout: '', stderr: '' }
+
+/** A plugin run that exits 0. */
+const DONE_RUN = { exitCode: 0, stdout: '', stderr: '' }
+
+/** The text of a Python problem: claude-security was not installed, and why (decision #39). */
+function pythonNeeds(why: string): string {
+  return (
+    `claude-security was not installed: it needs Python 3.9 or newer on PATH (${why}): install it, then run: ` +
+    `claude plugin install ${SECURITY_KEY}`
+  )
+}
+
+/** The reply line of a plugin whose install failed, with the marketplace add first when that failed too. */
+function installFailedLine(key: string, isMarketplaceFailed: boolean): string {
+  const add = isMarketplaceFailed ? 'claude plugin marketplace add anthropics/claude-plugins-official, then ' : ''
+
+  return `warning: could not install ${key}: run it yourself: ${add}claude plugin install ${key}`
+}
+
+describe('install checks (decision #39)', () => {
+  test('claude-security installs after one python3 run; every run of the installs starts from home', async () => {
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([
+      { argv: PYTHON_CHECK, options: PYTHON_OPTIONS },
+      { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
+      { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+    ])
+    expect(PYTHON_TIMEOUT_MS).toBe(5_000)
+  })
+
+  test('a missing or old Python skips only claude-security, with its warning; security-guidance installs', async () => {
+    const cases: readonly (readonly [HostRunRule['result'], string])[] = [
+      [null, pythonNeeds('python3 was not found')],
+      [{ exitCode: 0, stdout: 'Python 3.8.10\n', stderr: '' }, pythonNeeds('python3 --version says Python 3.8.10')],
+    ]
+    for (const [python, problem] of cases) {
+      const runs: readonly HostRunRule[] = [
+        { argv: PYTHON_CHECK, result: python },
+        { argv: SECURITY_INSTALL, result: DONE_RUN },
+        { argv: GUIDANCE_INSTALL, result: DONE_RUN },
+      ]
+      const host = memHost(hostWorld({ runs }))
+      const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+      const lines = reply.split('\n')
+      expect(host.calls.filter(call => call.argv[0] === 'claude').map(call => call.argv)).toEqual([GUIDANCE_INSTALL])
+      expect(lines).toContain(`warning: ${problem}`)
+      expect(lines.slice(-2)).toEqual([
+        'Installed security-guidance@claude-plugins-official: run /reload-plugins to load it in this session.',
+        NEXT_STEP_NOTE,
+      ])
+    }
+  })
+
+  test('python3 is not run when only security-guidance is to be installed', async () => {
+    const settings = { user: { enabledPlugins: { [SECURITY_KEY]: true } }, project: {}, local: {} }
+    const run = memIo(gitWorld({ settings }), INSTALL_ANSWERS)
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    await runInit(run.io, { dryRun: false, host: host.io })
+    const question = 'Install from claude-plugins-official after you confirm the plan: security-guidance?'
+    expect(run.asked.filter(asked => asked.startsWith(question))).toHaveLength(1)
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([
+      { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+    ])
+  })
+
+  test('with no home folder known nothing of the installs runs, each key is a warning, and apply goes on', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, home: null }
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    const reply = await runInit(memIo(gitWorld({ locations }), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    for (const key of SECURITY_KEYS) {
+      expect(lines).toContain(
+        `warning: could not install ${key}: no home folder is known to run it from: ` +
+          `run it yourself: claude plugin install ${key}`,
+      )
+    }
+    expect(reply).not.toContain('Installed ')
+    expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
+    expect(lines).toContain(`Applied: wrote ${host.writes.length} files (3 executable).`)
+  })
+
+  test('a failed install adds the marketplace once, from home, and installs again; exit 0 then counts', async () => {
+    const host = memHost(hostWorld({ runs: [PYTHON_OK_RUN] }))
+    let securityTries = 0
+    // The first claude-security install exits 1; the one after the marketplace add exits 0.
+    const io: HostIo = {
+      ...host.io,
+      run: async (argv, options) => {
+        const result = await host.io.run(argv, options)
+        if (argv.join(' ') !== SECURITY_INSTALL.join(' ')) return result
+        securityTries += 1
+
+        return securityTries === 1 ? FAILED_RUN : result
+      },
+    }
+    const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: io })
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([
+      { argv: PYTHON_CHECK, options: PYTHON_OPTIONS },
+      { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
+      { argv: MARKETPLACE_ADD, options: PLUGIN_OPTIONS },
+      { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
+      { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+    ])
+    expect(reply).not.toContain('could not install')
+    expect(reply.split('\n').slice(-2)).toEqual([BOTH_INSTALLED_LINE, NEXT_STEP_NOTE])
+  })
+
+  test('a failed marketplace add gives both commands and no retry, and is not run again for the next key', async () => {
+    const runs: readonly HostRunRule[] = [
+      PYTHON_OK_RUN,
+      { argv: SECURITY_INSTALL, result: FAILED_RUN },
+      { argv: MARKETPLACE_ADD, result: null },
+      { argv: GUIDANCE_INSTALL, result: FAILED_RUN },
+    ]
+    const host = memHost(hostWorld({ runs }))
+    const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([
+      { argv: PYTHON_CHECK, options: PYTHON_OPTIONS },
+      { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
+      { argv: MARKETPLACE_ADD, options: PLUGIN_OPTIONS },
+      { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+    ])
+    const lines = reply.split('\n')
+    for (const key of SECURITY_KEYS) expect(lines).toContain(installFailedLine(key, true))
+    expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
+  })
+
+  test('after an add that worked, a second failing key only retries its own install and gets the command', async () => {
+    const runs: readonly HostRunRule[] = [
+      PYTHON_OK_RUN,
+      { argv: SECURITY_INSTALL, result: FAILED_RUN },
+      { argv: MARKETPLACE_ADD, result: DONE_RUN },
+      { argv: GUIDANCE_INSTALL, result: null },
+    ]
+    const host = memHost(hostWorld({ runs }))
+    const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod').map(call => call.argv)).toEqual([
+      PYTHON_CHECK,
+      SECURITY_INSTALL,
+      MARKETPLACE_ADD,
+      SECURITY_INSTALL,
+      GUIDANCE_INSTALL,
+      GUIDANCE_INSTALL,
+    ])
+    const lines = reply.split('\n')
+    for (const key of SECURITY_KEYS) expect(lines).toContain(installFailedLine(key, false))
+    expect(reply).not.toContain('Installed ')
+  })
+
+  test('no python3, install or marketplace run has the repo as cwd; only the hunk runs there (T-03-46)', async () => {
+    const runs: readonly HostRunRule[] = [PYTHON_OK_RUN, { argv: SECURITY_INSTALL, result: FAILED_RUN }]
+    const host = memHost(hostWorld({ runs }))
+    await runInit(memIo(modeWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    const installRuns = host.calls.filter(call => call.argv[0] === 'python3' || call.argv[0] === 'claude')
+    expect(installRuns.map(call => call.argv)).toEqual([
+      PYTHON_CHECK,
+      SECURITY_INSTALL,
+      MARKETPLACE_ADD,
+      SECURITY_INSTALL,
+      GUIDANCE_INSTALL,
+    ])
+    expect(installRuns.filter(call => call.options.cwd !== '/home/u')).toEqual([])
+    expect(host.calls.filter(call => call.options.cwd === '/repo').map(call => call.argv)).toEqual([MODE_RUN])
+  })
+
+  test('the plan is made again with the installed plugins, so only an installed claude-security is on', async () => {
+    const textOf = (host: MemHost, path: string): string => host.writes.find(write => write.path === path)?.text ?? ''
+    const settingsPath = '/repo/.cadre/security/settings.json'
+    const rolePath = '/repo/.cadre/security/role.json'
+    const installed = memHost(hostWorld({ runs: INSTALLS_OK }))
+    await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: installed.io })
+    expect(textOf(installed, settingsPath)).toContain('"claude-security@claude-plugins-official": true')
+    const failed: readonly HostRunRule[] = [PYTHON_OK_RUN, { argv: SECURITY_INSTALL, result: FAILED_RUN }]
+    const skipped: readonly HostRunRule[] = [{ argv: PYTHON_CHECK, result: null }]
+    for (const runs of [failed, skipped]) {
+      const host = memHost(hostWorld({ runs }))
+      await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+      // The skill stays in role.json: after a manual install, /cadre regen security enables it (decision #66).
+      const settings = textOf(host, settingsPath)
+      expect([settings === '', settings.includes(SECURITY_KEY)]).toEqual([false, false])
+      expect(textOf(host, rolePath)).toContain('claude-security:claude-security')
+    }
+  })
+
+  test('the .gitignore block ends with the report line in every policy for a Security team, only then', async () => {
+    const ignoreOf = (host: MemHost): string => host.writes.find(write => write.path === '/repo/.gitignore')?.text ?? ''
+    const blockEnd = ['CLAUDE-SECURITY-*/', '# <<< cadre', '']
+    for (const answer of ['Commit definitions (default)', 'Commit all', 'Ignore all of .cadre/']) {
+      const host = memHost(hostWorld({}))
+      await runInit(memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': answer }).io, { dryRun: false, host: host.io })
+      expect([answer, ignoreOf(host).split('\n').slice(-3)]).toEqual([answer, blockEnd])
+    }
+    const dropped = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Use these roles?': ['Adjust them', 'Use these roles'],
+      'Adjust the roles': ['drop security', 'Done adjusting'],
+    })
+    const droppedHost = memHost(hostWorld({}))
+    await runInit(dropped.io, { dryRun: false, host: droppedHost.io })
+    expect(ignoreOf(droppedHost)).toContain('# <<< cadre')
+    expect(ignoreOf(droppedHost)).not.toContain('CLAUDE-SECURITY')
   })
 })

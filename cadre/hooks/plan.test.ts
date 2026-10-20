@@ -33,6 +33,7 @@ import {
   renderPlan,
   RUNTIME_RENDERED,
   RUNTIME_STAMP_FILE,
+  SECURITY_REPORTS_LINE,
   stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
@@ -1530,5 +1531,45 @@ describe('plan properties', () => {
     expect(chunks.length).toBeGreaterThan(1)
     expect(chunks.filter(chunk => chunk.length > 2000)).toEqual([])
     expect(chunks.join('\n')).toBe(lines.join('\n'))
+  })
+})
+
+describe('the security report line (decision #39)', () => {
+  /** The three git policies, in the order the tests run them. */
+  const POLICIES: readonly GitPolicy[] = ['all', 'definitions', 'ignore']
+
+  /** No .gitignore yet, and one that already ignores thoughts/ outside the block. */
+  const EXISTING: readonly (string | null)[] = [null, 'thoughts/\n']
+
+  test('the line ignores the CLAUDE-SECURITY-<time>/ report folders claude-security writes', () => {
+    expect(SECURITY_REPORTS_LINE).toBe('CLAUDE-SECURITY-*/')
+  })
+
+  test('with a Security role the block ends with the line, in every policy, with or without thoughts/', () => {
+    for (const policy of POLICIES) {
+      for (const existing of EXISTING) {
+        const lines = gitignoreLines(policy, existing, true)
+
+        expect([policy, existing, lines]).toEqual([
+          policy,
+          existing,
+          [...gitignoreLines(policy, existing), 'CLAUDE-SECURITY-*/'],
+        ])
+      }
+    }
+    expect(mergeIgnoreBlock(null, gitignoreLines('definitions', null, true))).toBe(
+      '# >>> cadre\nthoughts/\n.cadre/*/.runtime/\n.cadre/**/*.cadre-new\nCLAUDE-SECURITY-*/\n# <<< cadre\n',
+    )
+  })
+
+  test('without a Security role, or with the parameter left out, the lines are those of every policy before', () => {
+    for (const policy of POLICIES) {
+      for (const existing of EXISTING) {
+        expect(gitignoreLines(policy, existing, false)).toEqual(gitignoreLines(policy, existing))
+        expect(gitignoreLines(policy, existing)).not.toContain('CLAUDE-SECURITY-*/')
+      }
+    }
+    expect(gitignoreLines('definitions', null)).toEqual(['thoughts/', '.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
+    expect(gitignoreLines('ignore', 'thoughts/\n', false)).toEqual(['.cadre/'])
   })
 })
