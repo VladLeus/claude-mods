@@ -12,6 +12,8 @@ import type {
   TemplateRoleId,
   ToolCommand,
 } from '../types'
+import { pluginInstallArgv } from './apply'
+import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './assign'
 import { GSD_AUTONOMY } from './gsd'
 import {
   attendedNote,
@@ -22,6 +24,7 @@ import {
   INSTALL_COMMANDS,
   isAttendedFromConfig,
   isUnmetHunk,
+  missingSecurityPlugins,
   NOT_SET_TEXT,
   parseHunkAnswer,
   recommend,
@@ -31,6 +34,7 @@ import {
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
 import type { GsdToolContext, HunkCandidate } from './recommend'
+import { standsFor } from './roles'
 import { BIDI_OVERRIDE, emptySetupScan, session, skillRef } from './testkit'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
@@ -622,7 +626,9 @@ const E2E: ScanFinding = { kind: 'e2e', label: 'playwright', evidence: 'playwrig
 const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in plan, execute, verify loop'
 const PLAYWRIGHT_WHY = 'the FE role has no E2E setup to check its work in a browser'
 const DEVTOOLS_WHY = 'the FE role cannot inspect the running page'
-const SECURITY_WHY = 'the Security role has no security-review skill'
+const CLAUDE_SECURITY_WHY =
+  'the Security role has no review skill: claude-security adds one (needs Python 3.9 or newer)'
+const GUIDANCE_WHY = 'no hooks warn the Security role about risky edits'
 
 const GSD_LINE: Recommendation = { tool: 'GSD', roleId: null, why: NO_FRAMEWORK_WHY, install: INSTALL_COMMANDS.gsd }
 const SUPERPOWERS_LINE: Recommendation = {
@@ -642,22 +648,29 @@ function devtoolsFor(roleId: string): Recommendation {
   return { tool: 'DevTools MCP', roleId, why: DEVTOOLS_WHY, install: INSTALL_COMMANDS.devtools }
 }
 
-/** The security-review recommendation for the Security role `roleId`. */
-function securityReviewFor(roleId: string): Recommendation {
-  return { tool: 'security-review', roleId, why: SECURITY_WHY, install: INSTALL_COMMANDS.securityReview }
+/** The claude-security recommendation for the Security role `roleId` (decision #39). */
+function claudeSecurityFor(roleId: string): Recommendation {
+  return { tool: 'claude-security', roleId, why: CLAUDE_SECURITY_WHY, install: INSTALL_COMMANDS.claudeSecurity }
+}
+
+/** The security-guidance recommendation for the Security role `roleId` (decision #39). */
+function guidanceFor(roleId: string): Recommendation {
+  return { tool: 'security-guidance', roleId, why: GUIDANCE_WHY, install: INSTALL_COMMANDS.securityGuidance }
 }
 
 describe('recommend', () => {
-  test('INSTALL_COMMANDS holds the five printed commands word for word, and is frozen', () => {
+  test('INSTALL_COMMANDS holds the six printed commands word for word, and is frozen', () => {
     expect(INSTALL_COMMANDS).toEqual({
       gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
       superpowers: 'claude plugin install superpowers@claude-plugins-official',
       playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
       devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
-      securityReview:
-        "built into Claude Code as /security-review; add it to the Security role's skills in .cadre/<id>/role.json",
+      claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',
+      securityGuidance: 'claude plugin install security-guidance@claude-plugins-official',
     })
     expect(Object.isFrozen(INSTALL_COMMANDS)).toBe(true)
+    expect(INSTALL_COMMANDS.claudeSecurity).toBe(pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' '))
+    expect(INSTALL_COMMANDS.securityGuidance).toBe(pluginInstallArgv(SECURITY_GUIDANCE_PLUGIN).join(' '))
   })
 
   test('no framework in use for any role gives the GSD and superpowers lines, first', () => {
@@ -756,44 +769,60 @@ describe('recommend', () => {
     ])
   })
 
-  test('a Security role with no security-review skill gets the security-review line', () => {
+  test('a Security role with neither security plugin gets the claude-security and security-guidance lines', () => {
     expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup: emptySetupScan() })).toEqual([
-      securityReviewFor('security'),
+      claudeSecurityFor('security'),
+      guidanceFor('security'),
     ])
     const sec = role('sec', 'security', 'Sec')
     expect(recommend({ roles: [sec], frameworks: ['gsd'], scan: repoScan(), setup: emptySetupScan() })).toEqual([
-      securityReviewFor('sec'),
+      claudeSecurityFor('sec'),
+      guidanceFor('sec'),
     ])
   })
 
-  test('a security-review skill, plain or from a plugin, means no security-review line', () => {
-    const skills = [skillRef('security-review'), skillRef('claude-code:security-review', 'claude-code')]
+  test('the exact claude-plugins-official key of a security plugin removes its line', () => {
+    const cases: readonly (readonly [string[], Recommendation[]])[] = [
+      [[CLAUDE_SECURITY_PLUGIN], [guidanceFor('security')]],
+      [[SECURITY_GUIDANCE_PLUGIN], [claudeSecurityFor('security')]],
+      [[CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN], []],
+    ]
+
+    for (const [plugins, expected] of cases) {
+      const setup = emptySetupScan({ plugins })
+
+      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual(expected)
+    }
+  })
+
+  test('a security plugin key of another marketplace removes no line (T-03-46)', () => {
+    const setup = emptySetupScan({ plugins: ['claude-security@other-market', 'security-guidance@other-market'] })
+
+    expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
+      claudeSecurityFor('security'),
+      guidanceFor('security'),
+    ])
+  })
+
+  test('a scanned security-review skill, plain, from a plugin or in any case, removes no line', () => {
+    const skills = [
+      skillRef('security-review'),
+      skillRef('claude-code:security-review', 'claude-code'),
+      skillRef('my-security-review'),
+      skillRef('Acme:Security-Review'),
+    ]
 
     for (const found of skills) {
       const setup = emptySetupScan({ skills: [skillRef('review'), found] })
 
-      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
+      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
+        claudeSecurityFor('security'),
+        guidanceFor('security'),
+      ])
     }
   })
 
-  test('security-review counts only as the whole last word of a skill name, so security-reviewer does not', () => {
-    const skills = [skillRef('security-reviewer'), skillRef('security-review-extra'), skillRef('review')]
-    const setup = emptySetupScan({ skills })
-
-    expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
-      securityReviewFor('security'),
-    ])
-  })
-
-  test('a security-review skill after a dash or a plugin, in any case, means no security-review line', () => {
-    for (const name of ['my-security-review', 'Acme:Security-Review', 'SECURITY-REVIEW']) {
-      const setup = emptySetupScan({ skills: [skillRef(name)] })
-
-      expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([])
-    }
-  })
-
-  test('a full team with nothing found gets the five lines in rule order', () => {
+  test('a full team with nothing found gets the six lines in rule order', () => {
     const lines = recommend({
       roles: FULL_TEAM,
       frameworks: allOn(FULL_TEAM, 'none'),
@@ -806,15 +835,16 @@ describe('recommend', () => {
       ['superpowers', null],
       ['Playwright MCP', 'fe'],
       ['DevTools MCP', 'fe'],
-      ['security-review', 'security'],
+      ['claude-security', 'security'],
+      ['security-guidance', 'security'],
     ])
   })
 
-  test('with a framework, E2E, both MCP servers and a security-review skill nothing is recommended', () => {
+  test('with a framework, E2E, both MCP servers and both security plugins nothing is recommended', () => {
     const scan = repoScan({ findings: [E2E] })
     const setup = emptySetupScan({
       mcp: [session('playwright'), session('chrome-devtools')],
-      skills: [skillRef('security-review')],
+      plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN],
     })
 
     expect(recommend({ roles: FULL_TEAM, frameworks: allOn(FULL_TEAM, 'gsd'), scan, setup })).toEqual([])
@@ -828,7 +858,7 @@ describe('recommend', () => {
       setup: emptySetupScan(),
     })
 
-    expect(lines).toHaveLength(5)
+    expect(lines).toHaveLength(6)
     for (const line of lines) {
       expect(Object.keys(line).sort()).toEqual(['install', 'roleId', 'tool', 'why'])
       expect(typeof line.install).toBe('string')
@@ -836,10 +866,13 @@ describe('recommend', () => {
     }
   })
 
-  test('the security-review text is the one printed string, wherever it is shown', () => {
+  test('each security command is the one printed string, wherever it is shown', () => {
     const lines = recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup: emptySetupScan() })
 
-    expect(lines.map(line => line.install)).toEqual([INSTALL_COMMANDS.securityReview])
+    expect(lines.map(line => line.install)).toEqual([
+      INSTALL_COMMANDS.claudeSecurity,
+      INSTALL_COMMANDS.securityGuidance,
+    ])
   })
 
   test('recommendationLines of no recommendation says none', () => {
@@ -864,8 +897,10 @@ describe('recommend', () => {
       '    run: claude mcp add playwright -- npx @playwright/mcp@latest',
       '- DevTools MCP for FE: the FE role cannot inspect the running page',
       '    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
-      '- security-review for Security: the Security role has no security-review skill',
-      `    run: ${INSTALL_COMMANDS.securityReview}`,
+      `- claude-security for Security: ${CLAUDE_SECURITY_WHY}`,
+      '    run: claude plugin install claude-security@claude-plugins-official',
+      '- security-guidance for Security: no hooks warn the Security role about risky edits',
+      '    run: claude plugin install security-guidance@claude-plugins-official',
     ])
   })
 
@@ -914,5 +949,31 @@ describe('recommend', () => {
       `    run: ${INSTALL_COMMANDS.playwright}`,
       `    run: ${INSTALL_COMMANDS.devtools}`,
     ])
+  })
+})
+
+describe('security recommendations (decision #39)', () => {
+  test('the Security lines name exactly the plugins missingSecurityPlugins gives, as the install question does', () => {
+    const teams: readonly (readonly RoleSpec[])[] = [[SECURITY], [role('sec', 'security', 'Sec')], FULL_TEAM, [PM, FE]]
+    const setups = [
+      emptySetupScan(),
+      emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN] }),
+      emptySetupScan({ plugins: [SECURITY_GUIDANCE_PLUGIN] }),
+      emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN] }),
+      emptySetupScan({ plugins: ['claude-security@other-market', 'security-guidance@other-market'] }),
+      emptySetupScan({ skills: [skillRef('security-review'), skillRef('claude-code:security-review', 'claude-code')] }),
+    ]
+
+    for (const team of teams) {
+      for (const setup of setups) {
+        const lines = recommend({ roles: team, frameworks: allOn(team, 'gsd'), scan: repoScan(), setup })
+        const security = lines.filter(line =>
+          team.some(member => member.id === line.roleId && standsFor(member, 'security')),
+        )
+        const names = missingSecurityPlugins(team, setup).map(key => key.split('@')[0] ?? key)
+
+        expect(security.map(line => line.tool)).toEqual(names)
+      }
+    }
   })
 })
