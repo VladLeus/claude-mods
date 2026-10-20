@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../types'
 import { cadreJsonText, roleJsonText } from './generate'
+import { noStateReply, regenNoRole } from './init'
 import { autopilotLogPath, autopilotStatusPath } from './scan'
 import type { RunState } from './scan'
 import {
@@ -211,9 +212,9 @@ describe('status discovery (D-131)', () => {
       'cadre-be',
       [beat('s-array', { beatAt: 900 })],
     ]
-    expect(beatSessionOf(values, 'be', '/repo')).toEqual({ sessionId: 's-new', cwd: '/repo' })
-    expect(beatSessionOf([], 'be', '/repo')).toBeNull()
-    expect(beatSessionOf([beat('s-pm', { name: 'cadre-pm' })], 'be', '/repo')).toBeNull()
+    expect(beatSessionOf(values, 'be', '/repo', ['/repo'])).toEqual({ sessionId: 's-new', cwd: '/repo' })
+    expect(beatSessionOf([], 'be', '/repo', ['/repo'])).toBeNull()
+    expect(beatSessionOf([beat('s-pm', { name: 'cadre-pm' })], 'be', '/repo', ['/repo'])).toBeNull()
   })
 
   test('with no titled transcript, the newest fleet beat named cadre-be is the session, read capped', async () => {
@@ -263,7 +264,7 @@ describe('status discovery (D-131)', () => {
     expect(fiftyFirst.reads).not.toContain(`${FLEET}/s-50.json`)
   })
 
-  test('a here start lists no transcript and matches the beat by its name alone, in any folder', async () => {
+  test('a here start lists no transcript and matches the beat by its name, in any folder of the repo', async () => {
     const world = statusWorld({
       start: { kind: 'here' },
       dirs: {
@@ -519,5 +520,130 @@ describe('status states (D-111)', () => {
     expect(lastLogText(DONE_LOG)).toBe('finished (done): handed back to the person')
     expect(lastLogText('')).toBeNull()
     expect(lastLogText('no stamp here\n')).toBeNull()
+  })
+})
+
+/** The log line autopilot writes when `/autopilot` starts a run in the session (autopilot `register.tsx`). */
+const STARTED_LINE =
+  '2026-10-20T03:00:00.000Z  started: 4h (until 07:00), trigger 60%, restarts 0/3, 5h 90%, week 90%; role: be\n'
+
+/** The log line autopilot writes when the person stops the run with `/autopilot stop`. */
+const STOPPED_LINE = '2026-10-20T03:30:00.000Z  stopped by the person\n'
+
+/** The repo roots of the fixtures a here-start beat must be in: the root and the root as given (#63 A2). */
+const ROOTS: readonly string[] = ['/repo', '/link/repo']
+
+describe('status review fixes (#63)', () => {
+  test('only the run after the last started line counts, and a stop by the person ends it as stopped (A1)', () => {
+    expect(runOutcomeOf(`${DONE_LOG}${STARTED_LINE}${STOPPED_LINE}`)).toBe('stopped')
+    expect(runOutcomeOf(`${DONE_LOG}${STARTED_LINE}${RUNNING_LOG}`)).toBe('none')
+    expect(runOutcomeOf(`${DONE_LOG}${STARTED_LINE}`)).toBe('none')
+    expect(runOutcomeOf(`${STARTED_LINE}${DONE_LOG}`)).toBe('done')
+    expect(runOutcomeOf(`${STARTED_LINE}${STOPPED_LINE}`)).toBe('stopped')
+    expect(runOutcomeOf(`${STARTED_LINE}${STOPPED_LINE}${STARTED_LINE}${DONE_LOG}`)).toBe('done')
+    expect(runOutcomeOf(DONE_LOG)).toBe('done')
+  })
+
+  test('a started or stopped text inside a line, or on a line without its stamp, changes nothing (T-03-33)', () => {
+    const inside =
+      '2026-10-20T03:00:00.000Z  the session said: started: a new run\n' +
+      'started: 4h (until 07:00); role: be\n' +
+      '2026-10-20T03:01:00.000Z  note: stopped by the person\n' +
+      '2026-10-20T03:02:00.000Z started: one space after the stamp\n'
+    expect(runOutcomeOf(`${DONE_LOG}${inside}`)).toBe('done')
+  })
+
+  test('a done run started again and then stopped, or gone stale, reads stopped, not done (A1)', async () => {
+    const stopped = await statusBe(s9World('{"isOn":false}', `${DONE_LOG}${STARTED_LINE}${STOPPED_LINE}`), [S9_TITLED])
+    const stale = await statusBe(s9World(onStatus(120_000), `${DONE_LOG}${STARTED_LINE}`), [S9_TITLED])
+    expect(stopped.lines.slice(1, 4)).toEqual([
+      'state: stopped',
+      'session: s9 (found by its name cadre-be)',
+      'autopilot: stopped by the person',
+    ])
+    expect(stale.lines[1]).toBe('state: stopped')
+  })
+
+  test('a here-start beat counts only when its cwd is a repo root or below one, on a path boundary (A2)', () => {
+    const cases: readonly (readonly [string, boolean])[] = [
+      ['/repo', true],
+      ['/repo/', true],
+      ['/repo/tools', true],
+      ['/repo/tools/', true],
+      ['/link/repo/tools', true],
+      ['/repo2', false],
+      ['/repo2/tools', false],
+      ['/other/repo', false],
+      ['/link', false],
+      ['/', false],
+      ['/repo/../other', false],
+      ['/repo/./tools', false],
+    ]
+    for (const [cwd, isTaken] of cases) {
+      const found = beatSessionOf([beat('s-here', { cwd })], 'be', null, ROOTS)
+      expect([cwd, found]).toEqual([cwd, isTaken ? { sessionId: 's-here', cwd } : null])
+    }
+  })
+
+  test("a newer here-start beat of another repo's cadre-be is skipped for the one in this repo (A2)", async () => {
+    const world = statusWorld({
+      start: { kind: 'here' },
+      dirs: { [FLEET]: [entryAt('s-other.json', 'file', 9), entryAt('s-here.json', 'file', 5)] },
+      files: {
+        [`${FLEET}/s-other.json`]: JSON.stringify(beat('s-other', { cwd: '/other/repo', beatAt: 900 })),
+        [`${FLEET}/s-here.json`]: JSON.stringify(beat('s-here', { cwd: '/repo/tools', beatAt: 500 })),
+        ...doneFiles('s-here'),
+      },
+    })
+    const alone = statusWorld({
+      start: { kind: 'here' },
+      dirs: { [FLEET]: [entryAt('s-other.json', 'file', 9)] },
+      files: { [`${FLEET}/s-other.json`]: JSON.stringify(beat('s-other', { cwd: '/other/repo' })) },
+    })
+    const status = await statusBe(world)
+    const other = await statusBe(alone)
+    expect(status.lines.slice(1, 3)).toEqual(['state: done', 'session: s-here (found by its fleet beat)'])
+    expect(other.lines.slice(1, 3)).toEqual(['state: not started', 'session: none found for cadre-be'])
+    expect(other.listed.filter(path => path.startsWith('/other'))).toEqual([])
+  })
+
+  test('runStatus runs with a host that has only run, so it cannot write (A3)', async () => {
+    const host = memHost(hostWorld({ runs: [S9_TITLED] }))
+    const run = memIo(s9World('{"isOn":false}', DONE_LOG), {})
+    const reply = await runStatus(run.io, { run: host.io.run }, { id: 'be' })
+    expect(reply.split('\n').slice(1, 3)).toEqual(['state: done', 'session: s9 (found by its name cadre-be)'])
+    expect(host.writes).toEqual([])
+  })
+
+  test('runStatus refuses with the shared status replies before any grep, listing or HOME read (B3)', async () => {
+    const below = { ...DEFAULT_LOCATIONS, root: '/repo/app', givenRoot: '/repo/app' }
+    const cases: readonly (readonly [MemWorld, string, string])[] = [
+      [memWorld({ dirs: { '/repo/.git': [] } }), 'be', noStateReply('status')],
+      [statusWorld(), 'zz', regenNoRole('zz', ['be'])],
+      [statusWorld({ locations: below }), 'be', 'run /cadre status from the repo root: /repo'],
+    ]
+    for (const [world, id, text] of cases) {
+      const host = memHost(hostWorld({}))
+      const run = memIo(world, {})
+      expect([id, await runStatus(run.io, host.io, { id })]).toEqual([id, text])
+      expect(host.calls).toEqual([])
+      expect([...run.listed, ...run.reads].filter(path => path.startsWith('/home/u'))).toEqual([])
+    }
+  })
+
+  test('a titled session with no absolute HOME as given is unknown, and no HOME file is read (B4)', async () => {
+    for (const givenHome of [null, 'home/u']) {
+      const locations = { ...DEFAULT_LOCATIONS, givenHome }
+      const status = await statusBe(s9World('{"isOn":false}', DONE_LOG, { locations }), [S9_TITLED])
+      const homeFiles = [...status.listed, ...status.reads].filter(
+        path => path.startsWith(AUTOPILOT) || path.startsWith(FLEET),
+      )
+      expect([givenHome, status.lines.slice(1, 3)]).toEqual([
+        givenHome,
+        ['state: unknown', 'session: s9 (found by its name cadre-be)'],
+      ])
+      expect(homeFiles).toEqual([])
+      expect(status.greps).toEqual([`${TRANSCRIPTS}/s9.jsonl`])
+    }
   })
 })
