@@ -248,22 +248,34 @@ function absoluteSecretDeny(root: string): string[] {
 }
 
 /**
- * The deny list of a role at launch (ROLE-05, D-84, P13). A role with Bash keeps the denies of its template, which hold
- * no code dir. For a role without Bash, the template's any-depth code-dir denies (`Read(./x/**)` matches every folder
- * named x) are replaced by exact absolute ones, `Read(//<root>/<dir>/**)` and `Edit(//<root>/<dir>/**)`, which hit
- * that one folder and no other, for every code dir the launch scan names and every dir a template code-dir deny names,
- * so a folder the launch scan missed keeps its deny (fail closed). The template's two repo .env denies (`Read(./.env)`,
- * `Read(./.env.*)`), anchored at the cwd, are replaced the same way by `Read(//<root>/.env)`, `Read(//<root>/.env.*)`,
- * `Read(//<root>/**\/.env)` and `Read(//<root>/**\/.env.*)`; the ~/ denies stay as written (A2). A dir is skipped when
- * `<root>/<dir>/` is a prefix of one of the role's own paths (`.cadre/<id>/`, `.planning/`,
- * `thoughts/shared/handoffs/<id>/`; compared without letter case, as a file system may ignore it), so those stay
- * readable (D-80); a dir with an unusual name (`isSafeDir`) is skipped with a warning. A root a rule cannot hold keeps
- * the template's denies and warns. The result is sorted and once each, and an entry that fails
- * `lintRuntimeDenyPattern` is dropped with a warning, so no deny can block an infra tool.
+ * The deny list of a role at launch (ROLE-05, D-84, P13). The .env denies are absolute for every role with a safe
+ * root, Bash roles included (D-123): the template's two repo .env denies (`Read(./.env)`, `Read(./.env.*)`), anchored
+ * at the cwd, are replaced by `Read(//<root>/.env)`, `Read(//<root>/.env.*)`, `Read(//<root>/**\/.env)` and
+ * `Read(//<root>/**\/.env.*)`, so they hold wherever the launcher starts; the ~/ denies stay as written (A2). Code-dir
+ * denies are for a role without Bash only; a Bash role's template holds none, and none is added. For a role without
+ * Bash, the template's any-depth code-dir denies (`Read(./x/**)` matches every folder named x) are replaced by exact
+ * absolute ones, `Read(//<root>/<dir>/**)` and `Edit(//<root>/<dir>/**)`, which hit that one folder and no other, for
+ * every code dir the launch scan names and every dir a template code-dir deny names, so a folder the launch scan missed
+ * keeps its deny (fail closed). A dir is skipped when `<root>/<dir>/` is a prefix of one of the role's own paths
+ * (`.cadre/<id>/`, `.planning/`, `thoughts/shared/handoffs/<id>/`; compared without letter case, as a file system may
+ * ignore it), so those stay readable (D-80); a dir with an unusual name (`isSafeDir`) is skipped with a warning. A root
+ * a rule cannot hold keeps the template's denies; a role without Bash is then warned that its code-dir denies stay
+ * any-depth. The result is sorted and once each, and an entry that fails `lintRuntimeDenyPattern` is dropped with a
+ * warning, so no deny can block an infra tool.
  */
 export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const template = scope.settings.permissions.deny
-  if (role.hasBash) return lintedDeny(template, [])
+  if (role.hasBash) {
+    return isSafeRoot(user.root)
+      ? lintedDeny(
+          [
+            ...template.filter(entry => !RELATIVE_SECRET_DENY.includes(entry)),
+            ...absoluteSecretDeny(user.root.slice(1)),
+          ],
+          [],
+        )
+      : lintedDeny(template, [])
+  }
   if (!isSafeRoot(user.root)) return lintedDeny(template, [UNSAFE_ROOT_WARNING])
 
   const templateDirs = template.flatMap(entry => {
