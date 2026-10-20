@@ -7,6 +7,7 @@ import type {
   LaunchStart,
   McpRoute,
   PermissionMode,
+  ProbeCheck,
   RoleSpec,
   ScopeContext,
   ScopeRule,
@@ -88,6 +89,22 @@ const PARTIAL_MCP_RULE =
 
 /** The route rule of a merged scope (D-104): no --strict-mcp-config, so /fleet works; every MCP deny is best effort. */
 const MERGED_ROUTE_RULE = 'MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)'
+
+/** The rule on every card that the infra stays (D-77). */
+const AVAILABLE_RULE = 'Autopilot, agent-fleet and the handoff skills are always available'
+
+/**
+ * The checks of the infra rule (D-112, D-77): the autopilot command, the two handoff skills and autopilot's three MCP
+ * tools are in the startup inventory, in this order.
+ */
+const AVAILABLE_CHECKS: readonly ProbeCheck[] = [
+  { kind: 'command-present', token: 'autopilot' },
+  { kind: 'skill-present', token: 'create-handoff-doc' },
+  { kind: 'skill-present', token: 'resume-handoff-doc' },
+  { kind: 'tool-present', token: 'mcp__autopilot__restart_session' },
+  { kind: 'tool-present', token: 'mcp__autopilot__wait_for' },
+  { kind: 'tool-present', token: 'mcp__autopilot__queue_question' },
+]
 
 /** The MCP deny rule on the merged route: the names only; what stays reachable is the next rule (D-124, A1). */
 function mergedDenied(names: string): string {
@@ -1652,4 +1669,71 @@ describe('decided MCP route (D-104, D-124)', () => {
 
     expect(found.map(({ where }) => where)).toEqual([])
   })
+})
+
+/** The start of the text of every card rule that carries probe checks (D-112). */
+const CHECKED_RULE_STARTS: readonly string[] = [
+  'No Bash tool (denied)',
+  'Scanned MCP servers not given are denied: ',
+  AVAILABLE_RULE,
+  'Permission mode: ',
+]
+
+describe('probe checks (D-112)', () => {
+  test('the merged deny rule checks that no tool of a denied server is left; none denied, no check (D-124)', () => {
+    const setup = emptySetupScan({ mcp: [session('redmine'), session('notion')] })
+    const merged = compileScope(templateRole('pm'), context({ setup }))
+    const none = compileScope(templateRole('pm'), context())
+
+    expect(ruleOf(merged, mergedDenied('notion, redmine'))?.checks).toEqual([
+      { kind: 'tool-prefix-absent', token: 'mcp__notion__' },
+      { kind: 'tool-prefix-absent', token: 'mcp__redmine__' },
+    ])
+    expect(ruleOf(none, 'No other scanned MCP servers to deny')).toEqual({
+      text: 'No other scanned MCP servers to deny',
+      enforcement: 'best-effort',
+    })
+  })
+
+  test('the strict deny rule has the checks too, each server by its engine tool name and two underscores', () => {
+    const setup = emptySetupScan({ mcp: [session('my.server'), session('jira')] })
+    const strict = compileScope(templateRole('pm'), context({ setup, mcpRoute: 'strict' }))
+
+    expect(ruleOf(strict, 'Scanned MCP servers not given are denied: jira, my.server')).toEqual({
+      text: 'Scanned MCP servers not given are denied: jira, my.server',
+      enforcement: 'hard',
+      checks: [
+        { kind: 'tool-prefix-absent', token: 'mcp__jira__' },
+        { kind: 'tool-prefix-absent', token: 'mcp__my_server__' },
+      ],
+    })
+  })
+
+  test('the infra rule checks the autopilot command, the handoff skills and the autopilot tools, in order', () => {
+    for (const role of [templateRole('pm'), templateRole('be')]) {
+      expect(ruleOf(compileScope(role, context()), AVAILABLE_RULE)?.checks).toEqual(AVAILABLE_CHECKS)
+    }
+  })
+
+  test('the permission rule checks the mode, and manual as the engine reports it: default', () => {
+    const auto = compileScope(templateRole('be'), context())
+    const manual = compileScope(templateRole('be', { permissionMode: 'manual' }), context())
+
+    expect(ruleOf(auto, 'Permission mode: auto')?.checks).toEqual([{ kind: 'permission-mode', token: 'auto' }])
+    expect(ruleOf(manual, 'Permission mode: manual')?.checks).toEqual([{ kind: 'permission-mode', token: 'default' }])
+  })
+
+  test(
+    'only the Bash, MCP deny, infra and permission rules carry checks, in every role, framework, start and route',
+    () => {
+      const isChecked = (item: ScopeRule): boolean => CHECKED_RULE_STARTS.some(start => item.text.startsWith(start))
+      const found = routeMatrix().flatMap(({ where, scope }) =>
+        scope.card.rules
+          .filter(item => (item.checks !== undefined) !== isChecked(item))
+          .map(item => `${where}: ${item.text}`),
+      )
+
+      expect(found).toEqual([])
+    },
+  )
 })
