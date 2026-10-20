@@ -11,6 +11,7 @@ import {
   EMPTY_FACTS,
   emptySetupScan,
   entry,
+  entryAt,
   FRAMEWORKS,
   hostWorld,
   INIT_ANSWERS,
@@ -25,6 +26,7 @@ import {
   session,
   skillRef,
   templateRole,
+  withWrites,
   ZERO_WIDTH_SPACE,
 } from './testkit'
 
@@ -407,5 +409,50 @@ describe('testkit host', () => {
     expect(await host.io.run(['claude', '--version', '--json'], { timeoutMs: 10_000 })).toBe(DEFAULT_RUN)
     expect(DEFAULT_RUN).toEqual({ exitCode: 0, stdout: '', stderr: '' })
     expect(Object.isFrozen(DEFAULT_RUN)).toBe(true)
+  })
+
+  test('a rule with a null result makes the run resolve null (a rejected run), and the call is recorded', async () => {
+    const host = memHost(hostWorld({ runs: [{ argv: ['tmux', 'new-window'], result: null }] }))
+    expect(await host.io.run(['tmux', 'new-window'], { timeoutMs: 5_000 })).toBeNull()
+    expect(host.calls).toEqual([{ argv: ['tmux', 'new-window'], options: { timeoutMs: 5_000 } }])
+  })
+
+  test('of two rules for the same argv the first one answers, on every call', async () => {
+    const first = { exitCode: 0, stdout: 'first', stderr: '' }
+    const second = { exitCode: 1, stdout: 'second', stderr: '' }
+    const runs = [
+      { argv: ['git', 'status'], result: first },
+      { argv: ['git', 'status'], result: second },
+    ]
+    const host = memHost(hostWorld({ runs }))
+    expect(await host.io.run(['git', 'status'], { timeoutMs: 1_000 })).toEqual(first)
+    expect(await host.io.run(['git', 'status'], { timeoutMs: 1_000 })).toEqual(first)
+  })
+
+  test('env answers the value a variable has in the world, and null for a variable it does not set', async () => {
+    const host = memHost(hostWorld({ env: { TERM_PROGRAM: 'herdr' } }))
+    expect(await host.io.env('TERM_PROGRAM')).toBe('herdr')
+    expect(await host.io.env('TMUX')).toBeNull()
+  })
+
+  test('entryAt builds a listing entry with its modification time, not a link unless told so', () => {
+    expect(entryAt('a.jsonl', 'file', 5)).toEqual({ name: 'a.jsonl', kind: 'file', size: 0, mtimeMs: 5, isLink: false })
+    expect(entryAt('x', 'other', 1, true)).toEqual({ name: 'x', kind: 'other', size: 0, mtimeMs: 1, isLink: true })
+  })
+
+  test('withWrites applies each write that happened to a copy of the world, the last one winning', () => {
+    const world = memWorld({ files: { '/repo/a': 'old' } })
+    const applied = withWrites(world, [
+      { path: '/repo/a', text: 'new', isWritten: true },
+      { path: '/repo/b', text: 'no', isWritten: false },
+    ])
+    expect(applied.files).toEqual({ '/repo/a': 'new' })
+    expect({ ...applied, files: world.files }).toEqual(world)
+    expect(world.files).toEqual({ '/repo/a': 'old' })
+    const twice = withWrites(world, [
+      { path: '/repo/a', text: 'first', isWritten: true },
+      { path: '/repo/a', text: 'second', isWritten: true },
+    ])
+    expect(twice.files).toEqual({ '/repo/a': 'second' })
   })
 })
