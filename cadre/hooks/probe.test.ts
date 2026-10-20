@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, Enforcement, ProbeCheckKind, ProbeExpectation, ScopeContext, ScopeRule } from '../types'
-import { expectationsFor, isProbeToken, probeExpectationsText, probeVerdicts } from './probe'
+import { expectationsFor, isProbeToken, parseInitEvent, probeExpectationsText, probeVerdicts } from './probe'
 import type { InitInventory, ProbeVerdict } from './probe'
 import { compileScope } from './scope'
 import { emptySetupScan, session, templateRole } from './testkit'
@@ -271,5 +271,114 @@ describe('probe verdicts', () => {
       { check: 'not-visible', enforcement: 'hard', text: `x [tool a/b absent]${UNUSUAL}`, token: '' },
       PM_MEMORY_EXPECTATION,
     ])
+  })
+})
+
+/** The tools the init event of a PM probe run lists: Read and the three autopilot tools, and no Bash (ISO-01). */
+const PM_TOOLS: readonly string[] = [
+  'Read',
+  'mcp__autopilot__restart_session',
+  'mcp__autopilot__wait_for',
+  'mcp__autopilot__queue_question',
+]
+
+/** The skills the init event of a PM probe run lists: the two handoff skills every role keeps. */
+const PM_SKILLS: readonly string[] = ['create-handoff-doc', 'resume-handoff-doc']
+
+/** What parseInitEvent gives for the init line of an untouched PM run; the memory folder has its trailing slash. */
+const PM_INVENTORY: InitInventory = {
+  tools: PM_TOOLS,
+  slashCommands: ['autopilot'],
+  skills: PM_SKILLS,
+  permissionMode: 'auto',
+  memoryAuto: `${PM_MEMORY}/`,
+}
+
+/** What the probe prints for the check on a denied notion server: its tools must be absent, best-effort (D-104). */
+const NOTION_TEXT = 'Scanned MCP servers not given are denied: notion [tools of mcp__notion__ absent]'
+
+/**
+ * The init event of a PM probe run as an object, with the keys the engine writes (RESEARCH 2.4); `over` replaces the
+ * keys it names, and a key set to undefined is left out of the line.
+ */
+function initEvent(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    type: 'system',
+    subtype: 'init',
+    cwd: '/repo',
+    session_id: 'f1e2d3',
+    tools: PM_TOOLS,
+    mcp_servers: [{ name: 'autopilot', status: 'connected', source: 'dynamic' }],
+    model: 'opus',
+    permissionMode: 'auto',
+    slash_commands: ['autopilot'],
+    agents: ['general-purpose'],
+    skills: PM_SKILLS,
+    plugins: [{ name: 'autopilot', path: '/plugins/autopilot', source: 'autopilot@local-mods' }],
+    memory_paths: { auto: `${PM_MEMORY}/` },
+    claude_code_version: '2.1.295',
+    ...over,
+  }
+}
+
+/** The init event as the one compact JSON line the engine writes; `over` as in initEvent. */
+function initLine(over: Record<string, unknown> = {}): string {
+  return JSON.stringify(initEvent(over))
+}
+
+/** The stream-json output of a probe run: a hook event and a title event before the init line, then a result. */
+function probeOutput(line: string): string {
+  const events = [
+    JSON.stringify({ type: 'system', subtype: 'hook_started' }),
+    JSON.stringify({ type: 'system', subtype: 'session_title_changed' }),
+    line,
+    JSON.stringify({ type: 'result', subtype: 'success', result: 'OK' }),
+  ]
+
+  return `${events.join('\n')}\n`
+}
+
+/** The verdicts of the probe on the init line of this output, for the PM scope with these servers denied. */
+function runVerdicts(output: string, servers: readonly string[]): ReturnType<typeof probeVerdicts> {
+  const parsed = parseInitEvent(output)
+  if (parsed === null) return []
+
+  return probeVerdicts(parsed, expectationsFor(pmWith(servers), PM_MEMORY))
+}
+
+describe('parseInitEvent end to end (ISO-01)', () => {
+  test('parseInitEvent gives the tools, commands, skills, mode and memory folder of the init line', () => {
+    expect(parseInitEvent(initLine())).toEqual(PM_INVENTORY)
+  })
+
+  test('the init line need not be line 1: a hook event and a title event come before it (RESEARCH 2.4)', () => {
+    const output = probeOutput(initLine())
+
+    expect(output.split('\n').slice(0, 2)).toEqual([
+      '{"type":"system","subtype":"hook_started"}',
+      '{"type":"system","subtype":"session_title_changed"}',
+    ])
+    expect(parseInitEvent(output)).toEqual(PM_INVENTORY)
+  })
+
+  test('an untouched PM run gives no violated verdict, with or without a denied server (D-112)', () => {
+    const none = runVerdicts(probeOutput(initLine()), [])
+    const notion = runVerdicts(probeOutput(initLine()), ['notion'])
+
+    expect(none.filter(item => item.verdict === 'violated')).toEqual([])
+    expect(notion.filter(item => item.verdict === 'violated')).toEqual([])
+    expect(none.find(item => item.text === BASH_EXPECTATION.text)).toEqual({
+      verdict: 'enforced',
+      text: BASH_EXPECTATION.text,
+    })
+    expect(notion.find(item => item.text === NOTION_TEXT)).toEqual({ verdict: 'best-effort', text: NOTION_TEXT })
+    expect(notion.at(-1)).toEqual({ verdict: 'enforced', text: PM_MEMORY_EXPECTATION.text })
+  })
+
+  test('one tool of the denied notion server gives exactly one violated verdict, for the notion check', () => {
+    const output = probeOutput(initLine({ tools: [...PM_TOOLS, 'mcp__notion__search'] }))
+    const verdicts = runVerdicts(output, ['notion'])
+
+    expect(verdicts.filter(item => item.verdict === 'violated')).toEqual([{ verdict: 'violated', text: NOTION_TEXT }])
   })
 })
