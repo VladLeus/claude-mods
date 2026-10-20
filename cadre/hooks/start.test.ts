@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  HostIo,
   HostRun,
   InitIo,
   InitLocations,
@@ -1055,10 +1056,10 @@ async function launcherEntry(): Promise<ManifestEntry> {
 
 /**
  * A git repo at /repo after a plain init of BE (D-102, LNCH-04): the cadre.json of BE alone on the built-in default,
- * launched at the git root, BE's role.json, the folder `.cadre/be`, the launcher and a manifest whose `.cadre/bin/be`
- * entry holds the launcher's sha256.
+ * launched at the git root, recording `readUserMcp`, BE's role.json written from `role`, the folder `.cadre/be`, the
+ * launcher and a manifest whose `.cadre/bin/be` entry holds the launcher's sha256.
  */
-async function appliedWorld(): Promise<MemWorld> {
+async function appliedWorld(role: RoleSpec = BE, readUserMcp = false): Promise<MemWorld> {
   const state = cadreJsonText({
     schema: 1,
     cadreVersion: '0.2.0',
@@ -1066,14 +1067,14 @@ async function appliedWorld(): Promise<MemWorld> {
     gitPolicy: 'definitions',
     roles: ['be'],
     launchStart: { kind: 'git-root' },
-    readUserMcp: false,
+    readUserMcp,
   })
 
   return memWorld({
     dirs: { '/repo/.git': [], '/repo/.cadre/be': [] },
     files: {
       '/repo/.cadre/cadre.json': state,
-      '/repo/.cadre/be/role.json': roleJsonText(BE),
+      '/repo/.cadre/be/role.json': roleJsonText(role),
       [LAUNCHER_PATH]: LAUNCHER_TEXT,
       [MANIFEST_FILE]: manifestText([await launcherEntry()]),
     },
@@ -1157,10 +1158,14 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     expect(MIN_CLAUDE_VERSION).toEqual([2, 1, 295])
   })
 
-  test('parseClaudeVersion reads three dot-joined digit runs as the first field of the first line, else null', () => {
+  test('parseClaudeVersion reads the one stdout line that starts with a version, as the launcher does (D-107)', () => {
     expect(parseClaudeVersion('2.1.304 (Claude Code)\n')).toEqual([2, 1, 304])
     expect(parseClaudeVersion('2.1.295')).toEqual([2, 1, 295])
-    for (const text of ['garbage', '', '2.1', '2.1.x', 'v2.1.304', ' 2.1.304', '2.1.304.1', 'Claude Code\n2.1.304']) {
+    expect(parseClaudeVersion('Claude Code\n2.1.304')).toEqual([2, 1, 304])
+    expect(parseClaudeVersion('2.1.300-beta.1 (Claude Code)\n')).toEqual([2, 1, 300])
+    expect(parseClaudeVersion('2.1.304.1')).toEqual([2, 1, 304])
+    const nulls = ['garbage', '', '2.1', '2.1.x', 'v2.1.304', ' 2.1.304', 'Claude Code 2.1.304', '2.1.304\n2.1.305\n']
+    for (const text of nulls) {
       expect([text, parseClaudeVersion(text)]).toEqual([text, null])
     }
   })
@@ -1272,3 +1277,52 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     expect(start.writes.map(write => [write.path, write.isWritten])).toEqual([[`${RUNTIME}/settings.json`, false]])
   })
 })
+
+/** The line of the reply that hands over the launcher command. */
+const RUN_LINE = 'Run this in a terminal to start role be:'
+
+describe('runStart warnings and links (D-102)', () => {
+  test('the scan warnings are printed as regen prints them: an unreadable settings source is named', async () => {
+    const world = { ...(await appliedWorld()), settings: { project: {}, local: {} } }
+    const start = await startBe(world)
+    const lines = start.reply.split('\n')
+    const unread = lines.indexOf('warning: could not read user settings (treated as unknown)')
+
+    expect(unread).toBeGreaterThan(1)
+    expect(lines.indexOf(RUN_LINE)).toBeGreaterThan(unread)
+    expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
+  })
+
+  test('one skill link reads (1 link) and is made before any write; the MCP note precedes the command', async () => {
+    const base = await appliedWorld(templateRole('be', { mcp: ['redmine'] }))
+    const world = { ...base, dirs: { ...base.dirs, '/home/u/.claude/skills': [entry('create-handoff-doc', 'dir')] } }
+    const host = memHost(hostWorld({ runs: [CLAUDE_OK, GIT_OK] }))
+    const order: string[] = []
+    const io: HostIo = {
+      ...host.io,
+      run: async (argv, options) => {
+        order.push(`run ${argv[0] ?? ''}`)
+
+        return host.io.run(argv, options)
+      },
+      write: async (path, text) => {
+        order.push('write')
+
+        return host.io.write(path, text)
+      },
+    }
+    const lines = (await runStart(memIo(world, {}).io, io, { id: 'be', terminal: 'none' })).split('\n')
+    const skill = `${RUNTIME}/overlay/.claude/skills/create-handoff-doc`
+    const notRead = lines.indexOf(`warning: ${NOT_READ}`)
+
+    expect(lines[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(host.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)).toEqual([
+      ['/bin/ln', '-sfn', '/home/u/.claude/skills/create-handoff-doc', skill],
+    ])
+    expect(order.indexOf('run /bin/ln')).toBeGreaterThan(-1)
+    expect(order.indexOf('write')).toBeGreaterThan(order.indexOf('run /bin/ln'))
+    expect(notRead).toBeGreaterThan(1)
+    expect(lines.indexOf(RUN_LINE)).toBeGreaterThan(notRead)
+  })
+})
+
