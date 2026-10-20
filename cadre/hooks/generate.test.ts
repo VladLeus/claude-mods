@@ -964,21 +964,22 @@ const BE_PROBE_FLAGS = [
 
 /**
  * The probe run of the BE launcher (D-112, D-130): one print-mode turn with the scope flags, then for a here or dir
- * start the git root, `--` and a short prompt from /dev/null, never the kickoff; it keeps the init line of the output.
+ * start the git root, `--` and a short prompt from /dev/null, never the kickoff; it keeps the init line of the output,
+ * and claude's stderr reaches the terminal (#72 A1).
  */
 function beProbeRun(rootDir: string): string {
   return (
     '  init=$(claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence ' +
-    `${BE_PROBE_FLAGS}${rootDir} -- 'Reply with OK.' </dev/null 2>/dev/null | grep '"subtype":"init"' | head -n 1) ` +
+    `${BE_PROBE_FLAGS}${rootDir} -- 'Reply with OK.' </dev/null | grep '"subtype":"init"' | head -n 1) ` +
     '|| true'
   )
 }
 
 /**
  * The BE lines of the --probe branch after its run (D-130): the refusal of a run with no init line, the init fields
- * read with sed, the expectation lines read with jq or else sed, one verdict line per expectation, the refusal of an
- * init line that does not hold each list key once (D1), the row count and the refusal of a file that gave no rule
- * (A1), and the exit status.
+ * read with sed, the refusal of a list that holds a `\` or an odd number of `"` (#72 A1), the expectation lines read
+ * with jq or else sed, one verdict line per expectation, the refusal of an init line that does not hold each list key
+ * once (D1), the row count and the refusal of a file that gave no rule (A1), and the exit status.
  */
 const VERDICT_LINES: readonly string[] = [
   `  [ -n "$init" ] || { echo 'cadre: the probe run gave no startup inventory' >&2; exit 1; }`,
@@ -990,6 +991,10 @@ const VERDICT_LINES: readonly string[] = [
   '  tools=$(cadre_list tools)',
   '  commands=$(cadre_list slash_commands)',
   '  skills=$(cadre_list skills)',
+  '  cadre_closed() { case $1 in *\\\\*) return 1 ;; esac; ' +
+    `[ -z "$(printf '%s' "$1" | tr -cd '"' | sed 's/""//g')" ]; }`,
+  `  for l in "$tools" "$commands" "$skills"; do cadre_closed "$l" || { echo 'cadre: the probe startup inventory ` +
+    `holds a name the launcher cannot read' >&2; exit 1; }; done`,
   `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
   `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
   `  cadre_rules() { if command -v jq >/dev/null 2>&1; then jq -r '.rules[] | [.check, .enforcement, .text, ` +
@@ -1200,7 +1205,7 @@ describe('launcher', () => {
       const refusals = lines.flatMap((line, index) => (/exit [12]\b/.test(line) ? [index] : []))
 
       expect(lines.filter(line => line.startsWith('exec '))).toHaveLength(1)
-      expect(refusals).toHaveLength(start.kind === 'here' ? 14 : 13)
+      expect(refusals).toHaveLength(start.kind === 'here' ? 15 : 14)
       expect(refusals.every(index => index < execAt)).toBe(true)
       expect(lines.slice(lines.indexOf('fi') + 1, lines.indexOf(PROBE_IF))).toEqual([startLines[start.kind]])
       expect(lines[execAt - 1]).toBe('fi')
@@ -1222,6 +1227,24 @@ describe('launcher', () => {
           `  [ "$n" -gt 0 ] || { echo 'cadre: .cadre/pm/.runtime/probe-expectations.json gave no rule: ` +
             `run /cadre start pm' >&2; exit 1; }`,
         )
+      }
+    },
+  )
+
+  test(
+    'the --probe branch refuses a list its sed read cannot take whole, right after the three reads, ' +
+      'and the probe run keeps its stderr (#72 A1)',
+    () => {
+      const be = templateRole('be')
+      const closed = VERDICT_LINES.indexOf('  skills=$(cadre_list skills)') + 1
+      for (const start of LAUNCH_STARTS) {
+        const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
+        const skillsAt = lines.indexOf('  skills=$(cadre_list skills)')
+
+        expect(closed).toBeGreaterThan(0)
+        expect(skillsAt).toBeGreaterThan(0)
+        expect(lines.slice(skillsAt + 1, skillsAt + 3)).toEqual(VERDICT_LINES.slice(closed, closed + 2))
+        expect(lines.filter(line => line.startsWith('  init=$(claude ') && line.includes('2>/dev/null'))).toEqual([])
       }
     },
   )

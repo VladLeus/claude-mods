@@ -526,4 +526,37 @@ describe('parseInitEvent', () => {
 
     expect(hostile.map(parseInitEvent)).toEqual(hostile.map(() => null))
   })
+
+  test('a list that holds a name with ] gives null, wherever the name stands and in each list (#72 A1)', () => {
+    const lines = [
+      initLine({ tools: ['Read', 'we]ird', 'Bash', 'mcp__notion__search'] }),
+      initLine({ tools: [']x', ...PM_TOOLS, 'Bash'] }),
+      initLine({ tools: [...PM_TOOLS, ']'] }),
+      initLine({ slash_commands: ['autopilot', 'x]'] }),
+      initLine({ skills: [...PM_SKILLS, 'a]b'] }),
+    ]
+
+    expect(lines.map(parseInitEvent)).toEqual([null, null, null, null, null])
+    expect(lines.map(line => parseInitEvent(probeOutput(line)))).toEqual([null, null, null, null, null])
+    expect(runVerdicts(probeOutput(lines[0] ?? ''), ['notion'])).toEqual([])
+  })
+
+  test('a name JSON writes with an escape gives null: a quote, a backslash or a control character (#72 A1)', () => {
+    const lines = [
+      initLine({ skills: [...PM_SKILLS, 'a"b'] }),
+      initLine({ skills: [...PM_SKILLS, 'a\\b'] }),
+      initLine({ tools: [...PM_TOOLS, 'a\nb'] }),
+      initLine({ slash_commands: ['autopilot', 'x\u0007'] }),
+    ]
+
+    expect(lines.filter(line => !line.includes('\\'))).toEqual([])
+    expect(lines.map(parseInitEvent)).toEqual([null, null, null, null])
+  })
+
+  test('a name with [, a space or a letter outside ASCII is read as it is, as the launcher reads it (#72 A1)', () => {
+    const tools = [...PM_TOOLS, 'a[b', 'c d']
+    const skills = [...PM_SKILLS, 'caf\u00e9']
+
+    expect(parseInitEvent(initLine({ tools, skills }))).toEqual({ ...PM_INVENTORY, tools, skills })
+  })
 })
