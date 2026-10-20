@@ -3,7 +3,7 @@ import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { clean, compareText } from './facts'
 import { MAX_ROLE_CHARS } from './kickoff'
-import { RUNTIME_STAMP_FILE, stableJson } from './plan'
+import { PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { cardList } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
@@ -230,44 +230,112 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
 ])
 
 /**
+ * The prompt of the probe's one short turn (D-112). It is never the kickoff: a kickoff starts a real autopilot run,
+ * which on 2.1.295 can overrun --max-turns (RESEARCH 1.3).
+ */
+export const PROBE_PROMPT = 'Reply with OK.'
+
+/**
+ * The lines of the `--probe` branch after its print-mode run, the same for every role (D-112, D-130). They refuse when
+ * the run gave no init line; read the tools, slash commands and skills lists, the permission mode and the auto memory
+ * folder from that line with sed; read each line of the expectations file as check|enforcement|text|token with jq
+ * when it is on PATH, else with sed; print one line per expectation, `enforced`, `best-effort`, `violated` or `note`
+ * and its text; and exit 1 when a check is violated, else 0. A check the case has no arm for, such as not-visible, is
+ * best-effort. The init line and the expectations are only compared and echoed inside double quotes, never run
+ * (T-03-10).
+ */
+const PROBE_VERDICT_LINES: readonly string[] = Object.freeze([
+  `  [ -n "$init" ] || ${refusal('cadre: the probe run gave no startup inventory')}`,
+  `  cadre_list() { printf '%s' "$init" | sed -n "s/.*\\"$1\\":\\[\\([^]]*\\)\\].*/\\1/p"; }`,
+  '  tools=$(cadre_list tools)',
+  '  commands=$(cadre_list slash_commands)',
+  '  skills=$(cadre_list skills)',
+  `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
+  `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
+  '  cadre_rules() { if command -v jq >/dev/null 2>&1; then ' +
+    `jq -r '.rules[] | [.check, .enforcement, .text, .token] | join("|")' "$rt"/${PROBE_EXPECTATIONS_FILE}; ` +
+    `else sed -n 's/^{"check":"\\([a-z-]*\\)","enforcement":"\\([a-z-]*\\)","text":"\\([^"|]*\\)",` +
+    `"token":"\\([^"|]*\\)"},\\{0,1\\}$/\\1|\\2|\\3|\\4/p' "$rt"/${PROBE_EXPECTATIONS_FILE}; fi; }`,
+  '  bad=0',
+  "  while IFS='|' read -r check label text token; do",
+  '    [ -n "$check" ] || continue',
+  '    ok=1',
+  '    case $check in',
+  '      tool-absent) case ",$tools," in *",\\"$token\\","*) ok=0 ;; esac ;;',
+  '      tool-prefix-absent) case "$tools" in *"\\"$token"*) ok=0 ;; esac ;;',
+  '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
+  '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
+  '      note) echo "note         $text"; continue ;;',
+  '      *) ok=2 ;;',
+  '    esac',
+  '    if [ "$ok" = 0 ]; then bad=1; echo "violated     $text"',
+  '    elif [ "$ok" = 2 ] || [ "$label" != hard ]; then echo "best-effort  $text"',
+  '    else echo "enforced     $text"; fi',
+  '  done <<CADRE_RULES',
+  '$(cadre_rules)',
+  'CADRE_RULES',
+  '  exit "$bad"',
+  'fi',
+])
+
+/**
  * The text of the launcher `.cadre/bin/<id>`. It finds the repo from its own folder (`dirname -- "$0"`), never from
- * the folder it is run from, and under `set -eu` a failed git stops it. Before it starts anything it refuses, with one
- * line on stderr and exit 1, when:
+ * the folder it is run from, and under `set -eu` a failed git stops it. It takes no argument, or `--probe` alone; any
+ * other argument prints the usage line on stderr and exits 2. Before it starts anything it refuses, with one line on
+ * stderr and exit 1, when:
  * - `.cadre/<id>/role.json` is not under that repo, as for a launcher linked or copied into another repo (D-119);
  * - `.cadre/<id>/ROLE.md` or `kickoff.txt` is missing, since a failed `cat` inside the exec line would not stop it
  *   and claude would start with an empty kickoff;
  * - `claude --version` is missing, unreadable or older than 2.1.295, the engine floor cadre relies on (D-107);
  * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
  *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
- *   starts; or the rendered settings.json or mcp.json is newer than it, which means a render did not finish (D-102).
- *   The stamp is checked first, since `-nt` against a missing file is true; inbox.md is never compared, other roles
- *   append to it;
+ *   starts; or the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render
+ *   did not finish (D-102). The stamp is checked first, since `-nt` against a missing file is true; inbox.md is never
+ *   compared, other roles append to it;
  * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).
  * - for a `here` start, the folder it is run from (`pwd -P`) is not under the repo, since the engine reads project
  *   settings from the start folder (D-122) and outside the repo that folder's settings could be any, even the user
  *   settings. This check sits where the other starts have their `cd` line.
- * It never runs cadre code and never renders `.runtime/` (D-102): it reads only the stamp, those two JSON files and
- * the role files. It then goes where `start` says (D-113) and execs claude with the flags of the compiled scope, for a
- * `here` or `dir` start the git root it found as an added directory (ROOT_DIR_FLAG, D-127; a git-root start adds
- * nothing), then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the
- * kickoff read anchored at the repo root, since in `here` and `dir` the session starts outside the git top level. The
- * flags come only from compileScope and the title never reaches the script; the role id, a slug, is quoted in the
- * paths and cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add a
- * command either.
+ * It never runs cadre code and never renders `.runtime/` (D-102): it reads only the stamp, those two JSON files, the
+ * expectations file of `--probe` and the role files. It then goes where `start` says (D-113). With `--probe` it starts
+ * no session (D-112, D-130): it refuses when `.runtime/probe-expectations.json` is missing or empty, runs one
+ * print-mode turn (`claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence`) with the
+ * same flags, the name `cadre-<id>-probe` and PROBE_PROMPT from /dev/null, never the kickoff, keeps the init line of
+ * its output, and prints a verdict per expectation from that line alone (PROBE_VERDICT_LINES), exit 1 when a check is
+ * violated. Without it, it execs claude with the flags of the compiled scope, for a `here` or `dir` start the git root
+ * it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root start adds nothing),
+ * then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read
+ * anchored at the repo root, since in `here` and `dir` the session starts outside the git top level. The flags come
+ * only from compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and
+ * cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
-  const flags = scope.flags
-    .map((flag, index) => (PATH_FLAGS.includes(scope.flags[index - 1] ?? '') ? rootWord(flag) : shQuote(flag)))
+  const words = scope.flags.map((flag, index) =>
+    PATH_FLAGS.includes(scope.flags[index - 1] ?? '') ? rootWord(flag) : shQuote(flag),
+  )
+  const flags = words.join(' ')
+  // The probe run passes the same flags under its own name, so no fleet beat or status takes it for the role session.
+  const probeFlags = words
+    .map((word, index) => (scope.flags[index - 1] === '--name' ? shQuote(`cadre-${role.id}-probe`) : word))
     .join(' ')
   const rootDir = start.kind === 'git-root' ? '' : ` ${ROOT_DIR_FLAG}`
   const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
   const stamp = `"$rt"/${RUNTIME_STAMP_FILE}`
+  const expectations = `"$rt"/${PROBE_EXPECTATIONS_FILE}`
   const renderInputs = [STATE_PATH, ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name))]
-  const fresh = [...renderInputs.map(rootWord), '"$rt"/settings.json', '"$rt"/mcp.json'].join(' ')
+  const fresh = [...renderInputs.map(rootWord), '"$rt"/settings.json', '"$rt"/mcp.json', expectations].join(' ')
   const jsonFiles = '"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1'
+  const usage = errorLine(`cadre: usage: .cadre/bin/${id} [--probe]`)
+  const probeRun =
+    '  init=$(claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence ' +
+    `${probeFlags}${rootDir} -- ${shQuote(PROBE_PROMPT)} </dev/null 2>/dev/null | grep '"subtype":"init"' | ` +
+    'head -n 1) || true'
   const parse = shQuote('for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))')
   const foreign = `cadre: not the repo of role ${id}`
   const missing = `cadre: .cadre/${id}/ROLE.md or kickoff.txt is missing: run /cadre regen ${id}`
@@ -284,6 +352,8 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `[ -f ${rootWord(rolePath(role.id, 'role.json'))} ] || ${refusal(foreign)}`,
     `[ -f ${rootWord(rolePath(role.id, 'ROLE.md'))} ] && [ -f ${kickoff} ] || ${refusal(missing)}`,
     `rt=${rootWord(rolePath(role.id, '.runtime'))}`,
+    'probe=0',
+    `case $# in 0) ;; 1) [ "$1" = --probe ] || { ${usage}; exit 2; }; probe=1 ;; *) ${usage}; exit 2 ;; esac`,
     ...VERSION_CHECK_LINES,
     `cadre_claude_ok || ${refusal('cadre: needs claude 2.1.295 or newer on PATH (see claude --version)')}`,
     `[ -f ${stamp} ] || ${refusal(unrendered)}`,
@@ -301,6 +371,10 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `  ${errorLine('cadre: (JSON not re-checked: no jq or node)')}`,
     'fi',
     ...startLines(start, id),
+    'if [ "$probe" = 1 ]; then',
+    `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} is missing`))}`,
+    probeRun,
+    ...PROBE_VERDICT_LINES,
     `exec claude ${flags}${rootDir} -- "$(cat ${kickoff})"`,
   ]
 

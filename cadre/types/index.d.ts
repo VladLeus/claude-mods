@@ -631,10 +631,53 @@ export type SetupScan = {
 /** How a scope rule holds: enforced by the engine, best effort, or not enforced at all (a warning). */
 export type Enforcement = 'hard' | 'best-effort' | 'none'
 
+/**
+ * What `<launcher> --probe` checks in the init event of a print-mode start of the role (D-112, D-130), by what that
+ * event must show for the rule to hold:
+ * - `tool-absent`: `tools` does not list the tool named by the token;
+ * - `tool-prefix-absent`: no name in `tools` starts with the token, `mcp__<server>__` for a denied server (D-124);
+ * - `tool-present`: `tools` lists the tool named by the token;
+ * - `command-present`: `slash_commands` lists the command named by the token;
+ * - `skill-present`: `skills` lists the skill named by the token;
+ * - `permission-mode`: `permissionMode` is the token;
+ * - `memory-path`: `memory_paths.auto` is the folder of the token, with or without a trailing `/` (ISO-03);
+ * - `not-visible`: nothing; the event cannot show the rule, so the probe reports it best-effort;
+ * - `note`: nothing; the rule is labelled none, a note the probe prints as it is.
+ */
+export type ProbeCheckKind =
+  | 'tool-absent'
+  | 'tool-prefix-absent'
+  | 'tool-present'
+  | 'command-present'
+  | 'skill-present'
+  | 'permission-mode'
+  | 'memory-path'
+  | 'not-visible'
+  | 'note'
+
+/** One check on a scope rule: a kind the init event can show for a rule, and the name or value it compares. */
+export type ProbeCheck = {
+  readonly kind: Exclude<ProbeCheckKind, 'memory-path' | 'not-visible' | 'note'>
+  readonly token: string
+}
+
 /** One line of a scope card. */
 export type ScopeRule = {
   readonly text: string
   readonly enforcement: Enforcement
+  /** What the startup inventory must show for the rule to hold (D-112); absent when it cannot show it. */
+  readonly checks?: readonly ProbeCheck[]
+}
+
+/**
+ * One line of `.cadre/<id>/.runtime/probe-expectations.json` (D-130): the check, the label of its rule, the text the
+ * probe prints and the token it compares; the token is '' for not-visible and note.
+ */
+export type ProbeExpectation = {
+  readonly check: ProbeCheckKind
+  readonly enforcement: Enforcement
+  readonly text: string
+  readonly token: string
 }
 
 /** The MCP isolation route; Phase 3 uses merged for every role (D-104), strict stays a parameter. */

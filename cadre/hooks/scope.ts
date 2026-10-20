@@ -4,6 +4,7 @@ import type {
   FrameworkId,
   LaunchStart,
   McpRoute,
+  ProbeCheck,
   RoleSpec,
   ScopeCard,
   ScopeContext,
@@ -80,6 +81,11 @@ const DISABLE_SLASH_FLAG = '--disable-slash-commands'
 /** One line of the scope card. */
 function rule(text: string, enforcement: Enforcement): ScopeRule {
   return { text, enforcement }
+}
+
+/** One line of the scope card with what the startup inventory must show for it to hold (D-112, D-80). */
+function checkedRule(text: string, enforcement: Enforcement, checks: readonly ProbeCheck[]): ScopeRule {
+  return { text, enforcement, checks }
 }
 
 /**
@@ -359,9 +365,12 @@ function bypassRules(role: RoleSpec): ScopeRule[] {
   return [rule('WARNING: bypassPermissions is set in role.json: permission prompts are skipped', 'none')]
 }
 
-/** The Bash rule: no Bash tool (hard), or the sandbox (hard on macOS, best effort on Linux) for a role with Bash. */
+/**
+ * The Bash rule: no Bash tool (hard), which the probe checks as the Bash tool absent from the startup inventory, or the
+ * sandbox (hard on macOS, best effort on Linux) for a role with Bash, which the inventory cannot show.
+ */
 function bashRule(role: RoleSpec): ScopeRule {
-  if (!role.hasBash) return rule('No Bash tool (denied)', 'hard')
+  if (!role.hasBash) return checkedRule('No Bash tool (denied)', 'hard', [{ kind: 'tool-absent', token: 'Bash' }])
 
   return rule('Bash runs in the sandbox (hard on macOS, best-effort on Linux)', 'best-effort')
 }
