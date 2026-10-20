@@ -673,7 +673,8 @@ describe('gatherLaunchUser (D-98)', () => {
     expect(Object.isFrozen(GIT_COMMON_DIR_ARGV)).toBe(true)
     expect(START_NO_HOME).toBe('cadre start needs HOME to render the role files, so it stopped.')
     expect(START_NO_GIT_DIR).toBe(
-      'cadre start could not read the git common dir (git rev-parse failed), so it stopped.',
+      'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; ' +
+        'git 2.31 or newer is needed), so it stopped.',
     )
   })
 
@@ -1190,7 +1191,8 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
       '.cadre/bin/be is missing or not in .cadre/manifest.json: run /cadre regen be.',
     )
     expect(launcherChangedReply('be')).toBe(
-      '.cadre/bin/be was changed outside cadre: run /cadre regen be and take the new version, or restore the file.',
+      '.cadre/bin/be was changed outside cadre: restore it, or run /cadre init and answer Take new for it, ' +
+        'or run /cadre regen be, move .cadre/bin/be.cadre-new over it, chmod 755 it and run /cadre regen be again.',
     )
     expect(START_NO_CLAUDE).toBe(
       'cadre start could not run claude --version, so it stopped: install Claude Code 2.1.295 or newer.',
@@ -1238,7 +1240,7 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
 
     expect(writtenPaths(start)).toEqual(written.map(name => `${RUNTIME}/${name}`))
-    expect(start.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { timeoutMs: 10_000 } })
+    expect(start.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { cwd: '/home/u', timeoutMs: 10_000 } })
     expect(start.calls[1]?.argv).toEqual(GIT_ARGV)
     expect(renderRuns(start)).toEqual([
       { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: { timeoutMs: 10_000 } },
@@ -1291,6 +1293,14 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
       expect([start.reply, start.writes]).toEqual([START_NO_CLAUDE, []])
       expect(start.calls.map(call => call.argv)).toEqual([CLAUDE_ARGV])
     }
+  })
+
+  test('claude --version runs in the home folder, or with no home in the folder of the session (B1)', async () => {
+    const world = await appliedWorld()
+    const homeless = await startBe({ ...world, locations: { ...DEFAULT_LOCATIONS, home: null, givenHome: null } })
+
+    expect((await startBe(world)).calls[0]?.options).toEqual({ cwd: '/home/u', timeoutMs: 10_000 })
+    expect(homeless.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { timeoutMs: 10_000 } })
   })
 
   test('a claude below 2.1.295 refuses with what it gave, before any stat of .runtime (D-107)', async () => {
