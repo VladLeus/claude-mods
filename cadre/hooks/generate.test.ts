@@ -975,12 +975,17 @@ function beProbeRun(rootDir: string): string {
 }
 
 /**
- * The lines of the --probe branch after its run, the same for every role (D-130): the refusal of a run with no init
- * line, the init fields read with sed, the expectation lines read with jq or else sed, one verdict line per
- * expectation, and the exit status.
+ * The BE lines of the --probe branch after its run (D-130): the refusal of a run with no init line, the init fields
+ * read with sed, the expectation lines read with jq or else sed, one verdict line per expectation, the refusal of an
+ * init line that does not hold each list key once (D1), the row count and the refusal of a file that gave no rule
+ * (A1), and the exit status.
  */
 const VERDICT_LINES: readonly string[] = [
   `  [ -n "$init" ] || { echo 'cadre: the probe run gave no startup inventory' >&2; exit 1; }`,
+  '  cadre_once() { case "$init" in *"\\"$1\\":["*"\\"$1\\":["*) return 1 ;; ' +
+    '*"\\"$1\\":["*) return 0 ;; *) return 1 ;; esac; }',
+  `  for k in tools skills slash_commands; do cadre_once "$k" || { echo 'cadre: the probe startup inventory does not ` +
+    `hold one tools, skills and slash_commands list' >&2; exit 1; }; done`,
   `  cadre_list() { printf '%s' "$init" | sed -n "s/.*\\"$1\\":\\[\\([^]]*\\)\\].*/\\1/p"; }`,
   '  tools=$(cadre_list tools)',
   '  commands=$(cadre_list slash_commands)',
@@ -992,8 +997,10 @@ const VERDICT_LINES: readonly string[] = [
     `"\\([a-z-]*\\)","text":"\\([^"|]*\\)","token":"\\([^"|]*\\)"},\\{0,1\\}$/\\1|\\2|\\3|\\4/p' ` +
     `"$rt"/probe-expectations.json; fi; }`,
   '  bad=0',
+  '  n=0',
   "  while IFS='|' read -r check label text token; do",
   '    [ -n "$check" ] || continue',
+  '    n=$((n+1))',
   '    ok=1',
   '    case $check in',
   '      tool-absent) case ",$tools," in *",\\"$token\\","*) ok=0 ;; esac ;;',
@@ -1012,6 +1019,8 @@ const VERDICT_LINES: readonly string[] = [
   '  done <<CADRE_RULES',
   '$(cadre_rules)',
   'CADRE_RULES',
+  `  [ "$n" -gt 0 ] || { echo 'cadre: .cadre/be/.runtime/probe-expectations.json gave no rule: run /cadre start be' ` +
+    `>&2; exit 1; }`,
   '  exit "$bad"',
   'fi',
 ]
@@ -1191,12 +1200,31 @@ describe('launcher', () => {
       const refusals = lines.flatMap((line, index) => (/exit [12]\b/.test(line) ? [index] : []))
 
       expect(lines.filter(line => line.startsWith('exec '))).toHaveLength(1)
-      expect(refusals).toHaveLength(start.kind === 'here' ? 12 : 11)
+      expect(refusals).toHaveLength(start.kind === 'here' ? 14 : 13)
       expect(refusals.every(index => index < execAt)).toBe(true)
       expect(lines.slice(lines.indexOf('fi') + 1, lines.indexOf(PROBE_IF))).toEqual([startLines[start.kind]])
       expect(lines[execAt - 1]).toBe('fi')
     }
   })
+
+  test(
+    'the --probe branch refuses unless each list key is on the init line once, ' +
+      'and refuses a file that gave no rule (D1, A1)',
+    () => {
+      const pm = templateRole('pm')
+      for (const start of LAUNCH_STARTS) {
+        const lines = launcherText(pm, scopeOf(pm, 'gsd', [pm]), start).split('\n')
+        const noInit = lines.indexOf(VERDICT_LINES[0] ?? '')
+
+        expect(noInit).toBeGreaterThan(0)
+        expect(lines.slice(noInit, noInit + 3)).toEqual(VERDICT_LINES.slice(0, 3))
+        expect(lines[lines.indexOf('  exit "$bad"') - 1]).toBe(
+          `  [ "$n" -gt 0 ] || { echo 'cadre: .cadre/pm/.runtime/probe-expectations.json gave no rule: ` +
+            `run /cadre start pm' >&2; exit 1; }`,
+        )
+      }
+    },
+  )
 
   test('the --probe run of every start has the scope flags named cadre-be-probe and a short prompt, no kickoff', () => {
     const be = templateRole('be')

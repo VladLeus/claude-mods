@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, Enforcement, ProbeCheckKind, ProbeExpectation, ScopeContext, ScopeRule } from '../types'
-import { expectationsFor, isProbeToken, parseInitEvent, probeExpectationsText, probeVerdicts } from './probe'
+import {
+  expectationsFor,
+  isProbeToken,
+  parseInitEvent,
+  PROBE_CHECK_KINDS,
+  probeExpectationsText,
+  probeText,
+  probeVerdicts,
+} from './probe'
 import type { InitInventory, ProbeVerdict } from './probe'
 import { compileScope } from './scope'
 import { emptySetupScan, session, templateRole } from './testkit'
@@ -54,6 +62,14 @@ function inventory(tools: readonly string[], over: Partial<InitInventory> = {}):
 }
 
 describe('probe expectations (D-130)', () => {
+  test('PROBE_CHECK_KINDS lists the nine kinds in the order of the type, and the list is frozen', () => {
+    expect(PROBE_CHECK_KINDS).toEqual([
+      'tool-absent', 'tool-prefix-absent', 'tool-present', 'command-present', 'skill-present',
+      'permission-mode', 'memory-path', 'not-visible', 'note',
+    ])
+    expect(Object.isFrozen(PROBE_CHECK_KINDS)).toBe(true)
+  })
+
   test('the PM card has a tool-absent check on its Bash rule; the Bash rule of a role with Bash has none', () => {
     const pm = compileScope(templateRole('pm'), context()).card.rules
     const be = compileScope(templateRole('be'), context()).card.rules
@@ -262,6 +278,14 @@ describe('probe verdicts', () => {
     expect(['Bash', 'mcp__red__', '/home/u/John Smith/pm', "it's"].filter(token => !isProbeToken(token))).toEqual([])
   })
 
+  test(
+    'probeText writes every backslash and pipe as a slash, so jq and sed hand the launcher the same bytes (A3)',
+    () => {
+      expect(probeText('C:\\dir|x \\c \\n')).toBe('C:/dir/x /c /n')
+      expect(probeText('a\\\\b')).toBe('a//b')
+    },
+  )
+
   test('a check whose token is unusual is written as not-visible with the rule text and its label', () => {
     const scope = pmWith([])
     const rule: ScopeRule = { text: 'x', enforcement: 'hard', checks: [{ kind: 'tool-absent', token: 'a|b' }] }
@@ -409,6 +433,31 @@ describe('parseInitEvent', () => {
     const lines = ['Read', { Read: true }, null, 7, undefined].map(tools => initLine({ tools }))
 
     expect(lines.map(parseInitEvent)).toEqual([null, null, null, null, null])
+  })
+
+  test('an init line whose skills or slash_commands is not an array gives null, as the launcher refuses (A2)', () => {
+    const lines = [
+      initLine({ skills: undefined }),
+      initLine({ slash_commands: undefined }),
+      initLine({ skills: 'create-handoff-doc' }),
+      initLine({ slash_commands: { autopilot: true } }),
+      initLine({ skills: null }),
+    ]
+
+    expect(lines.map(parseInitEvent)).toEqual([null, null, null, null, null])
+  })
+
+  test('an init line that holds a list key twice, nested or not, gives null, as the launcher refuses (A2)', () => {
+    const nested = [
+      initLine({ plugins: [{ name: 'x', tools: ['Bash'] }] }),
+      initLine({ agents: [{ name: 'y', skills: [] }] }),
+      initLine({ mcp_servers: [{ name: 'z', slash_commands: ['a'] }] }),
+    ]
+    const duplicate = '{"type":"system","subtype":"init","tools":["Bash"],"tools":[],"skills":[],"slash_commands":[]}'
+
+    expect(nested.map(parseInitEvent)).toEqual([null, null, null])
+    expect(nested.map(line => parseInitEvent(probeOutput(line)))).toEqual([null, null, null])
+    expect(parseInitEvent(duplicate)).toBeNull()
   })
 
   test('a JSON array that holds the init text is no init event, nor is another type or another subtype', () => {
