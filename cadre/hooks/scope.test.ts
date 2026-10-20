@@ -94,10 +94,10 @@ function mergedDenied(names: string): string {
   return `Scanned MCP servers not given are denied: ${names}`
 }
 
-/** The rule right after a merged deny rule: what a tool deny leaves reachable (D-124). */
+/** The rule right after a merged deny rule: denied servers lose their tools and are denied whole (D-124, #39). */
 const MERGED_REACHABLE_RULE =
-  'Denied servers: tools removed (best-effort); ' +
-  'their MCP resources and prompts stay reachable'
+  'Denied servers: tools removed and the whole server denied ' +
+  '(deniedMcpServers; best-effort)'
 
 /** The rule that names the code dirs that are the role's own folders, which no deny ever covers (B7). */
 function ownRule(dirs: string): string {
@@ -962,7 +962,7 @@ describe('card rule lists', () => {
     const lines = scopeCardLines(compileScope(templateRole('pm'), context({ setup: scanned })).card)
     const listLine = lines.find(line => line.startsWith('    [best-effort] Scanned MCP servers not given are denied: '))
 
-    expect(lines.filter(line => line.endsWith('their MCP resources and prompts stay reachable'))).toEqual([
+    expect(lines.filter(line => line.endsWith('(deniedMcpServers; best-effort)'))).toEqual([
       `    [best-effort] ${MERGED_REACHABLE_RULE}`,
     ])
     expect(listLine?.endsWith('…')).toBe(true)
@@ -1613,7 +1613,7 @@ describe('decided MCP route (D-104, D-124)', () => {
   })
 
   test(
-    'a merged deny rule is followed by what a tool deny leaves reachable, best-effort; a strict one is not (A1)',
+    'a merged deny rule is followed by the whole-server deny rule, best-effort; a strict one is not (A1, #39)',
     () => {
       const setup = emptySetupScan({ mcp: [session('redmine'), session('notion')] })
       const merged = compileScope(templateRole('be'), context({ setup, mcpRoute: 'merged' }))

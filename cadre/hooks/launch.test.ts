@@ -137,11 +137,12 @@ function coveredPrefixes(deny: readonly string[]): string[] {
 }
 
 describe('launch render', () => {
-  test('RUNTIME_SETTINGS_KEYS lists the nine allowed settings keys and is frozen', () => {
+  test('RUNTIME_SETTINGS_KEYS lists the ten allowed settings keys and is frozen', () => {
     expect(RUNTIME_SETTINGS_KEYS).toEqual([
       'autoCompactWindow',
       'autoMemoryDirectory',
       'claudeMdExcludes',
+      'deniedMcpServers',
       'enabledPlugins',
       'env',
       'hooks',
@@ -217,6 +218,7 @@ describe('launch render', () => {
       autoCompactWindow: 800000,
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/pm',
       claudeMdExcludes: [],
+      deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
       env: { JIRA_URL: 'https://j' },
       hooks: {
@@ -318,7 +320,14 @@ describe('launch render', () => {
     const scope = compileScope(templateRole('pm'), context())
     const notCarried = launchPlan(templateRole('pm'), scope, carrier())
     const notHad = launchPlan(templateRole('pm', { carry: CARRY_ALL }), scope, user())
-    const base = ['autoMemoryDirectory', 'claudeMdExcludes', 'enabledPlugins', 'permissions', 'sandbox']
+    const base = [
+      'autoMemoryDirectory',
+      'claudeMdExcludes',
+      'deniedMcpServers',
+      'enabledPlugins',
+      'permissions',
+      'sandbox',
+    ]
 
     expect(Object.keys(notCarried.settings)).toEqual(base)
     expect(Object.keys(notHad.settings)).toEqual(base)
@@ -332,6 +341,7 @@ describe('launch render', () => {
     expect(plan.settings).toEqual({
       autoMemoryDirectory: '/home/u/.claude/cadre/repo-1a2b3c4d/be',
       claudeMdExcludes: [],
+      deniedMcpServers: [],
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
       permissions: {
         defaultMode: 'auto',
@@ -1590,6 +1600,44 @@ describe('launch properties', () => {
     expect(keys).toHaveLength(21)
     expect(keys).toEqual(keys.map(() => RUNTIME_SETTINGS_KEYS))
   })
+
+  test(
+    'the render denies every scanned server the role was not given as a whole server, by its scanned name, ' +
+      'beside the tool denies (D-124, #39)',
+    () => {
+      const role = templateRole('pm', { mcp: ['github'] })
+      const scope = matrixScope(role, 'gsd')
+      const plan = launchPlan(role, scope, MATRIX_USER)
+
+      expect(plan.settings.deniedMcpServers).toEqual([
+        { serverName: 'jira' },
+        { serverName: 'playwright' },
+        { serverName: 'sentry' },
+      ])
+      expect(denyOf(plan.settings)).toContain('mcp__jira')
+      expect(denyOf(plan.settings)).toContain('mcp__playwright')
+      expect(denyOf(plan.settings)).toContain('mcp__sentry')
+      expect(JSON.stringify(plan.settings.deniedMcpServers)).not.toContain('autopilot')
+      expect(JSON.stringify(plan.settings.deniedMcpServers)).not.toContain('github')
+    },
+  )
+
+  test(
+    'a server whose tool name is rewritten is denied by its scanned name, and a role with every server denies none ' +
+      '(D-124, #39)',
+    () => {
+      const role = templateRole('pm')
+      const scope = compileScope(role, context({ setup: emptySetupScan({ mcp: [session('my.server')] }) }))
+
+      expect(launchPlan(role, scope, carrier()).settings.deniedMcpServers).toEqual([{ serverName: 'my.server' }])
+      expect(denyOf(launchPlan(role, scope, carrier()).settings)).toContain('mcp__my_server')
+      expect(renderRuntimeSettings(role, scope, carrier(), []).deniedMcpServers).toEqual([{ serverName: 'my.server' }])
+
+      const { plan } = pmCase()
+
+      expect(plan.settings.deniedMcpServers).toEqual([])
+    },
+  )
 
   test('the plan of a role with everything holds instruction links, overlay skills and agents under .runtime', () => {
     const { plan } = pmCase()
