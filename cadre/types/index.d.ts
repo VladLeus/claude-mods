@@ -408,7 +408,7 @@ export type HostEnvName = 'TMUX' | 'TERM_PROGRAM'
 /**
  * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo. register.tsx builds it
  * from closures over `$`. InitIo never gets these members, so a path that is given only an InitIo (detect, every
- * --dry-run, every refusal and cancel) cannot write or run (decision #25). Every member maps a host failure to false or
+ * --dry-run, every refusal and cancel) cannot write or run (T-03-01). Every member maps a host failure to false or
  * null and never reads an error text.
  */
 export type HostIo = {

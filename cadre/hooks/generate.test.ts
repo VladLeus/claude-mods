@@ -214,18 +214,21 @@ describe('kickoff', () => {
     )
   })
 
-  test('a title of 300 characters gives a role line of at most ROLE_LINE_MAX that still ends with the instruction', () => {
-    const role = templateRole('be', { title: 'T'.repeat(300) })
+  test(
+    'a title of 300 characters gives a role line of at most ROLE_LINE_MAX that still ends with the instruction',
+    () => {
+      const role = templateRole('be', { title: 'T'.repeat(300) })
 
-    for (const framework of FRAMEWORKS) {
-      const line = kickoffRoleLine(role, framework)
+      for (const framework of FRAMEWORKS) {
+        const line = kickoffRoleLine(role, framework)
 
-      expect(line.length <= ROLE_LINE_MAX).toBe(true)
-      expect(line.startsWith('You are the TTTT')).toBe(true)
-    }
-    const instruction = 'Read .cadre/be/ROLE.md, check your inbox, then start with /gsd-autonomous.'
-    expect(kickoffRoleLine(role, 'gsd').endsWith(instruction)).toBe(true)
-  })
+        expect(line.length <= ROLE_LINE_MAX).toBe(true)
+        expect(line.startsWith('You are the TTTT')).toBe(true)
+      }
+      const instruction = 'Read .cadre/be/ROLE.md, check your inbox, then start with /gsd-autonomous.'
+      expect(kickoffRoleLine(role, 'gsd').endsWith(instruction)).toBe(true)
+    },
+  )
 
   test('a 24 character id with a long title keeps the whole plan path of the built-in framework', () => {
     const id = 'a'.repeat(24)
