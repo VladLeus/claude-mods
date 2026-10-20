@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, HunkOp, Manifest, ManifestEntry, Plan, PortRead, PortStat } from '../types'
+import type {
+  DesiredFile,
+  FileMode,
+  HunkOp,
+  Manifest,
+  ManifestEntry,
+  Plan,
+  PortRead,
+  PortStat,
+  WriteStat,
+} from '../types'
 import {
   applyStatPaths,
   applySteps,
@@ -474,8 +484,8 @@ function statAt(kind: PortStat['kind'], realPath: string, isLink = false): PortS
 }
 
 /** The stats of .cadre, .cadre/be and ROLE.md as real folders and a regular file inside /repo; `over` replaces some. */
-function roleStats(over: Readonly<Record<string, PortStat | null>> = {}): ReadonlyMap<string, PortStat | null> {
-  const stats: Record<string, PortStat | null> = {
+function roleStats(over: Readonly<Record<string, WriteStat>> = {}): ReadonlyMap<string, WriteStat> {
+  const stats: Record<string, WriteStat> = {
     '.cadre': statAt('dir', '/repo/.cadre'),
     '.cadre/be': statAt('dir', '/repo/.cadre/be'),
     [ROLE_MD]: statAt('file', '/repo/.cadre/be/ROLE.md'),
@@ -486,6 +496,13 @@ function roleStats(over: Readonly<Record<string, PortStat | null>> = {}): Readon
 
 /** The refusal of a write to ROLE.md. */
 const ROLE_REFUSED = 'refused to write .cadre/be/ROLE.md: it or a folder above it is a link, or not inside the repo'
+
+/** The refusal of a write to ROLE.md whose stat, or a folder above it, could not be checked (#44). */
+const ROLE_STAT_FAILED =
+  'refused to write .cadre/be/ROLE.md: it or a folder above it could not be checked (a stat failed)'
+
+/** The refusal of a write to ROLE.md when ROLE.md is a real folder (A5). */
+const ROLE_IS_FOLDER = 'refused to write .cadre/be/ROLE.md: it is a folder'
 
 describe('write safety', () => {
   test('applyStatPaths lists every path a step names and each folder above it, sorted and once each', () => {
@@ -513,41 +530,75 @@ describe('write safety', () => {
   })
 
   test('writeProblem lets a write through when nothing is there yet, or real folders and a file in the repo', () => {
-    const none = new Map<string, PortStat | null>([
-      ['.cadre', null],
-      ['.cadre/be', null],
-      [ROLE_MD, null],
+    const none = new Map<string, WriteStat>([
+      ['.cadre', 'absent'],
+      ['.cadre/be', 'absent'],
+      [ROLE_MD, 'absent'],
     ])
     const ignoreFile = new Map([['.gitignore', statAt('file', '/repo/.gitignore')]])
 
-    expect(writeProblem(ROLE_MD, new Map(), '/repo')).toBeNull()
     expect(writeProblem(ROLE_MD, none, '/repo')).toBeNull()
     expect(writeProblem(ROLE_MD, roleStats(), '/repo')).toBeNull()
-    expect(writeProblem(ROLE_MD, roleStats({ [ROLE_MD]: null }), '/repo')).toBeNull()
+    expect(writeProblem(ROLE_MD, roleStats({ [ROLE_MD]: 'absent' }), '/repo')).toBeNull()
     expect(writeProblem('.gitignore', ignoreFile, '/repo')).toBeNull()
   })
 
-  test('writeProblem refuses a link above the file, a folder out of the repo, and a target link or folder', () => {
-    const refused = [
-      roleStats({ '.cadre': statAt('dir', '/repo/.cadre', true) }),
-      roleStats({ '.cadre/be': statAt('dir', '/elsewhere/be') }),
-      roleStats({ '.cadre/be': statAt('file', '/repo/.cadre/be') }),
-      roleStats({ '.cadre': statAt('dir', '/repo') }),
-      roleStats({ '.cadre/be': { kind: 'dir', size: 0, isLink: false } }),
-      roleStats({ [ROLE_MD]: statAt('file', '/repo/.cadre/be/ROLE.md', true) }),
-      roleStats({ [ROLE_MD]: statAt('dir', '/repo/.cadre/be/ROLE.md') }),
-      roleStats({ [ROLE_MD]: statAt('other', '/repo/.cadre/be/ROLE.md') }),
-      roleStats({ [ROLE_MD]: statAt('file', '/elsewhere/ROLE.md') }),
-      roleStats({ '.cadre': null, '.cadre/be': statAt('dir', '/repo/.cadre/be', true), [ROLE_MD]: null }),
-    ]
+  test(
+    'writeProblem refuses a link above the file, a folder out of the repo, and a target link, with the link reason',
+    () => {
+      const refused = [
+        roleStats({ '.cadre': statAt('dir', '/repo/.cadre', true) }),
+        roleStats({ '.cadre/be': statAt('dir', '/elsewhere/be') }),
+        roleStats({ '.cadre/be': statAt('file', '/repo/.cadre/be') }),
+        roleStats({ '.cadre': statAt('dir', '/repo') }),
+        roleStats({ '.cadre/be': { kind: 'dir', size: 0, isLink: false } }),
+        roleStats({ [ROLE_MD]: statAt('file', '/repo/.cadre/be/ROLE.md', true) }),
+        roleStats({ [ROLE_MD]: statAt('other', '/repo/.cadre/be/ROLE.md') }),
+        roleStats({ [ROLE_MD]: statAt('file', '/elsewhere/ROLE.md') }),
+        roleStats({ '.cadre': 'absent', '.cadre/be': statAt('dir', '/repo/.cadre/be', true), [ROLE_MD]: 'absent' }),
+      ]
 
-    expect(refused.map(stats => writeProblem(ROLE_MD, stats, '/repo'))).toEqual(refused.map(() => ROLE_REFUSED))
-  })
+      expect(refused.map(stats => writeProblem(ROLE_MD, stats, '/repo'))).toEqual(refused.map(() => ROLE_REFUSED))
+    },
+  )
+
+  test(
+    'writeProblem refuses a target that is a real folder with the folder reason, unless a folder above is a link (A5)',
+    () => {
+      const folderStat = statAt('dir', '/repo/.cadre/be/ROLE.md')
+      const linkedAbove = roleStats({ '.cadre': statAt('dir', '/repo/.cadre', true), [ROLE_MD]: folderStat })
+
+      expect(writeProblem(ROLE_MD, roleStats({ [ROLE_MD]: folderStat }), '/repo')).toBe(ROLE_IS_FOLDER)
+      expect(writeProblem(ROLE_MD, linkedAbove, '/repo')).toBe(ROLE_REFUSED)
+    },
+  )
+
+  test(
+    'writeProblem refuses a failed stat of the target or a folder above, and a path with no stat at all (D3, #44)',
+    () => {
+      const failed = [
+        roleStats({ [ROLE_MD]: 'failed' }),
+        roleStats({ '.cadre': 'failed' }),
+        roleStats({ '.cadre/be': 'failed', [ROLE_MD]: 'absent' }),
+        roleStats({ '.cadre': statAt('dir', '/repo/.cadre', true), [ROLE_MD]: 'failed' }),
+        new Map<string, WriteStat>(),
+        new Map<string, WriteStat>([
+          ['.cadre', statAt('dir', '/repo/.cadre')],
+          ['.cadre/be', statAt('dir', '/repo/.cadre/be')],
+        ]),
+      ]
+
+      expect(failed.map(stats => writeProblem(ROLE_MD, stats, '/repo'))).toEqual(failed.map(() => ROLE_STAT_FAILED))
+    },
+  )
 
   test('writeProblem refuses a .gitignore link, and shows a path cleaned', () => {
     const ignoreLink = new Map([['.gitignore', statAt('file', '/repo/.gitignore', true)]])
     const hostile = `.cadre/a${BIDI_OVERRIDE}\nb`
-    const hostileLink = new Map([[hostile, statAt('file', '/elsewhere/x', true)]])
+    const hostileLink = new Map([
+      ['.cadre', statAt('dir', '/repo/.cadre')],
+      [hostile, statAt('file', '/elsewhere/x', true)],
+    ])
 
     expect(writeProblem('.gitignore', ignoreLink, '/repo')).toBe(
       'refused to write .gitignore: it or a folder above it is a link, or not inside the repo',

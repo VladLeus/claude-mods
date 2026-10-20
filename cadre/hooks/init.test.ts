@@ -3198,7 +3198,10 @@ describe('init plan', () => {
     expect(await runInit(io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(events.filter(event => event.includes('Scope card: '))).toEqual([])
     expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
-    expect(Object.keys(run.io).filter(key => /write|append|remove|delete|mkdir|rename/i.test(key))).toEqual([])
+    // statForWrite only stats a path before a write (#44); no member of the port can write.
+    expect(
+      Object.keys(run.io).filter(key => key !== 'statForWrite' && /write|append|remove|delete|mkdir|rename/i.test(key)),
+    ).toEqual([])
   })
 })
 
@@ -3974,7 +3977,8 @@ function withHostEvents(host: MemHost): { readonly io: HostIo; readonly events: 
 /**
  * The port of a run in which a link is planted at `path` once the person confirmed the review: until then the stat of
  * `path` is the run's own, so the plan sees no link; from then on it is a regular file that is a link landing on
- * `realPath`, as a link planted between the review and the write would be (RESEARCH 3.2, T-03-38).
+ * `realPath`, as a link planted between the review and the write would be (RESEARCH 3.2, T-03-38); statForWrite
+ * answers the same, so apply sees the planted link.
  */
 function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
   let isConfirmed = false
@@ -3992,7 +3996,20 @@ function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
 
       return { kind: 'file', size: 0, isLink: true, realPath }
     },
+    statForWrite: async asked => {
+      if (!isConfirmed || asked !== path) return run.io.statForWrite(asked)
+
+      return { kind: 'file', size: 0, isLink: true, realPath }
+    },
   }
+}
+
+/**
+ * The port of a run whose write-time stat fails at `path`: statForWrite answers failed there and the run's own answer
+ * elsewhere (#44, A5).
+ */
+function statFailsAt(run: MemRun, path: string): InitIo {
+  return { ...run.io, statForWrite: async asked => (asked === path ? 'failed' : run.io.statForWrite(asked)) }
 }
 
 /** The chmod argv of each launcher of the INIT_ANSWERS team in an empty repo (PM, Security, TL), in plan order. */
@@ -4116,6 +4133,26 @@ describe('init apply (D-105)', () => {
     expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
   })
 
+  test(
+    'a write whose stat failed is refused with its reason, gets no chmod, and skips the manifest (D3, #44)',
+    async () => {
+      const host = memHost(hostWorld({}))
+      const io = statFailsAt(memIo(fullWorld(), INIT_ANSWERS), '/repo/.cadre/bin/be')
+      const reply = await runInit(io, { dryRun: false, host: host.io })
+      const written = host.writes.map(write => write.path)
+      expect(written).not.toContain('/repo/.cadre/bin/be')
+      expect(written).not.toContain('/repo/.cadre/manifest.json')
+      expect(host.calls.filter(call => call.argv.includes('/repo/.cadre/bin/be'))).toEqual([])
+      const lines = reply.split('\n')
+      expect(lines).toContain(
+        'warning: refused to write .cadre/bin/be: it or a folder above it could not be checked (a stat failed)',
+      )
+      expect(lines).toContain(BE_NOT_EXECUTABLE)
+      expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+      expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
+    },
+  )
+
   test('a chmod that does not exit 0 is reported with the command to run; the manifest is still written', async () => {
     const runs = [
       { argv: ['/bin/chmod', '755', '/repo/.cadre/bin/pm'], result: { exitCode: 1, stdout: '', stderr: 'denied' } },
@@ -4144,7 +4181,7 @@ describe('init apply (D-105)', () => {
       manifestSkipped: true,
     })
     expect(appliedLines(outcome)).toEqual([
-      'Applied: wrote 1 files (0 executable).',
+      'Applied: wrote 1 file (0 executable).',
       `warning: ${BE_REFUSED}`,
       'warning: could not write .cadre/be/ROLE.md',
       BE_NOT_EXECUTABLE,
@@ -4223,6 +4260,18 @@ describe('regen apply', () => {
     const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
     expect(host.calls).toEqual([])
-    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 files (0 executable).', NEXT_STEP_NOTE])
+    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
+  })
+
+  test('a regen whose write failed skips the manifest and says to run regen again (A4)', async () => {
+    const host = memHost(hostWorld({ writeFails: ['/repo/.cadre/bin/be'] }))
+    const reply = await runRegen(memIo(beOnlyWorld(), {}).io, { id: 'be', dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(host.writes.map(write => write.path)).not.toContain('/repo/.cadre/manifest.json')
+    expect(lines).toContain(
+      'warning: .cadre/manifest.json was not written because a file above was not written: run /cadre regen be again.',
+    )
+    expect(lines).not.toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+    expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
   })
 })

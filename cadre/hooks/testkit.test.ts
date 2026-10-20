@@ -178,6 +178,33 @@ describe('testkit', () => {
     expect(await run.io.stat('/repo/u')).toBeNull()
   })
 
+  test(
+    'statForWrite gives the stat of a listed folder or a file, absent for a missing path ' +
+      'and failed for an unknown one (#44)',
+    async () => {
+      const world = memWorld({
+        files: { '/repo/a.txt': 'abc' },
+        dirs: { '/repo/src': [entry('a.ts')] },
+        unknownPaths: ['/repo/u'],
+      })
+      const run = memIo(world, [])
+      expect(await run.io.statForWrite('/repo/src')).toEqual({
+        kind: 'dir',
+        size: 0,
+        isLink: false,
+        realPath: '/repo/src',
+      })
+      expect(await run.io.statForWrite('/repo/a.txt')).toEqual({
+        kind: 'file',
+        size: 3,
+        isLink: false,
+        realPath: '/repo/a.txt',
+      })
+      expect(await run.io.statForWrite('/repo/none')).toBe('absent')
+      expect(await run.io.statForWrite('/repo/u')).toBe('failed')
+    },
+  )
+
   test('list gives the listing of a folder in dirs, and null for a folder not listed or unknown', async () => {
     const listing = [entry('a.ts'), entry('docs', 'dir')]
     const run = memIo(memWorld({ dirs: { '/repo': listing, '/repo/u': listing }, unknownPaths: ['/repo/u'] }), [])

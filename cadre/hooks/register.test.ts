@@ -1031,7 +1031,7 @@ describe('cadre init with a faked host', () => {
 
   test('a typed word the policy parser knows counts, with the same reply as the label', async ($, on) => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': ' Ignore ' } }), newLog())
-    const out = await $.command.run({ command: 'cadre', args: 'init' })
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
     expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
   })
@@ -1557,6 +1557,37 @@ describe('Phase 2 faked-host matrix', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
   })
+
+  test(
+    'plain regen refuses each write under a folder whose stat failed, asking exists only after the stat (D3, #44)',
+    async ($, on) => {
+      const log = newLog()
+      // .cadre/be exists but its stat refuses, so apply cannot tell what it is; .cadre/bin does not exist.
+      const world = await regenMatrixWorld({
+        isWriteAllowed: true,
+        realPaths: { '/repo': '/repo', '/home/u': '/home/u', '/repo/.cadre': '/repo/.cadre' },
+        runResults: { '/bin/chmod 755 /repo/.cadre/bin/be': { exitCode: 0, stdout: '' } },
+        dirs: [...initWorld().dirs, '/repo/.cadre', '/repo/.cadre/be'],
+        denyStat: ['/repo/.cadre/be'],
+      })
+      fakeHost(on, world, log)
+      const lines = (await $.command.run({ command: 'cadre', args: 'regen be' })).text.split('\n')
+      const statAt = log.ops.lastIndexOf('fs.stat /repo/.cadre/be resolve=true')
+      expect(lines).toContain(
+        'warning: refused to write .cadre/be/ROLE.md: it or a folder above it could not be checked (a stat failed)',
+      )
+      expect(lines).toContain(
+        'warning: .cadre/manifest.json was not written because a file above was not written: ' +
+          'run /cadre regen be again.',
+      )
+      expect(log.writes.filter(path => path.startsWith('/repo/.cadre/be/'))).toEqual([])
+      expect(log.ops).not.toContain('fs.write /repo/.cadre/manifest.json')
+      expect(log.ops).toContain('fs.write /repo/.cadre/bin/be')
+      expect(statAt).toBeGreaterThanOrEqual(0)
+      expect(log.ops[statAt + 1]).toBe('fs.exists /repo/.cadre/be')
+      expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    },
+  )
 
   test('every path of the regen plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)', async ($, on) => {
     fakeHost(on, await regenMatrixWorld(), newLog())
