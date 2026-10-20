@@ -4,6 +4,9 @@ import type { SettingsSource, SetupScan } from '../types'
 import { MAX_READ_BYTES } from './facts'
 import {
   CLAUDE_JSON_MAX_BYTES,
+  claudeJsonPathOf,
+  claudeMdPathsOf,
+  hookScriptOf,
   mangledProjectDir,
   projectAncestors,
   projectClaudeJson,
@@ -1217,5 +1220,40 @@ describe('setup MCP completeness', () => {
     const found: boolean[] = []
     for (const world of worlds) found.push((await scanOf(world, true)).isMcpPartial)
     expect(found).toEqual([true, true, true, true, true])
+  })
+})
+
+describe('launch exports', () => {
+  test('claudeMdPathsOf gives the CLAUDE.md files of the chain as absolute paths, in order and once each', () => {
+    const chain = [
+      { dir: '/repo', name: 'CLAUDE.md' },
+      { dir: '/', name: 'CLAUDE.md' },
+      { dir: '/repo', name: 'AGENTS.md' },
+    ]
+    expect(claudeMdPathsOf(chain)).toEqual(['/repo/CLAUDE.md', '/CLAUDE.md'])
+    const more = [...chain, { dir: '/repo/', name: 'CLAUDE.md' }, { dir: '/repo', name: '.claude/CLAUDE.md' }]
+    expect(claudeMdPathsOf(more)).toEqual(['/repo/CLAUDE.md', '/CLAUDE.md', '/repo/.claude/CLAUDE.md'])
+  })
+
+  test('claudeMdPathsOf skips an entry without a dir or a name, and anything but a list gives []', () => {
+    const entries = [{ name: 'CLAUDE.md' }, { dir: '/repo' }, { dir: 1, name: 'CLAUDE.md' }, null, 'CLAUDE.md']
+    expect(claudeMdPathsOf(entries)).toEqual([])
+    expect([null, {}, 'CLAUDE.md', 5].map(claudeMdPathsOf)).toEqual([[], [], [], []])
+  })
+
+  test('hookScriptOf gives the first script basename of a command that a role.json can hold, else null', () => {
+    const guard = 'SECRET=x node /home/u/.claude/hooks/gsd-secret-read-guard.js'
+    expect(hookScriptOf(guard)).toBe('gsd-secret-read-guard.js')
+    expect(hookScriptOf('echo hi')).toBeNull()
+    expect(hookScriptOf('sh /x/a.sh && node /x/b.js')).toBe('a.sh')
+    // 81 characters: the pattern finds it, the role.json cap of 80 does not take it, so the next script is the one.
+    expect(hookScriptOf(`node /x/${'x'.repeat(78)}.js /x/b.sh`)).toBe('b.sh')
+  })
+
+  test('claudeJsonPathOf is the file in CLAUDE_CONFIG_DIR when it is set, else in the home folder, else null', () => {
+    expect(claudeJsonPathOf(CTX)).toBe('/home/u/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg' })).toBe('/cfg/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg', home: null })).toBe('/cfg/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, home: null })).toBeNull()
   })
 })

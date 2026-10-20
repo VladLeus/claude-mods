@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun, InitLocations, LaunchStart, PortEntry, PortStat, ScopeContext } from '../types'
+import { MAX_READ_BYTES } from './facts'
 import { sha256Hex } from './hash'
 import { launchPlan } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
@@ -9,6 +10,9 @@ import { compileScope } from './scope'
 import {
   gatherLaunchUser,
   GIT_COMMON_DIR_ARGV,
+  hookSourcesFor,
+  launchHooksOf,
+  launchSettingsOf,
   renderArgv,
   renderPaths,
   renderSteps,
@@ -25,10 +29,14 @@ import {
   emptySetupScan,
   entry,
   hostWorld,
+  leaks,
   link,
   memHost,
   memIo,
   memWorld,
+  SECRET_FIXTURES,
+  secretUserSettings,
+  secretWorld,
   templateRole,
 } from './testkit'
 import type { HostCall, HostRunRule, MemWorld } from './testkit'
@@ -657,5 +665,212 @@ describe('gatherLaunchUser (D-98)', () => {
 
       expect([index, read]).toEqual([index, { kind: 'refuse', text: START_NO_GIT_DIR }])
     }
+  })
+})
+
+/** The command of the GSD secret read guard in the user settings of secretUserSettings. */
+const USER_GUARD = 'SECRET=SENTINEL_SECRET_VALUE node /home/u/.claude/hooks/gsd-secret-read-guard.js'
+
+/** The command of the secret read guard that the project settings register on Read (D-103). */
+const PROJECT_GUARD = 'node /repo/.claude/hooks/gsd-secret-read-guard.js'
+
+/** Project settings that register the secret read guard on Read. */
+const PROJECT_GUARD_SETTINGS = {
+  hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: PROJECT_GUARD }] }] },
+}
+
+/** The secret world with the project settings holding the guard too (D-103). */
+function guardedWorld(): MemWorld {
+  return secretWorld({ settings: { user: secretUserSettings(), project: PROJECT_GUARD_SETTINGS, local: {} } })
+}
+
+/** A start in the folder apps/web of the repo. */
+const DIR_START: LaunchStart = { kind: 'dir', path: 'apps/web' }
+
+/** One hook of a launch user, as launchHooksOf gives it. */
+type Hook = LaunchUser['hooks'][number]
+
+/** A hook with no matcher and no timeout; `over` changes the fields it names. */
+function hook(event: string, script: string, command: string, over: Partial<Hook> = {}): Hook {
+  return { event, script, command, matcher: null, timeout: null, ...over }
+}
+
+/** The two hooks of secretUserSettings: the guard and the user's own hook, with their whole commands. */
+const USER_HOOKS: readonly Hook[] = [
+  hook('PreToolUse', 'gsd-secret-read-guard.js', USER_GUARD),
+  hook('PreToolUse', 'my-hook.sh', '/home/u/bin/my-hook.sh --key ghp_FAKEFAKEFAKEFAKEFAKE'),
+]
+
+/** The guard of the project settings as a launch carries it. */
+const PROJECT_HOOK = hook('PreToolUse', 'gsd-secret-read-guard.js', PROJECT_GUARD, { matcher: 'Read' })
+
+/** The global CLAUDE.md of the fixture user. */
+const GLOBAL_MD = '/home/u/.claude/CLAUDE.md'
+
+/** The launch user gathered in `world` with the git run of the fixture repo, at the git root unless told otherwise. */
+async function gatheredUser(world: MemWorld, launchStart: LaunchStart = GIT_ROOT): Promise<LaunchUser> {
+  return userOf((await gather(world, [GIT_OK], DEFAULT_LOCATIONS, launchStart)).read)
+}
+
+describe('launch user settings (D-103)', () => {
+  test('launchSettingsOf carries the compact window, the status line and the string env values of the user', () => {
+    const settings = secretUserSettings()
+
+    expect(launchSettingsOf(settings)).toEqual({
+      autoCompactWindow: 800000,
+      statusLine: settings.statusLine,
+      env: { API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'Bearer FAKE-TOKEN-0123' },
+    })
+  })
+
+  test('launchSettingsOf gives null, null and {} for anything but an object; a non-string env value is dropped', () => {
+    const none = { autoCompactWindow: null, statusLine: null, env: {} }
+    for (const value of [null, [], 'x', 5]) expect(launchSettingsOf(value)).toEqual(none)
+    expect(launchSettingsOf({ env: { A: 'a', B: 1, C: null, D: { x: 'y' } } })).toEqual({ ...none, env: { A: 'a' } })
+    for (const window of [0, -1, 1.5, '800000']) {
+      expect(launchSettingsOf({ autoCompactWindow: window, statusLine: 'echo' })).toEqual(none)
+    }
+  })
+
+  test('launchHooksOf gives each command hook with its event, script, whole command, matcher and timeout', () => {
+    expect(launchHooksOf(secretUserSettings())).toEqual(USER_HOOKS)
+    const group = { matcher: 'Read', hooks: [{ type: 'command', command: 'x.sh', timeout: 5 }] }
+    const grouped = { hooks: { PostToolUse: [group] } }
+    expect(launchHooksOf(grouped)).toEqual([hook('PostToolUse', 'x.sh', 'x.sh', { matcher: 'Read', timeout: 5 })])
+  })
+
+  test('launchHooksOf drops a hook with no script or of another type; a timeout that is not positive is null', () => {
+    const groups = [
+      {
+        hooks: [
+          { type: 'command', command: 'echo hi' },
+          { type: 'prompt', command: 'a.sh' },
+          { command: 'b.sh' },
+          { type: 'command', command: 1 },
+          { type: 'command', command: 'c.sh', timeout: 0 },
+          { type: 'command', command: 'd.sh', timeout: -5 },
+          { type: 'command', command: 'e.sh', timeout: '5' },
+        ],
+      },
+      null,
+      { hooks: 'not a list' },
+      { matcher: 7, hooks: [{ type: 'command', command: 'f.sh' }] },
+    ]
+    const value = { hooks: { PreToolUse: groups, Stop: 'not a list' } }
+
+    expect(launchHooksOf(value)).toEqual(['c.sh', 'd.sh', 'e.sh', 'f.sh'].map(name => hook('PreToolUse', name, name)))
+    expect([null, {}, { hooks: [] }, { hooks: 'x' }].map(launchHooksOf)).toEqual([[], [], [], []])
+  })
+
+  test('hookSourcesFor leaves the project settings out at a git-root start, which loads them (Pitfall 9)', () => {
+    expect(hookSourcesFor({ kind: 'git-root' })).toEqual(['user', 'local'])
+    expect(hookSourcesFor({ kind: 'here' })).toEqual(['user', 'project', 'local'])
+    expect(hookSourcesFor(DIR_START)).toEqual(['user', 'project', 'local'])
+  })
+
+  test('the user carries the settings, the hooks and the CLAUDE.md chain of the secret world', async () => {
+    const settings = secretUserSettings()
+    const gathered = await gatheredUser(secretWorld())
+
+    expect([gathered.autoCompactWindow, gathered.statusLine]).toEqual([800000, settings.statusLine])
+    expect(gathered.env).toEqual({ API_KEY: 'sk-FAKE-SECRET-0123456789', JIRA_URL: 'Bearer FAKE-TOKEN-0123' })
+    expect(gathered.hooks).toEqual(USER_HOOKS)
+    expect(gathered.claudeMd).toEqual(['/repo/CLAUDE.md'])
+    expect(gathered.globalClaudeMd).toEqual([GLOBAL_MD])
+    expect([gathered.memoryFiles, gathered.givenMemoryFiles]).toEqual([['notes.md'], ['notes.md']])
+  })
+
+  test('the guard of the project settings is carried for a dir start, not for a git-root start (D-103)', async () => {
+    expect((await gatheredUser(guardedWorld(), DIR_START)).hooks).toEqual([...USER_HOOKS, PROJECT_HOOK])
+    expect((await gatheredUser(guardedWorld(), { kind: 'here' })).hooks).toEqual([...USER_HOOKS, PROJECT_HOOK])
+    expect((await gatheredUser(guardedWorld())).hooks).toEqual(USER_HOOKS)
+    const local = secretWorld({ settings: { user: {}, project: {}, local: PROJECT_GUARD_SETTINGS } })
+    expect((await gatheredUser(local)).hooks).toEqual([PROJECT_HOOK])
+  })
+
+  test('the rendered settings of a role that carries the guard hold its whole command (runtime only)', async () => {
+    const be = templateRole('be')
+    const carrier = { ...be, carry: { ...be.carry, hooks: ['gsd-secret-read-guard.js'] } }
+    const scope = compileScope(carrier, context())
+    const atRoot = launchPlan(carrier, scope, await gatheredUser(guardedWorld())).settings
+    const inDir = launchPlan(carrier, scope, await gatheredUser(guardedWorld(), DIR_START)).settings
+    const userGroup = { hooks: [{ type: 'command', command: USER_GUARD }] }
+
+    expect(atRoot.hooks).toEqual({ PreToolUse: [userGroup] })
+    expect(inDir.hooks).toEqual({
+      PreToolUse: [userGroup, { matcher: 'Read', hooks: [{ type: 'command', command: PROJECT_GUARD }] }],
+    })
+  })
+
+  test('globalClaudeMd follows the imports of the global CLAUDE.md once each, a cycle too; files only', async () => {
+    const files = {
+      [GLOBAL_MD]: 'Read @./rules.md, @./missing.md and @./notes.md first.',
+      '/home/u/.claude/rules.md': 'See @./CLAUDE.md again.',
+    }
+    const dirs = { '/repo/.git': [], '/home/u/.claude/notes.md': [] }
+
+    const followed = await gatheredUser(repoWorld({ files, dirs }))
+    expect(followed.globalClaudeMd).toEqual([GLOBAL_MD, '/home/u/.claude/rules.md'])
+    expect((await gatheredUser(repoWorld({ dirs: { '/repo/.git': [], [GLOBAL_MD]: [] } }))).globalClaudeMd).toEqual([])
+  })
+
+  test('globalClaudeMd goes breadth first; a file it cannot read is kept, with no imports', async () => {
+    const files = {
+      [GLOBAL_MD]: '@./a.md @./b.md',
+      '/home/u/.claude/a.md': '@./c.md',
+      '/home/u/.claude/b.md': '@./d.md',
+      '/home/u/.claude/c.md': 'c',
+      '/home/u/.claude/d.md': 'd',
+    }
+    const order = ['a', 'b', 'c', 'd'].map(name => `/home/u/.claude/${name}.md`)
+    expect((await gatheredUser(repoWorld({ files }))).globalClaudeMd).toEqual([GLOBAL_MD, ...order])
+    const tooLarge = { [GLOBAL_MD]: `@./a.md ${'x'.repeat(MAX_READ_BYTES)}`, '/home/u/.claude/a.md': 'a' }
+    expect((await gatheredUser(repoWorld({ files: tooLarge }))).globalClaudeMd).toEqual([GLOBAL_MD])
+  })
+
+  test('globalClaudeMd follows at most 5 import hops and keeps at most 20 files', async () => {
+    const chain: Record<string, string> = { [GLOBAL_MD]: '@./a1.md' }
+    for (let level = 1; level <= 6; level += 1) chain[`/home/u/.claude/a${level}.md`] = `@./a${level + 1}.md`
+    const hops = [1, 2, 3, 4, 5].map(level => `/home/u/.claude/a${level}.md`)
+    expect((await gatheredUser(repoWorld({ files: chain }))).globalClaudeMd).toEqual([GLOBAL_MD, ...hops])
+
+    const names = Array.from({ length: 25 }, (_, index) => `/home/u/.claude/b${String(index + 1).padStart(2, '0')}.md`)
+    const imports = names.map(path => `@${path}`).join('\n')
+    const wide = { [GLOBAL_MD]: imports, ...Object.fromEntries(names.map(path => [path, 'b'])) }
+    expect((await gatheredUser(repoWorld({ files: wide }))).globalClaudeMd).toEqual([GLOBAL_MD, ...names.slice(0, 19)])
+  })
+
+  test('memory files, user skills and user agents are listed from the user folder, by kind', async () => {
+    const dirs = {
+      '/repo/.git': [],
+      '/home/u/.claude/projects/-repo/memory': [
+        entry('notes.md'),
+        entry('MEMORY.md'),
+        entry('old.txt'),
+        entry('sub.md', 'dir'),
+        entry('linked.md', 'file', true),
+      ],
+      '/home/u/.claude/projects/-link-repo/memory': [entry('given.md')],
+      '/home/u/.claude/skills': [entry('create-handoff-doc', 'dir'), link('linked-skill'), entry('README.md')],
+      '/home/u/.claude/agents': [entry('reviewer.md'), entry('notes.txt'), entry('folder.md', 'dir'), link('x.md')],
+    }
+    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
+    const gathered = userOf((await gather(repoWorld({ dirs }), [GIT_OK], locations)).read)
+
+    expect([gathered.memoryFiles, gathered.givenMemoryFiles]).toEqual([['MEMORY.md', 'notes.md'], ['given.md']])
+    expect(gathered.userSkills).toEqual(['create-handoff-doc', 'linked-skill'])
+    expect(gathered.userAgents).toEqual(['reviewer'])
+  })
+
+  test('no warning or refusal text of gatherLaunchUser holds a secret of the fixtures', async () => {
+    const reads = [
+      (await gather(guardedWorld(), [GIT_OK], DEFAULT_LOCATIONS, DIR_START)).read,
+      (await gather(guardedWorld(), [GIT_OK], { ...DEFAULT_LOCATIONS, home: null })).read,
+      (await gather(guardedWorld(), [gitRule({ exitCode: 1, stdout: '', stderr: 'sk-FAKE-SECRET-0123456789' })])).read,
+    ]
+    const texts = reads.flatMap(read => (read.kind === 'ok' ? read.warnings : [read.text]))
+
+    expect(reads.map(read => read.kind)).toEqual(['ok', 'refuse', 'refuse'])
+    expect(leaks(texts.join('\n'), SECRET_FIXTURES)).toEqual([])
   })
 })
