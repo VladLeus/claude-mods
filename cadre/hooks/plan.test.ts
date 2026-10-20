@@ -28,6 +28,7 @@ import {
   MANIFEST_PATH,
   mergeIgnoreBlock,
   planReadPaths,
+  planWithManifest,
   PROBE_EXPECTATIONS_FILE,
   renderPlan,
   RUNTIME_RENDERED,
@@ -427,6 +428,26 @@ describe('buildPlan', () => {
     const plan = await buildPlan(input())
 
     expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
+  })
+})
+
+describe('planWithManifest', () => {
+  test('gives the plan of buildPlan and the manifest of every entry that plan records, sorted by path', async () => {
+    const desired = [file(INDEX, '# Roles v2\n'), file(ROLE, '{}\n'), file('.cadre/bin/be', '#!/bin/sh\n', 'exec')]
+    const oldEntries = await entriesOf([file(INDEX, '# Roles v1\n'), file('.cadre/old.md', 'old\n')])
+    const carried = await entriesOf([file('.cadre/pm/role.json', 'pm\n')])
+    const fresh = await entriesOf(desired.slice(1))
+    const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: oldEntries }
+    const edited: Readonly<Record<string, PortRead>> = { [INDEX]: text('# Roles edited\n') }
+    const base = input({ desired, disk: diskOf(edited), manifest, manifestState: 'present', carried })
+    const planned = await planWithManifest(base)
+    const files = [...oldEntries, ...carried, ...fresh].sort((a, b) => compareText(a.path, b.path))
+    const recordedText = stableJson(planned.manifest)
+    const again = await buildPlan({ ...base, disk: diskOf({ ...edited, [MANIFEST_PATH]: text(recordedText) }) })
+
+    expect(planned.plan).toEqual(await buildPlan(base))
+    expect(planned.manifest).toEqual({ schema: 1, cadreVersion: VERSION, files })
+    expect(kindOf(again, MANIFEST_PATH)).toBe('leave')
   })
 })
 
