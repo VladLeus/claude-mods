@@ -427,7 +427,8 @@ const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server d
 /**
  * The deny rule of the scanned servers: none to deny, the list, and on the merged route the reachable rule after it.
  * The probe checks the list for each denied server as no tool whose name starts with `mcp__<server>__` in the startup
- * inventory: tools only, since a denied server stays connected (D-112, D-124).
+ * inventory: the tool deny removes them, and deniedMcpServers removes the whole server where the engine honours it, so
+ * a tools check holds for both (D-112, D-124, #39).
  */
 function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'

@@ -130,7 +130,7 @@ These tell the session whether it may ask you now. They only work when you type 
 /cadre regen <id> --dry-run  # the same, ending "Dry run: nothing was written."
 /cadre start <id>            # render .cadre/<id>/.runtime/, print and copy the launcher command
 /cadre start <id> --terminal # also open it in a new Terminal window, iTerm tab or tmux window (macOS)
-/cadre status <id>           # done, running or not started, read from autopilot's files on disk
+/cadre status <id>           # done, running, stopped, not started or unknown, from autopilot's files on disk
 .cadre/bin/<id> --probe      # report each scope rule as enforced, best-effort or violated
 ```
 

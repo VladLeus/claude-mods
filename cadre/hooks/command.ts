@@ -43,7 +43,7 @@ export const USAGE_LINES: readonly string[] = [
   `  ${'/cadre start <id> --terminal'.padEnd(COMMAND_COLUMN)}also open it in a new Terminal window, ` +
     'iTerm tab or tmux window (macOS)',
   `  ${'/cadre status <id>'.padEnd(COMMAND_COLUMN)}show from disk whether a role's autopilot run ` +
-    'is done, running or not started',
+    'is done, running, stopped, not started or unknown',
 ]
 
 /**

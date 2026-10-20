@@ -159,8 +159,9 @@ function holdsListOnce(line: string, key: string): boolean {
  * truncated line, a JSON array, an init event whose `tools`, `slash_commands` or `skills` is not an array, and a line
  * that does not hold each of `"tools":[`, `"skills":[` and `"slash_commands":[` exactly once, nested or not (the
  * launcher's cadre_once check, decision #49), so no verdict is ever computed from a guessed inventory (T-03-39).
- * `mcp_servers` is never read: a denied server stays connected and only its tools leave `tools`, so a check on a server
- * is a check on tools. It is the TypeScript twin of the sh reads of the launcher's `--probe` branch.
+ * `mcp_servers` is never read: a denied server's tools leave `tools` under the tool deny, whether or not
+ * deniedMcpServers also disconnects it, so a check on a server is a check on tools. It is the TypeScript twin of the
+ * sh reads of the launcher's `--probe` branch.
  */
 export function parseInitEvent(output: string): InitInventory | null {
   const names = (list: unknown): string[] =>
