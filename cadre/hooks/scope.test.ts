@@ -1531,3 +1531,72 @@ describe('launch start card (D-122)', () => {
     expect(labels).toEqual(['none', undefined, undefined])
   })
 })
+
+/** One compiled scope of the route matrix, with the combination it was compiled for. */
+type RouteCase = {
+  readonly where: string
+  readonly scope: CompiledScope
+}
+
+/** Every template role on every framework, launch start and MCP route, compiled with the matrix setup. */
+function routeMatrix(): RouteCase[] {
+  const starts: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, APPS_WEB]
+  const routes: readonly McpRoute[] = ['merged', 'strict']
+
+  return ROLE_TEMPLATE.map(row => roleFromTemplate(row)).flatMap(role =>
+    FRAMEWORKS.flatMap(framework =>
+      starts.flatMap(launchStart =>
+        routes.map(mcpRoute => ({
+          where: `${role.id} / ${framework} / ${launchStart.kind} / ${mcpRoute}`,
+          scope: compileScope(role, context({ framework, launchStart, mcpRoute, setup: MATRIX_SETUP })),
+        })),
+      ),
+    ),
+  )
+}
+
+describe('decided MCP route (D-104, D-124)', () => {
+  test('the route rule of a merged scope says what merged holds, and that of a strict scope names its flag', () => {
+    const merged = compileScope(templateRole('be'), context({ mcpRoute: 'merged' })).card.rules
+    const strict = compileScope(templateRole('be'), context({ mcpRoute: 'strict' })).card.rules
+
+    expect(merged.at(-1)).toEqual({
+      text: 'MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)',
+      enforcement: 'none',
+    })
+    expect(strict.at(-1)).toEqual({ text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' })
+  })
+
+  test('a merged deny rule says what a tool deny leaves reachable, best-effort; a strict one keeps its text', () => {
+    const setup = emptySetupScan({ mcp: [session('redmine'), session('notion')] })
+    const merged = compileScope(templateRole('be'), context({ setup, mcpRoute: 'merged' }))
+    const strict = compileScope(templateRole('be'), context({ setup, mcpRoute: 'strict' }))
+    const listed = 'Scanned MCP servers not given are denied: notion, redmine'
+    const text =
+      'Scanned MCP servers not given are denied: notion, redmine; denied servers: tools removed (best-effort); ' +
+      'their MCP resources and prompts stay reachable'
+
+    expect(ruleOf(merged, text)).toEqual({ text, enforcement: 'best-effort' })
+    expect(ruleOf(merged, listed)).toBeUndefined()
+    expect(ruleOf(strict, listed)).toEqual({ text: listed, enforcement: 'hard' })
+    expect(ruleOf(strict, text)).toBeUndefined()
+  })
+
+  test('no scope card line of any template role, framework, start and route says provisional', () => {
+    const cases = routeMatrix()
+    const found = cases.flatMap(({ where, scope }) =>
+      scopeCardLines(scope.card)
+        .filter(line => line.includes('provisional'))
+        .map(line => `${where}: ${line}`),
+    )
+
+    expect(cases).toHaveLength(6 * 3 * 3 * 2)
+    expect(found).toEqual([])
+  })
+
+  test('no compiled settings template holds a deniedMcpServers key (D-124)', () => {
+    const found = routeMatrix().filter(({ scope }) => JSON.stringify(scope.settings).includes('deniedMcpServers'))
+
+    expect(found.map(({ where }) => where)).toEqual([])
+  })
+})

@@ -102,6 +102,7 @@ import {
   MAX_PROPOSE_ATTEMPTS,
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
+  MCP_ROUTE,
   MEMORY_DISMISSED_REASON,
   memoryStep,
   MODEL_DISMISSED_REASON,
@@ -117,7 +118,6 @@ import {
   portTextOf,
   proposalLines,
   provenUserDir,
-  PROVISIONAL_MCP_ROUTE,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
   REGEN_NO_MANIFEST,
@@ -147,7 +147,15 @@ import type { AdjustOutcome, Gathered, ReviewItem, StepResult } from './init'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
-import { AUTOPILOT_THRESHOLD, parseRoleJson, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
+import {
+  AUTOPILOT_THRESHOLD,
+  parseRoleJson,
+  PROPOSE_SYSTEM,
+  proposeRoles,
+  ROLE_TEMPLATE,
+  roleFromTemplate,
+  rolesFromProposal,
+} from './roles'
 import { autopilotReply, parseCadreState, scanRepo } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
@@ -2822,14 +2830,20 @@ describe('init plan', () => {
   /** PM on the repo default, Team Lead on superpowers by its own framework, BE on the repo default. */
   const roles = [templateRole('pm'), withFramework(templateRole('tl'), 'superpowers'), templateRole('be')]
 
-  test('the provisional MCP route is merged, and the card of every scope says Phase 3 decides it (D-94)', () => {
-    expect(PROVISIONAL_MCP_ROUTE).toBe('merged')
+  test('the MCP route is merged for every role, and every card says what merged holds (D-104, D-124)', () => {
+    expect(MCP_ROUTE).toBe('merged')
     const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
     for (const role of roles) {
       const card = cardOf(scopes, role.id)
       expect(card.mcpRoute).toBe('merged')
-      expect(scopeCardLines(card)).toContain('    [none] MCP route: merged (provisional; Phase 3 decides)')
+      expect(scopeCardLines(card)).toContain(
+        '    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)',
+      )
     }
+    const team = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
+    const all = [...scopesFor(team, 'gsd', gathered, [], { kind: 'git-root' }).values()]
+    expect(all).toHaveLength(6)
+    expect(all.filter(scope => scope.flags.includes('--strict-mcp-config'))).toEqual([])
   })
 
   test('scopesFor compiles each role with its framework, the setup, the code dirs and the whole team', () => {
@@ -2841,7 +2855,7 @@ describe('init plan', () => {
         setup: gathered.setup,
         codeDirs: ['src'],
         isAttended: false,
-        mcpRoute: PROVISIONAL_MCP_ROUTE,
+        mcpRoute: MCP_ROUTE,
         launchStart: { kind: 'git-root' },
         roles,
       }
