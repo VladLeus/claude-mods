@@ -94,8 +94,8 @@ export const INBOX_FILE = 'inbox.md'
 export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
 
 /**
- * The per-user files and folders Phase 3 renders into `.cadre/<id>/.runtime/` at launch: the final settings, the MCP
- * file, the skill overlay, the linked instructions, the probe expectations, the inbox and the stamp written last
+ * The per-user files and folders /cadre start renders into `.cadre/<id>/.runtime/` at launch: the final settings, the
+ * MCP file, the skill overlay, the linked instructions, the probe expectations, the inbox and the stamp written last
  * (D-66, D-84, D-102, D-114, D-130). The `all` git policy ignores exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
@@ -227,13 +227,13 @@ const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is pla
 const UNREADABLE_NOTE = 'could not read it (treated as changed): kept as is; the new version is planned beside it'
 
 /** The note under the `.cadre-new` copy. */
-const NEW_VERSION_NOTE = 'the new version, for diffing; Phase 3 offers take-new per file'
+const NEW_VERSION_NOTE = 'the new version, for diffing; init asks Keep mine or Take new for the file'
 
 /** The note under a `.cadre-new` path that already holds something else: it is kept as it is too. */
 const OCCUPIED_NOTE = 'a different file is already there: kept as is'
 
 /** The note under a file the last manifest lists and this plan no longer generates. */
-const STALE_NOTE = 'no longer generated (kept; Phase 2 deletes nothing)'
+const STALE_NOTE = 'no longer generated (kept; cadre deletes nothing)'
 
 /**
  * What buildPlan reads, all of it gathered before the call so that planning itself touches nothing. `disk` is keyed by
@@ -286,17 +286,17 @@ function byPath(a: { readonly path: string }, b: { readonly path: string }): num
 
 /** The note under a manifest that could not be read: kept as it is, so the entries of other roles survive (A6). */
 const UNREADABLE_MANIFEST_NOTE =
-  "could not read it (treated as changed): kept as is, so no role's entries are dropped; Phase 3 will not write it"
+  "could not read it (treated as changed): kept as is, so no role's entries are dropped; it is not written"
 
 /** The warning for a manifest that could not be read (A6, Pitfall 6: unknown is never absent). */
 const UNREADABLE_MANIFEST_WARNING =
-  'could not read .cadre/manifest.json (treated as unknown): it is kept as is and Phase 3 will not write it'
+  'could not read .cadre/manifest.json (treated as unknown): it is kept as is and not written'
 
 /**
  * The op for the manifest file, and the manifest the plan records: schema 1, the cadre version and the entries sorted
  * by path. A manifest that could not be read, by the scan (`manifestState` unknown) or on the disk (unknown or too
- * large), is a conflict with a note: it may hold the entries of other roles, so it is kept as it is and Phase 3 will
- * not write it (A6). Any other manifest is compared as plain text, since cadre owns the file: one that is not there is
+ * large), is a conflict with a note: it may hold the entries of other roles, so it is kept as it is and apply does not
+ * write it (A6). Any other manifest is compared as plain text, since cadre owns the file: one that is not there is
  * created, the same text is left, and other text is a change.
  */
 function manifestOp(
@@ -524,7 +524,7 @@ export async function planWithManifest(input: PlanInput): Promise<PlannedFiles> 
  * and is never planned for overwrite (PLAN-04), and so is a manifest cadre cannot read, with a warning (A6). There is
  * no op that deletes. Every path is checked against the PLAN-06 allow-list and the manifest is planned from the hashes
  * with no timestamp, so building the plan again from the same input gives the same plan. Classification uses the disk
- * as read for this run; Phase 3 checks again before it writes. It is the plan of planWithManifest.
+ * as read for this run; apply plans again from the disk right before it writes. It is the plan of planWithManifest.
  */
 export async function buildPlan(input: PlanInput): Promise<Plan> {
   return (await planWithManifest(input)).plan
