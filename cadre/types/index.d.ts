@@ -1,7 +1,8 @@
 /**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
  * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json. Any other
- * input is help with the input echoed back as unknown. Phase 2 writes nothing on any path.
+ * input is help with the input echoed back as unknown. Plain init writes the plan after Confirm and plain regen writes
+ * the role's plan; --dry-run prints the plan and writes nothing.
  */
 export type CadreCommand =
   | {
@@ -16,7 +17,10 @@ export type CadreCommand =
     }
   | {
       readonly kind: 'init'
-      /** Whether `--dry-run` was given. In Phase 2 plain init prints the same plan and also writes nothing (D-44). */
+      /**
+       * Whether --dry-run was given: the plan is printed and nothing is written; plain init writes it after Confirm
+       * (D-105).
+       */
       readonly dryRun: boolean
     }
   | {

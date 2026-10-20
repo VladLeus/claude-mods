@@ -34,9 +34,9 @@ export const USAGE_LINES: readonly string[] = [
   'cadre commands:',
   `  ${'/cadre detect'.padEnd(COMMAND_COLUMN)}show which dev framework this repo uses, with evidence (read-only)`,
   `  ${'/cadre detect --adapters'.padEnd(COMMAND_COLUMN)}also show the contract cadre would drive each framework with`,
-  `  ${'/cadre init'.padEnd(COMMAND_COLUMN)}guided setup: scan, propose roles, show the file plan (writes nothing yet)`,
+  `  ${'/cadre init'.padEnd(COMMAND_COLUMN)}guided setup: scan, propose roles, review the file plan, then write it`,
   `  ${'/cadre init --dry-run'.padEnd(COMMAND_COLUMN)}the same guided flow; prints the plan and writes nothing`,
-  `  ${'/cadre regen <id>'.padEnd(COMMAND_COLUMN)}re-render one role from its role.json (writes nothing yet)`,
+  `  ${'/cadre regen <id>'.padEnd(COMMAND_COLUMN)}re-render one role from its role.json and write its files`,
   `  ${'/cadre regen <id> --dry-run'.padEnd(COMMAND_COLUMN)}print that role's plan and write nothing`,
 ]
 
