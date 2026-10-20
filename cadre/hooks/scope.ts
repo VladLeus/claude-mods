@@ -399,23 +399,31 @@ function unusualDirRules(deny: DenyPlan): ScopeRule[] {
   return deny.unusualDirs.map(dir => rule(`Code dir ${shown(dir)} has an unusual name and is not denied`, 'none'))
 }
 
+/** What a tool deny on the merged route leaves of a denied server, as its own card rule (D-124, B6). */
+const MCP_REACHABLE_TEXT = 'Denied servers: tools removed (best-effort); their MCP resources and prompts stay reachable'
+
 /**
- * The MCP rules: the scanned servers denied, or that there are none, then the servers left out because they share a
- * tool name with one the role has (A5), and the refused patterns. The first rule is hard only on the strict route; on
+ * The deny rule of the scanned servers: none to deny, the list, and on the merged route the reachable rule after it.
+ */
+function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
+  const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
+  if (deny.mcp.length === 0) return [rule('No other scanned MCP servers to deny', enforcement)]
+  const listed = rule(`Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`, enforcement)
+  if (route === 'strict') return [listed]
+
+  return [listed, rule(MCP_REACHABLE_TEXT, 'best-effort')]
+}
+
+/**
+ * The MCP rules: the deny rules of the scanned servers (deniedMcpRules), then the servers left out because they share
+ * a tool name with one the role has (A5), and the refused patterns. The list rule is hard only on the strict route; on
  * the merged route a server the scan did not see still loads, so it is best effort (A4), and a tool deny removes only
- * the tools of a denied server, so the rule adds that its resources and prompts stay reachable (D-124).
+ * the tools of a denied server, so the next rule says what of it stays reachable (D-124). That sentence is a rule of
+ * its own, so a long list cannot cut it from its card line (B6).
  */
 function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
-  const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
-  const listed = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`
-  const reachable = '; denied servers: tools removed (best-effort); their MCP resources and prompts stay reachable'
-  const denied =
-    deny.mcp.length === 0
-      ? rule('No other scanned MCP servers to deny', enforcement)
-      : rule(route === 'merged' ? `${listed}${reachable}` : listed, enforcement)
-
   return [
-    denied,
+    ...deniedMcpRules(deny, route),
     ...deny.unusualMcp.map(name =>
       rule(`MCP server ${shown(name)} shares its tool name with a server this role has and is not denied`, 'none'),
     ),
@@ -488,10 +496,9 @@ function projectMonitorRules(setup: SetupScan): ScopeRule[] {
 
 /**
  * The folder a launcher that does not start at the git root starts the session in, as the card names it: the folder
- * of a `dir` start under `<git root>`, or for `here` the folder the launcher is run from. A git-root start is never
- * asked (startRules gives it no note).
+ * of a `dir` start under `<git root>`, or for `here` the folder the launcher is run from.
  */
-function startFolderText(start: LaunchStart): string {
+function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root' }>): string {
   if (start.kind === 'dir') return `<git root>/${shown(start.path)}`
 
   return 'the folder the launcher is run from'
@@ -660,22 +667,23 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
 
 /**
  * The lines of a scope card, as init shows it and ROLE.md holds it (ROLE-06): the title, the framework with the model,
- * effort and permission mode, the skills and MCP servers, what the role was not given, the hooks loaded, loaded by
- * project settings and not loaded, each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the
- * memory folder. Every line passes through reportText, so a hostile value cannot add a line or hide text.
+ * effort and permission mode, the skills and MCP servers, the skills and the MCP servers the role was not given, the
+ * hooks loaded, loaded by project settings and not loaded, one line per list so a list cut at the line cap never hides
+ * another (B6), each rule marked `[hard]`, `[best-effort]` or `[none]`, the decision chain and the memory folder. Every
+ * line passes through reportText, so a hostile value cannot add a line or hide text.
  */
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
-  const hooks =
-    `  hooks loaded: ${cardList(card.hooks.loaded)}; ` +
-    `loaded by project settings: ${cardList(card.hooks.loadedByProject)}; not loaded: ${cardList(card.hooks.notLoaded)}`
   const lines = [
     `Scope card: ${card.title} (${card.roleId})`,
     `  framework: ${framework}; model: ${card.model} + ${card.effort}; permission mode: ${card.permissionMode}`,
     `  skills: ${cardList(card.skills)}`,
     `  MCP servers: ${cardList(card.mcp)}`,
-    `  not given: skills: ${cardList(card.notGiven.skills)}; MCP: ${cardList(card.notGiven.mcp)}`,
-    hooks,
+    `  not given skills: ${cardList(card.notGiven.skills)}`,
+    `  not given MCP: ${cardList(card.notGiven.mcp)}`,
+    `  hooks loaded: ${cardList(card.hooks.loaded)}`,
+    `  hooks loaded by project settings: ${cardList(card.hooks.loadedByProject)}`,
+    `  hooks not loaded: ${cardList(card.hooks.notLoaded)}`,
     '  rules:',
     ...card.rules.map(item => `    [${item.enforcement}] ${item.text}`),
     '  decisions:',
