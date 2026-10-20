@@ -14,6 +14,7 @@ import type {
   GitPolicy,
   GsdFact,
   HookScript,
+  HostIo,
   HunkOp,
   InitFacts,
   InitIo,
@@ -32,9 +33,11 @@ import type {
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
+import { hunkFailureLine } from './apply'
+import type { HunkRun } from './apply'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
-import { desiredFiles } from './generate'
+import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { HISTORY_DISMISSED_REASON, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
@@ -43,7 +46,8 @@ import {
   ADJUST_QUESTION,
   ADJUST_ROUNDS_NOTE,
   adjustLoop,
-  APPLY_LATER_NOTE,
+  APPLIED_NONE_NOTE,
+  appliedLines,
   askChoice,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
@@ -95,6 +99,7 @@ import {
   LAUNCH_START_QUESTION,
   launchLine,
   launchStartStep,
+  MANIFEST_SKIPPED_NOTE,
   MAX_ADJUST_ROUNDS,
   MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
@@ -106,6 +111,7 @@ import {
   MODEL_DISMISSED_REASON,
   MODEL_MODE_QUESTION,
   modelStep,
+  NEXT_STEP_NOTE,
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
   parseReviewItem,
@@ -141,7 +147,15 @@ import {
   scanWarnings,
   scopesFor,
 } from './init'
-import type { AdjustOutcome, Gathered, ReviewItem, StepResult } from './init'
+import type {
+  AdjustOutcome,
+  ApplyOutcome,
+  Gathered,
+  InitOptions,
+  RegenOptions,
+  ReviewItem,
+  StepResult,
+} from './init'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
 import { choiceLine } from './render'
@@ -165,8 +179,10 @@ import {
   emptySetupScan,
   entry,
   FRAMEWORKS,
+  hostWorld,
   INIT_ANSWERS,
   leaks,
+  memHost,
   memIo,
   memWorld,
   SECRET_FIXTURES,
@@ -174,8 +190,9 @@ import {
   session,
   skillRef,
   templateRole,
+  withWrites,
 } from './testkit'
-import type { MemRun, MemWorld } from './testkit'
+import type { MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
@@ -2413,7 +2430,7 @@ describe('launchStartStep', () => {
       'Type the folder the launchers start in': 'apps/web/',
     }
     const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
-    const reply = await runInit(run.io, { dryRun: false })
+    const reply = await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
     const lines = reply.split('\n')
     const at = lines.indexOf(policyLine('ignore'))
     expect(lines.slice(at, at + 3)).toEqual([
@@ -2782,6 +2799,22 @@ function loggedFrom(events: readonly string[], head: string, before: string): st
   return events.slice(from, to).flatMap(event => (event.startsWith('log ') ? [event.slice(4)] : []))
 }
 
+/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
+function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
+  return {
+    written: [],
+    executable: [],
+    failed: [],
+    refused: [],
+    notExecutable: [],
+    chmodRefusals: [],
+    hunkFailures: [],
+    attended: [],
+    manifestSkipped: false,
+    ...over,
+  }
+}
+
 describe('init plan', () => {
   /** The scans of a session with nothing detected, a framework-free team on the built-in default. */
   const gathered: Gathered = {
@@ -2950,17 +2983,19 @@ describe('init plan', () => {
     }
   })
 
-  test('initReplyText puts the plan lines between the command and the policy, the start and the note', async () => {
+  test('initReplyText ends a plain reply with the applied lines and a dry run with its note', async () => {
     const plan = await emptyDiskPlan([], 'ignore')
-    expect(initReplyText(plan, 'ignore', { kind: 'dir', path: 'apps/web' }, false).split('\n')).toEqual([
+    const outcome = outcomeOf({ written: ['.cadre/bin/be', '.gitignore'], executable: ['.cadre/bin/be'] })
+    expect(appliedLines(outcome)).toEqual(['Applied: wrote 2 files (1 executable).', NEXT_STEP_NOTE])
+    expect(initReplyText(plan, 'ignore', { kind: 'dir', path: 'apps/web' }, outcome).split('\n')).toEqual([
       'cadre init',
       ...renderPlan(plan),
       policyLine('ignore'),
       'Launchers start in: apps/web/ under the git root',
       IGNORE_ALL_NOTE,
-      APPLY_LATER_NOTE,
+      ...appliedLines(outcome),
     ])
-    expect(initReplyText(plan, 'definitions', { kind: 'git-root' }, true).split('\n')).toEqual([
+    expect(initReplyText(plan, 'definitions', { kind: 'git-root' }, null).split('\n')).toEqual([
       'cadre init --dry-run',
       ...renderPlan(plan),
       policyLine('definitions'),
@@ -2981,11 +3016,14 @@ describe('init plan', () => {
     ])
   })
 
-  test('plain init gives the same lines as --dry-run but the first and the last (PLAN-02, D-44)', async () => {
+  test('plain init gives the lines of --dry-run but the first and the ending (PLAN-02, D-105)', async () => {
     const dry = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })).split('\n')
-    const plain = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false })).split('\n')
-    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
-    expect([plain[0], plain.at(-1)]).toEqual(['cadre init', APPLY_LATER_NOTE])
+    const host = memHost(hostWorld({}))
+    const plain = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })).split('\n')
+    const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
+    expect(appliedAt).toBeGreaterThan(0)
+    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, -1))
+    expect([plain[0], plain.at(-1)]).toEqual(['cadre init', NEXT_STEP_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre init --dry-run', DRY_RUN_NOTE])
   })
 
@@ -3496,15 +3534,18 @@ describe('reviewStep', () => {
     expect(run.logged.filter(text => text === MODEL_DISMISSED_REASON)).toHaveLength(1)
   })
 
-  test('one answer script gives init and --dry-run the same lines but the first and the last (PLAN-02)', async () => {
+  test('one answer script gives init and --dry-run the same lines but the first and the ending (PLAN-02)', async () => {
     const answers = {
       ...INIT_ANSWERS,
       'Review the plan': ['git policy', 'Confirm'],
       'Git policy': ['Commit all', 'Ignore all of .cadre/'],
     }
     const dry = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: true })).split('\n')
-    const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false })).split('\n')
-    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    const host = memHost(hostWorld({}))
+    const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
+    const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
+    expect(appliedAt).toBeGreaterThan(0)
+    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, -1))
     expect(dry.slice(1, -1)).toContain('File plan:')
     expect(dry.slice(1, -1)).toContain(policyLine('ignore'))
   })
@@ -3584,9 +3625,13 @@ describe('runRegen', () => {
     return isBePlanPath(path) && path !== BE_ROLE_PATH
   }
 
-  /** The reply of `/cadre regen be` in `world`, a dry run unless told otherwise. */
+  /** The reply of `/cadre regen be` in `world`, a dry run unless told otherwise; a plain run writes to a fresh host. */
   async function regenBe(world: MemWorld, dryRun = true): Promise<string> {
-    return runRegen(memIo(world, {}).io, { id: 'be', dryRun })
+    const options: RegenOptions = dryRun
+      ? { id: 'be', dryRun: true }
+      : { id: 'be', dryRun: false, host: memHost(hostWorld({})).io }
+
+    return runRegen(memIo(world, {}).io, options)
   }
 
   /** The text of the planned file at this repo-relative path; empty when none is planned there. */
@@ -3609,7 +3654,11 @@ describe('runRegen', () => {
   test('the guard runs first, in the regen wording, before any read or question', async () => {
     const world = await regenWorld()
     const run = memIo({ ...world, locations: { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' } }, {})
-    expect(await runRegen(run.io, { id: 'be', dryRun: false })).toBe(commandRefusal(HOME_ROOT_REPLY, 'regen'))
+    const host = memHost(hostWorld({}))
+    expect(await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })).toBe(
+      commandRefusal(HOME_ROOT_REPLY, 'regen'),
+    )
+    expect([host.writes, host.calls]).toEqual([[], []])
     expect(run.reads).toEqual([])
     expect(run.asked).toEqual([])
   })
@@ -3669,7 +3718,10 @@ describe('runRegen', () => {
 
   test('an id cadre.json does not list refuses, naming the roles it lists', async () => {
     const run = memIo(await regenWorld(), {})
-    expect(await runRegen(run.io, { id: 'qa', dryRun: false })).toBe('no role qa in .cadre/cadre.json (roles: be, pm)')
+    const host = memHost(hostWorld({}))
+    const reply = await runRegen(run.io, { id: 'qa', dryRun: false, host: host.io })
+    expect(reply).toBe('no role qa in .cadre/cadre.json (roles: be, pm)')
+    expect([host.writes, host.calls]).toEqual([[], []])
     expect(run.asked).toEqual([])
   })
 
@@ -3743,7 +3795,7 @@ describe('runRegen', () => {
   test('a valid setup asks and logs nothing, reads no ~/.claude.json or .gitignore, and plans only BE', async () => {
     const linear = '{"mcpServers":{"linear":{"command":"x"}}}'
     const run = memIo(withFiles(await regenWorld(), { '/home/u/.claude.json': linear }), {})
-    const reply = await runRegen(run.io, { id: 'be', dryRun: false })
+    const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: memHost(hostWorld({})).io })
     const kinds = opKinds(reply)
     expect(run.asked).toEqual([])
     expect(run.logged).toEqual([])
@@ -3785,14 +3837,14 @@ describe('runRegen', () => {
     }
   })
 
-  test('the reply is the command, the plan and the note; --dry-run changes only the first and last line', async () => {
+  test('the reply is the command, the plan and the ending; --dry-run ends with its note', async () => {
     // The root lists, so the scans give no warning and the reply has no warning line (A4).
     const world = await regenWorld(team, {}, listedWorld())
     const plain = (await regenBe(world, false)).split('\n')
     const dry = (await regenBe(world, true)).split('\n')
-    expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
+    expect([plain[0], ...plain.slice(-2)]).toEqual(['cadre regen be', APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
-    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    expect(plain.slice(1, -2)).toEqual(dry.slice(1, -1))
     const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
     const files = (await plannedFiles(listedWorld(), team)).filter(file => isBeOpPath(file.path))
     const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
@@ -3819,8 +3871,8 @@ describe('runRegen', () => {
     // The root lists, so the scans give no warning (A4), and a guard only in local settings adds none (D-103).
     expect(dry.filter(line => line.startsWith('warning: '))).toEqual([])
     expect(dry.at(-1)).toBe(DRY_RUN_NOTE)
-    expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
-    expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
+    expect([plain[0], ...plain.slice(-2)]).toEqual(['cadre regen be', APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+    expect(plain.slice(1, -2)).toEqual(dry.slice(1, -1))
     expect(run.logged).toEqual([])
   })
 
@@ -3893,5 +3945,284 @@ describe('runRegen', () => {
       expect([readUserMcp, reply.split('\n')[0]]).toEqual([readUserMcp, 'cadre regen be --dry-run'])
       expect([readUserMcp, leaks(reply, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])]).toEqual([readUserMcp, []])
     }
+  })
+})
+
+/** Whether the --dry-run variant of an options type has a `host` key, optional or not; the type checker decides it. */
+type DryRunHasHost<T> = 'host' extends keyof Extract<T, { readonly dryRun: true }> ? true : false
+
+/** The host of a run that also records its writes and runs in one list, in call order. */
+function withHostEvents(host: MemHost): { readonly io: HostIo; readonly events: string[] } {
+  const events: string[] = []
+  const io: HostIo = {
+    ...host.io,
+    write: async (path, text) => {
+      events.push(`write ${path}`)
+
+      return host.io.write(path, text)
+    },
+    run: async (argv, options) => {
+      events.push(`run ${argv.join(' ')}`)
+
+      return host.io.run(argv, options)
+    },
+  }
+
+  return { io, events }
+}
+
+/**
+ * The port of a run in which a link is planted at `path` once the person confirmed the review: until then the stat of
+ * `path` is the run's own, so the plan sees no link; from then on it is a regular file that is a link landing on
+ * `realPath`, as a link planted between the review and the write would be (RESEARCH 3.2, T-03-38).
+ */
+function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
+  let isConfirmed = false
+
+  return {
+    ...run.io,
+    ask: async (question, spec) => {
+      const answer = await run.io.ask(question, spec)
+      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+
+      return answer
+    },
+    stat: async asked => {
+      if (!isConfirmed || asked !== path) return run.io.stat(asked)
+
+      return { kind: 'file', size: 0, isLink: true, realPath }
+    },
+  }
+}
+
+/** The chmod argv of each launcher of the INIT_ANSWERS team in an empty repo (PM, Security, TL), in plan order. */
+const EMPTY_REPO_CHMODS = ['pm', 'security', 'tl'].map(id => ['/bin/chmod', '755', `/repo/.cadre/bin/${id}`])
+
+/** The refusal writeProblem gives for the launcher of BE. */
+const BE_REFUSED = 'refused to write .cadre/bin/be: it or a folder above it is a link, or not inside the repo'
+
+/** The line for the launcher of BE when its write was refused or failed, so no chmod ran (RESEARCH 3.2). */
+const BE_NOT_EXECUTABLE = 'warning: .cadre/bin/be was not made executable: its write was refused or failed'
+
+describe('init apply (D-105)', () => {
+  test('the apply notes are fixed', () => {
+    const skipped = '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.'
+    expect(APPLIED_NONE_NOTE).toBe('Applied: nothing to write; every file is up to date.')
+    expect(NEXT_STEP_NOTE).toBe('Next: run /cadre start <id> to launch a role.')
+    expect(MANIFEST_SKIPPED_NOTE).toBe(skipped)
+  })
+
+  test('Confirm writes each planned file, then .gitignore, then the manifest last, and asks nothing more', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const host = memHost(hostWorld({}))
+    await runInit(run.io, { dryRun: false, host: host.io })
+    const desired = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null))
+    expect(host.writes).toEqual([
+      ...desired.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
+      { path: '/repo/.gitignore', text: ignore, isWritten: true },
+      { path: '/repo/.cadre/manifest.json', text: await manifestOf(desired), isWritten: true },
+    ])
+    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
+  })
+
+  test('each launcher is made executable with /bin/chmod 755 right after its own write (LNCH-01)', async () => {
+    const host = memHost(hostWorld({}))
+    const { io, events } = withHostEvents(host)
+    await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: io })
+    expect(host.calls).toEqual(EMPTY_REPO_CHMODS.map(argv => ({ argv, options: { timeoutMs: 10_000 } })))
+    for (const argv of EMPTY_REPO_CHMODS) {
+      const path = argv[2] ?? ''
+      expect(events[events.indexOf(`write ${path}`) + 1]).toBe(`run ${argv.join(' ')}`)
+    }
+  })
+
+  test('the reply is the plan as written, the policy and the start, then the applied lines (D-105)', async () => {
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    expect(reply.split('\n')).toEqual([
+      'cadre init',
+      ...renderPlan(plan),
+      policyLine('definitions'),
+      'Launchers start in: the git root',
+      `Applied: wrote ${host.writes.length} files (3 executable).`,
+      NEXT_STEP_NOTE,
+    ])
+  })
+
+  test('init again over what it wrote has nothing to write and writes and runs nothing (LNCH-01)', async () => {
+    const first = memHost(hostWorld({}))
+    await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: first.io })
+    const again = memHost(hostWorld({}))
+    const world = withWrites(gitWorld(), first.writes)
+    const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: again.io })
+    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+    expect([again.writes, again.calls]).toEqual([[], []])
+  })
+
+  test('init --dry-run is the Phase 2 reply byte for byte, and no option type gives a dry run a host', async () => {
+    const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
+    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    const start = 'Launchers start in: the git root'
+    const lines = ['cadre init --dry-run', ...renderPlan(plan), policyLine('definitions'), start, DRY_RUN_NOTE]
+    expect(reply).toBe(lines.join('\n'))
+    // Each constant compiles only while the --dry-run variant of its options type has no host key (T-03-16).
+    const isInitHost: DryRunHasHost<InitOptions> = false
+    const isRegenHost: DryRunHasHost<RegenOptions> = false
+    expect([isInitHost, isRegenHost]).toEqual([false, false])
+  })
+
+  test('a refused or cancelled run holds a host and still writes and runs nothing (D-45, D-105)', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' }
+    const refused = memHost(hostWorld({}))
+    const home = memIo(gitWorld({ locations }), INIT_ANSWERS)
+    expect(await runInit(home.io, { dryRun: false, host: refused.io })).toBe(INIT_HOME_ROOT_REPLY)
+    const cancelled = memHost(hostWorld({}))
+    const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
+    expect(await runInit(dismissed.io, { dryRun: false, host: cancelled.io })).toBe(INIT_CANCELLED)
+    expect([refused.writes, refused.calls, cancelled.writes, cancelled.calls]).toEqual([[], [], [], []])
+  })
+
+  test('a launcher link planted after Confirm is not written or chmodded, and the manifest is skipped', async () => {
+    const host = memHost(hostWorld({}))
+    const io = linkAfterConfirm(memIo(fullWorld(), INIT_ANSWERS), '/repo/.cadre/bin/be', '/elsewhere/be')
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    expect(opKinds(reply).get('.cadre/bin/be')).toBe('create')
+    const written = host.writes.map(write => write.path)
+    const runs = host.calls.map(call => call.argv)
+    expect(written).not.toContain('/repo/.cadre/bin/be')
+    expect(runs.filter(argv => argv.includes('/repo/.cadre/bin/be') || argv.includes('/elsewhere/be'))).toEqual([])
+    for (const id of ['fe', 'pm', 'qa', 'security', 'tl']) {
+      expect(written).toContain(`/repo/.cadre/bin/${id}`)
+      expect(runs.map(argv => argv.join(' '))).toContain(`/bin/chmod 755 /repo/.cadre/bin/${id}`)
+    }
+    expect(written).not.toContain('/repo/.cadre/manifest.json')
+    const lines = reply.split('\n')
+    expect(lines).toContain(`warning: ${BE_REFUSED}`)
+    expect(lines).toContain(BE_NOT_EXECUTABLE)
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+  })
+
+  test('a launcher write the host refuses is reported, gets no chmod, and skips the manifest', async () => {
+    const host = memHost(hostWorld({ writeFails: ['/repo/.cadre/bin/be'] }))
+    const reply = await runInit(memIo(fullWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls.filter(call => call.argv.includes('/repo/.cadre/bin/be'))).toEqual([])
+    expect(host.writes.map(write => write.path)).not.toContain('/repo/.cadre/manifest.json')
+    const lines = reply.split('\n')
+    expect(lines).toContain('warning: could not write .cadre/bin/be')
+    expect(lines).toContain(BE_NOT_EXECUTABLE)
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+  })
+
+  test('a chmod that does not exit 0 is reported with the command to run; the manifest is still written', async () => {
+    const runs = [
+      { argv: ['/bin/chmod', '755', '/repo/.cadre/bin/pm'], result: { exitCode: 1, stdout: '', stderr: 'denied' } },
+      { argv: ['/bin/chmod', '755', '/repo/.cadre/bin/tl'], result: null },
+    ]
+    const host = memHost(hostWorld({ runs }))
+    const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    expect(lines).toContain(`Applied: wrote ${host.writes.length} files (1 executable).`)
+    expect(lines).toContain('warning: could not make .cadre/bin/pm executable: run chmod 755 .cadre/bin/pm')
+    expect(lines).toContain('warning: could not make .cadre/bin/tl executable: run chmod 755 .cadre/bin/tl')
+    expect(lines.join('\n')).not.toContain('denied')
+    expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
+  })
+
+  test('appliedLines: the count, one warning line per problem in a fixed order, the next step last', () => {
+    const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
+    const outcome = outcomeOf({
+      written: ['.cadre/pm/ROLE.md'],
+      failed: ['.cadre/be/ROLE.md'],
+      refused: [BE_REFUSED],
+      notExecutable: ['.cadre/bin/pm'],
+      chmodRefusals: ['.cadre/bin/be was not made executable: its write was refused or failed'],
+      hunkFailures: [run],
+      attended: ['mode'],
+      manifestSkipped: true,
+    })
+    expect(appliedLines(outcome)).toEqual([
+      'Applied: wrote 1 files (0 executable).',
+      `warning: ${BE_REFUSED}`,
+      'warning: could not write .cadre/be/ROLE.md',
+      BE_NOT_EXECUTABLE,
+      'warning: could not make .cadre/bin/pm executable: run chmod 755 .cadre/bin/pm',
+      `warning: ${hunkFailureLine(run)}`,
+      `warning: ${attendedNote(['mode'])}`,
+      `warning: ${MANIFEST_SKIPPED_NOTE}`,
+      NEXT_STEP_NOTE,
+    ])
+    expect(appliedLines(outcomeOf())).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+    expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
+  })
+
+  test('no secret or absolute path of the secret world reaches the plain init reply or a written file', async () => {
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(secretWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.writes.length).toBeGreaterThan(0)
+    const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
+    expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+})
+
+describe('regen apply', () => {
+  /** BE alone on the built-in default, as `.cadre/cadre.json` lists it. */
+  const be = templateRole('be')
+
+  /** The repo-relative paths regen of BE never writes: the repo state and BE's own role.json, its input (A5). */
+  const NOT_WRITTEN = ['.cadre/cadre.json', '.cadre/be/role.json']
+
+  /**
+   * The repo after an init of BE alone on the built-in default: a listed `.cadre/` folder with cadre.json, BE's
+   * role.json and a manifest that records no file, as the faked host's regen world has it.
+   */
+  function beOnlyWorld(): MemWorld {
+    return gitWorld({
+      dirs: { '/repo/.git': [], '/repo/.cadre': [] },
+      files: {
+        '/repo/.cadre/cadre.json': cadreJsonText(stateOf([be])),
+        '/repo/.cadre/be/role.json': roleJsonText(be),
+        '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: [] }),
+      },
+    })
+  }
+
+  test('plain regen writes the files of BE and the manifest last, asking nothing (D-68)', async () => {
+    const run = memIo(beOnlyWorld(), {})
+    const host = memHost(hostWorld({}))
+    const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })
+    const files = await plannedFiles(gitWorld(), [be])
+    const written = files.filter(file => !NOT_WRITTEN.includes(file.path))
+    const recorded = files.filter(file => file.path !== '.cadre/cadre.json')
+    expect(host.writes).toEqual([
+      ...written.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
+      { path: '/repo/.cadre/manifest.json', text: await manifestOf(recorded), isWritten: true },
+    ])
+    expect(host.calls.map(call => call.argv)).toEqual([['/bin/chmod', '755', '/repo/.cadre/bin/be']])
+    const applied = `Applied: wrote ${written.length + 1} files (1 executable).`
+    expect(reply.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+    expect([run.asked, run.logged]).toEqual([[], []])
+  })
+
+  test('plain regen keeps a hand-edited file, writes its .cadre-new copy and says so (D-67, D-68)', async () => {
+    const files = await plannedFiles(gitWorld(), [be])
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], '/repo/.cadre': [] },
+      files: {
+        ...onDisk(files),
+        '/repo/.cadre/be/ROLE.md': 'edited by hand\n',
+        '/repo/.cadre/manifest.json': await manifestOf(files),
+      },
+    })
+    const host = memHost(hostWorld({}))
+    const reply = await runRegen(memIo(world, {}).io, { id: 'be', dryRun: false, host: host.io })
+    const kinds = opKinds(reply)
+    expect([kinds.get('.cadre/be/ROLE.md'), kinds.get('.cadre/be/ROLE.md.cadre-new')]).toEqual(['conflict', 'create'])
+    const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
+    expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
+    expect(host.calls).toEqual([])
+    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 files (0 executable).', NEXT_STEP_NOTE])
   })
 })

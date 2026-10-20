@@ -8,10 +8,13 @@ import {
   GIT_POLICY_DISMISSED_REASON,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
+  MANIFEST_SKIPPED_NOTE,
+  NEXT_STEP_NOTE,
   NOT_INTERACTIVE_REPLY,
   policyLine,
   REGEN_NO_STATE,
   regenNoRole,
+  REVIEW_QUESTION,
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
@@ -60,8 +63,20 @@ type World = {
   readonly denySettings: readonly string[]
   /** Paths whose exists probe refuses, although the path exists. */
   readonly denyExists: readonly string[]
-  /** What `process.run` answers; null makes the call refuse with `runtimeDeny`. */
+  /** What `process.run` answers for an argv with no runResults key; null makes the call refuse with `runtimeDeny`. */
   readonly runtime: { readonly exitCode: number; readonly stdout: string } | null
+  /**
+   * What `process.run` answers for one argv, keyed by its words joined with one space; null makes the call refuse with
+   * `runtimeDeny`. An argv with no key here gets `runtime`.
+   */
+  readonly runResults: Readonly<Record<string, { readonly exitCode: number; readonly stdout: string } | null>>
+  /** Whether `fs.write` is answered as done and logged as `fs.write <path>`; when false it is a forbidden op. */
+  readonly isWriteAllowed: boolean
+  /**
+   * A link planted once the review question was answered: from then on the stat of `path` answers a regular file
+   * that is a link landing on `realPath`. Absent, nothing is planted.
+   */
+  readonly linkAfterReview?: { readonly path: string; readonly realPath: string }
   /** The reason a refused `process.run` gives; detect must never show it. */
   readonly runtimeDeny: string
   /** Makes `session.root` refuse, as a host that cannot say where the session is. */
@@ -94,7 +109,7 @@ type World = {
 /**
  * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
  * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
- * option labels each dialog showed, and each text the plugin logged to the transcript.
+ * option labels each dialog showed, each text the plugin logged to the transcript, and each path it wrote, in order.
  */
 type HostLog = {
   readonly ops: string[]
@@ -103,13 +118,15 @@ type HostLog = {
   readonly asks: string[]
   readonly askOptions: string[][]
   readonly logs: string[]
+  readonly writes: string[]
 }
 
 /**
  * Host ops that would change something or reach beyond the read-only reads (a second process call, the network, an
- * MCP tool, a tool registration); `/cadre detect` and `/cadre init` must never reach one. `process.spawn` is
- * forbidden too, but streams, so fakeHost hooks it with a generator. `process.run` is not here: it is logged, and
- * only the user-level identity call may use it.
+ * MCP tool, a tool registration); `/cadre detect`, every --dry-run and every refusal must never reach one, and only
+ * plain init and regen write, in a world whose isWriteAllowed lets `fs.write` through. `process.spawn` is forbidden
+ * too, but streams, so fakeHost hooks it with a generator. `process.run` is not here: it is logged, and only the
+ * user-level identity call and the launcher chmods of an apply may use it.
  */
 const FORBIDDEN_OPS: readonly string[] = [
   'fs.write',
@@ -124,7 +141,7 @@ const FORBIDDEN_OPS: readonly string[] = [
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
-  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [] }
+  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [], writes: [] }
 }
 
 /**
@@ -155,6 +172,8 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     denySettings: [],
     denyExists: [],
     runtime: null,
+    runResults: {},
+    isWriteAllowed: false,
     runtimeDeny: 'no runtime in this world',
     denyRoot: false,
     undefinedReads: [],
@@ -221,10 +240,11 @@ function hasPath(world: World, path: string): boolean {
 }
 
 /**
- * Answers the host ops `/cadre detect` and `/cadre init` may use from `world` and logs each fs, process and settings
- * op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript text is kept in
- * `log.logs`. The model answers `world.replies` in order. Every forbidden op is answered with a refusal, so a call to
- * one would show up in the log and fail its call.
+ * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs,
+ * process and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript
+ * text is kept in `log.logs`. The model answers `world.replies` in order. A process call answers its runResults entry,
+ * else `runtime`. `fs.write` is answered as done, and its path kept in `log.writes`, only when `world.isWriteAllowed`.
+ * Every other forbidden op is answered with a refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
@@ -237,6 +257,8 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: undefined }
   })
+  // Set once the review question is answered; only a world with linkAfterReview reads it.
+  let isReviewAnswered = false
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const asked = e.questions[0]
     const question = asked?.question ?? ''
@@ -244,6 +266,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.askOptions.push((asked?.options ?? []).map(option => option.label))
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
+    if (question === REVIEW_QUESTION) isReviewAnswered = true
 
     return { result: { questions: e.questions, answers: { [question]: answer } } }
   })
@@ -286,6 +309,12 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('fs.stat', async (_$, e) => {
     log.ops.push(`fs.stat ${e.path} resolve=${String(e.resolve)}`)
     if (world.denyStat.includes(e.path)) return { deny: 'stat refused' }
+    const planted = world.linkAfterReview
+    if (planted !== undefined && isReviewAnswered && e.path === planted.path) {
+      const realPath = planted.realPath
+
+      return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: true, ...(e.resolve ? { realPath } : {}) } }
+    }
     if (!Object.hasOwn(world.realPaths, e.path) && !hasPath(world, e.path)) return { deny: 'missing' }
     const isFile = Object.hasOwn(world.files, e.path)
     // A file lands on itself unless realPaths says otherwise; a folder with no realPaths entry answers none.
@@ -306,16 +335,28 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.ops.push('process.run')
     log.runs.push([...e.argv])
     log.cwds.push(e.init?.cwd ?? '')
-    if (world.runtime === null) return { deny: world.runtimeDeny }
+    const key = e.argv.join(' ')
+    const scripted = Object.hasOwn(world.runResults, key) ? world.runResults[key] : undefined
+    const result = scripted === undefined ? world.runtime : scripted
+    if (result === null) return { deny: world.runtimeDeny }
 
-    return { value: { ...world.runtime, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { ...result, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('process.spawn', async function* () {
     log.ops.push('forbidden process.spawn')
 
     return { deny: 'detect uses no such op' }
   })
+  if (world.isWriteAllowed) {
+    on('fs.write', async (_$, e) => {
+      log.ops.push(`fs.write ${e.path}`)
+      log.writes.push(e.path)
+
+      return { value: undefined }
+    })
+  }
   for (const op of FORBIDDEN_OPS) {
+    if (op === 'fs.write' && world.isWriteAllowed) continue
     on(op, async () => {
       log.ops.push(`forbidden ${op}`)
 
@@ -916,18 +957,16 @@ describe('cadre init with a faked host', () => {
     expect(log.ops).not.toContain('process.run')
   })
 
-  test('plain init prints the same reply but ends with the apply-later note', async ($, on) => {
+  test('plain init prints the same reply but ends with the applied lines', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
+    fakeHost(on, initWorld({ isWriteAllowed: true }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     expect(out.text.split('\n')[0]).toBe('cadre init')
     expect(out.text).toContain('Git policy: commit definitions')
-    expect(out.text.split('\n').at(-1)).toBe(
-      'Applying this plan arrives in a later cadre version; nothing was written.',
-    )
+    expect(out.text.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
     expect(out.text).not.toContain('Dry run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.ops).not.toContain('process.run')
+    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
   })
 
   test('init asks in order: consent, roles, framework, duration, model and effort, git policy', async ($, on) => {
@@ -1104,14 +1143,74 @@ describe('cadre init with a faked host', () => {
     expect(out.text).toBe('init cancelled, nothing written')
   })
 
-  test('no mutating host op and no process call is made by init or init --dry-run', async ($, on) => {
+  test('init --dry-run makes no process call; plain init runs only the launcher chmods', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init' })
+    fakeHost(on, initWorld({ isWriteAllowed: true }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.ops).not.toContain('process.run')
     expect(log.runs).toEqual([])
+    expect(log.ops).not.toContain('process.run')
+    const out = await $.command.run({ command: 'cadre', args: 'init' })
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    const launchers = planRows(out.text).filter(row => row.path.startsWith('.cadre/bin/'))
+    expect(launchers.length).toBeGreaterThan(0)
+    expect(log.runs).toEqual(launchers.map(row => ['/bin/chmod', '755', `/repo/${row.path}`]))
+  })
+
+  test('plain init writes every planned file, the manifest last, and makes each launcher executable', async ($, on) => {
+    const log = newLog()
+    const chmods = ['pm', 'security', 'tl'].map(id => ['/bin/chmod', '755', `/repo/.cadre/bin/${id}`])
+    const runResults = Object.fromEntries(chmods.map(argv => [argv.join(' '), { exitCode: 0, stdout: '' }]))
+    fakeHost(on, initWorld({ isWriteAllowed: true, runResults }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init' })
+    const writes = log.ops.filter(op => op.startsWith('fs.write '))
+    expect(writes.length).toBeGreaterThan(1)
+    expect(writes.indexOf('fs.write /repo/.cadre/manifest.json')).toBe(writes.length - 1)
+    expect(log.writes).toEqual(writes.map(op => op.slice('fs.write '.length)))
+    expect(log.runs).toEqual(chmods)
+    for (const argv of chmods) expect(log.ops[log.ops.indexOf(`fs.write ${argv[2]}`) + 1]).toBe('process.run')
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    const applied = `Applied: wrote ${writes.length} files (3 executable).`
+    expect(out.text.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+  })
+
+  test('init --dry-run in a world that allows writes still writes and runs nothing (PLAN-02)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ isWriteAllowed: true }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(log.ops.filter(op => op.startsWith('fs.write '))).toEqual([])
+    expect(log.writes).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+    expect(log.runs).toEqual([])
+  })
+
+  test('a launcher link planted after the review gets no write and no chmod; no manifest', async ($, on) => {
+    const log = newLog()
+    const base = initWorld()
+    // A source file keeps BE in the proposal, so its launcher is planned (D-85).
+    const listings = {
+      ...base.listings,
+      '/repo': [...base.listings['/repo'], entry('src', 'dir')],
+      '/repo/src': [entry('a.ts')],
+    }
+    const linkAfterReview = { path: '/repo/.cadre/bin/be', realPath: '/elsewhere/be' }
+    fakeHost(on, initWorld({ isWriteAllowed: true, listings, linkAfterReview }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init' })
+    const beRows = planRows(out.text).filter(row => row.path === '.cadre/bin/be')
+    expect(beRows).toEqual([{ kind: 'create', path: '.cadre/bin/be' }])
+    expect(log.ops).not.toContain('fs.write /repo/.cadre/bin/be')
+    expect(log.runs.filter(run => run.includes('/repo/.cadre/bin/be') || run.includes('/elsewhere/be'))).toEqual([])
+    expect(log.ops).not.toContain('fs.write /repo/.cadre/manifest.json')
+    for (const id of ['pm', 'security', 'tl']) {
+      expect(log.ops).toContain(`fs.write /repo/.cadre/bin/${id}`)
+      expect(log.runs.map(run => run.join(' '))).toContain(`/bin/chmod 755 /repo/.cadre/bin/${id}`)
+    }
+    const refused = 'refused to write .cadre/bin/be: it or a folder above it is a link, or not inside the repo'
+    const lines = out.text.split('\n')
+    expect(lines).toContain('warning: .cadre/bin/be was not made executable: its write was refused or failed')
+    expect(lines).toContain(`warning: ${refused}`)
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
   test('two init runs with the same answers give identical text', async ($, on) => {
@@ -1345,7 +1444,7 @@ function historyHostWorld(over: Partial<World> = {}): World {
   }
 }
 
-/** The lines of a reply between its first line and its last, which plain init and --dry-run share. */
+/** The lines of a reply between its first line and its last: the plan part of a --dry-run reply. */
 function middleLines(reply: string): string[] {
   return reply.split('\n').slice(1, -1)
 }
@@ -1376,18 +1475,21 @@ function isAllowedRow(row: PlanRow): boolean {
 
 describe('Phase 2 faked-host matrix', () => {
   for (const [name, build, expected] of FRAMEWORK_WORLDS) {
-    test(`${name}: init and init --dry-run print one plan and write nothing (PLAN-02, D-82)`, async ($, on) => {
+    test(`${name}: init and init --dry-run print one plan; only plain init writes`, async ($, on) => {
       const log = newLog()
-      fakeHost(on, build(), log)
+      fakeHost(on, { ...build(), isWriteAllowed: true }, log)
       const plain = (await $.command.run({ command: 'cadre', args: 'init' })).text
       const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
       expect(plain).toContain('File plan:')
       expect(dry).toContain('File plan:')
-      expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
+      expect(plain.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
       expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
-      expect(middleLines(dry)).toEqual(middleLines(plain))
+      const plainLines = plain.split('\n')
+      const appliedAt = plainLines.findIndex(line => line.startsWith('Applied: '))
+      expect(appliedAt).toBeGreaterThan(0)
+      expect(middleLines(dry)).toEqual(plainLines.slice(1, appliedAt))
       expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-      expect(log.runs).toEqual([])
+      expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
     })
 
     test(`${name}: every path of the init plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)`, async ($, on) => {
@@ -1430,7 +1532,13 @@ describe('Phase 2 faked-host matrix', () => {
 
   test('regen be, with and without --dry-run, asks nothing and plans no path of PM (D-68, D-82)', async ($, on) => {
     const log = newLog()
-    fakeHost(on, await regenMatrixWorld(), log)
+    // `.cadre` resolves inside the repo and the launcher chmod exits 0, so plain regen writes and warns about nothing.
+    const world = await regenMatrixWorld({
+      isWriteAllowed: true,
+      realPaths: { '/repo': '/repo', '/home/u': '/home/u', '/repo/.cadre': '/repo/.cadre' },
+      runResults: { '/bin/chmod 755 /repo/.cadre/bin/be': { exitCode: 0, stdout: '' } },
+    })
+    fakeHost(on, world, log)
     const plain = (await $.command.run({ command: 'cadre', args: 'regen be' })).text
     const dry = (await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })).text
     for (const reply of [plain, dry]) {
@@ -1439,12 +1547,15 @@ describe('Phase 2 faked-host matrix', () => {
       expect(reply.split('\n').filter(line => line.includes('.cadre/pm/'))).toEqual([])
       expect(reply.split('\n').filter(line => line.startsWith('warning:'))).toEqual([])
     }
-    expect(plain.split('\n').at(-1)).toBe('Applying this plan arrives in a later cadre version; nothing was written.')
+    expect(plain.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
-    expect(middleLines(dry)).toEqual(middleLines(plain))
+    const plainLines = plain.split('\n')
+    const appliedAt = plainLines.findIndex(line => line.startsWith('Applied: '))
+    expect(appliedAt).toBeGreaterThan(0)
+    expect(middleLines(dry)).toEqual(plainLines.slice(1, appliedAt))
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.runs).toEqual([])
+    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
   })
 
   test('every path of the regen plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)', async ($, on) => {
