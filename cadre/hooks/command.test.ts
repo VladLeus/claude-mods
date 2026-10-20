@@ -230,10 +230,12 @@ describe('status grammar', () => {
     expect(parseCommand('statusbe')).toEqual({ kind: 'help', unknown: 'statusbe' })
   })
 
-  test('the help without unknown input lists the status row with what it does', () => {
+  test('the help without unknown input lists the status row with all five states (#63 A4)', () => {
     const text = helpText(null)
     expect(text).toContain('/cadre status <id>')
-    expect(text).toContain("show from disk whether a role's autopilot run is done, running or not started")
+    expect(text).toContain(
+      "show from disk whether a role's autopilot run is done, running, stopped, not started or unknown",
+    )
   })
 })
 
