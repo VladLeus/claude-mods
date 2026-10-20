@@ -80,14 +80,31 @@ export const IGNORE_BEGIN = '# >>> cadre'
 export const IGNORE_END = '# <<< cadre'
 
 /**
+ * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`. The launcher refuses to start when it is missing
+ * or older than the role files, so a render that stopped part way, or one the role files changed after, never starts a
+ * session (D-102).
+ */
+export const RUNTIME_STAMP_FILE = 'stamp'
+
+/** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
+export const INBOX_FILE = 'inbox.md'
+
+/** What `<launcher> --probe` checks the startup inventory of a role against, rendered by `/cadre start` (D-130). */
+export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
+
+/**
  * The per-user files and folders Phase 3 renders into `.cadre/<id>/.runtime/` at launch: the final settings, the MCP
- * file, the skill overlay and the linked instructions (D-66, D-84). The `all` git policy ignores exactly these.
+ * file, the skill overlay, the linked instructions, the probe expectations, the inbox and the stamp written last
+ * (D-66, D-84, D-102, D-114, D-130). The `all` git policy ignores exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'settings.json',
   'mcp.json',
   'overlay/',
   'instructions/',
+  PROBE_EXPECTATIONS_FILE,
+  INBOX_FILE,
+  RUNTIME_STAMP_FILE,
 ])
 
 /** The scratch copies a conflict plans beside a user-edited file are for diffing and never go into git (D-99). */

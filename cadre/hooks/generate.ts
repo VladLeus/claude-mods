@@ -3,7 +3,7 @@ import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { clean, compareText } from './facts'
 import { MAX_ROLE_CHARS } from './kickoff'
-import { stableJson } from './plan'
+import { RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { cardList } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
@@ -183,16 +183,63 @@ function startLines(start: LaunchStart): string[] {
   return ['cd -- "$root"']
 }
 
+/** A message of the launcher on stderr, as one shell word whatever it holds (T-03-07). */
+function errorLine(message: string): string {
+  return `echo ${shQuote(message)} >&2`
+}
+
+/** A refusal of the launcher: its message on stderr, then exit 1 before anything starts. */
+function refusal(message: string): string {
+  return `{ ${errorLine(message)}; exit 1; }`
+}
+
 /**
- * The text of the launcher `.cadre/bin/<id>`, provisional until Phase 3 (Pitfall 8). It finds the repo from its own
- * folder (`dirname -- "$0"`), never from the folder it is run from, so a launcher run from another repo or outside any
- * repo cannot start another repo's role: under `set -eu` a failed git stops it. It then goes where `start` says (the
- * git root, a folder under it, or nowhere for `here`) and execs claude with the flags of the compiled scope, each one
- * shell-quoted, the value after a path flag (PATH_FLAGS) and the kickoff read anchored at the repo root, since in
- * `here` and `dir` the session starts outside the git top level, where the repo-relative paths of compileScope would
- * miss. The flags come only from compileScope and the title never reaches the script; the role id, which is a slug, is
- * quoted in the paths and cleaned in the comments, so a hostile one cannot add a command either. Phase 3 adds the
- * claude version check and renders the `.runtime/` folder before the session starts.
+ * A launcher message about the rendered folder of a role (D-102): `cadre: .cadre/<id>/.runtime/<problem>: run
+ * /cadre start <id>`. A problem starts with a space unless it names files in the folder.
+ */
+function runtimeMessage(id: string, problem: string): string {
+  return `cadre: .cadre/${id}/.runtime/${problem}: run /cadre start ${id}`
+}
+
+/**
+ * The fixed lines of the launcher checks, which launcherText puts in this order with the lines of the role between
+ * them. The first five define `cadre_claude_ok`, which reads `claude --version` through a fixed sed program and passes
+ * for 2.1.295 or newer (D-107); it is a function, so its `set --` leaves the launcher's own arguments alone. The last
+ * five frame the JSON check (D-129): jq when it is on PATH, else node, else one line saying the rendered files were
+ * not checked again, since `/cadre start` checked them when it rendered them.
+ */
+const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
+  'cadre_claude_ok() {',
+  "  set -- $(claude --version 2>/dev/null | sed -n " +
+    "'s/^\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\).*/\\1 \\2 \\3/p')",
+  '  [ $# -eq 3 ] || return 1',
+  '  [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && { [ "$2" -gt 1 ] || { [ "$2" -eq 1 ] && [ "$3" -ge 295 ]; }; }; }',
+  '}',
+  'if command -v jq >/dev/null 2>&1; then',
+  'elif command -v node >/dev/null 2>&1; then',
+  'else',
+  `  ${errorLine('cadre: (JSON not re-checked: no jq or node)')}`,
+  'fi',
+])
+
+/**
+ * The text of the launcher `.cadre/bin/<id>`. It finds the repo from its own folder (`dirname -- "$0"`), never from
+ * the folder it is run from, and under `set -eu` a failed git stops it. Before it starts anything it refuses, with one
+ * line on stderr and exit 1, when:
+ * - `.cadre/<id>/role.json` is not under that repo, as for a launcher linked or copied into another repo (D-119);
+ * - `claude --version` is missing, unreadable or older than 2.1.295, the engine floor cadre relies on (D-107);
+ * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing, or `.cadre/cadre.json` or the role's
+ *   role.json, settings.json or mcp.json is newer than it, so a render that stopped part way or that the role files
+ *   changed after never starts (D-102); the stamp is checked first, since `-nt` against a missing file is true;
+ * - the rendered settings.json or mcp.json is missing, empty or not valid JSON, since the engine drops an invalid
+ *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
+ *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).
+ * It never runs cadre code and never renders `.runtime/` (D-102): it reads only the stamp, those two JSON files and
+ * the role files. It then goes where `start` says (D-113) and execs claude with the flags of the compiled scope, `--`
+ * and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read anchored
+ * at the repo root, since in `here` and `dir` the session starts outside the git top level. The flags come only from
+ * compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and cleaned in the
+ * comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
@@ -200,12 +247,35 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     .map((flag, index) => (PATH_FLAGS.includes(scope.flags[index - 1] ?? '') ? rootWord(flag) : shQuote(flag)))
     .join(' ')
   const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
+  const stamp = `"$rt"/${RUNTIME_STAMP_FILE}`
+  const renderInputs = [STATE_PATH, ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name))]
+  const jsonFiles = '"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1'
+  const parse = shQuote('for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))')
+  const foreign = `cadre: not the repo of role ${id}`
+  const unrendered = `${runtimeMessage(id, ' is not rendered')} in the root session of the repo`
+  const empty = runtimeMessage(id, 'settings.json or mcp.json is missing or empty')
+  const invalid = refusal(runtimeMessage(id, ' holds a file that is not valid JSON'))
   const lines = [
     '#!/bin/sh',
-    `# cadre launcher for role ${id}. Provisional (Phase 2): Phase 3 adds the claude version check`,
-    `# and renders .cadre/${id}/.runtime/ before it starts the session.`,
+    `# cadre launcher for role ${id}: checks claude and .cadre/${id}/.runtime/, then starts the session.`,
+    `# /cadre start ${id} renders .cadre/${id}/.runtime/ in the root session of the repo; ` +
+      'this script never renders it.',
     'set -eu',
     ROOT_LINE,
+    `[ -f ${rootWord(rolePath(role.id, 'role.json'))} ] || ${refusal(foreign)}`,
+    `rt=${rootWord(rolePath(role.id, '.runtime'))}`,
+    ...VERSION_CHECK_LINES.slice(0, 5),
+    `cadre_claude_ok || ${refusal('cadre: needs claude 2.1.295 or newer on PATH (see claude --version)')}`,
+    `[ -f ${stamp} ] || ${refusal(unrendered)}`,
+    `for f in ${renderInputs.map(rootWord).join(' ')}; do`,
+    `  if [ "$f" -nt ${stamp} ]; then ${errorLine(runtimeMessage(id, ' is older than the role files'))}; exit 1; fi`,
+    'done',
+    `[ -s "$rt"/settings.json ] && [ -s "$rt"/mcp.json ] || ${refusal(empty)}`,
+    ...VERSION_CHECK_LINES.slice(5, 6),
+    `  jq empty ${jsonFiles} || ${invalid}`,
+    ...VERSION_CHECK_LINES.slice(6, 7),
+    `  node -e ${parse} ${jsonFiles} || ${invalid}`,
+    ...VERSION_CHECK_LINES.slice(7),
     ...startLines(start),
     `exec claude ${flags} -- "$(cat ${kickoff})"`,
   ]
