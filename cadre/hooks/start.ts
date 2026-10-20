@@ -24,6 +24,7 @@ import type {
   TerminalChoice,
 } from '../types'
 import {
+  clean,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
@@ -37,9 +38,10 @@ import { sha256Hex } from './hash'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
+import { INBOX_FILE, MANIFEST_PATH, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { reportText } from './render'
+import { parseManifest, readRepoFile } from './scan'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeJsonPathOf,
@@ -707,6 +709,131 @@ export function runtimeMcpText(
   return { text: stableJson({ mcpServers: Object.fromEntries(servers) }), warnings: missing }
 }
 
+/** The oldest claude cadre starts a role with (D-107): the engine floor the launcher's flags need. */
+export const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 295]
+
+/** A claude version as `claude --version` prints it first: three runs of digits joined by dots, and nothing else. */
+const CLAUDE_VERSION_FIELD = /^\d+\.\d+\.\d+$/
+
+/**
+ * The version a `claude --version` text gives (D-107): the first field of its first line, as three numbers, when that
+ * field is exactly three runs of digits joined by dots; null for any other text.
+ */
+export function parseClaudeVersion(text: string): readonly [number, number, number] | null {
+  const field = text.split('\n')[0]?.split(/\s/)[0] ?? ''
+  if (!CLAUDE_VERSION_FIELD.test(field)) return null
+  const [major, minor, patch] = field.split('.').map(Number)
+  if (major === undefined || minor === undefined || patch === undefined) return null
+
+  return [major, minor, patch]
+}
+
+/** Whether a claude version is MIN_CLAUDE_VERSION or newer, compared part by part from the first (D-107). */
+export function isSupportedClaude(version: readonly [number, number, number]): boolean {
+  const [major, minor, patch] = version
+  const [minMajor, minMinor, minPatch] = MIN_CLAUDE_VERSION
+  if (major !== minMajor) return major > minMajor
+  if (minor !== minMinor) return minor > minMinor
+
+  return patch >= minPatch
+}
+
+/** How long `claude --version` may run before it is given up. */
+const CLAUDE_VERSION_TIMEOUT_MS = 10_000
+
+/** The refusal when `claude --version` cannot run or exits non-zero (D-107). */
+export const START_NO_CLAUDE =
+  'cadre start could not run claude --version, so it stopped: install Claude Code 2.1.295 or newer.'
+
+/** The most characters of what `claude --version` gave that a refusal shows. */
+const VERSION_SHOWN_CHARS = 40
+
+/**
+ * The refusal when the claude on PATH is older than 2.1.295, or gives no version cadre can read (D-107). The text
+ * `claude --version` gave is shown cleaned, as reportText cleans a foreign value, and capped at 40 characters.
+ */
+export function claudeTooOldReply(versionText: string): string {
+  const shown = clean(versionText, VERSION_SHOWN_CHARS)
+
+  return `cadre start needs claude 2.1.295 or newer on PATH; claude --version gave: ${shown}`
+}
+
+/**
+ * The refusal when `.cadre/manifest.json` is missing, cannot be read or is not a valid manifest: without it the
+ * launcher cannot be checked (LNCH-04).
+ */
+export const START_NO_MANIFEST =
+  '.cadre/manifest.json is missing or not valid, so cadre cannot check the launcher: run /cadre init again.'
+
+/** The refusal when a role's launcher is missing, or the manifest holds no entry for it (LNCH-04). */
+export function launcherMissingReply(id: string): string {
+  const role = reportText(id)
+
+  return `.cadre/bin/${role} is missing or not in .cadre/manifest.json: run /cadre regen ${role}.`
+}
+
+/**
+ * The refusal when a role's launcher is not the file cadre wrote (LNCH-04, T-03-28): its sha256 differs from its
+ * manifest entry, or it cannot be read as a regular file inside the repo.
+ */
+export function launcherChangedReply(id: string): string {
+  const role = reportText(id)
+
+  return (
+    `.cadre/bin/${role} was changed outside cadre: run /cadre regen ${role} ` +
+    'and take the new version, or restore the file.'
+  )
+}
+
+/**
+ * The reply when a step of the render fails (LNCH-03): the render stops at that step, so no stamp is written and the
+ * launcher refuses to start. `path` is the step's path below the repo root, shown cleaned.
+ */
+export function renderFailedReply(id: string, path: string): string {
+  const role = reportText(id)
+
+  return (
+    `cadre start could not render .cadre/${role}/.runtime/ (${reportText(path)} failed), ` +
+    `so the launcher will refuse to start: fix it and run /cadre start ${role} again.`
+  )
+}
+
+/**
+ * Why the role's launcher cannot be trusted (LNCH-04, T-03-28), or null. It refuses, in this order: a
+ * `.cadre/manifest.json` that is missing, cannot be read or is not a valid manifest (START_NO_MANIFEST); a launcher
+ * `.cadre/bin/<id>` the manifest holds no entry for, or that is not there (launcherMissingReply); one that cannot be
+ * read as a regular file inside the repo, or whose sha256 differs from its entry (launcherChangedReply). Both are read
+ * through readRepoFile, so a link out of the repo is never read.
+ */
+async function launcherRefusal(io: InitIo, root: string, id: string): Promise<string | null> {
+  const manifestRead = await readRepoFile(io, root, MANIFEST_PATH, MAX_READ_BYTES)
+  const manifest = manifestRead.state === 'text' ? parseManifest(manifestRead.text) : null
+  if (manifest === null) return START_NO_MANIFEST
+  const path = `.cadre/bin/${id}`
+  const entry = manifest.files.find(file => file.path === path)
+  if (entry === undefined) return launcherMissingReply(id)
+  const launcher = await readRepoFile(io, root, path, MAX_READ_BYTES)
+  if (launcher.state === 'absent') return launcherMissingReply(id)
+  if (launcher.state !== 'text') return launcherChangedReply(id)
+  if ((await sha256Hex(launcher.text)) !== entry.sha256) return launcherChangedReply(id)
+
+  return null
+}
+
+/**
+ * Why the claude on PATH, the one the launcher execs (RESEARCH 1.2), must not start the role (D-107), or null:
+ * `claude --version` that cannot run or exits non-zero (START_NO_CLAUDE); a first line that holds no version
+ * parseClaudeVersion reads, or one older than MIN_CLAUDE_VERSION (claudeTooOldReply, with that line).
+ */
+async function claudeRefusal(host: HostIo): Promise<string | null> {
+  const run = await host.run(['claude', '--version'], { timeoutMs: CLAUDE_VERSION_TIMEOUT_MS })
+  if (run === null || run.exitCode !== 0) return START_NO_CLAUDE
+  const version = parseClaudeVersion(run.stdout)
+  if (version !== null && isSupportedClaude(version)) return null
+
+  return claudeTooOldReply(run.stdout.split('\n')[0] ?? '')
+}
+
 /** How long one removal, folder or link step of a render may run before it is given up. */
 const RENDER_STEP_TIMEOUT_MS = 10_000
 
@@ -747,11 +874,6 @@ async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
   return run !== null && run.exitCode === 0
 }
 
-/** The reply when a step of the render fails: the render stops there, so it writes no stamp (LNCH-03). */
-function renderStoppedReply(id: string, path: string): string {
-  return `cadre start could not render .cadre/${reportText(id)}/.runtime/ (${reportText(path)} failed).`
-}
-
 /**
  * The reply of a render that ran every step (D-102): what was asked for, the folder rendered with the number of links
  * it made, one `warning: ` line per warning, then the line that hands over the launcher and the launcher command, two
@@ -768,15 +890,18 @@ function startReplyText(id: string, root: string, links: number, warnings: reado
 }
 
 /**
- * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with the first refusal of repoGuard (in
- * the start wording) and readTeam. Otherwise it compiles the team (compileTeam), gathers the launching user
- * (gatherLaunchUser) and builds the role's LaunchPlan, and renders the role's `.runtime/`: the settings, the MCP config
- * (runtimeMcpText), the probe expectations, the links, the inbox when there is none, and the stamp last. renderPaths
- * names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was built for, and a render
- * refusal is the reply, before anything is written. Each step then runs through the host in order, and the first one
- * that fails stops the render with no stamp written, so the launcher refuses to start (LNCH-03). The reply names the
- * folder, every warning of the launch user, the LaunchPlan, the MCP config and the render, and the launcher command
- * (startReplyText). It never runs the launcher, and never starts a background session (D-108).
+ * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with one exact line, in this order: the
+ * repo refusals of repoGuard (in the start wording); the team refusals of readTeam; the launcher refusals of
+ * launcherRefusal (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
+ * before anything else is run; the refusals of gatherLaunchUser; and a render refusal. Otherwise it compiles the team
+ * (compileTeam), gathers the launching user and builds the role's LaunchPlan, and renders the role's `.runtime/`: the
+ * settings, the MCP config (runtimeMcpText), the probe expectations, the links, the inbox when there is none, and the
+ * stamp last. renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was
+ * built for, and every refusal comes before anything is written. Each step then runs through the host in order, and
+ * the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to
+ * start (LNCH-03). The reply names the folder, every warning of the launch user, the LaunchPlan, the MCP config and the
+ * render, and the launcher command (startReplyText). It never runs the launcher, and never starts a background session
+ * (D-108). `options.terminal` is not read yet: it is carried for the step that opens a terminal (D-109).
  */
 export async function runStart(
   io: InitIo,
@@ -790,6 +915,10 @@ export async function runStart(
   const team = await readTeam(io, locations.root, 'start', id)
   if (team.kind === 'refuse') return team.text
   const { state, roles } = team.value
+  const launcher = await launcherRefusal(io, locations.root, id)
+  if (launcher !== null) return launcher
+  const claude = await claudeRefusal(host)
+  if (claude !== null) return claude
 
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const role = roles.find(candidate => candidate.id === id)
@@ -814,7 +943,7 @@ export async function runStart(
   if (render.refusal !== null) return render.refusal
 
   for (const step of render.steps) {
-    if (!(await isStepDone(host, step))) return renderStoppedReply(id, repoRelative(user.root, step.path))
+    if (!(await isStepDone(host, step))) return renderFailedReply(id, repoRelative(user.root, step.path))
   }
   const links = render.steps.filter(step => step.kind === 'link').length
   const warnings = [...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
