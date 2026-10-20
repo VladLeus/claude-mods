@@ -80,10 +80,10 @@ export const IGNORE_BEGIN = '# >>> cadre'
 export const IGNORE_END = '# <<< cadre'
 
 /**
- * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`. The launcher refuses to start when it is missing,
- * when the role files are newer than it (they changed after the render), or when the rendered settings.json or
- * mcp.json is newer than it, which means a render did not finish; so a half-written render never starts a session
- * (D-102).
+ * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`, after it removed the old one first. The launcher
+ * refuses to start when it is missing, when the role files are newer than it (they changed after the render), or
+ * when the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render did
+ * not finish; so a half-written render never starts a session (D-102).
  */
 export const RUNTIME_STAMP_FILE = 'stamp'
 
@@ -436,7 +436,7 @@ async function planFile(
 
 /**
  * The manifest entries this plan keeps without regenerating: the carried ones (regen, D-68) and the ones the last
- * manifest lists that are no longer desired, which get a leave op with a note because Phase 2 deletes nothing. An
+ * manifest lists that are no longer desired, which get a leave op with a note because cadre deletes nothing. An
  * entry whose path is already taken, or is one cadre plans itself, is skipped; one outside `.cadre/` is refused.
  */
 function keptPart(
@@ -486,7 +486,7 @@ export type PlannedFiles = { readonly plan: Plan; readonly manifest: Manifest }
 
 /**
  * The file plan buildPlan gives, and the manifest that plan records: schema 1, the cadre version and, sorted by path,
- * every entry the plan keeps (each desired file that is not a conflict with its new hash, the old entry of a conflict,
+ * every entry the plan keeps (each desired file that is not a conflict, with its new hash, the old entry of a conflict,
  * the carried and the stale entries). The manifest op compares the stableJson text of this manifest with the disk,
  * and apply writes that same text, so the plan and the written manifest never differ (LNCH-01).
  */

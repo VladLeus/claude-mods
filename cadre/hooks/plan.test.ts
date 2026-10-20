@@ -577,7 +577,7 @@ describe('ignore block', () => {
       expect(IGNORE_END).toBe('# <<< cadre')
     })
 
-    test('the per-user files Phase 3 renders into .runtime are the seven named, in a frozen list', () => {
+    test('the per-user files /cadre start renders into .runtime are the seven named, in a frozen list', () => {
       expect(RUNTIME_RENDERED).toEqual([
         'settings.json',
         'mcp.json',

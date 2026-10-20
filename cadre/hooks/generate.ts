@@ -236,50 +236,69 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
 export const PROBE_PROMPT = 'Reply with OK.'
 
 /**
- * The lines of the `--probe` branch after its print-mode run, the same for every role (D-112, D-130). They refuse when
- * the run gave no init line; read the tools, slash commands and skills lists, the permission mode and the auto memory
- * folder from that line with sed; read each line of the expectations file as check|enforcement|text|token with jq
- * when it is on PATH, else with sed; print one line per expectation, `enforced`, `best-effort`, `violated` or `note`
- * and its text; and exit 1 when a check is violated, else 0. A check the case has no arm for, such as not-visible, is
- * best-effort. The init line and the expectations are only compared and echoed inside double quotes, never run
+ * The refusal of --probe when the init line does not hold one tools, skills and slash_commands list each (D-130,
+ * decision #48).
+ */
+const PROBE_INVENTORY_MESSAGE =
+  'cadre: the probe startup inventory does not hold one tools, skills and slash_commands list'
+
+/**
+ * The lines of the `--probe` branch after its print-mode run (D-112, D-130). They refuse when the run gave no init line
+ * or when the init line does not hold exactly one `tools`, `skills` and `slash_commands` list (decision #48); read the
+ * tools, slash commands and skills lists, the permission mode and the auto memory folder from that line with sed; read
+ * each line of the expectations file as check|enforcement|text|token with jq when it is on PATH, else with sed; print
+ * one line per expectation, `enforced`, `best-effort`, `violated` or `note` and its text; and exit 1 when a check is
+ * violated, else 0. They count the expectation lines and refuse when the file gave none, as a file jq or sed could not
+ * read would (decision #49); only that refusal names the role. A check the case has no arm for, such as not-visible,
+ * is best-effort. The init line and the expectations are only compared and echoed inside double quotes, never run
  * (T-03-10).
  */
-const PROBE_VERDICT_LINES: readonly string[] = Object.freeze([
-  `  [ -n "$init" ] || ${refusal('cadre: the probe run gave no startup inventory')}`,
-  `  cadre_list() { printf '%s' "$init" | sed -n "s/.*\\"$1\\":\\[\\([^]]*\\)\\].*/\\1/p"; }`,
-  '  tools=$(cadre_list tools)',
-  '  commands=$(cadre_list slash_commands)',
-  '  skills=$(cadre_list skills)',
-  `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
-  `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
-  '  cadre_rules() { if command -v jq >/dev/null 2>&1; then ' +
-    `jq -r '.rules[] | [.check, .enforcement, .text, .token] | join("|")' "$rt"/${PROBE_EXPECTATIONS_FILE}; ` +
-    `else sed -n 's/^{"check":"\\([a-z-]*\\)","enforcement":"\\([a-z-]*\\)","text":"\\([^"|]*\\)",` +
-    `"token":"\\([^"|]*\\)"},\\{0,1\\}$/\\1|\\2|\\3|\\4/p' "$rt"/${PROBE_EXPECTATIONS_FILE}; fi; }`,
-  '  bad=0',
-  "  while IFS='|' read -r check label text token; do",
-  '    [ -n "$check" ] || continue',
-  '    ok=1',
-  '    case $check in',
-  '      tool-absent) case ",$tools," in *",\\"$token\\","*) ok=0 ;; esac ;;',
-  '      tool-prefix-absent) case "$tools" in *"\\"$token"*) ok=0 ;; esac ;;',
-  '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
-  '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
-  '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
-  '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
-  '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
-  '      note) echo "note         $text"; continue ;;',
-  '      *) ok=2 ;;',
-  '    esac',
-  '    if [ "$ok" = 0 ]; then bad=1; echo "violated     $text"',
-  '    elif [ "$ok" = 2 ] || [ "$label" != hard ]; then echo "best-effort  $text"',
-  '    else echo "enforced     $text"; fi',
-  '  done <<CADRE_RULES',
-  '$(cadre_rules)',
-  'CADRE_RULES',
-  '  exit "$bad"',
-  'fi',
-])
+function probeVerdictLines(id: string): readonly string[] {
+  const noRule = runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} gave no rule`)
+
+  return [
+    `  [ -n "$init" ] || ${refusal('cadre: the probe run gave no startup inventory')}`,
+    '  cadre_once() { case "$init" in *"\\"$1\\":["*"\\"$1\\":["*) return 1 ;; ' +
+      '*"\\"$1\\":["*) return 0 ;; *) return 1 ;; esac; }',
+    `  for k in tools skills slash_commands; do cadre_once "$k" || ${refusal(PROBE_INVENTORY_MESSAGE)}; done`,
+    `  cadre_list() { printf '%s' "$init" | sed -n "s/.*\\"$1\\":\\[\\([^]]*\\)\\].*/\\1/p"; }`,
+    '  tools=$(cadre_list tools)',
+    '  commands=$(cadre_list slash_commands)',
+    '  skills=$(cadre_list skills)',
+    `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
+    `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
+    '  cadre_rules() { if command -v jq >/dev/null 2>&1; then ' +
+      `jq -r '.rules[] | [.check, .enforcement, .text, .token] | join("|")' "$rt"/${PROBE_EXPECTATIONS_FILE}; ` +
+      `else sed -n 's/^{"check":"\\([a-z-]*\\)","enforcement":"\\([a-z-]*\\)","text":"\\([^"|]*\\)",` +
+      `"token":"\\([^"|]*\\)"},\\{0,1\\}$/\\1|\\2|\\3|\\4/p' "$rt"/${PROBE_EXPECTATIONS_FILE}; fi; }`,
+    '  bad=0',
+    '  n=0',
+    "  while IFS='|' read -r check label text token; do",
+    '    [ -n "$check" ] || continue',
+    '    n=$((n+1))',
+    '    ok=1',
+    '    case $check in',
+    '      tool-absent) case ",$tools," in *",\\"$token\\","*) ok=0 ;; esac ;;',
+    '      tool-prefix-absent) case "$tools" in *"\\"$token"*) ok=0 ;; esac ;;',
+    '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+    '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+    '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+    '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
+    '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
+    '      note) echo "note         $text"; continue ;;',
+    '      *) ok=2 ;;',
+    '    esac',
+    '    if [ "$ok" = 0 ]; then bad=1; echo "violated     $text"',
+    '    elif [ "$ok" = 2 ] || [ "$label" != hard ]; then echo "best-effort  $text"',
+    '    else echo "enforced     $text"; fi',
+    '  done <<CADRE_RULES',
+    '$(cadre_rules)',
+    'CADRE_RULES',
+    `  [ "$n" -gt 0 ] || ${refusal(noRule)}`,
+    '  exit "$bad"',
+    'fi',
+  ]
+}
 
 /**
  * The text of the launcher `.cadre/bin/<id>`. It finds the repo from its own folder (`dirname -- "$0"`), never from
@@ -306,13 +325,15 @@ const PROBE_VERDICT_LINES: readonly string[] = Object.freeze([
  * no session (D-112, D-130): it refuses when `.runtime/probe-expectations.json` is missing or empty, runs one
  * print-mode turn (`claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence`) with the
  * same flags, the name `cadre-<id>-probe` and PROBE_PROMPT from /dev/null, never the kickoff, keeps the init line of
- * its output, and prints a verdict per expectation from that line alone (PROBE_VERDICT_LINES), exit 1 when a check is
- * violated. Without it, it execs claude with the flags of the compiled scope, for a `here` or `dir` start the git root
- * it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root start adds nothing),
- * then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read
- * anchored at the repo root, since in `here` and `dir` the session starts outside the git top level. The flags come
- * only from compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and
- * cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
+ * its output, refuses when that line does not hold exactly one `tools`, `skills` and `slash_commands` list or the
+ * expectations file gave no rule, and prints a verdict per expectation from that line alone (probeVerdictLines), exit 1
+ * when a check is violated. Without it, it execs claude with the flags of the compiled scope, for a `here` or `dir`
+ * start the git root it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root
+ * start adds nothing), then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS)
+ * and the kickoff read anchored at the repo root, since in `here` and `dir` the session starts outside the git top
+ * level. The flags come only from compileScope and the title never reaches the script; the role id, a slug, is quoted
+ * in the paths and cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add
+ * a command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
@@ -374,7 +395,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     'if [ "$probe" = 1 ]; then',
     `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} is missing`))}`,
     probeRun,
-    ...PROBE_VERDICT_LINES,
+    ...probeVerdictLines(id),
     `exec claude ${flags}${rootDir} -- "$(cat ${kickoff})"`,
   ]
 

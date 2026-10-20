@@ -26,10 +26,12 @@ const PROBE_TEXT_MAX = 300
 
 /**
  * Text as the launcher prints it for an expectation: one line of printable ASCII with no quote or backtick, at most 300
- * characters (asciiLine), and every `|` written as `/`, since the launcher splits an expectation line on `|`.
+ * characters (asciiLine), and every `|` and `\` written as `/`: the launcher splits an expectation line on `|`, and a
+ * backslash would reach its `echo` as `\` through jq but as `\\` through sed, and dash's `echo` reads backslash escapes
+ * (decision #49).
  */
 export function probeText(text: string): string {
-  return asciiLine(text, PROBE_TEXT_MAX).replaceAll('|', '/')
+  return asciiLine(text, PROBE_TEXT_MAX).replaceAll('|', '/').replaceAll('\\', '/')
 }
 
 /** A token of printable ASCII characters only, at least one. */
@@ -140,16 +142,25 @@ export type InitInventory = {
   readonly memoryAuto: string | null
 }
 
+/** The init lists the launcher reads; each must appear on the raw init line exactly once (decision #48). */
+const INIT_LIST_KEYS: readonly string[] = Object.freeze(['tools', 'skills', 'slash_commands'])
+
+/** Whether the raw line holds `"<key>":[` exactly once, as the launcher's cadre_once reads it. */
+function holdsListOnce(line: string, key: string): boolean {
+  return line.split(`"${key}":[`).length === 2
+}
+
 /**
  * The startup inventory in the stream-json output of a probe run (ISO-01, D-112), or null. The init event is the first
  * line that holds `"subtype":"init"` and parses to an object of type `system` and subtype `init`; no other line is
  * read, and it need not be line 1, since hook and title events can come before it (RESEARCH 2.4). Tools, slash commands
  * and skills keep their string entries; the permission mode and `memory_paths.auto` are strings or null. Every
  * malformed shape gives null, and nothing throws: output with no init event (the launcher refuses with exit 1 then), a
- * truncated line, a JSON array, and an init event whose `tools` is not an array, so no verdict is ever computed from a
- * guessed inventory (T-03-39). `mcp_servers` is never read: a denied server stays connected and only its tools leave
- * `tools`, so a check on a server is a check on tools. It is the TypeScript twin of the sh reads of the launcher's
- * `--probe` branch.
+ * truncated line, a JSON array, an init event whose `tools`, `slash_commands` or `skills` is not an array, and a line
+ * that does not hold each of `"tools":[`, `"skills":[` and `"slash_commands":[` exactly once, nested or not (the
+ * launcher's cadre_once check, decision #49), so no verdict is ever computed from a guessed inventory (T-03-39).
+ * `mcp_servers` is never read: a denied server stays connected and only its tools leave `tools`, so a check on a server
+ * is a check on tools. It is the TypeScript twin of the sh reads of the launcher's `--probe` branch.
  */
 export function parseInitEvent(output: string): InitInventory | null {
   const names = (list: unknown): string[] =>
@@ -159,7 +170,8 @@ export function parseInitEvent(output: string): InitInventory | null {
     if (!line.includes('"subtype":"init"')) continue
     const event = parseJsonValue(line)?.value
     if (!isObject(event) || event.type !== 'system' || event.subtype !== 'init') continue
-    if (!Array.isArray(event.tools)) return null
+    if (!Array.isArray(event.tools) || !Array.isArray(event.slash_commands) || !Array.isArray(event.skills)) return null
+    if (!INIT_LIST_KEYS.every(key => holdsListOnce(line, key))) return null
 
     const memory = event.memory_paths
     const auto = isObject(memory) ? memory.auto : null
