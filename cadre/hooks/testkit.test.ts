@@ -7,13 +7,16 @@ import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
+  DEFAULT_RUN,
   EMPTY_FACTS,
   emptySetupScan,
   entry,
   FRAMEWORKS,
+  hostWorld,
   INIT_ANSWERS,
   leaks,
   link,
+  memHost,
   memIo,
   memWorld,
   SECRET_FIXTURES,
@@ -374,5 +377,35 @@ describe('shared fixtures', () => {
     const changed = secretWorld({ facts })
     expect(changed.facts).toEqual(facts)
     expect({ ...changed, facts: world.facts }).toEqual(world)
+  })
+})
+
+describe('testkit host', () => {
+  test('a write resolves true and is recorded with its path, its text and isWritten true', async () => {
+    const host = memHost(hostWorld({}))
+    expect(await host.io.write('/repo/a', 'x')).toBe(true)
+    expect(host.writes).toEqual([{ path: '/repo/a', text: 'x', isWritten: true }])
+  })
+
+  test('a write to a path in writeFails resolves false and is still recorded, with isWritten false', async () => {
+    const host = memHost(hostWorld({ writeFails: ['/repo/a'] }))
+    expect(await host.io.write('/repo/a', 'x')).toBe(false)
+    expect(host.writes).toEqual([{ path: '/repo/a', text: 'x', isWritten: false }])
+  })
+
+  test('a run resolves the result of the rule naming its argv, and records the argv and the options', async () => {
+    const result = { exitCode: 0, stdout: '2.1.304 (Claude Code)\n', stderr: '' }
+    const host = memHost(hostWorld({ runs: [{ argv: ['claude', '--version'], result }] }))
+    expect(await host.io.run(['claude', '--version'], { timeoutMs: 10_000 })).toEqual(result)
+    expect(host.calls).toEqual([{ argv: ['claude', '--version'], options: { timeoutMs: 10_000 } }])
+  })
+
+  test('a run whose argv no rule names resolves DEFAULT_RUN, a frozen exit 0 with no output', async () => {
+    const result = { exitCode: 0, stdout: '2.1.304 (Claude Code)\n', stderr: '' }
+    const host = memHost(hostWorld({ runs: [{ argv: ['claude', '--version'], result }] }))
+    expect(await host.io.run(['claude'], { timeoutMs: 10_000 })).toBe(DEFAULT_RUN)
+    expect(await host.io.run(['claude', '--version', '--json'], { timeoutMs: 10_000 })).toBe(DEFAULT_RUN)
+    expect(DEFAULT_RUN).toEqual({ exitCode: 0, stdout: '', stderr: '' })
+    expect(Object.isFrozen(DEFAULT_RUN)).toBe(true)
   })
 })
