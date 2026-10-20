@@ -23,12 +23,15 @@ import {
   IGNORE_BEGIN,
   IGNORE_END,
   ignoreLines,
+  INBOX_FILE,
   isSafeOpPath,
   MANIFEST_PATH,
   mergeIgnoreBlock,
   planReadPaths,
+  PROBE_EXPECTATIONS_FILE,
   renderPlan,
   RUNTIME_RENDERED,
+  RUNTIME_STAMP_FILE,
   stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
@@ -554,9 +557,24 @@ describe('ignore block', () => {
       expect(IGNORE_END).toBe('# <<< cadre')
     })
 
-    test('the per-user files Phase 3 renders into .runtime are the four named, in a frozen list', () => {
-      expect(RUNTIME_RENDERED).toEqual(['settings.json', 'mcp.json', 'overlay/', 'instructions/'])
+    test('the per-user files Phase 3 renders into .runtime are the seven named, in a frozen list', () => {
+      expect(RUNTIME_RENDERED).toEqual([
+        'settings.json',
+        'mcp.json',
+        'overlay/',
+        'instructions/',
+        'probe-expectations.json',
+        'inbox.md',
+        'stamp',
+      ])
       expect(Object.isFrozen(RUNTIME_RENDERED)).toBe(true)
+    })
+
+    test('the stamp, the inbox and the probe expectations have one name each, the last three rendered (D-102)', () => {
+      expect(RUNTIME_STAMP_FILE).toBe('stamp')
+      expect(INBOX_FILE).toBe('inbox.md')
+      expect(PROBE_EXPECTATIONS_FILE).toBe('probe-expectations.json')
+      expect(RUNTIME_RENDERED.slice(-3)).toEqual([PROBE_EXPECTATIONS_FILE, INBOX_FILE, RUNTIME_STAMP_FILE])
     })
   })
 
@@ -690,7 +708,8 @@ describe('ignore block', () => {
 
       expect(text).toBe(
         '# >>> cadre\nthoughts/\n.cadre/*/.runtime/settings.json\n.cadre/*/.runtime/mcp.json\n' +
-          '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/**/*.cadre-new\n# <<< cadre\n',
+          '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/*/.runtime/probe-expectations.json\n' +
+          '.cadre/*/.runtime/inbox.md\n.cadre/*/.runtime/stamp\n.cadre/**/*.cadre-new\n# <<< cadre\n',
       )
     })
 
@@ -722,7 +741,7 @@ describe('ignore block', () => {
     test('ignoreLines gives the policy lines alone, as a new array each time', () => {
       expect(ignoreLines('definitions')).toEqual(['.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
       expect(ignoreLines('ignore')).toEqual(['.cadre/'])
-      expect(ignoreLines('all')).toHaveLength(5)
+      expect(ignoreLines('all')).toHaveLength(8)
 
       const first = ignoreLines('all')
       first.push('changed')
@@ -733,7 +752,7 @@ describe('ignore block', () => {
     test('every line of the all policy comes from the rendered files, and the folder itself is not ignored', () => {
       const lines = ignoreLines('all')
 
-      for (const name of RUNTIME_RENDERED) expect(lines).toContain(`.cadre/*/.runtime/${name}`)
+      expect(lines).toEqual([...RUNTIME_RENDERED.map(name => `.cadre/*/.runtime/${name}`), '.cadre/**/*.cadre-new'])
       expect(lines).not.toContain('.cadre/*/.runtime/')
     })
   })

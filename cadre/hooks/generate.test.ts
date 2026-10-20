@@ -913,17 +913,63 @@ const BE_FLAGS = [
 /** The line that finds the repo from the launcher's own folder, so a run from another folder cannot misfire (A2). */
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
 
-/** The first lines of the BE launcher: the shebang, the two comment lines, set -eu and the root line. */
-const BE_HEAD: readonly string[] = [
+/** The guard of the BE launcher: it refuses when role.json is not under the repo it found (D-119). */
+const BE_GUARD = `[ -f "$root"/.cadre/be/role.json ] || { echo 'cadre: not the repo of role be' >&2; exit 1; }`
+
+/** The refusal of a claude that is missing, unreadable or older than 2.1.295 (D-107). */
+const VERSION_REFUSAL =
+  "cadre_claude_ok || { echo 'cadre: needs claude 2.1.295 or newer on PATH (see claude --version)' >&2; exit 1; }"
+
+/** The stamp check of the BE launcher: with no stamp, no render of .runtime/ has finished (D-102). */
+const BE_STAMP_CHECK =
+  `[ -f "$rt"/stamp ] || { echo 'cadre: .cadre/be/.runtime/ is not rendered: ` +
+  `run /cadre start be in the root session of the repo' >&2; exit 1; }`
+
+/** The line a launcher prints when neither jq nor node is there to check the rendered JSON again (D-129). */
+const NO_JSON_CHECKER = "  echo 'cadre: (JSON not re-checked: no jq or node)' >&2"
+
+/**
+ * The launcher of the BE role on the merged route that starts at the git root, line by line, with its final newline:
+ * the guard (D-119), the claude version check (D-107), the freshness check against the stamp (D-102), the JSON check
+ * (D-107, D-129), the start line and the exec line.
+ */
+const BE_LAUNCHER = [
   '#!/bin/sh',
-  '# cadre launcher for role be. Provisional (Phase 2): Phase 3 adds the claude version check',
-  '# and renders .cadre/be/.runtime/ before it starts the session.',
+  '# cadre launcher for role be: checks claude and .cadre/be/.runtime/, then starts the session.',
+  '# /cadre start be renders .cadre/be/.runtime/ in the root session of the repo; this script never renders it.',
   'set -eu',
   ROOT_LINE,
-]
-
-/** The exec line of the BE launcher on the merged route: the flags, `--` and the kickoff read at the repo root. */
-const BE_EXEC = `exec claude ${BE_FLAGS} -- "$(cat "$root"/.cadre/be/kickoff.txt)"`
+  BE_GUARD,
+  'rt="$root"/.cadre/be/.runtime',
+  'cadre_claude_ok() {',
+  "  set -- $(claude --version 2>/dev/null | sed -n " +
+    "'s/^\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\).*/\\1 \\2 \\3/p')",
+  '  [ $# -eq 3 ] || return 1',
+  '  [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && { [ "$2" -gt 1 ] || { [ "$2" -eq 1 ] && [ "$3" -ge 295 ]; }; }; }',
+  '}',
+  VERSION_REFUSAL,
+  BE_STAMP_CHECK,
+  'for f in "$root"/.cadre/cadre.json "$root"/.cadre/be/role.json "$root"/.cadre/be/settings.json ' +
+    '"$root"/.cadre/be/mcp.json; do',
+  `  if [ "$f" -nt "$rt"/stamp ]; then echo 'cadre: .cadre/be/.runtime/ is older than the role files: ` +
+    `run /cadre start be' >&2; exit 1; fi`,
+  'done',
+  `[ -s "$rt"/settings.json ] && [ -s "$rt"/mcp.json ] || { echo 'cadre: .cadre/be/.runtime/settings.json or ` +
+    `mcp.json is missing or empty: run /cadre start be' >&2; exit 1; }`,
+  'if command -v jq >/dev/null 2>&1; then',
+  `  jq empty "$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1 || { echo 'cadre: .cadre/be/.runtime/ holds a ` +
+    `file that is not valid JSON: run /cadre start be' >&2; exit 1; }`,
+  'elif command -v node >/dev/null 2>&1; then',
+  `  node -e 'for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))' ` +
+    `"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1 || { echo 'cadre: .cadre/be/.runtime/ holds a file ` +
+    `that is not valid JSON: run /cadre start be' >&2; exit 1; }`,
+  'else',
+  NO_JSON_CHECKER,
+  'fi',
+  'cd -- "$root"',
+  `exec claude ${BE_FLAGS} -- "$(cat "$root"/.cadre/be/kickoff.txt)"`,
+  '',
+].join('\n')
 
 /** Words a shell would treat as more than one word, a command or a substitution if they were left bare. */
 const HOSTILE_WORDS: readonly string[] = [
@@ -979,28 +1025,42 @@ describe('launcher', () => {
     expect(shellWords('"$root"/\'a b\' "$(cat "$root"/\'x)y\')"')).toEqual(["$root/a b", '$(cat "$root"/\'x)y\')'])
   })
 
-  test('the git-root launcher of the BE finds its repo from its own folder, goes to its top and execs claude', () => {
+  test('the git-root BE launcher checks its repo, claude and the rendered files, then execs claude at the top', () => {
     const be = templateRole('be')
+    const text = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' })
 
-    expect(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' })).toBe(
-      [...BE_HEAD, 'cd -- "$root"', BE_EXEC, ''].join('\n'),
-    )
+    expect(text).toBe(BE_LAUNCHER)
+    expect(execWords(text)).toEqual([
+      'exec',
+      'claude',
+      ...shellWords(BE_FLAGS),
+      '--',
+      '$(cat "$root"/.cadre/be/kickoff.txt)',
+    ])
   })
 
-  test('the here launcher finds its repo the same way and starts in the folder it is run from: no cd line', () => {
+  test('the guard, the version refusal, the stamp check and the line for no JSON checker are there once each', () => {
     const be = templateRole('be')
+    const lines = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' }).split('\n')
 
-    expect(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' })).toBe([...BE_HEAD, BE_EXEC, ''].join('\n'))
+    for (const line of [BE_GUARD, VERSION_REFUSAL, BE_STAMP_CHECK, NO_JSON_CHECKER]) {
+      expect(lines.filter(candidate => candidate === line)).toHaveLength(1)
+    }
+  })
+
+  test('the here launcher starts in the folder it is run from: no cd line', () => {
+    const be = templateRole('be')
+    const lines = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' }).split('\n')
+
+    expect(lines.filter(line => line.startsWith('cd '))).toEqual([])
   })
 
   test('the dir launcher goes to its folder under the repo root, the path shell-quoted', () => {
     const be = templateRole('be')
     const scope = scopeOf(be, 'gsd', [be])
 
-    expect(launcherText(be, scope, { kind: 'dir', path: 'apps/web' })).toBe(
-      [...BE_HEAD, 'cd -- "$root"/apps/web', BE_EXEC, ''].join('\n'),
-    )
-    expect(launcherText(be, scope, { kind: 'dir', path: "a b/it's" }).split('\n')[5]).toBe(
+    expect(launcherText(be, scope, { kind: 'dir', path: 'apps/web' }).split('\n')).toContain('cd -- "$root"/apps/web')
+    expect(launcherText(be, scope, { kind: 'dir', path: "a b/it's" }).split('\n')).toContain(
       `cd -- "$root"/'a b/it'\\''s'`,
     )
   })
@@ -1070,7 +1130,7 @@ describe('launcher', () => {
     const lines = text.split('\n')
     const kickoffPath = `.cadre/${id}/kickoff.txt`
 
-    expect(lines).toHaveLength(8)
+    expect(lines).toHaveLength(28)
     expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
     expect(lines.slice(3, 5)).toEqual(['set -eu', ROOT_LINE])
     expect(execWords(text).slice(-2)).toEqual(['--', `$(cat "$root"/${shQuote(kickoffPath)})`])
@@ -1082,9 +1142,9 @@ describe('launcher', () => {
     const text = launcherText(role, scopeOf(role, 'gsd', [role]), { kind: 'git-root' })
     const lines = text.split('\n')
 
-    expect(lines.slice(0, 6).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'r', 'c'])
+    expect(lines.slice(0, 6).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'r', '['])
     expect(lines[1]).toBe(
-      '# cadre launcher for role xrm -rf ~. Provisional (Phase 2): Phase 3 adds the claude version check',
+      '# cadre launcher for role xrm -rf ~: checks claude and .cadre/xrm -rf ~/.runtime/, then starts the session.',
     )
     expect(execWords(text)).toContain(`$root/.cadre/${id}/.runtime/settings.json`)
   })
