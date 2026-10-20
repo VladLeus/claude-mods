@@ -136,6 +136,16 @@ function coveredPrefixes(deny: readonly string[]): string[] {
   })
 }
 
+/** The runtime deny list of the template BE at /repo: the ~/ denies, and the .env denies made absolute (D-123). */
+const BASH_DENY: readonly string[] = [
+  'Read(//repo/**/.env)',
+  'Read(//repo/**/.env.*)',
+  'Read(//repo/.env)',
+  'Read(//repo/.env.*)',
+  'Read(~/.aws/**)',
+  'Read(~/.ssh/**)',
+]
+
 describe('launch render', () => {
   test('RUNTIME_SETTINGS_KEYS lists the ten allowed settings keys and is frozen', () => {
     expect(RUNTIME_SETTINGS_KEYS).toEqual([
@@ -345,7 +355,14 @@ describe('launch render', () => {
       enabledPlugins: { 'agent-fleet@local-mods': true, 'autopilot@local-mods': true, 'cadre@local-mods': true },
       permissions: {
         defaultMode: 'auto',
-        deny: ['Read(./.env)', 'Read(./.env.*)', 'Read(~/.aws/**)', 'Read(~/.ssh/**)'],
+        deny: [
+          'Read(//repo/**/.env)',
+          'Read(//repo/**/.env.*)',
+          'Read(//repo/.env)',
+          'Read(//repo/.env.*)',
+          'Read(~/.aws/**)',
+          'Read(~/.ssh/**)',
+        ],
       },
       sandbox: { enabled: true },
     })
@@ -595,12 +612,12 @@ describe('runtimeDeny', () => {
     expect(new Set(a.deny).size).toBe(a.deny.length)
   })
 
-  test('a role with Bash gets its template deny unchanged', () => {
+  test('a role with Bash gets its template deny with only the .env denies made absolute (D-123)', () => {
     const role = templateRole('be')
     const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
 
     expect(runtimeDeny(role, scope, user({ codeDirs: ['cadre', 'src'] }))).toEqual({
-      deny: scope.settings.permissions.deny,
+      deny: BASH_DENY,
       warnings: [],
     })
   })
@@ -714,9 +731,9 @@ describe('runtimeDeny', () => {
       expect(scope.settings.permissions.deny).toContain('Read(./.env)')
       expect(scope.settings.permissions.deny).toContain('Read(./.env.*)')
       expect(result.warnings).toEqual([])
-      expect(bashDeny).toContain('Read(./.env)')
-      expect(bashDeny).toContain('Read(./.env.*)')
-      expect(bashDeny).not.toContain('Read(//repo/.env)')
+      expect(bashDeny).toContain('Read(//repo/.env)')
+      expect(bashDeny).not.toContain('Read(./.env)')
+      expect(bashDeny).not.toContain('Read(./.env.*)')
     },
   )
 
@@ -727,6 +744,59 @@ describe('runtimeDeny', () => {
 
     expect(result.deny.filter(entry => lintRuntimeDenyPattern(entry) !== null)).toEqual([])
     expect(result.deny).toContain('Read(//repo/docs/**)')
+  })
+})
+
+describe('runtimeDeny for Bash roles (D-123)', () => {
+  test('a Bash role at a safe root gets the four absolute .env denies, no relative one, and the ~/ denies', () => {
+    const role = templateRole('be')
+    const result = runtimeDeny(role, compileScope(role, context()), user())
+
+    expect(result).toEqual({ deny: BASH_DENY, warnings: [] })
+    expect(result.deny).toContain('Read(//repo/.env)')
+    expect(result.deny).toContain('Read(//repo/.env.*)')
+    expect(result.deny).toContain('Read(//repo/**/.env)')
+    expect(result.deny).toContain('Read(//repo/**/.env.*)')
+    expect(result.deny).not.toContain('Read(./.env)')
+    expect(result.deny).not.toContain('Read(./.env.*)')
+  })
+
+  test('a Bash role gets no code-dir deny, whatever code dirs the launch scan names: its template holds none', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
+    const result = runtimeDeny(role, scope, user({ codeDirs: ['cadre', 'src', 'docs'] }))
+
+    expect(coveredPrefixes(result.deny)).toEqual([])
+    expect(result).toEqual({ deny: BASH_DENY, warnings: [] })
+  })
+
+  test('launchPlan for BE renders that deny list into the runtime settings', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+
+    expect(launchPlan(role, scope, user()).settings.permissions).toEqual({
+      defaultMode: scope.settings.permissions.defaultMode,
+      deny: BASH_DENY,
+    })
+  })
+
+  test('a Bash role at a root a rule cannot hold keeps its template deny, with no warning', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+
+    expect(runtimeDeny(role, scope, user({ root: '/re po' }))).toEqual({
+      deny: scope.settings.permissions.deny,
+      warnings: [],
+    })
+  })
+
+  test('for every template role at a safe root, no runtime deny is a cwd-relative .env deny', () => {
+    const roles = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
+    const denies = roles.map(role => runtimeDeny(role, compileScope(role, context()), user()).deny)
+
+    expect(roles.filter(role => role.hasBash).length).toBeGreaterThan(0)
+    expect(denies.flatMap(deny => deny.filter(entry => entry.startsWith('Read(./.env')))).toEqual([])
+    expect(denies.filter(deny => !deny.includes('Read(//repo/.env)'))).toEqual([])
   })
 })
 
