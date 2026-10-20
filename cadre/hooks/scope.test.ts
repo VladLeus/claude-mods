@@ -1492,7 +1492,7 @@ function startNotes(folder: string): ScopeRule[] {
   return [
     `project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`,
     `Additional directory: <git root> (start folder is ${folder})`,
-    `Handoffs (thoughts/shared/handoffs/be/) and GSD .planning/ follow the start folder ${folder}`,
+    `Handoffs (thoughts/shared/handoffs/be/) and GSD .planning/ follow the start folder (${folder})`,
   ].map((text): ScopeRule => ({ text, enforcement: 'none' }))
 }
 

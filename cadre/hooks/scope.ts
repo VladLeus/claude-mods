@@ -510,7 +510,7 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   return [
     rule(`project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`, 'none'),
     rule(`Additional directory: <git root> (start folder is ${folder})`, 'none'),
-    rule(`Handoffs (${handoffs}) and GSD .planning/ follow the start folder ${folder}`, 'none'),
+    rule(`Handoffs (${handoffs}) and GSD .planning/ follow the start folder (${folder})`, 'none'),
   ]
 }
 
