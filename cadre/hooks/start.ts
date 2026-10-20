@@ -1,6 +1,7 @@
 /**
  * The gather and render halves of /cadre start (D-102), and runStart, the command itself, which checks the repo and
- * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command (LNCH-04).
+ * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command, printed and
+ * copied to the clipboard (LNCH-04, D-110).
  *
  * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
  * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
@@ -21,6 +22,7 @@ import type {
   PortEntry,
   PortStat,
   RoleSpec,
+  RunOptions,
   SettingsSource,
   TerminalChoice,
 } from '../types'
@@ -877,6 +879,31 @@ export function launcherCommand(root: string, id: string): string {
   return shQuote(`${root}/.cadre/bin/${id}`)
 }
 
+/** How long pbcopy may run before it is given up. */
+const CLIPBOARD_TIMEOUT_MS = 5_000
+
+/** The line below the launcher command when pbcopy copied it (D-110). */
+export const COPIED_LINE = 'Copied to the clipboard.'
+
+/**
+ * The line below the launcher command when it could not be copied (D-110, D-132): pbcopy is macOS only, and a host
+ * without it, or a copy that fails, still has the command printed above, so this is not an error.
+ */
+export const NOT_COPIED_LINE = 'Could not copy it to the clipboard (pbcopy is macOS only): copy the line above.'
+
+/**
+ * The run that copies the launcher command to the clipboard (D-110): `/usr/bin/pbcopy`, absolute and with no shell,
+ * given the command on stdin and LC_CTYPE=UTF-8, without which pbcopy mangles a non-ASCII letter of the path (RESEARCH
+ * Pitfall 8). pbcopy is macOS only, so a run that cannot start or exits non-zero is not an error: the command is
+ * printed all the same (D-132).
+ */
+export function clipboardRun(command: string): { readonly argv: readonly string[]; readonly options: RunOptions } {
+  return {
+    argv: ['/usr/bin/pbcopy'],
+    options: { stdin: command, env: { LC_CTYPE: 'UTF-8' }, timeoutMs: CLIPBOARD_TIMEOUT_MS },
+  }
+}
+
 /**
  * The disk a render is planned from: the stat of each path renderPaths names, asked with resolve, and the listing of
  * each folder it names. A folder the host cannot list gets no listing, so renderSteps counts it as empty.
@@ -912,15 +939,22 @@ async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
 /**
  * The reply of a render that ran every step (D-102): what was asked for, the folder rendered with the number of links
  * it made, one `warning: ` line per warning, then the line that hands over the launcher and the launcher command, two
- * spaces in.
+ * spaces in, and below the command the lines of `after`: the copy line (D-110).
  */
-function startReplyText(id: string, root: string, links: number, warnings: readonly string[]): string {
+function startReplyText(
+  id: string,
+  links: number,
+  warnings: readonly string[],
+  command: string,
+  after: readonly string[],
+): string {
   return [
     `cadre start ${id}`,
     `Rendered .cadre/${id}/.runtime/ (${links} ${links === 1 ? 'link' : 'links'}).`,
     ...warnings.map(warning => `warning: ${warning}`),
     `Run this in a terminal to start role ${id}:`,
-    `  ${launcherCommand(root, id)}`,
+    `  ${command}`,
+    ...after,
   ].join('\n')
 }
 
@@ -936,9 +970,11 @@ function startReplyText(id: string, root: string, links: number, warnings: reado
  * the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to
  * start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them (scanWarnings,
  * #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the LaunchPlan, the MCP
- * config and the render; and the launcher command (startReplyText). It never runs the launcher, and never starts a
- * background session (D-108). `options.terminal` is not read yet: it is carried for the step that opens a terminal
- * (D-109).
+ * config and the render; and the launcher command (startReplyText). Once the render has run every step, it copies the
+ * command through the host with clipboardRun, and the line below the command is COPIED_LINE when pbcopy exits 0, else
+ * NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies nothing. It never runs the
+ * launcher, and never starts a background session (D-108). `options.terminal` is not read yet: it is carried for the
+ * step that opens a terminal (D-109).
  */
 export async function runStart(
   io: InitIo,
@@ -986,6 +1022,10 @@ export async function runStart(
   const drift = launcherDrift(id, launcher.value, desiredFiles({ roles, scopes, state, only: id }))
   const scan = scanWarnings(locations, gathered)
   const warnings = [...scan, ...drift, ...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
+  const command = launcherCommand(user.root, id)
+  const copy = clipboardRun(command)
+  const copied = await host.run(copy.argv, copy.options)
+  const copyLine = copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE
 
-  return startReplyText(id, user.root, links, warnings)
+  return startReplyText(id, links, warnings, command, [copyLine])
 }
