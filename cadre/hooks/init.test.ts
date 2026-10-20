@@ -27,6 +27,7 @@ import type {
   RoleProposal,
   RoleSpec,
   ScopeCard,
+  ScopeContext,
   TemplateRoleId,
   UnsupportedId,
 } from '../types'
@@ -2722,8 +2723,8 @@ function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): Ca
 }
 
 /**
- * The files init plans for these roles in `world`: every scope compiled on the state's default, none attended, from
- * scans that read ~/.claude.json only when the state records the consent (A1).
+ * The files init plans for these roles in `world`: every scope compiled on the state's default and for its launch
+ * start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent (A1).
  */
 async function plannedFiles(
   world: MemWorld,
@@ -2732,8 +2733,9 @@ async function plannedFiles(
 ): Promise<DesiredFile[]> {
   const state = stateOf(roles, over)
   const gathered = await scansOf(world, state.readUserMcp)
+  const scopes = scopesFor(roles, state.framework, gathered, [], state.launchStart)
 
-  return desiredFiles({ roles, scopes: scopesFor(roles, state.framework, gathered, []), state, only: null })
+  return desiredFiles({ roles, scopes, state, only: null })
 }
 
 /** The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy`. */
@@ -2822,7 +2824,7 @@ describe('init plan', () => {
 
   test('the provisional MCP route is merged, and the card of every scope says Phase 3 decides it (D-94)', () => {
     expect(PROVISIONAL_MCP_ROUTE).toBe('merged')
-    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
     for (const role of roles) {
       const card = cardOf(scopes, role.id)
       expect(card.mcpRoute).toBe('merged')
@@ -2831,15 +2833,16 @@ describe('init plan', () => {
   })
 
   test('scopesFor compiles each role with its framework, the setup, the code dirs and the whole team', () => {
-    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
     expect([...scopes.keys()]).toEqual(['pm', 'tl', 'be'])
     for (const role of roles) {
-      const context = {
+      const context: ScopeContext = {
         framework: resolvedFramework(role, 'gsd'),
         setup: gathered.setup,
         codeDirs: ['src'],
         isAttended: false,
         mcpRoute: PROVISIONAL_MCP_ROUTE,
+        launchStart: { kind: 'git-root' },
         roles,
       }
       expect(scopes.get(role.id)).toEqual(compileScope(role, context))
@@ -2849,7 +2852,7 @@ describe('init plan', () => {
   test("a role is attended when an unmet hunk is on its own framework's config file (ROLE-04, A5)", () => {
     const team = [templateRole('be'), withFramework(templateRole('qa'), 'superpowers')]
     const attended = (hunks: readonly HunkOp[]): boolean[] => {
-      const scopes = scopesFor(team, 'gsd', gathered, hunks)
+      const scopes = scopesFor(team, 'gsd', gathered, hunks, { kind: 'git-root' })
 
       return team.map(role => cardOf(scopes, role.id).isAttended)
     }
@@ -2862,7 +2865,7 @@ describe('init plan', () => {
   })
 
   test("cardLines gives the lines of every role's card in role order, and none for a role with no scope", () => {
-    const scopes = scopesFor(roles, 'gsd', gathered, [])
+    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
     expect(cardLines(roles, scopes)).toEqual(roles.flatMap(role => scopeCardLines(cardOf(scopes, role.id))))
     expect(cardLines([...roles, templateRole('qa')], scopes)).toEqual(cardLines(roles, scopes))
   })
@@ -2870,7 +2873,7 @@ describe('init plan', () => {
   test('planStep plans a create for each planned file, the manifest and .gitignore, then hunks (PLAN-01)', async () => {
     const team = await defaultRoles(gitWorld())
     const scans = await scansOf(gitWorld())
-    const scopes = scopesFor(team, 'none', scans, [])
+    const scopes = scopesFor(team, 'none', scans, [], { kind: 'git-root' })
     const hunks = [gsdHunk(), gsdHunk({ key: 'workflow.text_mode', before: 'true', after: 'false' })]
     const input: Parameters<typeof planStep>[1] = {
       roles: team,
@@ -2896,7 +2899,7 @@ describe('init plan', () => {
   test('planStep reads each planned path, the copy beside it and .gitignore through readRepoFile', async () => {
     const team = await defaultRoles(gitWorld())
     const scans = await scansOf(gitWorld())
-    const scopes = scopesFor(team, 'none', scans, [])
+    const scopes = scopesFor(team, 'none', scans, [], { kind: 'git-root' })
     const linked = '/repo/.cadre/pm/ROLE.md'
     const world = gitWorld({ files: { [linked]: 'x' }, realPaths: { [linked]: '/elsewhere/ROLE.md' } })
     const run = memIo(world, {})
@@ -2923,7 +2926,7 @@ describe('init plan', () => {
   test("planStep writes cadre's own version into cadre.json and the manifest, and unknown when it cannot", async () => {
     const team = await defaultRoles(gitWorld())
     const scans = await scansOf(gitWorld())
-    const scopes = scopesFor(team, 'none', scans, [])
+    const scopes = scopesFor(team, 'none', scans, [], { kind: 'git-root' })
     const input: Parameters<typeof planStep>[1] = {
       roles: team,
       repoDefault: 'none',
@@ -2951,7 +2954,7 @@ describe('init plan', () => {
   test('planStep records the ~/.claude.json consent answer in the state and the planned cadre.json (A1)', async () => {
     const team = await defaultRoles(gitWorld())
     const scans = await scansOf(gitWorld())
-    const scopes = scopesFor(team, 'none', scans, [])
+    const scopes = scopesFor(team, 'none', scans, [], { kind: 'git-root' })
     for (const readUserMcp of [true, false]) {
       const result = await planStep(memIo(gitWorld(), {}).io, {
         roles: team,
@@ -3015,7 +3018,7 @@ describe('init plan', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const team = await defaultRoles(gitWorld())
-    const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), []))
+    const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), [], { kind: 'git-root' }))
     const logged = loggedFrom(events, 'Scope card: PM (pm)', GIT_POLICY_QUESTION)
     expect(logged.join('\n')).toBe(cards.join('\n'))
     expect(logged.every(text => text.length <= 2000)).toBe(true)
@@ -3280,7 +3283,7 @@ describe('reviewStep', () => {
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(world, {}).io, locations, false)
     const team = proposeRoles(gathered.repo).roles
-    const scopes = scopesFor(team, 'none', gathered, [])
+    const scopes = scopesFor(team, 'none', gathered, [], { kind: 'git-root' })
     const { plan } = await planStep(memIo(world, {}).io, {
       roles: team,
       repoDefault: 'none',

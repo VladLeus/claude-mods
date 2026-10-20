@@ -44,6 +44,7 @@ function context(over: Partial<ScopeContext> = {}): ScopeContext {
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
+    launchStart: { kind: 'git-root' },
     roles: ['pm', 'tl'],
     ...over,
   }

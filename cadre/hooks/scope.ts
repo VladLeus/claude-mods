@@ -2,6 +2,7 @@ import type {
   CompiledScope,
   Enforcement,
   FrameworkId,
+  LaunchStart,
   McpRoute,
   RoleSpec,
   ScopeCard,
@@ -456,9 +457,9 @@ function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
 }
 
 /**
- * The warnings of a GSD context monitor registered in project settings (D-62, A1): it loads in every role, since the
- * launcher runs --setting-sources project, and cadre's settings cannot remove it. One rule per script, sorted; none
- * when no project hook is the monitor.
+ * The warnings of a GSD context monitor registered in project settings (D-62, A1): it loads in every role that starts
+ * at the git root, since the launcher runs --setting-sources project, and cadre's settings cannot remove it; rulesFor
+ * gives them for a git-root start only (D-122). One rule per script, sorted; none when no project hook is the monitor.
  */
 function projectMonitorRules(setup: SetupScan): ScopeRule[] {
   const monitors = setup.hooks.filter(hook => hook.source === 'project' && isContextMonitorScript(hook.script))
@@ -470,6 +471,34 @@ function projectMonitorRules(setup: SetupScan): ScopeRule[] {
 
     return rule(text, 'none')
   })
+}
+
+/**
+ * The folder a launcher that does not start at the git root starts the session in, as the card names it: the folder
+ * of a `dir` start under `<git root>`, or for `here` the folder the launcher is run from. A git-root start is never
+ * asked (startRules gives it no note).
+ */
+function startFolderText(start: LaunchStart): string {
+  if (start.kind === 'dir') return `<git root>/${shown(start.path)}`
+
+  return 'the folder the launcher is run from'
+}
+
+/**
+ * The notes of a launch start other than the git root, labelled none, in this order: the project settings of the git
+ * root do not load, since the session starts in another folder (D-122); the git root is an additional directory
+ * (D-127); and the handoffs and GSD's .planning/ follow the start folder (D-113). None for a git-root start.
+ */
+function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
+  if (start.kind === 'git-root') return []
+  const folder = startFolderText(start)
+  const handoffs = `thoughts/shared/handoffs/${role.id}/`
+
+  return [
+    rule(`project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`, 'none'),
+    rule(`Additional directory: <git root> (start folder is ${folder})`, 'none'),
+    rule(`Handoffs (${handoffs}) and GSD .planning/ follow the start folder ${folder}`, 'none'),
+  ]
 }
 
 /**
@@ -492,18 +521,21 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     rule('Autopilot, agent-fleet and the handoff skills are always available', 'hard'),
     rule(`Permission mode: ${role.permissionMode}`, 'hard'),
     ...attendedRules(role, ctx),
-    ...projectMonitorRules(ctx.setup),
+    ...(ctx.launchStart.kind === 'git-root' ? projectMonitorRules(ctx.setup) : []),
+    ...startRules(role, ctx.launchStart),
     rule(`MCP route: ${ctx.mcpRoute} (provisional; Phase 3 decides)`, 'none'),
   ]
 }
 
 /**
  * The scope card of a role, from the same inputs as the settings, so the two cannot drift (D-80). The role is attended
- * when the context says so, and also when it runs GSD without Bash (A1).
+ * when the context says so, and also when it runs GSD without Bash (A1). The project hook scripts are loaded by
+ * project settings for a git-root start only; for a `here` or `dir` start they are not loaded (D-122).
  */
 function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeCard {
   const loaded = sortedUnique(role.carry.hooks)
-  const byProject = sortedUnique(ctx.setup.hooks.filter(hook => hook.source === 'project').map(hook => hook.script))
+  const projectScripts = ctx.setup.hooks.filter(hook => hook.source === 'project').map(hook => hook.script)
+  const byProject = ctx.launchStart.kind === 'git-root' ? sortedUnique(projectScripts) : []
   const loadedByProject = byProject.filter(script => !loaded.includes(script))
   const notLoaded = sortedUnique(ctx.setup.hooks.map(hook => hook.script)).filter(
     script => !loaded.includes(script) && !byProject.includes(script),

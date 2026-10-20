@@ -67,6 +67,7 @@ function scopeOf(
     codeDirs: [],
     isAttended: false,
     mcpRoute: 'merged',
+    launchStart: { kind: 'git-root' },
     roles: team,
     ...over,
   }

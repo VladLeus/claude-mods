@@ -648,6 +648,8 @@ export type ScopeContext = {
   readonly codeDirs: readonly string[]
   readonly isAttended: boolean
   readonly mcpRoute: McpRoute
+  /** Where the role's launcher starts its session (A2): the card tells what loads there (D-122, D-127, D-113). */
+  readonly launchStart: LaunchStart
   /**
    * Every role of the team, for the decision chain through basedOn (D-12, D-54, U5), in the ChainRole shape of
    * roles.ts: a role id, or a role's id with the template role it is based on.
@@ -684,9 +686,10 @@ export type ScopeCard = {
   readonly notGiven: { readonly skills: readonly string[]; readonly mcp: readonly string[] }
   /**
    * The scanned hook scripts by what loads them in a role session (D-62, A1): `loaded` are the hooks the role carries;
-   * `loadedByProject` are scripts registered in project settings that are not carried, which load in every role
-   * because the launcher runs `--setting-sources project`; `notLoaded` are the user and local scripts that are neither.
-   * Each list is sorted, once each.
+   * `loadedByProject` are scripts registered in project settings that are not carried, which load because the launcher
+   * runs `--setting-sources project`, and only for a git-root start: a `here` or `dir` start does not load the project
+   * settings of the git root, so the list is empty and those scripts are not loaded (D-122); `notLoaded` are the
+   * scripts that are neither. Each list is sorted, once each.
    */
   readonly hooks: {
     readonly loaded: readonly string[]

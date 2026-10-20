@@ -1574,14 +1574,16 @@ function attendedByHunks(setup: SetupScan, hunks: readonly HunkOp[]): ReadonlySe
 
 /**
  * One compiled scope per role, by role id (ROLE-06, D-80): each role is compiled for the framework it runs on
- * (resolvedFramework), with the setup and the code dirs of the scans, the provisional MCP route, the whole team for
- * the decision chain, and as attended when its framework is in `attended`.
+ * (resolvedFramework), with the setup and the code dirs of the scans, the provisional MCP route, where the launchers
+ * start, so the card tells what loads there (D-122), the whole team for the decision chain, and as attended when its
+ * framework is in `attended`.
  */
 function compileAll(
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
   gathered: Gathered,
   attended: ReadonlySet<FrameworkId>,
+  launchStart: LaunchStart,
 ): ReadonlyMap<string, CompiledScope> {
   return new Map(
     roles.map((role): [string, CompiledScope] => {
@@ -1592,6 +1594,7 @@ function compileAll(
         codeDirs: gathered.repo.codeDirs,
         isAttended: attended.has(framework),
         mcpRoute: PROVISIONAL_MCP_ROUTE,
+        launchStart,
         roles,
       }
 
@@ -1602,16 +1605,18 @@ function compileAll(
 
 /**
  * The scope of every role, which init shows and plans from (ROLE-06, D-78, D-94): compileScope with the role's own
- * framework or the repo default, the setup and the code dirs of the scans, PROVISIONAL_MCP_ROUTE and the whole team. A
- * role is attended when an unmet hunk is on its framework's config file (A5). Keyed by role id, in role order.
+ * framework or the repo default, the setup and the code dirs of the scans, PROVISIONAL_MCP_ROUTE, where the launchers
+ * start (D-122) and the whole team. A role is attended when an unmet hunk is on its framework's config file (A5). Keyed
+ * by role id, in role order.
  */
 export function scopesFor(
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
   gathered: Gathered,
   hunks: readonly HunkOp[],
+  launchStart: LaunchStart,
 ): ReadonlyMap<string, CompiledScope> {
-  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks))
+  return compileAll(roles, repoDefault, gathered, attendedByHunks(gathered.setup, hunks), launchStart)
 }
 
 /** The scope card lines of every role in role order (scopeCardLines); a role with no scope has none (ROLE-06). */
@@ -1950,7 +1955,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
 export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<PlanResult>> {
   let current = draft
   for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
-    const scopes = scopesFor(current.roles, current.repoDefault, current.gathered, current.hunks)
+    const scopes = scopesFor(current.roles, current.repoDefault, current.gathered, current.hunks, current.launchStart)
     const planned = await planStep(io, {
       roles: current.roles,
       repoDefault: current.repoDefault,
@@ -2033,7 +2038,9 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
 
   const { roles, repoDefault, hunks } = team.value
-  logLines(io, cardLines(roles, scopesFor(roles, repoDefault, gathered, hunks)))
+  // The launch start is asked after these cards, so they use launchStart: { kind: 'git-root' }, the default answer;
+  // the review shows the cards again with the start the person picks.
+  logLines(io, cardLines(roles, scopesFor(roles, repoDefault, gathered, hunks, { kind: 'git-root' })))
 
   const policy = await gitPolicyStep(io)
   if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
@@ -2229,7 +2236,7 @@ async function regenPlan(
   if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
   const frameworks = roles.map(role => resolvedFramework(role, state.framework))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
-  const scopes = compileAll(roles, state.framework, gathered, attended)
+  const scopes = compileAll(roles, state.framework, gathered, attended, state.launchStart)
   const generated = desiredFiles({ roles, scopes, state, only: id })
   const ownPath = roleJsonPath(id)
   const desired = generated.filter(file => file.path !== ownPath)
