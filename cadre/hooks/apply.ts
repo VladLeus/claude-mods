@@ -421,14 +421,15 @@ export const MARKETPLACE_ADD_ARGV: readonly string[] = Object.freeze([
 
 /**
  * The text init prints for a plugin it could not install (decision #39): the command to run by hand, and, when the
- * marketplace add failed too, that add first. The key is cleaned and capped as a report cell is.
+ * marketplace add failed too, that add as a first step only for a missing marketplace, since the add also fails when
+ * the marketplace is there already (decision #69 A3). The key is cleaned and capped as a report cell is.
  */
 export function installFailureText(key: string, isMarketplaceFailed: boolean): string {
   const shown = reportText(key)
   const install = `claude plugin install ${shown}`
-  const command = isMarketplaceFailed ? `${MARKETPLACE_ADD_ARGV.join(' ')}, then ${install}` : install
+  const add = ` (if the claude-plugins-official marketplace is missing, first run: ${MARKETPLACE_ADD_ARGV.join(' ')})`
 
-  return `could not install ${shown}: run it yourself: ${command}`
+  return `could not install ${shown}: run it yourself: ${install}${isMarketplaceFailed ? add : ''}`
 }
 
 /**

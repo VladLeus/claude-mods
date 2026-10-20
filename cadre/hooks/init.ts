@@ -1130,13 +1130,14 @@ const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
 /**
  * The security plugins question (decision #39): SECURITY_INSTALL_PREFIX, the names of the missing plugins joined with
  * `and`, then one note for each, so the person knows before answering that claude-security needs Python 3.9 or newer
- * and writes report folders into the repo. `keys` are the plugin keys missingSecurityPlugins gives.
+ * and writes report folders into the repo. `keys` are the plugin keys missingSecurityPlugins gives; each name is shown
+ * cleaned and capped as a report cell is, as every printed key is (decision #69 B7).
  */
 export function securityInstallQuestion(keys: readonly string[]): string {
   const names = keys.map(key => key.split('@')[0] ?? key)
   const notes = names.flatMap(name => SECURITY_PLUGIN_NOTES.get(name) ?? [])
 
-  return `${SECURITY_INSTALL_PREFIX} ${names.join(' and ')}? ${notes.join(' ')}`
+  return `${SECURITY_INSTALL_PREFIX} ${names.map(reportText).join(' and ')}? ${notes.join(' ')}`
 }
 
 /** Each answer to the security plugins question with whether it installs them: only Install does (decision #39). */
@@ -2213,10 +2214,10 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
  * The summary the review shows before its question (D-43): the role titles and ids, every scope card, the file plan
  * with its hunks and warnings as renderPlan prints them (so neither is printed twice), the scan warnings of the run,
  * kept for this review, the security plugins Confirm installs when the person answered Install for any (decision
- * #39), and REVIEW_HINT last.
+ * #39), each key cleaned and capped as a report cell is (decision #69 B7), and REVIEW_HINT last.
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
-  const keys = draft.pluginInstalls.join(', ')
+  const keys = draft.pluginInstalls.map(reportText).join(', ')
   const installLine = `Plugins to install after Confirm (a --dry-run installs nothing): ${keys}`
 
   return [

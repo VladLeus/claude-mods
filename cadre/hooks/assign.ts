@@ -105,14 +105,15 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
 
 /**
  * A security-review skill name, in any case: `security-review` as the whole last word, alone or after `-` or `:`, so
- * `acme:security-review` and `my-security-review` count and `security-reviewer` does not (D-53, D-74).
+ * `acme:security-review` and `my-security-review` count and `security-reviewer` does not (D-53; the skill table's
+ * security-review row, decision #39).
  */
 const SECURITY_REVIEW_PATTERN = /(^|[-:])security-review$/i
 
 /**
- * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table uses this rule for its
- * security-review row; the recommendations no longer do, since they name the claude-security and security-guidance
- * plugins by their exact keys (decision #39).
+ * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table's security-review row uses
+ * the same pattern (pinned by assign.test); since decision #39 no module calls this function, as the recommendations
+ * name the claude-security and security-guidance plugins by their exact keys.
  */
 export function isSecurityReviewSkill(name: string): boolean {
   return SECURITY_REVIEW_PATTERN.test(name)

@@ -198,7 +198,8 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
  * plugin named in SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly,
  * never by its plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other
  * plugin is matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the
- * setup holds that exact key, so its hooks warn that role about risky edits (decision #39).
+ * setup holds that exact key, so its hooks warn that role about risky edits (decision #39); another role enables it
+ * only for a `security-guidance:` skill the person gave it (decision #69 B4).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
   const skills = [...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills]

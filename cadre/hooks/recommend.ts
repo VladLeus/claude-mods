@@ -402,7 +402,7 @@ export function recommend(input: {
     }),
     ...forTemplateRole(roles, 'security', missing.includes(CLAUDE_SECURITY_PLUGIN), {
       tool: 'claude-security',
-      why: 'the Security role has no review skill: claude-security adds one (needs Python 3.9 or newer)',
+      why: "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
       install: INSTALL_COMMANDS.claudeSecurity,
     }),
     ...forTemplateRole(roles, 'security', missing.includes(SECURITY_GUIDANCE_PLUGIN), {
@@ -426,8 +426,11 @@ export function missingSecurityPlugins(roles: readonly RoleSpec[], setup: SetupS
   return SECURITY_PLUGINS.filter(key => !setup.installedPlugins.includes(key))
 }
 
-/** The heading above the recommendation lines. */
-const RECOMMENDATIONS_HEADING = 'Recommendations (print-only; nothing is installed):'
+/**
+ * The heading above the recommendation lines: the lines only print commands, and init asks before it installs any of
+ * them, as it does for the security plugins (decision #69 A2).
+ */
+const RECOMMENDATIONS_HEADING = 'Recommendations (print-only; init asks before it installs any):'
 
 /** The one line printed when there is nothing to recommend. */
 const NO_RECOMMENDATIONS = 'Recommendations: none'

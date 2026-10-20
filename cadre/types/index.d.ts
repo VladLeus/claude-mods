@@ -861,7 +861,10 @@ export type Plan = {
   readonly warnings: readonly string[]
 }
 
-/** One print-only recommendation (ROLE-03, D-74): nothing is installed. */
+/**
+ * One print-only recommendation (ROLE-03, D-74): the line installs nothing; init asks before it installs the security
+ * plugins (decision #39).
+ */
 export type Recommendation = {
   readonly tool: string
   /** The role that benefits; null when every role does. */
