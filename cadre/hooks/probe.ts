@@ -151,6 +151,16 @@ function holdsListOnce(line: string, key: string): boolean {
 }
 
 /**
+ * Whether the launcher's sed reads a name of an init list whole (#72 A1): the name holds no `]`, where that read of the
+ * list stops, and its JSON text holds no `\`, the escape JSON writes for a `"`, a `\` or a control character. The
+ * launcher refuses a list that holds a `\` or an odd number of `"`; for an init line written as JSON.stringify writes
+ * it, that is exactly a list with a string name this function rejects.
+ */
+function isReadableName(name: string): boolean {
+  return !name.includes(']') && !JSON.stringify(name).includes('\\')
+}
+
+/**
  * The startup inventory in the stream-json output of a probe run (ISO-01, D-112), or null. The init event is the first
  * line that holds `"subtype":"init"` and parses to an object of type `system` and subtype `init`; no other line is
  * read, and it need not be line 1, since hook and title events can come before it (RESEARCH 2.4). Tools, slash commands
@@ -158,7 +168,8 @@ function holdsListOnce(line: string, key: string): boolean {
  * malformed shape gives null, and nothing throws: output with no init event (the launcher refuses with exit 1 then), a
  * truncated line, a JSON array, an init event whose `tools`, `slash_commands` or `skills` is not an array, and a line
  * that does not hold each of `"tools":[`, `"skills":[` and `"slash_commands":[` exactly once, nested or not (the
- * launcher's cadre_once check, decision #49), so no verdict is ever computed from a guessed inventory (T-03-39).
+ * launcher's cadre_once check, decision #49), and a list with a string name the launcher cannot read whole
+ * (isReadableName, #72 A1), so no verdict is ever computed from a guessed or cut inventory (T-03-39).
  * `mcp_servers` is never read: a denied server's tools leave `tools` under the tool deny, whether or not
  * deniedMcpServers also disconnects it, so a check on a server is a check on tools. It is the TypeScript twin of the
  * sh reads of the launcher's `--probe` branch.
@@ -173,6 +184,8 @@ export function parseInitEvent(output: string): InitInventory | null {
     if (!isObject(event) || event.type !== 'system' || event.subtype !== 'init') continue
     if (!Array.isArray(event.tools) || !Array.isArray(event.slash_commands) || !Array.isArray(event.skills)) return null
     if (!INIT_LIST_KEYS.every(key => holdsListOnce(line, key))) return null
+    const lists = [event.tools, event.slash_commands, event.skills]
+    if (!lists.every(list => names(list).every(isReadableName))) return null
 
     const memory = event.memory_paths
     const auto = isObject(memory) ? memory.auto : null

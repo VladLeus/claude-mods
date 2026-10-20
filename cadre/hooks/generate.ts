@@ -243,15 +243,24 @@ const PROBE_INVENTORY_MESSAGE =
   'cadre: the probe startup inventory does not hold one tools, skills and slash_commands list'
 
 /**
+ * The refusal of --probe when a tools, skills or slash_commands list holds a name its sed read cannot take whole: a
+ * name with `]`, or with a character JSON escapes (#72 A1).
+ */
+const PROBE_NAME_MESSAGE = 'cadre: the probe startup inventory holds a name the launcher cannot read'
+
+/**
  * The lines of the `--probe` branch after its print-mode run (D-112, D-130). They refuse when the run gave no init line
  * or when the init line does not hold exactly one `tools`, `skills` and `slash_commands` list (decision #48); read the
- * tools, slash commands and skills lists, the permission mode and the auto memory folder from that line with sed; read
- * each line of the expectations file as check|enforcement|text|token with jq when it is on PATH, else with sed; print
+ * tools, slash commands and skills lists, the permission mode and the auto memory folder from that line with sed;
+ * refuse when one of the three lists holds a `\` (JSON's escape) or an odd number of `"` (#72 A1); read each line of
+ * the expectations file as check|enforcement|text|token with jq when it is on PATH, else with sed; print
  * one line per expectation, `enforced`, `best-effort`, `violated` or `note` and its text; and exit 1 when a check is
  * violated, else 0. They count the expectation lines and refuse when the file gave none, as a file jq or sed could not
  * read would (decision #49); only that refusal names the role. A check the case has no arm for, such as not-visible,
  * is best-effort. The init line and the expectations are only compared and echoed inside double quotes, never run
- * (T-03-10).
+ * (T-03-10). The sed read of a list stops at its first `]`; with no `\` in the list every `"` is a name's own quote,
+ * so a read that stopped inside a name, which held a `]`, holds an odd number of them, and the probe fails closed
+ * instead of comparing a cut list. The rule is the one parseInitEvent states for its null.
  */
 function probeVerdictLines(id: string): readonly string[] {
   const noRule = runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} gave no rule`)
@@ -265,6 +274,9 @@ function probeVerdictLines(id: string): readonly string[] {
     '  tools=$(cadre_list tools)',
     '  commands=$(cadre_list slash_commands)',
     '  skills=$(cadre_list skills)',
+    '  cadre_closed() { case $1 in *\\\\*) return 1 ;; esac; ' +
+      `[ -z "$(printf '%s' "$1" | tr -cd '"' | sed 's/""//g')" ]; }`,
+    `  for l in "$tools" "$commands" "$skills"; do cadre_closed "$l" || ${refusal(PROBE_NAME_MESSAGE)}; done`,
     `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
     `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
     '  cadre_rules() { if command -v jq >/dev/null 2>&1; then ' +
@@ -325,15 +337,16 @@ function probeVerdictLines(id: string): readonly string[] {
  * no session (D-112, D-130): it refuses when `.runtime/probe-expectations.json` is missing or empty, runs one
  * print-mode turn (`claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence`) with the
  * same flags, the name `cadre-<id>-probe` and PROBE_PROMPT from /dev/null, never the kickoff, keeps the init line of
- * its output, refuses when that line does not hold exactly one `tools`, `skills` and `slash_commands` list or the
- * expectations file gave no rule, and prints a verdict per expectation from that line alone (probeVerdictLines), exit 1
- * when a check is violated. Without it, it execs claude with the flags of the compiled scope, for a `here` or `dir`
- * start the git root it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root
- * start adds nothing), then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS)
- * and the kickoff read anchored at the repo root, since in `here` and `dir` the session starts outside the git top
- * level. The flags come only from compileScope and the title never reaches the script; the role id, a slug, is quoted
- * in the paths and cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add
- * a command either.
+ * its output and leaves its stderr on the terminal, so a run that fails shows why (#72 A1), refuses when that line does
+ * not hold exactly one `tools`, `skills` and `slash_commands` list, when a list holds a name its sed read cannot take
+ * whole, or when the expectations file gave no rule, and prints a verdict per expectation from that line alone
+ * (probeVerdictLines), exit 1 when a check is violated. Without it, it execs claude with the flags of the compiled
+ * scope, for a `here` or `dir` start the git root it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe
+ * run adds too; a git-root start adds nothing), then `--` and the kickoff: each flag shell-quoted, and the value after
+ * a path flag (PATH_FLAGS) and the kickoff read anchored at the repo root, since in `here` and `dir` the session starts
+ * outside the git top level. The flags come only from compileScope and the title never reaches the script; the role id,
+ * a slug, is quoted in the paths and cleaned in the comments and the messages, each message one quoted word, so a
+ * hostile id cannot add a command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
@@ -355,7 +368,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
   const usage = errorLine(`cadre: usage: .cadre/bin/${id} [--probe]`)
   const probeRun =
     '  init=$(claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence ' +
-    `${probeFlags}${rootDir} -- ${shQuote(PROBE_PROMPT)} </dev/null 2>/dev/null | grep '"subtype":"init"' | ` +
+    `${probeFlags}${rootDir} -- ${shQuote(PROBE_PROMPT)} </dev/null | grep '"subtype":"init"' | ` +
     'head -n 1) || true'
   const parse = shQuote('for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))')
   const foreign = `cadre: not the repo of role ${id}`
