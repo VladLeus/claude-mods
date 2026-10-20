@@ -1,9 +1,20 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, Manifest, Plan, PortRead } from '../types'
-import { applySteps, chmodArgv } from './apply'
+import type { DesiredFile, FileMode, Manifest, ManifestEntry, Plan, PortRead, PortStat } from '../types'
+import {
+  applyStatPaths,
+  applySteps,
+  chmodArgv,
+  chmodProblem,
+  CONFLICT_OPTIONS,
+  conflictPaths,
+  conflictQuestion,
+  parseConflictAnswer,
+  writeProblem,
+} from './apply'
 import type { ApplyStep, ConflictChoice } from './apply'
 import { MAX_READ_BYTES } from './facts'
+import { sha256Hex } from './hash'
 import {
   gitignoreLines,
   isSafeOpPath,
@@ -13,9 +24,9 @@ import {
   planWithManifest,
   stableJson,
 } from './plan'
-import type { PlanInput } from './plan'
+import type { PlanInput, PlannedFiles } from './plan'
 import { parseManifest, readRepoFile } from './scan'
-import { memIo, memWorld, withWrites } from './testkit'
+import { BIDI_OVERRIDE, memIo, memWorld, withWrites } from './testkit'
 import type { HostWrite, MemWorld } from './testkit'
 
 const VERSION = '0.2.0'
@@ -254,5 +265,299 @@ describe('apply steps (LNCH-01)', () => {
       `chmod ${LAUNCHER}`,
       `manifest ${MANIFEST_PATH}`,
     ])
+  })
+})
+
+/** The role file of the BE role. */
+const ROLE_MD = '.cadre/be/ROLE.md'
+
+/** The index of the roles. */
+const INDEX = '.cadre/INDEX.md'
+
+/** The copy a conflict on ROLE.md plans beside it (D-67). */
+const BESIDE = `${ROLE_MD}.cadre-new`
+
+/** The role file the plan wants now. */
+const NEW_ROLE = file(ROLE_MD, 'new role\n')
+
+/** The index, which did not change since cadre wrote it. */
+const SAME_INDEX = file(INDEX, '# Roles\n')
+
+/** The answer to one conflict question. */
+function answered(path: string, choice: ConflictChoice): ReadonlyMap<string, ConflictChoice> {
+  return new Map([[path, choice]])
+}
+
+/** The manifest the last step writes, parsed; null when the last step is not the manifest. */
+function writtenManifest(steps: readonly ApplyStep[]): Manifest | null {
+  const last = steps.at(-1)
+  if (last === undefined || last.kind !== 'manifest') return null
+
+  return parseManifest(last.text)
+}
+
+/**
+ * The plan for NEW_ROLE and SAME_INDEX over a disk where the person edited ROLE.md after cadre wrote it as
+ * 'old role\n'. The last manifest records both files at `version` and is read in full, so the manifest op is a leave
+ * at VERSION and a change at any other version; `extra` adds or replaces disk reads.
+ */
+async function editedRolePlan(
+  version: string,
+  extra: Readonly<Record<string, PortRead>> = {},
+): Promise<{ readonly planned: PlannedFiles; readonly old: Manifest }> {
+  const files: ManifestEntry[] = [
+    { path: INDEX, sha256: await sha256Hex('# Roles\n'), mode: 'file' },
+    { path: ROLE_MD, sha256: await sha256Hex('old role\n'), mode: 'file' },
+  ]
+  const old: Manifest = { schema: 1, cadreVersion: version, files }
+  const reads = { [ROLE_MD]: text('edited\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(stableJson(old)) }
+  const disk = new Map(Object.entries({ ...reads, ...extra }))
+  const desired = [NEW_ROLE, SAME_INDEX]
+  const planned = await planWithManifest(input({ desired, disk, manifest: old, manifestState: 'present' }))
+
+  return { planned, old }
+}
+
+describe('apply conflicts (D-67)', () => {
+  test('the question names the file, cleaned, and offers Keep mine and Take new in a frozen list', () => {
+    expect(CONFLICT_OPTIONS).toEqual(['Keep mine', 'Take new'])
+    expect(Object.isFrozen(CONFLICT_OPTIONS)).toBe(true)
+    expect(conflictQuestion(ROLE_MD)).toBe(
+      '.cadre/be/ROLE.md was changed outside cadre. ' +
+        'Keep your version, or take the new one (yours is then overwritten)?',
+    )
+    expect(conflictQuestion(`.cadre/a${BIDI_OVERRIDE}\nb`)).toBe(
+      '.cadre/ab was changed outside cadre. Keep your version, or take the new one (yours is then overwritten)?',
+    )
+  })
+
+  test('Keep mine or mine keeps the file, Take new or new takes the new one, in any case; else null', () => {
+    const mine = ['Keep mine', ' keep mine ', 'mine', 'MINE']
+
+    expect(mine.map(parseConflictAnswer)).toEqual(['mine', 'mine', 'mine', 'mine'])
+    expect(['Take new', 'take NEW', 'new'].map(parseConflictAnswer)).toEqual(['new', 'new', 'new'])
+    expect(['', 'yes', 'keep', 'Keep mine please'].map(parseConflictAnswer)).toEqual([null, null, null, null])
+  })
+
+  test('conflictPaths lists the conflicted files in plan order, never the manifest or a .cadre-new copy', async () => {
+    const desired = [SAME_INDEX, NEW_ROLE, file(LAUNCHER, '#!/bin/sh\nnew\n', 'exec')]
+    const disk = new Map<string, PortRead>([
+      [ROLE_MD, text('edited\n')],
+      [LAUNCHER, text('mine\n')],
+      [`${LAUNCHER}.cadre-new`, text('older\n')],
+      [MANIFEST_PATH, { state: 'unknown' }],
+    ])
+    const { plan } = await planWithManifest(input({ desired, disk }))
+
+    expect(summary(plan)).toEqual([
+      `create ${INDEX}`,
+      `conflict ${ROLE_MD}`,
+      `create ${BESIDE}`,
+      `conflict ${LAUNCHER}`,
+      `conflict ${LAUNCHER}.cadre-new`,
+      `conflict ${MANIFEST_PATH}`,
+    ])
+    expect(conflictPaths(plan)).toEqual([ROLE_MD, LAUNCHER])
+  })
+
+  test('Take new writes the desired file, not its .cadre-new copy, and the manifest records its new hash', async () => {
+    const { planned } = await editedRolePlan(VERSION)
+    const choices = answered(ROLE_MD, 'new')
+    const steps = await applySteps({ ...planned, desired: [NEW_ROLE, SAME_INDEX], gitignore: null, choices })
+
+    expect(summary(planned.plan)).toEqual([
+      `leave ${INDEX}`,
+      `conflict ${ROLE_MD}`,
+      `create ${BESIDE}`,
+      `leave ${MANIFEST_PATH}`,
+    ])
+    expect(steps.map(stepLine)).toEqual([`write ${ROLE_MD}`, `manifest ${MANIFEST_PATH}`])
+    expect(steps[0]).toEqual({ kind: 'write', path: ROLE_MD, text: 'new role\n' })
+    expect(writtenManifest(steps)).toEqual({
+      schema: 1,
+      cadreVersion: VERSION,
+      files: [
+        { path: INDEX, sha256: await sha256Hex('# Roles\n'), mode: 'file' },
+        { path: ROLE_MD, sha256: await sha256Hex('new role\n'), mode: 'file' },
+      ],
+    })
+  })
+
+  test('Keep mine, or no answer, writes the .cadre-new copy, not the file; the manifest keeps its entry', async () => {
+    const { planned, old } = await editedRolePlan('0.1.0')
+
+    expect(summary(planned.plan)).toEqual([
+      `leave ${INDEX}`,
+      `conflict ${ROLE_MD}`,
+      `create ${BESIDE}`,
+      `change ${MANIFEST_PATH}`,
+    ])
+    for (const choices of [answered(ROLE_MD, 'mine'), NO_CHOICES]) {
+      const steps = await applySteps({ ...planned, desired: [NEW_ROLE, SAME_INDEX], gitignore: null, choices })
+
+      expect(steps.map(stepLine)).toEqual([`write ${BESIDE}`, `manifest ${MANIFEST_PATH}`])
+      expect(steps[0]).toEqual({ kind: 'write', path: BESIDE, text: 'new role\n' })
+      expect(writtenManifest(steps)).toEqual({ ...old, cadreVersion: VERSION })
+    }
+  })
+
+  test('a .cadre-new copy already there with other text is kept as it is: Keep mine writes nothing', async () => {
+    const { planned } = await editedRolePlan(VERSION, { [BESIDE]: text('older\n') })
+    const choices = answered(ROLE_MD, 'mine')
+    const steps = await applySteps({ ...planned, desired: [NEW_ROLE, SAME_INDEX], gitignore: null, choices })
+
+    expect(summary(planned.plan)).toEqual([
+      `leave ${INDEX}`,
+      `conflict ${ROLE_MD}`,
+      `conflict ${BESIDE}`,
+      `leave ${MANIFEST_PATH}`,
+    ])
+    expect(steps).toEqual([])
+  })
+
+  test('Take new writes a launcher, then makes it executable; Keep mine writes its copy with no chmod', async () => {
+    const launcher = file(LAUNCHER, '#!/bin/sh\nnew\n', 'exec')
+    const disk = new Map<string, PortRead>([[LAUNCHER, text('mine\n')]])
+    const planned = await planWithManifest(input({ desired: [launcher], disk }))
+    const taken = await applySteps({
+      ...planned,
+      desired: [launcher],
+      gitignore: null,
+      choices: answered(LAUNCHER, 'new'),
+    })
+    const kept = await applySteps({ ...planned, desired: [launcher], gitignore: null, choices: NO_CHOICES })
+
+    expect(taken.map(stepLine)).toEqual([`write ${LAUNCHER}`, `chmod ${LAUNCHER}`, `manifest ${MANIFEST_PATH}`])
+    expect(kept.map(stepLine)).toEqual([`write ${LAUNCHER}.cadre-new`, `manifest ${MANIFEST_PATH}`])
+  })
+
+  test('an untracked conflict taken new is recorded in the manifest, which had no entry for it', async () => {
+    const disk = new Map<string, PortRead>([[ROLE_MD, text('somebody wrote this\n')]])
+    const planned = await planWithManifest(input({ desired: [NEW_ROLE], disk }))
+    const choices = answered(ROLE_MD, 'new')
+    const steps = await applySteps({ ...planned, desired: [NEW_ROLE], gitignore: null, choices })
+
+    expect(planned.manifest.files).toEqual([])
+    expect(writtenManifest(steps)?.files).toEqual([
+      { path: ROLE_MD, sha256: await sha256Hex('new role\n'), mode: 'file' },
+    ])
+  })
+
+  test('an answer for a path that is no conflict changes nothing: no write, and a left manifest stays', async () => {
+    const { planned } = await editedRolePlan(VERSION)
+    const choices = answered(INDEX, 'new')
+    const steps = await applySteps({ ...planned, desired: [NEW_ROLE, SAME_INDEX], gitignore: null, choices })
+
+    expect(steps.map(stepLine)).toEqual([`write ${BESIDE}`])
+  })
+
+  test('a plan that keeps the manifest as a conflict has no manifest step, even when a file is taken new', async () => {
+    const { planned } = await editedRolePlan(VERSION, { [MANIFEST_PATH]: { state: 'unknown' } })
+    const choices = answered(ROLE_MD, 'new')
+    const steps = await applySteps({ ...planned, desired: [NEW_ROLE, SAME_INDEX], gitignore: null, choices })
+
+    expect(summary(planned.plan)).toContain(`conflict ${MANIFEST_PATH}`)
+    expect(steps.map(stepLine)).toEqual([`write ${ROLE_MD}`])
+  })
+})
+
+/** A stat as the host answers it with resolve: a file or a folder at its real path, a link when told so. */
+function statAt(kind: PortStat['kind'], realPath: string, isLink = false): PortStat {
+  return { kind, size: 0, isLink, realPath }
+}
+
+/** The stats of .cadre, .cadre/be and ROLE.md as real folders and a regular file inside /repo; `over` replaces some. */
+function roleStats(over: Readonly<Record<string, PortStat | null>> = {}): ReadonlyMap<string, PortStat | null> {
+  const stats: Record<string, PortStat | null> = {
+    '.cadre': statAt('dir', '/repo/.cadre'),
+    '.cadre/be': statAt('dir', '/repo/.cadre/be'),
+    [ROLE_MD]: statAt('file', '/repo/.cadre/be/ROLE.md'),
+  }
+
+  return new Map(Object.entries({ ...stats, ...over }))
+}
+
+/** The refusal of a write to ROLE.md. */
+const ROLE_REFUSED = 'refused to write .cadre/be/ROLE.md: it or a folder above it is a link, or not inside the repo'
+
+describe('write safety', () => {
+  test('applyStatPaths lists every path a step names and each folder above it, sorted and once each', () => {
+    const steps: ApplyStep[] = [
+      { kind: 'write', path: ROLE_MD, text: 'x' },
+      { kind: 'write', path: '.gitignore', text: 'x' },
+      { kind: 'chmod', path: LAUNCHER },
+    ]
+    const launcherSteps: ApplyStep[] = [
+      { kind: 'write', path: LAUNCHER, text: 'x' },
+      { kind: 'chmod', path: LAUNCHER },
+      { kind: 'manifest', path: MANIFEST_PATH, text: '{}\n' },
+    ]
+
+    expect(applyStatPaths(steps)).toEqual([
+      '.cadre',
+      '.cadre/be',
+      '.cadre/be/ROLE.md',
+      '.cadre/bin',
+      '.cadre/bin/be',
+      '.gitignore',
+    ])
+    expect(applyStatPaths(launcherSteps)).toEqual(['.cadre', '.cadre/bin', '.cadre/bin/be', MANIFEST_PATH])
+    expect(applyStatPaths([])).toEqual([])
+  })
+
+  test('writeProblem lets a write through when nothing is there yet, or real folders and a file in the repo', () => {
+    const none = new Map<string, PortStat | null>([
+      ['.cadre', null],
+      ['.cadre/be', null],
+      [ROLE_MD, null],
+    ])
+    const ignoreFile = new Map([['.gitignore', statAt('file', '/repo/.gitignore')]])
+
+    expect(writeProblem(ROLE_MD, new Map(), '/repo')).toBeNull()
+    expect(writeProblem(ROLE_MD, none, '/repo')).toBeNull()
+    expect(writeProblem(ROLE_MD, roleStats(), '/repo')).toBeNull()
+    expect(writeProblem(ROLE_MD, roleStats({ [ROLE_MD]: null }), '/repo')).toBeNull()
+    expect(writeProblem('.gitignore', ignoreFile, '/repo')).toBeNull()
+  })
+
+  test('writeProblem refuses a link above the file, a folder out of the repo, and a target link or folder', () => {
+    const refused = [
+      roleStats({ '.cadre': statAt('dir', '/repo/.cadre', true) }),
+      roleStats({ '.cadre/be': statAt('dir', '/elsewhere/be') }),
+      roleStats({ '.cadre/be': statAt('file', '/repo/.cadre/be') }),
+      roleStats({ '.cadre': statAt('dir', '/repo') }),
+      roleStats({ '.cadre/be': { kind: 'dir', size: 0, isLink: false } }),
+      roleStats({ [ROLE_MD]: statAt('file', '/repo/.cadre/be/ROLE.md', true) }),
+      roleStats({ [ROLE_MD]: statAt('dir', '/repo/.cadre/be/ROLE.md') }),
+      roleStats({ [ROLE_MD]: statAt('other', '/repo/.cadre/be/ROLE.md') }),
+      roleStats({ [ROLE_MD]: statAt('file', '/elsewhere/ROLE.md') }),
+      roleStats({ '.cadre': null, '.cadre/be': statAt('dir', '/repo/.cadre/be', true), [ROLE_MD]: null }),
+    ]
+
+    expect(refused.map(stats => writeProblem(ROLE_MD, stats, '/repo'))).toEqual(refused.map(() => ROLE_REFUSED))
+  })
+
+  test('writeProblem refuses a .gitignore link, and shows a path cleaned', () => {
+    const ignoreLink = new Map([['.gitignore', statAt('file', '/repo/.gitignore', true)]])
+    const hostile = `.cadre/a${BIDI_OVERRIDE}\nb`
+    const hostileLink = new Map([[hostile, statAt('file', '/elsewhere/x', true)]])
+
+    expect(writeProblem('.gitignore', ignoreLink, '/repo')).toBe(
+      'refused to write .gitignore: it or a folder above it is a link, or not inside the repo',
+    )
+    expect(writeProblem(hostile, hostileLink, '/repo')).toBe(
+      'refused to write .cadre/ab: it or a folder above it is a link, or not inside the repo',
+    )
+  })
+
+  test('chmodProblem allows a chmod only on a path whose write landed in this same apply', () => {
+    const refusal = '.cadre/bin/be was not made executable: its write was refused or failed'
+
+    expect(chmodProblem(LAUNCHER, new Set([LAUNCHER]))).toBeNull()
+    expect(chmodProblem(LAUNCHER, new Set())).toBe(refusal)
+    expect(chmodProblem(LAUNCHER, new Set(['.cadre/bin/pm']))).toBe(refusal)
+    expect(chmodProblem(`.cadre/bin/a${BIDI_OVERRIDE}\nb`, new Set())).toBe(
+      '.cadre/bin/ab was not made executable: its write was refused or failed',
+    )
   })
 })
