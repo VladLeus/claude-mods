@@ -138,7 +138,7 @@ describe('parseCommand', () => {
   })
 
   test('an unknown subcommand is echoed back as unknown input', () => {
-    expect(parseCommand('start')).toEqual({ kind: 'help', unknown: 'start' })
+    expect(parseCommand('launch')).toEqual({ kind: 'help', unknown: 'launch' })
   })
 
   test('input of only invisible characters is the help text with no unknown input', () => {
@@ -217,19 +217,23 @@ describe('helpText', () => {
     }
   })
 
-  test('the init rows say what they do and that nothing is written yet', () => {
+  test('the init rows say what they do: plain init writes the plan, --dry-run writes nothing', () => {
     const text = helpText(null)
-    expect(text).toContain('guided setup: scan, propose roles, show the file plan (writes nothing yet)')
+    expect(text).toContain('guided setup: scan, propose roles, review the file plan, then write it')
     expect(text).toContain('the same guided flow; prints the plan and writes nothing')
   })
 
-  test('the regen rows say what they do and that nothing is written yet', () => {
+  test('the regen rows say what they do: plain regen writes the role files, --dry-run writes nothing', () => {
     const text = helpText(null)
-    expect(text).toContain('re-render one role from its role.json (writes nothing yet)')
+    expect(text).toContain('re-render one role from its role.json and write its files')
     expect(text).toContain("print that role's plan and write nothing")
   })
 
+  test('no row says that nothing is written yet', () => {
+    expect(USAGE_LINES.filter(row => row.includes('writes nothing yet'))).toEqual([])
+  })
+
   test('with unknown input the first line names it as an unknown subcommand', () => {
-    expect(helpText('start').split('\n')[0]).toBe('Unknown subcommand: start')
+    expect(helpText('launch').split('\n')[0]).toBe('Unknown subcommand: launch')
   })
 })

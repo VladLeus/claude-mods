@@ -379,8 +379,8 @@ describe('register with a faked host', () => {
   })
 
   test('an unknown subcommand is echoed on the first line of the reply', async $ => {
-    const out = await $.command.run({ command: 'cadre', args: 'start be' })
-    expect(out.text.startsWith('Unknown subcommand: start be')).toBe(true)
+    const out = await $.command.run({ command: 'cadre', args: 'launch be' })
+    expect(out.text.startsWith('Unknown subcommand: launch be')).toBe(true)
   })
 
   test('detect in an ambiguous repo prints the report and the ambiguous adapter line', async ($, on) => {
