@@ -227,11 +227,10 @@ describe('stableJson', () => {
 
 /** The note under a manifest that could not be read: it is kept, so no role's entries are dropped (A6). */
 const MANIFEST_NOTE =
-  "could not read it (treated as changed): kept as is, so no role's entries are dropped; Phase 3 will not write it"
+  "could not read it (treated as changed): kept as is, so no role's entries are dropped; it is not written"
 
 /** The plan warning for a manifest that could not be read (A6). */
-const MANIFEST_WARNING =
-  'could not read .cadre/manifest.json (treated as unknown): it is kept as is and Phase 3 will not write it'
+const MANIFEST_WARNING = 'could not read .cadre/manifest.json (treated as unknown): it is kept as is and not written'
 
 describe('buildPlan', () => {
   test('one new file gives a create op for it and one for the manifest, in path order', async () => {
@@ -869,9 +868,9 @@ const NEW_ROLE = file(ROLE, 'new\n')
 
 const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is planned beside it'
 const UNREADABLE_NOTE = 'could not read it (treated as changed): kept as is; the new version is planned beside it'
-const NEW_VERSION_NOTE = 'the new version, for diffing; Phase 3 offers take-new per file'
+const NEW_VERSION_NOTE = 'the new version, for diffing; init asks Keep mine or Take new for the file'
 const OCCUPIED_NOTE = 'a different file is already there: kept as is'
-const STALE_NOTE = 'no longer generated (kept; Phase 2 deletes nothing)'
+const STALE_NOTE = 'no longer generated (kept; cadre deletes nothing)'
 
 /** The reason a path is refused: PLAN-06 allows only `.cadre/` and the `.gitignore`. */
 function refusal(path: string): string {
