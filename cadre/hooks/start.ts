@@ -1,7 +1,7 @@
 /**
  * The gather and render halves of /cadre start (D-102), and runStart, the command itself, which checks the repo and
- * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command, printed and
- * copied to the clipboard (LNCH-04, D-110).
+ * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command: printed,
+ * copied to the clipboard and, with `--terminal`, opened in a new terminal on macOS (LNCH-04, D-110, D-109).
  *
  * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
  * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
@@ -904,6 +904,162 @@ export function clipboardRun(command: string): { readonly argv: readonly string[
   }
 }
 
+/** The refusal of `--terminal` on a host that is not macOS (D-132): the command is printed and copied all the same. */
+export const TERMINAL_MAC_ONLY = '--terminal works on macOS only: run the command above in a terminal yourself.'
+
+/** The refusal of `--terminal` with a value it does not take, or the switch given twice (D-109). */
+const TERMINAL_INVALID = '--terminal takes terminal, iterm or tmux: run the command above yourself.'
+
+/**
+ * The refusal of a bare `--terminal` outside tmux when TERM_PROGRAM names no terminal cadre opens (D-109): it names
+ * TERM_PROGRAM, shown cleaned, or `unset`.
+ */
+function terminalUnknownText(termProgram: string | null): string {
+  const shown = termProgram === null ? 'unset' : reportText(termProgram)
+
+  return (
+    `--terminal could not tell this terminal (TERM_PROGRAM=${shown}): ` +
+    'use --terminal=terminal, --terminal=iterm or --terminal=tmux, or run the command above yourself.'
+  )
+}
+
+/**
+ * The AppleScript lines that open a new Terminal window running the shell text, the last argv item, which `do script`
+ * reads through `on run argv` (D-126). Terminal.app cannot make a tab without System Events, so it is a window.
+ */
+const TERMINAL_APP_LINES: readonly string[] = Object.freeze([
+  'on run argv',
+  'tell application "Terminal"',
+  'activate',
+  'do script (item 1 of argv)',
+  'end tell',
+  'end run',
+])
+
+/**
+ * The AppleScript lines that open a new iTerm tab in the current window, or a new window when none is open, and write
+ * the shell text, the last argv item, into its session through `on run argv` (D-126).
+ */
+const ITERM_LINES: readonly string[] = Object.freeze([
+  'on run argv',
+  'tell application "iTerm"',
+  'activate',
+  'if (count of windows) is 0 then',
+  'create window with default profile',
+  'else',
+  'tell current window to create tab with default profile',
+  'end if',
+  'tell current session of current window to write text (item 1 of argv)',
+  'end tell',
+  'end run',
+])
+
+/**
+ * What a tmux window runs after a launcher that exits non-zero: a note, then a wait for Enter, so the launcher's
+ * refusal stays on screen and does not close with the window (RESEARCH Pitfall 7).
+ */
+const TMUX_WAIT = "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }"
+
+/**
+ * The osascript argv that runs these AppleScript lines, each as one `-e` value, with the shell text as the last argv
+ * item: the script reads it through `on run argv`, so no AppleScript is ever built from it (T-03-29).
+ */
+function osascriptArgv(lines: readonly string[], shellText: string): readonly string[] {
+  return Object.freeze(['/usr/bin/osascript', ...lines.flatMap(line => ['-e', line]), shellText])
+}
+
+/**
+ * The tmux argv that opens the command in a new window `cadre-<id>` at the root (D-126). tmux runs a single command
+ * argument through `sh -c`, so the command, a shell word already, is followed by TMUX_WAIT for when it fails.
+ */
+function tmuxArgv(id: string, root: string, command: string): readonly string[] {
+  return Object.freeze(['tmux', 'new-window', '-n', `cadre-${id}`, '-c', root, `${command} || ${TMUX_WAIT}`])
+}
+
+/**
+ * Where `/cadre start --terminal` opens the launcher command (D-109, D-126): the name of what it opens and the argv
+ * that opens it, or the refusal to print instead. The command is printed and copied either way.
+ */
+export type TerminalPlan =
+  | { readonly kind: 'open'; readonly name: string; readonly argv: readonly string[] }
+  | { readonly kind: 'refuse'; readonly text: string }
+
+/** What a bare `--terminal` picks (D-109): tmux when TMUX is set, else the macOS terminal TERM_PROGRAM names. */
+function detectedTerminal(
+  tmux: string | null,
+  termProgram: string | null,
+): Exclude<TerminalChoice, 'none' | 'auto' | 'invalid'> | null {
+  if (tmux !== null) return 'tmux'
+  if (termProgram === 'Apple_Terminal') return 'terminal'
+  if (termProgram === 'iTerm.app') return 'iterm'
+
+  return null
+}
+
+/**
+ * Where `--terminal` opens the launcher command, as data (D-109, D-126, D-132). Off macOS it refuses with
+ * TERMINAL_MAC_ONLY, whatever the choice, and `invalid` refuses. A forced value skips detection; `auto` picks tmux when
+ * TMUX is set, else a Terminal window for TERM_PROGRAM `Apple_Terminal` and an iTerm tab for `iTerm.app`, and refuses
+ * any other TERM_PROGRAM, or none. Terminal.app and iTerm get the shell text `cd -- <root> && <command>`, the root
+ * shQuote'd, as the last osascript argv item, which `on run argv` reads and no AppleScript is built from (T-03-29):
+ * Terminal.app opens a new window (`do script`), iTerm a new tab in its current window, or a new window when none is
+ * open. tmux opens a new window `cadre-<id>` at the root whose command waits for Enter when the launcher fails
+ * (Pitfall 7).
+ */
+export function terminalPlan(input: {
+  readonly choice: Exclude<TerminalChoice, 'none'>
+  readonly tmux: string | null
+  readonly termProgram: string | null
+  readonly isMacOs: boolean
+  readonly id: string
+  readonly root: string
+  readonly command: string
+}): TerminalPlan {
+  const { choice, tmux, termProgram, isMacOs, id, root, command } = input
+  if (!isMacOs) return { kind: 'refuse', text: TERMINAL_MAC_ONLY }
+  if (choice === 'invalid') return { kind: 'refuse', text: TERMINAL_INVALID }
+  const terminal = choice === 'auto' ? detectedTerminal(tmux, termProgram) : choice
+  if (terminal === null) return { kind: 'refuse', text: terminalUnknownText(termProgram) }
+  if (terminal === 'tmux') return { kind: 'open', name: 'tmux window', argv: tmuxArgv(id, root, command) }
+  const shellText = `cd -- ${shQuote(root)} && ${command}`
+  if (terminal === 'iterm') return { kind: 'open', name: 'iTerm tab', argv: osascriptArgv(ITERM_LINES, shellText) }
+
+  return { kind: 'open', name: 'Terminal window', argv: osascriptArgv(TERMINAL_APP_LINES, shellText) }
+}
+
+/** How long `uname -s` may run before it is given up. */
+const UNAME_TIMEOUT_MS = 5_000
+
+/** How long opening a terminal may run before it is given up: osascript may wait on the Automation consent prompt. */
+const TERMINAL_OPEN_TIMEOUT_MS = 15_000
+
+/**
+ * The `--terminal` line below the copy line (D-109, D-126, D-132). The host is macOS when `/usr/bin/uname -s` exits 0
+ * with `Darwin`; with that, and TMUX and TERM_PROGRAM as the host reads them, terminalPlan gives the argv to run, or
+ * the refusal, which is the line. An open that exits 0 gives `Opened it in a new <name>.`, and one that cannot run or
+ * exits non-zero gives `Could not open a new <name>: run the command above yourself.`
+ */
+async function terminalLine(
+  host: HostIo,
+  input: {
+    readonly choice: Exclude<TerminalChoice, 'none'>
+    readonly id: string
+    readonly root: string
+    readonly command: string
+  },
+): Promise<string> {
+  const uname = await host.run(['/usr/bin/uname', '-s'], { timeoutMs: UNAME_TIMEOUT_MS })
+  const isMacOs = uname !== null && uname.exitCode === 0 && uname.stdout === 'Darwin\n'
+  const tmux = await host.env('TMUX')
+  const termProgram = await host.env('TERM_PROGRAM')
+  const plan = terminalPlan({ ...input, tmux, termProgram, isMacOs })
+  if (plan.kind === 'refuse') return plan.text
+  const open = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })
+  if (open !== null && open.exitCode === 0) return `Opened it in a new ${plan.name}.`
+
+  return `Could not open a new ${plan.name}: run the command above yourself.`
+}
+
 /**
  * The disk a render is planned from: the stat of each path renderPaths names, asked with resolve, and the listing of
  * each folder it names. A folder the host cannot list gets no listing, so renderSteps counts it as empty.
@@ -939,7 +1095,8 @@ async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
 /**
  * The reply of a render that ran every step (D-102): what was asked for, the folder rendered with the number of links
  * it made, one `warning: ` line per warning, then the line that hands over the launcher and the launcher command, two
- * spaces in, and below the command the lines of `after`: the copy line (D-110).
+ * spaces in, and below the command the lines of `after`: the copy line, then the `--terminal` line when the switch
+ * was given (D-110, D-109).
  */
 function startReplyText(
   id: string,
@@ -972,16 +1129,18 @@ function startReplyText(
  * #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the LaunchPlan, the MCP
  * config and the render; and the launcher command (startReplyText). Once the render has run every step, it copies the
  * command through the host with clipboardRun, and the line below the command is COPIED_LINE when pbcopy exits 0, else
- * NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies nothing. It never runs the
- * launcher, and never starts a background session (D-108). `options.terminal` is not read yet: it is carried for the
- * step that opens a terminal (D-109).
+ * NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies nothing. With `--terminal`
+ * (`options.terminal` other than `none`), after the copy it asks `/usr/bin/uname -s`, TMUX and TERM_PROGRAM, and opens
+ * the command where terminalPlan says, or prints its refusal: the line of terminalLine follows the copy line, and the
+ * command is printed and copied in every case (D-109, D-126, D-132). It never runs the launcher, and never starts a
+ * background session (D-108).
  */
 export async function runStart(
   io: InitIo,
   host: HostIo,
   options: { readonly id: string; readonly terminal: TerminalChoice },
 ): Promise<string> {
-  const { id } = options
+  const { id, terminal } = options
   const guard = await repoGuard(io, 'start')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
@@ -1026,6 +1185,8 @@ export async function runStart(
   const copy = clipboardRun(command)
   const copied = await host.run(copy.argv, copy.options)
   const copyLine = copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE
+  if (terminal === 'none') return startReplyText(id, links, warnings, command, [copyLine])
+  const opened = await terminalLine(host, { choice: terminal, id, root: user.root, command })
 
-  return startReplyText(id, links, warnings, command, [copyLine])
+  return startReplyText(id, links, warnings, command, [copyLine, opened])
 }
