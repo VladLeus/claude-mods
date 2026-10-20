@@ -294,6 +294,7 @@ describe('compileScope', () => {
     expect(rules.find(candidate => candidate.text === 'No Bash tool (denied)')).toEqual({
       text: 'No Bash tool (denied)',
       enforcement: 'hard',
+      checks: [{ kind: 'tool-absent', token: 'Bash' }],
     })
   })
 
@@ -905,7 +906,7 @@ describe('scope rules', () => {
     expect(compileScope(role, ctx).card.rules).toEqual([
       { text: BYPASS_RULE, enforcement: 'none' },
       { text: PLUGIN_RULE, enforcement: 'hard' },
-      { text: 'No Bash tool (denied)', enforcement: 'hard' },
+      { text: 'No Bash tool (denied)', enforcement: 'hard', checks: [{ kind: 'tool-absent', token: 'Bash' }] },
       { text: 'Reads and edits under cadre are denied; the patterns match at any depth', enforcement: 'best-effort' },
       { text: skippedRule('pm'), enforcement: 'best-effort' },
       { text: 'Code dir * has an unusual name and is not denied', enforcement: 'none' },

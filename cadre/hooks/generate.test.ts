@@ -941,10 +941,86 @@ const BE_STAMP_CHECK =
 /** The line a launcher prints when neither jq nor node is there to check the rendered JSON again (D-129). */
 const NO_JSON_CHECKER = "  echo 'cadre: (JSON not re-checked: no jq or node)' >&2"
 
+/** The argument check of the BE launcher: no argument, or --probe alone; else the usage line and exit 2. */
+const BE_ARGS =
+  `case $# in 0) ;; 1) [ "$1" = --probe ] || { echo 'cadre: usage: .cadre/bin/be [--probe]' >&2; exit 2; }; ` +
+  "probe=1 ;; *) echo 'cadre: usage: .cadre/bin/be [--probe]' >&2; exit 2 ;; esac"
+
+/** The first line of the --probe branch, right after the start line of every start (D-112). */
+const PROBE_IF = 'if [ "$probe" = 1 ]; then'
+
+/** The flags of the BE probe run: those of the exec line, with the name cadre-be-probe (Pitfall 1). */
+const BE_PROBE_FLAGS = [
+  '--setting-sources project',
+  '--settings "$root"/.cadre/be/.runtime/settings.json',
+  '--append-system-prompt-file "$root"/.cadre/be/ROLE.md',
+  '--name cadre-be-probe',
+  '--model opus',
+  '--effort medium',
+  '--permission-mode auto',
+  '--add-dir "$root"/.cadre/be/.runtime/overlay',
+  '--mcp-config "$root"/.cadre/be/.runtime/mcp.json',
+].join(' ')
+
+/**
+ * The probe run of the BE launcher (D-112, D-130): one print-mode turn with the scope flags, then for a here or dir
+ * start the git root, `--` and a short prompt from /dev/null, never the kickoff; it keeps the init line of the output.
+ */
+function beProbeRun(rootDir: string): string {
+  return (
+    '  init=$(claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence ' +
+    `${BE_PROBE_FLAGS}${rootDir} -- 'Reply with OK.' </dev/null 2>/dev/null | grep '"subtype":"init"' | head -n 1) ` +
+    '|| true'
+  )
+}
+
+/**
+ * The lines of the --probe branch after its run, the same for every role (D-130): the refusal of a run with no init
+ * line, the init fields read with sed, the expectation lines read with jq or else sed, one verdict line per
+ * expectation, and the exit status.
+ */
+const VERDICT_LINES: readonly string[] = [
+  `  [ -n "$init" ] || { echo 'cadre: the probe run gave no startup inventory' >&2; exit 1; }`,
+  `  cadre_list() { printf '%s' "$init" | sed -n "s/.*\\"$1\\":\\[\\([^]]*\\)\\].*/\\1/p"; }`,
+  '  tools=$(cadre_list tools)',
+  '  commands=$(cadre_list slash_commands)',
+  '  skills=$(cadre_list skills)',
+  `  mode=$(printf '%s' "$init" | sed -n 's/.*"permissionMode":"\\([^"]*\\)".*/\\1/p')`,
+  `  memory=$(printf '%s' "$init" | sed -n 's/.*"memory_paths":{"auto":"\\([^"]*\\)".*/\\1/p')`,
+  `  cadre_rules() { if command -v jq >/dev/null 2>&1; then jq -r '.rules[] | [.check, .enforcement, .text, ` +
+    `.token] | join("|")' "$rt"/probe-expectations.json; else sed -n 's/^{"check":"\\([a-z-]*\\)","enforcement":` +
+    `"\\([a-z-]*\\)","text":"\\([^"|]*\\)","token":"\\([^"|]*\\)"},\\{0,1\\}$/\\1|\\2|\\3|\\4/p' ` +
+    `"$rt"/probe-expectations.json; fi; }`,
+  '  bad=0',
+  "  while IFS='|' read -r check label text token; do",
+  '    [ -n "$check" ] || continue',
+  '    ok=1',
+  '    case $check in',
+  '      tool-absent) case ",$tools," in *",\\"$token\\","*) ok=0 ;; esac ;;',
+  '      tool-prefix-absent) case "$tools" in *"\\"$token"*) ok=0 ;; esac ;;',
+  '      tool-present) case ",$tools," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      command-present) case ",$commands," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      skill-present) case ",$skills," in *",\\"$token\\","*) ;; *) ok=0 ;; esac ;;',
+  '      permission-mode) [ "$mode" = "$token" ] || ok=0 ;;',
+  '      memory-path) [ "$memory" = "$token" ] || [ "$memory" = "$token/" ] || ok=0 ;;',
+  '      note) echo "note         $text"; continue ;;',
+  '      *) ok=2 ;;',
+  '    esac',
+  '    if [ "$ok" = 0 ]; then bad=1; echo "violated     $text"',
+  '    elif [ "$ok" = 2 ] || [ "$label" != hard ]; then echo "best-effort  $text"',
+  '    else echo "enforced     $text"; fi',
+  '  done <<CADRE_RULES',
+  '$(cadre_rules)',
+  'CADRE_RULES',
+  '  exit "$bad"',
+  'fi',
+]
+
 /**
  * The launcher of the BE role on the merged route that starts at the git root, line by line, with its final newline:
- * the guard (D-119), the role-file check (A7), the claude version check (D-107), the freshness check of the role and
- * rendered files against the stamp (D-102, A2), the JSON check (D-107, D-129), the start line and the exec line.
+ * the guard (D-119), the role-file check (A7), the argument check (`--probe` or nothing), the claude version check
+ * (D-107), the freshness check of the role and rendered files against the stamp (D-102, A2), the JSON check (D-107,
+ * D-129), the start line, the --probe branch (D-112, D-130) and the exec line.
  */
 const BE_LAUNCHER = [
   '#!/bin/sh',
@@ -955,6 +1031,8 @@ const BE_LAUNCHER = [
   BE_GUARD,
   BE_FILES_CHECK,
   'rt="$root"/.cadre/be/.runtime',
+  'probe=0',
+  BE_ARGS,
   'cadre_claude_ok() {',
   "  set -- $(claude --version 2>/dev/null | sed -n " +
     "'s/^\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\).*/\\1 \\2 \\3/p')",
@@ -964,7 +1042,7 @@ const BE_LAUNCHER = [
   VERSION_REFUSAL,
   BE_STAMP_CHECK,
   'for f in "$root"/.cadre/cadre.json "$root"/.cadre/be/role.json "$root"/.cadre/be/settings.json ' +
-    '"$root"/.cadre/be/mcp.json "$rt"/settings.json "$rt"/mcp.json; do',
+    '"$root"/.cadre/be/mcp.json "$rt"/settings.json "$rt"/mcp.json "$rt"/probe-expectations.json; do',
   `  if [ "$f" -nt "$rt"/stamp ]; then echo 'cadre: .cadre/be/.runtime/ is older than the role files: ` +
     `run /cadre start be' >&2; exit 1; fi`,
   'done',
@@ -981,6 +1059,11 @@ const BE_LAUNCHER = [
   NO_JSON_CHECKER,
   'fi',
   'cd -- "$root"',
+  PROBE_IF,
+  `  [ -s "$rt"/probe-expectations.json ] || { echo 'cadre: .cadre/be/.runtime/probe-expectations.json is missing: ` +
+    `run /cadre start be' >&2; exit 1; }`,
+  beProbeRun(''),
+  ...VERDICT_LINES,
   `exec claude ${BE_FLAGS} -- "$(cat "$root"/.cadre/be/kickoff.txt)"`,
   '',
 ].join('\n')
@@ -1101,15 +1184,30 @@ describe('launcher', () => {
 
   test('in every start the exec line is the only one that starts with exec, after every check of the launcher', () => {
     const be = templateRole('be')
+    const startLines = { 'git-root': 'cd -- "$root"', here: BE_HERE_CHECK, dir: 'cd -- "$root"/apps/web' }
     for (const start of LAUNCH_STARTS) {
       const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
-      const startAt = lines.findIndex(line => line.startsWith('cd ') || line.startsWith('exec '))
-      const refusals = lines.flatMap((line, index) => (line.includes('exit 1') ? [index] : []))
+      const execAt = lines.findIndex(line => line.startsWith('exec '))
+      const refusals = lines.flatMap((line, index) => (/exit [12]\b/.test(line) ? [index] : []))
 
       expect(lines.filter(line => line.startsWith('exec '))).toHaveLength(1)
-      expect(refusals).toHaveLength(start.kind === 'here' ? 9 : 8)
-      expect(refusals.every(index => index < startAt)).toBe(true)
-      expect(lines.slice(lines.lastIndexOf('fi') + 1, startAt)).toEqual(start.kind === 'here' ? [BE_HERE_CHECK] : [])
+      expect(refusals).toHaveLength(start.kind === 'here' ? 12 : 11)
+      expect(refusals.every(index => index < execAt)).toBe(true)
+      expect(lines.slice(lines.indexOf('fi') + 1, lines.indexOf(PROBE_IF))).toEqual([startLines[start.kind]])
+      expect(lines[execAt - 1]).toBe('fi')
+    }
+  })
+
+  test('the --probe run of every start has the scope flags named cadre-be-probe and a short prompt, no kickoff', () => {
+    const be = templateRole('be')
+    for (const start of LAUNCH_STARTS) {
+      const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
+      const runs = lines.filter(line => line.startsWith('  init=$(claude '))
+
+      expect(runs).toEqual([beProbeRun(start.kind === 'git-root' ? '' : ' --add-dir "$root"')])
+      expect(runs.filter(line => line.includes('kickoff.txt'))).toEqual([])
+      expect(runs.filter(line => line.includes(`-- 'Reply with OK.' </dev/null`))).toHaveLength(1)
+      expect(lines[lines.indexOf(PROBE_IF) + 2]).toBe(runs[0])
     }
   })
 
@@ -1123,17 +1221,19 @@ describe('launcher', () => {
   })
 
   test(
-    'only the here launcher checks that it is run from a folder of its repo, right before its exec line (A3)',
+    'only the here launcher checks that it is run from a folder of its repo, right before its --probe branch (A3)',
     () => {
       const be = templateRole('be')
       const here = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' }).split('\n')
       for (const start of LAUNCH_STARTS) {
         const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
 
-        expect(lines.filter(line => line.startsWith('case '))).toEqual(start.kind === 'here' ? [BE_HERE_CHECK] : [])
+        expect(lines.filter(line => line.startsWith('case '))).toEqual(
+          start.kind === 'here' ? [BE_ARGS, BE_HERE_CHECK] : [BE_ARGS],
+        )
       }
 
-      expect(here[here.indexOf(BE_HERE_CHECK) + 1]?.startsWith('exec ')).toBe(true)
+      expect(here[here.indexOf(BE_HERE_CHECK) + 1]).toBe(PROBE_IF)
     },
   )
 
@@ -1144,7 +1244,7 @@ describe('launcher', () => {
       const lines = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' }).split('\n')
       const loop = lines.find(line => line.startsWith('for f in ')) ?? ''
 
-      expect(loop.endsWith('"$rt"/settings.json "$rt"/mcp.json; do')).toBe(true)
+      expect(loop.endsWith('"$rt"/settings.json "$rt"/mcp.json "$rt"/probe-expectations.json; do')).toBe(true)
       expect(loop).not.toContain('inbox')
     },
   )
