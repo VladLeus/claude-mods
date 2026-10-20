@@ -373,13 +373,11 @@ function hasMcp(setup: SetupScan, pattern: RegExp): boolean {
 /**
  * The tools to recommend for a team (ROLE-03, D-74 as reworded by decision #39), in this order: GSD and superpowers
  * when no role uses a framework; Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP
- * server exists; DevTools MCP for each FE role when no devtools MCP server exists; claude-security for each Security
- * role when `setup.plugins` does not hold CLAUDE_SECURITY_PLUGIN exactly; security-guidance for each Security role
- * when it does not hold SECURITY_GUIDANCE_PLUGIN exactly. Only the exact `@claude-plugins-official` key counts, as in
- * missingSecurityPlugins, so the Security lines name the plugins init offers to install (T-03-46), and a scanned
- * security-review skill removes no line. A role is FE or Security by its id or its `basedOn`. `frameworks` is each
- * role's resolved framework, in role order. The result is text for the person to read: nothing here runs a command
- * (T-02-23).
+ * server exists; DevTools MCP for each FE role when no devtools MCP server exists; claude-security and then
+ * security-guidance for each Security role when missingSecurityPlugins names it, so the Security lines name exactly the
+ * plugins init offers to install (T-03-46, decision #69 A1), and a scanned security-review skill removes no line. A
+ * role is FE or Security by its id or its `basedOn`. `frameworks` is each role's resolved framework, in role order. The
+ * result is text for the person to read: nothing here runs a command (T-02-23).
  */
 export function recommend(input: {
   readonly roles: readonly RoleSpec[]
@@ -388,6 +386,7 @@ export function recommend(input: {
   readonly setup: SetupScan
 }): Recommendation[] {
   const { roles, frameworks, scan, setup } = input
+  const missing = missingSecurityPlugins(roles, setup)
 
   return [
     ...frameworkRecommendations(frameworks),
@@ -401,12 +400,12 @@ export function recommend(input: {
       why: 'the FE role cannot inspect the running page',
       install: INSTALL_COMMANDS.devtools,
     }),
-    ...forTemplateRole(roles, 'security', !setup.plugins.includes(CLAUDE_SECURITY_PLUGIN), {
+    ...forTemplateRole(roles, 'security', missing.includes(CLAUDE_SECURITY_PLUGIN), {
       tool: 'claude-security',
       why: 'the Security role has no review skill: claude-security adds one (needs Python 3.9 or newer)',
       install: INSTALL_COMMANDS.claudeSecurity,
     }),
-    ...forTemplateRole(roles, 'security', !setup.plugins.includes(SECURITY_GUIDANCE_PLUGIN), {
+    ...forTemplateRole(roles, 'security', missing.includes(SECURITY_GUIDANCE_PLUGIN), {
       tool: 'security-guidance',
       why: 'no hooks warn the Security role about risky edits',
       install: INSTALL_COMMANDS.securityGuidance,
@@ -416,14 +415,15 @@ export function recommend(input: {
 
 /**
  * The security plugins init offers to install for a team (decision #39): none when no role stands for Security (by
- * its id or its `basedOn`), else each key of SECURITY_PLUGINS, in that order, that `setup.plugins` does not hold
- * exactly. Only the exact `@claude-plugins-official` key counts as present: a lookalike key of another marketplace is
- * not the plugin cadre installs, so it neither hides the offer nor counts as installed (T-03-46).
+ * its id or its `basedOn`), else each key of SECURITY_PLUGINS, in that order, that `setup.installedPlugins` does not
+ * hold exactly. Only an installed exact `@claude-plugins-official` key counts as present: a key that a settings file
+ * enables, the repo's own included, is not an install (decision #69 A1), and a lookalike key of another marketplace is
+ * not the plugin cadre installs, so neither hides the offer (T-03-46).
  */
 export function missingSecurityPlugins(roles: readonly RoleSpec[], setup: SetupScan): string[] {
   if (!roles.some(role => standsFor(role, 'security'))) return []
 
-  return SECURITY_PLUGINS.filter(key => !setup.plugins.includes(key))
+  return SECURITY_PLUGINS.filter(key => !setup.installedPlugins.includes(key))
 }
 
 /** The heading above the recommendation lines. */

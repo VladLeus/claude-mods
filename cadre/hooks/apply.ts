@@ -484,9 +484,15 @@ export function noHomeInstallText(key: string): string {
 
 /**
  * The setup scan the plan is made again from after the installs (decision #39): the setup with each installed plugin
- * key added to its plugins, sorted and once each, as the next scan of the installed plugins lists it, so a Security
- * role's settings enable claude-security once it is installed. The setup given is not changed.
+ * key added to its plugins and to its installed plugins, sorted and once each, as the next scan lists them, so a
+ * Security role's settings enable claude-security once it is installed. The review plans from it too, with the keys
+ * answered Install, so the cards and the plan it shows are those Confirm writes when every install works (decision #69
+ * A4). The setup given is not changed.
  */
 export function setupAfterInstalls(setup: SetupScan, installed: readonly string[]): SetupScan {
-  return { ...setup, plugins: sortedUnique([...setup.plugins, ...installed]) }
+  return {
+    ...setup,
+    plugins: sortedUnique([...setup.plugins, ...installed]),
+    installedPlugins: sortedUnique([...setup.installedPlugins, ...installed]),
+  }
 }

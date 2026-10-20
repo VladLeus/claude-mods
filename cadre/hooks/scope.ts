@@ -14,13 +14,13 @@ import type {
 } from '../types'
 import { adapterOf } from './adapters'
 import {
-  CLAUDE_SECURITY_PLUGIN,
   FRAMEWORK_START_SKILLS,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
   INFRA_TOOLS,
   SECURITY_GUIDANCE_PLUGIN,
+  SECURITY_PLUGINS,
 } from './assign'
 import { compareText, sortedUnique } from './facts'
 import { freezeRows } from './freeze'
@@ -194,21 +194,19 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
 /**
  * The plugins the role session loads under the whitelist: the three infra plugins, and every scanned key of a plugin
  * that adds a skill of the role or a start skill of its framework (a skill named `plugin:skill` is present only when
- * its plugin is enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of
- * the claude-security or security-guidance plugin is enabled only when it is CLAUDE_SECURITY_PLUGIN or
- * SECURITY_GUIDANCE_PLUGIN exactly, never by its plugin name, since the scanned keys include the repo's own settings
- * (T-03-46, T-03-47); every other plugin is matched by its name. A role that stands for Security also gets
- * SECURITY_GUIDANCE_PLUGIN itself when the setup holds that exact key, so its hooks warn that role about risky edits
- * (decision #39).
+ * its plugin is enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of a
+ * plugin named in SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly,
+ * never by its plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other
+ * plugin is matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the
+ * setup holds that exact key, so its hooks warn that role about risky edits (decision #39).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
   const skills = [...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills]
   const wanted = new Set(skills.map(skillPlugin).filter((plugin): plugin is string => plugin !== null))
   if (ctx.framework === 'superpowers') wanted.add('superpowers')
-  const exactKeys = [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN]
   const scanned = ctx.setup.plugins.filter(key => {
     const name = pluginName(key)
-    const exact = exactKeys.find(official => pluginName(official) === name)
+    const exact = SECURITY_PLUGINS.find(official => pluginName(official) === name)
 
     return wanted.has(name) && (exact === undefined || key === exact)
   })

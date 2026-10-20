@@ -712,7 +712,8 @@ function mergeMcp(lists: readonly (readonly McpRef[])[]): McpRef[] {
  * chain, the global CLAUDE.md and the auto-memory file names. A source the port cannot read adds a warning and is
  * treated as unknown, never as empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder,
  * the user-level sources are skipped. `isMcpPartial` is true when an MCP server name was dropped from any source, or
- * `~/.claude.json` was not read (A4).
+ * `~/.claude.json` was not read (A4). `plugins` holds the enabled and the installed keys, `installedPlugins` the
+ * installed keys alone, so no settings file can make a plugin look installed (decision #69 A1).
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
@@ -734,6 +735,7 @@ export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllow
 
   return {
     plugins: sortedUnique([...settings.enabled, ...installed]),
+    installedPlugins: sortedUnique(installed),
     skills,
     mcp: mergeMcp(servers.map(found => found.refs)),
     isMcpPartial: servers.some(found => found.isPartial),

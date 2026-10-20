@@ -2231,19 +2231,23 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
 }
 
 /**
- * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), plans the files (planStep),
- * prints the summary (reviewLines) and asks REVIEW_QUESTION with REVIEW_OPTIONS; an item word may be typed under
- * "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with and the draft it
- * was built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the summary again. A
- * dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step is cancelled with its reason, and so is a run
- * that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm
- * is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that item's questions (A3).
- * The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
+ * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
+ * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
+ * files (planStep), prints the summary (reviewLines) and asks REVIEW_QUESTION with REVIEW_OPTIONS; an item word may be
+ * typed under "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with and
+ * the draft it was built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the
+ * summary again. A dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step is cancelled with its
+ * reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the
+ * person did not confirm is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that
+ * item's questions (A3). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
  */
 export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
   let current = draft
   for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
-    const scopes = scopesFor(current.roles, current.repoDefault, current.gathered, current.hunks, current.launchStart)
+    const setup = setupAfterInstalls(current.gathered.setup, current.pluginInstalls)
+    const gathered = { ...current.gathered, setup }
+    const scopes = scopesFor(current.roles, current.repoDefault, gathered, current.hunks, current.launchStart)
     const planned = await planStep(io, {
       roles: current.roles,
       repoDefault: current.repoDefault,

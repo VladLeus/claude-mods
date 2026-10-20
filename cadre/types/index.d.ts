@@ -650,7 +650,17 @@ export type CarryFacts = {
 
 /** What the user-setup scan kept: names, counts and booleans only (SCAN-02, D-57). */
 export type SetupScan = {
+  /**
+   * The plugin keys set true in enabledPlugins of any settings source, the repo's own included, and the keys installed
+   * for the user or this repo, sorted and once each. A role's settings enable plugins from these.
+   */
   readonly plugins: readonly string[]
+  /**
+   * The keys installed for the user or this repo, from `installed_plugins.json` only, sorted and once each: no settings
+   * file adds one, so a repo cannot make a plugin look installed. Whether a security plugin is missing is read from
+   * these (decision #69 A1).
+   */
+  readonly installedPlugins: readonly string[]
   readonly skills: readonly SkillRef[]
   readonly mcp: readonly McpRef[]
   /**

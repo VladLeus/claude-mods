@@ -399,6 +399,7 @@ export function templateRole(id: TemplateRoleId, over: Partial<RoleSpec> = {}): 
 export function emptySetupScan(over: Partial<SetupScan> = {}): SetupScan {
   return {
     plugins: [],
+    installedPlugins: [],
     skills: [],
     mcp: [],
     isMcpPartial: false,
