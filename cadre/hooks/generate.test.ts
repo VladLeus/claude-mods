@@ -971,6 +971,12 @@ const BE_LAUNCHER = [
   '',
 ].join('\n')
 
+/**
+ * A single-quoted span, line breaks included, or a `\'` outside one, read left to right as a shell reads them: what the
+ * hostile-id tests remove from launcher lines, so what is left is all the shell runs or expands.
+ */
+const QUOTED = /'[^']*'|\\'/g
+
 /** Words a shell would treat as more than one word, a command or a substitution if they were left bare. */
 const HOSTILE_WORDS: readonly string[] = [
   '',
@@ -1048,33 +1054,60 @@ describe('launcher', () => {
     }
   })
 
-  test('the here launcher starts in the folder it is run from: no cd line', () => {
+  test('the here launcher starts in the folder it is run from, with no cd line, and adds the git root (D-127)', () => {
     const be = templateRole('be')
-    const lines = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' }).split('\n')
+    const text = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' })
 
-    expect(lines.filter(line => line.startsWith('cd '))).toEqual([])
+    expect(text.split('\n').filter(line => line.startsWith('cd '))).toEqual([])
+    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
   })
 
-  test('the dir launcher goes to its folder under the repo root, the path shell-quoted', () => {
+  test('the dir launcher goes to its folder, the path shell-quoted, and adds the git root (D-127)', () => {
     const be = templateRole('be')
     const scope = scopeOf(be, 'gsd', [be])
+    const text = launcherText(be, scope, { kind: 'dir', path: 'apps/web' })
 
-    expect(launcherText(be, scope, { kind: 'dir', path: 'apps/web' }).split('\n')).toContain('cd -- "$root"/apps/web')
+    expect(text.split('\n')).toContain('cd -- "$root"/apps/web')
+    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
     expect(launcherText(be, scope, { kind: 'dir', path: "a b/it's" }).split('\n')).toContain(
       `cd -- "$root"/'a b/it'\\''s'`,
     )
   })
 
-  test('in every mode the words are claude, the flags with each path anchored at the repo, --, and the kickoff', () => {
+  test('the git-root launcher adds no directory beyond the scope flags: it starts at the root (D-127)', () => {
+    const be = templateRole('be')
+    const words = execWords(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' }))
+
+    expect(words).not.toContain('$root')
+    expect(words.slice(-3)).toEqual(['$root/.cadre/be/.runtime/mcp.json', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
+  })
+
+  test('in every start the exec line is the only one that starts with exec, after every check of the launcher', () => {
+    const be = templateRole('be')
+    for (const start of LAUNCH_STARTS) {
+      const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
+      const startAt = lines.findIndex(line => line.startsWith('cd ') || line.startsWith('exec '))
+      const refusals = lines.flatMap((line, index) => (line.includes('exit 1') ? [index] : []))
+
+      expect(lines.filter(line => line.startsWith('exec '))).toHaveLength(1)
+      expect(refusals).toHaveLength(7)
+      expect(refusals.every(index => index < startAt)).toBe(true)
+      expect(lines[startAt - 1]).toBe('fi')
+    }
+  })
+
+  test('in every mode the words are claude, the anchored flags, the root for a sub-folder, -- and the kickoff', () => {
     for (const start of LAUNCH_STARTS) {
       for (const framework of FRAMEWORKS) {
         for (const role of TEMPLATE_ROLES) {
           const scope = scopeOf(role, framework, TEMPLATE_ROLES)
+          const rootDir = start.kind === 'git-root' ? [] : ['--add-dir', '$root']
 
           expect(execWords(launcherText(role, scope, start))).toEqual([
             'exec',
             'claude',
             ...anchoredFlags(scope.flags),
+            ...rootDir,
             '--',
             `$(cat "$root"/.cadre/${role.id}/kickoff.txt)`,
           ])
@@ -1126,14 +1159,16 @@ describe('launcher', () => {
   test('a role id with a space, a quote or a dollar cannot add a command', () => {
     const id = "x y'$(z);`"
     const role = templateRole('be', { id })
-    const text = launcherText(role, scopeOf(role, 'gsd', [role]), { kind: 'git-root' })
-    const lines = text.split('\n')
     const kickoffPath = `.cadre/${id}/kickoff.txt`
+    for (const start of LAUNCH_STARTS) {
+      const text = launcherText(role, scopeOf(role, 'gsd', [role]), start)
+      const lines = text.split('\n')
+      const unquoted = lines.slice(3).map(line => line.replace(QUOTED, ''))
 
-    expect(lines).toHaveLength(28)
-    expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
-    expect(lines.slice(3, 5)).toEqual(['set -eu', ROOT_LINE])
-    expect(execWords(text).slice(-2)).toEqual(['--', `$(cat "$root"/${shQuote(kickoffPath)})`])
+      expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
+      expect(unquoted.filter(line => line.includes('$(z)') || line.includes('`'))).toEqual([])
+      expect(execWords(text).slice(-2)).toEqual(['--', `$(cat "$root"/${shQuote(kickoffPath)})`])
+    }
   })
 
   test('a role id with a line break cannot leave the comment lines or the quotes', () => {
@@ -1141,11 +1176,14 @@ describe('launcher', () => {
     const role = templateRole('be', { id })
     const text = launcherText(role, scopeOf(role, 'gsd', [role]), { kind: 'git-root' })
     const lines = text.split('\n')
+    const shellLines = lines.slice(3).join('\n').replace(QUOTED, '').split('\n')
 
-    expect(lines.slice(0, 6).map(line => line.charAt(0))).toEqual(['#', '#', '#', 's', 'r', '['])
-    expect(lines[1]).toBe(
+    expect(lines.slice(1, 3)).toEqual([
       '# cadre launcher for role xrm -rf ~: checks claude and .cadre/xrm -rf ~/.runtime/, then starts the session.',
-    )
+      '# /cadre start xrm -rf ~ renders .cadre/xrm -rf ~/.runtime/ in the root session of the repo; ' +
+        'this script never renders it.',
+    ])
+    expect(shellLines.filter(line => line.startsWith('rm '))).toEqual([])
     expect(execWords(text)).toContain(`$root/.cadre/${id}/.runtime/settings.json`)
   })
 
