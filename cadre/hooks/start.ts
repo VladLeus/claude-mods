@@ -35,8 +35,9 @@ const WRITTEN_FILES: readonly string[] = Object.freeze([
 
 /**
  * The folders under `.runtime` a render links into: the overlay skills and agents, and the global and memory
- * instructions. /cadre start lists each of them, so a link an earlier render made there, which the plan no longer
- * names, is removed.
+ * instructions. /cadre start stats each of them, with every folder from `.runtime` down to them, and lists each of
+ * them, so a link an earlier render made there, which the plan no longer names, is removed, and a link planted at one
+ * of them or above it refuses the render (T-03-20).
  */
 export const STALE_LINK_FOLDERS: readonly string[] = Object.freeze([
   'overlay/.claude/skills',
@@ -108,19 +109,32 @@ function foldersTo(runtime: string, path: string): string[] {
 }
 
 /**
- * Every folder a render makes or links into, sorted and once each: `.runtime`, its overlay, and each folder from
- * `.runtime` down to a link.
+ * The folders from `.runtime` down to each STALE_LINK_FOLDERS folder, that folder included, below `.runtime`:
+ * `overlay`, `overlay/.claude`, `overlay/.claude/skills`, and so on (T-03-20).
+ */
+function staleLinkChain(runtime: string): string[] {
+  return STALE_LINK_FOLDERS.flatMap(folder => {
+    const parts = folder.split('/')
+
+    return parts.map((_, index) => [runtime, ...parts.slice(0, index + 1)].join('/'))
+  })
+}
+
+/**
+ * Every folder a render makes, links into or removes stale links from, sorted and once each: `.runtime`, its overlay,
+ * each folder from `.runtime` down to a STALE_LINK_FOLDERS folder, and each folder from `.runtime` down to a link.
  */
 function renderFolders(runtime: string, links: readonly OverlayLink[]): string[] {
   const linkFolders = links.flatMap(link => foldersTo(runtime, link.path))
 
-  return sortedUnique([runtime, `${runtime}/${OVERLAY_FOLDER}`, ...linkFolders])
+  return sortedUnique([runtime, `${runtime}/${OVERLAY_FOLDER}`, ...staleLinkChain(runtime), ...linkFolders])
 }
 
 /**
  * The paths /cadre start stats and lists before a render, so renderSteps can judge each one. `stats` holds, sorted
- * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a link, every link path
- * and the five files a render writes; `listings` holds the STALE_LINK_FOLDERS under `.runtime`.
+ * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a STALE_LINK_FOLDERS
+ * folder or to a link, every link path and the five files a render writes; `listings` holds the STALE_LINK_FOLDERS
+ * under `.runtime`.
  */
 export function renderPaths(
   root: string,
@@ -180,9 +194,9 @@ function isUnsafeFile(stat: PortStat | null): boolean {
 
 /**
  * Why a render must not run, or null (T-03-20). The role folder must be a real folder inside the repo; `.runtime`,
- * its overlay and every folder down to a link must be missing or a real folder; and each file a render writes must be
- * missing, a regular file, or a link, which is removed first. Anything else would let a step write, link or remove
- * through a link, or write onto a folder.
+ * its overlay, every folder down to a STALE_LINK_FOLDERS folder and every folder down to a link must be missing or a
+ * real folder; and each file a render writes must be missing, a regular file, or a link, which is removed first.
+ * Anything else would let a step write, link or remove through a link, or write onto a folder.
  */
 function refusalOf(input: RenderInput, runtime: string): string | null {
   const role = statAt(input, roleFolder(input.root, input.id))

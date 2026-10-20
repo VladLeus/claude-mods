@@ -265,16 +265,11 @@ function absoluteSecretDeny(root: string): string[] {
  */
 export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const template = scope.settings.permissions.deny
+  if (role.hasBash && !isSafeRoot(user.root)) return lintedDeny(template, [])
   if (role.hasBash) {
-    return isSafeRoot(user.root)
-      ? lintedDeny(
-          [
-            ...template.filter(entry => !RELATIVE_SECRET_DENY.includes(entry)),
-            ...absoluteSecretDeny(user.root.slice(1)),
-          ],
-          [],
-        )
-      : lintedDeny(template, [])
+    const kept = template.filter(entry => !RELATIVE_SECRET_DENY.includes(entry))
+
+    return lintedDeny([...kept, ...absoluteSecretDeny(user.root.slice(1))], [])
   }
   if (!isSafeRoot(user.root)) return lintedDeny(template, [UNSAFE_ROOT_WARNING])
 
