@@ -4383,6 +4383,30 @@ async function editedRoleWorld(): Promise<EditedRole> {
   return { world: { ...world, files: { ...world.files, ...edited } }, files, role }
 }
 
+/**
+ * The port of a run in which `path` is edited after the person confirmed the review: from then on a read of `path`
+ * answers `text`, so the plan made again from the disk after Confirm sees the edit, while the review and the questions
+ * did not (D-120, the 03-09 edge).
+ */
+function editedAfterConfirm(run: MemRun, path: string, text: string): InitIo {
+  let isConfirmed = false
+
+  return {
+    ...run.io,
+    ask: async (question, spec) => {
+      const answer = await run.io.ask(question, spec)
+      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+
+      return answer
+    },
+    read: async (asked, maxBytes) => {
+      if (!isConfirmed || asked !== path) return run.io.read(asked, maxBytes)
+
+      return { state: 'text', text }
+    },
+  }
+}
+
 describe('init apply conflicts (D-67)', () => {
   test('after Confirm a hand-edited ROLE.md gets one Keep mine / Take new question, and no other', async () => {
     const { world } = await editedRoleWorld()
@@ -4450,6 +4474,20 @@ describe('init apply conflicts (D-67)', () => {
       expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
       expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
     }
+  })
+
+  test('a file edited after the questions is kept as an unasked conflict, and only its copy is written', async () => {
+    const { world, files, role } = await editedRoleWorld()
+    const matching = { '/repo/.cadre/be/ROLE.md': role, '/repo/.cadre/manifest.json': await manifestOf(files) }
+    const host = memHost(hostWorld({}))
+    const run = memIo({ ...world, files: { ...world.files, ...matching } }, INIT_ANSWERS)
+    const io = editedAfterConfirm(run, '/repo/.cadre/be/ROLE.md', EDITED_ROLE)
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
+    expect(host.calls).toEqual([])
+    expect(opKinds(reply).get('.cadre/be/ROLE.md')).toBe('conflict')
+    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
   })
 })
 

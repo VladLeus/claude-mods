@@ -375,7 +375,14 @@ describe('parseHookScripts', () => {
   test('keeps the .sh and .cjs script forms as well as .js', () => {
     const value = {
       hooks: {
-        Stop: [{ hooks: [{ command: 'bash "/x/gsd-check.sh"' }, { command: 'node /x/gsd-tools.cjs' }] }],
+        Stop: [
+          {
+            hooks: [
+              { type: 'command', command: 'bash "/x/gsd-check.sh"' },
+              { type: 'command', command: 'node /x/gsd-tools.cjs' },
+            ],
+          },
+        ],
       },
     }
     expect(parseHookScripts(value, 'local')).toEqual([
@@ -390,9 +397,9 @@ describe('parseHookScripts', () => {
         Stop: [
           {
             hooks: [
-              { command: 'node /Users/someone/hooks/other.js' },
-              { command: 'node /x/mygsd-helper.js' },
-              { command: 'node /x/gsd-helper.js.bak' },
+              { type: 'command', command: 'node /Users/someone/hooks/other.js' },
+              { type: 'command', command: 'node /x/mygsd-helper.js' },
+              { type: 'command', command: 'node /x/gsd-helper.js.bak' },
             ],
           },
         ],
@@ -406,7 +413,10 @@ describe('parseHookScripts', () => {
       hooks: {
         Stop: [
           {
-            hooks: [{ command: `node /x/gsd-${'a'.repeat(80)}.js` }, { command: `node /x/gsd-${'b'.repeat(81)}.js` }],
+            hooks: [
+              { type: 'command', command: `node /x/gsd-${'a'.repeat(80)}.js` },
+              { type: 'command', command: `node /x/gsd-${'b'.repeat(81)}.js` },
+            ],
           },
         ],
       },
@@ -415,7 +425,7 @@ describe('parseHookScripts', () => {
   })
 
   test('an event name longer than 60 code points is cut to 60 with an ellipsis', () => {
-    const value = { hooks: { [`${'e'.repeat(61)}`]: [{ hooks: [{ command: 'node /x/gsd-x.js' }] }] } }
+    const value = { hooks: { [`${'e'.repeat(61)}`]: [{ hooks: [{ type: 'command', command: 'node /x/gsd-x.js' }] }] } }
     expect(parseHookScripts(value, 'user')[0]?.event).toBe(`${'e'.repeat(59)}\u2026`)
   })
 
@@ -423,12 +433,35 @@ describe('parseHookScripts', () => {
     const value = {
       hooks: {
         PostToolUse: [
-          { hooks: [{ command: 'node /a/gsd-x.js' }, { command: 'node /b/gsd-x.js' }] },
-          { hooks: [{ command: 'node /a/gsd-x.js' }] },
+          {
+            hooks: [
+              { type: 'command', command: 'node /a/gsd-x.js' },
+              { type: 'command', command: 'node /b/gsd-x.js' },
+            ],
+          },
+          { hooks: [{ type: 'command', command: 'node /a/gsd-x.js' }] },
         ],
       },
     }
     expect(parseHookScripts(value, 'user')).toEqual([{ script: 'gsd-x.js', event: 'PostToolUse', source: 'user' }])
+  })
+
+  test('a hook whose type is missing or is not exactly command gives nothing (#54 A4)', () => {
+    const value = {
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              { command: 'node /x/gsd-untyped.js' },
+              { type: 'prompt', command: 'node /x/gsd-prompt.js' },
+              { type: 'Command', command: 'node /x/gsd-cased.js' },
+              { type: 'command', command: 'node /x/gsd-typed.js' },
+            ],
+          },
+        ],
+      },
+    }
+    expect(parseHookScripts(value, 'user')).toEqual([{ script: 'gsd-typed.js', event: 'Stop', source: 'user' }])
   })
 })
 

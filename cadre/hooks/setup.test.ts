@@ -69,7 +69,7 @@ function userOnly(value: unknown): ReturnType<typeof projectSettings> {
 
 /** The settings of one source with a single PreToolUse hook that runs `command`. */
 function hookSettings(command: unknown): unknown {
-  return { hooks: { PreToolUse: [{ hooks: [{ command }] }] } }
+  return { hooks: { PreToolUse: [{ hooks: [{ type: 'command', command }] }] } }
 }
 
 describe('setup settings', () => {
@@ -258,8 +258,8 @@ describe('setup settings', () => {
   test('projectHooks lists a script once per event and again for another event', () => {
     const value = {
       hooks: {
-        PreToolUse: [{ hooks: [{ command: 'a.sh' }, { command: 'node a.sh' }] }],
-        PostToolUse: [{ hooks: [{ command: 'a.sh' }] }],
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'a.sh' }, { type: 'command', command: 'node a.sh' }] }],
+        PostToolUse: [{ hooks: [{ type: 'command', command: 'a.sh' }] }],
       },
     }
     expect(projectHooks(value, 'project')).toEqual([
@@ -271,15 +271,15 @@ describe('setup settings', () => {
   test('projectHooks cleans an event name and skips one that cleans to nothing', () => {
     const value = {
       hooks: {
-        'Pre\u0007Tool': [{ hooks: [{ command: 'a.sh' }] }],
-        '\u0007': [{ hooks: [{ command: 'b.sh' }] }],
+        'Pre\u0007Tool': [{ hooks: [{ type: 'command', command: 'a.sh' }] }],
+        '\u0007': [{ hooks: [{ type: 'command', command: 'b.sh' }] }],
       },
     }
     expect(projectHooks(value, 'user')).toEqual([{ script: 'a.sh', event: 'PreTool', source: 'user' }])
   })
 
   test('projectHooks caps an event name at 60 characters and ends a cut name with an ellipsis', () => {
-    const value = { hooks: { [`${'e'.repeat(70)}`]: [{ hooks: [{ command: 'a.sh' }] }] } }
+    const value = { hooks: { [`${'e'.repeat(70)}`]: [{ hooks: [{ type: 'command', command: 'a.sh' }] }] } }
     expect(projectHooks(value, 'user')[0]?.event).toBe(`${'e'.repeat(59)}\u2026`)
   })
 
@@ -295,6 +295,13 @@ describe('setup settings', () => {
       { hooks: { Pre: [null, 5, { hooks: 'x' }, { hooks: [null, { command: 5 }] }] } },
     ]
     expect(malformed.flatMap(value => projectHooks(value, 'user'))).toEqual([])
+  })
+
+  test('projectHooks takes only a hook whose type is command, the hooks launch renders (#54 A4)', () => {
+    const value = {
+      hooks: { PreToolUse: [{ hooks: [{ command: 'untyped.sh' }, { type: 'command', command: 'typed.sh' }] }] },
+    }
+    expect(projectHooks(value, 'user')).toEqual([{ script: 'typed.sh', event: 'PreToolUse', source: 'user' }])
   })
 
   test('a scan lists the hook basenames of the project and local sources too, with their source', async () => {
