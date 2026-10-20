@@ -35,7 +35,7 @@ import {
 } from './facts'
 import { shQuote } from './generate'
 import { sha256Hex } from './hash'
-import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
+import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, MANIFEST_PATH, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
@@ -712,20 +712,27 @@ export function runtimeMcpText(
 /** The oldest claude cadre starts a role with (D-107): the engine floor the launcher's flags need. */
 export const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 295]
 
-/** A claude version as `claude --version` prints it first: three runs of digits joined by dots, and nothing else. */
-const CLAUDE_VERSION_FIELD = /^\d+\.\d+\.\d+$/
+/**
+ * A line of `claude --version` that gives a version: it starts with three runs of digits joined by dots, whatever
+ * follows, as the launcher's sed program reads it (cadre_claude_ok).
+ */
+const CLAUDE_VERSION_LINE = /^(\d+)\.(\d+)\.(\d+)/
 
 /**
- * The version a `claude --version` text gives (D-107): the first field of its first line, as three numbers, when that
- * field is exactly three runs of digits joined by dots; null for any other text.
+ * The version a `claude --version` text gives (D-107), by the launcher's rule (cadre_claude_ok): the three numbers at
+ * the start of the one line that starts with a version; null when no line or more than one line does.
  */
 export function parseClaudeVersion(text: string): readonly [number, number, number] | null {
-  const field = text.split('\n')[0]?.split(/\s/)[0] ?? ''
-  if (!CLAUDE_VERSION_FIELD.test(field)) return null
-  const [major, minor, patch] = field.split('.').map(Number)
+  const found = text.split('\n').flatMap(line => {
+    const match = CLAUDE_VERSION_LINE.exec(line)
+
+    return match === null ? [] : [match]
+  })
+  if (found.length !== 1) return null
+  const [, major, minor, patch] = found[0] ?? []
   if (major === undefined || minor === undefined || patch === undefined) return null
 
-  return [major, minor, patch]
+  return [Number(major), Number(minor), Number(patch)]
 }
 
 /** Whether a claude version is MIN_CLAUDE_VERSION or newer, compared part by part from the first (D-107). */
@@ -822,8 +829,9 @@ async function launcherRefusal(io: InitIo, root: string, id: string): Promise<st
 
 /**
  * Why the claude on PATH, the one the launcher execs (RESEARCH 1.2), must not start the role (D-107), or null:
- * `claude --version` that cannot run or exits non-zero (START_NO_CLAUDE); a first line that holds no version
- * parseClaudeVersion reads, or one older than MIN_CLAUDE_VERSION (claudeTooOldReply, with that line).
+ * `claude --version` that cannot run or exits non-zero (START_NO_CLAUDE); an output in which parseClaudeVersion reads
+ * no version (no line, or more than one, starts with one), or one older than MIN_CLAUDE_VERSION (claudeTooOldReply,
+ * with the first line of the output).
  */
 async function claudeRefusal(host: HostIo): Promise<string | null> {
   const run = await host.run(['claude', '--version'], { timeoutMs: CLAUDE_VERSION_TIMEOUT_MS })
@@ -882,7 +890,7 @@ async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
 function startReplyText(id: string, root: string, links: number, warnings: readonly string[]): string {
   return [
     `cadre start ${id}`,
-    `Rendered .cadre/${id}/.runtime/ (${links} links).`,
+    `Rendered .cadre/${id}/.runtime/ (${links} ${links === 1 ? 'link' : 'links'}).`,
     ...warnings.map(warning => `warning: ${warning}`),
     `Run this in a terminal to start role ${id}:`,
     `  ${launcherCommand(root, id)}`,
@@ -899,9 +907,10 @@ function startReplyText(id: string, root: string, links: number, warnings: reado
  * stamp last. renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was
  * built for, and every refusal comes before anything is written. Each step then runs through the host in order, and
  * the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to
- * start (LNCH-03). The reply names the folder, every warning of the launch user, the LaunchPlan, the MCP config and the
- * render, and the launcher command (startReplyText). It never runs the launcher, and never starts a background session
- * (D-108). `options.terminal` is not read yet: it is carried for the step that opens a terminal (D-109).
+ * start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them (scanWarnings,
+ * #54 A1); every warning of the launch user, the LaunchPlan, the MCP config and the render; and the launcher command
+ * (startReplyText). It never runs the launcher, and never starts a background session (D-108). `options.terminal` is
+ * not read yet: it is carried for the step that opens a terminal (D-109).
  */
 export async function runStart(
   io: InitIo,
@@ -946,7 +955,8 @@ export async function runStart(
     if (!(await isStepDone(host, step))) return renderFailedReply(id, repoRelative(user.root, step.path))
   }
   const links = render.steps.filter(step => step.kind === 'link').length
-  const warnings = [...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
+  const scan = scanWarnings(locations, gathered)
+  const warnings = [...scan, ...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
 
   return startReplyText(id, user.root, links, warnings)
 }
