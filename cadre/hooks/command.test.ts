@@ -163,6 +163,55 @@ describe('parseCommand', () => {
   })
 })
 
+describe('start grammar', () => {
+  test('start with one role id is the start of that role, with no terminal to open (LNCH-04)', () => {
+    expect(parseCommand('start be')).toEqual({ kind: 'start', id: 'be', terminal: 'none' })
+    expect(parseCommand('  START   a-1 ')).toEqual({ kind: 'start', id: 'a-1', terminal: 'none' })
+  })
+
+  test('a bare --terminal, on either side of the id, is auto (D-109)', () => {
+    expect(parseCommand('start be --terminal')).toEqual({ kind: 'start', id: 'be', terminal: 'auto' })
+    expect(parseCommand('start --terminal be')).toEqual({ kind: 'start', id: 'be', terminal: 'auto' })
+  })
+
+  test('--terminal= names terminal, iterm or tmux, in any letter case (D-109, D-126)', () => {
+    expect(parseCommand('start be --TERMINAL=iTerm')).toEqual({ kind: 'start', id: 'be', terminal: 'iterm' })
+    expect(parseCommand('start be --terminal=terminal')).toEqual({ kind: 'start', id: 'be', terminal: 'terminal' })
+    expect(parseCommand('start --terminal=TMUX be')).toEqual({ kind: 'start', id: 'be', terminal: 'tmux' })
+  })
+
+  test('any other value, an empty one, or the switch twice is invalid, and still the start (D-109)', () => {
+    const inputs = [
+      'start be --terminal=kitty',
+      'start be --terminal=',
+      'start be --terminal --terminal',
+      'start be --terminal=tmux --terminal=tmux',
+    ]
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'start', id: 'be', terminal: 'invalid' })
+  })
+
+  test('start without exactly one role id, or with an id that is not a slug, is help with the input echoed', () => {
+    const inputs = ['start', 'start Be', 'start ../x', 'start be x', 'start --terminal', 'start be --dry-run']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`start ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `start ${'a'.repeat(25)}` })
+  })
+
+  test('a switch or a word that only starts with --terminal or start is not one', () => {
+    expect(parseCommand('start be --terminals')).toEqual({ kind: 'help', unknown: 'start be --terminals' })
+    expect(parseCommand('starting be')).toEqual({ kind: 'help', unknown: 'starting be' })
+    expect(parseCommand('start-be')).toEqual({ kind: 'help', unknown: 'start-be' })
+    expect(parseCommand('startbe')).toEqual({ kind: 'help', unknown: 'startbe' })
+  })
+
+  test('the help without unknown input lists both start rows with what they do', () => {
+    const text = helpText(null)
+    expect(text).toContain('/cadre start <id>')
+    expect(text).toContain('/cadre start <id> --terminal')
+    expect(text).toContain("render a role's runtime files, then print and copy its launcher command")
+    expect(text).toContain('also open it in a new Terminal window, iTerm tab or tmux window (macOS)')
+  })
+})
+
 describe('takeSwitch', () => {
   test('a switch is taken out of the text and reported on, whatever the spacing around it', () => {
     expect(takeSwitch(' a --dry-run', 'dry-run')).toEqual({ isOn: true, rest: 'a' })

