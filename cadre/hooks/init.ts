@@ -42,7 +42,10 @@ import {
   hunkFailureLine,
   hunkRuns,
   hunksAfterRuns,
+  installedLine,
+  installFailureText,
   parseConflictAnswer,
+  pluginInstallArgv,
   writeProblem,
 } from './apply'
 import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
@@ -52,6 +55,8 @@ import {
   assignToRoles,
   classifyMcp,
   classifySkills,
+  CLAUDE_SECURITY_PLUGIN,
+  CLAUDE_SECURITY_SKILL,
   envQuestion,
   groupUses,
   mcpQuestion,
@@ -93,6 +98,7 @@ import {
   hunkQuestion,
   isAttendedFromConfig,
   isUnmetHunk,
+  missingSecurityPlugins,
   parseHunkAnswer,
   recommend,
   recommendationLines,
@@ -110,6 +116,7 @@ import {
   proposePrompt,
   proposeRoles,
   rolesFromProposal,
+  standsFor,
 } from './roles'
 import {
   autopilotReply,
@@ -1102,6 +1109,76 @@ export function resolvedFramework(role: RoleSpec, repoDefault: FrameworkId | nul
   return role.framework ?? repoDefault ?? 'none'
 }
 
+/** The start of the security plugins question, which init asks right after the recommendations (decision #39). */
+export const SECURITY_INSTALL_PREFIX = 'Install from claude-plugins-official after you confirm the plan:'
+
+/** What each security plugin does, by the plugin name before its `@`, as the question tells it (decision #39). */
+const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
+  [
+    'claude-security',
+    'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and ' +
+      'writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+  ],
+  ['security-guidance', 'security-guidance adds hooks that warn about risky edits.'],
+])
+
+/**
+ * The security plugins question (decision #39): SECURITY_INSTALL_PREFIX, the names of the missing plugins joined with
+ * `and`, then one note for each, so the person knows before answering that claude-security needs Python 3.9 or newer
+ * and writes report folders into the repo. `keys` are the plugin keys missingSecurityPlugins gives.
+ */
+export function securityInstallQuestion(keys: readonly string[]): string {
+  const names = keys.map(key => key.split('@')[0] ?? key)
+  const notes = names.flatMap(name => SECURITY_PLUGIN_NOTES.get(name) ?? [])
+
+  return `${SECURITY_INSTALL_PREFIX} ${names.join(' and ')}? ${notes.join(' ')}`
+}
+
+/** Each answer to the security plugins question with whether it installs them: only Install does (decision #39). */
+const SECURITY_INSTALLS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: 'Install', value: true },
+  { label: 'Not now', value: false },
+])
+
+/** The answers to the security plugins question, Install first; nothing is preselected (decision #39). */
+export const SECURITY_INSTALL_OPTIONS: readonly string[] = Object.freeze(SECURITY_INSTALLS.map(entry => entry.label))
+
+/** Why init cancels when the security plugins question is dismissed or not answered (decision #39, A1, D-45). */
+export const SECURITY_INSTALL_DISMISSED_REASON = 'The security plugins question was dismissed or not answered.'
+
+/**
+ * The security plugins step (decision #39, LNCH-01). With no key it asks nothing and is accepted with none. Else it
+ * asks securityInstallQuestion with SECURITY_INSTALL_OPTIONS: Install, trimmed and in any case, is accepted with every
+ * key, and Not now with none. A dismissal, or MAX_ASKS answers that are neither, is cancelled with
+ * SECURITY_INSTALL_DISMISSED_REASON (A1, D-45). It installs nothing itself: the keys are installed only after Confirm,
+ * never in --dry-run (applyConfirmed).
+ */
+export async function securityInstallStep(
+  io: InitIo,
+  keys: readonly string[],
+): Promise<StepResult<readonly string[]>> {
+  if (keys.length === 0) return accepted([])
+  const parse = (answer: string): boolean | null => labelled(SECURITY_INSTALLS, answer)
+  const isWanted = await askChoice(io, securityInstallQuestion(keys), { options: SECURITY_INSTALL_OPTIONS }, parse)
+  if (isWanted === null) return cancelled(SECURITY_INSTALL_DISMISSED_REASON)
+
+  return accepted(isWanted ? keys : [])
+}
+
+/**
+ * The roles with the claude-security review skill given or taken away (decision #39): each role that stands for
+ * Security, by its id or its `basedOn`, has CLAUDE_SECURITY_SKILL once, last in its skills, when `isWanted`, and not at
+ * all when not; every other role is kept as it is. The roles given are not changed.
+ */
+export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean): RoleSpec[] {
+  return roles.map(role => {
+    if (!standsFor(role, 'security')) return role
+    const skills = role.skills.filter(skill => skill !== CLAUDE_SECURITY_SKILL)
+
+    return { ...role, skills: isWanted ? [...skills, CLAUDE_SECURITY_SKILL] : skills }
+  })
+}
+
 /** The question init asks once for every role: how long each autopilot run lasts (D-51). */
 export const DURATION_QUESTION = 'Autopilot duration for roles?'
 
@@ -1753,6 +1830,9 @@ export async function planStep(
  * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
  * - `hunkFailures`: each framework command that failed (D-106);
  * - `attended`: the required keys whose failed command made roles attended (D-106);
+ * - `installed`: each security plugin key whose install ran after Confirm and exited 0 (decision #39);
+ * - `installProblems`: the text of each security plugin that was not installed, with the command to run by hand
+ *   (decision #39); never fatal to the apply;
  * - `manifestSkipped`: whether the manifest was not written because a write before it failed or was refused.
  */
 export type ApplyOutcome = {
@@ -1764,6 +1844,8 @@ export type ApplyOutcome = {
   readonly chmodRefusals: readonly string[]
   readonly hunkFailures: readonly HunkRun[]
   readonly attended: readonly string[]
+  readonly installed: readonly string[]
+  readonly installProblems: readonly string[]
   readonly manifestSkipped: boolean
 }
 
@@ -1826,6 +1908,8 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
     chmodRefusals,
     hunkFailures: [],
     attended: [],
+    installed: [],
+    installProblems: [],
     manifestSkipped,
   }
 }
@@ -1836,9 +1920,10 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
  * and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no write failed or was
  * refused. Then one `warning: ` line for each write writeProblem refused (its text), each write the host failed, each
  * chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each
- * framework command that failed (hunkFailureLine), the attended note when a failure made roles attended, and
- * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. NEXT_STEP_NOTE
- * comes last.
+ * framework command that failed (hunkFailureLine), the attended note when a failure made roles attended, each security
+ * plugin that was not installed (its installProblems text, decision #39), and `manifestNote` (MANIFEST_SKIPPED_NOTE
+ * unless the caller names another) when the manifest was skipped. Then, when security plugins were installed, the line
+ * that names them and says to run /reload-plugins (installedLine). NEXT_STEP_NOTE comes last.
  */
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
@@ -1856,10 +1941,17 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
     }),
     ...outcome.hunkFailures.map(hunkFailureLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
+    ...outcome.installProblems,
     ...(outcome.manifestSkipped ? [manifestNote] : []),
   ]
+  const installed = outcome.installed.length > 0 ? [installedLine(outcome.installed)] : []
 
-  return [isNothing ? APPLIED_NONE_NOTE : counted, ...warnings.map(warning => `warning: ${warning}`), NEXT_STEP_NOTE]
+  return [
+    isNothing ? APPLIED_NONE_NOTE : counted,
+    ...warnings.map(warning => `warning: ${warning}`),
+    ...installed,
+    NEXT_STEP_NOTE,
+  ]
 }
 
 /**
@@ -1954,8 +2046,8 @@ export const REVIEW_HINT = 'To change something else, type one of: duration, mod
  * scans gave, the ~/.claude.json consent answer the scans were gathered with (cadre.json records it, A1), what the
  * roles and framework steps are asked with (the installed frameworks, the framework choice and the template proposal
  * with its scan changes), the history hints the skill questions are asked with (D-59), and every answer so far, the
- * accepted team's scan changes included, so Change roles shows those again (A6). It is never written or kept after
- * the run; a go-back gives a new Draft.
+ * accepted team's scan changes included, so Change roles shows those again (A6), and so are the security plugins the
+ * person answered Install for (decision #39). It is never written or kept after the run; a go-back gives a new Draft.
  */
 export type Draft = {
   readonly locations: InitLocations
@@ -1972,6 +2064,11 @@ export type Draft = {
   readonly changes: readonly RoleChange[]
   readonly repoDefault: FrameworkId | null
   readonly hunks: readonly HunkOp[]
+  /**
+   * The plugin keys the person answered Install for (decision #39); installed only after Confirm, never in --dry-run
+   * (applyConfirmed).
+   */
+  readonly pluginInstalls: readonly string[]
   readonly policy: GitPolicy
   readonly launchStart: LaunchStart
 }
@@ -1990,9 +2087,9 @@ type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'install
 
 /**
  * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
- * with (A6), the repo default and the hunks.
+ * with (A6), the repo default, the hunks and the security plugins to install after Confirm (decision #39).
  */
-type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks'>
+type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks' | 'pluginInstalls'>
 
 /** A step result with its value turned into another; a cancelled result stays cancelled with its reason (A1). */
 function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult<U> {
@@ -2010,7 +2107,7 @@ async function perRoleSteps(
   base: DraftBase,
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
-): Promise<StepResult<Omit<Team, 'duration' | 'changes'>>> {
+): Promise<StepResult<Omit<Team, 'duration' | 'changes' | 'pluginInstalls'>>> {
   const { gathered, locations } = base
   const modelled = await modelStep(io, roles)
   if (modelled.kind === 'cancelled') return modelled
@@ -2029,10 +2126,13 @@ async function perRoleSteps(
 /**
  * The role steps from the roles question to the hunks (ROLE-01 to ROLE-05, D-43): the roles (rolesStep from `start`,
  * shown with its scan changes), their frameworks (frameworkStep), the recommendations for that team (ROLE-03), the
- * duration, asked when `duration` is null and else kept for every role (D-51), then perRoleSteps. Init runs it once
- * from the proposal; Change roles runs it again from the current team with the scan changes it was accepted with (A6)
- * and the duration it has. The team keeps the scan changes of the roles accepted. The first cancelled step ends it with
- * its reason (A1).
+ * security plugins question for the plugins a team with a Security role misses (missingSecurityPlugins,
+ * securityInstallStep, decision #39), the duration, asked when `duration` is null and else kept for every role (D-51),
+ * then perRoleSteps. When claude-security was asked about, every role that stands for Security gets its review skill
+ * on Install and loses it on Not now (withSecuritySkill) before the duration. Init runs it once from the proposal;
+ * Change roles runs it again from the current team with the scan changes it was accepted with (A6) and the duration it
+ * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. The first
+ * cancelled step ends it with its reason (A1).
  */
 async function teamStep(
   io: InitIo,
@@ -2049,12 +2149,18 @@ async function teamStep(
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
   logLines(io, recommendationLines(recommendations, roles))
+  const missing = missingSecurityPlugins(roles, gathered.setup)
+  const installs = await securityInstallStep(io, missing)
+  if (installs.kind === 'cancelled') return installs
+  const pluginInstalls = installs.value
+  const isSkillAsked = missing.includes(CLAUDE_SECURITY_PLUGIN)
+  const team = isSkillAsked ? withSecuritySkill(roles, pluginInstalls.includes(CLAUDE_SECURITY_PLUGIN)) : roles
   const asked = duration === null ? await durationStep(io) : accepted(duration)
   if (asked.kind === 'cancelled') return asked
   const kept = asked.value
-  const steps = await perRoleSteps(io, base, withDuration(roles, kept), repoDefault)
+  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
 
-  return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, ...decided }))
+  return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, pluginInstalls, ...decided }))
 }
 
 /**
@@ -2100,15 +2206,20 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
 /**
  * The summary the review shows before its question (D-43): the role titles and ids, every scope card, the file plan
  * with its hunks and warnings as renderPlan prints them (so neither is printed twice), the scan warnings of the run,
- * kept for this review, and REVIEW_HINT last.
+ * kept for this review, the security plugins Confirm installs when the person answered Install for any (decision
+ * #39), and REVIEW_HINT last.
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
+  const keys = draft.pluginInstalls.join(', ')
+  const installLine = `Plugins to install after Confirm (a --dry-run installs nothing): ${keys}`
+
   return [
     'Roles:',
     ...draft.roles.map(role => `  ${role.title} (${role.id})`),
     ...cardLines(draft.roles, scopes),
     ...renderPlan(plan),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
+    ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     REVIEW_HINT,
   ]
 }
@@ -2168,8 +2279,33 @@ function cancelReply(io: InitIo, reason: string): string {
 /** How long one accepted framework command may run at apply before it is given up (D-106, T-03-19). */
 export const HUNK_TIMEOUT_MS = 30_000
 
+/** How long one security plugin install may run at apply before it is given up (decision #39, T-03-42). */
+export const PLUGIN_RUN_TIMEOUT_MS = 180_000
+
 /** Why init cancels when a Keep mine or Take new question is dismissed or not answered (D-67, A1). */
 export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was dismissed or not answered.'
+
+/**
+ * Installs the security plugins the person answered Install for, after Confirm (decision #39): each key in order, by
+ * pluginInstallArgv with the home folder as cwd, so no repo-level settings or marketplace definitions take part
+ * (T-03-46), and PLUGIN_RUN_TIMEOUT_MS. A key whose run exits 0 is installed; a run the host rejects or that exits
+ * non-zero is a problem with the command to run by hand (installFailureText), and the next key is still tried.
+ */
+async function installPlugins(
+  host: HostIo,
+  home: string,
+  keys: readonly string[],
+): Promise<Pick<ApplyOutcome, 'installed' | 'installProblems'>> {
+  const installed: string[] = []
+  const installProblems: string[] = []
+  for (const key of keys) {
+    const run = await host.run(pluginInstallArgv(key), { cwd: home, timeoutMs: PLUGIN_RUN_TIMEOUT_MS })
+    if (run !== null && run.exitCode === 0) installed.push(key)
+    else installProblems.push(installFailureText(key, false))
+  }
+
+  return { installed, installProblems }
+}
 
 /**
  * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
@@ -2182,14 +2318,18 @@ export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was d
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
  *    exits non-zero is a failure, and apply goes on (D-106).
  * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
- * 4. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
+ * 4. The security plugins the person answered Install for (draft.pluginInstalls, decision #39), installed in order
+ *    from the home folder, never the repo (installPlugins, T-03-46): an install that fails is a problem the reply
+ *    prints with the command to run, never fatal. With no home folder known nothing is installed.
+ * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
  *    again from the disk (planStep), so ROLE.md is rendered and hashed after the hunks ran (D-120).
- * 5. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
+ * 6. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
  *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
  *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
  *    `.cadre-new` copy, as it does for a file that became a conflict after the questions.
- * 6. The outcome with every failed run (hunkFailures) and the keys of the failed hunks that are required (attended),
- *    which the reply prints with the command to run (D-106).
+ * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), and
+ *    the plugins installed and the install problems (installed, installProblems), which the reply prints, each failure
+ *    with the command to run (D-106, decision #39).
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 export async function applyConfirmed(
@@ -2217,6 +2357,10 @@ export async function applyConfirmed(
     if (result === null || result.exitCode !== 0) failures.push(run)
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+  const installs =
+    locations.home === null
+      ? { installed: [], installProblems: [] }
+      : await installPlugins(host, locations.home, draft.pluginInstalls)
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
   const scopes = compileAll(roles, repoDefault, gathered, attended, launchStart)
@@ -2238,6 +2382,8 @@ export async function applyConfirmed(
     ...written,
     hunkFailures: failures,
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
+    installed: installs.installed,
+    installProblems: installs.installProblems,
   }
 
   return accepted({ planned, outcome })
@@ -2253,18 +2399,20 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
  * (consentStep), runs the scans and prints them with their warnings, then runs the history step (historyStep), which
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
- * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the autopilot duration once for every
- * role, each role's model and effort, the MCP servers and skills, the instruction and memory groups, the carried env
- * names, and the autonomy hunks of the frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the
- * repo, where the launchers start (launchStartStep), shows the one final review with every role's scope card for that
- * start (the one place the cards are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person
- * confirms or goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the
- * note that nothing was written (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new
- * for each conflicted file (D-67), running the accepted hunks first and writing the plan made again from the disk
- * (D-120), and replies with the plan as written and what the apply did (initReplyText). Every step gives a StepResult
- * (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its own line
- * and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it, and nothing is
- * written before Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
+ * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
+ * MCP servers and skills, the instruction and memory groups, the carried env names, and the autonomy hunks of the
+ * frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start
+ * (launchStartStep), shows the one final review with every role's scope card for that start (the one place the cards
+ * are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person confirms or goes back to change one
+ * item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
+ * installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new for each
+ * conflicted file (D-67), running the accepted hunks first, then installing the security plugins answered Install from
+ * the home folder, and writing the plan made again from the disk (D-120), and replies with the plan as written and what
+ * the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind before it uses the value,
+ * and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so only values the
+ * person accepted reach the steps after it, and nothing is written or installed before Confirm. Every answer lives in
+ * memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')

@@ -131,6 +131,28 @@ export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
   },
 ])
 
+/**
+ * Anthropic's claude-security plugin, by its exact key in the claude-plugins-official marketplace: it gives the
+ * Security role a review skill, and init offers to install it for a team with a Security role (decision #39).
+ */
+export const CLAUDE_SECURITY_PLUGIN = 'claude-security@claude-plugins-official'
+
+/**
+ * Anthropic's security-guidance plugin, by its exact key in the claude-plugins-official marketplace: its hooks warn
+ * about risky edits, and init offers to install it for a team with a Security role (decision #39).
+ */
+export const SECURITY_GUIDANCE_PLUGIN = 'security-guidance@claude-plugins-official'
+
+/** The security plugins init offers to install, in the order it asks about and installs them (decision #39). */
+export const SECURITY_PLUGINS: readonly string[] = Object.freeze([CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN])
+
+/**
+ * The review skill of claude-security, as `plugin:skill`, which every Security role gets when the person answers
+ * Install (decision #39). The name is an assumption (the plugin's skill folder is `claude-security`), checked live in
+ * 03-UAT (plan 03-16).
+ */
+export const CLAUDE_SECURITY_SKILL = 'claude-security:claude-security'
+
 /** One scanned name given to the roles with these ids. */
 export type NameAssignment = {
   readonly name: string

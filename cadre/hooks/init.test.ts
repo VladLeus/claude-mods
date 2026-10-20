@@ -2835,6 +2835,8 @@ function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
     chmodRefusals: [],
     hunkFailures: [],
     attended: [],
+    installed: [],
+    installProblems: [],
     manifestSkipped: false,
     ...over,
   }

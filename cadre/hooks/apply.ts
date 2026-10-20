@@ -4,7 +4,8 @@
  * never leaves a manifest that claims a file it did not write (LNCH-01). A file the person edited is written only when
  * they answer Take new (D-67), and no write or chmod may follow a link out of the repo. The framework commands of the
  * accepted hunks are re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106,
- * D-120). This module reads, writes and runs nothing: init runs the steps through the host port.
+ * D-120). It also gives the argv and the reply lines of the security plugin installs (decision #39). This module
+ * reads, writes and runs nothing: init runs the steps through the host port.
  */
 import type {
   DesiredFile,
@@ -385,4 +386,35 @@ export function hunkFailureLine(run: HunkRun): string {
   const change = `the ${reportText(run.file)} change ${reportText(run.key)}`
 
   return `${change} failed: run it yourself: ${reportText(run.display)}`
+}
+
+/**
+ * The argv that installs a plugin by its exact key (decision #39). Init runs it only after Confirm, through the host
+ * port, with the home folder as cwd.
+ */
+export function pluginInstallArgv(key: string): readonly string[] {
+  return ['claude', 'plugin', 'install', key]
+}
+
+/**
+ * The text init prints for a plugin it could not install (decision #39): the command to run by hand, and, when the
+ * marketplace add failed too, that add first. The key is cleaned and capped as a report cell is.
+ */
+export function installFailureText(key: string, isMarketplaceFailed: boolean): string {
+  const shown = reportText(key)
+  const install = `claude plugin install ${shown}`
+  const marketplace = 'claude plugin marketplace add anthropics/claude-plugins-official'
+  const command = isMarketplaceFailed ? `${marketplace}, then ${install}` : install
+
+  return `could not install ${shown}: run it yourself: ${command}`
+}
+
+/**
+ * The line init prints once plugins were installed (decision #39): their keys, and that /reload-plugins loads them in
+ * the session that ran init. Each key is cleaned and capped as a report cell is.
+ */
+export function installedLine(keys: readonly string[]): string {
+  const them = keys.length === 1 ? 'it' : 'them'
+
+  return `Installed ${keys.map(reportText).join(' and ')}: run /reload-plugins to load ${them} in this session.`
 }

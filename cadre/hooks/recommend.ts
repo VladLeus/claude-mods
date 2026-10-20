@@ -11,7 +11,7 @@ import type {
   TemplateRoleId,
   ToolCommand,
 } from '../types'
-import { isSecurityReviewSkill } from './assign'
+import { isSecurityReviewSkill, SECURITY_PLUGINS } from './assign'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
 import { reportText } from './render'
@@ -401,6 +401,18 @@ export function recommend(input: {
       install: INSTALL_COMMANDS.securityReview,
     }),
   ]
+}
+
+/**
+ * The security plugins init offers to install for a team (decision #39): none when no role stands for Security (by
+ * its id or its `basedOn`), else each key of SECURITY_PLUGINS, in that order, that `setup.plugins` does not hold
+ * exactly. Only the exact `@claude-plugins-official` key counts as present: a lookalike key of another marketplace is
+ * not the plugin cadre installs, so it neither hides the offer nor counts as installed (T-03-46).
+ */
+export function missingSecurityPlugins(roles: readonly RoleSpec[], setup: SetupScan): string[] {
+  if (!roles.some(role => standsFor(role, 'security'))) return []
+
+  return SECURITY_PLUGINS.filter(key => !setup.plugins.includes(key))
 }
 
 /** The heading above the recommendation lines. */
