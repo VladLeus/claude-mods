@@ -13,8 +13,9 @@ import type {
   ScopeContext,
 } from '../types'
 import { MAX_READ_BYTES } from './facts'
-import { cadreJsonText, roleJsonText } from './generate'
+import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
+import { compileTeam, readTeam, repoGuard } from './init'
 import { launchPlan } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { stableJson } from './plan'
@@ -1326,3 +1327,59 @@ describe('runStart warnings and links (D-102)', () => {
   })
 })
 
+/** The warning /cadre start gives when BE's launcher on disk is not the one this cadre writes today (#54 A3). */
+const OUTDATED_WARNING =
+  'warning: .cadre/bin/be is not the launcher this cadre writes today (written by an older cadre or for another ' +
+  'setup): run /cadre regen be to update it'
+
+/**
+ * `world` with BE's launcher, and its manifest entry, holding the text desiredFiles gives for BE today: the team read
+ * and compiled from `world` as /cadre start reads and compiles it (repoGuard, readTeam, compileTeam).
+ */
+async function withTodaysLauncher(world: MemWorld): Promise<MemWorld> {
+  const io = memIo(world, {}).io
+  const guard = await repoGuard(io, 'start')
+  if (guard.kind === 'refuse') throw new Error(guard.text)
+  const team = await readTeam(io, guard.locations.root, 'start', 'be')
+  if (team.kind === 'refuse') throw new Error(team.text)
+  const { state, roles } = team.value
+  const { scopes } = await compileTeam(io, guard.locations, state, roles)
+  const text = desiredFiles({ roles, scopes, state, only: 'be' }).find(file => file.path === '.cadre/bin/be')?.content
+  if (text === undefined) throw new Error('desiredFiles gave no launcher for be')
+  const launcher: ManifestEntry = { path: '.cadre/bin/be', sha256: await sha256Hex(text), mode: 'exec' }
+
+  return withFile(withFile(world, LAUNCHER_PATH, text), MANIFEST_FILE, manifestText([launcher]))
+}
+
+describe('runStart launcher drift and secrets (LNCH-04, T-03-32)', () => {
+  test('a launcher that matches its manifest but not today\'s text is warned about, not refused (#54 A3)', async () => {
+    const old = await startBe(await appliedWorld())
+    const today = await startBe(await withTodaysLauncher(await appliedWorld()))
+    const oldLines = old.reply.split('\n')
+
+    expect(oldLines).toContain(OUTDATED_WARNING)
+    expect(oldLines.indexOf(RUN_LINE)).toBeGreaterThan(oldLines.indexOf(OUTDATED_WARNING))
+    expect(writtenPaths(old).at(-1)).toBe(`${RUNTIME}/stamp`)
+    expect(today.reply.split('\n')).not.toContain(OUTDATED_WARNING)
+    expect(writtenPaths(today).at(-1)).toBe(`${RUNTIME}/stamp`)
+  })
+
+  test('over the secret world the reply holds no secret; the runtime settings and MCP config hold them', async () => {
+    const carry = { ...BE.carry, hooks: ['gsd-secret-read-guard.js'] }
+    const base = await appliedWorld(templateRole('be', { mcp: ['redmine'], carry }), true)
+    const secret = secretWorld()
+    const claudeJson = JSON.stringify({ mcpServers: { redmine: REDMINE } })
+    const world = {
+      ...secret,
+      dirs: { ...secret.dirs, ...base.dirs },
+      files: { ...secret.files, ...base.files, [CLAUDE_JSON]: claudeJson },
+    }
+    const start = await startBe(world)
+    const textOf = (name: string): string => start.writes.find(write => write.path === `${RUNTIME}/${name}`)?.text ?? ''
+
+    expect(start.reply.split('\n').slice(-2)).toEqual([RUN_LINE, '  /repo/.cadre/bin/be'])
+    expect(leaks(start.reply, SECRET_FIXTURES)).toEqual([])
+    expect(textOf('settings.json')).toContain(JSON.stringify(USER_GUARD))
+    expect(textOf('mcp.json')).toBe(stableJson({ mcpServers: { redmine: REDMINE } }))
+  })
+})
