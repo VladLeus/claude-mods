@@ -1303,7 +1303,8 @@ describe('frameworkStep', () => {
     const each = { options: BOTH_OPTIONS }
     expect(run.specs.slice(1)).toEqual([each, each, each])
     for (const spec of run.specs) {
-      expect(spec.options.length >= 2 && spec.options.length <= 4).toBe(true)
+      expect(spec.options.length).toBeGreaterThanOrEqual(2)
+      expect(spec.options.length).toBeLessThanOrEqual(4)
       expect(spec.options.some(option => option.includes('(default)'))).toBe(false)
     }
   })
@@ -1349,7 +1350,8 @@ describe('runInit framework and recommendations', () => {
     const frameworkAt = events.indexOf(
       'ask Which framework do the roles use? (asked because more than one framework is in use)',
     )
-    expect(rolesAt >= 0 && frameworkAt > rolesAt).toBe(true)
+    expect(rolesAt).toBeGreaterThanOrEqual(0)
+    expect(frameworkAt).toBeGreaterThan(rolesAt)
     expect(events[frameworkAt + 1]).toBe(`ask ${FRAMEWORK_ALL_QUESTION}`)
     const recommended = run.logged.find(text => text.startsWith('Recommendations'))
     expect(recommended === undefined).toBe(false)

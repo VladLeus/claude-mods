@@ -354,7 +354,8 @@ describe('history scan', () => {
   test('historyStep: a typed yes counts in any case; an unknown answer is asked again, three asks in all', async () => {
     const typed = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [' YES, scan names and counts '])
     const result = await historyStep(typed.io, DEFAULT_LOCATIONS)
-    expect(result.kind === 'accepted' && result.value !== 'skipped').toBe(true)
+    expect(result.kind).toBe('accepted')
+    expect(result.kind === 'accepted' ? result.value : 'skipped').not.toBe('skipped')
     const unread = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe'])
     expect(await historyStep(unread.io, DEFAULT_LOCATIONS)).toEqual({
       kind: 'cancelled',

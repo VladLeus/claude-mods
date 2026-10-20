@@ -790,7 +790,7 @@ describe('MARKER_ROWS', () => {
     ]
     for (const [kind, dep] of deps) {
       const row = rowOf(kind, dep)
-      expect(row !== undefined && 'dep' in row.match && row.match.dep === dep).toBe(true)
+      expect(row?.match).toMatchObject({ dep })
     }
   })
 
@@ -844,7 +844,7 @@ describe('MARKER_ROWS', () => {
   test('the cypress folder is an E2E marker by its exact name', () => {
     const row = rowOf('e2e', 'Cypress folder')
 
-    expect(row !== undefined && 'dir' in row.match && row.match.dir === 'cypress').toBe(true)
+    expect(row?.match).toMatchObject({ dir: 'cypress' })
   })
 })
 

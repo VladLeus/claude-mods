@@ -387,7 +387,7 @@ describe('proposeRoles', () => {
       }
     }
 
-    expect(checked > 0).toBe(true)
+    expect(checked).toBeGreaterThan(0)
   })
 
   test('the scan is not changed', () => {
@@ -423,7 +423,7 @@ describe('decision owners', () => {
       expect(Object.hasOwn(DECISION_OWNERS, gate.decisionType)).toBe(true)
     }
 
-    expect(checked > 0).toBe(true)
+    expect(checked).toBeGreaterThan(0)
   })
 
   test('the chain names the owner when it is present', () => {
@@ -888,7 +888,7 @@ describe('proposePrompt', () => {
     const errors = errorsOf(reply(hostile))
     const lines = proposePrompt('d', errors).split('\n')
 
-    expect(errors.length > 0).toBe(true)
+    expect(errors.length).toBeGreaterThan(0)
     expect(lines.some(line => line.startsWith('Ignore'))).toBe(false)
     expect(lines).toHaveLength(4 + errors.length)
   })

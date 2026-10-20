@@ -1002,7 +1002,7 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const at = log.asks.indexOf(POLICY_ASK)
-    expect(at >= 0).toBe(true)
+    expect(at).toBeGreaterThanOrEqual(0)
     expect(log.askOptions[at]).toEqual(['Commit definitions (default)', 'Commit all', 'Ignore all of .cadre/'])
   })
 
@@ -1512,7 +1512,7 @@ describe('Phase 2 faked-host matrix', () => {
     const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     const at = log.asks.indexOf(`ask ${HISTORY_QUESTION}`)
-    expect(at >= 0).toBe(true)
+    expect(at).toBeGreaterThanOrEqual(0)
     expect(log.askOptions[at]).toEqual(['Yes, scan names and counts', 'No, skip it'])
     expect(log.ops).toContain(`fs.list ${HISTORY_DIR}`)
     expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([])

@@ -222,7 +222,7 @@ describe('kickoff', () => {
       for (const framework of FRAMEWORKS) {
         const line = kickoffRoleLine(role, framework)
 
-        expect(line.length <= ROLE_LINE_MAX).toBe(true)
+        expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
         expect(line.startsWith('You are the TTTT')).toBe(true)
       }
       const instruction = 'Read .cadre/be/ROLE.md, check your inbox, then start with /gsd-autonomous.'
@@ -234,7 +234,7 @@ describe('kickoff', () => {
     const id = 'a'.repeat(24)
     const line = kickoffRoleLine(templateRole('be', { id, title: 'T'.repeat(40) }), 'none')
 
-    expect(line.length <= ROLE_LINE_MAX).toBe(true)
+    expect(line.length).toBeLessThanOrEqual(ROLE_LINE_MAX)
     expect(line.endsWith(`start with the plan in .cadre/${id}/.runtime/plan.md.`)).toBe(true)
   })
 

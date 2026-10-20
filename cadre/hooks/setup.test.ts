@@ -852,7 +852,7 @@ const CHAIN: readonly unknown[] = [
 describe('setup consent and instructions', () => {
   test('CLAUDE_JSON_MAX_BYTES is the 4 MiB host cap, far above the 256 KiB cap of the detect files', () => {
     expect(CLAUDE_JSON_MAX_BYTES).toBe(4 * 1024 * 1024)
-    expect(CLAUDE_JSON_MAX_BYTES > MAX_READ_BYTES).toBe(true)
+    expect(CLAUDE_JSON_MAX_BYTES).toBeGreaterThan(MAX_READ_BYTES)
   })
 
   test('projectClaudeJson keeps the mcpServers names of the file and of this repo, and nothing else', () => {

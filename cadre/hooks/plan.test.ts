@@ -1352,7 +1352,7 @@ describe('planReadPaths', () => {
       `create ${MANIFEST_PATH}`,
     ])
     expect(asked.filter(path => !wanted.includes(path))).toEqual([])
-    expect(asked.length > 0).toBe(true)
+    expect(asked.length).toBeGreaterThan(0)
   })
 })
 
@@ -1507,7 +1507,7 @@ describe('plan properties', () => {
     const lines = renderPlan(await buildPlan(input({ desired: files })))
     const chunks = chunkLines(lines, 2000)
 
-    expect(chunks.length > 1).toBe(true)
+    expect(chunks.length).toBeGreaterThan(1)
     expect(chunks.filter(chunk => chunk.length > 2000)).toEqual([])
     expect(chunks.join('\n')).toBe(lines.join('\n'))
   })

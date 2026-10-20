@@ -9,9 +9,10 @@ import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
 
 /**
- * The most characters the role line of a kickoff may have (D-79; 220 since the inbox sentence of D-114, decision #32).
+ * The most characters the role line of a kickoff may have (D-79; 240 since the inbox sentence of D-114,
+ * decisions #32/#39).
  */
-export const ROLE_LINE_MAX = 220
+export const ROLE_LINE_MAX = 240
 
 /** What the role line drops: any character outside printable ASCII, and the quote and backtick characters. */
 const NOT_ROLE_LINE_CHAR = /[^\x20-\x7e]|["'`]/g

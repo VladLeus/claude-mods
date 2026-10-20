@@ -241,7 +241,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
 
 /**
  * One scripted answer of the fake host's `run`: the argv it answers, compared element by element, and its result. A
- * null result is a run the host rejected (the command could not start, or it timed out).
+ * null result is a run the host rejected (the command could not start, timed out or was refused).
  */
 export type HostRunRule = {
   readonly argv: readonly string[]
@@ -255,6 +255,10 @@ export type HostRunRule = {
 export type HostWorld = {
   readonly runs: readonly HostRunRule[]
   readonly writeFails: readonly string[]
+  /**
+   * A name set to '' is answered as ''. The real HostIo answers null for an empty value, so leave the name
+   * out to model unset or empty.
+   */
   readonly env: Readonly<Partial<Record<HostEnvName, string>>>
 }
 
@@ -324,7 +328,8 @@ export function memHost(world: HostWorld): MemHost {
 
 /**
  * A new world whose `files` hold the text of every write with isWritten true, later writes winning, so a test can
- * re-run init or start over what a run wrote. The world given is not changed.
+ * re-run init or start over what a run wrote. The world given is not changed. It adds files only, not folders, so a
+ * folder a run created is still not listed or stat-ed as a folder.
  */
 export function withWrites(world: MemWorld, writes: readonly HostWrite[]): MemWorld {
   const files: Record<string, string> = { ...world.files }
