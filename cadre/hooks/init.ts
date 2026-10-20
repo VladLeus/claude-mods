@@ -31,8 +31,19 @@ import type {
   WriteStat,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
-import { applySteps, applyStatPaths, chmodArgv, chmodProblem, hunkFailureLine, writeProblem } from './apply'
-import type { ApplyStep, HunkRun } from './apply'
+import {
+  applySteps,
+  applyStatPaths,
+  chmodArgv,
+  chmodProblem,
+  CONFLICT_OPTIONS,
+  conflictPaths,
+  conflictQuestion,
+  hunkFailureLine,
+  parseConflictAnswer,
+  writeProblem,
+} from './apply'
+import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -2137,13 +2148,19 @@ function cancelReply(io: InitIo, reason: string): string {
   return INIT_CANCELLED
 }
 
+/** Why init cancels when a Keep mine or Take new question is dismissed or not answered (D-67, A1). */
+export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was dismissed or not answered.'
+
 /**
- * Writes the plan the person confirmed (D-105, LNCH-01): applySteps plans the steps from it and writeSteps runs them
- * through the host port, each write checked for links first, a launcher made executable only after its own write
- * landed, and the manifest last. Confirm is the consent, so nothing more is asked: a conflict keeps the person's file,
- * as an unanswered conflict does (D-67), and no framework command runs, so hunkFailures and attended stay empty. Like
- * every init step it gives a StepResult (A1); with no question to ask it is always accepted, with the plan as written
- * and what the apply did.
+ * Writes the plan the person confirmed (D-105, LNCH-01). The Keep mine or Take new questions come first and are the
+ * only questions after Confirm (D-105, D-67): one for each conflicted file of the confirmed plan (conflictPaths), in
+ * plan order, before any host call (conflictQuestion with CONFLICT_OPTIONS, parseConflictAnswer). A dismissal, or
+ * MAX_ASKS answers that are neither, cancels with CONFLICT_DISMISSED_REASON, so nothing is written or run (A1, D-45).
+ * applySteps then plans the steps from the plan and those answers, and writeSteps runs them through the host port,
+ * each write checked for links first, a launcher made executable only after its own write landed, and the manifest
+ * last: Take new overwrites the person's file and the manifest records its new hash, while Keep mine keeps the file
+ * and writes its `.cadre-new` copy. No framework command runs, so hunkFailures and attended stay empty. Like every init
+ * step it gives a StepResult (A1): accepted with the plan as written and what the apply did.
  */
 export async function applyConfirmed(
   io: InitIo,
@@ -2152,7 +2169,13 @@ export async function applyConfirmed(
 ): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
   const { draft, planned } = reviewed
   const { plan, desired, manifest, gitignore } = planned
-  const steps = await applySteps({ plan, desired, manifest, gitignore, choices: new Map() })
+  const choices = new Map<string, ConflictChoice>()
+  for (const path of conflictPaths(plan)) {
+    const choice = await askChoice(io, conflictQuestion(path), { options: CONFLICT_OPTIONS }, parseConflictAnswer)
+    if (choice === null) return cancelled(CONFLICT_DISMISSED_REASON)
+    choices.set(path, choice)
+  }
+  const steps = await applySteps({ plan, desired, manifest, gitignore, choices })
   const outcome = await writeSteps(io, host, draft.locations.root, steps)
 
   return accepted({ planned, outcome })
@@ -2174,11 +2197,12 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * repo, where the launchers start (launchStartStep), shows the one final review with every role's scope card for that
  * start (the one place the cards are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person
  * confirms or goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the
- * note that nothing was written (D-82); plain init writes it (applyConfirmed, D-105), asking nothing more, and replies
- * with the plan as written and what the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks
- * its kind before it uses the value, and for a cancelled step prints the reason as its own line and answers
- * INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it, and nothing is written before
- * Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * note that nothing was written (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new
+ * for each conflicted file (D-67), and replies with the plan as written and what the apply did (initReplyText). Every
+ * step gives a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the
+ * reason as its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after
+ * it, and nothing is written before Confirm. Every answer lives in memory for this one run, and nothing is kept for the
+ * next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')
