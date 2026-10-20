@@ -384,6 +384,42 @@ export type InitIo = {
   readonly tools: () => Promise<unknown>
 }
 
+/** What one process run gave: its exit code and its output. A run that exits non-zero is a result, never thrown. */
+export type HostRun = {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
+}
+
+/**
+ * How one argv runs: with no shell, `env` laid over the host env, and `timeoutMs` from 1 to 600000 (outside that range
+ * the host throws, RESEARCH 3.1).
+ */
+export type RunOptions = {
+  readonly cwd?: string
+  readonly stdin?: string
+  readonly env?: Readonly<Record<string, string>>
+  readonly timeoutMs: number
+}
+
+/** The only environment variables `/cadre start --terminal` reads; the host needs string-literal names. */
+export type HostEnvName = 'TMUX' | 'TERM_PROGRAM'
+
+/**
+ * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo. register.tsx builds it
+ * from closures over `$`. InitIo never gets these members, so a path that is given only an InitIo (detect, every
+ * --dry-run, every refusal and cancel) cannot write or run (decision #25). Every member maps a host failure to false or
+ * null and never reads an error text.
+ */
+export type HostIo = {
+  /** Writes the text to an absolute path, creating its parent folders; false when the host refused or failed. */
+  readonly write: (path: string, text: string) => Promise<boolean>
+  /** Runs the argv; null when the command could not start, timed out or was refused. */
+  readonly run: (argv: readonly string[], options: RunOptions) => Promise<HostRun | null>
+  /** The variable's value; null when it is unset, empty or unreadable. */
+  readonly env: (name: HostEnvName) => Promise<string | null>
+}
+
 /** The git policy for `.cadre/` (D-65, D-90): commit all, commit definitions (the default), or ignore all of it. */
 export type GitPolicy = 'all' | 'definitions' | 'ignore'
 

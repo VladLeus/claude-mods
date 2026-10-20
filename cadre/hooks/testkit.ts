@@ -2,6 +2,9 @@ import type {
   AskSpec,
   Facts,
   FrameworkId,
+  HostEnvName,
+  HostIo,
+  HostRun,
   InitFacts,
   InitIo,
   InitLocations,
@@ -10,6 +13,7 @@ import type {
   PortRead,
   PortStat,
   RoleSpec,
+  RunOptions,
   SettingsSource,
   SetupScan,
   SkillRef,
@@ -22,7 +26,8 @@ import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
  * Support for the Phase 2 tests, not a test itself: it is deliberately not named `*.test.ts`, so `claude plugin test`
  * does not run it, and `npm run typecheck:cadre` checks it. It gives a pure test a scripted InitIo: answers in order
  * or by question, a rejection when the answers run out, files and folders in memory, tri-state reads, and the
- * secret and absolute-path fixtures the property tests scan for.
+ * secret and absolute-path fixtures the property tests scan for. It also gives the Phase 3 tests a scripted HostIo
+ * that records every write and run in call order and answers each from a HostWorld.
  */
 
 /** The session of the fixtures: the repo at /repo, a user whose home is /home/u, no CLAUDE_CONFIG_DIR, no warnings. */
@@ -232,6 +237,89 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   }
 
   return { io, asked, specs, logged, prompts, reads, listed }
+}
+
+/**
+ * One scripted answer of the fake host's `run`: the argv it answers, compared element by element, and its result. A
+ * null result is a run the host rejected (the command could not start, or it timed out).
+ */
+export type HostRunRule = {
+  readonly argv: readonly string[]
+  readonly result: HostRun | null
+}
+
+/**
+ * What a scripted HostIo answers: the run rules (the first rule naming an argv answers it), the paths whose write
+ * fails, and the environment variables that are set.
+ */
+export type HostWorld = {
+  readonly runs: readonly HostRunRule[]
+  readonly writeFails: readonly string[]
+  readonly env: Readonly<Partial<Record<HostEnvName, string>>>
+}
+
+/** The fake host's answer to an argv no rule names: exit 0 with no output. Frozen, so no test can change it. */
+export const DEFAULT_RUN: HostRun = Object.freeze({ exitCode: 0, stdout: '', stderr: '' })
+
+/** A HostWorld with no run rules, no failing write and no variable set. `over` changes the fields it names. */
+export function hostWorld(over: Partial<HostWorld>): HostWorld {
+  return {
+    runs: [],
+    writeFails: [],
+    env: {},
+    ...over,
+  }
+}
+
+/** One write the fake host was asked for, and whether it answered that the write happened. */
+export type HostWrite = {
+  readonly path: string
+  readonly text: string
+  readonly isWritten: boolean
+}
+
+/** One run the fake host was asked for: a copy of its argv, and its options. */
+export type HostCall = {
+  readonly argv: readonly string[]
+  readonly options: RunOptions
+}
+
+/** A scripted HostIo and what it was asked, in call order: every write and every run. */
+export type MemHost = {
+  readonly io: HostIo
+  readonly writes: HostWrite[]
+  readonly calls: HostCall[]
+}
+
+/**
+ * A HostIo over `world` that records every write and run in call order. A write answers false for a path in
+ * `writeFails`, else true. A run answers the result of the first rule whose argv has the same length and the same
+ * element at every index (null for a rejected run), else DEFAULT_RUN. `env` answers the world's value, else null.
+ */
+export function memHost(world: HostWorld): MemHost {
+  const writes: HostWrite[] = []
+  const calls: HostCall[] = []
+
+  const io: HostIo = {
+    write: async (path, text) => {
+      const isWritten = !world.writeFails.includes(path)
+      writes.push({ path, text, isWritten })
+
+      return isWritten
+    },
+    run: async (argv, options) => {
+      calls.push({ argv: [...argv], options })
+      const rule = world.runs.find(
+        candidate =>
+          candidate.argv.length === argv.length && candidate.argv.every((word, index) => word === argv[index]),
+      )
+
+      return rule === undefined ? DEFAULT_RUN : rule.result
+    },
+    env: async name => world.env[name] ?? null,
+  }
+
+  return { io, writes, calls }
 }
 
 /** A listing entry as the port gives it: a file unless told otherwise, and not a link unless told so. */
