@@ -11,7 +11,7 @@ import type {
   TemplateRoleId,
   ToolCommand,
 } from '../types'
-import { isSecurityReviewSkill, SECURITY_PLUGINS } from './assign'
+import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './assign'
 import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
 import { reportText } from './render'
@@ -308,23 +308,25 @@ export function attendedNote(keys: readonly string[]): string {
 }
 
 /**
- * The commands printed for the person to run (D-96, approved word for word). cadre runs none of them (ROLE-03, D-28).
- * `securityReview` is not a command: that skill is built into Claude Code and is added to the Security role's
- * `role.json`, with `<id>` left as literal text. It is defined once and used wherever it is shown.
+ * The commands printed for the person to run (D-96 as reworded by decision #39), each defined once and used wherever
+ * it is shown. The recommendation lines run none of them (ROLE-03, D-28). Init itself offers to run the two security
+ * ones, `claudeSecurity` and `securityGuidance`, after Confirm, and only on an explicit Install (decision #39); each is
+ * the argv of pluginInstallArgv for its key, joined with spaces.
  */
 export const INSTALL_COMMANDS: Readonly<{
   gsd: string
   superpowers: string
   playwright: string
   devtools: string
-  securityReview: string
+  claudeSecurity: string
+  securityGuidance: string
 }> = Object.freeze({
   gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
   superpowers: 'claude plugin install superpowers@claude-plugins-official',
   playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
   devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
-  securityReview:
-    "built into Claude Code as /security-review; add it to the Security role's skills in .cadre/<id>/role.json",
+  claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',
+  securityGuidance: 'claude plugin install security-guidance@claude-plugins-official',
 })
 
 /** Why GSD and superpowers are recommended: no role of the team uses a framework (D-17, D-74). */
@@ -369,11 +371,15 @@ function hasMcp(setup: SetupScan, pattern: RegExp): boolean {
 }
 
 /**
- * The tools to recommend for a team (ROLE-03, D-74), in this order: GSD and superpowers when no role uses a framework;
- * Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP server exists; DevTools MCP
- * for each FE role when no devtools MCP server exists; security-review for each Security role when no such skill
- * exists. A role is FE or Security by its id or its `basedOn`. `frameworks` is each role's resolved framework, in role
- * order. The result is text for the person to read: nothing here runs a command (T-02-23).
+ * The tools to recommend for a team (ROLE-03, D-74 as reworded by decision #39), in this order: GSD and superpowers
+ * when no role uses a framework; Playwright MCP for each FE role when the scan found no E2E setup and no playwright MCP
+ * server exists; DevTools MCP for each FE role when no devtools MCP server exists; claude-security for each Security
+ * role when `setup.plugins` does not hold CLAUDE_SECURITY_PLUGIN exactly; security-guidance for each Security role
+ * when it does not hold SECURITY_GUIDANCE_PLUGIN exactly. Only the exact `@claude-plugins-official` key counts, as in
+ * missingSecurityPlugins, so the Security lines name the plugins init offers to install (T-03-46), and a scanned
+ * security-review skill removes no line. A role is FE or Security by its id or its `basedOn`. `frameworks` is each
+ * role's resolved framework, in role order. The result is text for the person to read: nothing here runs a command
+ * (T-02-23).
  */
 export function recommend(input: {
   readonly roles: readonly RoleSpec[]
@@ -395,10 +401,15 @@ export function recommend(input: {
       why: 'the FE role cannot inspect the running page',
       install: INSTALL_COMMANDS.devtools,
     }),
-    ...forTemplateRole(roles, 'security', !setup.skills.some(skill => isSecurityReviewSkill(skill.name)), {
-      tool: 'security-review',
-      why: 'the Security role has no security-review skill',
-      install: INSTALL_COMMANDS.securityReview,
+    ...forTemplateRole(roles, 'security', !setup.plugins.includes(CLAUDE_SECURITY_PLUGIN), {
+      tool: 'claude-security',
+      why: 'the Security role has no review skill: claude-security adds one (needs Python 3.9 or newer)',
+      install: INSTALL_COMMANDS.claudeSecurity,
+    }),
+    ...forTemplateRole(roles, 'security', !setup.plugins.includes(SECURITY_GUIDANCE_PLUGIN), {
+      tool: 'security-guidance',
+      why: 'no hooks warn the Security role about risky edits',
+      install: INSTALL_COMMANDS.securityGuidance,
     }),
   ]
 }
