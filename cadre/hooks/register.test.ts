@@ -296,6 +296,42 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   }
 }
 
+/** The folder of statusHostWorld's transcripts: the git root's folder under the user folder's projects (D-131). */
+const STATUS_TRANSCRIPTS = '/home/u/.claude/projects/-repo'
+
+/** The argv of the title grep of BE's transcript s9.jsonl in statusHostWorld (D-131). */
+const STATUS_GREP: readonly string[] = [
+  '/usr/bin/grep',
+  '-E',
+  '^\\{"type":"custom-title"',
+  '--',
+  `${STATUS_TRANSCRIPTS}/s9.jsonl`,
+]
+
+/**
+ * The repo of startHostWorld after a run of BE (D-111, D-131): the git root's transcripts folder lists s9.jsonl, whose
+ * title grep gives the custom-title row `cadre-be`, and autopilot's status file of s9 is off, with a log that ends
+ * `finished (done)`. Pass `over` to change one part of it.
+ */
+async function statusHostWorld(over: Partial<World> = {}): Promise<World> {
+  const base = await startHostWorld()
+  const titleRow = '{"type":"custom-title","customTitle":"cadre-be","sessionId":"s9"}\n'
+
+  return {
+    ...base,
+    listings: { ...base.listings, [STATUS_TRANSCRIPTS]: [entry('s9.jsonl')] },
+    files: {
+      ...base.files,
+      '/home/u/.claude/autopilot/s9.json': '{"isOn":false}',
+      '/home/u/.claude/autopilot/s9.log':
+        '2026-10-20T01:00:00.000Z  final handoff requested (done)\n' +
+        '2026-10-20T01:01:00.000Z  finished (done): handed back to the person\n',
+    },
+    runResults: { ...base.runResults, [STATUS_GREP.join(' ')]: { exitCode: 0, stdout: titleRow } },
+    ...over,
+  }
+}
+
 /** Whether the fake host has the path: a listed folder, a bare folder, or a file. */
 function hasPath(world: World, path: string): boolean {
   return Object.hasOwn(world.listings, path) || world.dirs.includes(path) || Object.hasOwn(world.files, path)
@@ -1431,6 +1467,36 @@ describe('cadre start with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'start be' })
     expect(out.text).toBe(regenNoRole('be', ['pm']))
     expect(log.writes).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('fs.write ') || op.startsWith('forbidden '))).toEqual([])
+  })
+})
+
+/** The first lines of statusHostWorld's `/cadre status be` reply: done, read from autopilot's log (D-111). */
+const STATUS_DONE_LINES: readonly string[] = [
+  'cadre status be',
+  'state: done',
+  'session: s9 (found by its name cadre-be)',
+  'autopilot: finished (done): handed back to the person',
+  'latest handoff: none yet',
+]
+
+describe('cadre status with a faked host', () => {
+  test('status be finds the session by its name and reports done from the autopilot log (D-111)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await statusHostWorld(), log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'status be' })).text.split('\n')
+    expect(lines.slice(0, STATUS_DONE_LINES.length)).toEqual(STATUS_DONE_LINES)
+    expect(log.runs).toEqual([STATUS_GREP])
+    expect(log.asks).toEqual([])
+    expect(log.ops.filter(op => op.startsWith('fs.write ') || op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('in claude -p, status be gives the same report and asks nothing (D-111)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await statusHostWorld({ surfaces: [] }), log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'status be' })).text.split('\n')
+    expect(lines.slice(0, STATUS_DONE_LINES.length)).toEqual(STATUS_DONE_LINES)
+    expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('fs.write ') || op.startsWith('forbidden '))).toEqual([])
   })
 })
