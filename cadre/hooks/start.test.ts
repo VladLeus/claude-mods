@@ -215,7 +215,8 @@ describe('runtime render (D-102)', () => {
   })
 
   test(
-    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the five files and DONE.md',
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders, the five files and DONE.md, ' +
+      'and lists .runtime, then the stale-link folders (#72 A2)',
     () => {
       expect(BE_PLAN.links).toEqual([])
       expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
@@ -237,6 +238,7 @@ describe('runtime render (D-102)', () => {
           `${RUNTIME}/stamp`,
         ],
         listings: [
+          RUNTIME,
           `${RUNTIME}/overlay/.claude/skills`,
           `${RUNTIME}/overlay/.claude/agents`,
           `${RUNTIME}/instructions/global`,
@@ -346,6 +348,9 @@ const ROLE_REFUSAL = '.cadre/be is not a folder inside this repo: run /cadre reg
 /** The refusal when .runtime, a folder in it or a file the render writes is not safe to render into. */
 const RUNTIME_REFUSAL =
   '.cadre/be/.runtime/ or a folder in it is a link or not a folder: remove it and run /cadre start be again'
+
+/** What the render refusal says after the path of a file .runtime lists as a link its stat did not show (#72 A2). */
+const UNCHECKED_LINK = 'is a link /cadre start could not check: remove it and run /cadre start be again'
 
 /** The disk after an earlier render: the role folder, .runtime and the overlay down to the skills, all real folders. */
 function rendered(over: Readonly<Record<string, PortStat | null>> = {}): ReadonlyMap<string, PortStat | null> {
@@ -561,6 +566,39 @@ describe('runtime render links', () => {
     expect(steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: stamp }])
     expect(steps[0]).toEqual({ kind: 'remove', path: stamp })
     expect(renderSteps(input({ stats: rendered() })).steps.filter(step => step.kind === 'remove')).toEqual([])
+  })
+
+  test('a file a render writes that .runtime lists as a link, with no link in its stat, refuses (#72 A2)', () => {
+    const names = ['settings.json', 'mcp.json', 'probe-expectations.json', 'inbox.md', 'stamp']
+    const results = names.map(name =>
+      renderSteps(input({ stats: rendered(), listings: listed({ [RUNTIME]: [entry('notes'), link(name)] }) })),
+    )
+    const regularStat = rendered({ [`${RUNTIME}/stamp`]: regular(`${RUNTIME}/stamp`) })
+    const listedStamp = listed({ [RUNTIME]: [link('stamp')] })
+
+    expect(results).toEqual(
+      names.map(name => ({
+        steps: [],
+        warnings: [],
+        refusal: `.cadre/be/.runtime/${name} ${UNCHECKED_LINK}`,
+      })),
+    )
+    expect(renderSteps(input({ stats: regularStat, listings: listedStamp })).refusal).toBe(
+      `.cadre/be/.runtime/stamp ${UNCHECKED_LINK}`,
+    )
+  })
+
+  test('a listed link its stat shows is removed first; a listed real file or another link refuses nothing', () => {
+    const settings = `${RUNTIME}/settings.json`
+    const linkListing = listed({ [RUNTIME]: [link('settings.json')] })
+    const realListing = listed({ [RUNTIME]: [entry('settings.json'), link('settings.json.old')] })
+    const linkedSettings = renderSteps(input({ stats: rendered({ [settings]: DANGLING }), listings: linkListing }))
+    const realFiles = renderSteps(input({ stats: rendered(), listings: realListing }))
+
+    expect(linkedSettings.refusal).toBeNull()
+    expect(linkedSettings.steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: settings }])
+    expect(realFiles.refusal).toBeNull()
+    expect(realFiles.steps.filter(step => step.kind === 'remove')).toEqual([])
   })
 
   test('no step removes a real file or folder but the old stamp, and nothing is removed with -r (T-03-20)', () => {

@@ -209,6 +209,7 @@ import {
   hostWorld,
   INIT_ANSWERS,
   leaks,
+  link,
   memHost,
   memIo,
   memWorld,
@@ -4183,6 +4184,34 @@ function statFailsAt(run: MemRun, path: string): InitIo {
   return { ...run.io, statForWrite: async asked => (asked === path ? 'failed' : run.io.statForWrite(asked)) }
 }
 
+/**
+ * The port of a run whose folder `folder` lists `name` as a link once the review is answered Confirm (#72 A2): a link
+ * planted there after Confirm whose stat the host takes for no file, as a dangling link may be, so statForWrite still
+ * answers the run's own absent; before Confirm and for every other folder, the run's own listing.
+ */
+function listedLinkAfterConfirm(run: MemRun, folder: string, name: string): InitIo {
+  let isConfirmed = false
+
+  return {
+    ...run.io,
+    ask: async (question, spec) => {
+      const answer = await run.io.ask(question, spec)
+      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+
+      return answer
+    },
+    list: async asked => {
+      const entries = await run.io.list(asked)
+      if (!isConfirmed || asked !== folder) return entries
+
+      return [...(entries ?? []), link(name)]
+    },
+  }
+}
+
+/** The refusal listedLinkProblem gives for a write whose folder, or one above it, lists it or its way as a link. */
+const LISTED_LINK = 'it or a folder above it is listed as a link'
+
 /** The chmod argv of each launcher of the INIT_ANSWERS team in an empty repo (PM, Security, TL), in plan order. */
 const EMPTY_REPO_CHMODS = ['pm', 'security', 'tl'].map(id => ['/bin/chmod', '755', `/repo/.cadre/bin/${id}`])
 
@@ -4289,6 +4318,31 @@ describe('init apply (D-105)', () => {
     expect(written).not.toContain('/repo/.cadre/manifest.json')
     const lines = reply.split('\n')
     expect(lines).toContain(`warning: ${BE_REFUSED}`)
+    expect(lines).toContain(BE_NOT_EXECUTABLE)
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+  })
+
+  test('a .gitignore link the stat takes for no file is not written through: the root lists it (#72 A2)', async () => {
+    const host = memHost(hostWorld({}))
+    const io = listedLinkAfterConfirm(memIo(fullWorld(), INIT_ANSWERS), '/repo', '.gitignore')
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    const written = host.writes.map(write => write.path)
+    expect(written).not.toContain('/repo/.gitignore')
+    expect(written).not.toContain('/repo/.cadre/manifest.json')
+    expect(written).toContain('/repo/.cadre/bin/be')
+    const lines = reply.split('\n')
+    expect(lines).toContain(`warning: refused to write .gitignore: ${LISTED_LINK}`)
+    expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+  })
+
+  test('a .cadre link the stat takes for no folder gets no write or chmod under it (#72 A2)', async () => {
+    const host = memHost(hostWorld({}))
+    const io = listedLinkAfterConfirm(memIo(fullWorld(), INIT_ANSWERS), '/repo', '.cadre')
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    expect(host.writes.map(write => write.path).filter(path => path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] === '/bin/chmod')).toEqual([])
+    const lines = reply.split('\n')
+    expect(lines).toContain(`warning: refused to write .cadre/bin/be: ${LISTED_LINK}`)
     expect(lines).toContain(BE_NOT_EXECUTABLE)
     expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
   })

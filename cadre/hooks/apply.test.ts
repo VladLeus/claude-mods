@@ -8,11 +8,13 @@ import type {
   Manifest,
   ManifestEntry,
   Plan,
+  PortEntry,
   PortRead,
   PortStat,
   WriteStat,
 } from '../types'
 import {
+  applyListPaths,
   applyStatPaths,
   applySteps,
   chmodArgv,
@@ -26,6 +28,7 @@ import {
   hunksAfterRuns,
   installedLine,
   installFailureText,
+  listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   parseConflictAnswer,
@@ -52,7 +55,7 @@ import type { PlanInput, PlannedFiles } from './plan'
 import { isUnmetHunk } from './recommend'
 import type { GsdToolContext } from './recommend'
 import { parseManifest, readRepoFile } from './scan'
-import { BIDI_OVERRIDE, emptySetupScan, memIo, memWorld, withWrites } from './testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, withWrites } from './testkit'
 import type { HostWrite, MemWorld } from './testkit'
 
 const VERSION = '0.2.0'
@@ -503,6 +506,29 @@ function roleStats(over: Readonly<Record<string, WriteStat>> = {}): ReadonlyMap<
   return new Map(Object.entries({ ...stats, ...over }))
 }
 
+/**
+ * The listings of the root, .cadre and .cadre/be, each holding the next one down as a real folder and ROLE.md as a
+ * regular file; `over` replaces some, null for a folder the host could not list.
+ */
+function roleListings(
+  over: Readonly<Record<string, readonly PortEntry[] | null>> = {},
+): ReadonlyMap<string, readonly PortEntry[] | null> {
+  const listings: Record<string, readonly PortEntry[] | null> = {
+    '': [entry('.cadre', 'dir')],
+    '.cadre': [entry('be', 'dir')],
+    '.cadre/be': [entry('ROLE.md')],
+  }
+
+  return new Map(Object.entries({ ...listings, ...over }))
+}
+
+/** The refusal of a write to ROLE.md when a folder lists it, or a folder above it, as a link (#72 A2). */
+const ROLE_LISTED_LINK = 'refused to write .cadre/be/ROLE.md: it or a folder above it is listed as a link'
+
+/** The refusal of a write to ROLE.md when a folder on its way is there but could not be listed (#72 A2). */
+const ROLE_LIST_FAILED =
+  'refused to write .cadre/be/ROLE.md: it or a folder above it could not be checked (a folder listing failed)'
+
 /** The refusal of a write to ROLE.md. */
 const ROLE_REFUSED = 'refused to write .cadre/be/ROLE.md: it or a folder above it is a link, or not inside the repo'
 
@@ -616,6 +642,68 @@ describe('write safety', () => {
       'refused to write .cadre/ab: it or a folder above it is a link, or not inside the repo',
     )
   })
+
+  test('applyListPaths lists the root as the empty path and each folder above a step path, sorted, once each', () => {
+    const steps: ApplyStep[] = [
+      { kind: 'write', path: ROLE_MD, text: 'x' },
+      { kind: 'write', path: '.gitignore', text: 'x' },
+      { kind: 'write', path: LAUNCHER, text: 'x' },
+      { kind: 'chmod', path: LAUNCHER },
+    ]
+
+    expect(applyListPaths(steps)).toEqual(['', '.cadre', '.cadre/be', '.cadre/bin'])
+    expect(applyListPaths([])).toEqual([''])
+  })
+
+  test('listedLinkProblem refuses a write when a folder lists it, or a folder on its way, as a link (#72 A2)', () => {
+    const absent = roleStats({ [ROLE_MD]: 'absent' })
+    const refused = [
+      roleListings({ '.cadre/be': [entry('kickoff.txt'), link('ROLE.md')] }),
+      roleListings({ '.cadre': [link('be')] }),
+      roleListings({ '': [entry('src', 'dir'), link('.cadre')] }),
+      roleListings({ '': null, '.cadre/be': [link('ROLE.md')] }),
+    ]
+    const ignore = new Map<string, WriteStat>([['.gitignore', 'absent']])
+
+    expect(refused.map(listings => listedLinkProblem(ROLE_MD, absent, listings))).toEqual(
+      refused.map(() => ROLE_LISTED_LINK),
+    )
+    expect(listedLinkProblem('.gitignore', ignore, roleListings({ '': [link('.gitignore')] }))).toBe(
+      'refused to write .gitignore: it or a folder above it is listed as a link',
+    )
+  })
+
+  test('listedLinkProblem lets a write through when the listings show real entries, or a link of another name', () => {
+    const other = roleListings({ '.cadre/be': [link('ROLE.md.bak'), entry('ROLE.md')] })
+
+    expect(listedLinkProblem(ROLE_MD, roleStats(), roleListings())).toBeNull()
+    expect(listedLinkProblem(ROLE_MD, roleStats({ [ROLE_MD]: 'absent' }), other)).toBeNull()
+  })
+
+  test(
+    'listedLinkProblem refuses below a folder that is there but gave no listing; an absent one or the root does not',
+    () => {
+      const none = new Map<string, WriteStat>([
+        ['.cadre', 'absent'],
+        ['.cadre/be', 'absent'],
+        [ROLE_MD, 'absent'],
+      ])
+      const hostile = `.cadre/a${BIDI_OVERRIDE}\nb`
+      const hostileStats = new Map<string, WriteStat>([
+        ['.cadre', statAt('dir', '/repo/.cadre')],
+        [hostile, 'absent'],
+      ])
+      const hostileListings = roleListings({ '.cadre': [link(`a${BIDI_OVERRIDE}\nb`)] })
+
+      expect(listedLinkProblem(ROLE_MD, roleStats(), roleListings({ '.cadre/be': null }))).toBe(ROLE_LIST_FAILED)
+      expect(listedLinkProblem(ROLE_MD, roleStats(), new Map())).toBe(ROLE_LIST_FAILED)
+      expect(listedLinkProblem(ROLE_MD, none, roleListings({ '.cadre': null, '.cadre/be': null }))).toBeNull()
+      expect(listedLinkProblem(ROLE_MD, roleStats(), roleListings({ '': null }))).toBeNull()
+      expect(listedLinkProblem(hostile, hostileStats, hostileListings)).toBe(
+        'refused to write .cadre/ab: it or a folder above it is listed as a link',
+      )
+    },
+  )
 
   test('chmodProblem allows a chmod only on a path whose write landed in this same apply', () => {
     const refusal = '.cadre/bin/be was not made executable: its write was refused or failed'

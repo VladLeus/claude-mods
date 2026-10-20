@@ -17,6 +17,7 @@ import type {
   Manifest,
   ManifestEntry,
   Plan,
+  PortEntry,
   PortStat,
   SettingProposal,
   SetupScan,
@@ -305,6 +306,20 @@ export function writeProblem(
   if (!isSafeTarget(target, root)) return `${refused}${LINK_REASON}`
 
   return null
+}
+
+/** RED stub (#72 A2): the GREEN commit gives the folders whose listing init reads before an apply writes. */
+export function applyListPaths(steps: readonly ApplyStep[]): string[] {
+  return steps.length < 0 ? [''] : []
+}
+
+/** RED stub (#72 A2): the GREEN commit gives why a write must not happen by the listings. */
+export function listedLinkProblem(
+  path: string,
+  stats: ReadonlyMap<string, WriteStat>,
+  listings: ReadonlyMap<string, readonly PortEntry[] | null>,
+): string | null {
+  return path === '' && stats.size < 0 && listings.size < 0 ? path : null
 }
 
 /**
