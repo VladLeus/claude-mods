@@ -149,27 +149,36 @@ describe('runtime render (D-102)', () => {
     expect(Object.isFrozen(STALE_LINK_FOLDERS)).toBe(true)
   })
 
-  test('renderPaths stats the role folder, .runtime, its overlay and the five files; it lists the link folders', () => {
-    expect(BE_PLAN.links).toEqual([])
-    expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
-      stats: [
-        ROLE_DIR,
-        RUNTIME,
-        `${RUNTIME}/inbox.md`,
-        `${RUNTIME}/mcp.json`,
-        `${RUNTIME}/overlay`,
-        `${RUNTIME}/probe-expectations.json`,
-        `${RUNTIME}/settings.json`,
-        `${RUNTIME}/stamp`,
-      ],
-      listings: [
-        `${RUNTIME}/overlay/.claude/skills`,
-        `${RUNTIME}/overlay/.claude/agents`,
-        `${RUNTIME}/instructions/global`,
-        `${RUNTIME}/instructions/memory`,
-      ],
-    })
-  })
+  test(
+    'renderPaths stats the role folder, .runtime, its overlay, the stale-link folders and the five files (#47)',
+    () => {
+      expect(BE_PLAN.links).toEqual([])
+      expect(renderPaths(ROOT, 'be', BE_PLAN)).toEqual({
+        stats: [
+          ROLE_DIR,
+          RUNTIME,
+          `${RUNTIME}/inbox.md`,
+          `${RUNTIME}/instructions`,
+          `${RUNTIME}/instructions/global`,
+          `${RUNTIME}/instructions/memory`,
+          `${RUNTIME}/mcp.json`,
+          `${RUNTIME}/overlay`,
+          `${RUNTIME}/overlay/.claude`,
+          `${RUNTIME}/overlay/.claude/agents`,
+          `${RUNTIME}/overlay/.claude/skills`,
+          `${RUNTIME}/probe-expectations.json`,
+          `${RUNTIME}/settings.json`,
+          `${RUNTIME}/stamp`,
+        ],
+        listings: [
+          `${RUNTIME}/overlay/.claude/skills`,
+          `${RUNTIME}/overlay/.claude/agents`,
+          `${RUNTIME}/instructions/global`,
+          `${RUNTIME}/instructions/memory`,
+        ],
+      })
+    },
+  )
 
   test('renderPaths also stats each folder from .runtime down to a link and each link path, sorted, once each', () => {
     const plan = { ...BE_PLAN, links: [MEMORY_LINK, SKILL_LINK, RESUME_LINK] }
@@ -179,11 +188,13 @@ describe('runtime render (D-102)', () => {
       RUNTIME,
       `${RUNTIME}/inbox.md`,
       `${RUNTIME}/instructions`,
+      `${RUNTIME}/instructions/global`,
       `${RUNTIME}/instructions/memory`,
       MEMORY_LINK.path,
       `${RUNTIME}/mcp.json`,
       `${RUNTIME}/overlay`,
       `${RUNTIME}/overlay/.claude`,
+      `${RUNTIME}/overlay/.claude/agents`,
       `${RUNTIME}/overlay/.claude/skills`,
       SKILL_LINK.path,
       RESUME_LINK.path,
@@ -434,6 +445,28 @@ describe('runtime render links', () => {
     expect(results).toHaveLength(12)
     expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })))
     expect(renderSteps(input({ stats: rendered({ [`${RUNTIME}/overlay`]: LINK_OUT }) })).refusal).toBe(RUNTIME_REFUSAL)
+  })
+
+  test('a stale-link folder or one above it that is a link or a file refuses, with no step (T-03-20, #47)', () => {
+    const folders = [
+      `${RUNTIME}/instructions`,
+      `${RUNTIME}/instructions/global`,
+      `${RUNTIME}/instructions/memory`,
+      `${RUNTIME}/overlay/.claude`,
+      `${RUNTIME}/overlay/.claude/agents`,
+      SKILLS,
+    ]
+    const results = folders.flatMap(path =>
+      [DANGLING, LINK_OUT, regular(path)].map(stat => renderSteps(input({ stats: rendered({ [path]: stat }) }))),
+    )
+
+    expect(results).toHaveLength(18)
+    expect(results).toEqual(results.map(() => ({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })))
+    expect(
+      renderSteps(
+        input({ stats: rendered({ [`${RUNTIME}/instructions`]: folder(`${RUNTIME}/instructions`) }) }),
+      ).refusal,
+    ).toBeNull()
   })
 
   test('an existing stamp is removed first, before every other step, and written last again (LNCH-03)', () => {
