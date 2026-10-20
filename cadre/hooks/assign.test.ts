@@ -590,6 +590,13 @@ describe('skill assignment', () => {
     expect(names.map(name => row?.pattern.test(name))).toEqual(names.map(isSecurityReviewSkill))
   })
 
+  test('an installed claude-security skill goes to Security with no question (decision #39)', () => {
+    expect(classifySkills([skill('claude-security:claude-security', 'claude-security')], TEAM)).toEqual({
+      assigned: [{ name: 'claude-security:claude-security', roleIds: ['security'] }],
+      groups: [],
+    })
+  })
+
   test('with no skills there is nothing to assign or ask', () => {
     expect(classifySkills([], TEAM)).toEqual({ assigned: [], groups: [] })
   })
@@ -616,8 +623,8 @@ describe('skill assignment', () => {
     expect(SKILL_ROLE_ROWS.every(row => Object.isFrozen(row.roles))).toBe(true)
   })
 
-  test('SKILL_ROLE_ROWS names the roles of the two rows in order, each with a label', () => {
-    expect(SKILL_ROLE_ROWS.map(row => row.roles)).toEqual([['security'], ['fe']])
+  test('SKILL_ROLE_ROWS names the roles of the three rows in order, each with a label', () => {
+    expect(SKILL_ROLE_ROWS.map(row => row.roles)).toEqual([['security'], ['security'], ['fe']])
     expect(SKILL_ROLE_ROWS.every(row => row.label.trim() !== '')).toBe(true)
     expect(new Set(SKILL_ROLE_ROWS.map(row => row.label)).size).toBe(SKILL_ROLE_ROWS.length)
   })

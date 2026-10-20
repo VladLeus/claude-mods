@@ -14,7 +14,7 @@ import type {
   SettingsSource,
   SetupScan,
 } from '../types'
-import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
+import { CLAUDE_SECURITY_PLUGIN, FRAMEWORK_START_SKILLS, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './assign'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import type { ChainRole } from './roles'
 import {
@@ -1755,4 +1755,48 @@ describe('probe checks (D-112)', () => {
       expect(found).toEqual([])
     },
   )
+})
+
+describe('security-guidance for Security (decision #39)', () => {
+  /** The plugin keys of a role that has only the three infra plugins, in the order the settings hold them. */
+  const INFRA_KEYS: readonly string[] = ['agent-fleet@local-mods', 'autopilot@local-mods', 'cadre@local-mods']
+
+  test('a claude-security skill enables only the exact claude-plugins-official key, never another (T-03-46)', () => {
+    const security = templateRole('security', { skills: ['claude-security:claude-security'] })
+    const other = emptySetupScan({ plugins: ['claude-security@other-market'] })
+    const both = emptySetupScan({ plugins: ['claude-security@other-market', CLAUDE_SECURITY_PLUGIN] })
+
+    expect(pluginKeys(compileScope(security, context({ setup: other })))).toEqual(INFRA_KEYS)
+    expect(pluginKeys(compileScope(security, context({ setup: both })))).toEqual([
+      ...INFRA_KEYS,
+      CLAUDE_SECURITY_PLUGIN,
+    ])
+  })
+
+  test('every role that stands for Security enables the official security-guidance key the setup holds', () => {
+    const setup = emptySetupScan({ plugins: ['codex@openai-codex', SECURITY_GUIDANCE_PLUGIN] })
+
+    for (const role of [templateRole('security'), templateRole('security', { id: 'sec' })]) {
+      const scope = compileScope(role, context({ setup }))
+
+      expect(scope.settings.enabledPlugins[SECURITY_GUIDANCE_PLUGIN]).toBe(true)
+      expect(pluginKeys(scope)).toEqual([...INFRA_KEYS, SECURITY_GUIDANCE_PLUGIN])
+    }
+  })
+
+  test('a security-guidance key of another marketplace is never enabled, not even for a skill of that name', () => {
+    const setup = emptySetupScan({ plugins: ['security-guidance@other-market'] })
+    const security = compileScope(templateRole('security'), context({ setup }))
+    const named = compileScope(templateRole('security', { skills: ['security-guidance:x'] }), context({ setup }))
+
+    expect(pluginKeys(security)).toEqual(INFRA_KEYS)
+    expect(pluginKeys(named)).toEqual(INFRA_KEYS)
+  })
+
+  test('a BE role does not enable security-guidance, and a Security role without the key is unchanged', () => {
+    const official = emptySetupScan({ plugins: [SECURITY_GUIDANCE_PLUGIN] })
+
+    expect(pluginKeys(compileScope(templateRole('be'), context({ setup: official })))).toEqual(INFRA_KEYS)
+    expect(pluginKeys(compileScope(templateRole('security'), context()))).toEqual(INFRA_KEYS)
+  })
 })
