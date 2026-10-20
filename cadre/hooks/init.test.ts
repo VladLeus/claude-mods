@@ -29,6 +29,7 @@ import type {
   RoleSpec,
   ScopeCard,
   ScopeContext,
+  SetupScan,
   TemplateRoleId,
   UnsupportedId,
 } from '../types'
@@ -4764,6 +4765,16 @@ const BOTH_INSTALLED_LINE =
   'Installed claude-security@claude-plugins-official and security-guidance@claude-plugins-official: ' +
   'run /reload-plugins to load them in this session.'
 
+/** The installed_plugins.json of the fixture user, whose home is /home/u (DEFAULT_LOCATIONS). */
+const INSTALLED_PLUGINS_PATH = '/home/u/.claude/plugins/installed_plugins.json'
+
+/** A git repo whose user has these plugin keys installed, at user scope (#69 A1). */
+function installedWorld(keys: readonly string[]): MemWorld {
+  const plugins = Object.fromEntries(keys.map(key => [key, [{ scope: 'user', version: '1.0.0' }]]))
+
+  return gitWorld({ files: { [INSTALLED_PLUGINS_PATH]: JSON.stringify({ plugins }) } })
+}
+
 describe('security plugin installs (decision #39)', () => {
   test('the plugin keys, their order and the review skill the Security role gets are fixed', () => {
     expect([CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN]).toEqual(SECURITY_KEYS)
@@ -4780,18 +4791,21 @@ describe('security plugin installs (decision #39)', () => {
     expect(PLUGIN_RUN_TIMEOUT_MS).toBe(180_000)
   })
 
-  test('only a team with a role standing for Security misses a plugin; only the exact key counts (T-03-46)', () => {
+  test('only a team with a role standing for Security misses a plugin; only an installed exact key counts', () => {
     const team = [templateRole('pm'), templateRole('security')]
     const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security' })
+    const installed = (keys: readonly string[]): SetupScan => emptySetupScan({ installedPlugins: keys })
     expect(missingSecurityPlugins([templateRole('pm'), templateRole('tl')], emptySetupScan())).toEqual([])
     expect(missingSecurityPlugins(team, emptySetupScan())).toEqual(SECURITY_KEYS)
     expect(missingSecurityPlugins([appsec], emptySetupScan())).toEqual(SECURITY_KEYS)
-    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: [SECURITY_KEY] }))).toEqual([GUIDANCE_KEY])
-    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: [GUIDANCE_KEY] }))).toEqual([SECURITY_KEY])
-    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual([])
+    expect(missingSecurityPlugins(team, installed([SECURITY_KEY]))).toEqual([GUIDANCE_KEY])
+    expect(missingSecurityPlugins(team, installed([GUIDANCE_KEY]))).toEqual([SECURITY_KEY])
+    expect(missingSecurityPlugins(team, installed(SECURITY_KEYS))).toEqual([])
     // A lookalike key of another marketplace is not the plugin cadre installs (T-03-46).
     const lookalikes = ['claude-security@other-market', 'security-guidance@other-market', 'claude-security']
-    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: lookalikes }))).toEqual(SECURITY_KEYS)
+    expect(missingSecurityPlugins(team, installed(lookalikes))).toEqual(SECURITY_KEYS)
+    // A key that only a settings file enables, the repo's own included, is not installed (#69 A1).
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual(SECURITY_KEYS)
   })
 
   test('the question names each missing plugin, then gives one note for each', () => {
@@ -4951,14 +4965,93 @@ describe('security plugin installs (decision #39)', () => {
       'Use these roles?': ['Adjust them', 'Use these roles'],
       'Adjust the roles': ['drop security', 'Done adjusting'],
     })
-    const enabledPlugins = { [SECURITY_KEY]: true, [GUIDANCE_KEY]: true }
-    const present = memIo(gitWorld({ settings: { user: { enabledPlugins }, project: {}, local: {} } }), INSTALL_ANSWERS)
+    const present = memIo(installedWorld(SECURITY_KEYS), INSTALL_ANSWERS)
     for (const quiet of [dropped, present]) {
       const quietHost = memHost(hostWorld({ runs: INSTALLS_OK }))
       await runInit(quiet.io, { dryRun: false, host: quietHost.io })
       expect(quiet.asked.some(question => question.startsWith('Install from claude-plugins-official'))).toBe(false)
       expect(quietHost.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
     }
+  })
+})
+
+/** The lines of each review init printed, in order: from `Roles:` to REVIEW_HINT. */
+function reviewRounds(run: MemRun): string[][] {
+  const lines = run.logged.flatMap(text => text.split('\n'))
+  const rounds: string[][] = []
+  for (const [at, line] of lines.entries()) {
+    if (line !== 'Roles:') continue
+    const end = lines.indexOf(REVIEW_HINT, at)
+    rounds.push(lines.slice(at, end < 0 ? lines.length : end + 1))
+  }
+
+  return rounds
+}
+
+/** The `Plugins: only ... load` card line of the role with this title and id in a review round; '' when none. */
+function pluginsRule(round: readonly string[], card: string): string {
+  const at = round.indexOf(`Scope card: ${card}`)
+  if (at < 0) return ''
+
+  return round.slice(at).find(line => line.includes('Plugins: only ')) ?? ''
+}
+
+describe('security plugin review fixes (#69)', () => {
+  test('exact keys that only the repo settings enable still get both lines and the question (A1)', async () => {
+    const enabledPlugins = { [SECURITY_KEY]: true, [GUIDANCE_KEY]: true }
+    const settings = { user: {}, project: { enabledPlugins }, local: {} }
+    const run = memIo(gitWorld({ settings }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const lines = run.logged.flatMap(text => text.split('\n'))
+    expect(run.asked.filter(question => question.startsWith(BOTH_QUESTION_START))).toHaveLength(1)
+    expect(lines).toContain(`    run: claude plugin install ${SECURITY_KEY}`)
+    expect(lines).toContain(`    run: claude plugin install ${GUIDANCE_KEY}`)
+  })
+
+  test('the review card of Security enables the plugins answered Install, and only those (A4)', async () => {
+    const installs = memIo(gitWorld(), INSTALL_ANSWERS)
+    await runInit(installs.io, { dryRun: true })
+    const installRule = pluginsRule(reviewRounds(installs).at(-1) ?? [], 'Security (security)')
+    expect([installRule.includes(SECURITY_KEY), installRule.includes(GUIDANCE_KEY)]).toEqual([true, true])
+    const notNow = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(notNow.io, { dryRun: true })
+    const notNowRule = pluginsRule(reviewRounds(notNow).at(-1) ?? [], 'Security (security)')
+    expect([notNowRule === '', notNowRule.includes('security')]).toEqual([false, false])
+  })
+
+  test('Install, then Change roles keeping Security and answering Not now: no install, no skill (B6)', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INIT_ANSWERS,
+      'Install from claude-plugins-official': ['Install', 'Not now'],
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    await runInit(run.io, { dryRun: false, host: host.io })
+    const rounds = reviewRounds(run)
+    const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
+    expect(installLines).toEqual([1, 0])
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+    const role = host.writes.find(write => write.path === '/repo/.cadre/security/role.json')?.text ?? ''
+    expect([role === '', role.includes(CLAUDE_SECURITY_SKILL)]).toEqual([false, false])
+  })
+
+  test('Install, then Change roles to a team without Security: no install, no report line (B6)', async () => {
+    const run = queuedIo(gitWorld(), {
+      ...INSTALL_ANSWERS,
+      'Use these roles?': ['Use these roles', 'Adjust them', 'Use these roles'],
+      'Adjust the roles': ['drop security', 'Done adjusting'],
+      'Review the plan': ['Change roles', 'Confirm'],
+    })
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const rounds = reviewRounds(run)
+    const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
+    expect(installLines).toEqual([1, 0])
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+    const ignore = host.writes.find(write => write.path === '/repo/.gitignore')?.text ?? ''
+    expect([ignore.includes('# >>> cadre'), ignore.includes('CLAUDE-SECURITY-*/')]).toEqual([true, false])
+    expect(host.writes.some(write => write.path.startsWith('/repo/.cadre/security/'))).toBe(false)
+    expect(reply).not.toContain('Installed ')
   })
 })
 
@@ -5031,8 +5124,7 @@ describe('install checks (decision #39)', () => {
   })
 
   test('python3 is not run when only security-guidance is to be installed', async () => {
-    const settings = { user: { enabledPlugins: { [SECURITY_KEY]: true } }, project: {}, local: {} }
-    const run = memIo(gitWorld({ settings }), INSTALL_ANSWERS)
+    const run = memIo(installedWorld([SECURITY_KEY]), INSTALL_ANSWERS)
     const host = memHost(hostWorld({ runs: INSTALLS_OK }))
     await runInit(run.io, { dryRun: false, host: host.io })
     const question = 'Install from claude-plugins-official after you confirm the plan: security-guidance?'

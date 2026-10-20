@@ -333,6 +333,7 @@ describe('shared fixtures', () => {
   test('emptySetupScan has every list empty and every flag false, and over changes the fields it names', () => {
     expect(emptySetupScan()).toEqual({
       plugins: [],
+      installedPlugins: [],
       skills: [],
       mcp: [],
       isMcpPartial: false,

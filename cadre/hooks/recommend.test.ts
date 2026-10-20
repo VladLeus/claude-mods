@@ -781,7 +781,7 @@ describe('recommend', () => {
     ])
   })
 
-  test('the exact claude-plugins-official key of a security plugin removes its line', () => {
+  test('the exact claude-plugins-official key of an installed security plugin removes its line', () => {
     const cases: readonly (readonly [string[], Recommendation[]])[] = [
       [[CLAUDE_SECURITY_PLUGIN], [guidanceFor('security')]],
       [[SECURITY_GUIDANCE_PLUGIN], [claudeSecurityFor('security')]],
@@ -789,14 +789,24 @@ describe('recommend', () => {
     ]
 
     for (const [plugins, expected] of cases) {
-      const setup = emptySetupScan({ plugins })
+      const setup = emptySetupScan({ plugins, installedPlugins: plugins })
 
       expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual(expected)
     }
   })
 
+  test('an exact security plugin key that only a settings file enables removes no line (#69 A1)', () => {
+    const setup = emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN] })
+
+    expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
+      claudeSecurityFor('security'),
+      guidanceFor('security'),
+    ])
+  })
+
   test('a security plugin key of another marketplace removes no line (T-03-46)', () => {
-    const setup = emptySetupScan({ plugins: ['claude-security@other-market', 'security-guidance@other-market'] })
+    const lookalikes = ['claude-security@other-market', 'security-guidance@other-market']
+    const setup = emptySetupScan({ plugins: lookalikes, installedPlugins: lookalikes })
 
     expect(recommend({ roles: [SECURITY], frameworks: ['gsd'], scan: repoScan(), setup })).toEqual([
       claudeSecurityFor('security'),
@@ -840,11 +850,12 @@ describe('recommend', () => {
     ])
   })
 
-  test('with a framework, E2E, both MCP servers and both security plugins nothing is recommended', () => {
+  test('with a framework, E2E, both MCP servers and both security plugins installed nothing is recommended', () => {
     const scan = repoScan({ findings: [E2E] })
     const setup = emptySetupScan({
       mcp: [session('playwright'), session('chrome-devtools')],
       plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN],
+      installedPlugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN],
     })
 
     expect(recommend({ roles: FULL_TEAM, frameworks: allOn(FULL_TEAM, 'gsd'), scan, setup })).toEqual([])
@@ -955,12 +966,16 @@ describe('recommend', () => {
 describe('security recommendations (decision #39)', () => {
   test('the Security lines name exactly the plugins missingSecurityPlugins gives, as the install question does', () => {
     const teams: readonly (readonly RoleSpec[])[] = [[SECURITY], [role('sec', 'security', 'Sec')], FULL_TEAM, [PM, FE]]
+    const both = [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN]
+    const lookalikes = ['claude-security@other-market', 'security-guidance@other-market']
     const setups = [
       emptySetupScan(),
-      emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN] }),
-      emptySetupScan({ plugins: [SECURITY_GUIDANCE_PLUGIN] }),
-      emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN] }),
-      emptySetupScan({ plugins: ['claude-security@other-market', 'security-guidance@other-market'] }),
+      emptySetupScan({ plugins: [CLAUDE_SECURITY_PLUGIN], installedPlugins: [CLAUDE_SECURITY_PLUGIN] }),
+      emptySetupScan({ plugins: [SECURITY_GUIDANCE_PLUGIN], installedPlugins: [SECURITY_GUIDANCE_PLUGIN] }),
+      emptySetupScan({ plugins: both, installedPlugins: both }),
+      // Enabled by a settings file only, the repo's own included: not installed (#69 A1).
+      emptySetupScan({ plugins: both }),
+      emptySetupScan({ plugins: lookalikes, installedPlugins: lookalikes }),
       emptySetupScan({ skills: [skillRef('security-review'), skillRef('claude-code:security-review', 'claude-code')] }),
     ]
 

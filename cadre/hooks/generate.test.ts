@@ -1410,6 +1410,7 @@ describe('launcher', () => {
  */
 const WORLD_SETUP: SetupScan = {
   plugins: ['superpowers@claude-plugins-official', 'codex@openai-codex'],
+  installedPlugins: ['codex@openai-codex', 'superpowers@claude-plugins-official'],
   skills: [
     skillRef('my-skill'),
     skillRef('gsd-health'),

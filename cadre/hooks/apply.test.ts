@@ -814,12 +814,17 @@ describe('install runs (decision #39)', () => {
     )
   })
 
-  test('setupAfterInstalls adds the installed keys to the plugins, sorted and once each; the setup given stays', () => {
-    const setup = emptySetupScan({ plugins: ['superpowers@claude-plugins-official'] })
+  test('setupAfterInstalls adds the installed keys to both plugin lists, sorted and once each; the setup stays', () => {
+    const official = 'superpowers@claude-plugins-official'
+    const setup = emptySetupScan({ plugins: [official, 'z@m'], installedPlugins: [official] })
     const before = JSON.stringify(setup)
     const after = setupAfterInstalls(setup, [SECURITY_KEY])
 
-    expect(after).toEqual({ ...setup, plugins: [SECURITY_KEY, 'superpowers@claude-plugins-official'] })
+    expect(after).toEqual({
+      ...setup,
+      plugins: [SECURITY_KEY, official, 'z@m'],
+      installedPlugins: [SECURITY_KEY, official],
+    })
     expect(setupAfterInstalls(after, [SECURITY_KEY])).toEqual(after)
     expect(setupAfterInstalls(setup, [])).toEqual(setup)
     expect(JSON.stringify(setup)).toBe(before)

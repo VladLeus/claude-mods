@@ -316,6 +316,7 @@ describe('setup settings', () => {
     const scan = await scanOf(memWorld({}))
     expect(scan).toEqual({
       plugins: [],
+      installedPlugins: [],
       skills: [],
       mcp: [],
       agents: [],
@@ -647,6 +648,21 @@ describe('setup sources', () => {
     expect(scan.plugins).toEqual(['a@m', 'b@m', 'z@m'])
     expect(reads).toContain(INSTALLED_PATH)
     expect(leaks(JSON.stringify(scan), SECRETS)).toEqual([])
+  })
+
+  test('installedPlugins holds only installed keys, none that a settings file enables (#69 A1)', async () => {
+    const official = 'claude-security@claude-plugins-official'
+    const project = { enabledPlugins: { [official]: true } }
+    const local = { enabledPlugins: { 'k@m': true } }
+    const installed = memWorld({
+      settings: { user: {}, project, local },
+      files: { [INSTALLED_PATH]: INSTALLED_PLUGINS },
+    })
+    const scan = await scanOf(installed)
+    expect(scan.installedPlugins).toEqual(['a@m', 'b@m'])
+    expect(scan.plugins).toEqual(['a@m', 'b@m', official, 'k@m'])
+    const enabledOnly = await scanOf(memWorld({ settings: { user: {}, project, local: {} } }))
+    expect([enabledOnly.plugins, enabledOnly.installedPlugins]).toEqual([[official], []])
   })
 
   test('an installed plugin entry for the root as given counts, as one for the root as resolved does', async () => {
