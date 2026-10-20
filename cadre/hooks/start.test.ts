@@ -1,13 +1,37 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortEntry, PortStat, ScopeContext } from '../types'
+import type { HostRun, InitLocations, LaunchStart, PortEntry, PortStat, ScopeContext } from '../types'
+import { sha256Hex } from './hash'
 import { launchPlan } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { stableJson } from './plan'
 import { compileScope } from './scope'
-import { renderArgv, renderPaths, renderSteps, runtimeFolder, STALE_LINK_FOLDERS, stampText } from './start'
-import type { RenderInput, RenderStep } from './start'
-import { BIDI_OVERRIDE, emptySetupScan, entry, link, templateRole } from './testkit'
+import {
+  gatherLaunchUser,
+  GIT_COMMON_DIR_ARGV,
+  renderArgv,
+  renderPaths,
+  renderSteps,
+  runtimeFolder,
+  STALE_LINK_FOLDERS,
+  stampText,
+  START_NO_GIT_DIR,
+  START_NO_HOME,
+} from './start'
+import type { LaunchUserRead, RenderInput, RenderStep } from './start'
+import {
+  BIDI_OVERRIDE,
+  DEFAULT_LOCATIONS,
+  emptySetupScan,
+  entry,
+  hostWorld,
+  link,
+  memHost,
+  memIo,
+  memWorld,
+  templateRole,
+} from './testkit'
+import type { HostCall, HostRunRule, MemWorld } from './testkit'
 
 /** The repo root of the fixtures, a realpath. */
 const ROOT = '/repo'
@@ -513,5 +537,125 @@ describe('runtime render links', () => {
     expect(result.refusal).toBeNull()
     expect(result.steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: `${RUNTIME}/stamp` }])
     expect(result.steps.flatMap(step => renderArgv(step) ?? []).filter(word => word.startsWith('-r'))).toEqual([])
+  })
+})
+
+/** The argv that asks git for the absolute common dir of the repo (D-98). */
+const GIT_ARGV = ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']
+
+/** A fake host rule that answers the git argv with this run; null is a run the host rejected. */
+function gitRule(result: HostRun | null): HostRunRule {
+  return { argv: GIT_ARGV, result }
+}
+
+/** The git run of the fixture repo: git answers /repo/.git, with its line break. */
+const GIT_OK = gitRule({ exitCode: 0, stdout: '/repo/.git\n', stderr: '' })
+
+/** A launcher start at the git root. */
+const GIT_ROOT: LaunchStart = { kind: 'git-root' }
+
+/** A git repo at /repo whose .git folder is there; `over` changes the fields it names. */
+function repoWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({ dirs: { '/repo/.git': [] }, ...over })
+}
+
+/** What gatherLaunchUser gave, and every run the fake host was asked for. */
+type GatherRun = {
+  readonly read: LaunchUserRead
+  readonly calls: readonly HostCall[]
+}
+
+/** gatherLaunchUser over `world` with these run rules, for these locations, this launcher start and these code dirs. */
+async function gather(
+  world: MemWorld,
+  runs: readonly HostRunRule[],
+  locations: InitLocations = DEFAULT_LOCATIONS,
+  launchStart: LaunchStart = GIT_ROOT,
+  codeDirs: readonly string[] = [],
+): Promise<GatherRun> {
+  const host = memHost(hostWorld({ runs }))
+  const read = await gatherLaunchUser(memIo(world, {}).io, host.io, { locations, launchStart, codeDirs })
+
+  return { read, calls: host.calls }
+}
+
+/** The user of a read that went on; a refusal stops the test with its text. */
+function userOf(read: LaunchUserRead): LaunchUser {
+  if (read.kind === 'refuse') throw new Error(`gatherLaunchUser refused: ${read.text}`)
+
+  return read.user
+}
+
+describe('gatherLaunchUser (D-98)', () => {
+  test('the git argv is frozen, and the two refusals have their fixed texts', () => {
+    expect(GIT_COMMON_DIR_ARGV).toEqual(GIT_ARGV)
+    expect(Object.isFrozen(GIT_COMMON_DIR_ARGV)).toBe(true)
+    expect(START_NO_HOME).toBe('cadre start needs HOME to render the role files, so it stopped.')
+    expect(START_NO_GIT_DIR).toBe(
+      'cadre start could not read the git common dir (git rev-parse failed), so it stopped.',
+    )
+  })
+
+  test('the user comes from the locations, the user folder and the common dir git gives at the root', async () => {
+    const { read, calls } = await gather(repoWorld(), [GIT_OK], DEFAULT_LOCATIONS, GIT_ROOT, ['src'])
+    const commonDirHash = await sha256Hex('/repo/.git')
+
+    expect(read).toEqual({ kind: 'ok', user: user({ commonDirHash, codeDirs: ['src'] }), warnings: [] })
+    expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
+  })
+
+  test('the common dir is its stat realpath, else as git gave it; CLAUDE_CONFIG_DIR is the user folder', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo', configDir: '/cfg' }
+    const linked = repoWorld({ realPaths: { '/repo/.git': '/data/repo/.git' } })
+    const resolved = await gather(linked, [GIT_OK], locations)
+
+    expect(resolved.read).toEqual({
+      kind: 'ok',
+      user: user({
+        givenRoot: '/link/repo',
+        userDir: '/cfg',
+        gitCommonDir: '/data/repo/.git',
+        commonDirHash: await sha256Hex('/data/repo/.git'),
+      }),
+      warnings: [],
+    })
+    const unresolved = userOf((await gather(memWorld({}), [GIT_OK])).read)
+    expect([unresolved.gitCommonDir, unresolved.commonDirHash]).toEqual(['/repo/.git', await sha256Hex('/repo/.git')])
+  })
+
+  test('two roles of one repo get their own memory folders under the repo slug (D-20, D-91, ISO-03)', async () => {
+    const gathered = userOf((await gather(repoWorld(), [GIT_OK])).read)
+    const slug = `repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
+    const be = templateRole('be')
+    const pm = templateRole('pm')
+    const beDir = launchPlan(be, compileScope(be, context()), gathered).settings.autoMemoryDirectory
+    const pmDir = launchPlan(pm, compileScope(pm, context()), gathered).settings.autoMemoryDirectory
+
+    expect(beDir).toBe(`/home/u/.claude/cadre/${slug}/be`)
+    expect(pmDir).toBe(`/home/u/.claude/cadre/${slug}/pm`)
+    expect(beDir).not.toBe(pmDir)
+  })
+
+  test('no HOME refuses before any run, even with CLAUDE_CONFIG_DIR set', async () => {
+    for (const configDir of [null, '/cfg']) {
+      const { read, calls } = await gather(repoWorld(), [GIT_OK], { ...DEFAULT_LOCATIONS, home: null, configDir })
+
+      expect([configDir, read, calls]).toEqual([configDir, { kind: 'refuse', text: START_NO_HOME }, []])
+    }
+  })
+
+  test('a git run that exits non-zero, is rejected or gives no absolute path refuses', async () => {
+    const cases: readonly (readonly HostRunRule[])[] = [
+      [gitRule({ exitCode: 1, stdout: '/repo/.git\n', stderr: 'fatal: not a git repository' })],
+      [gitRule(null)],
+      [gitRule({ exitCode: 0, stdout: 'repo/.git\n', stderr: '' })],
+      [gitRule({ exitCode: 0, stdout: ' /repo/.git\n', stderr: '' })],
+      [],
+    ]
+    for (const [index, runs] of cases.entries()) {
+      const { read } = await gather(repoWorld(), runs)
+
+      expect([index, read]).toEqual([index, { kind: 'refuse', text: START_NO_GIT_DIR }])
+    }
   })
 })
