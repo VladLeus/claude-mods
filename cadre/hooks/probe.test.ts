@@ -382,3 +382,99 @@ describe('parseInitEvent end to end (ISO-01)', () => {
     expect(verdicts.filter(item => item.verdict === 'violated')).toEqual([{ verdict: 'violated', text: NOTION_TEXT }])
   })
 })
+
+/** The text every init line holds, which a line must hold to be read at all. */
+const INIT_MARK = '"subtype":"init"'
+
+describe('parseInitEvent', () => {
+  test('output with no init line gives null, the twin of the launcher refusing with no startup inventory', () => {
+    const noInit = [
+      JSON.stringify({ type: 'system', subtype: 'hook_started' }),
+      JSON.stringify({ type: 'result', subtype: 'success' }),
+    ].join('\n')
+
+    expect([parseInitEvent(''), parseInitEvent('\n\n'), parseInitEvent(noInit)]).toEqual([null, null, null])
+  })
+
+  test('a truncated init line gives null, alone or among the other lines of a run', () => {
+    const line = initLine()
+    const half = line.slice(0, Math.floor(line.length / 2))
+
+    expect(half.includes(INIT_MARK)).toBe(true)
+    expect(parseInitEvent(half)).toBeNull()
+    expect(parseInitEvent(probeOutput(half))).toBeNull()
+  })
+
+  test('an init line whose tools is not an array gives null: a string, an object, null, a number or no tools', () => {
+    const lines = ['Read', { Read: true }, null, 7, undefined].map(tools => initLine({ tools }))
+
+    expect(lines.map(parseInitEvent)).toEqual([null, null, null, null, null])
+  })
+
+  test('a JSON array that holds the init text is no init event, nor is another type or another subtype', () => {
+    const asArray = JSON.stringify([initEvent()])
+    const otherType = initLine({ type: 'assistant' })
+    const otherSubtype = JSON.stringify({ type: 'system', subtype: 'hook_response', data: initEvent() })
+    const lines = [asArray, otherType, otherSubtype]
+
+    expect(lines.filter(line => !line.includes(INIT_MARK))).toEqual([])
+    expect(lines.map(parseInitEvent)).toEqual([null, null, null])
+  })
+
+  test('the first init event decides: a decoy before it is skipped, a malformed one is not skipped for a later', () => {
+    const decoy = initLine({ type: 'assistant', tools: ['Bash'] })
+    const malformed = initLine({ tools: 'Read' })
+
+    expect(parseInitEvent([decoy, initLine()].join('\n'))).toEqual(PM_INVENTORY)
+    expect(parseInitEvent([malformed, initLine()].join('\n'))).toBeNull()
+  })
+
+  test('an init line whose tools hold a number and a string keeps only the string, as its commands and skills', () => {
+    const tools = initLine({ tools: [7, 'Read', null, { name: 'Bash' }] })
+    const lists = initLine({ slash_commands: [false, 'autopilot'], skills: [['x'], 'create-handoff-doc'] })
+
+    expect(parseInitEvent(tools)).toEqual({ ...PM_INVENTORY, tools: ['Read'] })
+    expect(parseInitEvent(lists)).toEqual({
+      ...PM_INVENTORY,
+      slashCommands: ['autopilot'],
+      skills: ['create-handoff-doc'],
+    })
+  })
+
+  test('a permission mode that is a number, or no memory_paths, gives null for the mode and the memory folder', () => {
+    const line = initLine({ permissionMode: 5, memory_paths: undefined })
+    const memory = ['auto', ['auto'], null, {}, { auto: 5 }].map(value => initLine({ memory_paths: value }))
+
+    expect(parseInitEvent(line)).toEqual({ ...PM_INVENTORY, permissionMode: null, memoryAuto: null })
+    expect(memory.map(item => parseInitEvent(item)?.memoryAuto)).toEqual([null, null, null, null, null])
+  })
+
+  test('an init line that lists a denied server in mcp_servers changes no verdict: only tools are read (D-104)', () => {
+    const servers = [
+      { name: 'autopilot', status: 'connected', source: 'dynamic' },
+      { name: 'notion', status: 'connected', source: 'claudeai' },
+    ]
+    const listed = initLine({ mcp_servers: servers })
+    const verdicts = runVerdicts(probeOutput(listed), ['notion'])
+
+    expect(parseInitEvent(listed)).toEqual(PM_INVENTORY)
+    expect(verdicts.find(item => item.text === NOTION_TEXT)).toEqual({ verdict: 'best-effort', text: NOTION_TEXT })
+    expect(verdicts).toEqual(runVerdicts(probeOutput(initLine()), ['notion']))
+  })
+
+  test('hostile output never throws: every malformed shape gives null', () => {
+    const system = `{"type":"system",${INIT_MARK}`
+    const hostile = [
+      INIT_MARK,
+      `{${INIT_MARK}}`,
+      `[${INIT_MARK}]`,
+      system,
+      `${system},"tools":`,
+      `${system},"tools":{"__proto__":{"x":1}}}`,
+      `${system},"tools":"Read","memory_paths":"auto"}`,
+      `${INIT_MARK}\r\n${INIT_MARK}`,
+    ]
+
+    expect(hostile.map(parseInitEvent)).toEqual(hostile.map(() => null))
+  })
+})
