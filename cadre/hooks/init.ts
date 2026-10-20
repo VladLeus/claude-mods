@@ -1983,14 +1983,14 @@ function cancelReply(io: InitIo, reason: string): string {
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the autopilot duration once for every
  * role, each role's model and effort, the MCP servers and skills, the instruction and memory groups, the carried env
- * names, and the autonomy hunks of the frameworks in use. It then prints every role's scope card (scopesFor,
- * cardLines, ROLE-06), asks the git policy (gitPolicyStep) and then, once for the repo, where the launchers start
- * (launchStartStep), shows the one final review with the exact file plan, where the person confirms or goes back to
- * change one item (reviewStep, D-43), and replies with the confirmed plan and the note that nothing was written
- * (initReplyText; D-44, D-82). Every step gives a StepResult (A1): runInit checks its kind before it uses the value,
- * and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so only values the
- * person accepted reach the steps after it. Every answer lives in memory for this one run, and nothing is kept for
- * the next (D-45, D-82).
+ * names, and the autonomy hunks of the frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the
+ * repo, where the launchers start (launchStartStep), shows the one final review with every role's scope card for that
+ * start (the one place the cards are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person
+ * confirms or goes back to change one item (reviewStep, D-43), and replies with the confirmed plan and the note that
+ * nothing was written (initReplyText; D-44, D-82). Every step gives a StepResult (A1): runInit checks its kind before
+ * it uses the value, and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so
+ * only values the person accepted reach the steps after it. Every answer lives in memory for this one run, and nothing
+ * is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: { readonly dryRun: boolean }): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -2019,11 +2019,6 @@ export async function runInit(io: InitIo, options: { readonly dryRun: boolean })
   }
   const team = await teamStep(io, base, proposal, null)
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
-
-  const { roles, repoDefault, hunks } = team.value
-  // The launch start is asked after these cards, so they use launchStart: { kind: 'git-root' }, the default answer;
-  // the review shows the cards again with the start the person picks.
-  logLines(io, cardLines(roles, scopesFor(roles, repoDefault, gathered, hunks, { kind: 'git-root' })))
 
   const policy = await gitPolicyStep(io)
   if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
