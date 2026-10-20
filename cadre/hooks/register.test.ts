@@ -73,10 +73,12 @@ type World = {
   /** Whether `fs.write` is answered as done and logged as `fs.write <path>`; when false it is a forbidden op. */
   readonly isWriteAllowed: boolean
   /**
-   * A link planted once the review question was answered: from then on the stat of `path` answers a regular file
-   * that is a link landing on `realPath`. Absent, nothing is planted.
+   * A link planted once the review question was answered: from the `fromStat`-th stat of `path` after that answer on
+   * (the first when it is absent), the stat answers a regular file that is a link landing on `realPath`, so a count of
+   * 2 plants it after the plan apply makes again from the disk and before the write (D-120). Absent, nothing is
+   * planted.
    */
-  readonly linkAfterReview?: { readonly path: string; readonly realPath: string }
+  readonly linkAfterReview?: { readonly path: string; readonly realPath: string; readonly fromStat?: number }
   /** The reason a refused `process.run` gives; detect must never show it. */
   readonly runtimeDeny: string
   /** Makes `session.root` refuse, as a host that cannot say where the session is. */
@@ -206,6 +208,15 @@ function initWorld(over: Partial<World> = {}): World {
 }
 
 /**
+ * The argv of each GSD hunk an init in initWorld accepts, in hunk order: the proven user-level gsd-tools sets mode and
+ * workflow.text_mode. Plain init runs them with cwd /repo before it writes anything (D-120, D-71).
+ */
+const GSD_HUNK_RUNS: readonly (readonly string[])[] = [
+  ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo'],
+  ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'workflow.text_mode', 'false'],
+]
+
+/**
  * The repo of initWorld after an init of one BE role on the built-in default: the `.cadre/` folder with its cadre.json,
  * BE's role.json and an empty manifest (B3). Pass `over` to change one part of it.
  */
@@ -259,6 +270,8 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   })
   // Set once the review question is answered; only a world with linkAfterReview reads it.
   let isReviewAnswered = false
+  // How often the planted path was stat-ed since the review question was answered.
+  let plantedStats = 0
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const asked = e.questions[0]
     const question = asked?.question ?? ''
@@ -310,7 +323,9 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.ops.push(`fs.stat ${e.path} resolve=${String(e.resolve)}`)
     if (world.denyStat.includes(e.path)) return { deny: 'stat refused' }
     const planted = world.linkAfterReview
-    if (planted !== undefined && isReviewAnswered && e.path === planted.path) {
+    const isPlantedPath = planted !== undefined && isReviewAnswered && e.path === planted.path
+    plantedStats += isPlantedPath ? 1 : 0
+    if (isPlantedPath && plantedStats >= (planted.fromStat ?? 1)) {
       const realPath = planted.realPath
 
       return { value: { kind: 'file', size: 0, mtimeMs: 0, isLink: true, ...(e.resolve ? { realPath } : {}) } }
@@ -966,7 +981,8 @@ describe('cadre init with a faked host', () => {
     expect(out.text.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
     expect(out.text).not.toContain('Dry run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
+    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(GSD_HUNK_RUNS)
+    expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(['/repo', '/repo'])
   })
 
   test('init asks in order: consent, roles, framework, duration, model and effort, git policy', async ($, on) => {
@@ -1143,7 +1159,7 @@ describe('cadre init with a faked host', () => {
     expect(out.text).toBe('init cancelled, nothing written')
   })
 
-  test('init --dry-run makes no process call; plain init runs only the launcher chmods', async ($, on) => {
+  test('init --dry-run makes no process call; plain init runs the accepted hunks, then the chmods', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld({ isWriteAllowed: true }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
@@ -1153,20 +1169,25 @@ describe('cadre init with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     const launchers = planRows(out.text).filter(row => row.path.startsWith('.cadre/bin/'))
     expect(launchers.length).toBeGreaterThan(0)
-    expect(log.runs).toEqual(launchers.map(row => ['/bin/chmod', '755', `/repo/${row.path}`]))
+    const chmods = launchers.map(row => ['/bin/chmod', '755', `/repo/${row.path}`])
+    expect(log.runs).toEqual([...GSD_HUNK_RUNS, ...chmods])
+    expect(log.cwds).toEqual([...GSD_HUNK_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
   })
 
   test('plain init writes every planned file, the manifest last, and makes each launcher executable', async ($, on) => {
     const log = newLog()
     const chmods = ['pm', 'security', 'tl'].map(id => ['/bin/chmod', '755', `/repo/.cadre/bin/${id}`])
-    const runResults = Object.fromEntries(chmods.map(argv => [argv.join(' '), { exitCode: 0, stdout: '' }]))
+    // The accepted GSD hunks exit 0 as well, so the apply is clean (D-120).
+    const runs = [...GSD_HUNK_RUNS, ...chmods]
+    const runResults = Object.fromEntries(runs.map(argv => [argv.join(' '), { exitCode: 0, stdout: '' }]))
     fakeHost(on, initWorld({ isWriteAllowed: true, runResults }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     const writes = log.ops.filter(op => op.startsWith('fs.write '))
     expect(writes.length).toBeGreaterThan(1)
     expect(writes.indexOf('fs.write /repo/.cadre/manifest.json')).toBe(writes.length - 1)
     expect(log.writes).toEqual(writes.map(op => op.slice('fs.write '.length)))
-    expect(log.runs).toEqual(chmods)
+    expect(log.runs).toEqual(runs)
+    expect(log.cwds).toEqual([...GSD_HUNK_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
     for (const argv of chmods) expect(log.ops[log.ops.indexOf(`fs.write ${argv[2]}`) + 1]).toBe('process.run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     const applied = `Applied: wrote ${writes.length} files (3 executable).`
@@ -1193,7 +1214,9 @@ describe('cadre init with a faked host', () => {
       '/repo': [...base.listings['/repo'], entry('src', 'dir')],
       '/repo/src': [entry('a.ts')],
     }
-    const linkAfterReview = { path: '/repo/.cadre/bin/be', realPath: '/elsewhere/be' }
+    // The plan apply makes again from the disk stats the launcher once and sees no link; the link is planted from the
+    // second stat, apply's own right before the write (D-120).
+    const linkAfterReview = { path: '/repo/.cadre/bin/be', realPath: '/elsewhere/be', fromStat: 2 }
     fakeHost(on, initWorld({ isWriteAllowed: true, listings, linkAfterReview }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
     const beRows = planRows(out.text).filter(row => row.path === '.cadre/bin/be')
@@ -1489,7 +1512,10 @@ describe('Phase 2 faked-host matrix', () => {
       expect(appliedAt).toBeGreaterThan(0)
       expect(middleLines(dry)).toEqual(plainLines.slice(1, appliedAt))
       expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-      expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual([])
+      // Every hunk the plan shows is accepted and runnable in these worlds, so plain init runs each one (D-120).
+      const hunkRuns = GSD_HUNK_RUNS.slice(0, expected.hunks)
+      expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(hunkRuns)
+      expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(hunkRuns.map(() => '/repo'))
     })
 
     test(`${name}: every path of the init plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)`, async ($, on) => {

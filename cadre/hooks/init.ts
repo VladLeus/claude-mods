@@ -40,6 +40,8 @@ import {
   conflictPaths,
   conflictQuestion,
   hunkFailureLine,
+  hunkRuns,
+  hunksAfterRuns,
   parseConflictAnswer,
   writeProblem,
 } from './apply'
@@ -2148,35 +2150,80 @@ function cancelReply(io: InitIo, reason: string): string {
   return INIT_CANCELLED
 }
 
+/** How long one accepted framework command may run at apply before it is given up (D-106, T-03-19). */
+export const HUNK_TIMEOUT_MS = 30_000
+
 /** Why init cancels when a Keep mine or Take new question is dismissed or not answered (D-67, A1). */
 export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was dismissed or not answered.'
 
 /**
- * Writes the plan the person confirmed (D-105, LNCH-01). The Keep mine or Take new questions come first and are the
- * only questions after Confirm (D-105, D-67): one for each conflicted file of the confirmed plan (conflictPaths), in
- * plan order, before any host call (conflictQuestion with CONFLICT_OPTIONS, parseConflictAnswer). A dismissal, or
- * MAX_ASKS answers that are neither, cancels with CONFLICT_DISMISSED_REASON, so nothing is written or run (A1, D-45).
- * applySteps then plans the steps from the plan and those answers, and writeSteps runs them through the host port,
- * each write checked for links first, a launcher made executable only after its own write landed, and the manifest
- * last: Take new overwrites the person's file and the manifest records its new hash, while Keep mine keeps the file
- * and writes its `.cadre-new` copy. No framework command runs, so hunkFailures and attended stay empty. Like every init
- * step it gives a StepResult (A1): accepted with the plan as written and what the apply did.
+ * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
+ * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
+ *    of the confirmed plan (conflictPaths), in plan order, before any host call (conflictQuestion with
+ *    CONFLICT_OPTIONS, parseConflictAnswer). A dismissal, or MAX_ASKS answers that are neither, cancels with
+ *    CONFLICT_DISMISSED_REASON, so nothing is written or run (A1, D-45).
+ * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
+ *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
+ *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
+ *    exits non-zero is a failure, and apply goes on (D-106).
+ * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
+ * 4. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
+ *    again from the disk (planStep), so ROLE.md is rendered and hashed after the hunks ran (D-120).
+ * 5. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
+ *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
+ *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
+ *    `.cadre-new` copy, as it does for a file that became a conflict after the questions.
+ * 6. The outcome with every failed run (hunkFailures) and the keys of the failed hunks that are required (attended),
+ *    which the reply prints with the command to run (D-106).
+ * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 export async function applyConfirmed(
   io: InitIo,
   host: HostIo,
   reviewed: Reviewed,
 ): Promise<StepResult<{ readonly planned: PlanResult; readonly outcome: ApplyOutcome }>> {
-  const { draft, planned } = reviewed
-  const { plan, desired, manifest, gitignore } = planned
+  const { draft } = reviewed
+  const { locations, gathered, roles, repoDefault, launchStart } = draft
   const choices = new Map<string, ConflictChoice>()
-  for (const path of conflictPaths(plan)) {
+  for (const path of conflictPaths(reviewed.planned.plan)) {
     const choice = await askChoice(io, conflictQuestion(path), { options: CONFLICT_OPTIONS }, parseConflictAnswer)
     if (choice === null) return cancelled(CONFLICT_DISMISSED_REASON)
     choices.set(path, choice)
   }
-  const steps = await applySteps({ plan, desired, manifest, gitignore, choices })
-  const outcome = await writeSteps(io, host, draft.locations.root, steps)
+  const gsd = {
+    userDir: provenUserDir(gathered.facts),
+    home: locations.home,
+    root: locations.root,
+    configDir: locations.configDir,
+  }
+  const failures: HunkRun[] = []
+  for (const run of hunkRuns(draft.hunks, gathered.setup, gsd)) {
+    const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
+    if (result === null || result.exitCode !== 0) failures.push(run)
+  }
+  const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
+  const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
+  const scopes = compileAll(roles, repoDefault, gathered, attended, launchStart)
+  const planned = await planStep(io, {
+    roles,
+    repoDefault,
+    policy: draft.policy,
+    launchStart,
+    scopes,
+    hunks,
+    repo: gathered.repo,
+    locations,
+    readUserMcp: draft.readUserMcp,
+  })
+  const steps = await applySteps({ ...planned, choices })
+  const written = await writeSteps(io, host, locations.root, steps)
+  const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
+  const outcome: ApplyOutcome = {
+    ...written,
+    hunkFailures: failures,
+    attended: failures.filter(run => required.has(run.key)).map(run => run.key),
+  }
 
   return accepted({ planned, outcome })
 }
@@ -2198,11 +2245,11 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * start (the one place the cards are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person
  * confirms or goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the
  * note that nothing was written (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new
- * for each conflicted file (D-67), and replies with the plan as written and what the apply did (initReplyText). Every
- * step gives a StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the
- * reason as its own line and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after
- * it, and nothing is written before Confirm. Every answer lives in memory for this one run, and nothing is kept for the
- * next (D-45, D-82).
+ * for each conflicted file (D-67), running the accepted hunks first and writing the plan made again from the disk
+ * (D-120), and replies with the plan as written and what the apply did (initReplyText). Every step gives a StepResult
+ * (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its own line
+ * and answers INIT_CANCELLED (D-45), so only values the person accepted reach the steps after it, and nothing is
+ * written before Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -2358,10 +2405,10 @@ async function regenRoles(io: InitIo, root: string, ids: readonly string[]): Pro
 }
 
 /**
- * The frameworks whose roles the current config leaves attended, with no question asked (regen, D-70, D-72, A5): for
- * each adapter in ADAPTERS order that a role runs on and that offers autonomy hunks for this setup, its config file is
- * read through readRepoFile, and the framework is attended while a required proposal is not at its target
- * (isAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
+ * The frameworks whose roles the current config leaves attended, with no question asked (regen, and apply once the
+ * hunks ran, D-70, D-72, D-120, A5): for each adapter in ADAPTERS order that a role runs on and that offers autonomy
+ * hunks for this setup, its config file is read through readRepoFile, and the framework is attended while a required
+ * proposal is not at its target (isAttendedFromConfig). A config that cannot be read attends the roles (fail closed).
  */
 async function attendedByConfig(
   io: InitIo,

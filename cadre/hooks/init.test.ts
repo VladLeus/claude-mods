@@ -3975,10 +3975,11 @@ function withHostEvents(host: MemHost): { readonly io: HostIo; readonly events: 
 }
 
 /**
- * The port of a run in which a link is planted at `path` once the person confirmed the review: until then the stat of
- * `path` is the run's own, so the plan sees no link; from then on it is a regular file that is a link landing on
- * `realPath`, as a link planted between the review and the write would be (RESEARCH 3.2, T-03-38); statForWrite
- * answers the same, so apply sees the planted link.
+ * The port of a run in which a link is planted at `path` after the fresh plan read the disk, right before the write
+ * (D-120): the stat of `path` stays the run's own, so neither the review nor the plan made again after Confirm sees a
+ * link; once the person confirmed, statForWrite, which only apply asks right before its writes, answers a regular file
+ * that is a link landing on `realPath`, as a link planted between that plan and the write would be (RESEARCH 3.2,
+ * T-03-38).
  */
 function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
   let isConfirmed = false
@@ -3990,11 +3991,6 @@ function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
       if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
-    },
-    stat: async asked => {
-      if (!isConfirmed || asked !== path) return run.io.stat(asked)
-
-      return { kind: 'file', size: 0, isLink: true, realPath }
     },
     statForWrite: async asked => {
       if (!isConfirmed || asked !== path) return run.io.statForWrite(asked)
