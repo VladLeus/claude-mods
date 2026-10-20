@@ -259,7 +259,7 @@ function lintAll(patterns: readonly string[]): { readonly kept: readonly string[
  * The tool name the engine gives an MCP server, which is what a deny rule must name: `mcp__` and the server name with
  * every character outside letters, digits, `_` and `-` replaced by `_`, so `my.server` is `mcp__my_server` (A5).
  */
-function mcpToolName(name: string): string {
+export function mcpToolName(name: string): string {
   return `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}`
 }
 
@@ -399,8 +399,8 @@ function unusualDirRules(deny: DenyPlan): ScopeRule[] {
   return deny.unusualDirs.map(dir => rule(`Code dir ${shown(dir)} has an unusual name and is not denied`, 'none'))
 }
 
-/** What a tool deny on the merged route leaves of a denied server, as its own card rule (D-124, B6). */
-const MCP_REACHABLE_TEXT = 'Denied servers: tools removed (best-effort); their MCP resources and prompts stay reachable'
+/** What the launch render does to a denied server on the merged route, as its own card rule (D-124, B6, #39). */
+const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)'
 
 /**
  * The deny rule of the scanned servers: none to deny, the list, and on the merged route the reachable rule after it.
@@ -417,9 +417,9 @@ function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
 /**
  * The MCP rules: the deny rules of the scanned servers (deniedMcpRules), then the servers left out because they share
  * a tool name with one the role has (A5), and the refused patterns. The list rule is hard only on the strict route; on
- * the merged route a server the scan did not see still loads, so it is best effort (A4), and a tool deny removes only
- * the tools of a denied server, so the next rule says what of it stays reachable (D-124). That sentence is a rule of
- * its own, so a long list cannot cut it from its card line (B6).
+ * the merged route a server the scan did not see still loads, so it is best effort (A4), and the next rule says that
+ * the launch render denies such a server whole as well as its tools (D-124, #39). That sentence is a rule of its own,
+ * so a long list cannot cut it from its card line (B6).
  */
 function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   return [

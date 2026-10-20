@@ -1,7 +1,14 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, isChangedByClean, sortedUnique } from './facts'
 import { shown } from './render'
-import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from './scope'
+import {
+  isContextMonitorScript,
+  isSafeDir,
+  lintDenyPattern,
+  mcpToolName,
+  roleOwnPaths,
+  SECRET_READ_DENY,
+} from './scope'
 import { mangledProjectDir } from './setup'
 
 /**
@@ -12,6 +19,7 @@ export const RUNTIME_SETTINGS_KEYS: readonly string[] = Object.freeze([
   'autoCompactWindow',
   'autoMemoryDirectory',
   'claudeMdExcludes',
+  'deniedMcpServers',
   'enabledPlugins',
   'env',
   'hooks',
@@ -613,6 +621,14 @@ function entryIf(key: string, value: unknown): [string, unknown][] {
   return value === null || value === undefined ? [] : [[key, value]]
 }
 
+/**
+ * The deniedMcpServers entries of a role (D-124, #39): every scanned server the card lists as not given whose tool name
+ * the deny list holds, by the name the scan gave it, so the engine removes the whole server and not only its tools.
+ */
+function deniedServers(scope: CompiledScope, deny: readonly string[]): { readonly serverName: string }[] {
+  return scope.card.notGiven.mcp.filter(name => deny.includes(mcpToolName(name))).map(serverName => ({ serverName }))
+}
+
 /** The settings of renderRuntimeSettings with the deny list given, so a caller that has it computes it only once. */
 function settingsFor(
   role: RoleSpec,
@@ -625,6 +641,7 @@ function settingsFor(
     ...entryIf('autoCompactWindow', carriedWindow(role, user)),
     ['autoMemoryDirectory', roleMemoryDir(user, role.id)],
     ['claudeMdExcludes', [...claudeMdExcludes]],
+    ['deniedMcpServers', deniedServers(scope, deny)],
     ['enabledPlugins', { ...scope.settings.enabledPlugins }],
     ...entryIf('env', carriedEnv(role, user)),
     ...entryIf('hooks', carriedHooks(role, user)),
@@ -640,9 +657,10 @@ function settingsFor(
  * The runtime settings of a role: the launch half of D-66. Phase 3 writes the result to
  * `.cadre/<id>/.runtime/settings.json`; Phase 2 never writes it. It holds the template's plugins and sandbox, the
  * permissions with the deny list of `runtimeDeny`, the absolute memory folder of the role (D-91), the given CLAUDE.md
- * excludes, and the values the role carries from the user's settings: the compact window, the status line, the env
- * values for its env names, and its hooks (D-60, D-62, D-84). Every key is one of RUNTIME_SETTINGS_KEYS, in that
- * order, so a value of any other name or key never appears.
+ * excludes, the scanned servers its tool denies cover as deniedMcpServers (D-124), and the values the role carries from
+ * the user's settings: the compact window, the status line, the env values for its env names, and its hooks (D-60,
+ * D-62, D-84). Every key is one of RUNTIME_SETTINGS_KEYS, in that order, so a value of any other name or key never
+ * appears.
  */
 export function renderRuntimeSettings(
   role: RoleSpec,

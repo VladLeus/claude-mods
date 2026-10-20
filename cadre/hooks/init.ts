@@ -1534,8 +1534,8 @@ export async function launchStartStep(io: InitIo, root: string): Promise<StepRes
 }
 
 /**
- * The MCP route of every role (D-104): merged, so /fleet keeps working in role sessions; denied servers are blocked by
- * tool denies only, which the card labels best-effort (D-124).
+ * The MCP route of every role (D-104): merged, so /fleet keeps working in role sessions; a denied server gets tool
+ * denies and a deniedMcpServers entry in the runtime settings, which the card labels best-effort (D-124, #39).
  */
 export const MCP_ROUTE: McpRoute = 'merged'
 
