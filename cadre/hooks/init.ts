@@ -44,8 +44,13 @@ import {
   hunksAfterRuns,
   installedLine,
   installFailureText,
+  MARKETPLACE_ADD_ARGV,
+  noHomeInstallText,
   parseConflictAnswer,
   pluginInstallArgv,
+  PYTHON_VERSION_ARGV,
+  pythonProblem,
+  setupAfterInstalls,
   writeProblem,
 } from './apply'
 import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
@@ -1768,7 +1773,8 @@ async function readPaths(io: InitIo, root: string, paths: readonly string[]): Pr
  * may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the
  * manifest) and the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never
  * read. planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the
- * ignore block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has) and the hunks.
+ * ignore block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
+ * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
  * The result also holds what apply writes the plan from: the desired files, the manifest the plan records and the
  * merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be merged, since
  * the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm (applyConfirmed).
@@ -1802,7 +1808,7 @@ export async function planStep(
   const disk = await readPaths(io, locations.root, planReadPaths(desired))
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
-  const lines = gitignoreLines(policy, existing)
+  const lines = gitignoreLines(policy, existing, roles.some(role => standsFor(role, 'security')))
   const { plan, manifest } = await planWithManifest({
     desired,
     disk,
@@ -2279,17 +2285,29 @@ function cancelReply(io: InitIo, reason: string): string {
 /** How long one accepted framework command may run at apply before it is given up (D-106, T-03-19). */
 export const HUNK_TIMEOUT_MS = 30_000
 
-/** How long one security plugin install may run at apply before it is given up (decision #39, T-03-42). */
+/**
+ * How long one security plugin install, or the marketplace add, may run at apply before it is given up (decision #39,
+ * T-03-42).
+ */
 export const PLUGIN_RUN_TIMEOUT_MS = 180_000
+
+/**
+ * How long the Python check before the claude-security install may run before it is given up (decision #39,
+ * T-03-42).
+ */
+export const PYTHON_TIMEOUT_MS = 5_000
 
 /** Why init cancels when a Keep mine or Take new question is dismissed or not answered (D-67, A1). */
 export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was dismissed or not answered.'
 
 /**
- * Installs the security plugins the person answered Install for, after Confirm (decision #39): each key in order, by
- * pluginInstallArgv with the home folder as cwd, so no repo-level settings or marketplace definitions take part
- * (T-03-46), and PLUGIN_RUN_TIMEOUT_MS. A key whose run exits 0 is installed; a run the host rejects or that exits
- * non-zero is a problem with the command to run by hand (installFailureText), and the next key is still tried.
+ * Installs the security plugins the person answered Install for, after Confirm (decision #39): each key in order, every
+ * run with the home folder as cwd, so no repo-level settings or marketplace definitions take part (T-03-46). For
+ * claude-security alone, PYTHON_VERSION_ARGV runs first (PYTHON_TIMEOUT_MS), and a pythonProblem is recorded and skips
+ * that key only. An install runs pluginInstallArgv (PLUGIN_RUN_TIMEOUT_MS) and counts when it exits 0. The first
+ * install that fails, a run the host rejects included, runs MARKETPLACE_ADD_ARGV once for the whole call: when the add
+ * exits 0, that install and each later one that fails is tried once more; when the add fails, none is. A key that
+ * still failed is a problem with the commands to run by hand (installFailureText), and the next key is still tried.
  */
 async function installPlugins(
   host: HostIo,
@@ -2298,10 +2316,31 @@ async function installPlugins(
 ): Promise<Pick<ApplyOutcome, 'installed' | 'installProblems'>> {
   const installed: string[] = []
   const installProblems: string[] = []
+  const pythonOptions = { cwd: home, timeoutMs: PYTHON_TIMEOUT_MS }
+  const pluginOptions = { cwd: home, timeoutMs: PLUGIN_RUN_TIMEOUT_MS }
+  const isDone = async (argv: readonly string[]): Promise<boolean> => {
+    const run = await host.run(argv, pluginOptions)
+
+    return run !== null && run.exitCode === 0
+  }
+  let marketplace: 'untried' | 'added' | 'failed' = 'untried'
   for (const key of keys) {
-    const run = await host.run(pluginInstallArgv(key), { cwd: home, timeoutMs: PLUGIN_RUN_TIMEOUT_MS })
-    if (run !== null && run.exitCode === 0) installed.push(key)
-    else installProblems.push(installFailureText(key, false))
+    const problem =
+      key === CLAUDE_SECURITY_PLUGIN ? pythonProblem(await host.run(PYTHON_VERSION_ARGV, pythonOptions)) : null
+    if (problem !== null) {
+      installProblems.push(problem)
+      continue
+    }
+    if (await isDone(pluginInstallArgv(key))) {
+      installed.push(key)
+      continue
+    }
+    if (marketplace === 'untried') marketplace = (await isDone(MARKETPLACE_ADD_ARGV)) ? 'added' : 'failed'
+    if (marketplace === 'added' && (await isDone(pluginInstallArgv(key)))) {
+      installed.push(key)
+      continue
+    }
+    installProblems.push(installFailureText(key, marketplace === 'failed'))
   }
 
   return { installed, installProblems }
@@ -2319,10 +2358,14 @@ async function installPlugins(
  *    exits non-zero is a failure, and apply goes on (D-106).
  * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
  * 4. The security plugins the person answered Install for (draft.pluginInstalls, decision #39), installed in order
- *    from the home folder, never the repo (installPlugins, T-03-46): an install that fails is a problem the reply
- *    prints with the command to run, never fatal. With no home folder known nothing is installed.
+ *    from the home folder, never the repo (installPlugins, T-03-46): claude-security only after its Python check, and
+ *    a failed install tried once more after the marketplace add. An install that fails or is skipped is a problem the
+ *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
+ *    a problem (noHomeInstallText).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep), so ROLE.md is rendered and hashed after the hunks ran (D-120).
+ *    again from the disk (planStep), all from the setup with the plugins just installed (setupAfterInstalls), so
+ *    ROLE.md is rendered and hashed after the hunks ran (D-120) and a Security role's settings enable claude-security
+ *    once it is installed. The hunk runs above keep the setup of the scan.
  * 6. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
  *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
  *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
@@ -2359,11 +2402,12 @@ export async function applyConfirmed(
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
   const installs =
     locations.home === null
-      ? { installed: [], installProblems: [] }
+      ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
       : await installPlugins(host, locations.home, draft.pluginInstalls)
+  const setup = setupAfterInstalls(gathered.setup, installs.installed)
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const attended = await attendedByConfig(io, locations.root, frameworks, gathered.setup)
-  const scopes = compileAll(roles, repoDefault, gathered, attended, launchStart)
+  const attended = await attendedByConfig(io, locations.root, frameworks, setup)
+  const scopes = compileAll(roles, repoDefault, { ...gathered, setup }, attended, launchStart)
   const planned = await planStep(io, {
     roles,
     repoDefault,

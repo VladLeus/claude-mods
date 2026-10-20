@@ -4,13 +4,15 @@
  * never leaves a manifest that claims a file it did not write (LNCH-01). A file the person edited is written only when
  * they answer Take new (D-67), and no write or chmod may follow a link out of the repo. The framework commands of the
  * accepted hunks are re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106,
- * D-120). It also gives the argv and the reply lines of the security plugin installs (decision #39). This module
- * reads, writes and runs nothing: init runs the steps through the host port.
+ * D-120). It also gives the argvs and the reply lines of the security plugin installs, with the Python check and the
+ * marketplace add, and the setup the plan is made again from after them (decision #39). This module reads, writes and
+ * runs nothing: init runs the steps through the host port.
  */
 import type {
   DesiredFile,
   FileMode,
   FileOp,
+  HostRun,
   HunkOp,
   Manifest,
   ManifestEntry,
@@ -21,6 +23,7 @@ import type {
   WriteStat,
 } from '../types'
 import { ADAPTERS } from './adapters'
+import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { compareText, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
 import { sha256Hex } from './hash'
 import { MANIFEST_PATH, stableJson } from './plan'
@@ -397,14 +400,33 @@ export function pluginInstallArgv(key: string): readonly string[] {
 }
 
 /**
+ * The argv of the Python check init runs right before the claude-security install (decision #39): claude-security's
+ * README asks for Python 3.9 or newer on PATH. Like every install run it has the home folder as cwd, so no repo-level
+ * settings or marketplace definitions take part (T-03-46).
+ */
+export const PYTHON_VERSION_ARGV: readonly string[] = Object.freeze(['python3', '--version'])
+
+/**
+ * The argv that adds Anthropic's official marketplace (decision #39): init runs it once per apply, after the first
+ * install that fails, and then tries that install once more. It has the home folder as cwd, never the repo, so no
+ * repo-level settings or marketplace definitions take part (T-03-46).
+ */
+export const MARKETPLACE_ADD_ARGV: readonly string[] = Object.freeze([
+  'claude',
+  'plugin',
+  'marketplace',
+  'add',
+  'anthropics/claude-plugins-official',
+])
+
+/**
  * The text init prints for a plugin it could not install (decision #39): the command to run by hand, and, when the
  * marketplace add failed too, that add first. The key is cleaned and capped as a report cell is.
  */
 export function installFailureText(key: string, isMarketplaceFailed: boolean): string {
   const shown = reportText(key)
   const install = `claude plugin install ${shown}`
-  const marketplace = 'claude plugin marketplace add anthropics/claude-plugins-official'
-  const command = isMarketplaceFailed ? `${marketplace}, then ${install}` : install
+  const command = isMarketplaceFailed ? `${MARKETPLACE_ADD_ARGV.join(' ')}, then ${install}` : install
 
   return `could not install ${shown}: run it yourself: ${command}`
 }
@@ -417,4 +439,54 @@ export function installedLine(keys: readonly string[]): string {
   const them = keys.length === 1 ? 'it' : 'them'
 
   return `Installed ${keys.map(reportText).join(' and ')}: run /reload-plugins to load ${them} in this session.`
+}
+
+/** The version line python3 prints, `Python <major>.<minor>...`, with the major and minor version (decision #39). */
+const PYTHON_VERSION_LINE = /^Python (\d+)\.(\d+)/
+
+/**
+ * Why claude-security is not to be installed, or null when Python is fine for it (decision #39): claude-security's
+ * README asks for Python 3.9 or newer on PATH. A run of PYTHON_VERSION_ARGV the host rejected, or that did not exit 0,
+ * means python3 was not found. Otherwise the first line with text of stdout, else of stderr (an older python3 prints
+ * its version there), must be a PYTHON_VERSION_LINE of 3.9 or newer; any other line is named, cleaned and capped as a
+ * report cell is (T-03-45), and output with no text says nothing. The text ends with the command to run once Python is
+ * there.
+ */
+export function pythonProblem(run: HostRun | null): string | null {
+  const needs = (why: string): string =>
+    `claude-security was not installed: it needs Python 3.9 or newer on PATH (${why}): install it, then run: ` +
+    pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' ')
+  if (run === null || run.exitCode !== 0) return needs('python3 was not found')
+  const firstLine = (text: string): string | undefined => text.split(/\r?\n/).find(line => line.trim() !== '')
+  const line = firstLine(run.stdout) ?? firstLine(run.stderr)
+  if (line === undefined) return needs('python3 --version says nothing')
+  const match = PYTHON_VERSION_LINE.exec(line)
+  const major = Number(match?.[1])
+  const minor = Number(match?.[2])
+  if (major > 3 || (major === 3 && minor >= 9)) return null
+
+  return needs(`python3 --version says ${reportText(line)}`)
+}
+
+/**
+ * The text init prints for each plugin to install when no home folder is known to run the installs from (decision
+ * #39): nothing is run then, since a run from the repo would let its settings and marketplace definitions take part
+ * (T-03-46). The key is cleaned and capped as a report cell is.
+ */
+export function noHomeInstallText(key: string): string {
+  const shown = reportText(key)
+
+  return (
+    `could not install ${shown}: no home folder is known to run it from: run it yourself: ` +
+    `claude plugin install ${shown}`
+  )
+}
+
+/**
+ * The setup scan the plan is made again from after the installs (decision #39): the setup with each installed plugin
+ * key added to its plugins, sorted and once each, as the next scan of the installed plugins lists it, so a Security
+ * role's settings enable claude-security once it is installed. The setup given is not changed.
+ */
+export function setupAfterInstalls(setup: SetupScan, installed: readonly string[]): SetupScan {
+  return { ...setup, plugins: sortedUnique([...setup.plugins, ...installed]) }
 }

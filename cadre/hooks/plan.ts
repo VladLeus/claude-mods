@@ -111,6 +111,12 @@ export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
 /** The scratch copies a conflict plans beside a user-edited file are for diffing and never go into git (D-99). */
 const CADRE_NEW_LINE = '.cadre/**/*.cadre-new'
 
+/**
+ * The cadre block line for the security reports: claude-security writes a CLAUDE-SECURITY-<timestamp>/ report folder
+ * into the repo, with findings that must not be committed by mistake (decision #39, T-03-43).
+ */
+export const SECURITY_REPORTS_LINE = 'CLAUDE-SECURITY-*/'
+
 /** The lines that already ignore the `thoughts/` folder, where the handoffs live (D-64). */
 const THOUGHTS_LINES: readonly string[] = ['thoughts/', '/thoughts', 'thoughts', '/thoughts/']
 
@@ -169,12 +175,18 @@ export function hasThoughtsIgnore(text: string | null): boolean {
 
 /**
  * The lines of the cadre block for a policy and the current `.gitignore` text: `thoughts/` first, unless
- * hasThoughtsIgnore finds it already ignored outside the block, then the policy's lines (PLAN-03, D-64, D-90).
+ * hasThoughtsIgnore finds it already ignored outside the block, then the policy's lines (PLAN-03, D-64, D-90), and
+ * SECURITY_REPORTS_LINE last when the team has a role that stands for Security (`hasSecurityRole`, decision #39).
  */
-export function gitignoreLines(policy: GitPolicy, existing: string | null): string[] {
-  if (hasThoughtsIgnore(existing)) return ignoreLines(policy)
+export function gitignoreLines(
+  policy: GitPolicy,
+  existing: string | null,
+  hasSecurityRole: boolean = false,
+): string[] {
+  const reports = hasSecurityRole ? [SECURITY_REPORTS_LINE] : []
+  if (hasThoughtsIgnore(existing)) return [...ignoreLines(policy), ...reports]
 
-  return ['thoughts/', ...ignoreLines(policy)]
+  return ['thoughts/', ...ignoreLines(policy), ...reports]
 }
 
 /**
