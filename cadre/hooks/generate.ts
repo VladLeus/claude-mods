@@ -170,6 +170,13 @@ const PATH_FLAGS: readonly string[] = Object.freeze([
 /** The line that finds the repo from the launcher's own folder: under `set -eu` a failed git stops the script (A2). */
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
 
+/**
+ * The flag words a launcher that starts in a sub-folder (here or dir) adds after the scope flags: the git root it
+ * found, as an added directory, so the role reads its inbox, other roles' inboxes and the root `.planning/` without a
+ * prompt (D-127). It is not a scope flag: only the launcher knows the root it resolved.
+ */
+const ROOT_DIR_FLAG = '--add-dir "$root"'
+
 /** A repo-relative path as one shell word anchored at the repo root the launcher found: `"$root"/<quoted path>`. */
 function rootWord(path: string): string {
   return `"$root"/${shQuote(path)}`
@@ -235,17 +242,20 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
  *   settings file in silence with every deny in it (D-107). jq checks them when it is on PATH, else node, else one
  *   line says they were not checked again: `/cadre start` checked them when it rendered them (D-129).
  * It never runs cadre code and never renders `.runtime/` (D-102): it reads only the stamp, those two JSON files and
- * the role files. It then goes where `start` says (D-113) and execs claude with the flags of the compiled scope, `--`
- * and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read anchored
- * at the repo root, since in `here` and `dir` the session starts outside the git top level. The flags come only from
- * compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and cleaned in the
- * comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
+ * the role files. It then goes where `start` says (D-113) and execs claude with the flags of the compiled scope, for a
+ * `here` or `dir` start the git root it found as an added directory (ROOT_DIR_FLAG, D-127; a git-root start adds
+ * nothing), then `--` and the kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the
+ * kickoff read anchored at the repo root, since in `here` and `dir` the session starts outside the git top level. The
+ * flags come only from compileScope and the title never reaches the script; the role id, a slug, is quoted in the
+ * paths and cleaned in the comments and the messages, each message one quoted word, so a hostile id cannot add a
+ * command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
   const flags = scope.flags
     .map((flag, index) => (PATH_FLAGS.includes(scope.flags[index - 1] ?? '') ? rootWord(flag) : shQuote(flag)))
     .join(' ')
+  const rootDir = start.kind === 'git-root' ? '' : ` ${ROOT_DIR_FLAG}`
   const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
   const stamp = `"$rt"/${RUNTIME_STAMP_FILE}`
   const renderInputs = [STATE_PATH, ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name))]
@@ -277,7 +287,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `  node -e ${parse} ${jsonFiles} || ${invalid}`,
     ...VERSION_CHECK_LINES.slice(7),
     ...startLines(start),
-    `exec claude ${flags} -- "$(cat ${kickoff})"`,
+    `exec claude ${flags}${rootDir} -- "$(cat ${kickoff})"`,
   ]
 
   return `${lines.join('\n')}\n`
