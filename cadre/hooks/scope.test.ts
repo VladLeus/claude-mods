@@ -89,13 +89,15 @@ const PARTIAL_MCP_RULE =
 /** The route rule of a merged scope (D-104): no --strict-mcp-config, so /fleet works; every MCP deny is best effort. */
 const MERGED_ROUTE_RULE = 'MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)'
 
-/** The MCP deny rule on the merged route: the names, then what a tool deny removes and what stays reachable (D-124). */
+/** The MCP deny rule on the merged route: the names only; what stays reachable is the next rule (D-124, A1). */
 function mergedDenied(names: string): string {
-  return (
-    `Scanned MCP servers not given are denied: ${names}; denied servers: tools removed (best-effort); ` +
-    'their MCP resources and prompts stay reachable'
-  )
+  return `Scanned MCP servers not given are denied: ${names}`
 }
+
+/** The rule right after a merged deny rule: what a tool deny leaves reachable (D-124). */
+const MERGED_REACHABLE_RULE =
+  'Denied servers: tools removed (best-effort); ' +
+  'their MCP resources and prompts stay reachable'
 
 /** The rule that names the code dirs that are the role's own folders, which no deny ever covers (B7). */
 function ownRule(dirs: string): string {
@@ -575,16 +577,19 @@ describe('scope rules', () => {
     })
     const role = templateRole('pm', { carry: { ...EMPTY_CARRY, hooks: ['gsd-secret-read-guard.js'] } })
     const card = compileScope(role, context({ setup: scanned })).card
+    const lines = scopeCardLines(card)
+    const at = lines.indexOf('  hooks loaded: gsd-secret-read-guard.js')
 
     expect(card.hooks).toEqual({
       loaded: ['gsd-secret-read-guard.js'],
       loadedByProject: ['both.sh', 'project-only.sh'],
       notLoaded: ['local-only.sh', 'user-only.sh'],
     })
-    expect(scopeCardLines(card)).toContain(
-      '  hooks loaded: gsd-secret-read-guard.js; loaded by project settings: both.sh, project-only.sh; ' +
-        'not loaded: local-only.sh, user-only.sh',
-    )
+    expect(lines.slice(at, at + 3)).toEqual([
+      '  hooks loaded: gsd-secret-read-guard.js',
+      '  hooks loaded by project settings: both.sh, project-only.sh',
+      '  hooks not loaded: local-only.sh, user-only.sh',
+    ])
   })
 
   test(
@@ -928,6 +933,7 @@ describe('scope rules', () => {
       { text: SANDBOX_RULE, enforcement: 'best-effort' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
       { text: mergedDenied('jira'), enforcement: 'best-effort' },
+      { text: MERGED_REACHABLE_RULE, enforcement: 'best-effort' },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
       { text: 'Autopilot, agent-fleet and the handoff skills are always available', enforcement: 'hard' },
       { text: 'Permission mode: auto', enforcement: 'hard' },
@@ -949,6 +955,17 @@ describe('card rule lists', () => {
 
     expect(ruleOf(scope, text)?.enforcement).toBe('best-effort')
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toHaveLength(15)
+  })
+
+  test('the D-124 sentence keeps its own card line however long the denied list is (A1)', () => {
+    const scanned = emptySetupScan({ mcp: numbered('claude_ai_connector_', 15).map(session) })
+    const lines = scopeCardLines(compileScope(templateRole('pm'), context({ setup: scanned })).card)
+    const listLine = lines.find(line => line.startsWith('    [best-effort] Scanned MCP servers not given are denied: '))
+
+    expect(lines.filter(line => line.endsWith('their MCP resources and prompts stay reachable'))).toEqual([
+      `    [best-effort] ${MERGED_REACHABLE_RULE}`,
+    ])
+    expect(listLine?.endsWith('…')).toBe(true)
   })
 
   test('the MCP deny rule shows a scanned name cleaned', () => {
@@ -1087,14 +1104,18 @@ describe('scopeCardLines', () => {
       '  framework: GSD; model: opus + medium; permission mode: auto',
       '  skills: none',
       '  MCP servers: none',
-      '  not given: skills: my-skill; MCP: jira',
-      '  hooks loaded: gsd-secret-read-guard.js; loaded by project settings: none; not loaded: gsd-context-monitor.js',
+      '  not given skills: my-skill',
+      '  not given MCP: jira',
+      '  hooks loaded: gsd-secret-read-guard.js',
+      '  hooks loaded by project settings: none',
+      '  hooks not loaded: gsd-context-monitor.js',
       '  rules:',
       `    [hard] ${PLUGIN_RULE}`,
       '    [hard] No Bash tool (denied)',
       '    [best-effort] Reads and edits under cadre are denied; the patterns match at any depth',
       '    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied',
       `    [best-effort] ${mergedDenied('jira')}`,
+      `    [best-effort] ${MERGED_REACHABLE_RULE}`,
       '    [best-effort] Skills: only the listed skills are linked',
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
       '    [hard] Permission mode: auto',
@@ -1114,7 +1135,7 @@ describe('scopeCardLines', () => {
     expect(lines[0]).toBe('Scope card: Team Lead (tl)')
     expect(lines[2]).toBe('  skills: codex:rescue, my-skill')
     expect(lines[3]).toBe('  MCP servers: github, jira')
-    expect(lines[4]).toBe('  not given: skills: none; MCP: none')
+    expect(lines.slice(4, 6)).toEqual(['  not given skills: none', '  not given MCP: none'])
   })
 
   test('the framework line names GSD, superpowers or built-in, and the model, effort and mode of the role', () => {
@@ -1135,9 +1156,19 @@ describe('scopeCardLines', () => {
     const names = Array.from({ length: 15 }, (_, index) => `skill-${String(index).padStart(2, '0')}`)
     const scanned = emptySetupScan({ skills: names.map(name => skillRef(name)) })
     const card = compileScope(templateRole('pm'), context({ setup: scanned })).card
-    const line = scopeCardLines(card).find(candidate => candidate.startsWith('  not given:'))
+    const line = scopeCardLines(card).find(candidate => candidate.startsWith('  not given skills:'))
 
-    expect(line).toBe(`  not given: skills: ${names.slice(0, 12).join(', ')}, +3 more; MCP: none`)
+    expect(line).toBe(`  not given skills: ${names.slice(0, 12).join(', ')}, +3 more`)
+  })
+
+  test('a not-given skills list cut at the line cap never hides the MCP servers not given (A4)', () => {
+    const skills = numbered('a-skill-with-a-long-name-', 15).map(name => skillRef(name))
+    const scanned = emptySetupScan({ skills, mcp: [session('jira')] })
+    const lines = scopeCardLines(compileScope(templateRole('pm'), context({ setup: scanned })).card)
+    const skillsLine = lines.find(line => line.startsWith('  not given skills: '))
+
+    expect(skillsLine?.endsWith('…')).toBe(true)
+    expect(lines).toContain('  not given MCP: jira')
   })
 
   test('a list of exactly 12 names shows all of them', () => {
@@ -1169,7 +1200,10 @@ describe('scopeCardLines', () => {
     const scanned = emptySetupScan({ mcp: [session(`ev${BIDI_OVERRIDE}il`)] })
     const lines = scopeCardLines(compileScope(templateRole('pm'), context({ setup: scanned })).card)
 
-    expect(lines.filter(line => line.startsWith('  not given:'))).toEqual(['  not given: skills: none; MCP: evil'])
+    expect(lines.filter(line => line.startsWith('  not given'))).toEqual([
+      '  not given skills: none',
+      '  not given MCP: evil',
+    ])
     expect(leaks(lines.join('|'), [BIDI_OVERRIDE])).toEqual([])
   })
 
@@ -1578,20 +1612,27 @@ describe('decided MCP route (D-104, D-124)', () => {
     expect(strict.at(-1)).toEqual({ text: 'MCP route: strict (--strict-mcp-config)', enforcement: 'none' })
   })
 
-  test('a merged deny rule says what a tool deny leaves reachable, best-effort; a strict one keeps its text', () => {
-    const setup = emptySetupScan({ mcp: [session('redmine'), session('notion')] })
-    const merged = compileScope(templateRole('be'), context({ setup, mcpRoute: 'merged' }))
-    const strict = compileScope(templateRole('be'), context({ setup, mcpRoute: 'strict' }))
-    const listed = 'Scanned MCP servers not given are denied: notion, redmine'
-    const text =
-      'Scanned MCP servers not given are denied: notion, redmine; denied servers: tools removed (best-effort); ' +
-      'their MCP resources and prompts stay reachable'
+  test(
+    'a merged deny rule is followed by what a tool deny leaves reachable, best-effort; a strict one is not (A1)',
+    () => {
+      const setup = emptySetupScan({ mcp: [session('redmine'), session('notion')] })
+      const merged = compileScope(templateRole('be'), context({ setup, mcpRoute: 'merged' }))
+      const strict = compileScope(templateRole('be'), context({ setup, mcpRoute: 'strict' }))
+      const allGiven = compileScope(
+        templateRole('be', { mcp: ['notion', 'redmine'] }),
+        context({ setup, mcpRoute: 'merged' }),
+      )
+      const listed = 'Scanned MCP servers not given are denied: notion, redmine'
+      const texts = merged.card.rules.map(item => item.text)
 
-    expect(ruleOf(merged, text)).toEqual({ text, enforcement: 'best-effort' })
-    expect(ruleOf(merged, listed)).toBeUndefined()
-    expect(ruleOf(strict, listed)).toEqual({ text: listed, enforcement: 'hard' })
-    expect(ruleOf(strict, text)).toBeUndefined()
-  })
+      expect(ruleOf(merged, listed)).toEqual({ text: listed, enforcement: 'best-effort' })
+      expect(ruleOf(merged, MERGED_REACHABLE_RULE)).toEqual({ text: MERGED_REACHABLE_RULE, enforcement: 'best-effort' })
+      expect(texts.indexOf(MERGED_REACHABLE_RULE)).toBe(texts.indexOf(listed) + 1)
+      expect(ruleOf(strict, listed)).toEqual({ text: listed, enforcement: 'hard' })
+      expect(ruleOf(strict, MERGED_REACHABLE_RULE)).toBeUndefined()
+      expect(ruleOf(allGiven, MERGED_REACHABLE_RULE)).toBeUndefined()
+    },
+  )
 
   test('no scope card line of any template role, framework, start and route says provisional', () => {
     const cases = routeMatrix()
