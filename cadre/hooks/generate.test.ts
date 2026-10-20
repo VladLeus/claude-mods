@@ -181,14 +181,15 @@ describe('kickoff', () => {
     const be = templateRole('be')
 
     expect(kickoffRoleLine(be, 'gsd')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md and start with /gsd-autonomous.',
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
+        '/gsd-autonomous.',
     )
     expect(kickoffRoleLine(be, 'superpowers')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md and start with ' +
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
         'superpowers:brainstorming.',
     )
     expect(kickoffRoleLine(be, 'none')).toBe(
-      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md and start with ' +
+      'You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, then start with ' +
         'the plan in .cadre/be/.runtime/plan.md.',
     )
   })
@@ -197,8 +198,8 @@ describe('kickoff', () => {
     const api = templateRole('be', { id: 'api', title: 'Backend API' })
 
     expect(kickoffRoleLine(api, 'gsd')).toBe(
-      'You are the Backend API role of this repo (cadre role api). Read .cadre/api/ROLE.md and start with ' +
-        '/gsd-autonomous.',
+      'You are the Backend API role of this repo (cadre role api). Read .cadre/api/ROLE.md, check your inbox, ' +
+        'then start with /gsd-autonomous.',
     )
     expect(kickoffRoleLine(api, 'none')).toContain('start with the plan in .cadre/api/.runtime/plan.md.')
   })
@@ -208,8 +209,8 @@ describe('kickoff', () => {
     const role = templateRole('be', { id: 'design', title: cyrillic })
 
     expect(kickoffRoleLine(role, 'gsd')).toBe(
-      'You are the design role of this repo (cadre role design). Read .cadre/design/ROLE.md and start with ' +
-        '/gsd-autonomous.',
+      'You are the design role of this repo (cadre role design). Read .cadre/design/ROLE.md, check your inbox, ' +
+        'then start with /gsd-autonomous.',
     )
   })
 
@@ -222,7 +223,8 @@ describe('kickoff', () => {
       expect(line.length <= ROLE_LINE_MAX).toBe(true)
       expect(line.startsWith('You are the TTTT')).toBe(true)
     }
-    expect(kickoffRoleLine(role, 'gsd').endsWith('Read .cadre/be/ROLE.md and start with /gsd-autonomous.')).toBe(true)
+    const instruction = 'Read .cadre/be/ROLE.md, check your inbox, then start with /gsd-autonomous.'
+    expect(kickoffRoleLine(role, 'gsd').endsWith(instruction)).toBe(true)
   })
 
   test('a 24 character id with a long title keeps the whole plan path of the built-in framework', () => {
@@ -235,15 +237,15 @@ describe('kickoff', () => {
 
   test('the kickoff of the PM is the autopilot command with the role line and --ask-user, then a newline', () => {
     expect(kickoffText(templateRole('pm'), 'gsd')).toBe(
-      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md and start with ' +
-        '/gsd-autonomous." --ask-user\n',
+      '/autopilot 4h 65 "You are the PM role of this repo (cadre role pm). Read .cadre/pm/ROLE.md, check your inbox, ' +
+        'then start with /gsd-autonomous." --ask-user\n',
     )
   })
 
   test('the kickoff of the BE has no --ask-user', () => {
     expect(kickoffText(templateRole('be'), 'superpowers')).toBe(
-      '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md and start with ' +
-        'superpowers:brainstorming."\n',
+      '/autopilot 4h 65 "You are the BE role of this repo (cadre role be). Read .cadre/be/ROLE.md, check your inbox, ' +
+        'then start with superpowers:brainstorming."\n',
     )
   })
 
@@ -536,11 +538,11 @@ describe('role documents', () => {
     ])
   })
 
-  test('ROLE.md has the sections How you work, Decisions, Handoffs and Scope, in that order', () => {
+  test('ROLE.md has the sections How you work, Decisions, Handoffs, Inbox and Scope, in that order', () => {
     const be = templateRole('be')
     const text = roleMdText(be, scopeOf(be, 'gsd', TEMPLATE_ROLES))
 
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Scope'])
+    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
     expect(text.endsWith('\n')).toBe(true)
     expect(text.endsWith('\n\n')).toBe(false)
   })
@@ -600,7 +602,24 @@ describe('role documents', () => {
 
     expect(text).toContain(
       '## Handoffs\n\n' +
-        "Write every handoff under thoughts/shared/handoffs/api/ (autopilot's handoff path).\n\n## Scope\n",
+        "Write every handoff under thoughts/shared/handoffs/api/ (autopilot's handoff path).\n\n## Inbox\n",
+    )
+  })
+
+  test('Inbox names the inbox of the role id and how to leave a note for another role, in two lines (D-114)', () => {
+    const be = templateRole('be')
+    const api = templateRole('be', { id: 'api', title: 'Backend API' })
+    const text = roleMdText(be, scopeOf(be, 'gsd', [be]))
+
+    expect(text).toContain(
+      '## Inbox\n\n' +
+        'Your inbox is .cadre/be/.runtime/inbox.md, a path from the git root. ' +
+        'Read it when you start and after every restart.\n' +
+        'To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ' +
+        '(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.\n\n## Scope\n',
+    )
+    expect(roleMdText(api, scopeOf(api, 'gsd', [api]))).toContain(
+      '\n\nYour inbox is .cadre/api/.runtime/inbox.md, a path from the git root. ',
     )
   })
 
@@ -658,7 +677,7 @@ describe('role documents', () => {
     expect(leaks(text, [BIDI_OVERRIDE])).toEqual([])
     expect(lines[0]).toBe('# PM (cadre role pm)')
     expect(lines[2]).toBe('Owns a thing.## Injectedmore')
-    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Scope'])
+    expect(headings(text)).toEqual(['## How you work', '## Decisions', '## Handoffs', '## Inbox', '## Scope'])
   })
 
   test('INDEX.md of two roles is the header, the table header and one row each, in role order', () => {

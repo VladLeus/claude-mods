@@ -76,8 +76,6 @@ import {
   GIT_POLICY_OPTIONS,
   GIT_POLICY_QUESTION,
   gitPolicyStep,
-  GUARD_SOURCE_WARNING,
-  guardSourceWarnings,
   HUNK_DISMISSED_REASON,
   hunkStep,
   IGNORE_ALL_NOTE,
@@ -550,6 +548,11 @@ describe('scanWarnings', () => {
     expect(scanWarningLines(['a'])).toEqual(['warning: a'])
     expect(scanWarningLines(['a', 'b c'])).toEqual(['warning: a', 'warning: b c'])
   })
+
+  test('a guard only in local settings adds no warning: launch renders it from every settings source (D-103)', () => {
+    const gathered = { ...gatheredWith(['facts a'], [], []), setup: { ...guardFrom(['local']), warnings: ['setup a'] } }
+    expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual(['facts a', 'setup a'])
+  })
 })
 
 /** A setup scan whose hooks register the GSD secret read guard once from each of these settings sources. */
@@ -563,52 +566,6 @@ function guardFrom(sources: readonly HookScript['source'][]): Gathered['setup'] 
 const GUARD_SETTINGS = {
   hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node /x/hooks/gsd-secret-read-guard.js' }] }] },
 }
-
-describe('guardSourceWarnings (A2)', () => {
-  test('the warning says that a guard only in local settings will not load in role sessions yet', () => {
-    expect(GUARD_SOURCE_WARNING).toBe(
-      'the GSD secret read guard is registered only in local settings, so it will not load in role sessions yet',
-    )
-  })
-
-  test('a guard registered only in local settings is named once in the warnings', () => {
-    expect(guardSourceWarnings(guardFrom(['local']))).toEqual([GUARD_SOURCE_WARNING])
-    expect(guardSourceWarnings(guardFrom(['local', 'local']))).toEqual([GUARD_SOURCE_WARNING])
-  })
-
-  test('a guard from the user or project settings, as well or alone, or no guard at all, gives no warning', () => {
-    const cases: readonly (readonly HookScript['source'][])[] = [
-      ['user'],
-      ['project'],
-      ['local', 'project'],
-      ['local', 'user'],
-      [],
-    ]
-    for (const sources of cases) {
-      expect([sources.join('+'), guardSourceWarnings(guardFrom(sources))]).toEqual([sources.join('+'), []])
-    }
-  })
-
-  test('another hook only in local settings gives no warning', () => {
-    const setup = emptySetupScan({ hooks: [{ script: 'my-hook.sh', event: 'PreToolUse', source: 'local' }] })
-    expect(guardSourceWarnings(setup)).toEqual([])
-  })
-
-  test('scanWarnings ends with the guard-source warning, after the setup scan warnings, each text once', () => {
-    const gathered = { ...gatheredWith(['facts a'], [], []), setup: { ...guardFrom(['local']), warnings: ['setup a'] } }
-    expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual(['facts a', 'setup a', GUARD_SOURCE_WARNING])
-    const twice = { ...gathered, setup: { ...gathered.setup, warnings: [GUARD_SOURCE_WARNING] } }
-    expect(scanWarnings(DEFAULT_LOCATIONS, twice)).toEqual(['facts a', GUARD_SOURCE_WARNING])
-  })
-
-  test('the guard is still carried when it is only in local settings: the warning changes nothing else', async () => {
-    const world = gitWorld({ settings: { user: {}, project: {}, local: GUARD_SETTINGS } })
-    const gathered = await gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, false)
-    const roles = proposeRoles(repoScan()).roles
-    const carried = valueOf(await carryStep(memIo(memWorld({}), []).io, roles, gathered.setup))
-    expect(carried.map(role => role.carry.hooks)).toEqual(roles.map(() => ['gsd-secret-read-guard.js']))
-  })
-})
 
 describe('runInit', () => {
   test('a guard that refuses ends init with its text before any question or scan', async () => {
@@ -698,16 +655,6 @@ describe('runInit', () => {
     const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
     expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
     expect(events[1]).toBe(`log ${scanSummaryLines(gathered.repo, gathered.setup).join('\n')}`)
-  })
-
-  test('init prints the guard-source warning with the scan warnings when the guard is only local (A2)', async () => {
-    const local = memIo(gitWorld({ settings: { user: {}, project: {}, local: GUARD_SETTINGS } }), INIT_ANSWERS)
-    const { io, events } = withEvents(local)
-    await runInit(io, { dryRun: true })
-    expect(events[1]?.split('\n')).toContain(`warning: ${GUARD_SOURCE_WARNING}`)
-    const user = memIo(gitWorld({ settings: { user: GUARD_SETTINGS, project: {}, local: {} } }), INIT_ANSWERS)
-    await runInit(user.io, { dryRun: true })
-    expect(user.logged.join('\n')).not.toContain(GUARD_SOURCE_WARNING)
   })
 
   test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
@@ -1989,6 +1936,19 @@ describe('carryStep', () => {
     const setup = emptySetupScan({ hooks: scripts.map(script => hook(script)) })
     const [first] = valueOf(await carryStep(memIo(memWorld({}), []).io, roles, setup))
     expect(first?.carry.hooks).toEqual(['gsd-secret-read-guard.cjs', 'gsd-secret-read-guard.sh'])
+  })
+
+  test('the guard is carried when any settings source registers it: user, project or local (D-103)', async () => {
+    const placements = [
+      { user: GUARD_SETTINGS, project: {}, local: {} },
+      { user: {}, project: GUARD_SETTINGS, local: {} },
+      { user: {}, project: {}, local: GUARD_SETTINGS },
+    ]
+    for (const settings of placements) {
+      const gathered = await gatherScans(memIo(gitWorld({ settings }), {}).io, DEFAULT_LOCATIONS, false)
+      const carried = valueOf(await carryStep(memIo(memWorld({}), []).io, roles, gathered.setup))
+      expect(carried.map(role => role.carry.hooks)).toEqual(roles.map(() => ['gsd-secret-read-guard.js']))
+    }
   })
 
   test('a dismissal or three answers that name no scanned variable cancel with the reason (A1)', async () => {
@@ -3827,13 +3787,15 @@ describe('runRegen', () => {
     expect(run.logged).toEqual([])
   })
 
-  test('a secret read guard only in local settings is warned about right before the note (A4)', async () => {
+  test('a guard only in local settings adds no warning: the reply ends with the note (A4, D-103)', async () => {
     const local = listedWorld({ settings: { user: {}, project: {}, local: GUARD_SETTINGS } })
     const world = await regenWorld(team, {}, local)
     const run = memIo(world, {})
     const dry = (await runRegen(run.io, { id: 'be', dryRun: true })).split('\n')
     const plain = (await regenBe(world, false)).split('\n')
-    expect(dry.slice(-2)).toEqual([`warning: ${GUARD_SOURCE_WARNING}`, DRY_RUN_NOTE])
+    // The root lists, so the scans give no warning (A4), and a guard only in local settings adds none (D-103).
+    expect(dry.filter(line => line.startsWith('warning: '))).toEqual([])
+    expect(dry.at(-1)).toBe(DRY_RUN_NOTE)
     expect([plain[0], plain.at(-1)]).toEqual(['cadre regen be', APPLY_LATER_NOTE])
     expect(plain.slice(1, -1)).toEqual(dry.slice(1, -1))
     expect(run.logged).toEqual([])
