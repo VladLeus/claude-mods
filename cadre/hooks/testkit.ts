@@ -18,7 +18,6 @@ import type {
   SetupScan,
   SkillRef,
   TemplateRoleId,
-  WriteStat,
 } from '../types'
 import { utf8Bytes } from './facts'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
