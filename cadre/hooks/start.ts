@@ -61,6 +61,12 @@ const SETTINGS_FILE = 'settings.json'
 /** The name of the rendered MCP config in `.runtime` (D-93). */
 const MCP_FILE = 'mcp.json'
 
+/**
+ * The name of the built-in framework's done marker in `.runtime`, which the kickoff has the session write before
+ * AUTOPILOT_DONE (D-17); a render removes one an earlier run left (#63 A6).
+ */
+const DONE_MARKER_FILE = 'DONE.md'
+
 /** The folder in `.runtime` a launcher adds with `--add-dir`; every render makes it, with or without links (D-102). */
 const OVERLAY_FOLDER = 'overlay'
 
@@ -91,7 +97,7 @@ export const STALE_LINK_FOLDERS: readonly string[] = Object.freeze([
 
 /**
  * One step of a render, in the order /cadre start runs it; every path is absolute:
- * - `remove`: remove a link, or the stamp of an earlier render (`/bin/rm -f`);
+ * - `remove`: remove a link, the stamp of an earlier render, or the DONE.md an earlier run left (`/bin/rm -f`);
  * - `mkdir`: make a folder and the folders above it (`/bin/mkdir -p`);
  * - `link`: make `path` a symbolic link to `target` (`/bin/ln -sfn`);
  * - `write`: write the text to the path; the host writes it, so it has no argv.
@@ -176,8 +182,8 @@ function renderFolders(runtime: string, links: readonly OverlayLink[]): string[]
 /**
  * The paths /cadre start stats and lists before a render, so renderSteps can judge each one. `stats` holds, sorted
  * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a STALE_LINK_FOLDERS
- * folder or to a link, every link path and the five files a render writes; `listings` holds the STALE_LINK_FOLDERS
- * under `.runtime`.
+ * folder or to a link, every link path, the five files a render writes and the DONE.md marker (#63 A6); `listings`
+ * holds the STALE_LINK_FOLDERS under `.runtime`.
  */
 export function renderPaths(
   root: string,
@@ -190,6 +196,7 @@ export function renderPaths(
     ...renderFolders(runtime, plan.links),
     ...plan.links.map(link => link.path),
     ...WRITTEN_FILES.map(name => `${runtime}/${name}`),
+    `${runtime}/${DONE_MARKER_FILE}`,
   ])
 
   return { stats, listings: STALE_LINK_FOLDERS.map(folder => `${runtime}/${folder}`) }
@@ -341,8 +348,24 @@ function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
 }
 
 /**
+ * The removal of the DONE.md marker an earlier run left in `.runtime` (D-17, #63 A6), so each start begins a run with
+ * no marker and /cadre status never shows an old one: one step when it is a file or a link, a dangling one included,
+ * since `rm -f` removes a link and not what it points at; none when it is not there, and none for a folder or any
+ * other kind, which `rm -f` without `-r` would fail on and status does not count as the marker.
+ */
+function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
+  const path = `${runtime}/${DONE_MARKER_FILE}`
+  const stat = statAt(input, path)
+  if (stat === null) return []
+  if (!stat.isLink && stat.kind !== 'file') return []
+
+  return [removeStep(path)]
+}
+
+/**
  * The steps that render a role's `.runtime` (D-102), in order. An existing stamp is removed first, so a render that
- * stops part way never leaves the old stamp beside new files. Then the links of linkRemovals are removed; then
+ * stops part way never leaves the old stamp beside new files; then the DONE.md an earlier run left
+ * (doneMarkerRemovals). Then the links of linkRemovals are removed; then
  * `.runtime`, its overlay and each link's folder are made, sorted and once each; then each link is made, except at a
  * path that holds a real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside
  * a folder or replace a file); then the files of fileWrites are written, and the stamp last. A render that stops at any
@@ -358,6 +381,7 @@ export function renderSteps(input: RenderInput): RenderResult {
   const links = input.plan.links.filter(link => !isRealEntry(statAt(input, link.path)))
   const steps: RenderStep[] = [
     ...(statAt(input, stamp) === null ? [] : [removeStep(stamp)]),
+    ...doneMarkerRemovals(input, runtime),
     ...linkRemovals(input, runtime).map(removeStep),
     ...mkdirFolders(runtime, input.plan.links).map(mkdirStep),
     ...links.map(linkStep),
@@ -961,6 +985,12 @@ const ITERM_LINES: readonly string[] = Object.freeze([
 const TMUX_WAIT = "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }"
 
 /**
+ * What the reply names an iTerm open: ITERM_LINES make a tab in the current window, or a window when none is open,
+ * and do not say which, so the name covers both (#63).
+ */
+const ITERM_NAME = 'iTerm tab or window'
+
+/**
  * The osascript argv that runs these AppleScript lines, each as one `-e` value, with the shell text as the last argv
  * item: the script reads it through `on run argv`, so no AppleScript is ever built from it (T-03-29).
  */
@@ -969,11 +999,15 @@ function osascriptArgv(lines: readonly string[], shellText: string): readonly st
 }
 
 /**
- * The tmux argv that opens the command in a new window `cadre-<id>` at the root (D-126). tmux runs a single command
- * argument through `sh -c`, so the command, a shell word already, is followed by TMUX_WAIT for when it fails.
+ * The tmux argv that opens the command in a new window `cadre-<id>` at the root (D-126). tmux would run a single
+ * command argument with its default-shell, which may be fish or another shell that cannot parse TMUX_WAIT, so the
+ * window runs `/bin/sh -c` with the shell text as separate argv items, which tmux 3.0 and later run with no shell
+ * between (#63 A5): the command, a shell word already, followed by TMUX_WAIT for when it fails.
  */
 function tmuxArgv(id: string, root: string, command: string): readonly string[] {
-  return Object.freeze(['tmux', 'new-window', '-n', `cadre-${id}`, '-c', root, `${command} || ${TMUX_WAIT}`])
+  const shellText = `${command} || ${TMUX_WAIT}`
+
+  return Object.freeze(['tmux', 'new-window', '-n', `cadre-${id}`, '-c', root, '/bin/sh', '-c', shellText])
 }
 
 /**
@@ -1003,8 +1037,8 @@ function detectedTerminal(
  * any other TERM_PROGRAM, or none. Terminal.app and iTerm get the shell text `cd -- <root> && <command>`, the root
  * shQuote'd, as the last osascript argv item, which `on run argv` reads and no AppleScript is built from (T-03-29):
  * Terminal.app opens a new window (`do script`), iTerm a new tab in its current window, or a new window when none is
- * open. tmux opens a new window `cadre-<id>` at the root whose command waits for Enter when the launcher fails
- * (Pitfall 7).
+ * open, named ITERM_NAME. tmux opens a new window `cadre-<id>` at the root whose command, run by `/bin/sh -c`, waits
+ * for Enter when the launcher fails (Pitfall 7).
  */
 export function terminalPlan(input: {
   readonly choice: Exclude<TerminalChoice, 'none'>
@@ -1022,7 +1056,7 @@ export function terminalPlan(input: {
   if (terminal === null) return { kind: 'refuse', text: terminalUnknownText(termProgram) }
   if (terminal === 'tmux') return { kind: 'open', name: 'tmux window', argv: tmuxArgv(id, root, command) }
   const shellText = `cd -- ${shQuote(root)} && ${command}`
-  if (terminal === 'iterm') return { kind: 'open', name: 'iTerm tab', argv: osascriptArgv(ITERM_LINES, shellText) }
+  if (terminal === 'iterm') return { kind: 'open', name: ITERM_NAME, argv: osascriptArgv(ITERM_LINES, shellText) }
 
   return { kind: 'open', name: 'Terminal window', argv: osascriptArgv(TERMINAL_APP_LINES, shellText) }
 }
