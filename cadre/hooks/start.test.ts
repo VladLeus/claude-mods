@@ -11,6 +11,7 @@ import type {
   PortStat,
   RoleSpec,
   ScopeContext,
+  TerminalChoice,
 } from '../types'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
@@ -23,6 +24,8 @@ import { compileScope } from './scope'
 import { CLAUDE_JSON_MAX_BYTES } from './setup'
 import {
   claudeTooOldReply,
+  clipboardRun,
+  COPIED_LINE,
   gatherLaunchUser,
   GIT_COMMON_DIR_ARGV,
   hookSourcesFor,
@@ -33,6 +36,7 @@ import {
   launchHooksOf,
   launchSettingsOf,
   MIN_CLAUDE_VERSION,
+  NOT_COPIED_LINE,
   parseClaudeVersion,
   readClaudeJson,
   renderArgv,
@@ -66,7 +70,7 @@ import {
   secretWorld,
   templateRole,
 } from './testkit'
-import type { HostCall, HostRunRule, HostWrite, MemWorld } from './testkit'
+import type { HostCall, HostRunRule, HostWorld, HostWrite, MemWorld } from './testkit'
 
 /** The repo root of the fixtures, a realpath. */
 const ROOT = '/repo'
@@ -1377,9 +1381,109 @@ describe('runStart launcher drift and secrets (LNCH-04, T-03-32)', () => {
     const start = await startBe(world)
     const textOf = (name: string): string => start.writes.find(write => write.path === `${RUNTIME}/${name}`)?.text ?? ''
 
-    expect(start.reply.split('\n').slice(-2)).toEqual([RUN_LINE, '  /repo/.cadre/bin/be'])
+    expect(start.reply.split('\n').slice(-3)).toEqual([RUN_LINE, '  /repo/.cadre/bin/be', COPIED_LINE])
     expect(leaks(start.reply, SECRET_FIXTURES)).toEqual([])
     expect(textOf('settings.json')).toContain(JSON.stringify(USER_GUARD))
     expect(textOf('mcp.json')).toBe(stableJson({ mcpServers: { redmine: REDMINE } }))
+  })
+})
+
+/** The launcher command of BE in the start worlds, as the reply prints it, two spaces in. */
+const COMMAND_LINE = '  /repo/.cadre/bin/be'
+
+/** The first two lines of the reply of a render of BE that made no link. */
+const RENDERED_LINES = ['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).']
+
+/** A fake host rule that answers pbcopy with this run; null is a host with no pbcopy, or one that refused the run. */
+function pbcopyRule(result: HostRun | null): HostRunRule {
+  return { argv: ['/usr/bin/pbcopy'], result }
+}
+
+/** What runStart of BE replied, every run the fake host was asked for, and its writes and runs in one call order. */
+type OrderedStart = {
+  readonly reply: string
+  readonly calls: readonly HostCall[]
+  /** Each write as `write <path>` and each run as `run <first argv word>`, in the order the host was asked. */
+  readonly order: readonly string[]
+}
+
+/**
+ * runStart of BE over the applied world with this `--terminal` choice, these run rules before the default ones (claude
+ * new enough and the git common dir; any other argv exits 0) and these variables set.
+ */
+async function startOrdered(
+  terminal: TerminalChoice,
+  runs: readonly HostRunRule[] = [],
+  env: HostWorld['env'] = {},
+): Promise<OrderedStart> {
+  const host = memHost(hostWorld({ runs: [...runs, CLAUDE_OK, GIT_OK], env }))
+  const order: string[] = []
+  const io: HostIo = {
+    ...host.io,
+    run: async (argv, options) => {
+      order.push(`run ${argv[0] ?? ''}`)
+
+      return host.io.run(argv, options)
+    },
+    write: async (path, text) => {
+      order.push(`write ${path}`)
+
+      return host.io.write(path, text)
+    },
+  }
+  const reply = await runStart(memIo(await appliedWorld(), {}).io, io, { id: 'be', terminal })
+
+  return { reply, calls: host.calls, order }
+}
+
+describe('copy the command (D-110)', () => {
+  test('clipboardRun gives pbcopy the command on stdin with LC_CTYPE=UTF-8; the copy lines have their texts', () => {
+    expect(clipboardRun('cmd')).toEqual({
+      argv: ['/usr/bin/pbcopy'],
+      options: { stdin: 'cmd', env: { LC_CTYPE: 'UTF-8' }, timeoutMs: 5_000 },
+    })
+    expect(COPIED_LINE).toBe('Copied to the clipboard.')
+    expect(NOT_COPIED_LINE).toBe('Could not copy it to the clipboard (pbcopy is macOS only): copy the line above.')
+  })
+
+  test('after the render the command is copied, right after the stamp, and the copied line follows it', async () => {
+    const start = await startOrdered('none')
+    const lines = start.reply.split('\n')
+
+    expect(start.order.slice(-2)).toEqual([`write ${RUNTIME}/stamp`, 'run /usr/bin/pbcopy'])
+    expect(start.calls.at(-1)).toEqual({
+      argv: ['/usr/bin/pbcopy'],
+      options: { stdin: '/repo/.cadre/bin/be', env: { LC_CTYPE: 'UTF-8' }, timeoutMs: 5_000 },
+    })
+    expect(lines.slice(0, 2)).toEqual(RENDERED_LINES)
+    expect(lines.slice(-3)).toEqual([RUN_LINE, COMMAND_LINE, COPIED_LINE])
+  })
+
+  test('no pbcopy, or one that exits non-zero, gives the not-copied line and is still the success reply', async () => {
+    for (const result of [null, { exitCode: 1, stdout: '', stderr: 'pbcopy: command not found' }]) {
+      const start = await startOrdered('none', [pbcopyRule(result)])
+      const lines = start.reply.split('\n')
+
+      expect(start.order.slice(-2)).toEqual([`write ${RUNTIME}/stamp`, 'run /usr/bin/pbcopy'])
+      expect(lines.slice(0, 2)).toEqual(RENDERED_LINES)
+      expect(lines.slice(-3)).toEqual([RUN_LINE, COMMAND_LINE, NOT_COPIED_LINE])
+    }
+  })
+
+  test('a refused render, or one that fails at a step, makes no copy run', async () => {
+    const world = await appliedWorld()
+    const mkdirFails = { argv: ['/bin/mkdir', '-p', '--', RUNTIME], result: { exitCode: 1, stdout: '', stderr: 'x' } }
+    const refused = await startBe(withFile(world, RUNTIME, 'not a folder'))
+    const mkdirFailed = await startBe(world, [mkdirFails, CLAUDE_OK, GIT_OK])
+    const writeFailed = await startBe(world, [CLAUDE_OK, GIT_OK], [`${RUNTIME}/settings.json`])
+
+    expect([refused.reply, mkdirFailed.reply, writeFailed.reply]).toEqual([
+      RUNTIME_REFUSAL,
+      renderFailedReply('be', '.cadre/be/.runtime'),
+      renderFailedReply('be', '.cadre/be/.runtime/settings.json'),
+    ])
+    for (const start of [refused, mkdirFailed, writeFailed]) {
+      expect(start.calls.map(call => call.argv[0])).not.toContain('/usr/bin/pbcopy')
+    }
   })
 })

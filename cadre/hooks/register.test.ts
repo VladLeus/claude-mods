@@ -1387,6 +1387,22 @@ describe('cadre start with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
+  test('start be copies the printed command with pbcopy once the stamp is written (D-110)', async ($, on) => {
+    const log = newLog()
+    const world = await startHostWorld()
+    const runResults = { ...world.runResults, '/usr/bin/pbcopy': { exitCode: 0, stdout: '' } }
+    fakeHost(on, { ...world, runResults }, log)
+    const lines = (await $.command.run({ command: 'cadre', args: 'start be' })).text.split('\n')
+    const stampOp = log.ops.indexOf(`fs.write ${START_RUNTIME}/stamp`)
+    // The n-th process.run op is the n-th run, so the pbcopy run is found among the ops by its run index.
+    const copyAt = log.runs.findIndex(run => run.join(' ') === '/usr/bin/pbcopy')
+    const runOps = log.ops.flatMap((op, at) => (op === 'process.run' ? [at] : []))
+    expect(stampOp).toBeGreaterThanOrEqual(0)
+    expect(runOps[copyAt] ?? -1).toBeGreaterThan(stampOp)
+    expect(lines.slice(-2)).toEqual(['  /repo/.cadre/bin/be', 'Copied to the clipboard.'])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
   test('a cadre.json that does not list the role refuses with the no-role reply and writes nothing', async ($, on) => {
     const log = newLog()
     const world = await startHostWorld()
