@@ -30,6 +30,7 @@ import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
 import { detectText } from './render'
+import { runStart } from './start'
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -400,10 +401,10 @@ function initIoOf($: EngineInterface): InitIo {
 
 /**
  * The write and run port apply, `/cadre start` and `/cadre status` run through, beside InitIo: plain closures over
- * `$`, built only for plain init and regen. InitIo never gets these members, so a path that is given only an InitIo
- * (detect, every --dry-run, every refusal and cancel) cannot write or run (T-03-01). Every member maps a host failure
- * to false or null and never reads an error text. A run passes its cwd, stdin and env only when given; the env names
- * are string literals, as the host reads only literal names.
+ * `$`, built only for plain init, plain regen and /cadre start. InitIo never gets these members, so a path that is
+ * given only an InitIo (detect, every --dry-run, every refusal and cancel) cannot write or run (T-03-01). Every member
+ * maps a host failure to false or null and never reads an error text. A run passes its cwd, stdin and env only when
+ * given; the env names are string literals, as the host reads only literal names.
  */
 function hostIoOf($: EngineInterface): HostIo {
   return {
@@ -437,8 +438,10 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'cadre',
-      description: 'Split this repo into scope-limited role sessions: detect, init, regen',
-      argumentHint: 'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run]',
+      description: 'Split this repo into scope-limited role sessions: detect, init, regen, start',
+      argumentHint:
+        'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run] | ' +
+        'start <id> [--terminal[=terminal|iterm|tmux]]',
     })
 
     return next(e)
@@ -462,6 +465,8 @@ export const register: Register = on => {
 
         return { text: await runRegen(initIoOf($), options) }
       }
+      case 'start':
+        return { text: await runStart(initIoOf($), hostIoOf($), { id: command.id, terminal: command.terminal }) }
       default: {
         const unreachable: never = command
         return unreachable

@@ -1,5 +1,6 @@
 /**
- * The gather and render halves of /cadre start (D-102).
+ * The gather and render halves of /cadre start (D-102), and runStart, the command itself, which checks the repo and
+ * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command (LNCH-04).
  *
  * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
  * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
@@ -20,6 +21,7 @@ import type {
   PortStat,
   RoleSpec,
   SettingsSource,
+  TerminalChoice,
 } from '../types'
 import {
   isDirInsideRoot,
@@ -30,10 +32,13 @@ import {
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
+import { shQuote } from './generate'
 import { sha256Hex } from './hash'
-import { claudeMdImports } from './launch'
+import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
+import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
+import { expectationsFor, probeExpectationsText } from './probe'
 import { reportText } from './render'
 import {
   CLAUDE_JSON_MAX_BYTES,
@@ -700,4 +705,119 @@ export function runtimeMcpText(
   const missing = found.filter(({ config }) => config === null).map(({ name }) => mcpNotInFileWarning(name))
 
   return { text: stableJson({ mcpServers: Object.fromEntries(servers) }), warnings: missing }
+}
+
+/** How long one removal, folder or link step of a render may run before it is given up. */
+const RENDER_STEP_TIMEOUT_MS = 10_000
+
+/** The command that starts a role: the absolute path of its launcher `<root>/.cadre/bin/<id>`, as one shell word. */
+export function launcherCommand(root: string, id: string): string {
+  return shQuote(`${root}/.cadre/bin/${id}`)
+}
+
+/**
+ * The disk a render is planned from: the stat of each path renderPaths names, asked with resolve, and the listing of
+ * each folder it names. A folder the host cannot list gets no listing, so renderSteps counts it as empty.
+ */
+async function renderDiskOf(
+  io: InitIo,
+  paths: { readonly stats: readonly string[]; readonly listings: readonly string[] },
+): Promise<Pick<RenderInput, 'stats' | 'listings'>> {
+  const stats = new Map<string, PortStat | null>()
+  for (const path of paths.stats) stats.set(path, await io.stat(path))
+  const listings = new Map<string, readonly PortEntry[]>()
+  for (const path of paths.listings) {
+    const entries = await io.list(path)
+    if (entries !== null) listings.set(path, entries)
+  }
+
+  return { stats, listings }
+}
+
+/**
+ * Runs one step of a render through the host: a write through host.write; a removal, a folder or a link through
+ * host.run with its renderArgv, absolute and with no shell, done only when it exits 0.
+ */
+async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
+  if (step.kind === 'write') return host.write(step.path, step.text)
+  const argv = renderArgv(step)
+  if (argv === null) return false
+  const run = await host.run(argv, { timeoutMs: RENDER_STEP_TIMEOUT_MS })
+
+  return run !== null && run.exitCode === 0
+}
+
+/** The reply when a step of the render fails: the render stops there, so it writes no stamp (LNCH-03). */
+function renderStoppedReply(id: string, path: string): string {
+  return `cadre start could not render .cadre/${reportText(id)}/.runtime/ (${reportText(path)} failed).`
+}
+
+/**
+ * The reply of a render that ran every step (D-102): what was asked for, the folder rendered with the number of links
+ * it made, one `warning: ` line per warning, then the line that hands over the launcher and the launcher command, two
+ * spaces in.
+ */
+function startReplyText(id: string, root: string, links: number, warnings: readonly string[]): string {
+  return [
+    `cadre start ${id}`,
+    `Rendered .cadre/${id}/.runtime/ (${links} links).`,
+    ...warnings.map(warning => `warning: ${warning}`),
+    `Run this in a terminal to start role ${id}:`,
+    `  ${launcherCommand(root, id)}`,
+  ].join('\n')
+}
+
+/**
+ * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with the first refusal of repoGuard (in
+ * the start wording) and readTeam. Otherwise it compiles the team (compileTeam), gathers the launching user
+ * (gatherLaunchUser) and builds the role's LaunchPlan, and renders the role's `.runtime/`: the settings, the MCP config
+ * (runtimeMcpText), the probe expectations, the links, the inbox when there is none, and the stamp last. renderPaths
+ * names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was built for, and a render
+ * refusal is the reply, before anything is written. Each step then runs through the host in order, and the first one
+ * that fails stops the render with no stamp written, so the launcher refuses to start (LNCH-03). The reply names the
+ * folder, every warning of the launch user, the LaunchPlan, the MCP config and the render, and the launcher command
+ * (startReplyText). It never runs the launcher, and never starts a background session (D-108).
+ */
+export async function runStart(
+  io: InitIo,
+  host: HostIo,
+  options: { readonly id: string; readonly terminal: TerminalChoice },
+): Promise<string> {
+  const { id } = options
+  const guard = await repoGuard(io, 'start')
+  if (guard.kind === 'refuse') return guard.text
+  const { locations } = guard
+  const team = await readTeam(io, locations.root, 'start', id)
+  if (team.kind === 'refuse') return team.text
+  const { state, roles } = team.value
+
+  const { gathered, scopes } = await compileTeam(io, locations, state, roles)
+  const role = roles.find(candidate => candidate.id === id)
+  const scope = scopes.get(id)
+  // Fail closed: readTeam read every listed role and compileTeam compiled each one, so both are always there.
+  if (role === undefined || scope === undefined) return regenBadRole(id)
+  const launch = await gatherLaunchUser(io, host, {
+    locations,
+    launchStart: state.launchStart,
+    codeDirs: gathered.repo.codeDirs,
+  })
+  if (launch.kind === 'refuse') return launch.text
+  const { user } = launch
+  const plan = launchPlan(role, scope, user)
+  const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
+  const mcp = runtimeMcpText(role, claudeJson, [locations.root, locations.givenRoot], state.readUserMcp)
+  const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
+  const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
+  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
+  const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
+  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk })
+  if (render.refusal !== null) return render.refusal
+
+  for (const step of render.steps) {
+    if (!(await isStepDone(host, step))) return renderStoppedReply(id, repoRelative(user.root, step.path))
+  }
+  const links = render.steps.filter(step => step.kind === 'link').length
+  const warnings = [...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
+
+  return startReplyText(id, user.root, links, warnings)
 }

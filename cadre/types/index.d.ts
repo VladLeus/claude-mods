@@ -1,8 +1,21 @@
 /**
+ * Where `/cadre start <id> --terminal` opens the launcher command (D-109, D-126, D-132):
+ * - `none`: no `--terminal` was given, so the command is only printed and copied;
+ * - `auto`: a bare `--terminal`: a new tmux window inside tmux, else the macOS terminal `TERM_PROGRAM` names;
+ * - `terminal`: `--terminal=terminal`, a new macOS Terminal window;
+ * - `iterm`: `--terminal=iterm`, a new iTerm tab, or a new window when none is open;
+ * - `tmux`: `--terminal=tmux`, a new tmux window;
+ * - `invalid`: `--terminal=` with any other value, or the switch given twice: nothing is opened, and the command is
+ *   still printed and copied.
+ */
+export type TerminalChoice = 'none' | 'auto' | 'terminal' | 'iterm' | 'tmux' | 'invalid'
+
+/**
  * What `/cadre` asked for. Empty or `help` is the help text; `detect [--adapters]` is the read-only detection;
- * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json. Any other
- * input is help with the input echoed back as unknown. Plain init writes the plan after Confirm and plain regen writes
- * the role's plan; --dry-run prints the plan and writes nothing.
+ * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json;
+ * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command.
+ * Any other input is help with the input echoed back as unknown. Plain init writes the plan after Confirm and plain
+ * regen writes the role's plan; --dry-run prints the plan and writes nothing.
  */
 export type CadreCommand =
   | {
@@ -28,6 +41,13 @@ export type CadreCommand =
       /** The role id, already matched against the role-id slug (D-48). */
       readonly id: string
       readonly dryRun: boolean
+    }
+  | {
+      readonly kind: 'start'
+      /** The role id, already matched against the role-id slug (D-48). */
+      readonly id: string
+      /** Where `--terminal` asked to open the launcher command; `none` without the switch (D-109). */
+      readonly terminal: TerminalChoice
     }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */

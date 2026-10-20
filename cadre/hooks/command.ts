@@ -1,4 +1,4 @@
-import type { CadreCommand } from '../types'
+import type { CadreCommand, TerminalChoice } from '../types'
 
 /** The most code points a reply echoes back, the ellipsis included. */
 const MAX_ECHOED = 40
@@ -38,6 +38,10 @@ export const USAGE_LINES: readonly string[] = [
   `  ${'/cadre init --dry-run'.padEnd(COMMAND_COLUMN)}the same guided flow; prints the plan and writes nothing`,
   `  ${'/cadre regen <id>'.padEnd(COMMAND_COLUMN)}re-render one role from its role.json and write its files`,
   `  ${'/cadre regen <id> --dry-run'.padEnd(COMMAND_COLUMN)}print that role's plan and write nothing`,
+  `  ${'/cadre start <id>'.padEnd(COMMAND_COLUMN)}render a role's runtime files, then print and copy ` +
+    'its launcher command',
+  `  ${'/cadre start <id> --terminal'.padEnd(COMMAND_COLUMN)}also open it in a new Terminal window, ` +
+    'iTerm tab or tmux window (macOS)',
 ]
 
 /**
@@ -100,11 +104,46 @@ function regenCommand(rest: string): CadreCommand | null {
   return { kind: 'regen', id: dryRun.rest, dryRun: dryRun.isOn }
 }
 
+/** The places `--terminal=<value>` can name, as the value reads lowercased (D-109, D-126). */
+const TERMINAL_VALUES: readonly TerminalChoice[] = Object.freeze(['terminal', 'iterm', 'tmux'])
+
+/**
+ * Takes every `--terminal` switch, with or without `=<value>`, out of the arguments as whole words in any letter case
+ * (D-109): no switch is `none`; one bare switch is `auto`; one switch whose value, lowercased, is `terminal`, `iterm`
+ * or `tmux` is that value; one with any other value, an empty one included, or two switches or more is `invalid`.
+ */
+function terminalOf(rest: string): { readonly terminal: TerminalChoice; readonly rest: string } {
+  const pattern = /\s--terminal(?:=(\S*))?(?=\s|$)/gi
+  const text = ` ${rest}`
+  const matches = Array.from(text.matchAll(pattern))
+  const left = text.replace(pattern, '').trim()
+  if (matches.length === 0) return { terminal: 'none', rest: left }
+  if (matches.length > 1) return { terminal: 'invalid', rest: left }
+  const value = matches[0]?.[1]
+  if (value === undefined) return { terminal: 'auto', rest: left }
+  const named = TERMINAL_VALUES.find(choice => choice === value.toLowerCase())
+
+  return { terminal: named ?? 'invalid', rest: left }
+}
+
+/**
+ * The start of one role (LNCH-04), when the arguments after `start` are one role id that matches ROLE_ID_PATTERN
+ * exactly, with no case folding, and the `--terminal` switches terminalOf takes, on either side of it; null for
+ * anything else (D-48).
+ */
+function startCommand(rest: string): CadreCommand | null {
+  const terminal = terminalOf(rest)
+  if (!ROLE_ID_PATTERN.test(terminal.rest)) return null
+
+  return { kind: 'start', id: terminal.rest, terminal: terminal.terminal }
+}
+
 /**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
  * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
- * `--dry-run`, re-renders that role; anything else, `regen` with no id or with an id that is not a slug included, is
- * help with the input echoed back as unknown.
+ * `--dry-run`, re-renders that role; `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`,
+ * renders that role's runtime files and prints its launcher command; anything else, `regen` or `start` with no id or
+ * with an id that is not a slug included, is help with the input echoed back as unknown.
  */
 export function parseCommand(args: string): CadreCommand {
   const text = visibleText(args)
@@ -118,6 +157,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const regen = /^regen(?=\s|$)/i.exec(text)
   if (regen) return regenCommand(text.slice(regen[0].length)) ?? unknownCommand(text)
+
+  const start = /^start(?=\s|$)/i.exec(text)
+  if (start) return startCommand(text.slice(start[0].length)) ?? unknownCommand(text)
 
   return unknownCommand(text)
 }
