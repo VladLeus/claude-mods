@@ -212,6 +212,31 @@ describe('start grammar', () => {
   })
 })
 
+describe('status grammar', () => {
+  test('status with one role id is the status of that role, in any case of the word status (D-111)', () => {
+    expect(parseCommand('status be')).toEqual({ kind: 'status', id: 'be' })
+    expect(parseCommand('  STATUS   a-1 ')).toEqual({ kind: 'status', id: 'a-1' })
+  })
+
+  test('status without exactly one role id, or with an id that is not a slug, is help with the input echoed', () => {
+    const inputs = ['status', 'status Be', 'status be x', 'status ../x', 'status --terminal be', 'status be --dry-run']
+    for (const input of inputs) expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    expect(parseCommand(`status ${'a'.repeat(25)}`)).toEqual({ kind: 'help', unknown: `status ${'a'.repeat(25)}` })
+  })
+
+  test('a word that only starts with status is not the status', () => {
+    expect(parseCommand('statuses be')).toEqual({ kind: 'help', unknown: 'statuses be' })
+    expect(parseCommand('status-be')).toEqual({ kind: 'help', unknown: 'status-be' })
+    expect(parseCommand('statusbe')).toEqual({ kind: 'help', unknown: 'statusbe' })
+  })
+
+  test('the help without unknown input lists the status row with what it does', () => {
+    const text = helpText(null)
+    expect(text).toContain('/cadre status <id>')
+    expect(text).toContain("show from disk whether a role's autopilot run is done, running or not started")
+  })
+})
+
 describe('takeSwitch', () => {
   test('a switch is taken out of the text and reported on, whatever the spacing around it', () => {
     expect(takeSwitch(' a --dry-run', 'dry-run')).toEqual({ isOn: true, rest: 'a' })
