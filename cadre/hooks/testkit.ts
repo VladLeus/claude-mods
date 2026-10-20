@@ -322,6 +322,20 @@ export function memHost(world: HostWorld): MemHost {
   return { io, writes, calls }
 }
 
+/**
+ * A new world whose `files` hold the text of every write with isWritten true, later writes winning, so a test can
+ * re-run init or start over what a run wrote. The world given is not changed.
+ */
+export function withWrites(world: MemWorld, writes: readonly HostWrite[]): MemWorld {
+  const files: Record<string, string> = { ...world.files }
+  for (const write of writes) {
+    if (!write.isWritten) continue
+    files[write.path] = write.text
+  }
+
+  return { ...world, files }
+}
+
 /** A listing entry as the port gives it: a file unless told otherwise, and not a link unless told so. */
 export function entry(name: string, kind: PortEntry['kind'] = 'file', isLink = false): PortEntry {
   return { name, kind, size: 0, mtimeMs: 0, isLink }
@@ -330,6 +344,11 @@ export function entry(name: string, kind: PortEntry['kind'] = 'file', isLink = f
 /** A symbolic link as the host lists it: kind other, isLink true. */
 export function link(name: string): PortEntry {
   return entry(name, 'other', true)
+}
+
+/** A listing entry with its modification time, for the newest-first tests of `/cadre status`. */
+export function entryAt(name: string, kind: PortEntry['kind'], mtimeMs: number, isLink = false): PortEntry {
+  return { ...entry(name, kind, isLink), mtimeMs }
 }
 
 /** A right-to-left override (U+202E), the bidi character the hostile-text tests hide in names and titles. */
