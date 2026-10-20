@@ -183,7 +183,8 @@ function renderFolders(runtime: string, links: readonly OverlayLink[]): string[]
  * The paths /cadre start stats and lists before a render, so renderSteps can judge each one. `stats` holds, sorted
  * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a STALE_LINK_FOLDERS
  * folder or to a link, every link path, the five files a render writes and the DONE.md marker (#63 A6); `listings`
- * holds the STALE_LINK_FOLDERS under `.runtime`.
+ * holds `.runtime`, whose listing shows a file a render writes that is a link whatever its stat says (#72 A2), then
+ * the STALE_LINK_FOLDERS under it.
  */
 export function renderPaths(
   root: string,
@@ -199,7 +200,7 @@ export function renderPaths(
     `${runtime}/${DONE_MARKER_FILE}`,
   ])
 
-  return { stats, listings: STALE_LINK_FOLDERS.map(folder => `${runtime}/${folder}`) }
+  return { stats, listings: [runtime, ...STALE_LINK_FOLDERS.map(folder => `${runtime}/${folder}`)] }
 }
 
 /** The stat of a path; null when it is not there or was not asked, as a path with no stat counts as not there. */
@@ -232,6 +233,25 @@ function runtimeRefusal(id: string): string {
   return `${what}: remove it and run /cadre start ${role} again`
 }
 
+/**
+ * The refusal when `.runtime` lists a file a render writes as a link that its stat did not show as one, such as a
+ * dangling link the host's stat takes for no file (#72 A2): the write would go through it.
+ */
+function unstatedLinkRefusal(id: string, name: string): string {
+  const role = reportText(id)
+  const what = `.cadre/${role}/.runtime/${name} is a link /cadre start could not check`
+
+  return `${what}: remove it and run /cadre start ${role} again`
+}
+
+/** Whether `.runtime` lists a file a render writes as a link while the stat of that file shows no link (#72 A2). */
+function isUnstatedLink(input: RenderInput, runtime: string, name: string): boolean {
+  const entries = input.listings.get(runtime) ?? []
+  if (!entries.some(entry => entry.name === name && entry.isLink)) return false
+
+  return !isLinkStat(statAt(input, `${runtime}/${name}`))
+}
+
 /** Whether a folder a render makes or links into is unsafe: it is there, and a link or not a folder. */
 function isUnsafeFolder(stat: PortStat | null): boolean {
   return stat !== null && (stat.isLink || stat.kind !== 'dir')
@@ -246,7 +266,10 @@ function isUnsafeFile(stat: PortStat | null): boolean {
  * Why a render must not run, or null (T-03-20). The role folder must be a real folder inside the repo; `.runtime`,
  * its overlay, every folder down to a STALE_LINK_FOLDERS folder and every folder down to a link must be missing or a
  * real folder; and each file a render writes must be missing, a regular file, or a link, which is removed first.
- * Anything else would let a step write, link or remove through a link, or write onto a folder.
+ * Anything else would let a step write, link or remove through a link, or write onto a folder. A file a render writes
+ * that the listing of `.runtime` shows as a link while its stat does not refuses too (unstatedLinkRefusal, #72 A2),
+ * so no write rests on what the host's stat makes of a dangling link; a `.runtime` with no listing is taken as empty,
+ * as every folder with none is.
  */
 function refusalOf(input: RenderInput, runtime: string): string | null {
   const role = statAt(input, roleFolder(input.root, input.id))
@@ -254,6 +277,8 @@ function refusalOf(input: RenderInput, runtime: string): string | null {
   const folders = renderFolders(runtime, input.plan.links).map(path => statAt(input, path))
   const files = WRITTEN_FILES.map(name => statAt(input, `${runtime}/${name}`))
   if (folders.some(isUnsafeFolder) || files.some(isUnsafeFile)) return runtimeRefusal(input.id)
+  const unstated = WRITTEN_FILES.find(name => isUnstatedLink(input, runtime, name))
+  if (unstated !== undefined) return unstatedLinkRefusal(input.id, unstated)
 
   return null
 }

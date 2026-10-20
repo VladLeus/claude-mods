@@ -308,18 +308,55 @@ export function writeProblem(
   return null
 }
 
-/** RED stub (#72 A2): the GREEN commit gives the folders whose listing init reads before an apply writes. */
+/**
+ * Every folder whose listing init reads before an apply writes, sorted by code unit and once each: the root, as '',
+ * and each folder above a path the steps name, so each path applyStatPaths names is listed by its own folder (#72 A2).
+ */
 export function applyListPaths(steps: readonly ApplyStep[]): string[] {
-  return steps.length < 0 ? [''] : []
+  return sortedUnique(['', ...steps.flatMap(step => foldersAbove(step.path))])
 }
 
-/** RED stub (#72 A2): the GREEN commit gives why a write must not happen by the listings. */
+/** Why a write is refused when the folder that holds it, or one that holds a folder above it, lists it as a link. */
+const LISTED_LINK_REASON = 'it or a folder above it is listed as a link'
+
+/** Why a write is refused when the folder that holds it or a folder above it is there but could not be listed. */
+const LIST_FAILED_REASON = 'it or a folder above it could not be checked (a folder listing failed)'
+
+/** The folder that holds a repo-relative path, '' for a path at the root. */
+function folderOf(path: string): string {
+  const at = path.lastIndexOf('/')
+
+  return at < 0 ? '' : path.slice(0, at)
+}
+
+/**
+ * Why a write must not happen by the listings, or null when it may (#72 A2, T-03-13): a check that does not rest on
+ * what the host's stat makes of a link. From the top, each folder above the path and the path itself is looked up in
+ * the listing of the folder that holds it, which shows a link as a link, a dangling one included, and an entry listed
+ * as a link refuses. A folder below the root with no listing refuses as not checked, unless writeProblem's stat found
+ * it absent: a folder that is not there holds nothing, and its own entry was looked up one step before. A root, '',
+ * with no listing only skips the look-up of the top entry, as the scans treat an unlistable root as unknown and not as
+ * a refusal. `listings` holds what the host listed for each folder applyListPaths names, keyed by repo-relative path,
+ * null where it could not list; `stats` is the map writeProblem reads. The path is cleaned and capped as a report cell
+ * is.
+ */
 export function listedLinkProblem(
   path: string,
   stats: ReadonlyMap<string, WriteStat>,
   listings: ReadonlyMap<string, readonly PortEntry[] | null>,
 ): string | null {
-  return path === '' && stats.size < 0 && listings.size < 0 ? path : null
+  const refused = `refused to write ${reportText(path)}: `
+  for (const entryPath of [...foldersAbove(path), path]) {
+    const folder = folderOf(entryPath)
+    const entries = listings.get(folder) ?? null
+    if (entries === null && folder === '') continue
+    if (entries === null && stats.get(folder) === 'absent') return null
+    if (entries === null) return `${refused}${LIST_FAILED_REASON}`
+    const name = entryPath.slice(folder === '' ? 0 : folder.length + 1)
+    if (entries.some(entry => entry.name === name && entry.isLink)) return `${refused}${LISTED_LINK_REASON}`
+  }
+
+  return null
 }
 
 /**

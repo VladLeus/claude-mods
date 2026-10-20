@@ -18,6 +18,7 @@ import type {
   ManifestEntry,
   McpRoute,
   Plan,
+  PortEntry,
   PortRead,
   PortStat,
   RepoScan,
@@ -32,6 +33,7 @@ import type {
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import {
+  applyListPaths,
   applySteps,
   applyStatPaths,
   chmodArgv,
@@ -44,6 +46,7 @@ import {
   hunksAfterRuns,
   installedLine,
   installFailureText,
+  listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   parseConflictAnswer,
@@ -1831,8 +1834,10 @@ export async function planStep(
  * - `written`: each path whose write landed, in step order, the `.gitignore` and the manifest included;
  * - `executable`: each launcher whose chmod ran and exited 0;
  * - `failed`: each path whose write the host refused or failed;
- * - `refused`: the writeProblem text of each write that was not tried, because the stat of the path or a folder above
- *   it failed, the path is a folder, or the path or a folder above it is a link, not a folder or not inside the repo;
+ * - `refused`: the writeProblem or listedLinkProblem text of each write that was not tried, because the stat of the
+ *   path or a folder above it failed, the path is a folder, the path or a folder above it is a link, not a folder or
+ *   not inside the repo, a folder lists the path or a folder above it as a link, or such a folder could not be listed
+ *   (#72 A2);
  * - `notExecutable`: each launcher whose chmod ran but did not exit 0, or could not run;
  * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
  * - `hunkFailures`: each framework command that failed (D-106);
@@ -1861,19 +1866,25 @@ const CHMOD_TIMEOUT_MS = 10_000
 
 /**
  * Runs the steps of a confirmed apply through the host, in order (D-105, LNCH-01). Every path applyStatPaths names is
- * stat'ed once, through the init port's statForWrite and with resolve, before the first step. A write is tried only
- * when writeProblem finds no failed stat, link, folder, non-folder or out-of-repo path on its way (T-03-17, #44), and
- * its path joins `written` only when host.write says it landed. A chmod runs only on a path in `written`, so only after
- * the write of that same path in this same apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows
- * links, so a chmod on a path whose write was refused or failed could change the target of a link planted there,
- * outside the repo (RESEARCH 3.2, T-03-38); such a launcher is not made executable, and no chmod runs for it at all. A
- * chmod that ran makes its launcher executable only on exit 0. The manifest is written like any file, but skipped when
- * a write before it failed or was refused, so it never claims a file that is not on the disk (T-03-18).
+ * stat'ed once, through the init port's statForWrite and with resolve, and every folder applyListPaths names is listed
+ * once through io.list, before the first step. A write is tried only when writeProblem finds no failed stat, link,
+ * folder, non-folder or out-of-repo path on its way (T-03-17, #44) and listedLinkProblem finds no entry on its way
+ * listed as a link and no folder there that could not be listed (#72 A2), and its path joins `written` only when
+ * host.write says it landed. A chmod runs only on a path in `written`, so only after the write of that same path in
+ * this same apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows links, so a chmod on a path whose
+ * write was refused or failed could change the target of a link planted there, outside the repo (RESEARCH 3.2,
+ * T-03-38); such a launcher is not made executable, and no chmod runs for it at all. A chmod that ran makes its
+ * launcher executable only on exit 0. The manifest is written like any file, but skipped when a write before it failed
+ * or was refused, so it never claims a file that is not on the disk (T-03-18).
  */
 async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonly ApplyStep[]): Promise<ApplyOutcome> {
   const base = trimSlash(root)
   const stats = new Map<string, WriteStat>()
   for (const path of applyStatPaths(steps)) stats.set(path, await io.statForWrite(`${base}/${path}`))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of applyListPaths(steps)) {
+    listings.set(folder, await io.list(folder === '' ? base : `${base}/${folder}`))
+  }
   const written = new Set<string>()
   const executable: string[] = []
   const failed: string[] = []
@@ -1897,7 +1908,7 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
       manifestSkipped = true
       continue
     }
-    const problem = writeProblem(step.path, stats, root)
+    const problem = writeProblem(step.path, stats, root) ?? listedLinkProblem(step.path, stats, listings)
     if (problem !== null) {
       refused.push(problem)
       continue
