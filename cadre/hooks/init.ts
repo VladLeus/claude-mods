@@ -2312,11 +2312,14 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   return initReplyText(asWritten.plan, asWritten.state.gitPolicy, asWritten.state.launchStart, applied.value.outcome)
 }
 
+/** The cadre commands that work from an applied team, so they need `.cadre/cadre.json`. */
+export type TeamCommand = Exclude<CommandWord, 'init'>
+
 /**
  * The reply when a command that works from the team finds no `.cadre/cadre.json`, worded for that command: there is
  * nothing to work from until init has run (D-68).
  */
-export function noStateReply(command: 'regen' | 'start' | 'status'): string {
+export function noStateReply(command: TeamCommand): string {
   return `cadre ${command} needs .cadre/cadre.json from /cadre init: run /cadre init first.`
 }
 
@@ -2388,7 +2391,7 @@ function regenRefusal(text: string): RegenRead<never> {
 async function regenState(
   io: InitIo,
   root: string,
-  command: 'regen' | 'start' | 'status',
+  command: TeamCommand,
 ): Promise<RegenRead<CadreState>> {
   const read = await readRepoFile(io, root, CADRE_STATE_FILE, MAX_READ_BYTES)
   if (read.state === 'absent') return regenRefusal(noStateReply(command))
@@ -2453,7 +2456,7 @@ export type TeamState = {
 export async function readTeam(
   io: InitIo,
   root: string,
-  command: 'regen' | 'start' | 'status',
+  command: TeamCommand,
   id: string,
 ): Promise<RegenRead<TeamState>> {
   const loaded = await regenState(io, root, command)

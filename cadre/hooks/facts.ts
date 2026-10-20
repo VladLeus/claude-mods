@@ -300,10 +300,11 @@ export function parseHookScripts(value: unknown, source: SettingsSource): HookSc
 }
 
 /**
- * The hook script basenames under `hooks` of one settings value that the global `pattern` finds in a command, each
- * with its event and source. The rest of each command is discarded: the interpreter, the path and the arguments, which
- * may hold a secret. An event that cleans to nothing is skipped, and a script named twice for the same event appears
- * once. The detection and the setup scan share this walk over the settings shape, each with its own pattern.
+ * The hook script basenames under `hooks` of one settings value that the global `pattern` finds in the command of a
+ * hook whose `type` is exactly `command`, the only hooks launch renders (launchHookOf), each with its event and source.
+ * The rest of each command is discarded: the interpreter, the path and the arguments, which may hold a secret. An
+ * event that cleans to nothing is skipped, and a script named twice for the same event appears once. The detection
+ * and the setup scan share this walk over the settings shape, each with its own pattern.
  */
 export function hookScriptsMatching(value: unknown, source: SettingsSource, pattern: RegExp): HookScript[] {
   if (!isObject(value) || !isObject(value.hooks)) return []
@@ -314,7 +315,7 @@ export function hookScriptsMatching(value: unknown, source: SettingsSource, patt
     for (const matcher of matchers) {
       if (!isObject(matcher) || !Array.isArray(matcher.hooks)) continue
       for (const hook of matcher.hooks) {
-        if (!isObject(hook) || typeof hook.command !== 'string') continue
+        if (!isObject(hook) || hook.type !== 'command' || typeof hook.command !== 'string') continue
         for (const match of hook.command.match(pattern) ?? []) {
           const script = clean(match)
           found.set(JSON.stringify([event, script]), { script, event, source })
