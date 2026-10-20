@@ -448,9 +448,13 @@ const GIT_TIMEOUT_MS = 10_000
 /** The refusal when there is no HOME: the role files are rendered from the user's own folder (D-98). */
 export const START_NO_HOME = 'cadre start needs HOME to render the role files, so it stopped.'
 
-/** The refusal when git gives no common dir, which names the role memory folders (D-91). */
+/**
+ * The refusal when git gives no common dir, which names the role memory folders (D-91): the run failed, or it gave no
+ * absolute path, as a git older than 2.31 does with `--path-format=absolute` (#72 A4).
+ */
 export const START_NO_GIT_DIR =
-  'cadre start could not read the git common dir (git rev-parse failed), so it stopped.'
+  'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; ' +
+  'git 2.31 or newer is needed), so it stopped.'
 
 /** What gatherLaunchUser gives: the launching user's facts with the warnings to show, or the exact refusal. */
 export type LaunchUserRead =
@@ -834,14 +838,19 @@ export function launcherMissingReply(id: string): string {
 
 /**
  * The refusal when a role's launcher is not the file cadre wrote (LNCH-04, T-03-28): its sha256 differs from its
- * manifest entry, or it cannot be read as a regular file inside the repo.
+ * manifest entry, or it cannot be read as a regular file inside the repo. It names the three ways that work (#72 A3):
+ * restore the file; `/cadre init`, whose Take new answer writes the new launcher and its manifest entry; or plain
+ * regen, which keeps the changed file and its old manifest entry and writes the new version beside it as
+ * `.cadre-new`, so that copy is moved over the launcher, made executable again, and a second regen records it.
  */
 export function launcherChangedReply(id: string): string {
   const role = reportText(id)
+  const launcher = `.cadre/bin/${role}`
 
   return (
-    `.cadre/bin/${role} was changed outside cadre: run /cadre regen ${role} ` +
-    'and take the new version, or restore the file.'
+    `${launcher} was changed outside cadre: restore it, or run /cadre init and answer Take new for it, ` +
+    `or run /cadre regen ${role}, move ${launcher}.cadre-new over it, chmod 755 it ` +
+    `and run /cadre regen ${role} again.`
   )
 }
 
@@ -909,10 +918,12 @@ function launcherDrift(id: string, onDisk: string, desired: readonly DesiredFile
  * Why the claude on PATH, the one the launcher execs (RESEARCH 1.2), must not start the role (D-107), or null:
  * `claude --version` that cannot run or exits non-zero (START_NO_CLAUDE); an output in which parseClaudeVersion reads
  * no version (no line, or more than one, starts with one), or one older than MIN_CLAUDE_VERSION (claudeTooOldReply,
- * with the first line of the output).
+ * with the first line of the output). It runs in the home folder when there is one, as every install run does
+ * (T-03-46), so no repo-level settings take part in the one `claude` run of /cadre start (#72 B1).
  */
-async function claudeRefusal(host: HostIo): Promise<string | null> {
-  const run = await host.run(['claude', '--version'], { timeoutMs: CLAUDE_VERSION_TIMEOUT_MS })
+async function claudeRefusal(host: HostIo, home: string | null): Promise<string | null> {
+  const options = home === null ? {} : { cwd: home }
+  const run = await host.run(['claude', '--version'], { ...options, timeoutMs: CLAUDE_VERSION_TIMEOUT_MS })
   if (run === null || run.exitCode !== 0) return START_NO_CLAUDE
   const version = parseClaudeVersion(run.stdout)
   if (version !== null && isSupportedClaude(version)) return null
@@ -1208,7 +1219,7 @@ export async function runStart(
   const { state, roles } = team.value
   const launcher = await launcherRead(io, locations.root, id)
   if (launcher.kind === 'refuse') return launcher.text
-  const claude = await claudeRefusal(host)
+  const claude = await claudeRefusal(host, locations.home)
   if (claude !== null) return claude
 
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)

@@ -167,8 +167,11 @@ export function lintDenyPattern(pattern: string): string | null {
   return null
 }
 
-/** The part of a plugin key before `@`: `superpowers@claude-plugins-official` is `superpowers`. */
-function pluginName(key: string): string {
+/**
+ * The part of a plugin key before `@`: `superpowers@claude-plugins-official` is `superpowers`; a key with no `@` is its
+ * own name. The one rule every plugin name cadre shows or matches is cut by (#72 B3).
+ */
+export function pluginName(key: string): string {
   const at = key.indexOf('@')
 
   return at < 0 ? key : key.slice(0, at)

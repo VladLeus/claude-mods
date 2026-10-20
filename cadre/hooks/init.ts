@@ -140,7 +140,7 @@ import {
   scanRepo,
 } from './scan'
 import type { CommandWord } from './scan'
-import { compileScope, scopeCardLines } from './scope'
+import { compileScope, pluginName, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
@@ -1133,11 +1133,11 @@ const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
 /**
  * The security plugins question (decision #39): SECURITY_INSTALL_PREFIX, the names of the missing plugins joined with
  * `and`, then one note for each, so the person knows before answering that claude-security needs Python 3.9 or newer
- * and writes report folders into the repo. `keys` are the plugin keys missingSecurityPlugins gives; each name is shown
- * cleaned and capped as a report cell is, as every printed key is (decision #69 B7).
+ * and writes report folders into the repo. `keys` are the plugin keys missingSecurityPlugins gives, each named by
+ * pluginName (#72 B3) and shown cleaned and capped as a report cell is, like every printed key (decision #69 B7).
  */
 export function securityInstallQuestion(keys: readonly string[]): string {
-  const names = keys.map(key => key.split('@')[0] ?? key)
+  const names = keys.map(pluginName)
   const notes = names.flatMap(name => SECURITY_PLUGIN_NOTES.get(name) ?? [])
 
   return `${SECURITY_INSTALL_PREFIX} ${names.map(reportText).join(' and ')}? ${notes.join(' ')}`
