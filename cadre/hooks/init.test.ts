@@ -35,7 +35,14 @@ import type {
 import { detectAll } from './adapters'
 import { CONFLICT_OPTIONS, conflictQuestion, hunkFailureLine } from './apply'
 import type { HunkRun } from './apply'
-import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
+import {
+  CLAUDE_SECURITY_PLUGIN,
+  CLAUDE_SECURITY_SKILL,
+  MODEL_EFFORT_OPTIONS,
+  modelEffortRefusal,
+  SECURITY_GUIDANCE_PLUGIN,
+  SECURITY_PLUGINS,
+} from './assign'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
@@ -118,6 +125,7 @@ import {
   parseGitPolicy,
   parseReviewItem,
   planStep,
+  PLUGIN_RUN_TIMEOUT_MS,
   pluginVersionOf,
   policyLine,
   portProbeOf,
@@ -150,6 +158,12 @@ import {
   scanWarningLines,
   scanWarnings,
   scopesFor,
+  SECURITY_INSTALL_DISMISSED_REASON,
+  SECURITY_INSTALL_OPTIONS,
+  SECURITY_INSTALL_PREFIX,
+  securityInstallQuestion,
+  securityInstallStep,
+  withSecuritySkill,
 } from './init'
 import type {
   AdjustOutcome,
@@ -161,7 +175,14 @@ import type {
   StepResult,
 } from './init'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
-import { attendedNote, NOT_SET_TEXT, recommend, recommendationLines, UNKNOWN_CONFIG_TEXT } from './recommend'
+import {
+  attendedNote,
+  missingSecurityPlugins,
+  NOT_SET_TEXT,
+  recommend,
+  recommendationLines,
+  UNKNOWN_CONFIG_TEXT,
+} from './recommend'
 import { choiceLine } from './render'
 import {
   AUTOPILOT_THRESHOLD,
@@ -196,7 +217,7 @@ import {
   templateRole,
   withWrites,
 } from './testkit'
-import type { MemHost, MemRun, MemWorld } from './testkit'
+import type { HostRunRule, MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
@@ -4694,5 +4715,246 @@ describe('regen apply', () => {
     )
     expect(lines).not.toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
     expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
+  })
+})
+
+/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
+const SECURITY_KEY = 'claude-security@claude-plugins-official'
+
+/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
+const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
+
+/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
+const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
+
+/** The argv that installs claude-security (decision #39). */
+const SECURITY_INSTALL = ['claude', 'plugin', 'install', SECURITY_KEY]
+
+/** The argv that installs security-guidance (decision #39). */
+const GUIDANCE_INSTALL = ['claude', 'plugin', 'install', GUIDANCE_KEY]
+
+/** The python3 run of a host whose Python is new enough for claude-security (decision #39). */
+const PYTHON_OK_RUN: HostRunRule = {
+  argv: ['python3', '--version'],
+  result: { exitCode: 0, stdout: 'Python 3.12.1\n', stderr: '' },
+}
+
+/** A host whose Python is new enough and whose two plugin installs exit 0 (decision #39). */
+const INSTALLS_OK: readonly HostRunRule[] = [
+  PYTHON_OK_RUN,
+  { argv: SECURITY_INSTALL, result: { exitCode: 0, stdout: '', stderr: '' } },
+  { argv: GUIDANCE_INSTALL, result: { exitCode: 0, stdout: '', stderr: '' } },
+]
+
+/** INIT_ANSWERS with Install answered to the security plugins question (decision #39). */
+const INSTALL_ANSWERS: Readonly<Record<string, string>> = {
+  ...INIT_ANSWERS,
+  'Install from claude-plugins-official': 'Install',
+}
+
+/** The start of the security plugins question when both plugins are missing (decision #39). */
+const BOTH_QUESTION_START =
+  'Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance?'
+
+/** The line before the next step when both plugins were installed (decision #39). */
+const BOTH_INSTALLED_LINE =
+  'Installed claude-security@claude-plugins-official and security-guidance@claude-plugins-official: ' +
+  'run /reload-plugins to load them in this session.'
+
+describe('security plugin installs (decision #39)', () => {
+  test('the plugin keys, their order and the review skill the Security role gets are fixed', () => {
+    expect([CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN]).toEqual(SECURITY_KEYS)
+    expect(SECURITY_PLUGINS).toEqual(SECURITY_KEYS)
+    expect(Object.isFrozen(SECURITY_PLUGINS)).toBe(true)
+    expect(CLAUDE_SECURITY_SKILL).toBe('claude-security:claude-security')
+  })
+
+  test('the question start, its two answers, its cancel reason and the install timeout are fixed', () => {
+    expect(SECURITY_INSTALL_PREFIX).toBe('Install from claude-plugins-official after you confirm the plan:')
+    expect(SECURITY_INSTALL_OPTIONS).toEqual(['Install', 'Not now'])
+    expect(Object.isFrozen(SECURITY_INSTALL_OPTIONS)).toBe(true)
+    expect(SECURITY_INSTALL_DISMISSED_REASON).toBe('The security plugins question was dismissed or not answered.')
+    expect(PLUGIN_RUN_TIMEOUT_MS).toBe(180_000)
+  })
+
+  test('only a team with a role standing for Security misses a plugin; only the exact key counts (T-03-46)', () => {
+    const team = [templateRole('pm'), templateRole('security')]
+    const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security' })
+    expect(missingSecurityPlugins([templateRole('pm'), templateRole('tl')], emptySetupScan())).toEqual([])
+    expect(missingSecurityPlugins(team, emptySetupScan())).toEqual(SECURITY_KEYS)
+    expect(missingSecurityPlugins([appsec], emptySetupScan())).toEqual(SECURITY_KEYS)
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: [SECURITY_KEY] }))).toEqual([GUIDANCE_KEY])
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: [GUIDANCE_KEY] }))).toEqual([SECURITY_KEY])
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual([])
+    // A lookalike key of another marketplace is not the plugin cadre installs (T-03-46).
+    const lookalikes = ['claude-security@other-market', 'security-guidance@other-market', 'claude-security']
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: lookalikes }))).toEqual(SECURITY_KEYS)
+  })
+
+  test('the question names each missing plugin, then gives one note for each', () => {
+    const start = 'Install from claude-plugins-official after you confirm the plan:'
+    const securityNote =
+      'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and ' +
+      'writes CLAUDE-SECURITY-<time>/ report folders into the repo.'
+    const guidanceNote = 'security-guidance adds hooks that warn about risky edits.'
+    expect(securityInstallQuestion(SECURITY_KEYS)).toBe(
+      `${start} claude-security and security-guidance? ${securityNote} ${guidanceNote}`,
+    )
+    expect(securityInstallQuestion([SECURITY_KEY])).toBe(`${start} claude-security? ${securityNote}`)
+    expect(securityInstallQuestion([GUIDANCE_KEY])).toBe(`${start} security-guidance? ${guidanceNote}`)
+  })
+
+  test('the step asks nothing with no plugin missing; Install gives the keys, Not now none, in any case', async () => {
+    const quiet = memIo(memWorld({}), [])
+    expect(await securityInstallStep(quiet.io, [])).toEqual({ kind: 'accepted', value: [] })
+    expect(quiet.asked).toEqual([])
+    const cases: readonly (readonly [string, readonly string[]])[] = [
+      ['Install', SECURITY_KEYS],
+      [' install ', SECURITY_KEYS],
+      ['Not now', []],
+      ['NOT NOW', []],
+    ]
+    for (const [answer, value] of cases) {
+      const run = memIo(memWorld({}), [answer])
+      const result = await securityInstallStep(run.io, SECURITY_KEYS)
+      expect([answer, result]).toEqual([answer, { kind: 'accepted', value }])
+      expect(run.asked).toEqual([securityInstallQuestion(SECURITY_KEYS)])
+      expect(run.specs).toEqual([{ options: ['Install', 'Not now'] }])
+    }
+  })
+
+  test('a dismissal, or three answers that are neither, cancels the step with its reason (A1, D-45)', async () => {
+    for (const answers of [[], ['yes', 'later', 'Install them']]) {
+      const run = memIo(memWorld({}), answers)
+      expect(await securityInstallStep(run.io, SECURITY_KEYS)).toEqual({
+        kind: 'cancelled',
+        reason: 'The security plugins question was dismissed or not answered.',
+      })
+      expect(run.asked).toHaveLength(answers.length === 0 ? 1 : MAX_ASKS)
+      expect(run.logged).toEqual([])
+    }
+  })
+
+  test('withSecuritySkill gives the skill once to each role standing for Security, or takes it away', () => {
+    const skill = 'claude-security:claude-security'
+    const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security', skills: ['codex:rescue'] })
+    const roles = [templateRole('pm', { skills: [skill] }), templateRole('security'), appsec]
+    const before = JSON.stringify(roles)
+    const given = withSecuritySkill(roles, true)
+    expect(given.map(role => [role.id, role.skills])).toEqual([
+      ['pm', [skill]],
+      ['security', [skill]],
+      ['appsec', ['codex:rescue', skill]],
+    ])
+    expect(withSecuritySkill(given, true)).toEqual(given)
+    expect(withSecuritySkill(given, false).map(role => [role.id, role.skills])).toEqual([
+      ['pm', [skill]],
+      ['security', []],
+      ['appsec', ['codex:rescue']],
+    ])
+    expect(given[0]).toEqual(roles[0])
+    expect(JSON.stringify(roles)).toBe(before)
+  })
+
+  test('init asks it after the recommendations, before the duration; a dry run answered Install plans it', async () => {
+    const run = memIo(gitWorld(), INSTALL_ANSWERS)
+    const { io, events } = withEvents(run)
+    const reply = await runInit(io, { dryRun: true })
+    const recommendedAt = events.findIndex(event => event.startsWith('log Recommendations'))
+    const askedAt = events.findIndex(event => event.startsWith(`ask ${BOTH_QUESTION_START}`))
+    const durationAt = events.indexOf(`ask ${DURATION_QUESTION}`)
+    expect([recommendedAt >= 0, recommendedAt < askedAt, askedAt < durationAt]).toEqual([true, true, true])
+    const lines = run.logged.flatMap(text => text.split('\n'))
+    expect(lines[lines.indexOf(REVIEW_HINT) - 1]).toBe(
+      'Plugins to install after Confirm (a --dry-run installs nothing): ' +
+        'claude-security@claude-plugins-official, security-guidance@claude-plugins-official',
+    )
+    const cardAt = lines.indexOf('Scope card: Security (security)')
+    const skills = lines.slice(cardAt).find(line => line.startsWith('  skills: ')) ?? ''
+    expect([cardAt >= 0, skills.includes('claude-security:claude-security')]).toEqual([true, true])
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    // A dry run holds only the init port, which has no member that can run or write (T-03-40).
+    expect(Object.keys(run.io).filter(key => /^(run|write|spawn)$/.test(key))).toEqual([])
+  })
+
+  test('plain init answered Install installs both plugins from home after Confirm and says to reload', async () => {
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    const { io, events } = withHostEvents(host)
+    const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: io })
+    const options = { cwd: '/home/u', timeoutMs: 180_000 }
+    expect(host.calls.filter(call => call.argv[0] === 'claude')).toEqual([
+      { argv: SECURITY_INSTALL, options },
+      { argv: GUIDANCE_INSTALL, options },
+    ])
+    const lastInstallAt = events.indexOf(`run ${GUIDANCE_INSTALL.join(' ')}`)
+    const firstWriteAt = events.findIndex(event => event.startsWith('write '))
+    expect([lastInstallAt >= 0, lastInstallAt < firstWriteAt]).toEqual([true, true])
+    const role = host.writes.find(write => write.path === '/repo/.cadre/security/role.json')?.text ?? ''
+    expect(role).toContain('claude-security:claude-security')
+    expect(reply.split('\n').slice(-2)).toEqual([BOTH_INSTALLED_LINE, NEXT_STEP_NOTE])
+  })
+
+  test('the installs run after the accepted hunks and before the first write (D-120)', async () => {
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    const { io, events } = withHostEvents(host)
+    await runInit(memIo(modeWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: io })
+    const hunkAt = events.indexOf(`run ${MODE_RUN.join(' ')}`)
+    const installAt = events.indexOf(`run ${SECURITY_INSTALL.join(' ')}`)
+    const firstWriteAt = events.findIndex(event => event.startsWith('write '))
+    expect([hunkAt >= 0, hunkAt < installAt, installAt < firstWriteAt]).toEqual([true, true, true])
+  })
+
+  test('an install the host rejects or that exits non-zero is a warning with the command; apply goes on', async () => {
+    const runs: readonly HostRunRule[] = [
+      PYTHON_OK_RUN,
+      { argv: SECURITY_INSTALL, result: { exitCode: 1, stdout: '', stderr: 'denied' } },
+      { argv: GUIDANCE_INSTALL, result: null },
+    ]
+    const host = memHost(hostWorld({ runs }))
+    const reply = await runInit(memIo(gitWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
+    const lines = reply.split('\n')
+    for (const key of SECURITY_KEYS) {
+      expect(lines).toContain(`warning: could not install ${key}: run it yourself: claude plugin install ${key}`)
+    }
+    expect(reply).not.toContain('denied')
+    expect(reply).not.toContain('Installed ')
+    expect(host.writes.every(write => write.isWritten)).toBe(true)
+    expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
+    expect(lines).toContain(`Applied: wrote ${host.writes.length} files (3 executable).`)
+    expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
+  })
+
+  test('a dismissed install question cancels init with its reason, and nothing is written or run (A1)', async () => {
+    const run = memIo(gitWorld(), answersWithout('Install from claude-plugins-official'))
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(INIT_CANCELLED)
+    expect(run.asked.at(-1)?.startsWith(BOTH_QUESTION_START)).toBe(true)
+    expect(run.logged.at(-1)).toBe('The security plugins question was dismissed or not answered.')
+    expect([host.calls, host.writes]).toEqual([[], []])
+  })
+
+  test('Not now, a team without Security, or both plugins present install nothing', async () => {
+    const host = memHost(hostWorld({ runs: INSTALLS_OK }))
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    expect(run.asked.filter(question => question.startsWith(BOTH_QUESTION_START))).toHaveLength(1)
+    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    const applied = `Applied: wrote ${host.writes.length} files (3 executable).`
+    expect(reply.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+    const role = host.writes.find(write => write.path === '/repo/.cadre/security/role.json')?.text ?? ''
+    expect(role).not.toContain('claude-security')
+    const dropped = queuedIo(gitWorld(), {
+      ...INSTALL_ANSWERS,
+      'Use these roles?': ['Adjust them', 'Use these roles'],
+      'Adjust the roles': ['drop security', 'Done adjusting'],
+    })
+    const enabledPlugins = { [SECURITY_KEY]: true, [GUIDANCE_KEY]: true }
+    const present = memIo(gitWorld({ settings: { user: { enabledPlugins }, project: {}, local: {} } }), INSTALL_ANSWERS)
+    for (const quiet of [dropped, present]) {
+      const quietHost = memHost(hostWorld({ runs: INSTALLS_OK }))
+      await runInit(quiet.io, { dryRun: false, host: quietHost.io })
+      expect(quiet.asked.some(question => question.startsWith('Install from claude-plugins-official'))).toBe(false)
+      expect(quietHost.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+    }
   })
 })

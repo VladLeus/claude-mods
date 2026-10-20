@@ -443,6 +443,7 @@ export const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Which roles get': 'None',
   'Which env variables': 'None',
   '.planning/config.json:': 'Accept',
+  'Install from claude-plugins-official': 'Not now',
   'Git policy': 'Commit definitions (default)',
   'Where should the role launchers start': 'Git root of this repo',
   'Review the plan': 'Confirm',

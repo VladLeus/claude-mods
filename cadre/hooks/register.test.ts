@@ -1042,6 +1042,16 @@ describe('register with a faked host', () => {
 describe('cadre init with a faked host', () => {
   const POLICY_ASK = 'ask Git policy for .cadre/?'
 
+  /** INIT_ANSWERS with Install answered to the security plugins question (decision #39). */
+  const INSTALL_ANSWERS = { ...INIT_ANSWERS, 'Install from claude-plugins-official': 'Install' }
+
+  /** A new enough python3, and both plugin installs exiting 0; the hunk runs stay unscripted (decision #39). */
+  const INSTALL_RESULTS = {
+    'python3 --version': { exitCode: 0, stdout: 'Python 3.12.1\n' },
+    'claude plugin install claude-security@claude-plugins-official': { exitCode: 0, stdout: '' },
+    'claude plugin install security-guidance@claude-plugins-official': { exitCode: 0, stdout: '' },
+  }
+
   test('init --dry-run asks the git policy and ends with the dry-run note', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
@@ -1358,6 +1368,34 @@ describe('cadre init with a faked host', () => {
     const known = [...Object.keys(world.listings), ...world.dirs]
     const read = log.ops.filter(op => op.startsWith('fs.read ')).map(op => op.slice('fs.read '.length))
     expect(read.filter(path => known.includes(path))).toEqual([])
+  })
+
+  test('plain init answered Install runs both plugin installs from home after Confirm (#39)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ isWriteAllowed: true, answers: INSTALL_ANSWERS, runResults: INSTALL_RESULTS }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init' })
+    const installs = log.runs.flatMap((run, at) => (run[0] === 'claude' ? [{ run, cwd: log.cwds[at] }] : []))
+    expect(installs).toEqual([
+      { run: ['claude', 'plugin', 'install', 'claude-security@claude-plugins-official'], cwd: '/home/u' },
+      { run: ['claude', 'plugin', 'install', 'security-guidance@claude-plugins-official'], cwd: '/home/u' },
+    ])
+    expect(out.text.split('\n')).toContain(
+      'Installed claude-security@claude-plugins-official and security-guidance@claude-plugins-official: ' +
+        'run /reload-plugins to load them in this session.',
+    )
+    expect(out.text.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('init --dry-run answered Install asks the question but runs no process (#39, T-03-40)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ isWriteAllowed: true, answers: INSTALL_ANSWERS, runResults: INSTALL_RESULTS }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.asks.some(ask => ask.startsWith('ask Install from claude-plugins-official'))).toBe(true)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(log.ops).not.toContain('process.run')
+    expect([log.runs, log.writes]).toEqual([[], []])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 })
 

@@ -368,12 +368,13 @@ describe('shared fixtures', () => {
       'Which roles get': 'None',
       'Which env variables': 'None',
       '.planning/config.json:': 'Accept',
+      'Install from claude-plugins-official': 'Not now',
       'Git policy': 'Commit definitions (default)',
       'Where should the role launchers start': 'Git root of this repo',
       'Review the plan': 'Confirm',
       "Scan this repo's session history": 'No, skip it',
     })
-    expect(Object.keys(INIT_ANSWERS)).toHaveLength(14)
+    expect(Object.keys(INIT_ANSWERS)).toHaveLength(15)
     expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
   })
 
