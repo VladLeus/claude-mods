@@ -216,6 +216,13 @@ const PATH_FLAGS: readonly string[] = Object.freeze([
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
 
 /**
+ * What the exec line runs claude through (D-140 q1-b): `env` with the variable that makes the engine load a CLAUDE.md
+ * from each folder `--add-dir` adds, so the role's built CLAUDE.md and its private one load, set for claude alone and
+ * not for the launcher's own commands or the probe run.
+ */
+const EXEC_CLAUDE = 'exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude'
+
+/**
  * The flag words a launcher that starts in a sub-folder (here or dir) adds after the scope flags: the git root it
  * found, as an added directory, so the role reads its inbox, other roles' inboxes and the root `.planning/` without a
  * prompt (D-127). It is not a scope flag: only the launcher knows the root it resolved.
@@ -382,13 +389,14 @@ function probeVerdictLines(id: string): readonly string[] {
  * its output and leaves its stderr on the terminal, so a run that fails shows why (#72 A1), refuses when that line does
  * not hold exactly one `tools`, `skills` and `slash_commands` list, when a list holds a name its sed read cannot take
  * whole, or when the expectations file gave no rule, and prints a verdict per expectation from that line alone
- * (probeVerdictLines), exit 1 when a check is violated. Without it, it execs claude with the flags of the compiled
- * scope, for a `here` or `dir` start the git root it found as an added directory (ROOT_DIR_FLAG, D-127, which the probe
- * run adds too; a git-root start adds nothing), then `--` and the kickoff: each flag shell-quoted, and the value after
- * a path flag (PATH_FLAGS) and the kickoff read anchored at the repo root, since in `here` and `dir` the session starts
- * outside the git top level. The flags come only from compileScope and the title never reaches the script; the role id,
- * a slug, is quoted in the paths and cleaned in the comments and the messages, each message one quoted word, so a
- * hostile id cannot add a command either.
+ * (probeVerdictLines), exit 1 when a check is violated. Without it, it execs claude through env with
+ * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 (EXEC_CLAUDE, D-140 q1-b), so the CLAUDE.md files of the folders the
+ * flags add load, with the flags of the compiled scope, for a `here` or `dir` start the git root it found as an added
+ * directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root start adds nothing), then `--` and the
+ * kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read anchored at the
+ * repo root, since in `here` and `dir` the session starts outside the git top level. The flags come only from
+ * compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and cleaned in the
+ * comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
  */
 export function launcherText(role: RoleSpec, scope: CompiledScope, start: LaunchStart): string {
   const id = clean(role.id)
@@ -451,7 +459,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} is missing`))}`,
     probeRun,
     ...probeVerdictLines(id),
-    `exec claude ${flags}${rootDir} -- "$(cat ${kickoff})"`,
+    `${EXEC_CLAUDE} ${flags}${rootDir} -- "$(cat ${kickoff})"`,
   ]
 
   return `${lines.join('\n')}\n`

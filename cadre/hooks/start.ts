@@ -28,6 +28,7 @@ import type {
 } from '../types'
 import {
   clean,
+  compareText,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
@@ -46,6 +47,7 @@ import { INBOX_FILE, MANIFEST_PATH, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE,
 import { expectationsFor, probeExpectationsText } from './probe'
 import { reportText } from './render'
 import { parseManifest, readRepoFile } from './scan'
+import { PRIVATE_INSTRUCTIONS_LINK } from './scope'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeJsonPathOf,
@@ -356,6 +358,18 @@ function mkdirFolders(runtime: string, links: readonly OverlayLink[]): string[] 
 }
 
 /**
+ * The making of the folder the plan's private instructions link points at (D-140 q1-b): one mkdir when the plan links
+ * `.runtime/private-instructions`, so the folder the launcher adds there is always there, empty when the role has no
+ * private part; none when the plan has no such link. Its target comes from the role memory folder, never from disk.
+ */
+function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
+  const link = input.plan.links.find(candidate => candidate.path === `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`)
+  if (link === undefined) return []
+
+  return [mkdirStep(link.target)]
+}
+
+/**
  * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, and an
  * empty inbox only when there is none, so a note another role left there is never lost (D-114, Pitfall 3). An inbox
  * that is a link is removed first (linkRemovals), so it counts as none.
@@ -390,12 +404,13 @@ function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
 /**
  * The steps that render a role's `.runtime` (D-102), in order. An existing stamp is removed first, so a render that
  * stops part way never leaves the old stamp beside new files; then the DONE.md an earlier run left
- * (doneMarkerRemovals). Then the links of linkRemovals are removed; then
- * `.runtime`, its overlay and each link's folder are made, sorted and once each; then each link is made, except at a
- * path that holds a real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside
- * a folder or replace a file); then the files of fileWrites are written, and the stamp last. A render that stops at any
- * step before the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that refusalOf refuses
- * has no step at all.
+ * (doneMarkerRemovals). Then the links of linkRemovals are removed, an earlier private instructions link included;
+ * then `.runtime`, its overlay and each link's folder are made, sorted and once each, and the folder the private
+ * instructions link points at (privateFolderSteps, D-140 q1-b); then each link is made, except at a path that holds a
+ * real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or
+ * replace a file); then the files of fileWrites are written, and the stamp last. A render that stops at any step before
+ * the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that refusalOf refuses has no step at
+ * all.
  */
 export function renderSteps(input: RenderInput): RenderResult {
   const runtime = runtimeFolder(input.root, input.id)
@@ -409,6 +424,7 @@ export function renderSteps(input: RenderInput): RenderResult {
     ...doneMarkerRemovals(input, runtime),
     ...linkRemovals(input, runtime).map(removeStep),
     ...mkdirFolders(runtime, input.plan.links).map(mkdirStep),
+    ...privateFolderSteps(input, runtime),
     ...links.map(linkStep),
     ...fileWrites(input, runtime),
     writeStep(stamp, input.stampText),
@@ -1229,24 +1245,40 @@ function startReplyText(
 }
 
 /**
+ * The role's LaunchPlan with the link `.cadre/<id>/.runtime/private-instructions` to its private instructions folder,
+ * `<role memory folder>/instructions` (D-140 q1-b, q2-a), added in path order: the launcher adds that link with
+ * `--add-dir`, so every render makes it, and the folder behind it (privateFolderSteps), for a role with no private part
+ * too. The folder lies in the user's config folder, apart from the memory files, and never in the repo.
+ */
+function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string): LaunchPlan {
+  const link: OverlayLink = {
+    path: `${runtimeFolder(user.root, id)}/${PRIVATE_INSTRUCTIONS_LINK}`,
+    target: `${roleMemoryDir(user, id)}/instructions`,
+  }
+
+  return { ...plan, links: [...plan.links, link].sort((a, b) => compareText(a.path, b.path)) }
+}
+
+/**
  * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with one exact line, in this order: the
  * repo refusals of repoGuard (in the start wording); the team refusals of readTeam; the launcher refusals of
  * launcherRead (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
  * before anything else is run; the refusals of gatherLaunchUser; and a render refusal. Otherwise it compiles the team
- * (compileTeam), gathers the launching user and builds the role's LaunchPlan, and renders the role's `.runtime/`: the
- * settings, the MCP config (runtimeMcpText), the probe expectations, the links, the inbox when there is none, and the
- * stamp last. renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was
- * built for, and every refusal comes before anything is written. Each step then runs through the host in order, and
- * the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to
- * start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them (scanWarnings,
- * #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the LaunchPlan, the MCP
- * config and the render; and the launcher command (startReplyText). Once the render has run every step, it copies the
- * command through the host with clipboardRun, and the line below the command is COPIED_LINE when pbcopy exits 0, else
- * NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies nothing. With `--terminal`
- * (`options.terminal` other than `none`), after the copy it asks `/usr/bin/uname -s`, TMUX and TERM_PROGRAM, and opens
- * the command where terminalPlan says, or prints its refusal: the line of terminalLine follows the copy line, and the
- * command is printed and copied in every case (D-109, D-126, D-132). It never runs the launcher, and never starts a
- * background session (D-108).
+ * (compileTeam), gathers the launching user and builds the role's LaunchPlan with its private instructions link
+ * (withPrivateInstructions, D-140 q1-b), and renders the role's `.runtime/`: the settings, the MCP config
+ * (runtimeMcpText), the probe expectations, the links and the private instructions folder, the inbox when there is
+ * none, and the stamp last. renderPaths names what to stat and list, renderSteps plans the steps from the root the
+ * LaunchPlan was built for, and every refusal comes before anything is written. Each step then runs through the host
+ * in order, and the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher
+ * refuses to start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them
+ * (scanWarnings, #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the
+ * LaunchPlan, the MCP config and the render; and the launcher command (startReplyText). Once the render has run every
+ * step, it copies the command through the host with clipboardRun, and the line below the command is COPIED_LINE when
+ * pbcopy exits 0, else NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies
+ * nothing. With `--terminal` (`options.terminal` other than `none`), after the copy it asks `/usr/bin/uname -s`, TMUX
+ * and TERM_PROGRAM, and opens the command where terminalPlan says, or prints its refusal: the line of terminalLine
+ * follows the copy line, and the command is printed and copied in every case (D-109, D-126, D-132). It never runs the
+ * launcher, and never starts a background session (D-108).
  */
 export async function runStart(
   io: InitIo,
@@ -1277,7 +1309,7 @@ export async function runStart(
   })
   if (launch.kind === 'refuse') return launch.text
   const { user } = launch
-  const plan = launchPlan(role, scope, user)
+  const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
   const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
   const mcp = runtimeMcpText(role, claudeJson, [locations.root, locations.givenRoot], state.readUserMcp)
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))

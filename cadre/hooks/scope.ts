@@ -357,10 +357,19 @@ function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay']
 }
 
 /**
+ * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder
+ * (D-140 q1-b, q2-a), which the launcher adds with `--add-dir` and /cadre start makes on every render.
+ */
+export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
+
+/**
  * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token
- * (D-50, D-78, S1, S4). The paths are repo-relative: the launcher starts in the git top level. The MCP route is a
- * parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff skills.
- * The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
+ * (D-50, D-78, S1, S4). The paths are repo-relative: the launcher starts in the git top level. Beside the overlay, the
+ * role folder and the private instructions link in `.runtime` are added directories, so the engine loads the role's
+ * built `.cadre/<id>/CLAUDE.md` and its private CLAUDE.md as CLAUDE.md files when the exec line sets
+ * CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD (D-140 q1-b); ROLE.md stays the appended system prompt. The MCP route
+ * is a parameter, and the flag that turns off slash commands is never added, because it would turn off the handoff
+ * skills. The role id is a validated slug (validateRoleId), so it is safe in a path and in a token.
  */
 function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
   const runtime = `.cadre/${role.id}/.runtime`
@@ -381,6 +390,10 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
     role.permissionMode,
     '--add-dir',
     `${runtime}/overlay`,
+    '--add-dir',
+    `.cadre/${role.id}`,
+    '--add-dir',
+    `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`,
     '--mcp-config',
     `${runtime}/mcp.json`,
   ]
