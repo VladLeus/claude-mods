@@ -4,6 +4,7 @@ import type {
   CadreState,
   Choice,
   CompiledScope,
+  Facts,
   FrameworkId,
   GitPolicy,
   KickoffContext,
@@ -296,7 +297,6 @@ const REPO: RepoScan = {
   languages: ['TypeScript'],
   codeDirs: ['src'],
   hasSource: true,
-  isTruncated: true,
   cappedFolders: ['src/generated'],
   isOverallCapped: false,
   cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
@@ -317,7 +317,6 @@ const RAILS_REPO: RepoScan = {
   languages: ['JavaScript', 'Ruby'],
   codeDirs: ['app', 'spec'],
   hasSource: true,
-  isTruncated: true,
   cappedFolders: ['app/models', 'app/views'],
   isOverallCapped: false,
   cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
@@ -698,6 +697,34 @@ function historyWorld(): MemWorld {
   })
 }
 
+/** Facts with GSD (.planning/) and superpowers (docs/superpowers/) both in use, so the framework question is asked. */
+const BOTH_IN_USE: Facts = {
+  ...EMPTY_FACTS,
+  repoEntries: [
+    { name: '.planning', kind: 'dir', isLink: false },
+    { name: 'docs', kind: 'dir', isLink: false },
+  ],
+  docsEntries: [{ name: 'superpowers', kind: 'dir', isLink: false }],
+}
+
+/** The model's roles for a typed description: BE (be) and Docs (docs), so the roles question is asked about them. */
+const DESCRIBED_REPLY =
+  '{"roles":[{"id":"be","title":"BE","purpose":"API","basedOn":"be"},' +
+  '{"id":"docs","title":"Docs","purpose":"docs","basedOn":null}]}'
+
+/** A line of each init text that is not exported, so not in TEXTS: the env pane heading and each refusal's accepts. */
+const PRIVATE_FRAGMENTS: readonly string[] = [
+  'Env variable names in your settings',
+  "isn't one of: definitions, all, ignore",
+  'a description of your roles',
+  ' - a role runs one framework',
+  'a duration such as 4h',
+  'or role ids from: ',
+  'or names from the list, typed exactly',
+  '(or type git root, in here or other)',
+  'or duration, model, assignments, memory, env, hunks',
+]
+
 /**
  * Every text a run put before the person: each question asked, each option and chip of its dialog, each logged line,
  * each side-pane title and line, and the reply.
@@ -755,5 +782,43 @@ describe('user text names no internal phase (G-02-3b)', () => {
     expect(run.shown.map(block => block.key)).toEqual(['scan', 'history', 'roles', 'recommendations', 'review'])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
+  })
+
+  // The env pane heading and the refusal accepts are private to init.ts, so not in TEXTS: only a run reaches them.
+  test('a dry run with one unreadable answer per kind of question names no phase in its private texts', async () => {
+    const world = gitWorld({
+      facts: { facts: BOTH_IN_USE, gsdUserDir: null },
+      settings: { user: { env: { API_KEY: 'x' } }, project: {}, local: {} },
+      tools: [{ name: 'mcp__sentry__issues', description: 'Sentry issues', mcp: true }],
+      replies: [DESCRIBED_REPLY],
+    })
+    const answers = {
+      ...INIT_ANSWERS,
+      'Use these roles?': 'Describe my own structure',
+      [withContext(ROLES_QUESTION, 'Proposed: BE (be)')]: 'Use these roles',
+      'Describe your role structure': ' ',
+      "An empty answer isn't one of": 'we have a BE and a docs writer',
+      'Framework for': 'zz-framework',
+      "'zz-framework' isn't one of": 'GSD',
+      'Autopilot duration': 'zz-duration',
+      "'zz-duration' isn't one of": '4h',
+      'Which roles get': 'zz-assign',
+      "'zz-assign' isn't one of": 'None',
+      'Which env variables': 'zz-env',
+      "'zz-env' isn't one of": 'None',
+      'Git policy': 'zz-git',
+      "'zz-git' isn't one of": 'Commit definitions (default)',
+      'Where should the role launchers start': 'zz-launch',
+      "'zz-launch' isn't one of": 'Git root of this repo',
+      'Review the plan': 'zz-review',
+      "'zz-review' isn't one of": 'Confirm',
+    }
+    const run = memIo(world, answers)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(run.shown.map(block => block.key)).toContain('env')
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
+    const lines = runTexts(run, reply).flatMap(text => text.split('\n'))
+    expect(PRIVATE_FRAGMENTS.filter(fragment => !lines.some(line => line.includes(fragment)))).toEqual([])
   })
 })
