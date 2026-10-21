@@ -8,9 +8,11 @@ import {
   autopilotRunState,
   autopilotStatusPath,
   findGitTop,
+  gemfileGems,
   gitRootRefusal,
   isSafeRelativePath,
   listingState,
+  MANIFEST_FILES,
   MARKER_ROWS,
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
@@ -893,6 +895,176 @@ describe('scan tables', () => {
       cs: 'C#',
     })
     expect(Object.isFrozen(SOURCE_EXTENSIONS)).toBe(true)
+  })
+})
+
+/**
+ * A trainual-like Rails repo (02-UAT test 1): a root Gemfile with gem 'rails', a package.json with react, an .rspec,
+ * and Ruby code under app/.
+ */
+const RAILS_REPO: Partial<MemWorld> = {
+  dirs: {
+    '/repo': [entry('.rspec'), entry('Gemfile'), entry('app', 'dir'), entry('package.json')],
+    '/repo/app': [entry('models', 'dir')],
+    '/repo/app/models': [entry('user.rb')],
+  },
+  files: {
+    '/repo/Gemfile': ["source 'https://rubygems.org'", '', "gem 'rails', '8.1.3.1'", "gem 'pg'"].join('\n'),
+    '/repo/package.json': packageOf({ react: '^18.0.0' }),
+  },
+}
+
+describe('root manifests (G-02-1c)', () => {
+  test('MANIFEST_FILES names the one root file each manifest kind is read from, and is frozen (D-137)', () => {
+    expect(MANIFEST_FILES).toEqual({
+      gemfile: 'Gemfile',
+      pyproject: 'pyproject.toml',
+      requirements: 'requirements.txt',
+      gomod: 'go.mod',
+      cargo: 'Cargo.toml',
+      composer: 'composer.json',
+    })
+    expect(Object.isFrozen(MANIFEST_FILES)).toBe(true)
+  })
+
+  test('gemfileGems gives the name of a gem line in single or double quotes, with or without a version', () => {
+    expect(gemfileGems("gem 'rails', '~> 7.1'")).toEqual(['rails'])
+    expect(gemfileGems('gem "rails"')).toEqual(['rails'])
+    expect(gemfileGems("gem  'rails'\r")).toEqual(['rails'])
+  })
+
+  test('gemfileGems reads an indented gem line inside a group block', () => {
+    const text = ["source 'https://rubygems.org'", 'group :development, :test do', "  gem 'rails'", 'end'].join('\n')
+
+    expect(gemfileGems(text)).toEqual(['rails'])
+  })
+
+  test('gemfileGems skips a commented gem line and every line that is not a gem line', () => {
+    expect(gemfileGems("# gem 'rails'")).toEqual([])
+    expect(gemfileGems("  # gem 'rails'")).toEqual([])
+    const others = ["source 'https://rubygems.org'", "ruby '3.3.0'", 'gemspec', "gems 'rails'", 'gem rails']
+    expect(gemfileGems([...others, "gem 'a b'"].join('\n'))).toEqual([])
+  })
+
+  test('gemfileGems gives the names in file order, each once, and needs the same quote on both sides', () => {
+    const text = ["gem 'pg'", 'gem "rails"', "gem 'pg', '1.5'", "gem 'selenium-webdriver'", `gem 'mixed"`].join('\n')
+
+    expect(gemfileGems(text)).toEqual(['pg', 'rails', 'selenium-webdriver'])
+  })
+
+  test('the Gemfile rows find Rails, Sinatra and Hanami as the backend, each labelled by its gem', () => {
+    const rows = MARKER_ROWS.filter(row => row.kind === 'be' && 'manifest' in row.match)
+
+    expect(rows.map(row => [row.label, row.match])).toEqual([
+      ['rails', { manifest: 'gemfile', name: 'rails' }],
+      ['sinatra', { manifest: 'gemfile', name: 'sinatra' }],
+      ['hanami', { manifest: 'gemfile', name: 'hanami' }],
+    ])
+  })
+
+  test("a trainual-like repo, gem 'rails' in the root Gemfile beside react, scans as the backend rails", async () => {
+    const scan = await scanOf(RAILS_REPO)
+
+    expect(scan.findings).toEqual([
+      { kind: 'be', label: 'rails', evidence: 'Gemfile' },
+      { kind: 'fe', label: 'react', evidence: 'package.json' },
+      { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
+      { kind: 'lang', label: 'Ruby (Gemfile)', evidence: 'Gemfile' },
+      { kind: 'test', label: 'RSpec config', evidence: '.rspec' },
+    ])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('Sinatra and Hanami in the root Gemfile are backends too; a gem no row names adds nothing', async () => {
+    const scan = await scanOf({
+      dirs: { '/repo': [entry('Gemfile')] },
+      files: { '/repo/Gemfile': ["gem 'sinatra'", 'gem "hanami", "~> 2.1"', "gem 'puma'"].join('\n') },
+    })
+
+    expect(scan.findings).toEqual([
+      { kind: 'be', label: 'hanami', evidence: 'Gemfile' },
+      { kind: 'be', label: 'sinatra', evidence: 'Gemfile' },
+      { kind: 'lang', label: 'Ruby (Gemfile)', evidence: 'Gemfile' },
+    ])
+  })
+
+  test('a commented gem rails gives no backend', async () => {
+    const scan = await scanOf({ dirs: { '/repo': [entry('Gemfile')] }, files: { '/repo/Gemfile': "# gem 'rails'" } })
+
+    expect(findingOf(scan, 'be', 'rails')).toBeUndefined()
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('the root Gemfile is read after the package.json files, and a Gemfile one folder down never', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: {
+          '/repo': [entry('Gemfile'), entry('api', 'dir'), entry('package.json')],
+          '/repo/api': [entry('Gemfile'), entry('package.json')],
+        },
+        files: {
+          '/repo/Gemfile': "gem 'rails'",
+          '/repo/api/Gemfile': "gem 'sinatra'",
+          '/repo/api/package.json': packageOf({}),
+          '/repo/package.json': packageOf({}),
+        },
+      }),
+      [],
+    )
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(fileReads(run.reads)).toEqual(['/repo/package.json', '/repo/api/package.json', '/repo/Gemfile'])
+    expect(findingOf(scan, 'be', 'rails')).toEqual({ kind: 'be', label: 'rails', evidence: 'Gemfile' })
+    expect(findingOf(scan, 'be', 'sinatra')).toBeUndefined()
+  })
+
+  test('a folder named Gemfile is not read as a manifest', async () => {
+    const run = memIo(memWorld({ dirs: { '/repo': [entry('Gemfile', 'dir')], '/repo/Gemfile': [] } }), [])
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(fileReads(run.reads)).toEqual([])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a Gemfile that links out of the repo is not read and gives a could not read warning (T-02-57)', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: { '/repo': [link('Gemfile')] },
+        files: { '/repo/Gemfile': "gem 'rails'" },
+        realPaths: { '/repo/Gemfile': '/elsewhere/Gemfile' },
+      }),
+      [],
+    )
+    const scan = await scanRepo(run.io, '/repo')
+
+    expect(fileReads(run.reads)).toEqual([])
+    expect(scan.warnings).toEqual(['could not read Gemfile (treated as unknown)'])
+    expect(scan.findings).toEqual([])
+  })
+
+  test('a Gemfile over the read cap, or one that cannot be read, gives the could not read warning', async () => {
+    const huge = await scanOf({
+      dirs: { '/repo': [entry('Gemfile')] },
+      files: { '/repo/Gemfile': `gem 'rails'\n${'#'.repeat(MAX_READ_BYTES)}` },
+    })
+    const unreadable = await scanOf({ dirs: { '/repo': [entry('Gemfile')] }, unknownPaths: ['/repo/Gemfile'] })
+
+    expect(huge.warnings).toEqual(['could not read Gemfile (treated as unknown)'])
+    expect(findingOf(huge, 'be', 'rails')).toBeUndefined()
+    expect(unreadable.warnings).toEqual(['could not read Gemfile (treated as unknown)'])
+  })
+
+  test('only the names of gems a row names are kept: no version, source or other Gemfile text (T-02-57)', async () => {
+    const text = [
+      `source 'https://${SECRET_FIXTURES[0]}@gems.example'`,
+      `gem 'rails', '${SECRET_FIXTURES[1]}'`,
+      `gem '${SECRET_FIXTURES[3]}'`,
+      `gem 'private', git: 'https://${SECRET_FIXTURES[2]}@git.example/private.git'`,
+    ].join('\n')
+    const scan = await scanOf({ dirs: { '/repo': [entry('Gemfile')] }, files: { '/repo/Gemfile': text } })
+
+    expect(findingOf(scan, 'be', 'rails')).toEqual({ kind: 'be', label: 'rails', evidence: 'Gemfile' })
+    expect(leaks(JSON.stringify(scan), SECRET_FIXTURES)).toEqual([])
   })
 })
 

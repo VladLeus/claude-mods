@@ -530,6 +530,26 @@ describe('scanSummaryLines', () => {
     expect(lines[2]).toBe('  tests: JS/TS test files, vitest; E2E: Playwright config')
   })
 
+  test("a repo with gem 'rails' in its root Gemfile shows backend: rails and keeps BE (G-02-1c)", async () => {
+    const world = memWorld({
+      dirs: {
+        '/repo': [entry('.rspec'), entry('Gemfile'), entry('app', 'dir'), entry('package.json')],
+        '/repo/app': [entry('models', 'dir')],
+        '/repo/app/models': [entry('user.rb')],
+      },
+      files: {
+        '/repo/Gemfile': "source 'https://rubygems.org'\n\ngem 'rails', '8.1.3.1'\n",
+        '/repo/package.json': JSON.stringify({ dependencies: { react: '^18.0.0' } }),
+      },
+    })
+    const repo = await scanRepo(memIo(world, []).io, '/repo')
+    const proposal = proposeRoles(repo)
+
+    expect(scanSummaryLines(repo, emptySetupScan())[1]).toBe('  stack: Ruby; frontend: react; backend: rails')
+    expect(proposal.roles.map(role => role.id)).toContain('be')
+    expect(proposal.changes.filter(change => change.roleId === 'be')).toEqual([])
+  })
+
   test('an existing .cadre/ is shown with its state and the state of its manifest', () => {
     const cadre = (dir: 'present' | 'unknown', manifestState: 'present' | 'absent' | 'unknown'): RepoScan['cadre'] => ({
       dir,
