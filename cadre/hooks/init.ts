@@ -922,7 +922,8 @@ export type AdjustOutcome =
  * question; `Show the roles` shows the roles as they are now in the side pane. A dismissed dialog cancels with
  * ADJUST_DISMISSED_REASON. After MAX_ADJUST_ROUNDS answers it prints ADJUST_ROUNDS_NOTE and gives the roles adjusted
  * so far, so the roles question asks about them again: a cap is never an acceptance (A1). The roles it is given are
- * never changed.
+ * never changed. It keeps its own loop, not askChoice: it runs MAX_ADJUST_ROUNDS rounds, a refused change does not end
+ * it, and a taken change asks again with the new roles.
  */
 export async function adjustLoop(
   io: InitIo,
@@ -1403,23 +1404,18 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
 
 /**
  * Asks one model and effort question at most MAX_ASKS times (D-52, A4, D-136), with MODEL_EFFORT_CONTEXT on the line
- * after the question: a dismissal gives `dismissed` at once and an answer parseModelEffort reads is the choice; any
- * other answer puts modelEffortRefusal, cleaned as a report cell, on top of the next ask. After MAX_ASKS refused
- * answers it gives `exhausted`, so a cap is never a choice (A1).
+ * after the question: askChoice with modelEffortRefusal, cleaned as a report cell, as its refusal. A dismissal gives
+ * `dismissed` at once and an answer parseModelEffort reads is the choice; after MAX_ASKS refused answers it gives
+ * `exhausted`, so a cap is never a choice (A1).
  */
 async function askModelEffort(io: InitIo, question: string): Promise<AskResult<Pick<RoleSpec, 'model' | 'effort'>>> {
-  const spec = { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model }
-  const asked = withContext(question, MODEL_EFFORT_CONTEXT)
-  let refusal: string | null = null
-  for (let round = 0; round < MAX_ASKS; round += 1) {
-    const answer = await askOnce(io, askedText(asked, refusal), spec)
-    if (answer === null) return { kind: 'dismissed' }
-    const value = parseModelEffort(answer)
-    if (value !== null) return { kind: 'answered', value }
-    refusal = reportText(modelEffortRefusal(answer))
-  }
-
-  return { kind: 'exhausted' }
+  return askChoice(io, {
+    question: withContext(question, MODEL_EFFORT_CONTEXT),
+    spec: { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model },
+    parse: parseModelEffort,
+    accepts: quotedLabels(MODEL_EFFORT_OPTIONS),
+    refuse: answer => reportText(modelEffortRefusal(answer)),
+  })
 }
 
 /**
@@ -1878,7 +1874,8 @@ async function launchDirProblem(io: InitIo, root: string, path: string): Promise
  * The folder question (A2), with LAUNCH_DIR_CONTEXT on its second line (D-136), asked at most MAX_ASKS times: `Cancel
  * init` or a dismissal cancels. An answer is trimmed and loses one trailing `/`; one that launchDirProblem refuses
  * puts `Cannot use <typed>: <problem>.`, cleaned as a report cell, on top of the next ask, and after MAX_ASKS refused
- * answers nothing is chosen (LAUNCH_DIR_ROUNDS_REASON).
+ * answers nothing is chosen (LAUNCH_DIR_ROUNDS_REASON). It keeps its own loop, not askChoice: its check is
+ * asynchronous (isRepoFolder) and its refusal names the problem that check found.
  */
 async function launchDirStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
   const spec = { options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir }

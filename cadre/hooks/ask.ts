@@ -80,13 +80,18 @@ export type AskResult<T> =
 
 /**
  * One question as askChoice asks it (D-136): its text and dialog spec, the parser that reads an answer (null when it
- * reads none), and the answers it takes in words, which the refusal of an answer it cannot read lists.
+ * reads none), and the answers it takes in words, which the default refusal lists.
  */
 export type ChoiceAsk<T> = {
   readonly question: string
   readonly spec: AskSpec
   readonly parse: (answer: string) => T | null
   readonly accepts: string
+  /**
+   * The first line an answer the parser does not take puts on top of the next ask; refusalLine(answer, accepts) when
+   * absent (D-136).
+   */
+  readonly refuse?: (answer: string) => string
 }
 
 /** The most code points of a typed answer a refusal echoes, so the answer cannot push the rest out (T-02-54). */
@@ -126,8 +131,9 @@ export function withContext(question: string, context: string): string {
 /**
  * Asks `ask.question` and gives what `ask.parse` makes of the answer (D-45, D-136). An answer the parser does not take
  * is asked again with its refusalLine on top of the question, up to MAX_ASKS asks in all; after MAX_ASKS such answers
- * it gives `exhausted` and asks no more. A dismissed dialog gives `dismissed` at once and is not asked again. A
- * dismissal, an empty answer and an unknown answer are never taken as the person's choice (A1).
+ * it gives `exhausted` and asks no more. A question with its own `refuse` puts that text on top instead. A dismissed
+ * dialog gives `dismissed` at once and is not asked again. A dismissal, an empty answer and an unknown answer are never
+ * taken as the person's choice (A1).
  */
 export async function askChoice<T>(io: InitIo, ask: ChoiceAsk<T>): Promise<AskResult<T>> {
   let refusal: string | null = null
@@ -136,7 +142,7 @@ export async function askChoice<T>(io: InitIo, ask: ChoiceAsk<T>): Promise<AskRe
     if (answer === null) return { kind: 'dismissed' }
     const value = ask.parse(answer)
     if (value !== null) return { kind: 'answered', value }
-    refusal = refusalLine(answer, ask.accepts)
+    refusal = ask.refuse === undefined ? refusalLine(answer, ask.accepts) : ask.refuse(answer)
   }
 
   return { kind: 'exhausted' }
