@@ -822,7 +822,7 @@ describe('init pane (G-02-1)', () => {
     await runInit(run.io, { dryRun: true })
     const lines = run.shown[0]?.lines ?? []
     expect(lines).toContain('warning: a linkwarning: forged')
-    expect(lines.filter(line => /[\n\u0007‮]/u.test(line))).toEqual([])
+    expect(lines.filter(line => /[\n\u0007\u202E]/u.test(line))).toEqual([])
   })
 })
 
