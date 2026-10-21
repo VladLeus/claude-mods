@@ -17,6 +17,7 @@ import {
   parseContentConsent,
   parseRecommendation,
   parseTopics,
+  readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
   splitSections,
@@ -27,7 +28,9 @@ import {
   TOPICS_SYSTEM,
   topicsPrompt,
 } from './instructions'
-import { BIDI_OVERRIDE, emptySetupScan, templateRole } from './testkit'
+import type { InstructionSources } from './instructions'
+import { BIDI_OVERRIDE, emptySetupScan, memIo, memWorld, templateRole } from './testkit'
+import type { MemWorld } from './testkit'
 
 /** The global CLAUDE.md of the cases: a Security section and a Git section, as the plan's dry run has it. */
 const GLOBAL_TEXT = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
@@ -518,5 +521,232 @@ describe('instruction questions (G-02-1f)', () => {
     ])
     expect(items[0]?.context).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security']))
     expect(topicItems(SCAN, TOPICS, new Map()).map(item => item.recommended)).toEqual([[], []])
+  })
+})
+
+/** The config folder of the fixture user, where the global CLAUDE.md lives. */
+const CONFIG = '/home/u/.claude'
+
+/** Where the reader reads in the fixtures: the repo /repo, the home /home/u, no CLAUDE_CONFIG_DIR, and this chain. */
+function sourcesOf(chain: readonly string[] = []): InstructionSources {
+  return { root: '/repo', home: '/home/u', configDir: null, chain }
+}
+
+/** A world of the fixture user with these files; `over` changes the other fields it names. */
+function filesWorld(files: Readonly<Record<string, string>>, over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({ files, ...over })
+}
+
+/** The file, heading and source of each part a read gave, in read order. */
+function placesOf(scan: InstructionScan): (readonly [string, string, string])[] {
+  return scan.parts.map(found => [found.file, found.heading, found.source])
+}
+
+/** A text of `kib` KiB of the letter x under one heading. */
+function kibText(heading: string, kib: number): string {
+  return `# ${heading}\n${'x'.repeat(kib * 1024 - heading.length - 3)}`
+}
+
+describe('readInstructionFiles', () => {
+  test('the global file, its imports depth first, then the chain outermost first, then the chain imports', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@./b.md\n@./a.md\n',
+        [`${CONFIG}/a.md`]: '# A\n@./c.md\n',
+        [`${CONFIG}/b.md`]: '# B\n',
+        [`${CONFIG}/c.md`]: '# C\n',
+        '/repo/CLAUDE.md': '# R\nSee @docs/rules.md for the rules.\n',
+        '/repo/.claude/CLAUDE.md': '# Local\n',
+        '/repo/docs/rules.md': '# Rules\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md', '<repo>/.claude/CLAUDE.md']))
+    expect(run.reads).toEqual([
+      `${CONFIG}/CLAUDE.md`,
+      `${CONFIG}/a.md`,
+      `${CONFIG}/c.md`,
+      `${CONFIG}/b.md`,
+      '/repo/CLAUDE.md',
+      '/repo/.claude/CLAUDE.md',
+      '/repo/docs/rules.md',
+    ])
+    expect(placesOf(scan)).toEqual([
+      ['~/.claude/CLAUDE.md', 'G', 'global'],
+      ['~/.claude/a.md', 'A', 'global'],
+      ['~/.claude/c.md', 'C', 'global'],
+      ['~/.claude/b.md', 'B', 'global'],
+      ['CLAUDE.md', 'R', 'repo'],
+      ['.claude/CLAUDE.md', 'Local', 'repo'],
+      ['docs/rules.md', 'Rules', 'repo'],
+    ])
+    expect(scan.parts.map(found => found.id)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'])
+    expect(scan.files).toEqual(placesOf(scan).map(([file]) => file))
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a path in the config folder is global and a path in the repo is a repo part, whoever imports it', async () => {
+    const files = { [`${CONFIG}/CLAUDE.md`]: '# G\n@/repo/docs/x.md\n', '/repo/docs/x.md': '# X\n' }
+    const run = memIo(filesWorld(files), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect(placesOf(scan)).toEqual([
+      ['~/.claude/CLAUDE.md', 'G', 'global'],
+      ['docs/x.md', 'X', 'repo'],
+    ])
+  })
+
+  test('imports are followed at most 3 levels deep', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@./l1.md\n',
+        [`${CONFIG}/l1.md`]: '# L1\n@./l2.md\n',
+        [`${CONFIG}/l2.md`]: '# L2\n@./l3.md\n',
+        [`${CONFIG}/l3.md`]: '# L3\n@./l4.md\n',
+        [`${CONFIG}/l4.md`]: '# L4\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect(scan.parts.map(found => found.heading)).toEqual(['G', 'L1', 'L2', 'L3'])
+    expect(run.reads).not.toContain(`${CONFIG}/l4.md`)
+  })
+
+  test('at most 20 imported files are read for the global file, and 20 for the chain', async () => {
+    const names = Array.from({ length: 25 }, (_, at) => `i${String(at + 1).padStart(2, '0')}.md`)
+    const global = Object.fromEntries(names.map(name => [`${CONFIG}/${name}`, `# ${name}\n`]))
+    const repo = Object.fromEntries(names.map(name => [`/repo/${name}`, `# ${name}\n`]))
+    const imports = names.map(name => `@${name}`).join('\n')
+    const roots = { [`${CONFIG}/CLAUDE.md`]: `# G\n${imports}\n`, '/repo/CLAUDE.md': `# R\n${imports}\n` }
+    const run = memIo(filesWorld({ ...global, ...repo, ...roots }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts.filter(found => found.source === 'global')).toHaveLength(21)
+    expect(scan.parts.filter(found => found.source === 'repo')).toHaveLength(21)
+    expect(run.reads).not.toContain(`${CONFIG}/i21.md`)
+    expect(run.reads).not.toContain('/repo/i21.md')
+  })
+
+  test('each file is read once: a file imported twice, an import cycle, a chain file already read', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@./a.md\n@./b.md\n@/repo/CLAUDE.md\n',
+        [`${CONFIG}/a.md`]: '# A\n@./b.md\n',
+        [`${CONFIG}/b.md`]: '# B\n@./a.md\n',
+        '/repo/CLAUDE.md': '# R\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts.map(found => found.heading)).toEqual(['G', 'A', 'B', 'R'])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, `${CONFIG}/a.md`, `${CONFIG}/b.md`, '/repo/CLAUDE.md'])
+  })
+
+  test('a file over 256 KiB is not split; the read stops at 512 KiB in all and counts the files not read', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: `${kibText('G', 200)}\n@./a-big.md\n@./b-one.md\n@./c-two.md\n@./d-three.md\n`,
+        [`${CONFIG}/a-big.md`]: kibText('Big', 300),
+        [`${CONFIG}/b-one.md`]: kibText('One', 200),
+        [`${CONFIG}/c-two.md`]: kibText('Two', 200),
+        [`${CONFIG}/d-three.md`]: kibText('Three', 1),
+        '/repo/CLAUDE.md': '# R\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts.map(found => found.heading)).toEqual(['G', 'One'])
+    expect(scan.warnings).toEqual([
+      '~/.claude/a-big.md is over 256 KiB: not split',
+      'stopped reading at 512 KiB in total: 3 files not read',
+    ])
+    expect(run.reads).not.toContain(`${CONFIG}/d-three.md`)
+    expect(run.reads).not.toContain('/repo/CLAUDE.md')
+  })
+
+  test('one file left unread is counted as 1 file', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: `${kibText('G', 250)}\n@./one.md\n@./two.md\n`,
+        [`${CONFIG}/one.md`]: kibText('One', 250),
+        [`${CONFIG}/two.md`]: kibText('Two', 20),
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect(scan.warnings).toEqual(['stopped reading at 512 KiB in total: 1 file not read'])
+  })
+
+  test('a repo file that links out of the repo is refused and never read (readRepoFile)', async () => {
+    const world = filesWorld({ '/repo/CLAUDE.md': '# R\n' }, { realPaths: { '/repo/CLAUDE.md': '/home/u/secret.md' } })
+    const run = memIo(world, [])
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts).toEqual([])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`])
+    expect(scan.warnings).toEqual(['could not read CLAUDE.md (treated as unknown)'])
+  })
+
+  test('a path outside the repo and the config folder is not read: an ancestor, a global import', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@~/notes/private.md\n',
+        '/home/u/notes/private.md': '# Private\n',
+        '/home/u/work/CLAUDE.md': '# Work\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['~/work/CLAUDE.md']))
+    expect(scan.parts.map(found => found.heading)).toEqual(['G'])
+    expect(scan.warnings).toEqual([
+      '~/notes/private.md is outside the repo and your config folder: not read',
+      '~/work/CLAUDE.md is outside the repo and your config folder: not read',
+    ])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`])
+  })
+
+  test('a repo file importing ~/.claude/.credentials.json never reads it: the import stays in the repo', async () => {
+    const credentials = `${CONFIG}/.credentials.json`
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n@~/.claude/.credentials.json\n@../outside.md\n@docs/in.md\n',
+        [credentials]: '{"accessToken":"sk-FAKE-SECRET-0123456789"}',
+        '/outside.md': '# Outside\n',
+        '/repo/docs/in.md': '# In\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/repo/CLAUDE.md', '/repo/docs/in.md'])
+    expect(run.reads).not.toContain(credentials)
+    expect(scan.parts.map(found => found.heading)).toEqual(['R', 'In'])
+    expect(scan.warnings).toEqual([
+      '~/.claude/.credentials.json is imported by a repo file and is outside the repo: not read',
+      '/outside.md is imported by a repo file and is outside the repo: not read',
+    ])
+    expect(JSON.stringify(scan)).not.toContain('sk-FAKE-SECRET')
+  })
+
+  test('a file the port cannot read gets the could-not-read warning; a missing one is quiet', async () => {
+    const world = filesWorld({ [`${CONFIG}/CLAUDE.md`]: '# G\n@./gone.md\n@./broken.md\n' })
+    const run = memIo({ ...world, unknownPaths: [`${CONFIG}/broken.md`] }, [])
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect(scan.warnings).toEqual(['could not read ~/.claude/broken.md (treated as unknown)'])
+    expect(scan.parts.map(found => found.heading)).toEqual(['G'])
+  })
+
+  test('parts beyond 200 are not offered and stay with the root session', async () => {
+    const sections = Array.from({ length: 205 }, (_, at) => `# H${at + 1}\nbody\n`).join('')
+    const run = memIo(filesWorld({ [`${CONFIG}/CLAUDE.md`]: sections, '/repo/CLAUDE.md': '# R\n' }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts).toHaveLength(200)
+    expect(scan.parts.at(-1)?.heading).toBe('H200')
+    expect(scan.files).toEqual(['~/.claude/CLAUDE.md'])
+    expect(scan.warnings).toEqual(['6 more parts were not offered: they stay with the root session'])
+  })
+
+  test('with no config folder nothing global is read, and the chain still is', async () => {
+    const run = memIo(filesWorld({ '/repo/CLAUDE.md': '# R\n' }), [])
+    const sources = { root: '/repo', home: null, configDir: null, chain: ['<repo>/CLAUDE.md'] }
+    const scan = await readInstructionFiles(run.io, sources)
+    expect(placesOf(scan)).toEqual([['CLAUDE.md', 'R', 'repo']])
+    expect(run.reads).toEqual(['/repo/CLAUDE.md'])
   })
 })

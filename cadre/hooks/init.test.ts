@@ -2369,6 +2369,39 @@ const PART_BY_PART_ANSWERS: Readonly<Record<string, string>> = {
   'Which roles get "Release notes"': 'be, qa',
 }
 
+/** A sentence of the global CLAUDE.md that must never be shown, asked or logged (T-02-61). */
+const GLOBAL_SENTENCE = 'LEAKY-GLOBAL-SENTENCE stays with the model'
+
+/** A sentence of the repo CLAUDE.md that must never be shown, asked or logged (T-02-61). */
+const REPO_SENTENCE = 'LEAKY-REPO-SENTENCE stays with the model'
+
+/** One CLAUDE.md of the chain as `$.fs.ancestors` gives it: its folder, its name and its text, which the scan drops. */
+function ancestor(dir: string): Readonly<Record<string, unknown>> {
+  return { dir, name: 'CLAUDE.md', content: REPO_SENTENCE, parts: [] }
+}
+
+/**
+ * A git repo whose global CLAUDE.md holds a Security section and whose repo CLAUDE.md, in the chain, holds a Rules
+ * section, each with a sentence that must never be shown; the model groups them into two topics. `over` changes the
+ * fields it names.
+ */
+function chainWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const topics = [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2'] },
+  ]
+
+  return partsWorld({
+    files: {
+      [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+      '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\n`,
+    },
+    ancestors: [ancestor('/repo')],
+    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]}}'],
+    ...over,
+  })
+}
+
 /** The instructions block of the plan's dry run (G-02-1f). */
 const PARTS_BLOCK = [
   'Read for this run only (nothing is written):',
@@ -2679,6 +2712,61 @@ describe('instruction parts (G-02-1f)', () => {
     const empty = queuedIo(gitWorld(), { ...PARTS_ANSWERS, 'Review the plan': ['memory', 'Confirm'] })
     await runInit(empty.io, { dryRun: true })
     expect(between(empty.asked, REVIEW_QUESTION)).toEqual([])
+  })
+
+  test('the repo chain is read after the global file, and its parts are named by their repo path', async () => {
+    const run = memIo(chainWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.reads.filter(path => path.endsWith('CLAUDE.md'))).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
+    expect(run.prompts[0]).toContain('P2 | CLAUDE.md | Rules | # Rules')
+    expect(shownBlock(run, 'instructions')).toContain('    from: CLAUDE.md > Rules')
+  })
+
+  test('the content consent counts the global file and the chain files the scan found', async () => {
+    const run = memIo(chainWorld({ ancestors: [ancestor('/home/u/work'), ancestor('/repo')] }), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const found =
+      'Found: global CLAUDE.md yes, 2 CLAUDE.md files in the repo chain, 0 memories. No keeps the whole-file questions.'
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
+  })
+
+  test('instruction text never reaches a question, a log line, the pane or the reply (T-02-61)', async () => {
+    const answers = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' }
+    const run = memIo(chainWorld(), answers)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toContain('Which roles get "Repo rules"?')
+    const shown = [
+      ...run.asked,
+      ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
+      ...run.logged,
+      ...paneText(run),
+      reply,
+    ].join('\n')
+    expect(leaks(shown, [GLOBAL_SENTENCE, REPO_SENTENCE])).toEqual([])
+    expect(leaks(run.prompts[0] ?? '', [GLOBAL_SENTENCE, REPO_SENTENCE])).toEqual([GLOBAL_SENTENCE, REPO_SENTENCE])
+  })
+
+  test('every read warning is a row of the instructions block, after the topics', async () => {
+    const world = chainWorld({
+      ancestors: [ancestor('/home/u/work'), ancestor('/repo')],
+      files: { [GLOBAL_CLAUDE_MD]: '# G\n@./big.md\n', '/home/u/.claude/big.md': `# Big\n${'x'.repeat(300 * 1024)}` },
+      unknownPaths: ['/repo/CLAUDE.md'],
+      replies: [
+        '{"topics":[{"title":"General","summary":"The general rules.","parts":["P1"]}]}',
+        '{"topics":{"T1":["tl"]}}',
+      ],
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(shownBlock(run, 'instructions')).toEqual([
+      'Read for this run only (nothing is written):',
+      '  General: The general rules.',
+      '    from: ~/.claude/CLAUDE.md > G',
+      '    recommended: tl',
+      'warning: ~/.claude/big.md is over 256 KiB: not split',
+      'warning: ~/work/CLAUDE.md is outside the repo and your config folder: not read',
+      'warning: could not read CLAUDE.md (treated as unknown)',
+    ])
   })
 })
 
