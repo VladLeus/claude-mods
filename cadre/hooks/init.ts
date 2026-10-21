@@ -1865,6 +1865,23 @@ export async function instructionsStep(
   return partsFlow(io, roles, setup, locations)
 }
 
+/**
+ * The instruction step again, for the review item memory (G-02-1f): a parts hand-out goes back to its entry question
+ * with the same read, topics and recommendations, its block shown again first, so nothing is read and the model is not
+ * called again (handOutParts); a whole-files or none hand-out asks the whole-file questions as before (memoryStep) and
+ * keeps its kind.
+ */
+async function instructionsAgain(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  handout: InstructionHandout,
+): Promise<StepResult<Instructed>> {
+  if (handout.kind === 'parts') return handOutParts(io, roles, setup, handout)
+
+  return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: handout }))
+}
+
 /** The buttons of the env question: no name or every scanned name; names are typed under "Other" (D-60). */
 const ENV_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, ALL_ENV_OPTION])
 
@@ -2718,8 +2735,9 @@ async function teamStep(
  * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
  * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
  * duration kept (teamStep, given `isDryRun` as the run is). The duration, model, assignment, memory and env steps run
- * again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a name away. A
- * cancelled step ends the review with its reason (A1).
+ * again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a name away;
+ * memory goes back to the instruction hand-out it had (instructionsAgain). A cancelled step ends the review with its
+ * reason (A1).
  */
 async function goBack(
   io: InitIo,
@@ -2751,15 +2769,11 @@ async function goBack(
         ...draft,
         roles: assigned,
       }))
-    case 'memory': {
-      const instructions = draft.instructions.kind === 'none' ? draft.instructions : WHOLE
-
-      return mapped(await memoryStep(io, roles, gathered.setup), (instructed): Draft => ({
+    case 'memory':
+      return mapped(await instructionsAgain(io, roles, gathered.setup, draft.instructions), (instructed): Draft => ({
         ...draft,
-        roles: instructed,
-        instructions,
+        ...instructed,
       }))
-    }
     case 'env':
       return mapped(await carryStep(io, roles, gathered.setup), carried => ({ ...draft, roles: carried }))
     case 'hunks': {

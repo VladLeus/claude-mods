@@ -6,6 +6,7 @@
 import type { InitIo, RoleSpec } from '../types'
 import { accepted, askChoice, choiceResult, quotedLabels, withContext } from './ask'
 import type { StepResult } from './ask'
+import { parseRoleList } from './assign'
 
 /**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
@@ -71,13 +72,70 @@ function recommendedOf(items: readonly HandoutItem[]): ReadonlyMap<string, reado
   return new Map(items.map((item): [string, readonly string[]] => [item.id, item.recommended]))
 }
 
+/** The item answer that gives an item its recommended roles (G-02-1f Part by part). */
+const YES_LABEL = 'Yes'
+
+/** The item answer that gives an item to no role (G-02-1f Part by part). */
+const NO_LABEL = 'No'
+
+/** The buttons of an item question; a role list is typed under "Other" (G-02-1f Part by part). */
+const ITEM_OPTIONS: readonly string[] = Object.freeze([YES_LABEL, NO_LABEL])
+
+/** What an item question takes, as its refusal lists it: Yes, No or the team's role ids (D-136). */
+function itemAccepts(roles: readonly RoleSpec[]): string {
+  return `${quotedLabels(ITEM_OPTIONS)}, or role ids from: ${roles.map(role => role.id).join(', ')}`
+}
+
+/**
+ * The roles an answer to an item question gives the item (G-02-1f Part by part): Yes its recommended roles, No none,
+ * else the role list parseRoleList reads (none, all, or role ids and titles); null when it reads none, so it is asked
+ * again. Yes and No keep their meaning whatever a role is called.
+ */
+function itemRoles(answer: string, item: HandoutItem, roles: readonly RoleSpec[]): readonly string[] | null {
+  const word = answer.trim().toLowerCase()
+  if (word === YES_LABEL.toLowerCase()) return item.recommended
+  if (word === NO_LABEL.toLowerCase()) return []
+
+  return parseRoleList(answer, roles)
+}
+
+/**
+ * Asks each item once, in item order (G-02-1f Part by part): its question with its context line on the second line,
+ * its chip and the buttons Yes and No, a role list typed under "Other"; an answer it cannot read is asked again with
+ * why on top (askChoice). Only an answer to every item gives roles: a dismissal is cancelled with `dismissedReason`,
+ * and MAX_ASKS answers it cannot read at one item with NO_USABLE_ANSWER_REASON (A1).
+ */
+async function askEachItem(
+  io: InitIo,
+  items: readonly HandoutItem[],
+  roles: readonly RoleSpec[],
+  dismissedReason: string,
+): Promise<StepResult<HandoutOutcome>> {
+  const accepts = itemAccepts(roles)
+  const given = new Map<string, readonly string[]>()
+  for (const item of items) {
+    const ask = {
+      question: withContext(item.question, item.context),
+      spec: { options: ITEM_OPTIONS, header: item.header },
+      parse: (answer: string): readonly string[] | null => itemRoles(answer, item, roles),
+      accepts,
+    }
+    const answer = choiceResult(await askChoice(io, ask), dismissedReason)
+    if (answer.kind === 'cancelled') return answer
+    given.set(item.id, answer.value)
+  }
+
+  return accepted({ kind: 'given', given })
+}
+
 /**
  * The hand-out (G-02-1f Entry choices). It asks the entry question with its context line on the second line, its chip
  * and its three answers in the order accept, one by one, whole, and asks any other answer again with why on top
- * (askChoice). Accept gives every item its recommended roles, an item with none to no role; the whole answer gives the
- * whole-group outcome, so the caller asks its whole-group questions. A dismissal is cancelled with `dismissedReason`
- * and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON, so no answer the person did not give hands anything
- * out (A1). It only asks: the roles and the items it is given never change.
+ * (askChoice). Accept gives every item its recommended roles, an item with none to no role; one by one asks each item
+ * once (askEachItem); the whole answer gives the whole-group outcome, so the caller asks its whole-group questions. A
+ * dismissal is cancelled with `dismissedReason` and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON, so
+ * no answer the person did not give hands anything out (A1). It only asks: the roles and the items it is given never
+ * change.
  */
 export async function handoutStep(
   io: InitIo,
@@ -97,6 +155,7 @@ export async function handoutStep(
   const choice = choiceResult(await askChoice(io, ask), dismissedReason)
   if (choice.kind === 'cancelled') return choice
   if (choice.value === 'whole') return accepted({ kind: 'whole' })
+  if (choice.value === 'oneByOne') return askEachItem(io, items, roles, dismissedReason)
 
   return accepted({ kind: 'given', given: recommendedOf(items) })
 }
