@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart, InstructionScan, InstructionTopic } from '../types'
+import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
+import { sha256Hex } from './hash'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -14,11 +15,19 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  MEMORY_UNLISTED_WARNING,
+  memoryIndex,
+  memoryItemContextLine,
+  memoryItemHeader,
+  memoryItemQuestion,
+  memoryItems,
   moreDocsWarning,
+  NO_MEMORY_SUMMARY,
   parseContentConsent,
   parseRecommendation,
   parseTopics,
   readInstructionFiles,
+  readMemories,
   RECOMMEND_SYSTEM,
   recommendPrompt,
   referencedDocs,
@@ -50,8 +59,28 @@ const PARTS: readonly InstructionPart[] = [
   part('P2', 'Git', '## Git\nUse signed commits.\n'),
 ]
 
-/** The read of GLOBAL_TEXT: its two parts, the one file they came from and no warning. */
-const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], warnings: [] }
+/** The read of GLOBAL_TEXT: its two parts, the one file they came from, no memory and no warning. */
+const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], memories: [], warnings: [] }
+
+/** The auto-memory folder of the fixture repo for the fixture user. */
+const MEMORY = '/home/u/.claude/projects/-repo/memory'
+
+/** The auto-memory folder of the fixture repo as given through a link, /link/repo. */
+const GIVEN_MEMORY = '/home/u/.claude/projects/-link-repo/memory'
+
+/** A memory with this id, file and summary, from the memory folder of the repo. */
+function memory(id: string, file: string, summary: string): MemoryItem {
+  return { id, file, folder: MEMORY, summary, hash: `hash of ${file}` }
+}
+
+/** Two memories: squad.md with its index summary, and workflow.md with none. */
+const MEMORIES: readonly MemoryItem[] = [
+  memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.'),
+  memory('M2', 'workflow.md', 'No summary in MEMORY.md.'),
+]
+
+/** The read of GLOBAL_TEXT with the two MEMORIES. */
+const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
 
 /** The first topic of the plan's dry run: the Security part. */
 const SECURITY_TOPIC: InstructionTopic = {
@@ -253,42 +282,56 @@ describe('parseTopics', () => {
 })
 
 describe('parseRecommendation', () => {
-  test('a valid reply gives each topic the roles named for it', () => {
-    const reply = '{"topics":{"T1":["security"],"T2":["tl"]}}'
-    const result = parseRecommendation(reply, ['T1', 'T2'], ROLE_IDS)
+  test('a valid reply gives each topic and each memory the roles named for it', () => {
+    const reply = '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["tl","pm"],"M2":[]}}'
+    const result = parseRecommendation(reply, ['T1', 'T2'], ['M1', 'M2'], ROLE_IDS)
     expect(result.kind === 'ok' ? [...result.recommended.entries()] : result.errors).toEqual([
       ['T1', ['security']],
       ['T2', ['tl']],
+      ['M1', ['pm', 'tl']],
+      ['M2', []],
     ])
   })
 
-  test('a topic left out is recommended to no role; the role ids come once each, in role order', () => {
-    const result = parseRecommendation('{"topics":{"T1":["security","pm","security"]}}', ['T1', 'T2'], ROLE_IDS)
+  test('a topic or memory left out is recommended to no role; the role ids come once each, in role order', () => {
+    const reply = '{"topics":{"T1":["security","pm","security"]},"memories":{}}'
+    const result = parseRecommendation(reply, ['T1', 'T2'], ['M1'], ROLE_IDS)
     expect(result.kind === 'ok' ? [...result.recommended.entries()] : result.errors).toEqual([
       ['T1', ['pm', 'security']],
       ['T2', []],
+      ['M1', []],
     ])
   })
 
   test('a reply in one code fence is read the same', () => {
-    const result = parseRecommendation('```\n{"topics":{"T1":[]}}\n```', ['T1'], ROLE_IDS)
+    const result = parseRecommendation('```\n{"topics":{"T1":[]},"memories":{}}\n```', ['T1'], [], ROLE_IDS)
     expect(result.kind === 'ok' ? [...result.recommended.entries()] : result.errors).toEqual([['T1', []]])
   })
 
-  test('a reply that is not JSON, or has no topics object, gives that error', () => {
-    expect(errorsOf(parseRecommendation('no', ['T1'], ROLE_IDS))).toEqual(['the reply is not JSON'])
-    expect(errorsOf(parseRecommendation('{"topics":[]}', ['T1'], ROLE_IDS))).toEqual([
+  test('a reply that is not JSON, or has no topics or no memories object, gives that error', () => {
+    expect(errorsOf(parseRecommendation('no', ['T1'], [], ROLE_IDS))).toEqual(['the reply is not JSON'])
+    expect(errorsOf(parseRecommendation('{"topics":[],"memories":{}}', ['T1'], [], ROLE_IDS))).toEqual([
       'the reply has no "topics" object',
+    ])
+    expect(errorsOf(parseRecommendation('{"topics":{"T1":[]}}', ['T1'], [], ROLE_IDS))).toEqual([
+      'the reply has no "memories" object',
+    ])
+    expect(errorsOf(parseRecommendation('{}', ['T1'], ['M1'], ROLE_IDS))).toEqual([
+      'the reply has no "topics" object',
+      'the reply has no "memories" object',
     ])
   })
 
-  test('an unknown topic, an unknown role and a value that is not a list each give their error', () => {
-    const reply = '{"topics":{"T9":["pm"],"T1":["cto",3],"T2":"tl"}}'
-    expect(errorsOf(parseRecommendation(reply, ['T1', 'T2'], ROLE_IDS))).toEqual([
+  test('an unknown topic or memory, an unknown role and a value that is not a list each give their error', () => {
+    const reply = '{"topics":{"T9":["pm"],"T1":["cto",3],"T2":"tl"},"memories":{"M9":[],"M1":["cto"],"M2":"pm"}}'
+    expect(errorsOf(parseRecommendation(reply, ['T1', 'T2'], ['M1', 'M2'], ROLE_IDS))).toEqual([
       'unknown topic "T9"',
       'topic T1 names an unknown role "cto"',
       'topic T1 names an unknown role "<non-string id>"',
       'topic T2 is not a list of role ids',
+      'unknown memory "M9"',
+      'memory M1 names an unknown role "cto"',
+      'memory M2 is not a list of role ids',
     ])
   })
 })
@@ -324,14 +367,22 @@ describe('instruction prompts (G-02-1f)', () => {
     ])
   })
 
-  test('the recommendation prompts hold each role as id | title | purpose and each topic with its summary', () => {
-    expect(RECOMMEND_SYSTEM).toContain('{"topics":{"T1":["be"]}}')
-    expect(RECOMMEND_SYSTEM).toContain('[] for a topic no role needs')
-    const prompt = recommendPrompt(ROLES, TOPICS, [])
+  test('the recommendation prompts hold each role, each topic with its summary, each memory with its summary', () => {
+    expect(RECOMMEND_SYSTEM).toContain('{"topics":{"T1":["be"]},"memories":{"M1":[]}}')
+    expect(RECOMMEND_SYSTEM).toContain('[] for a topic or memory no role needs')
+    const prompt = recommendPrompt(ROLES, TOPICS, MEMORIES, [])
     for (const role of ROLES) expect(prompt).toContain(`${role.id} | ${role.title} | ${role.purpose}`)
     expect(prompt).toContain('T1 | Security rules | How secrets stay out of the repo.')
     expect(prompt).toContain('T2 | Git and commits | How commits are made.')
-    expect(recommendPrompt(ROLES, TOPICS, ['unknown topic "T9"']).split('\n').at(-1)).toBe('- unknown topic "T9"')
+    expect(prompt).toContain('M1 | squad.md | Unsigned commits on per-phase branches.')
+    expect(prompt).toContain('M2 | workflow.md | No summary in MEMORY.md.')
+    const retried = recommendPrompt(ROLES, TOPICS, MEMORIES, ['unknown topic "T9"'])
+    expect(retried.split('\n').at(-1)).toBe('- unknown topic "T9"')
+  })
+
+  test('no recommendation prompt carries a memory folder or hash, only the file and the summary', () => {
+    const prompt = recommendPrompt(ROLES, TOPICS, MEMORIES, [])
+    expect([prompt.includes(MEMORY), prompt.includes('hash of')]).toEqual([false, false])
   })
 
   test('no prompt carries a part past its first 300 code points', () => {
@@ -346,6 +397,7 @@ describe('fallbackTopics', () => {
     const scan: InstructionScan = {
       parts: [...PARTS, part('P3', '', 'Repo rules.\n', 'CLAUDE.md')],
       files: ['~/.claude/CLAUDE.md', 'CLAUDE.md'],
+      memories: [],
       warnings: [],
     }
     expect(fallbackTopics(scan)).toEqual([
@@ -369,7 +421,7 @@ describe('instructionLines', () => {
   })
 
   test("a topic recommended to no role says none, and a part with no heading is '(top of file)'", () => {
-    const scan: InstructionScan = { parts: [part('P1', '', 'Intro.\n')], files: ['~/.claude/CLAUDE.md'], warnings: [] }
+    const scan: InstructionScan = { ...SCAN, parts: [part('P1', '', 'Intro.\n')] }
     const topics = [{ id: 'T1', title: 'Intro', summary: 'The intro.', partIds: ['P1'] }]
     expect(instructionLines(scan, topics, new Map([['T1', []]])).slice(1)).toEqual([
       '  Intro: The intro.',
@@ -399,16 +451,44 @@ describe('instructionLines', () => {
     expect(lines).not.toContain('Never commit secrets')
     expect(lines).not.toContain('Use signed commits')
   })
+
+  test('the memories follow the topics: a heading, then each file with its summary and recommended roles', () => {
+    const recommended = new Map([...RECOMMENDED, ['M1', ['tl']], ['M2', []]])
+    expect(instructionLines(MEMORY_SCAN, TOPICS, recommended).slice(7)).toEqual([
+      'Memories (each linked, never copied, when a role gets it):',
+      '  squad.md: Unsigned commits on per-phase branches.',
+      '    recommended: tl',
+      '  workflow.md: No summary in MEMORY.md.',
+      '    recommended: none',
+    ])
+  })
+
+  test('with only memories and no usable recommendation the block says so, and names no folder or hash', () => {
+    const lines = instructionLines({ ...MEMORY_SCAN, parts: [], files: [] }, [], new Map())
+    expect(lines.at(-1)).toBe('The model gave no usable recommendation: no role gets a part unless you pick one.')
+    expect([lines.join('\n').includes(MEMORY), lines.join('\n').includes('hash of')]).toEqual([false, false])
+  })
 })
 
 describe('instructionReviewLines', () => {
-  test('per role the topics it gets, else none, then the topics kept with the root session only', () => {
-    expect(instructionReviewLines(ROLES, TOPICS, RECOMMENDED)).toEqual([
+  test('per role the topics and memories it gets, else none, then what stays with the root session only', () => {
+    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED)).toEqual([
       'Instructions per role:',
       '  pm: none',
-      '  tl: 1 topic: Git and commits',
-      '  security: 1 topic: Security rules',
-      'Kept with the root session only: 0 topics',
+      '  tl: 1 topic: Git and commits; 0 memories',
+      '  security: 1 topic: Security rules; 0 memories',
+      'Kept with the root session only: 0 topics, 0 memories',
+    ])
+  })
+
+  test('a role with memories and no topic counts both; a memory no role gets is counted as kept', () => {
+    const given = new Map([...RECOMMENDED, ['M1', ['pm', 'security']], ['M2', []]])
+    expect(instructionReviewLines(ROLES, TOPICS, MEMORIES, given)).toEqual([
+      'Instructions per role:',
+      '  pm: 0 topics; 1 memory',
+      '  tl: 1 topic: Git and commits; 0 memories',
+      '  security: 1 topic: Security rules; 1 memory',
+      'Kept with the root session only: 0 topics, 1 memory',
     ])
   })
 
@@ -426,12 +506,13 @@ describe('instructionReviewLines', () => {
       ['T4', ['tl']],
       ['T5', []],
     ])
-    expect(instructionReviewLines(ROLES, topics, given)).toEqual([
+    const withMemories = new Map([...given, ['M1', ['tl']], ['M2', ['tl']]])
+    expect(instructionReviewLines(ROLES, topics, MEMORIES, withMemories)).toEqual([
       'Instructions per role:',
       '  pm: none',
-      '  tl: 4 topics: A, B, C, +1 more',
+      '  tl: 4 topics: A, B, C, +1 more; 2 memories',
       '  security: none',
-      'Kept with the root session only: 1 topic',
+      'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
 })
@@ -479,14 +560,17 @@ describe('instruction questions (G-02-1f)', () => {
   })
 
   test('the entry question offers Accept recommendations, Go part by part and Whole files', () => {
-    expect(INSTRUCTIONS_ENTRY_QUESTION).toBe('How do you want to hand out the instruction parts?')
+    expect(INSTRUCTIONS_ENTRY_QUESTION).toBe('How do you want to hand out the instruction parts and memories?')
     expect(INSTRUCTIONS_ENTRY_OPTIONS).toEqual(['Accept recommendations', 'Go part by part', 'Whole files'])
     expect(Object.isFrozen(INSTRUCTIONS_ENTRY_OPTIONS)).toBe(true)
     expect(entryContextLine(SCAN, TOPICS)).toBe(
-      '2 topics from 1 file; the pane shows each with the roles it is recommended for.',
+      '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.',
     )
-    expect(entryContextLine({ ...SCAN, files: ['a', 'b'] }, TOPICS.slice(0, 1))).toBe(
-      '1 topic from 2 files; the pane shows each with the roles it is recommended for.',
+    expect(entryContextLine({ ...MEMORY_SCAN, files: ['a', 'b'] }, TOPICS.slice(0, 1))).toBe(
+      '1 topic from 2 files and 2 memories; the pane shows each with the roles it is recommended for.',
+    )
+    expect(entryContextLine({ ...SCAN, memories: MEMORIES.slice(0, 1) }, TOPICS)).toBe(
+      '2 topics from 1 file and 1 memory; the pane shows each with the roles it is recommended for.',
     )
     expect(instructionsEntry(SCAN, TOPICS)).toEqual({
       question: INSTRUCTIONS_ENTRY_QUESTION,
@@ -536,6 +620,35 @@ describe('instruction questions (G-02-1f)', () => {
     expect(items[0]?.context).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security']))
     expect(topicItems(SCAN, TOPICS, new Map()).map(item => item.recommended)).toEqual([[], []])
   })
+
+  test('a memory question names its file; its context line has its summary and the recommended roles', () => {
+    const squad = memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.')
+    const workflow = memory('M2', 'workflow.md', 'No summary in MEMORY.md.')
+    expect(memoryItemQuestion(squad)).toBe('Which roles get the memory "squad.md"?')
+    expect(memoryItemContextLine(squad, ['tl', 'security'])).toBe(
+      'Unsigned commits on per-phase branches. Recommended: tl, security.',
+    )
+    expect(memoryItemContextLine(workflow, [])).toBe('No summary in MEMORY.md. Recommended: none.')
+    expect(NO_MEMORY_SUMMARY).toBe('No summary in MEMORY.md.')
+  })
+
+  test('the memory chip is Memory i/n, and just Memory when that is over 12 characters', () => {
+    expect(memoryItemHeader(1, 2)).toBe('Memory 1/2')
+    expect(memoryItemHeader(10, 99)).toBe('Memory 10/99')
+    expect(memoryItemHeader(10, 100)).toBe('Memory')
+  })
+
+  test('the memory items carry each memory question, context line, chip and recommended roles', () => {
+    const items = memoryItems(MEMORIES, new Map([['M1', ['tl']]]))
+    expect(items.map(item => [item.id, item.question, item.header, item.recommended])).toEqual([
+      ['M1', 'Which roles get the memory "squad.md"?', 'Memory 1/2', ['tl']],
+      ['M2', 'Which roles get the memory "workflow.md"?', 'Memory 2/2', []],
+    ])
+    expect(items.map(item => item.context)).toEqual([
+      'Unsigned commits on per-phase branches. Recommended: tl.',
+      'No summary in MEMORY.md. Recommended: none.',
+    ])
+  })
 })
 
 /** The config folder of the fixture user, where the global CLAUDE.md lives. */
@@ -543,10 +656,10 @@ const CONFIG = '/home/u/.claude'
 
 /**
  * Where the reader reads in the fixtures: the repo /repo, the home /home/u, no CLAUDE_CONFIG_DIR, this chain, no rule
- * file and no AGENTS.md.
+ * file, no AGENTS.md and no memory folder.
  */
 function sourcesOf(chain: readonly string[] = []): InstructionSources {
-  return { root: '/repo', home: '/home/u', configDir: null, chain, rules: [], hasAgentsMd: false }
+  return { root: '/repo', home: '/home/u', configDir: null, chain, rules: [], hasAgentsMd: false, memoryFolders: [] }
 }
 
 /** A world of the fixture user with these files; `over` changes the other fields it names. */
@@ -925,5 +1038,144 @@ describe('rules, AGENTS.md and referenced docs', () => {
     const outside = memIo(memWorld(linkedOut), [])
     expect((await repoInstructionNames(outside.io, '/repo')).rules).toBeNull()
     expect(outside.listed).toEqual([])
+  })
+})
+
+/** The MEMORY.md of the memory cases: an index line for a.md and one for c.md, and a line that is not one. */
+const MEMORY_INDEX_TEXT =
+  '# Memory\n- [A](a.md) \u2014 the a memory\n- [C](c.md) - the c memory\nSENTINEL_SECRET_VALUE\n'
+
+describe('memoryIndex', () => {
+  test('an index line gives its file the summary after an em dash or a hyphen', () => {
+    const index = memoryIndex(
+      [
+        '# Memory index',
+        '- [Squad unsigned commits](squad.md) \u2014 squad worktree: unsigned commits on per-phase branches',
+        '- [Workflow](workflow.md) - more than 4 sub-agents go through the Workflow tool',
+      ].join('\r\n'),
+    )
+    expect([...index.entries()]).toEqual([
+      ['squad.md', 'squad worktree: unsigned commits on per-phase branches'],
+      ['workflow.md', 'more than 4 sub-agents go through the Workflow tool'],
+    ])
+  })
+
+  test('a link line with no summary after it gives its title; any other line is ignored', () => {
+    const index = memoryIndex(
+      [
+        '- [Just a title](title.md)',
+        '- [Blank summary](blank.md) \u2014   ',
+        'Text with [a link](x.md) \u2014 not an index line',
+        '* [Star](star.md) \u2014 another list mark',
+        '  - [Nested](nested.md) \u2014 indented',
+        '- [](empty.md)',
+      ].join('\n'),
+    )
+    expect([...index.entries()]).toEqual([
+      ['title.md', 'Just a title'],
+      ['blank.md', 'Blank summary'],
+    ])
+  })
+
+  test('a summary is cleaned and cut to 160 code points; a file named twice keeps its first line', () => {
+    const long = `- [A](a.md) \u2014 Sec${BIDI_OVERRIDE}ret ${'s'.repeat(200)}`
+    const index = memoryIndex(`${long}\n- [A again](a.md) - second`)
+    expect(index.get('a.md')).toBe(`Secret ${'s'.repeat(152)}\u2026`)
+    expect(index.size).toBe(1)
+  })
+})
+
+describe('readMemories', () => {
+  test('MEMORY.md first, then each other .md file once, in name order, with its folder, summary and hash', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: {
+          [MEMORY]: [entry('b.md'), entry('MEMORY.md'), entry('a.md')],
+          [GIVEN_MEMORY]: [entry('a.md'), entry('c.md')],
+        },
+        files: {
+          [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT,
+          [`${MEMORY}/a.md`]: 'text of a',
+          [`${MEMORY}/b.md`]: 'text of b',
+          [`${GIVEN_MEMORY}/a.md`]: 'another a',
+          [`${GIVEN_MEMORY}/c.md`]: 'text of c',
+        },
+      }),
+      [],
+    )
+    const read = await readMemories(run.io, [MEMORY, GIVEN_MEMORY])
+    expect(run.reads).toEqual([`${MEMORY}/MEMORY.md`, `${MEMORY}/a.md`, `${MEMORY}/b.md`, `${GIVEN_MEMORY}/c.md`])
+    expect(read.memories).toEqual([
+      { id: 'M1', file: 'a.md', folder: MEMORY, summary: 'the a memory', hash: await sha256Hex('text of a') },
+      { id: 'M2', file: 'b.md', folder: MEMORY, summary: NO_MEMORY_SUMMARY, hash: await sha256Hex('text of b') },
+      { id: 'M3', file: 'c.md', folder: GIVEN_MEMORY, summary: 'the c memory', hash: await sha256Hex('text of c') },
+    ])
+    expect(read.warnings).toEqual([])
+  })
+
+  test('with no MEMORY.md every memory gets No summary in MEMORY.md.', async () => {
+    const world = memWorld({ dirs: { [MEMORY]: [entry('a.md')] }, files: { [`${MEMORY}/a.md`]: 'text of a' } })
+    const read = await readMemories(memIo(world, []).io, [MEMORY])
+    expect(read.memories.map(found => [found.id, found.file, found.summary])).toEqual([
+      ['M1', 'a.md', 'No summary in MEMORY.md.'],
+    ])
+  })
+
+  test('the text of a memory and of MEMORY.md is never kept: only file, folder, summary and hash', async () => {
+    const world = memWorld({
+      dirs: { [MEMORY]: [entry('MEMORY.md'), entry('a.md')] },
+      files: { [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT, [`${MEMORY}/a.md`]: 'sk-FAKE-SECRET-0123456789' },
+    })
+    const read = await readMemories(memIo(world, []).io, [MEMORY])
+    expect(read.memories.map(found => Object.keys(found))).toEqual([['id', 'file', 'folder', 'summary', 'hash']])
+    expect(JSON.stringify(read)).not.toContain('SECRET')
+  })
+
+  test('a folder that cannot be listed gives the memory folder warning once; a missing folder is quiet', async () => {
+    const unknown = memIo(memWorld({ unknownPaths: [MEMORY, GIVEN_MEMORY] }), [])
+    expect(await readMemories(unknown.io, [MEMORY, GIVEN_MEMORY])).toEqual({
+      memories: [],
+      warnings: [MEMORY_UNLISTED_WARNING],
+    })
+    expect(MEMORY_UNLISTED_WARNING).toBe('could not list the memory folder (treated as unknown)')
+    expect(await readMemories(memIo(memWorld({}), []).io, [MEMORY])).toEqual({ memories: [], warnings: [] })
+  })
+
+  test('a link, a folder, another extension and a name with a hidden character are no memory', async () => {
+    const hidden = `hid${BIDI_OVERRIDE}den.md`
+    const world = memWorld({
+      dirs: { [MEMORY]: [entry('notes.txt'), entry('sub', 'dir'), link('l.md'), entry(hidden), entry('ok.md')] },
+      files: { [`${MEMORY}/ok.md`]: 'ok', [`${MEMORY}/${hidden}`]: 'hidden', [`${MEMORY}/notes.txt`]: 'txt' },
+    })
+    const run = memIo(world, [])
+    const read = await readMemories(run.io, [MEMORY])
+    expect(read.memories.map(found => found.file)).toEqual(['ok.md'])
+    expect(run.reads).toEqual([`${MEMORY}/ok.md`])
+  })
+
+  test('a memory the port cannot read, or one over 256 KiB, is not offered and gets its warning', async () => {
+    const world = memWorld({
+      dirs: { [MEMORY]: [entry('bad.md'), entry('big.md'), entry('good.md')] },
+      files: { [`${MEMORY}/big.md`]: 'x'.repeat(300 * 1024), [`${MEMORY}/good.md`]: 'good' },
+      unknownPaths: [`${MEMORY}/bad.md`],
+    })
+    const read = await readMemories(memIo(world, []).io, [MEMORY])
+    expect(read.memories.map(found => [found.id, found.file])).toEqual([['M1', 'good.md']])
+    expect(read.warnings).toEqual(['could not read bad.md (treated as unknown)', 'big.md is over 256 KiB: not split'])
+  })
+
+  test('readInstructionFiles reads the memories last, after the docs, and its scan holds them', async () => {
+    const run = memIo(
+      filesWorld(
+        { '/repo/CLAUDE.md': '# R\n', [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT, [`${MEMORY}/a.md`]: 'text of a' },
+        { dirs: { [MEMORY]: [entry('MEMORY.md'), entry('a.md')] } },
+      ),
+      [],
+    )
+    const sources = { ...sourcesOf(['<repo>/CLAUDE.md']), memoryFolders: [MEMORY] }
+    const scan = await readInstructionFiles(run.io, sources)
+    expect(run.reads.slice(-3)).toEqual(['/repo/CLAUDE.md', `${MEMORY}/MEMORY.md`, `${MEMORY}/a.md`])
+    expect(scan.memories.map(found => [found.id, found.file, found.summary])).toEqual([['M1', 'a.md', 'the a memory']])
+    expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md'])
   })
 })

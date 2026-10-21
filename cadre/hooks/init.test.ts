@@ -2306,8 +2306,8 @@ const PARTS_TOPICS_REPLY = JSON.stringify({
   ],
 })
 
-/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl. */
-const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]}}'
+/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl, and no memory. */
+const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'
 
 /**
  * A git repo whose user has PARTS_GLOBAL as the global CLAUDE.md, with the grouping and the recommendation replies in
@@ -2334,9 +2334,9 @@ const GLOBAL_GROUP_QUESTION =
 const PARTS_REVIEW_ROWS = [
   'Instructions per role:',
   '  pm: none',
-  '  tl: 1 topic: Git and commits',
-  '  security: 1 topic: Security rules',
-  'Kept with the root session only: 0 topics',
+  '  tl: 1 topic: Git and commits; 0 memories',
+  '  security: 1 topic: Security rules; 0 memories',
+  'Kept with the root session only: 0 topics, 0 memories',
 ]
 
 /** A global CLAUDE.md with three sections, for the part-by-part runs (G-02-1f Part by part). */
@@ -2356,7 +2356,7 @@ function threePartsWorld(): MemWorld {
   return partsWorld({
     dirs: { '/repo/.git': [], ...FULL_DIRS },
     files: { ...FULL_FILES, [GLOBAL_CLAUDE_MD]: THREE_GLOBAL },
-    replies: [THREE_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl","be"],"T3":["pm"]}}'],
+    replies: [THREE_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl","be"],"T3":["pm"]},"memories":{}}'],
   })
 }
 
@@ -2397,7 +2397,7 @@ function chainWorld(over: Partial<MemWorld> = {}): MemWorld {
       '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\n`,
     },
     ancestors: [ancestor('/repo')],
-    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]}}'],
+    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'],
     ...over,
   })
 }
@@ -2470,7 +2470,8 @@ describe('instruction parts (G-02-1f)', () => {
     const entryAt = firstLines(run.asked).indexOf(INSTRUCTIONS_ENTRY_QUESTION)
     expect(run.asked[consentAt]).toBe(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
     expect(run.specs[consentAt]).toEqual({ options: ['No, skip it', 'Yes, read them'], header: 'Instructions' })
-    const entryContext = '2 topics from 1 file; the pane shows each with the roles it is recommended for.'
+    const entryContext =
+      '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.'
     expect(run.asked[entryAt]).toBe(withContext(INSTRUCTIONS_ENTRY_QUESTION, entryContext))
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
     expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions' })
@@ -2535,22 +2536,29 @@ describe('instruction parts (G-02-1f)', () => {
     expect([run.reads.includes(GLOBAL_CLAUDE_MD), run.prompts]).toEqual([false, []])
   })
 
-  test('a repo with only memories gets the step; a yes that finds no part asks the memories question', async () => {
+  test('a repo with only memories gets the step; a yes hands them out with no grouping call', async () => {
     const memory = '/home/u/.claude/projects/-repo/memory'
     const world = gitWorld({
       dirs: { '/repo/.git': [], [memory]: [entry('notes.md')] },
       files: { [`${memory}/notes.md`]: 'SENTINEL_SECRET_VALUE' },
+      replies: ['{"topics":{},"memories":{"M1":["tl"]}}'],
     })
-    const run = memIo(world, { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'Yes, read them' })
+    const run = memIo(world, PARTS_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const found =
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 1 memory. ' +
       'No keeps the whole-file questions.'
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
+    const entryContext = '0 topics from 0 files and 1 memory; the pane shows each with the roles it is recommended for.'
+    expect(run.asked).toContain(withContext(INSTRUCTIONS_ENTRY_QUESTION, entryContext))
     const memories = 'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)'
-    expect(firstLines(run.asked)).toContain(memories)
-    expect([run.prompts, run.reads.includes(`${memory}/notes.md`)]).toEqual([[], false])
+    expect(firstLines(run.asked)).not.toContain(memories)
+    expect(run.prompts).toHaveLength(1)
+    expect(run.prompts[0]?.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
+    expect(run.prompts[0]).toContain('M1 | notes.md | No summary in MEMORY.md.')
+    expect(run.prompts.join('\n')).not.toContain('SENTINEL_SECRET_VALUE')
+    expect(shownBlock(run, 'review')).toContain('  tl: 0 topics; 1 memory')
   })
 
   test('a repo with nothing to hand out asks no content consent and leaves every role no group', async () => {
@@ -2602,7 +2610,9 @@ describe('instruction parts (G-02-1f)', () => {
     expect(run.prompts).toHaveLength(6)
     expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
     expect(run.prompts[3]?.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
-    expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object')).toBe(true)
+    expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object\n- the reply has no "memories" object')).toBe(
+      true,
+    )
     const block = shownBlock(run, 'instructions')
     expect(block.slice(1, 4)).toEqual([
       '  ~/.claude/CLAUDE.md: All of ~/.claude/CLAUDE.md',
@@ -2620,7 +2630,7 @@ describe('instruction parts (G-02-1f)', () => {
       '  pm: none',
       '  tl: none',
       '  security: none',
-      'Kept with the root session only: 1 topic',
+      'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
 
@@ -2643,11 +2653,11 @@ describe('instruction parts (G-02-1f)', () => {
       'Instructions per role:',
       '  pm: none',
       '  tl: none',
-      '  be: 1 topic: Release notes',
+      '  be: 1 topic: Release notes; 0 memories',
       '  fe: none',
-      '  qa: 1 topic: Release notes',
-      '  security: 1 topic: Security rules',
-      'Kept with the root session only: 1 topic',
+      '  qa: 1 topic: Release notes; 0 memories',
+      '  security: 1 topic: Security rules; 0 memories',
+      'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
 
@@ -2704,7 +2714,7 @@ describe('instruction parts (G-02-1f)', () => {
     ])
     expect([run.reads.filter(path => path === GLOBAL_CLAUDE_MD).length, run.prompts.length]).toEqual([1, 2])
     expect(run.shown.filter(block => block.key === 'instructions')).toHaveLength(2)
-    expect(shownBlock(run, 'review')).toContain('Kept with the root session only: 2 topics')
+    expect(shownBlock(run, 'review')).toContain('Kept with the root session only: 2 topics, 0 memories')
   })
 
   test('the review item memory after No, or with nothing to hand out, asks as before', async () => {
@@ -2756,7 +2766,7 @@ describe('instruction parts (G-02-1f)', () => {
       unknownPaths: ['/repo/CLAUDE.md'],
       replies: [
         '{"topics":[{"title":"General","summary":"The general rules.","parts":["P1"]}]}',
-        '{"topics":{"T1":["tl"]}}',
+        '{"topics":{"T1":["tl"]},"memories":{}}',
       ],
     })
     const run = memIo(world, PARTS_ANSWERS)
@@ -2934,6 +2944,208 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
     expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
     expect([run.logged.includes(PARTS_DRY_RUN_ONLY_NOTE), run.listed.includes(RULES_DIR)]).toEqual([false, false])
+  })
+})
+
+/** The auto-memory folder of the fixture repo for the fixture user (G-02-1f Memories). */
+const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
+
+/** A sentence of a memory, and of MEMORY.md off its index lines, that is never shown or sent anywhere (T-02-64). */
+const MEMORY_SENTENCE = 'LEAKY-MEMORY-SENTENCE stays on disk'
+
+/** The MEMORY.md of memoriesWorld: an index line for squad.md only, then a line that is no index line. */
+const MEMORY_INDEX =
+  `# Memory index\n- [Squad commits](squad.md) \u2014 Unsigned commits on per-phase branches.\n${MEMORY_SENTENCE}\n`
+
+/**
+ * partsWorld with the auto-memories squad.md, which MEMORY.md sums up, and workflow.md, which it does not; the
+ * recommendation gives squad.md to the Team Lead and workflow.md to no role. `over` changes the fields it names.
+ */
+function memoriesWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return partsWorld({
+    dirs: { '/repo/.git': [], [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')] },
+    files: {
+      [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
+      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
+      [`${MEMORY_DIR}/workflow.md`]: `${MEMORY_SENTENCE} (workflow)`,
+    },
+    replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["tl"],"M2":[]}}'],
+    ...over,
+  })
+}
+
+/** The instructions block of memoriesWorld: the topics of the plan's dry run, then the two memories. */
+const MEMORIES_BLOCK = [
+  ...PARTS_BLOCK,
+  'Memories (each linked, never copied, when a role gets it):',
+  '  squad.md: Unsigned commits on per-phase branches.',
+  '    recommended: tl',
+  '  workflow.md: No summary in MEMORY.md.',
+  '    recommended: none',
+]
+
+/** Part by part on memoriesWorld: Yes and No to the topics, Yes to squad.md and pm, security typed for workflow.md. */
+const MEMORY_BY_PART_ANSWERS: Readonly<Record<string, string>> = {
+  ...PARTS_ANSWERS,
+  [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part',
+  'Which roles get "Security rules"': 'Yes',
+  'Which roles get "Git and commits"': 'No',
+  'Which roles get the memory "squad.md"': 'Yes',
+  'Which roles get the memory "workflow.md"': 'pm, security',
+}
+
+/** The questions of a run that hand out one topic or one memory, as asked. */
+function itemQuestions(run: MemRun): string[] {
+  const isItem = (question: string): boolean =>
+    question.startsWith('Which roles get "') || question.startsWith('Which roles get the memory "')
+
+  return run.asked.filter(isItem)
+}
+
+describe('memories one by one (G-02-1f)', () => {
+  test('a dry run shows both memories after the topics, each with its MEMORY.md summary or none', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(shownBlock(run, 'instructions')).toEqual(MEMORIES_BLOCK)
+  })
+
+  test('the entry question names the parts and memories, and its context line counts both', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const context = '2 topics from 1 file and 2 memories; the pane shows each with the roles it is recommended for.'
+    const question = 'How do you want to hand out the instruction parts and memories?'
+    expect(run.asked).toContain(withContext(question, context))
+  })
+
+  test('part by part asks both memories one by one after the topics, with their context lines and chips', async () => {
+    const run = memIo(memoriesWorld(), MEMORY_BY_PART_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const items = itemQuestions(run)
+    expect(firstLines(items)).toEqual([
+      'Which roles get "Security rules"?',
+      'Which roles get "Git and commits"?',
+      'Which roles get the memory "squad.md"?',
+      'Which roles get the memory "workflow.md"?',
+    ])
+    expect(items.slice(2)).toEqual([
+      withContext(
+        'Which roles get the memory "squad.md"?',
+        'Unsigned commits on per-phase branches. Recommended: tl.',
+      ),
+      withContext('Which roles get the memory "workflow.md"?', 'No summary in MEMORY.md. Recommended: none.'),
+    ])
+    const at = run.asked.indexOf(items[2] ?? 'missing')
+    const chips = ['Memory 1/2', 'Memory 2/2'].map(header => ({ options: ['Yes', 'No'], header }))
+    expect(run.specs.slice(at, at + 2)).toEqual(chips)
+  })
+
+  test('the review counts the memories each role gets and the ones kept with the root session', async () => {
+    const run = memIo(memoriesWorld(), MEMORY_BY_PART_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+    expect(review.slice(at, at + 5)).toEqual([
+      'Instructions per role:',
+      '  pm: 0 topics; 1 memory',
+      '  tl: 0 topics; 1 memory',
+      '  security: 1 topic: Security rules; 1 memory',
+      'Kept with the root session only: 1 topic, 0 memories',
+    ])
+  })
+
+  test('Accept recommendations gives each memory its recommended roles; one with none stays at the root', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+    expect(review.slice(at, at + 5)).toEqual([
+      'Instructions per role:',
+      '  pm: none',
+      '  tl: 1 topic: Git and commits; 1 memory',
+      '  security: 1 topic: Security rules; 0 memories',
+      'Kept with the root session only: 0 topics, 1 memory',
+    ])
+  })
+
+  test('the hand-out keeps each memory by its M id with its folder, summary and hash', async () => {
+    const roles = proposeRoles(repoScan()).roles
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['MEMORY.md', 'squad.md', 'workflow.md'] })
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS, true))
+    expect(value.instructions.kind).toBe('parts')
+    const handout = partsOf(value.instructions)
+    expect(Object.keys(handout.scan)).toContain('memories')
+    expect(handout.scan.memories.map(found => [found.id, found.file, found.folder, found.summary])).toEqual([
+      ['M1', 'squad.md', MEMORY_DIR, 'Unsigned commits on per-phase branches.'],
+      ['M2', 'workflow.md', MEMORY_DIR, 'No summary in MEMORY.md.'],
+    ])
+    const hashes = [await sha256Hex(`${MEMORY_SENTENCE} (squad)`), await sha256Hex(`${MEMORY_SENTENCE} (workflow)`)]
+    expect(handout.scan.memories.map(found => found.hash)).toEqual(hashes)
+    expect([...handout.given.entries()]).toEqual([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+      ['M1', ['tl']],
+      ['M2', []],
+    ])
+  })
+
+  test('the recommendation prompt lists each memory by id, file and summary', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const recommending = run.prompts[1] ?? ''
+    expect(recommending).toContain('M1 | squad.md | Unsigned commits on per-phase branches.')
+    expect(recommending).toContain('M2 | workflow.md | No summary in MEMORY.md.')
+  })
+
+  test('no memory and no MEMORY.md is read before the content consent answer (T-02-60)', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    const { io, events } = withReadEvents(run)
+    await runInit(io, { dryRun: true })
+    const consentAt = events.indexOf(`ask ${CONTENT_QUESTION}`)
+    const readAt = events.findIndex(event => event.startsWith(`read ${MEMORY_DIR}/`))
+    expect([consentAt > 0, readAt > consentAt]).toEqual([true, true])
+  })
+
+  test('memory text never reaches a question, a log line, the pane, the reply or a prompt (T-02-64)', async () => {
+    const run = memIo(memoriesWorld(), MEMORY_BY_PART_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(itemQuestions(run)).toHaveLength(4)
+    const shown = [
+      ...run.asked,
+      ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
+      ...run.logged,
+      ...paneText(run),
+      reply,
+      ...run.prompts,
+    ].join('\n')
+    expect(leaks(shown, [MEMORY_SENTENCE])).toEqual([])
+  })
+
+  test('the memories of the root as given are read too, after those of the root as resolved', async () => {
+    const given = '/home/u/.claude/projects/-link-repo/memory'
+    const world = memoriesWorld({
+      dirs: { '/repo/.git': [], [MEMORY_DIR]: [entry('squad.md')], [given]: [entry('squad.md'), entry('extra.md')] },
+      files: {
+        [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+        [`${MEMORY_DIR}/squad.md`]: 'squad',
+        [`${given}/squad.md`]: 'another squad',
+        [`${given}/extra.md`]: 'extra',
+      },
+      replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":[],"T2":[]},"memories":{"M1":[],"M2":[]}}'],
+    })
+    const roles = proposeRoles(repoScan()).roles
+    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations, true))
+    expect(value.instructions.kind).toBe('parts')
+    const { scan } = partsOf(value.instructions)
+    expect(Object.keys(scan)).toContain('memories')
+    expect(scan.memories.map(found => [found.id, found.file, found.folder])).toEqual([
+      ['M1', 'extra.md', given],
+      ['M2', 'squad.md', MEMORY_DIR],
+    ])
   })
 })
 
@@ -4114,7 +4326,7 @@ describe('question context lines (G-02-1)', () => {
       [
         runs.parts,
         INSTRUCTIONS_ENTRY_QUESTION,
-        '2 topics from 1 file; the pane shows each with the roles it is recommended for.',
+        '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.',
       ],
       [
         runs.perRole,
