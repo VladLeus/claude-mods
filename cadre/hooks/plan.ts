@@ -353,9 +353,15 @@ function ignorePart(gitignore: PlanInput['gitignore']): Part {
   const merged = mergeIgnoreBlock(existing, lines)
   if (merged === null) return { ops: [], warnings: [OPEN_BLOCK_WARNING] }
   const kind: FileOpKind = existing === null ? 'create' : merged === existing ? 'leave' : 'change'
-  const detail = [IGNORE_BEGIN, ...lines, IGNORE_END]
+  const op: FileOp = {
+    kind,
+    path: GITIGNORE_PATH,
+    mode: 'file',
+    note: null,
+    detail: [IGNORE_BEGIN, ...lines, IGNORE_END],
+  }
 
-  return { ops: [{ kind, path: GITIGNORE_PATH, mode: 'file', note: null, detail }], warnings: [] }
+  return { ops: [op], warnings: [] }
 }
 
 /** The warning for a path the plan will not touch: PLAN-06 allows only `.cadre/` and the root `.gitignore`. */
