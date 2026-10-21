@@ -1,4 +1,4 @@
-import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter, Gate } from '../types'
+import type { Choice, Detection, DetectStatus, Facts, FrameworkAdapter, Gate, ShownBlock } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import { clean } from './facts'
 import { chooseFramework } from './framework'
@@ -74,30 +74,32 @@ export function cardList(names: readonly string[]): string {
   return [...names.slice(0, MAX_CARD_LIST), `+${rest} more`].join(', ')
 }
 
-/**
- * Groups lines into chunks of text, each at most `maxChars` UTF-16 units when its lines are joined with a newline, so
- * that no single log entry passes the host's 2000 character limit and loses its tail (P9). Joining the chunks with a
- * newline gives the input joined with a newline again. A line longer than the cap stays whole in a chunk of its own,
- * since cutting it would change the text.
- */
-export function chunkLines(lines: readonly string[], maxChars: number): string[] {
-  const chunks: string[] = []
-  let current: string[] = []
-  let length = 0
-  for (const line of lines) {
-    const joined = current.length === 0 ? line.length : length + 1 + line.length
-    if (current.length > 0 && joined > maxChars) {
-      chunks.push(current.join('\n'))
-      current = [line]
-      length = line.length
-      continue
-    }
-    current.push(line)
-    length = joined
-  }
-  if (current.length > 0) chunks.push(current.join('\n'))
+/** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */
+export type PaneRow = {
+  readonly text: string
+  readonly isTitle: boolean
+}
 
-  return chunks
+/**
+ * The side pane after one more block (D-133): that block first, then every other block in its order, so the pane holds
+ * one block per key, a block shown again replaces the old one and moves to the top, and the newest context is first.
+ * The blocks it is given are never changed.
+ */
+export function paneView(blocks: readonly ShownBlock[], block: ShownBlock): ShownBlock[] {
+  return [block, ...blocks.filter(other => other.key !== block.key)]
+}
+
+/**
+ * The rows the side pane draws (D-133): per block its title row, then one row per line, with one empty row between two
+ * blocks and none after the last. Every title and line is cleaned as a report cell (reportText), so a scanned or typed
+ * value cannot add a row or hide text.
+ */
+export function paneRows(blocks: readonly ShownBlock[]): PaneRow[] {
+  return blocks.flatMap((block, at) => [
+    ...(at === 0 ? [] : [{ text: '', isTitle: false }]),
+    { text: reportText(block.title), isTitle: true },
+    ...block.lines.map(line => ({ text: reportText(line), isTitle: false })),
+  ])
 }
 
 /**

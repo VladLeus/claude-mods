@@ -1,8 +1,9 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { asciiLower } from './assign'
 import { compareText } from './facts'
-import { askChoice } from './init'
+import { askChoice, PANE_TITLES } from './init'
 import type { StepResult } from './init'
+import { reportText } from './render'
 import { listingState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
@@ -246,9 +247,10 @@ function noteLines(scan: HistoryScan): string[] {
 }
 
 /**
- * The history block init prints after a scan (SCAN-03): the heading, then at most MAX_HISTORY_ROWS names as
- * `  <name>  <count>`, busiest first and then by name, or `  none` when no name was found, then the notes (noteLines).
- * A scan from scanHistory holds only names that fit HISTORY_NAME_PATTERN, so no transcript text can reach a line.
+ * The history block init shows in the side pane after a scan (SCAN-03, D-133): the heading, then at most
+ * MAX_HISTORY_ROWS names as `  <name>  <count>`, busiest first and then by name, or `  none` when no name was found,
+ * then the notes (noteLines). A scan from scanHistory holds only names that fit HISTORY_NAME_PATTERN, so no transcript
+ * text can reach a line.
  */
 export function historyLines(scan: HistoryScan): string[] {
   const rows = [...scan.counts]
@@ -272,9 +274,10 @@ function skippedWith(io: InitIo, note: string): StepResult<'skipped'> {
  * With no folder or no transcript it logs NO_HISTORY_NOTE, and with a folder it cannot list UNLISTED_HISTORY_NOTE;
  * either way it asks nothing and the scan is skipped. Otherwise it asks historyQuestion with the session count:
  * `No, skip it` skips the scan and reads no transcript, and `Yes, scan names and counts` runs scanHistory over the
- * newest sessions and logs historyLines as one entry. A dismissal, or MAX_ASKS answers that name neither, is cancelled
- * with HISTORY_DISMISSED_REASON, which init prints (A1, D-45). It runs no process, and no other step needs its result:
- * the counts are only hints for the skill questions.
+ * newest sessions and shows historyLines as the side pane's Session history block, each line cleaned as a report cell
+ * (D-133). A dismissal, or MAX_ASKS answers that name neither, is cancelled with HISTORY_DISMISSED_REASON, which init
+ * prints (A1, D-45). It runs no process, and no other step needs its result: the counts are only hints for the skill
+ * questions.
  */
 export async function historyStep(
   io: InitIo,
@@ -291,7 +294,7 @@ export async function historyStep(
   if (isAllowed === null) return { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
   if (!isAllowed) return { kind: 'accepted', value: 'skipped' }
   const scan = await scanHistory(io, dir, listed.sessions)
-  io.log(historyLines(scan).join('\n'))
+  await io.show({ key: 'history', title: PANE_TITLES.history, lines: historyLines(scan).map(reportText) })
 
   return { kind: 'accepted', value: scan }
 }

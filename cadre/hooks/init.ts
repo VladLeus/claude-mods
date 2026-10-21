@@ -114,7 +114,7 @@ import {
   resolveToolCommand,
 } from './recommend'
 import type { HunkCandidate } from './recommend'
-import { cardList, choiceLine, chunkLines, pad, reportText, shown } from './render'
+import { cardList, choiceLine, pad, reportText, shown } from './render'
 import {
   applyAdjust,
   isAutopilotDuration,
@@ -338,15 +338,12 @@ export function pluginVersionOf(text: string): string | null {
   return version
 }
 
-/** The most characters one transcript entry shows: the host draws only the first 2000 of one log call (P9). */
-const LOG_CHUNK_CHARS = 2000
-
 /**
- * Prints lines to the transcript: each line cleaned as a report cell (reportText), so a scanned or typed value cannot
- * add a line or hide text, in entries of at most LOG_CHUNK_CHARS characters (P9).
+ * Logs one note to the transcript as one line (D-133, P9), cleaned as a report cell (reportText), so a scanned or typed
+ * value cannot add a line or hide text. A block of lines goes to the side pane (showBlock) instead.
  */
-function logLines(io: InitIo, lines: readonly string[]): void {
-  for (const chunk of chunkLines(lines.map(reportText), LOG_CHUNK_CHARS)) io.log(chunk)
+function noteLine(io: InitIo, line: string): void {
+  io.log(reportText(line))
 }
 
 /** The side-pane titles of D-133: the bold title of each kind of block the cadre init pane shows. */
@@ -650,7 +647,7 @@ export const ADJUST_QUESTION =
   'Adjust the roles: type one change, for example add docs "Docs writer", drop fe, rename be api "API", ' +
   'or framework qa gsd.'
 
-/** What a button of the Adjust question does: end the loop, or print the roles as they are now. */
+/** What a button of the Adjust question does: end the loop, or show the roles as they are now in the side pane. */
 type AdjustChoice = 'done' | 'show'
 
 /** Each button of the Adjust question with what it does. */
@@ -715,8 +712,9 @@ function changeLine(change: RoleChange): string {
 }
 
 /**
- * The proposal as init prints it before the roles question (ROLE-01): every role with its title, id and purpose, then
- * every change the scan made to the template with its reason and evidence, or `none` when it made none.
+ * The proposal as init shows it in the side pane before the roles question (ROLE-01, D-133): every role with its title,
+ * id and purpose, then every change the scan made to the template with its reason and evidence, or `none` when it made
+ * none.
  */
 export function proposalLines(roles: readonly RoleSpec[], changes: readonly RoleChange[]): string[] {
   const changeRows = changes.length === 0 ? ['  none'] : changes.map(changeLine)
@@ -844,8 +842,8 @@ export type AdjustOutcome =
 /**
  * The Adjust loop (D-47): one typed change per answer, add, drop, rename or framework, until `Done adjusting`, which
  * gives the roles as adjusted. A line it cannot read, a change applyAdjust refuses, or a framework outside
- * `installed` (A5) prints its exact message and the loop goes on; `Show the roles` prints the roles as they are now.
- * A dismissed dialog cancels with ADJUST_DISMISSED_REASON. After MAX_ADJUST_ROUNDS answers it prints
+ * `installed` (A5) prints its exact message and the loop goes on; `Show the roles` shows the roles as they are now in
+ * the side pane. A dismissed dialog cancels with ADJUST_DISMISSED_REASON. After MAX_ADJUST_ROUNDS answers it prints
  * ADJUST_ROUNDS_NOTE and gives the roles adjusted so far, so the roles question asks about them again: a cap is never
  * an acceptance (A1). The roles it is given are never changed.
  */
@@ -861,17 +859,17 @@ export async function adjustLoop(
     const choice = labelled(ADJUST_CHOICES, answer)
     if (choice === 'done') return { kind: 'adjusted', roles: current }
     if (choice === 'show') {
-      logLines(io, roleLines(current))
+      await showBlock(io, 'roles', roleLines(current))
       continue
     }
     const result = adjusted(current, answer, installed)
     if (result.kind === 'error') {
-      logLines(io, [result.message])
+      noteLine(io, result.message)
       continue
     }
     current = result.roles
   }
-  logLines(io, [ADJUST_ROUNDS_NOTE])
+  noteLine(io, ADJUST_ROUNDS_NOTE)
 
   return { kind: 'adjusted', roles: current }
 }
@@ -908,7 +906,7 @@ async function afterProposed(
   io: InitIo,
   state: Extract<RolesState, { readonly kind: 'proposed' }>,
 ): Promise<RolesState> {
-  logLines(io, proposalLines(state.roles, state.changes))
+  await showBlock(io, 'roles', proposalLines(state.roles, state.changes))
   const choice = await askChoice(io, ROLES_QUESTION, { options: ROLES_OPTIONS }, parseRolesChoice)
   if (choice === null) return rolesCancelled(ROLES_DISMISSED_REASON)
   if (choice === 'use') return { kind: 'accepted', roles: state.roles, changes: state.changes }
@@ -937,7 +935,7 @@ async function afterDescribing(io: InitIo, proposal: RoleProposal): Promise<Role
   const described = await describeStep(io)
   if (described === null) return rolesCancelled(DESCRIBE_CANCELLED_REASON)
   if (described.kind === 'roles') return { kind: 'proposed', roles: described.roles, changes: [] }
-  if (described.kind === 'fallback') logLines(io, [described.message])
+  if (described.kind === 'fallback') noteLine(io, described.message)
 
   return { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
 }
@@ -1122,7 +1120,7 @@ export async function frameworkStep(
     case 'installed-only':
       return askFrameworks(io, choice, roles)
     case 'unsupported':
-      logLines(io, [choiceLine(choice)])
+      noteLine(io, choiceLine(choice))
 
       return accepted({ roles, repoDefault: 'none' })
     case 'none':
@@ -1273,7 +1271,7 @@ async function askModelEffort(io: InitIo, question: string): Promise<Pick<RoleSp
     if (answer === null) return null
     const choice = parseModelEffort(answer)
     if (choice !== null) return choice
-    logLines(io, [modelEffortRefusal(answer)])
+    noteLine(io, modelEffortRefusal(answer))
   }
 
   return null
@@ -1556,7 +1554,7 @@ export async function hunkStep(
     hunks.push(hunkOp(candidate, isAccepted, resolveToolCommand(candidate.proposal.write, gsd)))
   }
   const unmet = hunks.filter(isUnmetHunk).map(hunk => hunk.key)
-  if (unmet.length > 0) logLines(io, [attendedNote(unmet)])
+  if (unmet.length > 0) noteLine(io, attendedNote(unmet))
 
   return accepted(hunks)
 }
@@ -1666,7 +1664,7 @@ async function launchDirStep(io: InitIo, root: string): Promise<StepResult<Launc
     const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
     const problem = await launchDirProblem(io, root, path)
     if (problem === null) return accepted({ kind: 'dir', path })
-    logLines(io, [`Cannot use ${shown(answer)}: ${problem}.`])
+    noteLine(io, `Cannot use ${shown(answer)}: ${problem}.`)
   }
 
   return cancelled(LAUNCH_DIR_ROUNDS_REASON)
@@ -2184,7 +2182,7 @@ async function teamStep(
   const { roles, repoDefault } = framed.value
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-  logLines(io, recommendationLines(recommendations, roles))
+  await showBlock(io, 'recommendations', recommendationLines(recommendations, roles))
   const missing = missingSecurityPlugins(roles, gathered.setup)
   const installs = await securityInstallStep(io, missing)
   if (installs.kind === 'cancelled') return installs
@@ -2264,13 +2262,14 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
  * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
  * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
- * files (planStep), prints the summary (reviewLines) and asks REVIEW_QUESTION with REVIEW_OPTIONS; an item word may be
- * typed under "Other" (parseReviewItem). Confirm accepts the plan just shown, with the state it was planned with and
- * the draft it was built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the
- * summary again. A dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step is cancelled with its
- * reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the
- * person did not confirm is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that
- * item's questions (A3). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ * files (planStep), shows the summary in the side pane (reviewLines, D-133) and asks REVIEW_QUESTION with
+ * REVIEW_OPTIONS; an item word may be typed under "Other" (parseReviewItem). Confirm accepts the plan just shown, with
+ * the state it was planned with and the draft it was built from (Reviewed). A go-back re-asks that one item (goBack),
+ * and the next round shows the summary again. A dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step
+ * is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm
+ * (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back picked at the last round
+ * cancels at once and asks none of that item's questions (A3). The review itself writes nothing: Confirm is the consent
+ * apply writes the plan on (D-105).
  */
 export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
   let current = draft
@@ -2289,7 +2288,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
       locations: current.locations,
       readUserMcp: current.readUserMcp,
     })
-    logLines(io, reviewLines(current, scopes, planned.plan))
+    await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
     const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
     if (item === null) return cancelled(REVIEW_DISMISSED_REASON)
     if (item === 'confirm') return accepted({ draft: current, planned })
@@ -2311,7 +2310,7 @@ function historyHints(history: HistoryScan | 'skipped'): ReadonlyMap<string, num
 
 /** The reply of a cancelled step: its reason as its own line, the one place a cancel reason is printed (A1). */
 function cancelReply(io: InitIo, reason: string): string {
-  logLines(io, [reason])
+  noteLine(io, reason)
 
   return INIT_CANCELLED
 }
@@ -2482,7 +2481,7 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * MCP servers and skills, the instruction and memory groups, the carried env names, and the autonomy hunks of the
  * frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start
  * (launchStartStep), shows the one final review with every role's scope card for that start (the one place the cards
- * are printed; reviewLines, ROLE-06, A5) and the exact file plan, where the person confirms or goes back to change one
+ * are shown; reviewLines, ROLE-06, A5) and the exact file plan, where the person confirms or goes back to change one
  * item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
  * installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new for each
  * conflicted file (D-67), running the accepted hunks first, then installing the security plugins answered Install from

@@ -31,7 +31,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { detectText } from './render'
+import { detectText, paneRows, paneView } from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
 
@@ -361,9 +361,7 @@ function initIoOf($: EngineInterface): InitIo {
     ask: (question, spec) => $.ui.ask(question, spec),
     log: text => $.ui.log(text),
     show: async block => {
-      await update($, initPane, blocks =>
-        isPaneOpened ? [block, ...blocks.filter(shown => shown.key !== block.key)] : [block],
-      ).catch(() => undefined)
+      await update($, initPane, blocks => (isPaneOpened ? paneView(blocks, block) : [block])).catch(() => undefined)
       if (isPaneOpened) return
       isPaneOpened = true
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
@@ -501,7 +499,7 @@ export const register: Register = on => {
     }
   })
 
-  // The cadre init side pane (D-133): each block's title in bold, then one row per line, in the normal look.
+  // The cadre init side pane (D-133): the rows of paneRows, each block's title in bold, every row in the normal look.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const blocks = await read($, initPane)
@@ -509,14 +507,10 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        {blocks.map((block, at) => (
-          <Box key={block.key} flexDirection="column">
-            {at > 0 && <Text> </Text>}
-            <Text bold>{block.title}</Text>
-            {block.lines.map((line, row) => (
-              <Text key={row}>{line === '' ? ' ' : line}</Text>
-            ))}
-          </Box>
+        {paneRows(blocks).map((row, at) => (
+          <Text key={at} bold={row.isTitle}>
+            {row.text === '' ? ' ' : row.text}
+          </Text>
         ))}
       </Box>
     )
