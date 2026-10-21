@@ -80,6 +80,7 @@ import type { AskResult, ChoiceAsk, StepResult } from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
+  asciiLower,
   assignToRoles,
   classifyMcp,
   classifySkills,
@@ -91,6 +92,7 @@ import {
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
+  NO_SKILL_PURPOSE,
   NONE_OPTION,
   orderGroupsByUse,
   ownSkillIds,
@@ -104,10 +106,12 @@ import {
   skillGroupQuestion,
   SKILLS_SYSTEM,
   skillsPrompt,
+  skillUsesText,
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import {
   clean,
+  compareText,
   detectRefusal,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
@@ -121,6 +125,7 @@ import {
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { desiredFiles } from './generate'
 import { handoutStep } from './handout'
+import type { HandoutEntry, HandoutItem } from './handout'
 import { sha256Hex } from './hash'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
@@ -1568,18 +1573,107 @@ async function askAssignments(
 }
 
 /**
- * The user's own skills the step asks about (G-02-1b): each skill of the group no plugin adds, as the setup scan gave
- * it, so with its purpose (D-139), in the group's order; none when there is no such group.
+ * The question of a skill group as askAssignments asks it (D-53, D-59, D-136): skillGroupQuestion with how often the
+ * history scan saw the group, the team's role ids and what giving the skills means on its second line, and the Skills
+ * chip; its answer gives every skill of the group.
  */
-function ownSkillsOf(skills: readonly SkillRef[], groups: readonly SkillGroup[]): SkillRef[] {
-  const own = groups.find(group => group.plugin === null)
-  if (own === undefined) return []
+function skillGroupItem(
+  group: SkillGroup,
+  counts: ReadonlyMap<string, number>,
+  roles: readonly RoleSpec[],
+): AssignItem {
+  return {
+    question: withContext(skillGroupQuestion(group, groupUses(group, counts)), skillsContextLine(roles)),
+    header: ASK_HEADERS.skills,
+    names: group.names,
+  }
+}
 
-  return own.names.flatMap(name => {
+/** The entry answer that gives each of the user's own skills its recommended roles (G-02-1b). */
+const OWN_ACCEPT_LABEL = 'Accept recommendations'
+
+/** The entry answer that asks each of the user's own skills once (G-02-1b). */
+const ONE_BY_ONE_LABEL = 'Go one by one'
+
+/** The entry answer that asks the group question of D-53 for all of the user's own skills at once (G-02-1b). */
+const WHOLE_GROUP_LABEL = 'Whole group'
+
+/** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
+export const OWN_SKILLS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
+  OWN_ACCEPT_LABEL,
+  ONE_BY_ONE_LABEL,
+  WHOLE_GROUP_LABEL,
+])
+
+/** The entry question of the hand-out of the user's own skills (G-02-1b), with how many there are. */
+export function ownSkillsQuestion(count: number): string {
+  return `How do you want to hand out your own skills (${count})?`
+}
+
+/**
+ * The context line of the own-skills entry question (G-02-1b, D-136): how many skills no plugin adds, and that the
+ * side pane shows what each does and the roles it is recommended for.
+ */
+export function ownSkillsContextLine(count: number): string {
+  const skills = `${count} ${count === 1 ? 'skill' : 'skills'}`
+
+  return `${skills} with no plugin; the pane shows what each does and the roles it is recommended for.`
+}
+
+/** The most code points of a skill name an own-skill question shows. A scanned name is data, not text to trust. */
+const MAX_SHOWN_SKILL_CHARS = 60
+
+/** The question of one of the user's own skills (G-02-1b): which roles get it, by its name cleaned and cut to 60. */
+export function ownSkillQuestion(name: string): string {
+  return `Which roles get the skill ${clean(name, MAX_SHOWN_SKILL_CHARS)}?`
+}
+
+/**
+ * The context line of an own skill's question (G-02-1b, D-136): what the skill does (NO_SKILL_PURPOSE when the engine
+ * gave no description), how often the history scan saw it (skillUsesText; left out at 0, which a run without the scan
+ * gives) and the roles the model recommended for it, or none.
+ */
+export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: readonly string[]): string {
+  const used = uses === 0 ? '' : ` Used ${skillUsesText(uses)}.`
+
+  return `${skill.purpose ?? NO_SKILL_PURPOSE}${used} Recommended: ${namesOrNone(recommended)}.`
+}
+
+/** The most code points the engine shows in a question's chip. */
+const MAX_CHIP_CHARS = 12
+
+/**
+ * The chip of an own skill's question (G-02-3c): `Skill <i>/<n>`, or just `Skill` when that would be over the 12 code
+ * points a chip shows.
+ */
+export function ownSkillHeader(position: number, count: number): string {
+  const chip = `Skill ${position}/${count}`
+
+  return Array.from(chip).length > MAX_CHIP_CHARS ? 'Skill' : chip
+}
+
+/**
+ * The user's own skills of the group no plugin adds (G-02-1b), as the setup scan gave them, so with their purposes
+ * (D-139), in the group's order.
+ */
+function ownSkillsOf(skills: readonly SkillRef[], group: SkillGroup): SkillRef[] {
+  return group.names.flatMap(name => {
     const found = skills.find(skill => skill.plugin === null && skill.name === name)
 
     return found === undefined ? [] : [found]
   })
+}
+
+/** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
+function skillUseCount(name: string, counts: ReadonlyMap<string, number>): number {
+  return counts.get(asciiLower(name)) ?? 0
+}
+
+/** The skills busiest first by their own use counts, then by name (G-02-1b; user answer 2026-10-21). */
+function busiestFirst(skills: readonly SkillRef[], counts: ReadonlyMap<string, number>): SkillRef[] {
+  return [...skills].sort(
+    (a, b) => skillUseCount(b.name, counts) - skillUseCount(a.name, counts) || compareText(a.name, b.name),
+  )
 }
 
 /**
@@ -1607,20 +1701,67 @@ async function recommendedSkillRoles(
   return new Map()
 }
 
+/** The entry question of the own-skills hand-out as handoutStep asks it (G-02-1b): context line, chip and answers. */
+function ownSkillsEntry(count: number): HandoutEntry {
+  return {
+    question: ownSkillsQuestion(count),
+    context: ownSkillsContextLine(count),
+    header: ASK_HEADERS.skills,
+    accept: OWN_ACCEPT_LABEL,
+    oneByOne: ONE_BY_ONE_LABEL,
+    whole: WHOLE_GROUP_LABEL,
+  }
+}
+
 /**
- * The own-skills block (G-02-1b): nothing with no skill of the user's own; else the model recommends roles for each
- * (recommendedSkillRoles), and the side pane shows every skill with what it does, its own use count and the roles
- * recommended for it, or that the model gave no usable recommendation (ownSkillLines).
+ * Each of the user's own skills as a hand-out item (G-02-1b), in the order given: its name as its id, its question,
+ * context line and chip, and the roles the recommendation gave it (keyed S1, S2, ... by place), none when it gave none.
  */
-async function showOwnSkills(
-  io: InitIo,
-  roles: readonly RoleSpec[],
+function ownSkillItems(
   skills: readonly SkillRef[],
   counts: ReadonlyMap<string, number>,
-): Promise<void> {
-  if (skills.length === 0) return
+  recommended: ReadonlyMap<string, readonly string[]>,
+): HandoutItem[] {
+  const ids = ownSkillIds(skills)
+
+  return skills.flatMap((skill, index) => {
+    const id = ids[index]
+    if (id === undefined) return []
+    const roleIds = recommended.get(id) ?? []
+    const context = ownSkillContextLine(skill, skillUseCount(skill.name, counts), roleIds)
+    const header = ownSkillHeader(index + 1, skills.length)
+
+    return [{ id: skill.name, question: ownSkillQuestion(skill.name), context, header, recommended: roleIds }]
+  })
+}
+
+/**
+ * The hand-out of the user's own skills (G-02-1b, D-139); with no such skill it asks nothing. Else, busiest first and
+ * then by name, the model recommends roles for each (recommendedSkillRoles) and the side pane shows every skill with
+ * what it does, its own use count and the roles recommended for it (ownSkillLines). Then the entry question
+ * (handoutStep): Accept recommendations gives each skill its recommended roles, Go one by one asks each skill once in
+ * that order (Yes, No or a typed role list) and Whole group asks the group question of D-53 (skillGroupItem). A
+ * dismissal is cancelled with ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question with
+ * NO_USABLE_ANSWER_REASON (A1).
+ */
+async function ownSkillsStep(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  scanned: readonly SkillRef[],
+  group: SkillGroup | undefined,
+  counts: ReadonlyMap<string, number>,
+): Promise<StepResult<NameAssignment[]>> {
+  if (group === undefined) return accepted([])
+  const skills = busiestFirst(ownSkillsOf(scanned, group), counts)
   const recommended = await recommendedSkillRoles(io, roles, skills, counts)
   await showBlock(io, 'skills', ownSkillLines(skills, counts, recommended))
+  const items = ownSkillItems(skills, counts, recommended)
+  const outcome = await handoutStep(io, ownSkillsEntry(skills.length), items, roles, ASSIGNMENT_DISMISSED_REASON)
+  if (outcome.kind === 'cancelled') return outcome
+  if (outcome.value.kind === 'whole') return askAssignments(io, roles, [skillGroupItem(group, counts, roles)])
+  const { given } = outcome.value
+
+  return accepted(skills.map(skill => ({ name: skill.name, roleIds: given.get(skill.name) ?? [] })))
 }
 
 /**
@@ -1629,16 +1770,17 @@ async function showOwnSkills(
  * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
  * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
- * any other role is asked again (parseRoleList, T-02-33). Before any skill group is asked, when the user has skills
- * that no plugin adds, a model call recommends roles for each and the side pane shows them with what each does, its
- * own use count and the roles recommended for it (showOwnSkills, G-02-1b, D-139). The step decides the whole list of
- * each name it asks about: every role first loses those names, then each name joins the `mcp` or `skills` list of the
- * roles its answer names (assignToRoles), so running the step again sets that list, and the names the tables decide
- * stay (A3). With `hints`, the command and skill counts of the history scan, the skill groups are asked busiest first
- * and each question says how often its group was used (orderGroupsByUse, skillGroupQuestion); without hints, or with
- * none that count, the questions and their order are the same as without the scan (D-59). Only an answer to every
- * question gives roles: a dismissal gives the cancel reason ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it
- * cannot read at one question NO_USABLE_ANSWER_REASON (A1, D-136). The roles it is given never change.
+ * any other role is asked again (parseRoleList, T-02-33). Then, when the user has skills that no plugin adds, they are
+ * handed out (ownSkillsStep, G-02-1b): a model call recommends roles for each, the side pane shows them, and the entry
+ * question offers Accept recommendations, Go one by one or Whole group. The step decides the whole list of each name it
+ * asks about: every role first loses those names, then each name joins the `mcp` or `skills` list of the roles its
+ * answer names (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3).
+ * With `hints`, the command and skill counts of the history scan, the plugin groups are asked busiest first and each
+ * group question says how often its group was used (orderGroupsByUse, skillGroupQuestion), and the own skills are
+ * shown and asked busiest first; without hints, or with none that count, the questions and their order are the same
+ * as without the scan (D-59). Only an answer to every question gives roles: a dismissal gives the cancel reason
+ * ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question NO_USABLE_ANSWER_REASON (A1,
+ * D-136). The roles it is given never change.
  */
 export async function assignmentStep(
   io: InitIo,
@@ -1654,16 +1796,15 @@ export async function assignmentStep(
     header: ASK_HEADERS.mcp,
     names: [name],
   }))
-  const groupItems = orderGroupsByUse(skills.groups, counts).map(group => ({
-    question: withContext(skillGroupQuestion(group, groupUses(group, counts)), skillsContextLine(roles)),
-    header: ASK_HEADERS.skills,
-    names: group.names,
-  }))
+  const pluginGroups = skills.groups.filter(group => group.plugin !== null)
+  const groupItems = orderGroupsByUse(pluginGroups, counts).map(group => skillGroupItem(group, counts, roles))
   const servers = await askAssignments(io, roles, serverItems)
   if (servers.kind === 'cancelled') return servers
-  await showOwnSkills(io, roles, ownSkillsOf(setup.skills, skills.groups), counts)
   const grouped = await askAssignments(io, roles, groupItems)
   if (grouped.kind === 'cancelled') return grouped
+  const ownGroup = skills.groups.find(group => group.plugin === null)
+  const own = await ownSkillsStep(io, roles, setup.skills, ownGroup, counts)
+  if (own.kind === 'cancelled') return own
   const asked = new Set([...mcp.unknown])
   const askedSkills = new Set(skills.groups.flatMap(group => group.names))
   const unasked = roles.map(role => ({
@@ -1673,7 +1814,7 @@ export async function assignmentStep(
   }))
   const withMcp = assignToRoles(unasked, [...mcp.assigned, ...servers.value], 'mcp')
 
-  return accepted(assignToRoles(withMcp, [...skills.assigned, ...grouped.value], 'skills'))
+  return accepted(assignToRoles(withMcp, [...skills.assigned, ...grouped.value, ...own.value], 'skills'))
 }
 
 /** The instruction groups in the order init asks about them and a role stores them (D-63). */

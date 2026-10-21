@@ -16,6 +16,7 @@ import type {
   ProbeExpectation,
   RepoScan,
   ScopeContext,
+  SkillRef,
 } from '../types'
 import { ADAPTERS } from './adapters'
 import {
@@ -46,13 +47,17 @@ import {
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
+  NO_SKILL_PURPOSE,
   NONE_OPTION,
+  ownSkillLines,
   PER_ROLE,
   SAME_FOR_ALL,
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
   SKILL_ROLE_ROWS,
   skillGroupQuestion,
+  SKILLS_SYSTEM,
+  skillUsesText,
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
@@ -144,6 +149,12 @@ import {
   MODEL_MODE_QUESTION,
   NEXT_STEP_NOTE,
   NOT_INTERACTIVE_REPLY,
+  OWN_SKILLS_ENTRY_OPTIONS,
+  ownSkillContextLine,
+  ownSkillHeader,
+  ownSkillQuestion,
+  ownSkillsContextLine,
+  ownSkillsQuestion,
   PARTS_DRY_RUN_ONLY_NOTE,
   policyLine,
   proposalLines,
@@ -452,6 +463,24 @@ const PART_RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
   ['M1', ['tl']],
 ])
 
+/** One of the user's own skills, with the purpose the engine gave it (G-02-1b, D-139). */
+const RELEASE_NOTES: SkillRef = { name: 'release-notes', plugin: null, purpose: 'Write the release notes.' }
+
+/** One of the user's own skills that the engine gave no description. */
+const MY_SKILL: SkillRef = { name: 'my-skill', plugin: null }
+
+/** The user's own skills of the own-skills texts: S1 release-notes and S2 my-skill. */
+const OWN_SKILLS: readonly SkillRef[] = [RELEASE_NOTES, MY_SKILL]
+
+/** The history counts of OWN_SKILLS: release-notes was used 3 times. */
+const OWN_SKILL_USES: ReadonlyMap<string, number> = new Map([['release-notes', 3]])
+
+/** The roles recommended for OWN_SKILLS: S1 to BE, S2 to no role. */
+const OWN_SKILLS_RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
+  ['S1', ['be']],
+  ['S2', []],
+])
+
 const POLICIES: readonly GitPolicy[] = ['definitions', 'all', 'ignore']
 
 const STARTS: readonly LaunchStart[] = [{ kind: 'git-root' }, { kind: 'here' }, { kind: 'dir', path: 'apps/web' }]
@@ -555,6 +584,17 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
       memoryQuestion('project-claude-md', ['<repo>/CLAUDE.md']),
     ],
   ],
+  ['assign', 'NO_SKILL_PURPOSE', NO_SKILL_PURPOSE],
+  ['assign', 'skillUsesText', [skillUsesText(1), skillUsesText(3)]],
+  [
+    'assign',
+    'ownSkillLines',
+    [
+      ownSkillLines(OWN_SKILLS, OWN_SKILL_USES, OWN_SKILLS_RECOMMENDED),
+      ownSkillLines(OWN_SKILLS, new Map(), new Map()),
+    ],
+  ],
+  ['assign', 'SKILLS_SYSTEM', SKILLS_SYSTEM],
   ['builtin', 'BUILTIN_GATES', BUILTIN_GATES],
   ['builtin', 'BUILTIN_ADAPTER', BUILTIN_ADAPTER],
   ['builtin', 'builtinKickoffText', KICKOFFS.map(builtinKickoffText)],
@@ -696,6 +736,16 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
     ],
   ],
   ['init', 'PARTS_DRY_RUN_ONLY_NOTE', PARTS_DRY_RUN_ONLY_NOTE],
+  ['init', 'OWN_SKILLS_ENTRY_OPTIONS', OWN_SKILLS_ENTRY_OPTIONS],
+  ['init', 'ownSkillsQuestion', ownSkillsQuestion(2)],
+  ['init', 'ownSkillsContextLine', [ownSkillsContextLine(1), ownSkillsContextLine(2)]],
+  ['init', 'ownSkillQuestion', ownSkillQuestion(RELEASE_NOTES.name)],
+  [
+    'init',
+    'ownSkillContextLine',
+    [ownSkillContextLine(RELEASE_NOTES, 3, ['be']), ownSkillContextLine(MY_SKILL, 0, [])],
+  ],
+  ['init', 'ownSkillHeader', [ownSkillHeader(1, 2), ownSkillHeader(100, 200)]],
   ['instructions', 'CONTENT_QUESTION', CONTENT_QUESTION],
   ['instructions', 'CONTENT_OPTIONS', CONTENT_OPTIONS],
   ['instructions', 'CONTENT_DISMISSED_REASON', CONTENT_DISMISSED_REASON],
