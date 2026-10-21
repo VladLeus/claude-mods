@@ -24,8 +24,10 @@ import {
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
+  NO_SKILL_PURPOSE,
   NONE_OPTION,
   orderGroupsByUse,
+  ownSkillLines,
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
@@ -33,8 +35,10 @@ import {
   SAME_FOR_ALL,
   SKILL_ROLE_ROWS,
   skillGroupQuestion,
+  skillUsesText,
 } from './assign'
 import type { SkillGroup } from './assign'
+import { HISTORY_MAX_SESSIONS } from './history'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -692,6 +696,79 @@ describe('history hints', () => {
   test('orderGroupsByUse puts a busy group first when its skill name has capital letters (WR-02)', () => {
     const mixed: SkillGroup = { label: 'your own', plugin: null, names: ['MySkill'] }
     expect(orderGroupsByUse([ALPHA, CODEX, mixed], new Map([['myskill', 10]]))).toEqual([mixed, ALPHA, CODEX])
+  })
+})
+
+describe('ownSkillLines', () => {
+  /** Two of the user's own skills: one the engine described, one it did not (D-139). */
+  const OWN_SKILLS: readonly SkillRef[] = [
+    { name: 'deploy-notes', plugin: null, purpose: 'Write the release notes for a deploy.' },
+    { name: 'my-skill', plugin: null },
+  ]
+  /** The first row of the block: what giving a skill means (G-02-1b). */
+  const HEADING =
+    'Skills with no plugin (a role given a skill can run it in its session; a role not given it cannot):'
+  /** S1 (deploy-notes) recommended to BE and QA, S2 (my-skill) to no role. */
+  const RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
+    ['S1', ['be', 'qa']],
+    ['S2', []],
+  ])
+  /** The rows of OWN_SKILLS and RECOMMENDED when no skill was used. */
+  const UNUSED_ROWS = [
+    HEADING,
+    '  deploy-notes: Write the release notes for a deploy.',
+    '    recommended: be, qa',
+    '  my-skill: No description.',
+    '    recommended: none',
+  ]
+
+  test('each skill shows its purpose, its own use count and the roles recommended for it, after the heading', () => {
+    const uses = new Map([
+      ['deploy-notes', 3],
+      ['my-skill', 1],
+    ])
+    expect(ownSkillLines(OWN_SKILLS, uses, RECOMMENDED)).toEqual([
+      HEADING,
+      '  deploy-notes: Write the release notes for a deploy.',
+      '    used 3 times in the last 50 sessions; recommended: be, qa',
+      '  my-skill: No description.',
+      '    used 1 time in the last 50 sessions; recommended: none',
+    ])
+  })
+
+  test('the used part is left out for a count of 0 and when the history was not scanned', () => {
+    expect(ownSkillLines(OWN_SKILLS, new Map(), RECOMMENDED)).toEqual(UNUSED_ROWS)
+    expect(ownSkillLines(OWN_SKILLS, new Map([['deploy-notes', 0]]), RECOMMENDED)).toEqual(UNUSED_ROWS)
+  })
+
+  test("a skill's count is found under its name in ASCII lower case, the form the history scan keeps", () => {
+    const mixed: readonly SkillRef[] = [{ name: 'MySkill', plugin: null }]
+    expect(ownSkillLines(mixed, new Map([['myskill', 4]]), new Map([['S1', []]]))).toEqual([
+      HEADING,
+      '  MySkill: No description.',
+      '    used 4 times in the last 50 sessions; recommended: none',
+    ])
+  })
+
+  test('with no usable recommendation, an empty map, every skill shows none and a last row says so', () => {
+    expect(ownSkillLines(OWN_SKILLS, new Map(), new Map())).toEqual([
+      HEADING,
+      '  deploy-notes: Write the release notes for a deploy.',
+      '    recommended: none',
+      '  my-skill: No description.',
+      '    recommended: none',
+      'The model gave no usable recommendation: no role gets a skill unless you pick one.',
+    ])
+  })
+
+  test('the skills are S1, S2 by their place; a skill a usable map leaves out shows none, with no fallback row', () => {
+    expect(ownSkillLines(OWN_SKILLS, new Map(), new Map([['S1', ['be', 'qa']]]))).toEqual(UNUSED_ROWS)
+  })
+
+  test('a skill with no description reads NO_SKILL_PURPOSE; the sessions named are those the history reads', () => {
+    expect(NO_SKILL_PURPOSE).toBe('No description.')
+    expect(skillUsesText(1)).toBe(`1 time in the last ${HISTORY_MAX_SESSIONS} sessions`)
+    expect(skillUsesText(2)).toBe(`2 times in the last ${HISTORY_MAX_SESSIONS} sessions`)
   })
 })
 

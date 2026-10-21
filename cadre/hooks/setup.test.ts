@@ -38,6 +38,14 @@ const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', 
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
 
+/**
+ * A scan as JSON with its skills by name and plugin only: the skill purposes, which D-139 keeps in memory by design,
+ * are left out, so the leak checks still read every other value of the scan.
+ */
+function jsonWithoutPurposes(scan: SetupScan): string {
+  return JSON.stringify({ ...scan, skills: scan.skills.map(skill => ({ name: skill.name, plugin: skill.plugin })) })
+}
+
 /** A world whose three settings sources are the given ones. */
 function settingsWorld(user: unknown, project: unknown = {}, local: unknown = {}): MemWorld {
   return memWorld({ settings: { user, project, local } })
@@ -92,10 +100,13 @@ describe('setup settings', () => {
     ])
   })
 
-  test('no secret fixture and no home path survives into the scan of the secret world', async () => {
-    const json = JSON.stringify(await scanOf(secretWorld()))
+  test('no secret fixture and no home path survives into the secret world scan but a skill purpose', async () => {
+    const scan = await scanOf(secretWorld())
+    const json = jsonWithoutPurposes(scan)
     expect(leaks(json, SECRETS)).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
+    // The codex skill's description is its purpose, held in memory for the questions and never written (D-139).
+    expect(scan.skills).toEqual([{ name: 'codex:rescue', plugin: 'codex', purpose: 'Bearer FAKE-TOKEN-0123' }])
   })
 
   test('settingsKeys lists the user, project and local sources in that order with their names sorted', () => {
@@ -430,8 +441,8 @@ describe('setup sources', () => {
       { name: 'mcp__x__y', source: 'mcp', description: '' },
     ])
     expect(found).toEqual([
-      { name: 'gsd-plan-phase', plugin: null },
-      { name: 'superpowers:brainstorming', plugin: 'superpowers' },
+      { name: 'gsd-plan-phase', plugin: null, purpose: 'x' },
+      { name: 'superpowers:brainstorming', plugin: 'superpowers', purpose: 'y' },
     ])
   })
 
@@ -462,12 +473,12 @@ describe('setup sources', () => {
     ])
   })
 
-  test('projectCommands never keeps a description or any other field of a command', () => {
+  test('projectCommands keeps a description only as the purpose, and never any other field of a command', () => {
     const found = projectCommands([
       { name: 'one', source: 'user', description: 'Bearer FAKE-TOKEN-0123', argumentHint: 'sk-FAKE-SECRET-0123456789' },
     ])
-    expect(found).toEqual([{ name: 'one', plugin: null }])
-    expect(leaks(JSON.stringify(found), SECRETS)).toEqual([])
+    expect(found).toEqual([{ name: 'one', plugin: null, purpose: 'Bearer FAKE-TOKEN-0123' }])
+    expect(leaks(JSON.stringify(found), SECRETS)).toEqual(['Bearer FAKE-TOKEN-0123'])
   })
 
   test('projectCommands drops a name or a plugin outside the name pattern', () => {
@@ -829,15 +840,68 @@ describe('setup sources', () => {
     const scan = await scanOf(world)
     expect(scan.plugins).toEqual(['a@m', 'b@m', 'z@m'])
     expect(scan.skills).toEqual([
-      { name: 'gsd-plan-phase', plugin: null },
-      { name: 'superpowers:brainstorming', plugin: 'superpowers' },
+      { name: 'gsd-plan-phase', plugin: null, purpose: 'Bearer FAKE-TOKEN-0123' },
+      { name: 'superpowers:brainstorming', plugin: 'superpowers', purpose: 'x' },
     ])
     expect(scan.mcp.map(server => server.name)).toEqual(['github', 'jira', 'slack'])
     expect(scan.agents).toEqual(['a', 'b', 'c'])
     expect(scan.warnings).toEqual([])
-    const json = JSON.stringify(scan)
+    const json = jsonWithoutPurposes(scan)
     expect(leaks(json, SECRETS)).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
+  })
+})
+
+describe('skill purpose (D-139)', () => {
+  test('projectCommands keeps a string description as the purpose of its skill, user and plugin alike', () => {
+    const found = projectCommands([
+      { name: 'my-skill', source: 'user', description: 'Write the release notes for a deploy.' },
+      { name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Hand a stuck task to Codex.' },
+    ])
+    expect(found).toEqual([
+      { name: 'codex:rescue', plugin: 'codex', purpose: 'Hand a stuck task to Codex.' },
+      { name: 'my-skill', plugin: null, purpose: 'Write the release notes for a deploy.' },
+    ])
+  })
+
+  test('a purpose is cleaned: line breaks, control and bidi characters are removed', () => {
+    const bell = String.fromCharCode(7)
+    const description = `One line\nand more${BIDI_OVERRIDE}${bell}.`
+    expect(projectCommands([{ name: 'a', source: 'user', description }])).toEqual([
+      { name: 'a', plugin: null, purpose: 'One lineand more.' },
+    ])
+  })
+
+  test('a purpose is cut to 120 code points, the ellipsis included; one of 120 is kept whole', () => {
+    const smile = String.fromCodePoint(0x1f600)
+    const found = projectCommands([
+      { name: 'exact', source: 'user', description: 'x'.repeat(120) },
+      { name: 'long', source: 'user', description: 'y'.repeat(121) },
+      { name: 'wide', source: 'user', description: smile.repeat(121) },
+    ])
+    expect(found.map(skill => skill.purpose)).toEqual([
+      'x'.repeat(120),
+      `${'y'.repeat(119)}…`,
+      `${smile.repeat(119)}…`,
+    ])
+  })
+
+  test('a missing, non-string or blank description gives no purpose field', () => {
+    const found = projectCommands([
+      { name: 'a', source: 'user' },
+      { name: 'b', source: 'user', description: 5 },
+      { name: 'c', source: 'user', description: '' },
+      { name: 'd', source: 'user', description: '   ' },
+      { name: 'e', source: 'user', description: String.fromCharCode(7) },
+    ])
+    expect(found).toEqual(['a', 'b', 'c', 'd', 'e'].map(name => ({ name, plugin: null })))
+    expect(found.filter(skill => Object.hasOwn(skill, 'purpose'))).toEqual([])
+  })
+
+  test('the setup scan keeps each skill purpose in memory, as projectCommands gives it', async () => {
+    const commands = [{ name: 'my-skill', source: 'user', description: 'UNIQUE-PURPOSE-7f3a' }]
+    const scan = await scanOf(memWorld({ commands }))
+    expect(scan.skills).toEqual([{ name: 'my-skill', plugin: null, purpose: 'UNIQUE-PURPOSE-7f3a' }])
   })
 })
 
@@ -1202,7 +1266,8 @@ describe('setup consent and instructions', () => {
     expect(scan.claudeMd).toHaveLength(4)
     expect(scan.hasGlobalClaudeMd).toBe(true)
     expect(scan.memoryFiles).toEqual(['MEMORY.md'])
-    const json = JSON.stringify(scan)
+    expect(scan.skills).toEqual([{ name: 'one', plugin: null, purpose: 'Bearer FAKE-TOKEN-0123' }])
+    const json = jsonWithoutPurposes(scan)
     expect(leaks(json, [...SECRETS, 'someone@example.com'])).toEqual([])
     expect(leaks(json, ABSOLUTE_PATH_MARKERS)).toEqual([])
   })

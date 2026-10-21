@@ -257,7 +257,7 @@ import {
   templateRole,
   withWrites,
 } from './testkit'
-import type { HostRunRule, MemHost, MemRun, MemWorld } from './testkit'
+import type { HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
@@ -1056,6 +1056,7 @@ describe('init pane (G-02-1)', () => {
       env: 'Env variables',
       notes: 'Notes',
       instructions: 'Instruction parts',
+      skills: 'Your own skills',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -2208,6 +2209,46 @@ describe('history hints', () => {
     expect(replies[1]).toBe(replies[0])
     expect(replies[2]).toBe(replies[0])
     expect(replies[0]?.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+  })
+})
+
+/** The description of the own skill of the purpose tests: a text no other fixture holds (D-139). */
+const UNIQUE_PURPOSE = 'UNIQUE-PURPOSE-7f3a'
+
+/** A git repo whose one skill is the user's own my-skill, which the engine describes as UNIQUE_PURPOSE. */
+function purposeWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({ commands: [{ name: 'my-skill', source: 'user', description: UNIQUE_PURPOSE }], ...over })
+}
+
+describe('skill purpose in init (D-139)', () => {
+  test('a dry run shows the Your own skills block with each purpose before any own-skill question', async () => {
+    const run = memIo(purposeWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(run.shown.filter(block => block.key === 'skills').map(block => block.title)).toEqual(['Your own skills'])
+    expect(shownBlock(run, 'skills')).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
+    const shownAt = events.indexOf('show skills')
+    const askedAt = events.findIndex(event => event.startsWith('ask ') && event.includes('your own skills'))
+    expect(shownAt).toBeGreaterThan(-1)
+    expect(askedAt).toBeGreaterThan(shownAt)
+  })
+
+  test('a plain init holds the purpose in memory for the pane and writes no file that holds it (T-02-66)', async () => {
+    const host = memHost(hostWorld({}))
+    const run = memIo(purposeWorld(), { ...INIT_ANSWERS, 'Which roles get your own skills': 'All roles' })
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    expect(shownBlock(run, 'skills')).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
+    const roleFiles = host.writes.filter(write => write.path.endsWith('/role.json'))
+    expect(roleFiles.map(write => write.path)).toEqual([
+      '/repo/.cadre/pm/role.json',
+      '/repo/.cadre/security/role.json',
+      '/repo/.cadre/tl/role.json',
+    ])
+    expect(roleFiles.filter(write => !write.text.includes('"my-skill"'))).toEqual([])
+    const isHolding = (write: HostWrite): boolean =>
+      write.path.includes(UNIQUE_PURPOSE) || write.text.includes(UNIQUE_PURPOSE)
+    expect(host.writes.filter(isHolding)).toEqual([])
+    expect(reply).not.toContain(UNIQUE_PURPOSE)
   })
 })
 
