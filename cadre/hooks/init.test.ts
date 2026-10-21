@@ -3443,7 +3443,7 @@ describe('reviewStep', () => {
     for (const [answer, item] of cases) expect([answer, parseReviewItem(answer)]).toEqual([answer, item])
   })
 
-  test('before the question init shows one review block: roles, cards, plan, warnings, then the hint', async () => {
+  test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const world = fullWorld({ locations })
     const run = memIo(world, INIT_ANSWERS)
@@ -3468,8 +3468,9 @@ describe('reviewStep', () => {
       ...team.map(role => `  ${role.title} (${role.id})`),
       ...cardLines(team, scopes),
       ...renderPlan(plan),
+      policyLine('definitions'),
+      launchLine({ kind: 'git-root' }),
       ...scanWarningLines(scanWarnings(locations, gathered)),
-      REVIEW_HINT,
     ]
     expect(team).toHaveLength(6)
     expect(expected).toContain('warning: the root was given through a link')
@@ -3697,6 +3698,59 @@ describe('reviewStep', () => {
     const again = await runInit(run.io, { dryRun: true })
     expect(run.asked[askedBefore]).toBe(CLAUDE_JSON_QUESTION)
     expect(again).toBe(await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true }))
+  })
+})
+
+describe('review shows policy and launcher start (G-02-3)', () => {
+  /**
+   * The rows a dry run of the default team on a repo with no `.gitignore` plans for it: the row, then each line of the
+   * cadre block it writes, markers included, as gitignoreLines gives them for a team with a Security role (D-134).
+   */
+  const IGNORE_ROWS = [
+    '  create    .gitignore',
+    ...['# >>> cadre', ...gitignoreLines('definitions', null, true), '# <<< cadre'].map(line => `            ${line}`),
+  ]
+
+  /** The lines of the review block after its file plan: the rows below the plan's `Summary:` line. */
+  function afterPlan(review: readonly string[]): readonly string[] {
+    return review.slice(review.findIndex(line => line.startsWith('Summary: ')) + 1)
+  }
+
+  test('a dry run shows the git policy and the launcher start right after the plan, before the question', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const review = shownBlock(run, 'review')
+    expect(review).toContain('File plan:')
+    expect(afterPlan(review).slice(0, 2)).toEqual([
+      'Git policy: commit definitions (.cadre/*/.runtime/ ignored)',
+      'Launchers start in: the git root',
+    ])
+    expect(review).not.toContain(IGNORE_ALL_NOTE)
+    const askedAt = events.findIndex(event => event.startsWith('ask Review the plan'))
+    expect([askedAt > 0, events[askedAt - 1]]).toEqual([true, 'show review'])
+  })
+
+  test('with the ignore policy the review also shows the worktree note, right after the launcher start', async () => {
+    const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': 'Ignore all of .cadre/' })
+    await runInit(run.io, { dryRun: true })
+    expect(afterPlan(shownBlock(run, 'review')).slice(0, 3)).toEqual([
+      'Git policy: ignore all of .cadre/',
+      'Launchers start in: the git root',
+      IGNORE_ALL_NOTE,
+    ])
+  })
+
+  test('the review and the reply show the lines of the .gitignore block under its row (PLAN-03)', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const reply = (await runInit(run.io, { dryRun: true })).split('\n')
+    const review = shownBlock(run, 'review')
+    const reviewAt = review.indexOf('  create    .gitignore')
+    const replyAt = reply.indexOf('  create    .gitignore')
+    expect([reviewAt > 0, replyAt > 0]).toEqual([true, true])
+    expect(review.slice(reviewAt, reviewAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
+    expect(reply.slice(replyAt, replyAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
+    expect(IGNORE_ROWS.slice(-2)).toEqual(['            CLAUDE-SECURITY-*/', '            # <<< cadre'])
   })
 })
 
@@ -5043,7 +5097,7 @@ describe('security plugin installs (decision #39)', () => {
     const durationAt = events.indexOf(`ask ${DURATION_QUESTION}`)
     expect([recommendedAt >= 0, recommendedAt < askedAt, askedAt < durationAt]).toEqual([true, true, true])
     const lines = shownBlock(run, 'review')
-    expect(lines[lines.indexOf(REVIEW_HINT) - 1]).toBe(
+    expect(lines.at(-1)).toBe(
       'Plugins to install after Confirm (a --dry-run installs nothing): ' +
         'claude-security@claude-plugins-official, security-guidance@claude-plugins-official',
     )
@@ -5136,7 +5190,7 @@ describe('security plugin installs (decision #39)', () => {
   })
 })
 
-/** The lines of each review init showed, in order: one side-pane review block per round, `Roles:` to REVIEW_HINT. */
+/** The lines of each review init showed, in order: one side-pane review block per round, from `Roles:` on. */
 function reviewRounds(run: MemRun): string[][] {
   return run.shown.filter(block => block.key === 'review').map(block => [...block.lines])
 }

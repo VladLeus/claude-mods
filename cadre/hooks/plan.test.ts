@@ -789,9 +789,10 @@ describe('ignore block', () => {
 
     test('no .gitignore on disk plans a create op that sorts after the .cadre ops', async () => {
       const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], gitignore: withIgnore({ state: 'absent' }) }))
+      const detail = [IGNORE_BEGIN, ...LINES, IGNORE_END]
 
       expect(summary(plan)).toEqual([`create ${ROLE}`, `create ${MANIFEST_PATH}`, 'create .gitignore'])
-      expect(fileOps(plan)[2]).toEqual({ kind: 'create', path: '.gitignore', mode: 'file', note: null })
+      expect(fileOps(plan)[2]).toEqual({ kind: 'create', path: '.gitignore', mode: 'file', note: null, detail })
       expect(plan.warnings).toEqual([])
     })
 
@@ -860,6 +861,93 @@ describe('ignore block', () => {
 
       expect(kindOf(plan, '.gitignore')).toBe('leave')
     })
+  })
+})
+
+describe('gitignore block rows (G-02-3)', () => {
+  /** The block lines of the definitions policy for a repo with no `.gitignore`, as gitignoreLines gives them. */
+  const LINES = gitignoreLines('definitions', null)
+
+  /** What the `.gitignore` op carries: the block lines between the two markers, markers included (PLAN-03). */
+  const DETAIL = [IGNORE_BEGIN, ...LINES, IGNORE_END]
+
+  test('the .gitignore op carries the block lines, markers included, when created, changed or left', async () => {
+    const reads: readonly (readonly [PortRead, FileOp['kind']])[] = [
+      [{ state: 'absent' }, 'create'],
+      [text('node_modules\n'), 'change'],
+      [text(mergeIgnoreBlock(null, LINES) ?? ''), 'leave'],
+    ]
+    for (const [disk, kind] of reads) {
+      const plan = await buildPlan(input({ gitignore: { disk, lines: LINES } }))
+      const ignore = fileOps(plan).find(planned => planned.path === '.gitignore')
+
+      expect([kind, ignore]).toEqual([kind, { kind, path: '.gitignore', mode: 'file', note: null, detail: DETAIL }])
+    }
+  })
+
+  test('only the .gitignore op has detail rows: no create, conflict, copy, stale file or manifest op', async () => {
+    const stale: ManifestEntry = { path: '.cadre/old.json', sha256: 'x', mode: 'file' }
+    const plan = await buildPlan(
+      input({
+        desired: [file(ROLE, 'new\n'), file(INDEX, '# index\n')],
+        disk: diskOf({ [ROLE]: text('mine\n') }),
+        manifest: { schema: 1, cadreVersion: VERSION, files: [stale] },
+        manifestState: 'present',
+        gitignore: { disk: { state: 'absent' }, lines: LINES },
+        hunks: [HUNK],
+      }),
+    )
+
+    expect(summary(plan)).toEqual([
+      `create ${INDEX}`,
+      `conflict ${ROLE}`,
+      `create ${ROLE}.cadre-new`,
+      `create ${MANIFEST_PATH}`,
+      'leave .cadre/old.json',
+      'create .gitignore',
+    ])
+    expect(fileOps(plan).filter(planned => 'detail' in planned).map(planned => planned.path)).toEqual(['.gitignore'])
+  })
+
+  test('renderPlan shows each block line on its own row under the .gitignore row, indented like a note', async () => {
+    const plan = await buildPlan(input({ gitignore: { disk: { state: 'absent' }, lines: LINES } }))
+
+    expect(LINES).toEqual(['thoughts/', '.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
+    expect(renderPlan(plan)).toEqual([
+      'File plan:',
+      '  create    .cadre/manifest.json',
+      '  create    .gitignore',
+      '            # >>> cadre',
+      '            thoughts/',
+      '            .cadre/*/.runtime/',
+      '            .cadre/**/*.cadre-new',
+      '            # <<< cadre',
+      'Summary: 2 create, 0 change, 0 leave, 0 conflict, 0 hunks',
+    ])
+  })
+
+  test('the detail rows come after the note row when the op has a note, and before the next op', () => {
+    const ops = [op('change', '.gitignore', { note: 'kept', detail: ['a', 'b'] }), op('create', 'z')]
+    const lines = renderPlan(planOf(ops))
+
+    expect(lines.slice(1, 6)).toEqual([
+      '  change    .gitignore',
+      '            kept',
+      '            a',
+      '            b',
+      '  create    z',
+    ])
+  })
+
+  test('each detail line is cleaned as a report cell, so none can add a row or hide text (T-02-52)', () => {
+    const lines = renderPlan(planOf([op('create', '.gitignore', { detail: [`x\ny${BIDI_OVERRIDE}`] })]))
+
+    expect(lines).toEqual([
+      'File plan:',
+      '  create    .gitignore',
+      '            xy',
+      'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks',
+    ])
   })
 })
 
