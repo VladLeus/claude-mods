@@ -1179,3 +1179,52 @@ describe('readMemories', () => {
     expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md'])
   })
 })
+
+describe('part hashes', () => {
+  test('every part carries the SHA-256 of its text, its heading line included', async () => {
+    const run = memIo(filesWorld({ [`${CONFIG}/CLAUDE.md`]: GLOBAL_TEXT }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    const texts = ['# Security\nNever commit secrets.\n', '## Git\nUse signed commits.\n']
+    expect(scan.parts.map(found => found.text)).toEqual(texts)
+    const hashes = [await sha256Hex(texts[0] ?? ''), await sha256Hex(texts[1] ?? '')]
+    expect(scan.parts.map(found => found.hash)).toEqual(hashes)
+  })
+
+  test('the same text in two files gives the same hash, and a changed byte changes it', async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# Same\nKeep it short.\n',
+        '/repo/CLAUDE.md': '# Same\nKeep it short.\n',
+        '/repo/.claude/CLAUDE.md': '# Same\nKeep it short!\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md', '<repo>/.claude/CLAUDE.md']))
+    const [global, repo, changed] = scan.parts.map(found => found.hash)
+    expect([scan.parts.length, global === repo, repo === changed]).toEqual([3, true, false])
+    expect(global).toBe(await sha256Hex('# Same\nKeep it short.\n'))
+  })
+
+  test('a part of every source has a hash of 64 lowercase hex characters: rules, AGENTS.md and docs', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n[a doc](docs/a.md)\n',
+        [`${RULES}/x.md`]: '# X\n',
+        '/repo/AGENTS.md': '# Agents\n',
+        '/repo/docs/a.md': '# A\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, repoSources(['<repo>/CLAUDE.md'], ['x.md'], true))
+    expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md', '.claude/rules/x.md', 'AGENTS.md', 'docs/a.md'])
+    expect(scan.parts.filter(found => /^[0-9a-f]{64}$/.test(String(found.hash)))).toHaveLength(4)
+  })
+
+  test('a hash is in the scan only: the pane and the prompts never carry it', async () => {
+    const run = memIo(filesWorld({ [`${CONFIG}/CLAUDE.md`]: GLOBAL_TEXT }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    const hashes = scan.parts.map(found => String(found.hash))
+    const shown = [...instructionLines(scan, TOPICS, RECOMMENDED), topicsPrompt(scan.parts, [])].join('\n')
+    expect([hashes.every(hash => hash.length === 64), hashes.some(hash => shown.includes(hash))]).toEqual([true, false])
+  })
+})
