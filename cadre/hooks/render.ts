@@ -83,10 +83,16 @@ export type PaneRow = {
 /**
  * The side pane after one more block (D-133): that block first, then every other block in its order, so the pane holds
  * one block per key, a block shown again replaces the old one and moves to the top, and the newest context is first.
- * The blocks it is given are never changed.
+ * A notes block shown again keeps the old notes before its own lines, so the notes of a run collect in the order they
+ * were noted (batch-1 review S1). The blocks it is given are never changed.
  */
 export function paneView(blocks: readonly ShownBlock[], block: ShownBlock): ShownBlock[] {
-  return [block, ...blocks.filter(other => other.key !== block.key)]
+  const others = blocks.filter(other => other.key !== block.key)
+  if (block.key !== 'notes') return [block, ...others]
+  const old = blocks.find(other => other.key === 'notes')
+  if (old === undefined) return [block, ...others]
+
+  return [{ ...block, lines: [...old.lines, ...block.lines] }, ...others]
 }
 
 /**

@@ -120,12 +120,26 @@ export function askedText(question: string, refusal: string | null): string {
 }
 
 /**
+ * The most code points of a question's context line, the ellipsis included (batch-1 review N2): room for twelve roles
+ * or a polyglot scan line.
+ */
+const MAX_CONTEXT_CHARS = 400
+
+/**
+ * A context line as a question carries it: unsafe characters removed, then capped at MAX_CONTEXT_CHARS code points
+ * (T-02-55).
+ */
+export function contextText(text: string): string {
+  return clean(text, MAX_CONTEXT_CHARS)
+}
+
+/**
  * A question with its short context line (G-02-1, D-136): the question, then on the next line the context, cleaned
- * as a report cell (reportText), so the dialog reads on its own on a surface where the side pane is not drawn and a
- * scanned or typed value in it cannot add a line or hide text (T-02-55).
+ * and capped as a context line (contextText), so the dialog reads on its own on a surface where the side pane is not
+ * drawn and a scanned or typed value in it cannot add a line or hide text (T-02-55).
  */
 export function withContext(question: string, context: string): string {
-  return `${question}\n${reportText(context)}`
+  return `${question}\n${contextText(context)}`
 }
 
 /**
@@ -161,14 +175,19 @@ export function choiceResult<T>(result: AskResult<T>, dismissedReason: string): 
 }
 
 /**
- * Logs one note to the transcript as one line (D-133, P9), cleaned as a report cell (reportText), so a scanned or typed
- * value cannot add a line or hide text. A block of lines goes to the side pane (showBlock) instead.
+ * Logs one note to the transcript as one line and shows it in the side pane's notes block (D-133; batch-1 review S1:
+ * the desktop app does not draw ui.log rows), cleaned as a report cell (reportText), so a scanned or typed value cannot
+ * add a line or hide text. A block of lines goes to the side pane (showBlock) instead.
  */
-export function noteLine(io: InitIo, line: string): void {
+export async function noteLine(io: InitIo, line: string): Promise<void> {
   io.log(reportText(line))
+  await showBlock(io, 'notes', [line])
 }
 
-/** The side-pane titles of D-133 and D-135: the bold title of each kind of block the cadre init pane shows. */
+/**
+ * The side-pane titles of D-133 and D-135, and the notes block of the batch-1 review S1: the bold title of each kind of
+ * block the cadre init pane shows.
+ */
 export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   scan: 'Scan',
   history: 'Session history',
@@ -176,6 +195,7 @@ export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   recommendations: 'Recommendations',
   review: 'Review',
   env: 'Env variables',
+  notes: 'Notes',
 })
 
 /**

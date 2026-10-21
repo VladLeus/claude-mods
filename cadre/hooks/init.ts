@@ -64,6 +64,7 @@ import {
   askOnce,
   cancelled,
   choiceResult,
+  contextText,
   MAX_ASKS,
   noteLine,
   quotedLabels,
@@ -188,8 +189,19 @@ export const INIT_HOME_ROOT_REPLY = commandRefusal(HOME_ROOT_REPLY, 'init')
 /** The file-system-root refusal as init words it (D-36, Pitfall 10). */
 export const INIT_FILE_SYSTEM_ROOT_REPLY = commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init')
 
-/** The reply when a dialog is dismissed or never answered with a listed choice: nothing was written (D-45). */
+/**
+ * The start of the reply when a dialog is dismissed or never answered with a listed choice: nothing was written
+ * (D-45); cancelledReply adds the reason.
+ */
 export const INIT_CANCELLED = 'init cancelled, nothing written'
+
+/**
+ * The reply of a cancelled init (D-45, batch-1 review S1): INIT_CANCELLED, a colon and the step's reason cleaned as a
+ * report cell, so every surface shows why init stopped.
+ */
+export function cancelledReply(reason: string): string {
+  return `${INIT_CANCELLED}: ${reportText(reason)}`
+}
 
 /** The last line of the dry-run reply (PLAN-02). */
 export const DRY_RUN_NOTE = 'Dry run: nothing was written.'
@@ -520,12 +532,22 @@ export async function gatherScans(
 /** How a partial line names a walk that stopped at its overall safety cap (D-137). */
 const SAFETY_CAP_TEXT = `the scan stopped at the ${MAX_SCAN_ENTRIES.toLocaleString('en-US')}-entry safety cap`
 
-/** What a partial line says the scan found (D-137): the facts that may be incomplete, or that all were found. */
+/**
+ * How a partial line ends when the safety cap stopped the walk and no fact is missing: the walk did not reach
+ * everything, so nothing is called all found (D-137, batch-1 review N7).
+ */
+const STOPPED_EARLY_TEXT = 'the scan stopped early; stack, tests and E2E may be incomplete'
+
+/**
+ * What a partial line says the scan found (D-137): the facts that may be incomplete; with none, STOPPED_EARLY_TEXT
+ * when the safety cap stopped the walk (batch-1 review N7), else that all were found.
+ */
 function partialFactsText(repo: RepoScan): string {
   const facts = undecidedFacts(repo)
-  if (facts.length === 0) return 'stack, tests and E2E were all found'
+  if (facts.length > 0) return `may be incomplete: ${facts.join(', ')}`
+  if (repo.isOverallCapped) return STOPPED_EARLY_TEXT
 
-  return `may be incomplete: ${facts.join(', ')}`
+  return 'stack, tests and E2E were all found'
 }
 
 /** The partial line for the deeper folders listed only in part (D-137); null when no folder was capped. */
@@ -542,8 +564,9 @@ function folderCapLine(repo: RepoScan): string | null {
  * The summary line of a scan that did not list everything (G-02-1e, D-137). A walk that stopped at the safety cap is
  * named first, in place of the folder wording: `  partial: the scan stopped at the 20,000-entry safety cap; ...`.
  * Else, with deeper folders listed only in part: `  partial: <n> deeper folder(s) listed only in part (the first 200
- * entries each); ...`. Either way the line ends with the facts that may be incomplete (undecidedFacts) or with
- * `stack, tests and E2E were all found`. Null when nothing was capped.
+ * entries each); ...`. Either way the line ends with the facts that may be incomplete (undecidedFacts); with none, a
+ * walk the safety cap stopped ends with STOPPED_EARLY_TEXT and any other with `stack, tests and E2E were all found`
+ * (batch-1 review N7). Null when nothing was capped.
  */
 export function truncatedLine(repo: RepoScan): string | null {
   if (repo.isOverallCapped) return `  partial: ${SAFETY_CAP_TEXT}; ${partialFactsText(repo)}`
@@ -951,7 +974,7 @@ export async function adjustLoop(
     }
     current = result.roles
   }
-  noteLine(io, ADJUST_ROUNDS_NOTE)
+  await noteLine(io, ADJUST_ROUNDS_NOTE)
 
   return { kind: 'adjusted', roles: current }
 }
@@ -1028,7 +1051,7 @@ async function afterDescribing(io: InitIo, proposal: RoleProposal): Promise<Role
   const described = await describeStep(io)
   if (described.kind === 'cancelled') return rolesCancelled(described.reason)
   if (described.kind === 'roles') return { kind: 'proposed', roles: described.roles, changes: [] }
-  if (described.kind === 'fallback') noteLine(io, described.message)
+  if (described.kind === 'fallback') await noteLine(io, described.message)
 
   return { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
 }
@@ -1232,7 +1255,7 @@ export async function frameworkStep(
     case 'installed-only':
       return askFrameworks(io, choice, roles)
     case 'unsupported':
-      noteLine(io, choiceLine(choice))
+      await noteLine(io, choiceLine(choice))
 
       return accepted({ roles, repoDefault: 'none' })
     case 'none':
@@ -1763,7 +1786,7 @@ export async function hunkStep(
     hunks.push(hunkOp(candidate, isAccepted.value, resolveToolCommand(candidate.proposal.write, gsd)))
   }
   const unmet = hunks.filter(isUnmetHunk).map(hunk => hunk.key)
-  if (unmet.length > 0) noteLine(io, attendedNote(unmet))
+  if (unmet.length > 0) await noteLine(io, attendedNote(unmet))
 
   return accepted(hunks)
 }
@@ -2570,7 +2593,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
     })
     await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
     const ask = {
-      question: reviewQuestion(reportText(reviewContextLine(planned.plan, current.policy, current.launchStart))),
+      question: reviewQuestion(contextText(reviewContextLine(planned.plan, current.policy, current.launchStart))),
       spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review },
       parse: parseReviewItem,
       accepts: REVIEW_ACCEPTS,
@@ -2595,11 +2618,14 @@ function historyHints(history: HistoryScan | 'skipped'): ReadonlyMap<string, num
   return new Map(history.counts.map((entry): [string, number] => [entry.name, entry.count]))
 }
 
-/** The reply of a cancelled step: its reason as its own line, the one place a cancel reason is printed (A1). */
+/**
+ * The reply of a cancelled step: its reason logged as its own line, the one place a cancel reason is printed (A1), and
+ * cancelledReply of that reason, so the reply names it too (batch-1 review S1).
+ */
 function cancelReply(io: InitIo, reason: string): string {
-  noteLine(io, reason)
+  io.log(reportText(reason))
 
-  return INIT_CANCELLED
+  return cancelledReply(reason)
 }
 
 /** How long one accepted framework command may run at apply before it is given up (D-106, T-03-19). */
@@ -2784,9 +2810,9 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * conflicted file (D-67), running the accepted hunks first, then installing the security plugins answered Install from
  * the home folder, and writing the plan made again from the disk (D-120), and replies with the plan as written and what
  * the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind before it uses the value,
- * and for a cancelled step prints the reason as its own line and answers INIT_CANCELLED (D-45), so only values the
- * person accepted reach the steps after it, and nothing is written or installed before Confirm. Every answer lives in
- * memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * and for a cancelled step prints the reason as its own line and answers cancelledReply with the step's reason (D-45),
+ * so only values the person accepted reach the steps after it, and nothing is written or installed before Confirm.
+ * Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')
