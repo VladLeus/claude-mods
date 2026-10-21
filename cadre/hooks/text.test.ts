@@ -25,6 +25,7 @@ import {
   PYTHON_VERSION_ARGV,
 } from './apply'
 import type { HunkRun } from './apply'
+import { ASK_HEADERS, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels, refusalLine, withContext } from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -83,7 +84,6 @@ import {
   adjustContextLine,
   APPLIED_NONE_NOTE,
   appliedLines,
-  ASK_HEADERS,
   ASSIGNMENT_DISMISSED_REASON,
   cardLines,
   CLAUDE_JSON_CONTEXT,
@@ -138,13 +138,9 @@ import {
   MODEL_EFFORT_CONTEXT,
   MODEL_MODE_QUESTION,
   NEXT_STEP_NOTE,
-  NO_USABLE_ANSWER_REASON,
   NOT_INTERACTIVE_REPLY,
-  PANE_TITLES,
   policyLine,
   proposalLines,
-  quotedLabels,
-  refusalLine,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
   REGEN_NO_MANIFEST,
@@ -173,7 +169,6 @@ import {
   skillsContextLine,
   teamContextLine,
   truncatedLine,
-  withContext,
 } from './init'
 import type { ApplyOutcome } from './init'
 import { UNNAMED_ROLE } from './kickoff'
@@ -435,6 +430,12 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['apply', 'installFailureText', [false, true].map(isFailed => installFailureText(CLAUDE_SECURITY_PLUGIN, isFailed))],
   ['apply', 'installedLine', installedLine(SECURITY_PLUGINS)],
   ['apply', 'noHomeInstallText', noHomeInstallText(CLAUDE_SECURITY_PLUGIN)],
+  ['ask', 'NO_USABLE_ANSWER_REASON', NO_USABLE_ANSWER_REASON],
+  ['ask', 'refusalLine', [refusalLine('both', 'GSD, none - a role runs one framework'), refusalLine(' ', 'x')]],
+  ['ask', 'quotedLabels', quotedLabels(REVIEW_OPTIONS)],
+  ['ask', 'ASK_HEADERS', ASK_HEADERS],
+  ['ask', 'withContext', withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)],
+  ['ask', 'PANE_TITLES', PANE_TITLES],
   ['assign', 'INFRA_PLUGINS', INFRA_PLUGINS],
   ['assign', 'INFRA_SKILLS', INFRA_SKILLS],
   ['assign', 'INFRA_TOOLS', INFRA_TOOLS],
@@ -514,11 +515,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'INIT_HOME_ROOT_REPLY', INIT_HOME_ROOT_REPLY],
   ['init', 'INIT_FILE_SYSTEM_ROOT_REPLY', INIT_FILE_SYSTEM_ROOT_REPLY],
   ['init', 'INIT_CANCELLED', INIT_CANCELLED],
-  ['init', 'NO_USABLE_ANSWER_REASON', NO_USABLE_ANSWER_REASON],
-  ['init', 'refusalLine', [refusalLine('both', 'GSD, none - a role runs one framework'), refusalLine(' ', 'x')]],
-  ['init', 'quotedLabels', quotedLabels(REVIEW_OPTIONS)],
-  ['init', 'ASK_HEADERS', ASK_HEADERS],
-  ['init', 'withContext', withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)],
   ['init', 'teamContextLine', teamContextLine(TEAM)],
   ['init', 'GIT_POLICY_CONTEXT', GIT_POLICY_CONTEXT],
   ['init', 'CLAUDE_JSON_CONTEXT', CLAUDE_JSON_CONTEXT],
@@ -545,7 +541,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'GIT_POLICY_QUESTION', GIT_POLICY_QUESTION],
   ['init', 'GIT_POLICY_OPTIONS', GIT_POLICY_OPTIONS],
   ['init', 'GIT_POLICY_DISMISSED_REASON', GIT_POLICY_DISMISSED_REASON],
-  ['init', 'PANE_TITLES', PANE_TITLES],
   ['init', 'CLAUDE_JSON_QUESTION', CLAUDE_JSON_QUESTION],
   ['init', 'CLAUDE_JSON_OPTIONS', CLAUDE_JSON_OPTIONS],
   ['init', 'CONSENT_DISMISSED_REASON', CONSENT_DISMISSED_REASON],

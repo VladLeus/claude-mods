@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ask'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
@@ -14,15 +15,12 @@ import {
   INIT_HOME_ROOT_REPLY,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
-  NO_USABLE_ANSWER_REASON,
   NOT_INTERACTIVE_REPLY,
   policyLine,
-  refusalLine,
   REGEN_NO_STATE,
   regenNoRole,
   REVIEW_QUESTION,
   ROLES_QUESTION,
-  withContext,
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'

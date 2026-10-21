@@ -1,9 +1,8 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
+import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ask'
+import type { StepResult } from './ask'
 import { asciiLower } from './assign'
 import { compareText } from './facts'
-import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels, withContext } from './init'
-import type { StepResult } from './init'
-import { reportText } from './render'
 import { listingState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
@@ -305,7 +304,7 @@ export async function historyStep(
   if (answer.kind === 'exhausted') return { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
   if (!answer.value) return { kind: 'accepted', value: 'skipped' }
   const scan = await scanHistory(io, dir, listed.sessions)
-  await io.show({ key: 'history', title: PANE_TITLES.history, lines: historyLines(scan).map(reportText) })
+  await showBlock(io, 'history', historyLines(scan))
 
   return { kind: 'accepted', value: scan }
 }

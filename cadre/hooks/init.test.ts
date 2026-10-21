@@ -39,6 +39,17 @@ import { detectAll } from './adapters'
 import { CONFLICT_OPTIONS, conflictQuestion, hunkFailureLine } from './apply'
 import type { HunkRun } from './apply'
 import {
+  ASK_HEADERS,
+  askChoice,
+  MAX_ASKS,
+  NO_USABLE_ANSWER_REASON,
+  PANE_TITLES,
+  quotedLabels,
+  refusalLine,
+  withContext,
+} from './ask'
+import type { ChoiceAsk, StepResult } from './ask'
+import {
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
   envQuestion,
@@ -60,8 +71,6 @@ import {
   adjustLoop,
   APPLIED_NONE_NOTE,
   appliedLines,
-  ASK_HEADERS,
-  askChoice,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
   cardLines,
@@ -123,7 +132,6 @@ import {
   launchStartStep,
   MANIFEST_SKIPPED_NOTE,
   MAX_ADJUST_ROUNDS,
-  MAX_ASKS,
   MAX_PROPOSE_ATTEMPTS,
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
@@ -137,10 +145,8 @@ import {
   MODEL_MODE_QUESTION,
   modelStep,
   NEXT_STEP_NOTE,
-  NO_USABLE_ANSWER_REASON,
   noStateReply,
   NOT_INTERACTIVE_REPLY,
-  PANE_TITLES,
   parseGitPolicy,
   parseReviewItem,
   planStep,
@@ -152,9 +158,7 @@ import {
   proposalLines,
   provenUserDir,
   PYTHON_TIMEOUT_MS,
-  quotedLabels,
   readTeam,
-  refusalLine,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
   REGEN_NO_MANIFEST,
@@ -193,19 +197,9 @@ import {
   skillsContextLine,
   teamContextLine,
   truncatedLine,
-  withContext,
   withSecuritySkill,
 } from './init'
-import type {
-  AdjustOutcome,
-  ApplyOutcome,
-  ChoiceAsk,
-  Gathered,
-  InitOptions,
-  RegenOptions,
-  ReviewItem,
-  StepResult,
-} from './init'
+import type { AdjustOutcome, ApplyOutcome, Gathered, InitOptions, RegenOptions, ReviewItem } from './init'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import {
   attendedNote,

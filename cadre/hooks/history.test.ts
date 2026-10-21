@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../types'
+import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from './ask'
 import {
   countNames,
   HISTORY_DISMISSED_REASON,
@@ -19,7 +20,6 @@ import {
   UNLISTED_HISTORY_NOTE,
 } from './history'
 import type { HistoryScan } from './history'
-import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from './init'
 import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from './testkit'
 import type { MemWorld } from './testkit'
 

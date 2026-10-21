@@ -1,5 +1,4 @@
 import type {
-  AskSpec,
   CadreState,
   Choice,
   CompiledScope,
@@ -17,7 +16,6 @@ import type {
   Manifest,
   ManifestEntry,
   McpRoute,
-  PaneKey,
   Plan,
   PortEntry,
   PortRead,
@@ -58,6 +56,21 @@ import {
   writeProblem,
 } from './apply'
 import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
+import {
+  accepted,
+  ASK_HEADERS,
+  askChoice,
+  askedText,
+  askOnce,
+  cancelled,
+  choiceResult,
+  MAX_ASKS,
+  noteLine,
+  quotedLabels,
+  showBlock,
+  withContext,
+} from './ask'
+import type { AskResult, StepResult } from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -204,41 +217,6 @@ function regenManifestSkippedNote(id: string): string {
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees"
 
-/** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
-export const MAX_ASKS = 3
-
-/**
- * Why init cancels when one question got MAX_ASKS answers it could not read (D-136). Esc keeps the question's own
- * dismissed reason (D-45); both cancel, and nothing is written (A1).
- */
-export const NO_USABLE_ANSWER_REASON = `No usable answer after ${MAX_ASKS} tries.`
-
-/**
- * The chip set of G-02-3c (D-136): the header chip of each kind of init question, a name of 12 characters at most (the
- * engine's limit for a chip), so no init dialog falls back to the engine's generic chip. A hunk question keeps its own
- * `Hunk i of n` chip (hunkQuestion).
- */
-export const ASK_HEADERS = Object.freeze({
-  claudeJson: 'claude.json',
-  history: 'History',
-  roles: 'Roles',
-  adjust: 'Adjust',
-  describe: 'Describe',
-  framework: 'Framework',
-  security: 'Security',
-  duration: 'Duration',
-  model: 'Model',
-  mcp: 'MCP',
-  skills: 'Skills',
-  memory: 'Memory',
-  env: 'Env',
-  launch: 'Launch',
-  launchDir: 'Launch dir',
-  gitPolicy: 'Git policy',
-  review: 'Review',
-  conflict: 'Conflict',
-})
-
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
 
@@ -332,69 +310,6 @@ export function portTextOf(text: unknown, maxBytes: number): PortRead {
   return { state: 'text', text }
 }
 
-/** Asks once; null when the dialog is dismissed. The rejection is never read, so its text cannot reach a reply. */
-async function askOnce(io: InitIo, question: string, spec: AskSpec): Promise<string | null> {
-  try {
-    return await io.ask(question, spec)
-  } catch {
-    return null
-  }
-}
-
-/**
- * What one question gave (D-136): the value of an answer its parser took, a dismissal, or MAX_ASKS answers it could
- * not read. Only `answered` holds a choice (A1).
- */
-export type AskResult<T> =
-  | { readonly kind: 'answered'; readonly value: T }
-  | { readonly kind: 'dismissed' }
-  | { readonly kind: 'exhausted' }
-
-/**
- * One question as askChoice asks it (D-136): its text and dialog spec, the parser that reads an answer (null when it
- * reads none), and the answers it takes in words, which the refusal of an answer it cannot read lists.
- */
-export type ChoiceAsk<T> = {
-  readonly question: string
-  readonly spec: AskSpec
-  readonly parse: (answer: string) => T | null
-  readonly accepts: string
-}
-
-/** The most code points of a typed answer a refusal echoes, so the answer cannot push the rest out (T-02-54). */
-const MAX_REFUSED_CHARS = 40
-
-/**
- * The first line of a question asked again after an answer it could not read (D-136): the answer, trimmed, cleaned
- * and cut to MAX_REFUSED_CHARS code points, so a typed line break or control character cannot forge a line of the
- * dialog (T-02-54), then the answers the question takes. An answer that is empty once cleaned is named an empty answer.
- */
-export function refusalLine(answer: string, accepts: string): string {
-  const typed = clean(answer.trim(), MAX_REFUSED_CHARS)
-  if (typed === '') return `An empty answer isn't one of: ${accepts}.`
-
-  return `'${typed}' isn't one of: ${accepts}.`
-}
-
-/** Option labels as a refusal lists them (D-136): each in double quotes, joined with `, `. */
-export function quotedLabels(options: readonly string[]): string {
-  return options.map(label => `"${label}"`).join(', ')
-}
-
-/** A question as it is asked (D-136): after a refusal, the refusal on its own first line, then the question. */
-function askedText(question: string, refusal: string | null): string {
-  return refusal === null ? question : `${refusal}\n${question}`
-}
-
-/**
- * A question with its short context line (G-02-1, D-136): the question, then on the next line the context, cleaned
- * as a report cell (reportText), so the dialog reads on its own on a surface where the side pane is not drawn and a
- * scanned or typed value in it cannot add a line or hide text (T-02-55).
- */
-export function withContext(question: string, context: string): string {
-  return `${question}\n${reportText(context)}`
-}
-
 /** The role ids of a team in role order, joined with `, `, as a question's refusal or context line names them. */
 function idsOf(roles: readonly RoleSpec[]): string {
   return roles.map(role => role.id).join(', ')
@@ -403,37 +318,6 @@ function idsOf(roles: readonly RoleSpec[]): string {
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
 export function teamContextLine(roles: readonly RoleSpec[]): string {
   return `Roles: ${idsOf(roles)}.`
-}
-
-/**
- * Asks `ask.question` and gives what `ask.parse` makes of the answer (D-45, D-136). An answer the parser does not take
- * is asked again with its refusalLine on top of the question, up to MAX_ASKS asks in all; after MAX_ASKS such answers
- * it gives `exhausted` and asks no more. A dismissed dialog gives `dismissed` at once and is not asked again. A
- * dismissal, an empty answer and an unknown answer are never taken as the person's choice (A1).
- */
-export async function askChoice<T>(io: InitIo, ask: ChoiceAsk<T>): Promise<AskResult<T>> {
-  let refusal: string | null = null
-  for (let asked = 0; asked < MAX_ASKS; asked += 1) {
-    const answer = await askOnce(io, askedText(ask.question, refusal), ask.spec)
-    if (answer === null) return { kind: 'dismissed' }
-    const value = ask.parse(answer)
-    if (value !== null) return { kind: 'answered', value }
-    refusal = refusalLine(answer, ask.accepts)
-  }
-
-  return { kind: 'exhausted' }
-}
-
-/**
- * A question's result as a step result (A1, D-45, D-136): an answer is accepted with its value, a dismissal is
- * cancelled with that question's `dismissedReason`, and MAX_ASKS answers it could not read with
- * NO_USABLE_ANSWER_REASON.
- */
-function choiceResult<T>(result: AskResult<T>, dismissedReason: string): StepResult<T> {
-  if (result.kind === 'answered') return accepted(result.value)
-  if (result.kind === 'dismissed') return cancelled(dismissedReason)
-
-  return cancelled(NO_USABLE_ANSWER_REASON)
 }
 
 /** The line that states each git policy and what stays out of git under it (D-65, D-90). */
@@ -466,32 +350,6 @@ export function pluginVersionOf(text: string): string | null {
   return version
 }
 
-/**
- * Logs one note to the transcript as one line (D-133, P9), cleaned as a report cell (reportText), so a scanned or typed
- * value cannot add a line or hide text. A block of lines goes to the side pane (showBlock) instead.
- */
-function noteLine(io: InitIo, line: string): void {
-  io.log(reportText(line))
-}
-
-/** The side-pane titles of D-133 and D-135: the bold title of each kind of block the cadre init pane shows. */
-export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
-  scan: 'Scan',
-  history: 'Session history',
-  roles: 'Roles',
-  recommendations: 'Recommendations',
-  review: 'Review',
-  env: 'Env variables',
-})
-
-/**
- * Shows lines as one side-pane block (D-133): each line cleaned as a report cell (reportText), so a scanned or typed
- * value cannot add a row or hide text.
- */
-async function showBlock(io: InitIo, key: PaneKey, lines: readonly string[]): Promise<void> {
-  await io.show({ key, title: PANE_TITLES[key], lines: lines.map(reportText) })
-}
-
 /** A dialog answer with the value it stands for. */
 type Labelled<T> = {
   readonly label: string
@@ -514,24 +372,6 @@ export type GuardResult =
 /** A refusal with its text. */
 function refuse(text: string): GuardResult {
   return { kind: 'refuse', text }
-}
-
-/**
- * What every init step gives (A1, D-45): only an explicit confirming answer is accepted, with the value it chose; a
- * dismissal or a cap is cancelled with the reason runInit prints, and holds no value.
- */
-export type StepResult<T> =
-  | { readonly kind: 'accepted'; readonly value: T }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
-/** A step result accepted with the value the person confirmed. */
-function accepted<T>(value: T): StepResult<T> {
-  return { kind: 'accepted', value }
-}
-
-/** A step result cancelled with the reason runInit prints; the step itself prints nothing (A1). */
-function cancelled(reason: string): StepResult<never> {
-  return { kind: 'cancelled', reason }
 }
 
 /**
