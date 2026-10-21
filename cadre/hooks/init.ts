@@ -1832,7 +1832,7 @@ async function partsFlow(
   locations: InitLocations,
 ): Promise<StepResult<Instructed>> {
   const { root, home, configDir } = locations
-  const scan = await readInstructionFiles(io, { root, home, configDir })
+  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd })
   if (scan.parts.length === 0) return noPartRead(io, roles, setup, scan)
   const topics = await groupedTopics(io, scan)
   const recommended = await recommendedRoles(io, roles, topics)

@@ -15,8 +15,10 @@ import type {
   SetupScan,
 } from '../types'
 import { ASK_HEADERS } from './ask'
-import { clean, displayPath, idLabel, isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
+import { clean, displayPath, idLabel, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash, utf8Bytes } from './facts'
 import type { HandoutEntry, HandoutItem } from './handout'
+import { claudeMdImports } from './launch'
+import { readRepoFile } from './scan'
 import { userDirOf } from './setup'
 
 /**
@@ -299,14 +301,28 @@ export function splitSections(text: string): Section[] {
 }
 
 /**
- * Where the instruction files are read from (G-02-1f Sources): the repo root, the home folder and CLAUDE_CONFIG_DIR,
- * as resolved; the config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude` (userDirOf).
+ * Where the instruction files are read from (G-02-1f Sources): the repo root, the home folder and CLAUDE_CONFIG_DIR
+ * as resolved (the config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude`; userDirOf), and the CLAUDE.md files of
+ * the repo chain in display form, outermost first, as the user-setup scan names them (SetupScan.claudeMd).
  */
 export type InstructionSources = {
   readonly root: string
   readonly home: string | null
   readonly configDir: string | null
+  readonly chain: readonly string[]
 }
+
+/** The most import levels followed below a file the read starts from (G-02-1f Sources). */
+const MAX_IMPORT_LEVELS = 3
+
+/** The most imported files read for the global file, and again for the repo chain (G-02-1f Sources). */
+const MAX_IMPORTED_FILES = 20
+
+/** The most UTF-8 bytes one read takes in all, every file together (G-02-1f Sources): 512 KiB. */
+const MAX_TOTAL_BYTES = 2 * MAX_READ_BYTES
+
+/** The most parts offered to the model and the hand-out (G-02-1f Part unit); the rest stay with the root session. */
+const MAX_PARTS = 200
 
 /** The warning for a file the port could not read (G-02-1f): its display form, never its path. */
 export function unreadableWarning(file: string): string {
@@ -318,40 +334,255 @@ export function overSizeWarning(file: string): string {
   return `${file} is over ${MAX_READ_BYTES / 1024} KiB: not split`
 }
 
-/** The parts, files and warnings of a read so far. */
-type ReadState = {
-  readonly parts: InstructionPart[]
-  readonly files: string[]
-  readonly warnings: string[]
-}
-
-/** Adds a file's sections as parts, `P<n>` in read order, and the file once when it gave a part. */
-function addParts(state: ReadState, file: string, source: PartSource, text: string): void {
-  const sections = splitSections(text)
-  for (const section of sections) {
-    state.parts.push({ id: `P${state.parts.length + 1}`, file, heading: section.heading, source, text: section.text })
-  }
-  if (sections.length > 0 && !state.files.includes(file)) state.files.push(file)
+/** The warning for a path outside the repo and the config folder (G-02-1f Sources): it is not read. */
+export function outsideWarning(file: string): string {
+  return `${file} is outside the repo and your config folder: not read`
 }
 
 /**
- * Reads the instruction files after the content consent (G-02-1f Sources): the global `<config folder>/CLAUDE.md`,
- * read with MAX_READ_BYTES through the port and split into parts (splitSections) with source 'global' and its display
- * form as the file. A file that is not there gives nothing; one the port could not read and one over the cap give a
- * warning and no part. The text is held in memory for this run only; nothing is written.
+ * The warning for a file a repo file imports from outside the repo, the config folder included (G-02-1f Sources;
+ * night-run AUTO-PICK #3): it is not read, so repo content cannot pull in a private file of the user.
+ */
+export function repoImportWarning(file: string): string {
+  return `${file} is imported by a repo file and is outside the repo: not read`
+}
+
+/** The warning when the read stopped at its total cap (G-02-1f Sources): how many files it did not read. */
+export function totalCapWarning(count: number): string {
+  return `stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB in total: ${counted(count, 'file', 'files')} not read`
+}
+
+/** The warning for the parts past MAX_PARTS (G-02-1f Part unit): not offered, they stay with the root session. */
+export function morePartsWarning(count: number): string {
+  return `${count} more parts were not offered: they stay with the root session`
+}
+
+/** Where a path lies for the read: in the repo (with its repo-relative path), in the config folder, or elsewhere. */
+type Place =
+  | { readonly kind: 'repo'; readonly path: string; readonly relPath: string }
+  | { readonly kind: 'global'; readonly path: string }
+  | { readonly kind: 'outside'; readonly path: string }
+
+/** A file the read split into parts: its text, the folder its imports resolve against, and its source. */
+type ReadFile = {
+  readonly text: string
+  readonly dir: string
+  readonly source: PartSource
+}
+
+/** What one read keeps as it goes: the port, where it reads, and the lists that grow as files are read. */
+type ReadState = {
+  readonly io: InitIo
+  readonly sources: InstructionSources
+  readonly userDir: string | null
+  readonly parts: InstructionPart[]
+  readonly warnings: string[]
+  /** Every path the read reached, read or not, so each file is read once. */
+  readonly seen: Set<string>
+  /** The UTF-8 size of each file read, toward MAX_TOTAL_BYTES. */
+  readonly sizes: number[]
+  /** The files left unread once the read reached MAX_TOTAL_BYTES; any entry means the read has stopped. */
+  readonly unread: string[]
+}
+
+/** The display prefix of a path in the repo. */
+const REPO_PREFIX = '<repo>/'
+
+/** The display prefix of a path in the home folder. */
+const HOME_PREFIX = '~/'
+
+/** The display prefix of a path in a CLAUDE_CONFIG_DIR outside the home folder. */
+const CONFIG_PREFIX = '$CLAUDE_CONFIG_DIR/'
+
+/** A folder and a path below it, joined with one `/`. */
+function joinedPath(folder: string, rest: string): string {
+  return `${trimSlash(folder)}/${rest}`
+}
+
+/**
+ * The path a chain file's display form stands for (displayPath read back): `<repo>/`, `~/` and `$CLAUDE_CONFIG_DIR/`
+ * under their folders; any other form is already the path.
+ */
+function chainPath(shown: string, sources: InstructionSources): string {
+  const { root, home, configDir } = sources
+  if (shown.startsWith(REPO_PREFIX)) return joinedPath(root, shown.slice(REPO_PREFIX.length))
+  if (home !== null && shown.startsWith(HOME_PREFIX)) return joinedPath(home, shown.slice(HOME_PREFIX.length))
+  if (configDir !== null && shown.startsWith(CONFIG_PREFIX)) {
+    return joinedPath(configDir, shown.slice(CONFIG_PREFIX.length))
+  }
+
+  return shown
+}
+
+/** Where a path lies: in the repo first, then in the config folder, else elsewhere (G-02-1f Sources). */
+function placeOf(path: string, state: ReadState): Place {
+  const root = trimSlash(state.sources.root)
+  if (path.startsWith(`${root}/`)) return { kind: 'repo', path, relPath: path.slice(root.length + 1) }
+  const userDir = state.userDir === null ? null : trimSlash(state.userDir)
+  if (userDir !== null && path.startsWith(`${userDir}/`)) return { kind: 'global', path }
+
+  return { kind: 'outside', path }
+}
+
+/** A place as a part and a warning name it: repo-relative in the repo, else in display form (`~/...`). */
+function fileOf(place: Place, sources: InstructionSources): string {
+  if (place.kind === 'repo') return clean(place.relPath)
+
+  return displayPath(place.path, sources.home, sources.root, sources.configDir)
+}
+
+/** The folder a path is in: what its imports resolve against. */
+function folderOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/'))
+}
+
+/** Adds a warning to the read and gives no file. */
+function warned(state: ReadState, warning: string): null {
+  state.warnings.push(warning)
+
+  return null
+}
+
+/** Counts a file left unread once the read has stopped at its total, and gives no file. */
+function leftUnread(state: ReadState, file: string): null {
+  state.unread.push(file)
+
+  return null
+}
+
+/** Adds a file's sections as parts, `P<n>` in read order, with the file and source each comes from. */
+function addParts(state: ReadState, file: string, source: PartSource, text: string): void {
+  for (const section of splitSections(text)) {
+    state.parts.push({ id: `P${state.parts.length + 1}`, file, heading: section.heading, source, text: section.text })
+  }
+}
+
+/**
+ * A text the port read, kept within the total (G-02-1f Sources): when it would take the read past MAX_TOTAL_BYTES the
+ * read stops and the file is counted unread; else it is split into parts and given back for its imports.
+ */
+function keptText(
+  state: ReadState,
+  place: Exclude<Place, { readonly kind: 'outside' }>,
+  text: string,
+): ReadFile | null {
+  const file = fileOf(place, state.sources)
+  const bytes = utf8Bytes(text)
+  const total = state.sizes.reduce((sum, size) => sum + size, 0)
+  if (total + bytes > MAX_TOTAL_BYTES) return leftUnread(state, file)
+  state.sizes.push(bytes)
+  const source: PartSource = place.kind === 'repo' ? 'repo' : 'global'
+  addParts(state, file, source, text)
+
+  return { text, dir: folderOf(place.path), source }
+}
+
+/**
+ * Reads one file the read reaches, once (G-02-1f Sources). A path outside the repo and the config folder is not read
+ * (outsideWarning), and neither is one a repo file imports from outside the repo (repoImportWarning, night-run
+ * AUTO-PICK #3). Once the read has stopped at its total, a file is only counted. A repo file is read through
+ * readRepoFile, so a link out of the repo is never read; a config-folder file through the port. A missing file is
+ * quiet; one the port could not read and one over MAX_READ_BYTES are warnings.
+ */
+async function readOne(state: ReadState, path: string, isRepoImport: boolean): Promise<ReadFile | null> {
+  if (state.seen.has(path)) return null
+  state.seen.add(path)
+  const place = placeOf(path, state)
+  const file = fileOf(place, state.sources)
+  if (place.kind === 'outside') return warned(state, isRepoImport ? repoImportWarning(file) : outsideWarning(file))
+  if (isRepoImport && place.kind === 'global') return warned(state, repoImportWarning(file))
+  if (state.unread.length > 0) return leftUnread(state, file)
+  const read =
+    place.kind === 'repo'
+      ? await readRepoFile(state.io, state.sources.root, place.relPath, MAX_READ_BYTES)
+      : await state.io.read(place.path, MAX_READ_BYTES)
+  if (read.state === 'unknown') return warned(state, unreadableWarning(file))
+  if (read.state === 'too-large') return warned(state, overSizeWarning(file))
+  if (read.state === 'absent') return null
+
+  return keptText(state, place, read.text)
+}
+
+/**
+ * The imports of a file read, depth first (G-02-1f Sources): each import (claudeMdImports, in its sorted order) is
+ * read once, at most MAX_IMPORT_LEVELS levels below the file the read started from and MAX_IMPORTED_FILES imports per
+ * budget (`handled`); a repo file's imports may not leave the repo (readOne). With no home folder a `~/` import
+ * resolves from `/`, so it lands outside and is not read.
+ */
+async function readImports(state: ReadState, from: ReadFile, level: number, handled: string[]): Promise<void> {
+  if (level >= MAX_IMPORT_LEVELS) return
+  const isRepoImport = from.source === 'repo'
+  for (const path of claudeMdImports(from.text, from.dir, state.sources.home ?? '')) {
+    if (handled.length >= MAX_IMPORTED_FILES) return
+    if (state.seen.has(path)) continue
+    handled.push(path)
+    const read = await readOne(state, path, isRepoImport)
+    if (read !== null) await readImports(state, read, level + 1, handled)
+  }
+}
+
+/** The global CLAUDE.md, then its imports depth first, with their own budget; nothing with no config folder. */
+async function readGlobal(state: ReadState): Promise<void> {
+  if (state.userDir === null) return
+  const global = await readOne(state, joinedPath(state.userDir, 'CLAUDE.md'), false)
+  if (global === null) return
+  await readImports(state, global, 0, [])
+}
+
+/** The repo chain, outermost first, then each chain file's imports depth first, with one budget for them all. */
+async function readChain(state: ReadState): Promise<void> {
+  const files: ReadFile[] = []
+  for (const shown of state.sources.chain) {
+    const read = await readOne(state, chainPath(shown, state.sources), false)
+    if (read !== null) files.push(read)
+  }
+  const handled: string[] = []
+  for (const file of files) await readImports(state, file, 0, handled)
+}
+
+/**
+ * What a read gave (G-02-1f): the first MAX_PARTS parts, the files they came from in read order, once each, and the
+ * warnings, then how many files the total left unread and how many parts were not offered.
+ */
+function scanOf(state: ReadState): InstructionScan {
+  const parts = state.parts.slice(0, MAX_PARTS)
+  const rest = state.parts.length - parts.length
+  const warnings = [
+    ...state.warnings,
+    ...(state.unread.length > 0 ? [totalCapWarning(state.unread.length)] : []),
+    ...(rest > 0 ? [morePartsWarning(rest)] : []),
+  ]
+
+  return { parts, files: Array.from(new Set(parts.map(part => part.file))), warnings }
+}
+
+/**
+ * Reads the instruction files after the content consent (G-02-1f Sources), in this order: the global
+ * `<config folder>/CLAUDE.md`, then its @imports (claudeMdImports) depth first, at most 3 import levels and 20 imported
+ * files; then the repo chain, outermost first (SetupScan.claudeMd), then the chain files' @imports the same way with a
+ * budget of their own. Each file is read once. A path in the repo is a 'repo' part, read only through readRepoFile, so
+ * a link that leads out of the repo is never read; a path in the config folder is a 'global' part; any other path is
+ * not read and gets a warning, and so does any file a repo file imports from outside the repo, the config folder
+ * included (night-run AUTO-PICK #3). Each file is read with MAX_READ_BYTES and one over it is not split; the read
+ * stops at 512 KiB in all and counts the files it did not read; parts past the 200th are not offered. A missing file
+ * is quiet, and one the port could not read is a warning. The text is held in memory for this run only: nothing is
+ * written.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
-  const state: ReadState = { parts: [], files: [], warnings: [] }
-  const userDir = userDirOf(sources)
-  if (userDir === null) return state
-  const path = `${userDir}/CLAUDE.md`
-  const file = displayPath(path, sources.home, sources.root, sources.configDir)
-  const read = await io.read(path, MAX_READ_BYTES)
-  if (read.state === 'unknown') state.warnings.push(unreadableWarning(file))
-  if (read.state === 'too-large') state.warnings.push(overSizeWarning(file))
-  if (read.state === 'text') addParts(state, file, 'global', read.text)
+  const state: ReadState = {
+    io,
+    sources,
+    userDir: userDirOf(sources),
+    parts: [],
+    warnings: [],
+    seen: new Set(),
+    sizes: [],
+    unread: [],
+  }
+  await readGlobal(state)
+  await readChain(state)
 
-  return state
+  return scanOf(state)
 }
 
 /** The most code points a topic title keeps (G-02-1f). */
