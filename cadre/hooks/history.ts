@@ -1,7 +1,7 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { asciiLower } from './assign'
 import { compareText } from './facts'
-import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels } from './init'
+import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels, withContext } from './init'
 import type { StepResult } from './init'
 import { reportText } from './render'
 import { listingState } from './scan'
@@ -275,16 +275,18 @@ function skippedWith(io: InitIo, note: string): StepResult<'skipped'> {
  * The history step (SCAN-03, D-59), which init runs once, after the scan summary. It lists this repo's session folder
  * in the user folder (historyDir, from the repo root as resolved) and reads nothing else before the person answers.
  * With no folder or no transcript it logs NO_HISTORY_NOTE, and with a folder it cannot list UNLISTED_HISTORY_NOTE;
- * either way it asks nothing and the scan is skipped. Otherwise it asks historyQuestion with the session count:
+ * either way it asks nothing and the scan is skipped. Otherwise it asks historyQuestion with the session count, and
+ * `context`, the line of what the repo scan found (scanContextLine), on its second line (G-02-1, D-136):
  * `No, skip it` skips the scan and reads no transcript, and `Yes, scan names and counts` runs scanHistory over the
  * newest sessions and shows historyLines as the side pane's Session history block, each line cleaned as a report cell
- * (D-133). Any other answer is asked again with why on top (D-136). A dismissal is cancelled with
+ * (D-133). Any other answer is asked again with why on top. A dismissal is cancelled with
  * HISTORY_DISMISSED_REASON and MAX_ASKS answers that name neither with NO_USABLE_ANSWER_REASON, which init prints (A1,
  * D-45). It runs no process, and no other step needs its result: the counts are only hints for the skill questions.
  */
 export async function historyStep(
   io: InitIo,
   locations: InitLocations,
+  context: string,
 ): Promise<StepResult<HistoryScan | 'skipped'>> {
   const userDir = userDirOf(locations)
   if (userDir === null) return skippedWith(io, NO_HISTORY_NOTE)
@@ -293,7 +295,7 @@ export async function historyStep(
   if (listed === null) return skippedWith(io, UNLISTED_HISTORY_NOTE)
   if (listed.total === 0) return skippedWith(io, NO_HISTORY_NOTE)
   const ask = {
-    question: historyQuestion(listed.total),
+    question: withContext(historyQuestion(listed.total), context),
     spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history },
     parse: parseHistoryConsent,
     accepts: quotedLabels(HISTORY_OPTIONS),

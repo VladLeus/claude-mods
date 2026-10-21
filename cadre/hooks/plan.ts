@@ -577,29 +577,36 @@ function hunkRows(op: HunkOp): string[] {
 }
 
 /**
- * The plan as the lines init prints (PLAN-01): `File plan:`, one row per op in plan order with the kind padded to a
- * column and its note and detail rows under it (the `.gitignore` block, PLAN-03), any warnings, and a summary that
- * counts each kind and the hunks with their accepted ones. Every value that comes from outside is cleaned and capped
- * as reportText does, so a hostile path or note cannot add a line.
+ * The summary line of a plan (PLAN-01, D-136): `Summary: `, how many file ops of each kind it holds, then its hunks
+ * with how many were accepted. renderPlan ends with it, and the review question carries it in its context line.
  */
-export function renderPlan(plan: Plan): string[] {
+export function planSummary(plan: Plan): string {
   const counts: Record<FileOpKind, number> = { create: 0, change: 0, leave: 0, conflict: 0 }
-  const rows: string[] = []
   let hunks = 0
   let accepted = 0
   for (const op of plan.ops) {
     if (op.kind === 'hunk') {
-      rows.push(...hunkRows(op))
       hunks += 1
       accepted += op.isAccepted ? 1 : 0
       continue
     }
-    rows.push(...fileRows(op))
     counts[op.kind] += 1
   }
-  const warnings = plan.warnings.map(warning => `warning: ${reportText(warning)}`)
   const hunkCount = hunks === 0 ? '0 hunks' : `${hunks} hunks (${accepted} accepted)`
   const kinds = `${counts.create} create, ${counts.change} change, ${counts.leave} leave, ${counts.conflict} conflict`
 
-  return ['File plan:', ...rows, ...warnings, `Summary: ${kinds}, ${hunkCount}`]
+  return `Summary: ${kinds}, ${hunkCount}`
+}
+
+/**
+ * The plan as the lines init prints (PLAN-01): `File plan:`, one row per op in plan order with the kind padded to a
+ * column and its note and detail rows under it (the `.gitignore` block, PLAN-03), any warnings, and last its summary
+ * (planSummary), which counts each kind and the hunks with their accepted ones. Every value that comes from outside is
+ * cleaned and capped as reportText does, so a hostile path or note cannot add a line.
+ */
+export function renderPlan(plan: Plan): string[] {
+  const rows = plan.ops.flatMap(op => (op.kind === 'hunk' ? hunkRows(op) : fileRows(op)))
+  const warnings = plan.warnings.map(warning => `warning: ${reportText(warning)}`)
+
+  return ['File plan:', ...rows, ...warnings, planSummary(plan)]
 }
