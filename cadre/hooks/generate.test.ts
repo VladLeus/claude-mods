@@ -7,6 +7,7 @@ import type {
   FileOp,
   FrameworkAdapter,
   FrameworkId,
+  InstructionPart,
   LaunchStart,
   RoleSpec,
   ScopeContext,
@@ -24,6 +25,7 @@ import {
   launcherText,
   mcpText,
   ROLE_LINE_MAX,
+  roleClaudeMdText,
   roleJsonText,
   roleMdText,
   settingsText,
@@ -496,6 +498,134 @@ describe('desiredFiles', () => {
 
     expect(index).toBe(contentOf(all, '.cadre/INDEX.md'))
     expect(index.split('\n').filter(line => line.includes('| .cadre/bin/'))).toHaveLength(TEMPLATE_ROLES.length)
+  })
+})
+
+/** The first line of the built CLAUDE.md of role `id`, as the plan writes it (G-02-1f, D-140). */
+function builtHeader(id: string): string {
+  return (
+    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
+    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+  )
+}
+
+/** An instruction part as the reader gives it, from the repo unless told otherwise; the hash is a fixed stand-in. */
+function part(
+  id: string,
+  file: string,
+  heading: string,
+  text: string,
+  source: InstructionPart['source'] = 'repo',
+): InstructionPart {
+  return { id, file, heading, source, text, hash: 'a'.repeat(64) }
+}
+
+/** The Rules section of the root CLAUDE.md, with the blank line before the next heading, as the reader keeps it. */
+const RULES_PART = part('P2', 'CLAUDE.md', 'Rules', '# Rules\nRun the tests before a commit.\n\n')
+
+/** The Secrets section of a rule file. */
+const SECRETS_PART = part('P3', '.claude/rules/security.md', 'Secrets', '## Secrets\nKeep keys out of the repo.\n')
+
+/** A sentence of the global CLAUDE.md that no file in the repo may hold (T-02-69). */
+const GLOBAL_ONLY_SENTENCE = 'GLOBAL-ONLY-SENTENCE stays out of the repo'
+
+/** A part of the global CLAUDE.md, which never goes into a built role file (T-02-69). */
+const GLOBAL_PART = part('P1', '~/.claude/CLAUDE.md', 'Private', `# Private\n${GLOBAL_ONLY_SENTENCE}.\n`, 'global')
+
+describe('roleClaudeMdText (G-02-1f)', () => {
+  test('the header line, a blank line, then each part under its marker, a blank line apart, one final newline', () => {
+    expect(roleClaudeMdText('be', [RULES_PART, SECRETS_PART])).toBe(
+      [
+        builtHeader('be'),
+        '',
+        '<!-- from CLAUDE.md > Rules -->',
+        '# Rules',
+        'Run the tests before a commit.',
+        '',
+        '<!-- from .claude/rules/security.md > Secrets -->',
+        '## Secrets',
+        'Keep keys out of the repo.',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  test('the parts come in the order given, read order, and a part with no heading is marked (top of file)', () => {
+    const top = part('P1', 'AGENTS.md', '', 'Work in small steps.\nAsk before a large change.')
+    const lines = roleClaudeMdText('qa', [top, SECRETS_PART]).split('\n')
+
+    expect(lines.filter(line => line.startsWith('<!-- from '))).toEqual([
+      '<!-- from AGENTS.md > (top of file) -->',
+      '<!-- from .claude/rules/security.md > Secrets -->',
+    ])
+    expect(lines.slice(0, 6)).toEqual([
+      builtHeader('qa'),
+      '',
+      '<!-- from AGENTS.md > (top of file) -->',
+      'Work in small steps.',
+      'Ask before a large change.',
+      '',
+    ])
+  })
+
+  test('a part read with CRLF line ends is written with LF, and the text ends with exactly one newline', () => {
+    const crlf = part('P2', 'CLAUDE.md', 'Rules', '# Rules\r\nRun the tests.\r\n\r\n')
+    const text = roleClaudeMdText('be', [crlf])
+
+    expect(text.includes('\r')).toBe(false)
+    expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
+  })
+
+  test('with no part the text is the header line alone, with its newline', () => {
+    expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
+  })
+
+  test('a file name or heading with a line break or a bidi character adds no line to the file', () => {
+    const hostile = part('P2', `docs/a\nb${BIDI_OVERRIDE}.md`, `Ru\rles${BIDI_OVERRIDE}`, '# Rules\nRun the tests.\n')
+
+    expect(roleClaudeMdText('be', [hostile]).split('\n').slice(2)).toEqual([
+      '<!-- from docs/ab.md > Rules -->',
+      '# Rules',
+      'Run the tests.',
+      '',
+    ])
+  })
+
+  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file, for a role given repo parts, none for the rest', () => {
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const repoParts = new Map([['be', [RULES_PART, SECRETS_PART]]])
+    const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
+    const content = roleClaudeMdText('be', [RULES_PART, SECRETS_PART])
+
+    expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
+      { path: '.cadre/be/CLAUDE.md', content, mode: 'file' },
+    ])
+    expect(pathsOfRole(files, 'be')).toEqual(['.cadre/be/CLAUDE.md', ...BE_PATHS.filter(path => path.includes('/be'))])
+    expect(files.map(file => file.path)).toEqual(files.map(file => file.path).sort(compareText))
+  })
+
+  test('a global part never goes into the file, and a role given only global parts gets none (T-02-69)', () => {
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const repoParts = new Map([
+      ['be', [GLOBAL_PART, RULES_PART]],
+      ['pm', [GLOBAL_PART]],
+    ])
+    const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
+
+    expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(roleClaudeMdText('be', [RULES_PART]))
+    expect(contentOf(files, '.cadre/pm/CLAUDE.md')).toBeUndefined()
+    expect(files.filter(file => file.content.includes(GLOBAL_ONLY_SENTENCE))).toEqual([])
+  })
+
+  test('without repoParts, or with no part for a role, the files are those of the whole-files flow', () => {
+    const be = templateRole('be')
+    const without = desiredFiles(inputOf([be], 'gsd'))
+    const empty = desiredFiles(inputOf([be], 'gsd', { repoParts: new Map([['be', []]]) }))
+
+    expect(without.map(file => file.path)).toEqual(BE_PATHS)
+    expect(empty).toEqual(without)
   })
 })
 
@@ -1527,12 +1657,21 @@ function contentProblems(file: DesiredFile): string[] {
   return leaks(file.content, FORBIDDEN_TEXT).map(needle => `${file.path} holds ${needle}`)
 }
 
-/** The ways the path of a desired file breaks PLAN-06 (D-50), as messages. */
+/**
+ * Whether lowercased path segments name a role's built `.cadre/<id>/CLAUDE.md`, the one CLAUDE.md a plan may hold
+ * (G-02-1f Storage split, D-140): directly in a role folder, never in `.cadre/bin/` or deeper.
+ */
+function isBuiltRoleFile(segments: readonly string[]): boolean {
+  return segments.length === 3 && segments[0] === '.cadre' && segments[1] !== 'bin' && segments[2] === 'claude.md'
+}
+
+/** The ways the path of a desired file breaks PLAN-06 (D-50, as D-140 amends it for built role files), as messages. */
 function pathProblems(file: DesiredFile): string[] {
   const segments = file.path.toLowerCase().split('/')
   const problems: string[] = []
+  const isInstructionFile = /(?:claude|agents)\.md$/.test(file.path.toLowerCase())
   if (!isSafeOpPath(file.path)) problems.push(`${file.path} is not a safe op path`)
-  if (/(?:claude|agents)\.md$/.test(file.path.toLowerCase())) problems.push(`${file.path} is a CLAUDE.md or AGENTS.md`)
+  if (isInstructionFile && !isBuiltRoleFile(segments)) problems.push(`${file.path} is a CLAUDE.md or AGENTS.md`)
   if (segments.includes('.claude')) problems.push(`${file.path} is under a .claude folder`)
   if (segments.includes('.runtime')) problems.push(`${file.path} is in a .runtime folder`)
 
@@ -1609,6 +1748,19 @@ describe('generated file properties', () => {
     expect(worldProblems((_input, files) => files.flatMap(pathProblems))).toEqual([])
   })
 
+  test('built role CLAUDE.md files pass the content and path checks and hold no global part (PLAN-05, T-02-69)', () => {
+    const input = worldInput('gsd', role => role, {})
+    const keys = `# Keys\n${SECRET_FIXTURES[0]} in /Users/alice\n`
+    const secretPart = part('P1', '~/.claude/CLAUDE.md', 'Keys', keys, 'global')
+    const given = (role: RoleSpec): [string, InstructionPart[]] => [role.id, [secretPart, RULES_PART]]
+    const files = desiredFiles({ ...input, repoParts: new Map(input.roles.map(given)) })
+    const built = files.filter(file => file.path.endsWith('/CLAUDE.md')).map(file => file.path)
+
+    expect(built).toEqual(input.roles.map(role => `.cadre/${role.id}/CLAUDE.md`).sort(compareText))
+    expect(files.flatMap(contentProblems)).toEqual([])
+    expect(files.flatMap(pathProblems)).toEqual([])
+  })
+
   test('every mcp.json holds exactly the schema and a sorted list of server names (D-93)', () => {
     expect(worldProblems(mcpFilesCheck)).toEqual([])
   })
@@ -1648,11 +1800,13 @@ describe('generated file properties', () => {
     expect(contentProblems(bad('fine'))).toEqual([])
   })
 
-  test('the path check finds a path outside .cadre, a CLAUDE.md, an AGENTS.md, a .claude and a .runtime folder', () => {
+  test('the path check finds a path outside .cadre, a non-role CLAUDE.md, an AGENTS.md, .claude and .runtime', () => {
     const at = (path: string): DesiredFile => ({ path, content: '', mode: 'file' })
 
     expect(pathProblems(at('CLAUDE.md')).length > 0).toBe(true)
-    expect(pathProblems(at('.cadre/be/CLAUDE.md')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/be/CLAUDE.md'))).toEqual([])
+    expect(pathProblems(at('.cadre/bin/CLAUDE.md')).length > 0).toBe(true)
+    expect(pathProblems(at('.cadre/be/docs/CLAUDE.md')).length > 0).toBe(true)
     expect(pathProblems(at('.cadre/be/agents.md')).length > 0).toBe(true)
     expect(pathProblems(at('.cadre/.claude/settings.json')).length > 0).toBe(true)
     expect(pathProblems(at('.cadre/be/.runtime/settings.json')).length > 0).toBe(true)

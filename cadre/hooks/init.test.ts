@@ -152,7 +152,6 @@ import {
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
   parseReviewItem,
-  PARTS_DRY_RUN_ONLY_NOTE,
   planStep,
   PLUGIN_RUN_TIMEOUT_MS,
   pluginVersionOf,
@@ -2918,20 +2917,6 @@ describe('instruction parts (G-02-1f)', () => {
     expect(firstLines(run.asked)).toContain(GLOBAL_GROUP_QUESTION)
   })
 
-  test('a plain init asks no content consent, notes once that parts are --dry-run only, asks whole files', async () => {
-    expect(PARTS_DRY_RUN_ONLY_NOTE).toBe(
-      'This cadre version shows instruction parts only in --dry-run; a plain init asks the whole-file questions.',
-    )
-    const run = memIo(partsWorld(), PARTS_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: false, host: memHost(hostWorld({})).io })
-    expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
-    expect(run.logged.filter(text => text === PARTS_DRY_RUN_ONLY_NOTE)).toHaveLength(1)
-    const noteAt = events.indexOf(`log ${PARTS_DRY_RUN_ONLY_NOTE}`)
-    expect(events.indexOf(`ask ${GLOBAL_GROUP_QUESTION}`)).toBeGreaterThan(noteAt)
-    expect([run.reads.includes(GLOBAL_CLAUDE_MD), run.prompts]).toEqual([false, []])
-  })
-
   test('a repo with only memories gets the step; a yes hands them out with no grouping call', async () => {
     const memory = '/home/u/.claude/projects/-repo/memory'
     const world = gitWorld({
@@ -3335,11 +3320,11 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE, DOC_SENTENCE])
   })
 
-  test('a plain init on a repo with only rule files lists nothing more and asks no instruction question', async () => {
-    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+  test('a plain init on a repo with only rule files lists them before the consent and asks it', async () => {
+    const run = memIo(rulesWorld(), PARTS_DECLINED)
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
-    expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
-    expect([run.logged.includes(PARTS_DRY_RUN_ONLY_NOTE), run.listed.includes(RULES_DIR)]).toEqual([false, false])
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, RULES_ONLY_FOUND))
+    expect(run.listed).toContain(RULES_DIR)
   })
 })
 
@@ -3542,6 +3527,107 @@ describe('memories one by one (G-02-1f)', () => {
       ['M1', 'extra.md', given],
       ['M2', 'squad.md', MEMORY_DIR],
     ])
+  })
+})
+
+/** The sentence of the root CLAUDE.md's Rules section, which init writes into the built file of the role given it. */
+const BUILT_RULE = 'Run the tests before a commit.'
+
+/**
+ * The six-role repo of fullWorld whose user has a global Security section and whose root CLAUDE.md, in the chain, has a
+ * Rules section; the model groups them into T1 'Security rules' (global) and T2 'Repo rules' (repo) and recommends T1
+ * to security and T2 to be (G-02-1f Storage split). `over` changes the fields it names.
+ */
+function builtWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const topics = [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2'] },
+  ]
+
+  return gitWorld({
+    dirs: { '/repo/.git': [], ...FULL_DIRS },
+    files: {
+      ...FULL_FILES,
+      [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+    },
+    ancestors: [ancestor('/repo')],
+    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
+    ...over,
+  })
+}
+
+/** BE's built CLAUDE.md in builtWorld: the header line, then the Rules part of the root CLAUDE.md (D-140). */
+const BUILT_BE = [
+  "<!-- cadre: instructions for role be, built from this repo's CLAUDE.md files, rules and docs. " +
+    'Edit the originals and run /cadre regen be; this file is rebuilt. -->',
+  '',
+  '<!-- from CLAUDE.md > Rules -->',
+  '# Rules',
+  BUILT_RULE,
+  '',
+].join('\n')
+
+/** The file plan row of BE's built CLAUDE.md on a disk that does not have it. */
+const BUILT_BE_ROW = '  create    .cadre/be/CLAUDE.md'
+
+/** The written files of a host whose path ends in `/CLAUDE.md`. */
+function builtWrites(host: MemHost): HostWrite[] {
+  return host.writes.filter(write => write.path.endsWith('/CLAUDE.md'))
+}
+
+describe('built role CLAUDE.md (G-02-1f)', () => {
+  test('a dry run of the parts flow plans .cadre/be/CLAUDE.md for the role given a repo topic, no other', async () => {
+    const run = memIo(builtWorld(), PARTS_ANSWERS)
+    const lines = (await runInit(run.io, { dryRun: true })).split('\n')
+    expect(lines.filter(line => line.includes('CLAUDE.md'))).toEqual([BUILT_BE_ROW])
+    expect(lines.at(-1)).toBe(DRY_RUN_NOTE)
+  })
+
+  test('a plain init asks the content consent, runs the parts flow and writes the built file of the role', async () => {
+    const run = memIo(builtWorld(), PARTS_ANSWERS)
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    expect(firstLines(run.asked)).toContain(CONTENT_QUESTION)
+    expect(run.prompts).toHaveLength(2)
+    expect(builtWrites(host)).toEqual([{ path: '/repo/.cadre/be/CLAUDE.md', text: BUILT_BE, isWritten: true }])
+    expect(reply.split('\n')).toContain(BUILT_BE_ROW)
+    expect(run.logged.filter(text => text.includes('--dry-run'))).toEqual([])
+  })
+
+  test('the global part given to security is written to no file in the repo (T-02-69)', async () => {
+    const host = memHost(hostWorld({}))
+    await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(builtWrites(host).map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(host.writes.filter(write => write.text.includes(GLOBAL_SENTENCE))).toEqual([])
+  })
+
+  test('a plain init answered No, skip it asks the whole-file questions and writes no built file', async () => {
+    const run = memIo(builtWorld(), PARTS_DECLINED)
+    const host = memHost(hostWorld({}))
+    await runInit(run.io, { dryRun: false, host: host.io })
+    const asked = firstLines(run.asked)
+    expect(asked).toContain(CONTENT_QUESTION)
+    expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBeGreaterThan(asked.indexOf(CONTENT_QUESTION))
+    expect([builtWrites(host), run.prompts]).toEqual([[], []])
+    expect(host.writes.length).toBeGreaterThan(0)
+  })
+
+  test('a plain init on the secret world, Yes and Accept, writes no secret or global text (T-02-69)', async () => {
+    const world = secretWorld({
+      files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
+      replies: [
+        '{"topics":[{"title":"Keys and rules","summary":"How keys are kept.","parts":["P1","P2"]}]}',
+        '{"topics":{"T1":["tl"]},"memories":{"M1":["tl"]}}',
+      ],
+    })
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const built = builtWrites(host)
+    expect(built.map(write => write.path)).toEqual(['/repo/.cadre/tl/CLAUDE.md'])
+    expect(built[0]?.text).toContain(BUILT_RULE)
+    const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
+    expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })
 
@@ -6848,7 +6934,8 @@ describe('init apply (D-105)', () => {
 
   test('no secret or absolute path of the secret world reaches the plain init reply or a written file', async () => {
     const host = memHost(hostWorld({}))
-    const reply = await runInit(memIo(secretWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    // The content consent is declined, so the whole-file flow is checked here; a yes is the T-02-69 run.
+    const reply = await runInit(memIo(secretWorld(), PARTS_DECLINED).io, { dryRun: false, host: host.io })
     expect(host.writes.length).toBeGreaterThan(0)
     const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
