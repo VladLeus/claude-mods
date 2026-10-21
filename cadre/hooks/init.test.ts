@@ -2096,6 +2096,12 @@ describe('assignmentStep', () => {
   })
 })
 
+/** The start of the entry question of the user's own skills (G-02-1b), as an answer key matches it. */
+const OWN_SKILLS_ENTRY_PREFIX = 'How do you want to hand out your own skills'
+
+/** The entry question of the user's own skills when there is one (G-02-1b), as its first line reads. */
+const OWN_SKILLS_ENTRY_ONE = `${OWN_SKILLS_ENTRY_PREFIX} (1)?`
+
 describe('history hints', () => {
   /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
   const roles = proposeRoles(FULL_SCAN).roles
@@ -2110,16 +2116,21 @@ describe('history hints', () => {
     ],
   })
   const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
-  /** The 02-07 questions in the 02-07 order: the server, then the groups by label with the user's own last. */
+  /**
+   * The 02-07 questions in today's order: the server, the plugin groups by label, then the hand-out of the user's own
+   * skills answered Whole group, which asks their group question (G-02-1b).
+   */
   const PLAIN_QUESTIONS = [
     SENTRY_QUESTION,
     'Which roles get alpha skills (1)? (e.g. BE, QA, or none)',
     'Which roles get codex skills (2)? (e.g. BE, QA, or none)',
+    OWN_SKILLS_ENTRY_ONE,
     'Which roles get your own skills (1)? (e.g. BE, QA, or none)',
   ]
-  const NONE_FOR_ALL = ['None', 'None', 'None', 'None']
+  /** None for the server and each plugin group, then Whole group and None for the user's own skills. */
+  const NONE_FOR_ALL = ['None', 'None', 'None', 'Whole group', 'None']
 
-  test('assignmentStep with hints asks the busiest skill group first, with its uses; servers come first', async () => {
+  test('with hints the busiest plugin group comes first, with its uses; servers first, own skills last', async () => {
     const hints = new Map([
       ['my-skill', 5],
       ['codex:rescue', 2],
@@ -2129,9 +2140,10 @@ describe('history hints', () => {
     valueOf(await assignmentStep(run.io, roles, setup, hints))
     expect(firstLines(run.asked)).toEqual([
       SENTRY_QUESTION,
-      'Which roles get your own skills (1)? (used 5 times in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (2)? (used 3 times in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get alpha skills (1)? (e.g. BE, QA, or none)',
+      OWN_SKILLS_ENTRY_ONE,
+      'Which roles get your own skills (1)? (used 5 times in recent sessions) (e.g. BE, QA, or none)',
     ])
   })
 
@@ -2145,14 +2157,14 @@ describe('history hints', () => {
 
   test('with hints each answer still decides the whole list of the names it asks about (A3)', async () => {
     const hints = new Map([['my-skill', 5]])
-    const all = ['All roles', 'All roles', 'All roles', 'All roles']
+    const all = ['All roles', 'All roles', 'All roles', 'Whole group', 'All roles']
     const first = valueOf(await assignmentStep(memIo(memWorld({}), all).io, roles, setup, hints))
     expect(first.every(role => role.skills.includes('my-skill') && role.skills.includes('alpha:x'))).toBe(true)
     const again = valueOf(await assignmentStep(memIo(memWorld({}), NONE_FOR_ALL).io, first, setup, hints))
     expect(again.flatMap(role => [...role.mcp, ...role.skills])).toEqual([])
   })
 
-  test('runInit with Yes orders and annotates the skill questions by use; skipped, it asks as before', async () => {
+  test('runInit with Yes annotates the own skills group question by use; skipped, it asks as before', async () => {
     const skillCall = '{"type":"tool_use","name":"Skill","input":{"skill":"my-skill"}}'
     const commands = [
       { name: 'codex:rescue', source: 'plugin', plugin: 'codex' },
@@ -2161,16 +2173,19 @@ describe('history hints', () => {
     const world = historyGitWorld({ commands, files: { [`${HISTORY_DIR}/a.jsonl`]: `${skillCall}\n${skillCall}` } })
     const skillAsks = (run: MemRun): string[] =>
       firstLines(run.asked).filter(question => / skills \(\d+\)\?/.test(question))
-    const scanned = memIo(world, { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    const whole = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
+    const scanned = memIo(world, { ...whole, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
     await runInit(scanned.io, { dryRun: true })
     expect(skillAsks(scanned)).toEqual([
-      'Which roles get your own skills (1)? (used 2 times in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      OWN_SKILLS_ENTRY_ONE,
+      'Which roles get your own skills (1)? (used 2 times in recent sessions) (e.g. BE, QA, or none)',
     ])
-    const skipped = memIo(world, INIT_ANSWERS)
+    const skipped = memIo(world, whole)
     await runInit(skipped.io, { dryRun: true })
     expect(skillAsks(skipped)).toEqual([
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      OWN_SKILLS_ENTRY_ONE,
       'Which roles get your own skills (1)? (e.g. BE, QA, or none)',
     ])
   })
@@ -2185,12 +2200,14 @@ describe('history hints', () => {
     const run = queuedIo(world, {
       ...INIT_ANSWERS,
       [HISTORY_PREFIX]: 'Yes, scan names and counts',
+      [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group',
       'Review the plan': ['assignments', 'Confirm'],
     })
     await runInit(run.io, { dryRun: true })
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([
-      'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      OWN_SKILLS_ENTRY_ONE,
+      'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
     ])
   })
 
@@ -2220,9 +2237,15 @@ function purposeWorld(over: Partial<MemWorld> = {}): MemWorld {
   return gitWorld({ commands: [{ name: 'my-skill', source: 'user', description: UNIQUE_PURPOSE }], ...over })
 }
 
+/** INIT_ANSWERS with the user's own skills handed out by the model's recommendations (G-02-1b). */
+const OWN_ACCEPTED: Readonly<Record<string, string>> = {
+  ...INIT_ANSWERS,
+  [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations',
+}
+
 describe('skill purpose in init (D-139)', () => {
   test('a dry run shows the Your own skills block with each purpose before any own-skill question', async () => {
-    const run = memIo(purposeWorld(), INIT_ANSWERS)
+    const run = memIo(purposeWorld(), OWN_ACCEPTED)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(run.shown.filter(block => block.key === 'skills').map(block => block.title)).toEqual(['Your own skills'])
@@ -2235,7 +2258,12 @@ describe('skill purpose in init (D-139)', () => {
 
   test('a plain init holds the purpose in memory for the pane and writes no file that holds it (T-02-66)', async () => {
     const host = memHost(hostWorld({}))
-    const run = memIo(purposeWorld(), { ...INIT_ANSWERS, 'Which roles get your own skills': 'All roles' })
+    const answers = {
+      ...INIT_ANSWERS,
+      [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group',
+      'Which roles get your own skills': 'All roles',
+    }
+    const run = memIo(purposeWorld(), answers)
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(shownBlock(run, 'skills')).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
     const roleFiles = host.writes.filter(write => write.path.endsWith('/role.json'))
@@ -2281,7 +2309,7 @@ function completionAt(run: MemRun, at: number): { readonly system: string; reado
 
 describe('skill recommendation in init (G-02-1b)', () => {
   test('a dry run asks the model once and shows the roles it recommends on each skill row', async () => {
-    const run = memIo(ownSkillsWorld(['{"skills":{"S1":["security","tl"],"S2":[]}}']), INIT_ANSWERS)
+    const run = memIo(ownSkillsWorld(['{"skills":{"S1":["security","tl"],"S2":[]}}']), OWN_ACCEPTED)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(1)
     const { system, prompt } = completionAt(run, 0)
@@ -2301,7 +2329,7 @@ describe('skill recommendation in init (G-02-1b)', () => {
 
   test('three replies it cannot take are retried with their exact errors, then the fallback row', async () => {
     const replies = ['not json', '{"skills":{"S9":["pm"]}}', '{"skills":{"S1":"tl"}}']
-    const run = memIo(ownSkillsWorld(replies), INIT_ANSWERS)
+    const run = memIo(ownSkillsWorld(replies), OWN_ACCEPTED)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(MAX_PROPOSE_ATTEMPTS)
     expect(completionAt(run, 1).prompt.split('\n').slice(-2)).toEqual([
@@ -2320,7 +2348,7 @@ describe('skill recommendation in init (G-02-1b)', () => {
   })
 
   test('a model that gives no text is asked three times, told so, and the block shows the fallback row', async () => {
-    const run = memIo(ownSkillsWorld([]), INIT_ANSWERS)
+    const run = memIo(ownSkillsWorld([]), OWN_ACCEPTED)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(MAX_PROPOSE_ATTEMPTS)
     expect(completionAt(run, 2).prompt.split('\n').at(-1)).toBe('- the model gave no text')
@@ -2333,6 +2361,249 @@ describe('skill recommendation in init (G-02-1b)', () => {
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toEqual([])
     expect(run.shown.map(block => block.key)).not.toContain('skills')
+  })
+})
+
+/** The own-skills entry question of a hand-out of `count` skills (G-02-1b), as its first line reads. */
+function ownEntry(count: number): string {
+  return `${OWN_SKILLS_ENTRY_PREFIX} (${count})?`
+}
+
+/** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
+const OWN_ENTRY_OPTIONS = ['Accept recommendations', 'Go one by one', 'Whole group']
+
+/** The skills row of a role's scope card in the last review block a run showed (D-133); '' with no such card. */
+function cardSkills(run: MemRun, id: string): string {
+  const review = shownBlock(run, 'review')
+  const at = review.findIndex(line => line.startsWith('Scope card: ') && line.endsWith(`(${id})`))
+
+  return at === -1 ? '' : (review[at + 2] ?? '')
+}
+
+describe('own skills hand-out (G-02-1b)', () => {
+  /** PM, Team Lead, BE, FE, QA and Security. */
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** A codex plugin skill, and three of the user's own skills: mid and zeta used 4 times each, alpha never. */
+  const setup = emptySetupScan({
+    skills: [
+      skillRef('codex:rescue', 'codex'),
+      { name: 'alpha', plugin: null, purpose: 'Sort the inbox.' },
+      { name: 'zeta', plugin: null },
+      { name: 'mid', plugin: null, purpose: 'Draft the weekly report.' },
+    ],
+  })
+  const hints = new Map([
+    ['mid', 4],
+    ['zeta', 4],
+  ])
+  /** The recommendation in the busiest-first order: S1 mid to BE, S2 zeta to FE, S3 alpha to no role. */
+  const REPLY = '{"skills":{"S1":["be"],"S2":["fe"],"S3":[]}}'
+  const CODEX_QUESTION = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
+  const ENTRY_CONTEXT = '3 skills with no plugin; the pane shows what each does and the roles it is recommended for.'
+  /** The one-by-one questions as asked, busiest first and then by name, each with its context line. */
+  const MID_ASKED =
+    'Which roles get the skill mid?\nDraft the weekly report. Used 4 times in the last 50 sessions. Recommended: be.'
+  const ZETA_ASKED =
+    'Which roles get the skill zeta?\nNo description. Used 4 times in the last 50 sessions. Recommended: fe.'
+  const ALPHA_ASKED = 'Which roles get the skill alpha?\nSort the inbox. Recommended: none.'
+
+  /** The user's own skills a role was given, in the order its list keeps them. */
+  function ownOf(assigned: readonly RoleSpec[], id: string): readonly string[] {
+    return roleIn(assigned, id).skills.filter(name => ['alpha', 'mid', 'zeta'].includes(name))
+  }
+
+  /** A run of the step on `given` with these answers and replies; the result is checked to be accepted first. */
+  async function stepRun(
+    answers: readonly string[],
+    replies: readonly string[] = [REPLY],
+    given: readonly RoleSpec[] = roles,
+  ): Promise<{ readonly run: MemRun; readonly assigned: readonly RoleSpec[] }> {
+    const run = memIo(memWorld({ replies }), answers)
+    const result = await assignmentStep(run.io, given, setup, hints)
+    expect(result.kind).toBe('accepted')
+
+    return { run, assigned: result.kind === 'accepted' ? result.value : [] }
+  }
+
+  test('the plugin groups come first, then the entry question with its context, chip and three answers', async () => {
+    const { run } = await stepRun(['None', 'Accept recommendations'])
+    expect(run.asked).toEqual([
+      withContext(CODEX_QUESTION, skillsContextLine(roles)),
+      withContext(ownEntry(3), ENTRY_CONTEXT),
+    ])
+    expect(run.specs).toEqual([
+      { options: ['None', 'All roles'], header: 'Skills' },
+      { options: OWN_ENTRY_OPTIONS, header: 'Skills' },
+    ])
+  })
+
+  test('one own skill is counted in the singular in the entry question and its context line', async () => {
+    const one = emptySetupScan({ skills: [{ name: 'alpha', plugin: null }] })
+    const run = memIo(memWorld({}), ['Accept recommendations'])
+    expect((await assignmentStep(run.io, roles, one)).kind).toBe('accepted')
+    const context = '1 skill with no plugin; the pane shows what each does and the roles it is recommended for.'
+    expect(run.asked).toEqual([withContext(ownEntry(1), context)])
+  })
+
+  test('after the plugin groups the model recommends, and the pane shows the skills busiest first', async () => {
+    const run = memIo(memWorld({ replies: [REPLY] }), ['None', 'Accept recommendations'])
+    const { io, events } = withEvents(run)
+    await assignmentStep(io, roles, setup, hints)
+    expect(events).toEqual([`ask ${CODEX_QUESTION}`, 'show skills', `ask ${ownEntry(3)}`])
+    expect(completionAt(run, 0).prompt.split('\n').slice(-3)).toEqual([
+      'S1 | mid | Draft the weekly report. | used 4 times',
+      'S2 | zeta | (no description) | used 4 times',
+      'S3 | alpha | Sort the inbox. | used 0 times',
+    ])
+    expect(shownBlock(run, 'skills')).toEqual([
+      OWN_SKILLS_HEADING,
+      '  mid: Draft the weekly report.',
+      '    used 4 times in the last 50 sessions; recommended: be',
+      '  zeta: No description.',
+      '    used 4 times in the last 50 sessions; recommended: fe',
+      '  alpha: Sort the inbox.',
+      '    recommended: none',
+    ])
+  })
+
+  test('Accept recommendations gives each own skill its recommended roles; the plugin answer stays', async () => {
+    const { run, assigned } = await stepRun(['All roles', 'Accept recommendations'])
+    expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
+      ['pm', []],
+      ['tl', []],
+      ['be', ['mid']],
+      ['fe', ['zeta']],
+      ['qa', []],
+      ['security', []],
+    ])
+    expect(assigned.filter(role => !role.skills.includes('codex:rescue'))).toEqual([])
+    expect(run.asked).toHaveLength(2)
+  })
+
+  test('with no usable recommendation, Accept gives no own skill to any role', async () => {
+    const { assigned } = await stepRun(['None', 'Accept recommendations'], [])
+    expect(assigned.flatMap(role => role.skills)).toEqual([])
+  })
+
+  test('Go one by one asks each own skill once, busiest first, then by name: Yes, No and a role list', async () => {
+    const { run, assigned } = await stepRun(['None', 'Go one by one', 'Yes', 'No', 'qa'])
+    expect(run.asked.slice(2)).toEqual([MID_ASKED, ZETA_ASKED, ALPHA_ASKED])
+    expect(run.specs.slice(2)).toEqual([
+      { options: ['Yes', 'No'], header: 'Skill 1/3' },
+      { options: ['Yes', 'No'], header: 'Skill 2/3' },
+      { options: ['Yes', 'No'], header: 'Skill 3/3' },
+    ])
+    expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
+      ['pm', []],
+      ['tl', []],
+      ['be', ['mid']],
+      ['fe', []],
+      ['qa', ['alpha']],
+      ['security', []],
+    ])
+  })
+
+  test('a typed role list is read as a group answer is; an unknown role is asked again with why on top', async () => {
+    const { run, assigned } = await stepRun(['None', 'Go one by one', 'cto', 'Team Lead, qa', 'No', 'No'])
+    const refusal = `'cto' isn't one of: "Yes", "No", or role ids from: pm, tl, be, fe, qa, security.`
+    expect(run.asked.slice(2, 4)).toEqual([MID_ASKED, `${refusal}\n${MID_ASKED}`])
+    expect([ownOf(assigned, 'tl'), ownOf(assigned, 'qa'), ownOf(assigned, 'be')]).toEqual([['mid'], ['mid'], []])
+  })
+
+  test("Whole group asks today's group question for the own skills, with their uses", async () => {
+    const { run, assigned } = await stepRun(['None', 'Whole group', 'All roles'])
+    const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
+    expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
+    expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills' })
+    expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))
+  })
+
+  test('a dismissal or three unreadable answers cancel with their reason at the question they hit (A1)', async () => {
+    const cases: readonly (readonly [readonly string[], string, string])[] = [
+      [['None'], ASSIGNMENT_DISMISSED_REASON, ownEntry(3)],
+      [['None', 'zz', 'zz', 'zz'], NO_USABLE_ANSWER_REASON, ownEntry(3)],
+      [['None', 'Go one by one', 'Yes'], ASSIGNMENT_DISMISSED_REASON, 'Which roles get the skill zeta?'],
+      [['None', 'Go one by one', 'cto', 'cto', 'cto'], NO_USABLE_ANSWER_REASON, 'Which roles get the skill mid?'],
+    ]
+    for (const [answers, reason, question] of cases) {
+      const run = memIo(memWorld({ replies: [REPLY] }), answers)
+      expect(await assignmentStep(run.io, roles, setup, hints)).toEqual({ kind: 'cancelled', reason })
+      expect([answers, run.asked.at(-1)?.includes(question)]).toEqual([answers, true])
+    }
+  })
+
+  test('a second run decides the own skills again: No takes away what Accept gave (A3)', async () => {
+    const first = await stepRun(['None', 'Accept recommendations'])
+    expect(ownOf(first.assigned, 'be')).toEqual(['mid'])
+    const again = await stepRun(['None', 'Go one by one', 'No', 'No', 'No'], [REPLY], first.assigned)
+    expect(again.assigned.flatMap(role => ownOf(again.assigned, role.id))).toEqual([])
+  })
+
+  test('a team with no own skill is asked no hand-out question, and the model is not called', async () => {
+    const run = memIo(memWorld({ replies: [REPLY] }), ['All roles'])
+    const plugins = emptySetupScan({ skills: [skillRef('codex:rescue', 'codex')] })
+    valueOf(await assignmentStep(run.io, roles, plugins, hints))
+    expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles))])
+    expect(run.prompts).toEqual([])
+  })
+
+  test('a skill question cuts the name to 60 code points; past 12 code points the chip is just Skill', async () => {
+    const names = Array.from({ length: 100 }, (_, at) => `s${String(at).padStart(3, '0')}`)
+    const long = skillRef('n'.repeat(100))
+    const many = emptySetupScan({ skills: [long, ...names.map(name => skillRef(name))] })
+    const run = memIo(memWorld({}), ['Go one by one', ...Array.from({ length: 101 }, () => 'No')])
+    expect((await assignmentStep(run.io, roles, many)).kind).toBe('accepted')
+    expect(run.asked[1]?.split('\n')[0]).toBe(`Which roles get the skill ${'n'.repeat(59)}…?`)
+    expect([run.specs[99]?.header, run.specs[100]?.header, run.specs[101]?.header]).toEqual([
+      'Skill 99/101',
+      'Skill',
+      'Skill',
+    ])
+  })
+
+  test('a dry run one by one: Yes gives the recommended roles, No none, and a typed qa the QA role', async () => {
+    const skillCall = '{"type":"tool_use","name":"Skill","input":{"skill":"release-notes"}}'
+    const world = fullWorld({
+      dirs: { '/repo/.git': [], ...FULL_DIRS, [HISTORY_DIR]: [{ ...entry('a.jsonl'), mtimeMs: 1 }] },
+      files: { ...FULL_FILES, [`${HISTORY_DIR}/a.jsonl`]: `${skillCall}\n${skillCall}` },
+      commands: [
+        { name: 'codex:rescue', source: 'plugin', plugin: 'codex' },
+        { name: 'zeta', source: 'user', description: 'Tidy the zeta folder.' },
+        { name: 'alpha', source: 'user' },
+        { name: 'release-notes', source: 'project', description: 'Write the release notes.' },
+      ],
+      replies: ['{"skills":{"S1":["be","tl"],"S2":["fe"],"S3":[]}}'],
+    })
+    const run = memIo(world, {
+      ...INIT_ANSWERS,
+      [HISTORY_PREFIX]: 'Yes, scan names and counts',
+      [OWN_SKILLS_ENTRY_PREFIX]: 'Go one by one',
+      'Which roles get the skill release-notes': 'Yes',
+      'Which roles get the skill alpha': 'No',
+      'Which roles get the skill zeta': 'qa',
+    })
+    expect((await runInit(run.io, { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    const lines = firstLines(run.asked)
+    const at = lines.indexOf(CODEX_QUESTION)
+    expect(lines.slice(at, at + 5)).toEqual([
+      CODEX_QUESTION,
+      ownEntry(3),
+      'Which roles get the skill release-notes?',
+      'Which roles get the skill alpha?',
+      'Which roles get the skill zeta?',
+    ])
+    expect(askedOf(run, 'Which roles get the skill release-notes?')).toBe(
+      'Which roles get the skill release-notes?\n' +
+        'Write the release notes. Used 2 times in the last 50 sessions. Recommended: tl, be.',
+    )
+    expect(['pm', 'tl', 'be', 'fe', 'qa', 'security'].map(id => [id, cardSkills(run, id)])).toEqual([
+      ['pm', '  skills: none'],
+      ['tl', '  skills: release-notes'],
+      ['be', '  skills: release-notes'],
+      ['fe', '  skills: none'],
+      ['qa', '  skills: zeta'],
+      ['security', '  skills: none'],
+    ])
   })
 })
 
@@ -4072,6 +4343,11 @@ describe('refusal re-ask (G-02-6b)', () => {
       ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
       ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
+      [
+        'own skills',
+        io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('mine')] })),
+        '"Accept recommendations", "Go one by one", "Whole group"',
+      ],
       ['memory', io => memoryStep(io, roles, emptySetupScan({ hasGlobalClaudeMd: true })), roleList],
       [
         'env',
@@ -4189,6 +4465,8 @@ type QuestionRuns = {
   readonly conflict: MemRun
   /** The content consent answered Yes on a world with a global CLAUDE.md, then Accept recommendations (G-02-1f). */
   readonly parts: MemRun
+  /** Two of the user's own skills handed out one by one, each answered No; the model gives no text (G-02-1b). */
+  readonly ownSkills: MemRun
 }
 
 /** Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change. */
@@ -4219,8 +4497,14 @@ async function questionRuns(): Promise<QuestionRuns> {
   await runInit(conflict.io, { dryRun: false, host: memHost(hostWorld({})).io })
   const parts = memIo(partsWorld(), PARTS_ANSWERS)
   await runInit(parts.io, { dryRun: true })
+  const ownSkills = memIo(ownSkillsWorld([]), {
+    ...INIT_ANSWERS,
+    [OWN_SKILLS_ENTRY_PREFIX]: 'Go one by one',
+    'Which roles get the skill': 'No',
+  })
+  await runInit(ownSkills.io, { dryRun: true })
 
-  return { plain, adjusted, perRole, security, history, folder, conflict, parts }
+  return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills }
 }
 
 /** The dialog spec of the first question a run asked that starts with `start`; a missing one stops the test. */
@@ -4296,6 +4580,9 @@ describe('question chips (G-02-3c)', () => {
       [runs.perRole, CONTENT_QUESTION, 'Instructions'],
       [runs.parts, CONTENT_QUESTION, 'Instructions'],
       [runs.parts, INSTRUCTIONS_ENTRY_QUESTION, 'Instructions'],
+      [runs.ownSkills, OWN_SKILLS_ENTRY_PREFIX, 'Skills'],
+      [runs.ownSkills, 'Which roles get the skill deploy-notes?', 'Skill 1/2'],
+      [runs.ownSkills, 'Which roles get the skill my-skill?', 'Skill 2/2'],
       [runs.perRole, 'Which env variables', 'Env'],
       [runs.perRole, '.planning/config.json: mode', 'Hunk 1 of 3'],
       [runs.perRole, '.planning/config.json: hooks.context_warnings', 'Hunk 3 of 3'],
@@ -4453,6 +4740,17 @@ describe('question context lines (G-02-1)', () => {
         INSTRUCTIONS_ENTRY_QUESTION,
         '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.',
       ],
+      [
+        runs.ownSkills,
+        OWN_SKILLS_ENTRY_PREFIX,
+        '2 skills with no plugin; the pane shows what each does and the roles it is recommended for.',
+      ],
+      [
+        runs.ownSkills,
+        'Which roles get the skill deploy-notes?',
+        'Write the release notes for a deploy. Recommended: none.',
+      ],
+      [runs.ownSkills, 'Which roles get the skill my-skill?', 'No description. Recommended: none.'],
       [
         runs.perRole,
         'Which env variables',
