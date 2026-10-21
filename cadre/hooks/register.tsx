@@ -1,3 +1,4 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type {
@@ -9,6 +10,7 @@ import type {
   RawFacts,
   RawGsdCandidate,
   SettingsSource,
+  ShownBlock,
 } from '../types'
 import { helpText, parseCommand } from './command'
 import {
@@ -32,6 +34,15 @@ import type { InitOptions, RegenOptions } from './init'
 import { detectText } from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
+
+/** The id of the cadre init side pane (D-133). */
+const PANE = 'cadre-init'
+/** The title the cadre init side pane opens with (D-133). */
+const PANE_TITLE = 'cadre init'
+/** The side pane's blocks before a run shows any. */
+const NO_BLOCKS: ShownBlock[] = []
+/** The blocks of the cadre init side pane, newest first; a run's first block replaces the last run's (D-133). */
+const initPane = atom({ plugin: 'cadre', key: 'initPane' }, NO_BLOCKS)
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -339,12 +350,24 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
  * The port one init run goes through (P8): plain closures over `$`, built here because `$` cannot cross into another
  * file, so the pure modules never see it. Every member except `ask` turns a host failure into null or unknown, never
  * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
- * message. `ask` rejects when the person dismisses the dialog (D-45).
+ * message. `ask` rejects when the person dismisses the dialog (D-45). `show` puts a block into the side pane's state
+ * and opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
+ * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50).
  */
 function initIoOf($: EngineInterface): InitIo {
+  let isPaneOpened = false
+
   return {
     ask: (question, spec) => $.ui.ask(question, spec),
     log: text => $.ui.log(text),
+    show: async block => {
+      await update($, initPane, blocks =>
+        isPaneOpened ? [block, ...blocks.filter(shown => shown.key !== block.key)] : [block],
+      ).catch(() => undefined)
+      if (isPaneOpened) return
+      isPaneOpened = true
+      await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
+    },
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
       if (model === null) return null
@@ -476,5 +499,26 @@ export const register: Register = on => {
         return unreachable
       }
     }
+  })
+
+  // The cadre init side pane (D-133): each block's title in bold, then one row per line, in the normal look.
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const blocks = await read($, initPane)
+    if (blocks.length === 0) return <Text>cadre init has not shown anything yet.</Text>
+
+    return (
+      <Box flexDirection="column">
+        {blocks.map((block, at) => (
+          <Box key={block.key} flexDirection="column">
+            {at > 0 && <Text> </Text>}
+            <Text bold>{block.title}</Text>
+            {block.lines.map((line, row) => (
+              <Text key={row}>{line === '' ? ' ' : line}</Text>
+            ))}
+          </Box>
+        ))}
+      </Box>
+    )
   })
 }

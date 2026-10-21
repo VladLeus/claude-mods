@@ -16,6 +16,7 @@ import type {
   RunOptions,
   SettingsSource,
   SetupScan,
+  ShownBlock,
   SkillRef,
   TemplateRoleId,
 } from '../types'
@@ -114,6 +115,8 @@ export type MemRun = {
   readonly asked: string[]
   readonly specs: AskSpec[]
   readonly logged: string[]
+  /** Every block shown in the side pane, in order. */
+  readonly shown: ShownBlock[]
   /** Every completion asked, as `${system}\n---\n${prompt}`. */
   readonly prompts: string[]
   readonly reads: string[]
@@ -186,6 +189,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   const asked: string[] = []
   const specs: AskSpec[] = []
   const logged: string[] = []
+  const shown: ShownBlock[] = []
   const prompts: string[] = []
   const reads: string[] = []
   const listed: string[] = []
@@ -206,6 +210,9 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     },
     log: text => {
       logged.push(text)
+    },
+    show: async block => {
+      shown.push(block)
     },
     complete: async (prompt, system) => {
       prompts.push(`${system}\n---\n${prompt}`)
@@ -242,7 +249,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     tools: async () => world.tools,
   }
 
-  return { io, asked, specs, logged, prompts, reads, listed }
+  return { io, asked, specs, logged, shown, prompts, reads, listed }
 }
 
 /**

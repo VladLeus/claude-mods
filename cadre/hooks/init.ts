@@ -17,6 +17,7 @@ import type {
   Manifest,
   ManifestEntry,
   McpRoute,
+  PaneKey,
   Plan,
   PortEntry,
   PortRead,
@@ -348,6 +349,23 @@ function logLines(io: InitIo, lines: readonly string[]): void {
   for (const chunk of chunkLines(lines.map(reportText), LOG_CHUNK_CHARS)) io.log(chunk)
 }
 
+/** The side-pane titles of D-133: the bold title of each kind of block the cadre init pane shows. */
+export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
+  scan: 'Scan',
+  history: 'Session history',
+  roles: 'Roles',
+  recommendations: 'Recommendations',
+  review: 'Review',
+})
+
+/**
+ * Shows lines as one side-pane block (D-133): each line cleaned as a report cell (reportText), so a scanned or typed
+ * value cannot add a row or hide text.
+ */
+async function showBlock(io: InitIo, key: PaneKey, lines: readonly string[]): Promise<void> {
+  await io.show({ key, title: PANE_TITLES[key], lines: lines.map(reportText) })
+}
+
 /** A dialog answer with the value it stands for. */
 type Labelled<T> = {
   readonly label: string
@@ -548,11 +566,11 @@ function pluginSummary(plugins: readonly string[]): string {
 }
 
 /**
- * The scans as init prints them before any role question (SCAN-01, SCAN-02): the repo part (stack, frontend, backend,
- * tests, E2E, an existing `.cadre/`, and a line when the walk stopped at the entry cap), then the user setup as names
- * and counts only. Each setup line gives its counts first and its name list last, and a list shows 12 names cleaned and
- * capped, then counts the rest, so a long list never pushes a count past the 240 code points a line keeps (B2). No
- * setting value, file content or warning is part of it.
+ * The scans as init shows them in the side pane before any role question (SCAN-01, SCAN-02, D-133): the repo part
+ * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and a line when the walk stopped at the entry cap),
+ * then the user setup as names and counts only. Each setup line gives its counts first and its name list last, and a
+ * list shows 12 names cleaned and capped, then counts the rest, so a long list never pushes a count past the 240 code
+ * points a line keeps (B2). No setting value, file content or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
   const stack = `stack: ${namesOrNone(repo.languages)}`
@@ -576,9 +594,9 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
 
 /**
  * Every warning the scans of one run gave: those of the locations, of the detect facts, of the repo scan and of the
- * setup scan, in that order, each text once where it first comes. Init prints them right after the scan summary, and
- * the final review (reviewStep) shows the same list again next to the plan. A secret read guard registered only in
- * local settings is no warning: launch renders the guard from every settings source (D-103).
+ * setup scan, in that order, each text once where it first comes. Init shows them right after the scan summary, in its
+ * side-pane block, and the final review (reviewStep) shows the same list again next to the plan. A secret read guard
+ * registered only in local settings is no warning: launch renders the guard from every settings source (D-103).
  */
 export function scanWarnings(locations: InitLocations, gathered: Gathered): string[] {
   const all = [
@@ -591,7 +609,7 @@ export function scanWarnings(locations: InitLocations, gathered: Gathered): stri
   return Array.from(new Set(all))
 }
 
-/** The scan warnings as init prints them, one `warning: <text>` line each; nothing when there are none. */
+/** The scan warnings as init shows them, one `warning: <text>` line each; nothing when there are none. */
 export function scanWarningLines(warnings: readonly string[]): string[] {
   return warnings.map(warning => `warning: ${warning}`)
 }
@@ -2457,7 +2475,7 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
- * (consentStep), runs the scans and prints them with their warnings, then runs the history step (historyStep), which
+ * (consentStep), runs the scans and shows them with their warnings, then runs the history step (historyStep), which
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
@@ -2483,7 +2501,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
 
   const gathered = await gatherScans(io, guard.locations, consent.value)
   const warnings = scanWarningLines(scanWarnings(guard.locations, gathered))
-  logLines(io, [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
+  await showBlock(io, 'scan', [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
 
   const history = await historyStep(io, guard.locations)
   if (history.kind === 'cancelled') return cancelReply(io, history.reason)

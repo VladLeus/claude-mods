@@ -384,6 +384,27 @@ export type InitFacts = {
   readonly gsdUserDir: string | null
 }
 
+/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133). */
+export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review'
+
+/** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
+export type ShownBlock = {
+  readonly key: PaneKey
+  readonly title: string
+  readonly lines: readonly string[]
+}
+
+/**
+ * The side-pane state of one init run (D-133): the blocks the cadre init pane shows, newest first; only register.tsx
+ * reads and writes it. It is declared in this types contract because `claude plugin validate` takes a plugin's state
+ * keys from the manifest's `types` file only.
+ */
+declare module 'claude-code' {
+  interface PluginState {
+    cadre: { initPane: ShownBlock[] }
+  }
+}
+
 /**
  * The host port init and regen run through. register.tsx builds it from closures over `$`, so pure modules never see
  * `$` (P8). Every member except `ask` maps a host failure to null or `unknown`, never to absent. `list`, `stat`, `read`
@@ -393,8 +414,16 @@ export type InitFacts = {
 export type InitIo = {
   /** Rejects when the person dismisses the dialog; the rejection text is never shown (D-45). */
   readonly ask: (question: string, spec: AskSpec) => Promise<string>
-  /** One transcript entry of at most 2000 characters (P9). */
+  /**
+   * Appends one line to the transcript as a dim notice (the desktop app does not draw it): only for one-line notes,
+   * never a block.
+   */
   readonly log: (text: string) => void
+  /**
+   * Shows a block of lines in the cadre init side pane, replacing the block of the same key and putting it first;
+   * never rejects.
+   */
+  readonly show: (block: ShownBlock) => Promise<void>
   /** One model completion; the model has no tools (D-83). Null when the model gave no text. */
   readonly complete: (prompt: string, system: string) => Promise<string | null>
   /** True when a surface can show a dialog, false in `claude -p`, null when unknown. */
