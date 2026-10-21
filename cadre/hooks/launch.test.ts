@@ -1196,6 +1196,52 @@ describe('instructionPlan', () => {
   })
 })
 
+/** The rule files of the fixture repo, as gatherLaunchUser lists them (G-02-1f). */
+const RULES = ['/repo/.claude/rules/security.md', '/repo/.claude/rules/style.md']
+
+/** The built role files of the fixture repo: BE's own, PM's and QA's (G-02-1f). */
+const ROLE_FILES = ['/repo/.cadre/be/CLAUDE.md', '/repo/.cadre/pm/CLAUDE.md', '/repo/.cadre/qa/CLAUDE.md']
+
+/** Everything a parts-flow BE excludes in the fixture repo: the chain, the rules and the other roles' files, sorted. */
+const BE_PARTS_EXCLUDES = sortedUnique([...CHAIN, ...RULES, '/repo/.cadre/pm/CLAUDE.md', '/repo/.cadre/qa/CLAUDE.md'])
+
+describe('parts-flow excludes (G-02-1f)', () => {
+  test("a role with no instruction group excludes the chain, each rule file and the other roles' built files", () => {
+    const plan = instructionPlan(templateRole('be'), user({ claudeMd: CHAIN, rules: RULES, roleClaudeMds: ROLE_FILES }))
+
+    expect(plan.claudeMdExcludes).toEqual(BE_PARTS_EXCLUDES)
+    expect(plan.claudeMdExcludes).not.toContain('/repo/.cadre/be/CLAUDE.md')
+  })
+
+  test('a role with groups keeps the whole-files rule: the chain, or nothing with the project group', () => {
+    const launcher = user({ claudeMd: CHAIN, rules: RULES, roleClaudeMds: ROLE_FILES })
+    const globalOnly = instructionPlan(templateRole('be', { instructions: ['global-claude-md'] }), launcher)
+    const project = instructionPlan(templateRole('be', { instructions: ['project-claude-md'] }), launcher)
+
+    expect(globalOnly.claudeMdExcludes).toEqual(sortedUnique(CHAIN))
+    expect(project.claudeMdExcludes).toEqual([])
+  })
+
+  test('launchPlan renders the parts-flow excludes into the runtime settings, sorted and once each', () => {
+    const role = templateRole('be')
+    const launcher = user({ claudeMd: CHAIN, rules: [...RULES, ...RULES], roleClaudeMds: ROLE_FILES })
+    const plan = launchPlan(role, compileScope(role, context()), launcher)
+
+    expect(plan.settings.claudeMdExcludes).toEqual(BE_PARTS_EXCLUDES)
+  })
+
+  test("only <root>/.cadre/<id>/CLAUDE.md is the role's own: a role with a longer id is another", () => {
+    const files = ['/w/repo/.cadre/be/CLAUDE.md', '/w/repo/.cadre/bee/CLAUDE.md', '/other/.cadre/be/CLAUDE.md']
+    const plan = instructionPlan(templateRole('be'), user({ root: '/w/repo', roleClaudeMds: files }))
+
+    expect(plan.claudeMdExcludes).toEqual(['/other/.cadre/be/CLAUDE.md', '/w/repo/.cadre/bee/CLAUDE.md'])
+  })
+
+  test('with no rule file and no built file a parts-flow role excludes the chain alone, as before', () => {
+    expect(instructionPlan(templateRole('be'), user({ claudeMd: CHAIN })).claudeMdExcludes).toEqual(sortedUnique(CHAIN))
+  })
+})
+
 describe('overlayLinks', () => {
   const OVERLAY = '/repo/.cadre/pm/.runtime/overlay/.claude'
 

@@ -740,6 +740,41 @@ describe('gatherLaunchUser (D-98)', () => {
       expect([index, read]).toEqual([index, { kind: 'refuse', text: START_NO_GIT_DIR }])
     }
   })
+
+  test('the rule files are the .md files and links of .claude/rules, absolute and sorted (G-02-1f)', async () => {
+    const rules = [entry('style.md'), entry('notes.txt'), entry('linked.md', 'other', true), entry('drafts', 'dir')]
+    const world = repoWorld({ dirs: { '/repo/.git': [], '/repo/.claude/rules': [entry('security.md'), ...rules] } })
+    const gathered = userOf((await gather(world, [GIT_OK])).read)
+
+    expect(gathered.rules).toEqual([
+      '/repo/.claude/rules/linked.md',
+      '/repo/.claude/rules/security.md',
+      '/repo/.claude/rules/style.md',
+    ])
+  })
+
+  test('the built role files are the CLAUDE.md of every .cadre folder that has one, stale ones too', async () => {
+    const world = repoWorld({
+      dirs: {
+        '/repo/.git': [],
+        '/repo/.cadre': [entry('be', 'dir'), entry('old', 'dir'), entry('pm', 'dir'), entry('INDEX.md')],
+        '/repo/.cadre/be': [entry('CLAUDE.md'), entry('ROLE.md')],
+        '/repo/.cadre/old': [entry('CLAUDE.md', 'other', true)],
+        '/repo/.cadre/pm': [entry('ROLE.md'), entry('notes', 'dir')],
+      },
+    })
+    const gathered = userOf((await gather(world, [GIT_OK])).read)
+
+    expect(gathered.roleClaudeMds).toEqual(['/repo/.cadre/be/CLAUDE.md', '/repo/.cadre/old/CLAUDE.md'])
+  })
+
+  test('a listing that fails or a folder that is not there gives no rule file and no built file', async () => {
+    const missing = userOf((await gather(repoWorld(), [GIT_OK])).read)
+    const unknownPaths = ['/repo/.claude/rules', '/repo/.cadre']
+    const unknown = userOf((await gather(repoWorld({ unknownPaths }), [GIT_OK])).read)
+
+    expect([missing.rules, missing.roleClaudeMds, unknown.rules, unknown.roleClaudeMds]).toEqual([[], [], [], []])
+  })
 })
 
 /** The command of the GSD secret read guard in the user settings of secretUserSettings. */
@@ -1380,6 +1415,24 @@ describe('runStart warnings and links (D-102)', () => {
     expect(order.indexOf('write')).toBeGreaterThan(order.indexOf('run /bin/ln'))
     expect(notRead).toBeGreaterThan(1)
     expect(lines.indexOf(RUN_LINE)).toBeGreaterThan(notRead)
+  })
+
+  test("a parts-flow role's rendered settings exclude rules and other roles' built files (T-02-70)", async () => {
+    const base = await appliedWorld()
+    const dirs = {
+      ...base.dirs,
+      '/repo/.claude/rules': [entry('security.md')],
+      '/repo/.cadre': [entry('be', 'dir'), entry('pm', 'dir'), entry('bin', 'dir')],
+      '/repo/.cadre/be': [entry('CLAUDE.md'), entry('role.json')],
+      '/repo/.cadre/pm': [entry('CLAUDE.md')],
+    }
+    const start = await startBe({ ...base, dirs })
+    const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
+
+    expect(JSON.parse(settings).claudeMdExcludes).toEqual([
+      '/repo/.cadre/pm/CLAUDE.md',
+      '/repo/.claude/rules/security.md',
+    ])
   })
 })
 
