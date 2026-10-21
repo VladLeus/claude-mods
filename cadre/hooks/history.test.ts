@@ -19,7 +19,7 @@ import {
   UNLISTED_HISTORY_NOTE,
 } from './history'
 import type { HistoryScan } from './history'
-import { NO_USABLE_ANSWER_REASON, PANE_TITLES } from './init'
+import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from './init'
 import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from './testkit'
 import type { MemWorld } from './testkit'
 
@@ -31,6 +31,14 @@ const HEADING = 'Session history (names and counts only):'
 
 /** The refusal on top of the history question when it is asked again after the answer `maybe` (D-136). */
 const MAYBE_REFUSAL = `'maybe' isn't one of: "No, skip it", "Yes, scan names and counts".`
+
+/** The context line init gives the history question on a repo where the scan found nothing (D-136). */
+const SCAN_CONTEXT = 'Scan: stack none; frontend none; backend none; tests none; E2E none.'
+
+/** The history question for `total` sessions as historyStep asks it: SCAN_CONTEXT on its second line (D-136). */
+function historyAsked(total: number): string {
+  return withContext(historyQuestion(total), SCAN_CONTEXT)
+}
 
 /** The transcript of the plan's example: two kept commands, one Skill call and a command name that is dropped. */
 const EXAMPLE = [
@@ -308,7 +316,7 @@ describe('history scan', () => {
     const empty = memWorld({ dirs: { [DIR]: [entry('notes.txt'), entry('sub', 'dir')] } })
     for (const world of [memWorld({}), empty]) {
       const run = memIo(world, ['Yes, scan names and counts'])
-      expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
+      expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
       expect(run.asked).toEqual([])
       expect(run.logged).toEqual([NO_HISTORY_NOTE])
       expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
@@ -317,7 +325,7 @@ describe('history scan', () => {
 
   test('historyStep: a session folder it cannot list gets its own note; nothing is asked or read (Q3)', async () => {
     const run = memIo(memWorld({ unknownPaths: [DIR] }), ['Yes, scan names and counts'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
     expect(run.asked).toEqual([])
     expect(run.logged).toEqual([UNLISTED_HISTORY_NOTE])
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
@@ -325,8 +333,8 @@ describe('history scan', () => {
 
   test('historyStep: with sessions it asks first, and No, skip it reads no transcript and shows nothing', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': EXAMPLE }), ['No, skip it'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(run.asked).toEqual([historyQuestion(2)])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(run.asked).toEqual([historyAsked(2)])
     expect(run.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History' }])
     expect(run.reads).toEqual([])
     expect(run.logged).toEqual([])
@@ -345,7 +353,7 @@ describe('history scan', () => {
       scanned: 2,
       total: 2,
     })
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: scan })
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: scan })
     expect(run.reads).toEqual([`${DIR}/a.jsonl`, `${DIR}/b.jsonl`])
     expect(run.shown.map(block => block.lines)).toEqual([historyLines(scan)])
     expect(run.logged).toEqual([])
@@ -359,7 +367,7 @@ describe('history scan', () => {
 
   test('historyStep: a Yes run shows one Session history block in the pane and logs no block (D-133)', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['Yes, scan names and counts'])
-    const result = await historyStep(run.io, DEFAULT_LOCATIONS)
+    const result = await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
     const scan = result.kind === 'accepted' && result.value !== 'skipped' ? result.value : scanOf()
     expect(run.shown).toEqual([{ key: 'history', title: PANE_TITLES.history, lines: historyLines(scan) }])
     expect(PANE_TITLES.history).toBe('Session history')
@@ -368,26 +376,26 @@ describe('history scan', () => {
 
   test('historyStep: a typed yes counts in any case; an unknown answer is asked again, three asks in all', async () => {
     const typed = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [' YES, scan names and counts '])
-    const result = await historyStep(typed.io, DEFAULT_LOCATIONS)
+    const result = await historyStep(typed.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
     expect(result.kind).toBe('accepted')
     expect(result.kind === 'accepted' ? result.value : 'skipped').not.toBe('skipped')
     const unread = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe'])
-    expect(await historyStep(unread.io, DEFAULT_LOCATIONS)).toEqual({
+    expect(await historyStep(unread.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({
       kind: 'cancelled',
       reason: NO_USABLE_ANSWER_REASON,
     })
-    const again = `${MAYBE_REFUSAL}\n${historyQuestion(1)}`
-    expect(unread.asked).toEqual([historyQuestion(1), again, again])
+    const again = `${MAYBE_REFUSAL}\n${historyAsked(1)}`
+    expect(unread.asked).toEqual([historyAsked(1), again, again])
     expect(unread.reads).toEqual([])
   })
 
   test('historyStep: a dismissed question cancels with its reason, and nothing is read or logged (A1)', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({
       kind: 'cancelled',
       reason: HISTORY_DISMISSED_REASON,
     })
-    expect(run.asked).toEqual([historyQuestion(1)])
+    expect(run.asked).toEqual([historyAsked(1)])
     expect(run.reads).toEqual([])
     expect(run.logged).toEqual([])
   })
@@ -396,12 +404,12 @@ describe('history scan', () => {
     const cfg = '/cfg/projects/-repo'
     const world = memWorld({ dirs: { [cfg]: [transcript('a.jsonl', 1)] }, files: { [`${cfg}/a.jsonl`]: EXAMPLE } })
     const run = memIo(world, ['No, skip it'])
-    await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '/cfg' })
+    await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '/cfg' }, SCAN_CONTEXT)
     expect(run.listed).toEqual([cfg])
-    expect(run.asked).toEqual([historyQuestion(1)])
+    expect(run.asked).toEqual([historyAsked(1)])
     const none = memIo(memWorld({}), [])
     const homeless = { ...DEFAULT_LOCATIONS, home: null, givenHome: null }
-    expect(await historyStep(none.io, homeless)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(await historyStep(none.io, homeless, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
     expect(none.listed).toEqual([])
     expect(none.logged).toEqual([NO_HISTORY_NOTE])
   })
@@ -409,7 +417,7 @@ describe('history scan', () => {
   test('historyStep: the session folder is the one of the repo root as resolved', async () => {
     const locations = { ...DEFAULT_LOCATIONS, root: '/real/repo', givenRoot: '/link/repo' }
     const run = memIo(memWorld({}), [])
-    await historyStep(run.io, locations)
+    await historyStep(run.io, locations, SCAN_CONTEXT)
     expect(run.listed).toEqual(['/home/u/.claude/projects/-real-repo'])
   })
 
@@ -423,7 +431,7 @@ describe('history scan', () => {
     const held = JSON.stringify([world.dirs, world.files])
     expect(leaks(held, ['SENTINEL_SECRET_VALUE', '/home/u'])).toEqual(['SENTINEL_SECRET_VALUE', '/home/u'])
     const run = memIo(world, ['Yes, scan names and counts'])
-    const result = await historyStep(run.io, DEFAULT_LOCATIONS)
+    const result = await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
     const pane = run.shown.flatMap(block => [block.title, ...block.lines]).join('\n')
     expect(pane).toContain('  gsd-plan-phase  1')
     expect(pane).toContain('  codex:rescue  1')
@@ -441,15 +449,15 @@ describe('consent declines first (G-02-11)', () => {
   test('option 0 of the history question declines and reads no transcript (T-02-51)', async () => {
     const [first = ''] = HISTORY_OPTIONS
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [first])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(run.asked).toEqual([historyQuestion(1)])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(run.asked).toEqual([historyAsked(1)])
     expect([run.reads, run.shown, run.logged]).toEqual([[], [], []])
   })
 
   test('option 1 of the history question consents and reads the transcript', async () => {
     const [, second = ''] = HISTORY_OPTIONS
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [second])
-    const result = await historyStep(run.io, DEFAULT_LOCATIONS)
+    const result = await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
     expect([result.kind, result.kind === 'accepted' && result.value !== 'skipped']).toEqual(['accepted', true])
     expect(run.reads).toEqual([`${DIR}/a.jsonl`])
   })
@@ -458,14 +466,15 @@ describe('consent declines first (G-02-11)', () => {
 describe('refusal re-ask (G-02-6b)', () => {
   test('an answer the history question cannot read is asked again with why on top, then counts', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'No, skip it'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(run.asked).toEqual([historyQuestion(1), `${MAYBE_REFUSAL}\n${historyQuestion(1)}`])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(run.asked).toEqual([historyAsked(1), `${MAYBE_REFUSAL}\n${historyAsked(1)}`])
     expect([run.reads, run.logged]).toEqual([[], []])
   })
 
   test('three answers it cannot read cancel with no usable answer; no transcript is read (A1, D-136)', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe', 'Yes, scan names and counts'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    const exhausted = { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual(exhausted)
     expect(run.asked).toHaveLength(3)
     expect([run.reads, run.shown, run.logged]).toEqual([[], [], []])
   })
@@ -473,7 +482,7 @@ describe('refusal re-ask (G-02-6b)', () => {
   test('Esc after a refused answer still cancels with the dismissed reason of the history question', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe'])
     const dismissed = { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual(dismissed)
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual(dismissed)
     expect(run.asked).toHaveLength(2)
     expect(run.reads).toEqual([])
   })

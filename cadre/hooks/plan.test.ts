@@ -28,6 +28,7 @@ import {
   MANIFEST_PATH,
   mergeIgnoreBlock,
   planReadPaths,
+  planSummary,
   planWithManifest,
   PROBE_EXPECTATIONS_FILE,
   renderPlan,
@@ -567,6 +568,26 @@ describe('renderPlan', () => {
     const lines = renderPlan(planOf([op('leave', 'a', { note: '' })]))
 
     expect(lines).toEqual(['File plan:', '  leave     a', 'Summary: 0 create, 0 change, 1 leave, 0 conflict, 0 hunks'])
+  })
+})
+
+describe('planSummary', () => {
+  test('planSummary counts each kind and the hunks with their accepted ones, after Summary: (D-136)', () => {
+    const declined: HunkOp = { ...HUNK, key: 'workflow.text_mode', isAccepted: false }
+    const plan = planOf([op('change', 'a'), op('conflict', 'b'), op('create', 'c'), op('leave', 'd'), HUNK, declined])
+
+    expect(planSummary(plan)).toBe('Summary: 1 create, 1 change, 1 leave, 1 conflict, 2 hunks (1 accepted)')
+    expect(planSummary(planOf([op('create', 'c'), op('create', 'e')]))).toBe(
+      'Summary: 2 create, 0 change, 0 leave, 0 conflict, 0 hunks',
+    )
+    expect(planSummary(planOf([]))).toBe('Summary: 0 create, 0 change, 0 leave, 0 conflict, 0 hunks')
+  })
+
+  test('renderPlan ends with planSummary, so the review question and the plan give the same line', async () => {
+    const built = await buildPlan(input({ desired: [file(ROLE, '{}\n')] }))
+    const plans = [built, planOf([op('create', ROLE), HUNK], ['w']), planOf([])]
+
+    for (const plan of plans) expect(renderPlan(plan).at(-1)).toBe(planSummary(plan))
   })
 })
 

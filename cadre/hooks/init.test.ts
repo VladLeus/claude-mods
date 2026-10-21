@@ -56,6 +56,7 @@ import {
   ADJUST_OPTIONS,
   ADJUST_QUESTION,
   ADJUST_ROUNDS_NOTE,
+  adjustContextLine,
   adjustLoop,
   APPLIED_NONE_NOTE,
   appliedLines,
@@ -65,13 +66,16 @@ import {
   assignmentStep,
   cardLines,
   carryStep,
+  CLAUDE_JSON_CONTEXT,
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   commandRefusal,
   compileTeam,
+  CONFLICT_CONTEXT,
   CONSENT_DISMISSED_REASON,
   consentStep,
   DESCRIBE_CANCELLED_REASON,
+  DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
   describeStep,
@@ -79,8 +83,10 @@ import {
   DURATION_DISMISSED_REASON,
   DURATION_OPTIONS,
   DURATION_QUESTION,
+  durationContextLine,
   durationStep,
   ENV_DISMISSED_REASON,
+  envContextLine,
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
   FRAMEWORK_LABELS,
@@ -89,6 +95,7 @@ import {
   frameworkRoleQuestion,
   frameworkStep,
   gatherScans,
+  GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
   GIT_POLICY_OPTIONS,
   GIT_POLICY_QUESTION,
@@ -104,12 +111,14 @@ import {
   initReplyText,
   installedFrameworks,
   LAUNCH_DIR_CANCELLED_REASON,
+  LAUNCH_DIR_CONTEXT,
   LAUNCH_DIR_OPTIONS,
   LAUNCH_DIR_QUESTION,
   LAUNCH_DIR_ROUNDS_REASON,
   LAUNCH_START_DISMISSED_REASON,
   LAUNCH_START_OPTIONS,
   LAUNCH_START_QUESTION,
+  launchContextLine,
   launchLine,
   launchStartStep,
   MANIFEST_SKIPPED_NOTE,
@@ -119,9 +128,12 @@ import {
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
   MCP_ROUTE,
+  mcpContextLine,
   MEMORY_DISMISSED_REASON,
+  memoryContextLine,
   memoryStep,
   MODEL_DISMISSED_REASON,
+  MODEL_EFFORT_CONTEXT,
   MODEL_MODE_QUESTION,
   modelStep,
   NEXT_STEP_NOTE,
@@ -157,23 +169,30 @@ import {
   REVIEW_QUESTION,
   REVIEW_ROUNDS_REASON,
   REVIEW_TYPE_HINT,
+  reviewContextLine,
   reviewQuestion,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_OPTIONS,
   ROLES_QUESTION,
+  rolesContextLine,
   rolesStep,
   runInit,
   runRegen,
+  scanContextLine,
   scanSummaryLines,
   scanWarningLines,
   scanWarnings,
   scopesFor,
+  SECURITY_INSTALL_CONTEXT,
   SECURITY_INSTALL_DISMISSED_REASON,
   SECURITY_INSTALL_OPTIONS,
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
   securityInstallStep,
+  skillsContextLine,
+  teamContextLine,
+  withContext,
   withSecuritySkill,
 } from './init'
 import type {
@@ -235,8 +254,13 @@ import type { HostRunRule, MemHost, MemRun, MemWorld } from './testkit'
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
 
-/** The review question as reviewStep asks it: the question, then the typed-item hint on its last line (D-134). */
-const REVIEW_ASKED = reviewQuestion(null)
+/**
+ * The first line of each question a run asked: the line the question constants and the INIT_ANSWERS keys match, since
+ * every question carries its context line on its second line (D-136). A re-asked question starts with its refusal.
+ */
+function firstLines(asked: readonly string[]): string[] {
+  return asked.map(question => question.split('\n')[0] ?? '')
+}
 
 /** A session in the git repo /repo: its `.git` folder is there, and `over` changes the fields it names. */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
@@ -259,15 +283,15 @@ function withStats(run: MemRun): { readonly io: InitIo; readonly stats: string[]
 }
 
 /**
- * The port of a run that also records its questions, log entries and side-pane blocks (as `show <key>`) in one list,
- * in the order they happened.
+ * The port of a run that also records its questions (as `ask <first line>`, firstLines), log entries and side-pane
+ * blocks (as `show <key>`) in one list, in the order they happened.
  */
 function withEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
   const events: string[] = []
   const io: InitIo = {
     ...run.io,
     ask: async (question, spec) => {
-      events.push(`ask ${question}`)
+      events.push(`ask ${question.split('\n')[0] ?? ''}`)
 
       return run.io.ask(question, spec)
     },
@@ -653,7 +677,7 @@ describe('runInit', () => {
   test('after the guard the first question is the ~/.claude.json consent with its two options', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.asked[0]).toBe(CLAUDE_JSON_QUESTION)
+    expect(firstLines(run.asked)[0]).toBe(CLAUDE_JSON_QUESTION)
     expect(CLAUDE_JSON_QUESTION).toBe(
       'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
     )
@@ -675,7 +699,7 @@ describe('runInit', () => {
   test('a dismissed consent cancels init before any scan and prints why (A1)', async () => {
     const run = memIo(gitWorld(), {})
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked).toEqual([CLAUDE_JSON_QUESTION])
+    expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION])
     expect(run.listed).toEqual([])
     expect(run.reads).toEqual([STATUS_PATH])
     expect(run.logged).toEqual([CONSENT_DISMISSED_REASON])
@@ -684,7 +708,7 @@ describe('runInit', () => {
   test('consentStep accepts yes or no; a dismissal or unknown answers cancel with their reasons (A1)', async () => {
     const yes = memIo(memWorld({}), ['Yes, read names only'])
     expect(await consentStep(yes.io)).toEqual({ kind: 'accepted', value: true })
-    expect(yes.asked).toEqual([CLAUDE_JSON_QUESTION])
+    expect(yes.asked).toEqual([withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT)])
     expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS, header: 'claude.json' }])
     expect(await consentStep(memIo(memWorld({}), [' no, SKIP it ']).io)).toEqual({ kind: 'accepted', value: false })
     const cases: readonly (readonly [readonly string[], string])[] = [
@@ -754,7 +778,7 @@ describe('runInit', () => {
     const answers = Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== 'Use these roles?'))
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
+    expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
     expect(run.logged.at(-1)).toBe(ROLES_DISMISSED_REASON)
   })
 
@@ -763,8 +787,8 @@ describe('runInit', () => {
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.logged.at(-1)).toBe(ROLE_ROUNDS_REASON)
-    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
-    expect(run.asked.filter(question => question !== ROLES_QUESTION && question !== ADJUST_QUESTION)).toEqual([
+    expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
+    expect(firstLines(run.asked).filter(line => line !== ROLES_QUESTION && line !== ADJUST_QUESTION)).toEqual([
       CLAUDE_JSON_QUESTION,
     ])
   })
@@ -814,7 +838,7 @@ describe('runInit history step (SCAN-03, D-59)', () => {
   test('a dismissed history question cancels init, prints why and asks nothing after it (A1)', async () => {
     const run = memIo(historyGitWorld(), answersWithout(HISTORY_PREFIX))
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
+    expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
     expect(run.logged.at(-1)).toBe(HISTORY_DISMISSED_REASON)
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
   })
@@ -974,6 +998,9 @@ const FALLBACK_END = 'Using the template proposal; you can still adjust it.'
 const EMPTY_DESCRIPTION =
   `An empty answer isn't one of: a description of your roles, "Use the template instead", "Cancel init".`
 
+/** The describe question as it is asked: the question, then its context line (D-136). */
+const DESCRIBE_ASKED = withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT)
+
 describe('proposalLines', () => {
   test('the proposal lists each role with its title, id and purpose, then each scan change with its reason', () => {
     const proposal = proposeRoles(SOURCE_SCAN)
@@ -1009,7 +1036,7 @@ describe('describeStep', () => {
   test('a description the model turns into valid roles gives those roles', async () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), [DESCRIPTION])
     expect(await describeStep(run.io)).toEqual({ kind: 'roles', roles: DESCRIBED_ROLES })
-    expect(run.asked).toEqual([DESCRIBE_QUESTION])
+    expect(run.asked).toEqual([DESCRIBE_ASKED])
     expect(run.specs[0]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe' })
   })
 
@@ -1062,8 +1089,8 @@ describe('describeStep', () => {
   test('a blank description is asked again with why on top, and never sent to the model', async () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), ['   ', '', DESCRIPTION])
     expect(await describeStep(run.io)).toEqual({ kind: 'roles', roles: DESCRIBED_ROLES })
-    const again = `${EMPTY_DESCRIPTION}\n${DESCRIBE_QUESTION}`
-    expect(run.asked).toEqual([DESCRIBE_QUESTION, again, again])
+    const again = `${EMPTY_DESCRIPTION}\n${DESCRIBE_ASKED}`
+    expect(run.asked).toEqual([DESCRIBE_ASKED, again, again])
     expect(run.prompts).toHaveLength(1)
   })
 
@@ -1090,13 +1117,15 @@ describe('describeStep', () => {
 
 describe('adjustLoop', () => {
   const roles = proposeRoles(FULL_SCAN).roles
+  /** The Adjust question as it is asked while the roles are unchanged: its context names all six (D-136). */
+  const ASKED = withContext(ADJUST_QUESTION, adjustContextLine(roles))
 
   test('one typed change per answer until Done adjusting: drop and add', async () => {
     const run = memIo(memWorld({}), ['drop fe', 'add docs "Docs writer"', 'Done adjusting'])
     const adjusted = rolesOf(await adjustLoop(run.io, roles, FRAMEWORKS))
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
-    expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
+    expect(firstLines(run.asked)).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
     expect(run.specs[0]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust' })
   })
 
@@ -1119,9 +1148,9 @@ describe('adjustLoop', () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'Done adjusting'])
     expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles })
     expect(run.asked).toEqual([
-      ADJUST_QUESTION,
-      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${ADJUST_QUESTION}`,
-      `no role "zz"\n${ADJUST_QUESTION}`,
+      ASKED,
+      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${ASKED}`,
+      `no role "zz"\n${ASKED}`,
     ])
     expect(run.logged).toEqual([])
   })
@@ -1164,7 +1193,7 @@ describe('adjustLoop', () => {
     const refusal =
       'Cannot set qa to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
       'qa keeps its framework.'
-    expect(run.asked).toEqual([ADJUST_QUESTION, `${refusal}\n${ADJUST_QUESTION}`])
+    expect(run.asked).toEqual([ASKED, `${refusal}\n${ASKED}`])
     expect(run.logged).toEqual([])
   })
 
@@ -1172,7 +1201,7 @@ describe('adjustLoop', () => {
     const run = memIo(memWorld({}), ['framework qa gsd', 'framework nosuch superpowers', 'Done adjusting'])
     const adjusted = rolesOf(await adjustLoop(run.io, roles, ['gsd', 'none']))
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
-    expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, `no role "nosuch"\n${ADJUST_QUESTION}`])
+    expect(run.asked).toEqual([ASKED, ASKED, `no role "nosuch"\n${ASKED}`])
     expect(run.logged).toEqual([])
   })
 
@@ -1183,7 +1212,7 @@ describe('adjustLoop', () => {
     expect(adjusted?.find(role => role.id === 'be')?.framework).toBeUndefined()
     const refusal =
       'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.'
-    expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, `${refusal}\n${ADJUST_QUESTION}`])
+    expect(run.asked).toEqual([ASKED, ASKED, `${refusal}\n${ASKED}`])
     expect(run.logged).toEqual([])
   })
 
@@ -1221,7 +1250,7 @@ describe('rolesStep', () => {
     const lines = proposalLines(proposal.roles, proposal.changes)
     expect(run.shown).toEqual([{ key: 'roles', title: 'Roles', lines }])
     expect(run.logged).toEqual([])
-    expect(run.asked).toEqual([ROLES_QUESTION])
+    expect(run.asked).toEqual([withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))])
     const options = ['Use these roles', 'Adjust them', 'Describe my own structure']
     expect(run.specs[0]).toEqual({ options, header: 'Roles' })
     expect(ROLES_QUESTION).toBe('Use these roles?')
@@ -1241,7 +1270,7 @@ describe('rolesStep', () => {
     const docs = roles?.find(role => role.id === 'docs')
     expect(docs?.hasBash).toBe(true)
     expect(docs?.autopilot.askUser).toBe(false)
-    expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
+    expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
     expect(run.shown[1]?.lines).toEqual(proposalLines(DESCRIBED_ROLES, []))
   })
 
@@ -1255,7 +1284,7 @@ describe('rolesStep', () => {
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
     expect(reason?.endsWith(FALLBACK_END)).toBe(true)
     expect(run.shown[1]?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
-    expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
+    expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
 
   test('Use the template instead goes back to the roles question with no model call', async () => {
@@ -1263,12 +1292,8 @@ describe('rolesStep', () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
     expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal })
     expect(run.prompts).toEqual([])
-    expect(run.asked).toEqual([
-      ROLES_QUESTION,
-      DESCRIBE_QUESTION,
-      `${EMPTY_DESCRIPTION}\n${DESCRIBE_QUESTION}`,
-      ROLES_QUESTION,
-    ])
+    expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, EMPTY_DESCRIPTION, ROLES_QUESTION])
+    expect(run.asked[2]).toBe(`${EMPTY_DESCRIPTION}\n${DESCRIBE_ASKED}`)
   })
 
   test('the prompt holds the typed text as a JSON string and no name the scans found', async () => {
@@ -1291,7 +1316,7 @@ describe('rolesStep', () => {
     const run = memIo(memWorld({}), answers)
     const roles = rolesOf(await rolesStep(run.io, full, FRAMEWORKS))
     expect(roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
-    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
+    expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     expect(shownBlock(run, 'roles').join('\n')).toContain('Docs writer (docs)')
   })
 
@@ -1321,7 +1346,7 @@ describe('rolesStep', () => {
     expect(result).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
     expect(rolesOf(result)).toBeNull()
     expect(run.prompts).toHaveLength(1)
-    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
+    expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
     expect(MAX_ROLE_ROUNDS).toBe(10)
     expect(ROLE_ROUNDS_REASON).toBe(
       'The roles question was asked 10 times without "Use these roles": nothing was chosen.',
@@ -1332,7 +1357,7 @@ describe('rolesStep', () => {
     const answers = Array.from({ length: 11 }, () => ['Adjust them', 'Done adjusting']).flat()
     const run = memIo(memWorld({}), answers)
     expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'cancelled', reason: ROLE_ROUNDS_REASON })
-    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(10)
+    expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(10)
   })
 
   test('the Adjust cap shows the roles so far and asks the roles question again; Use these roles accepts', async () => {
@@ -1345,7 +1370,7 @@ describe('rolesStep', () => {
       kind: 'accepted',
       value: { roles: kept, changes: full.changes },
     })
-    expect(run.asked.filter(question => question === ROLES_QUESTION)).toHaveLength(2)
+    expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     const noteAt = events.indexOf(`log ${ADJUST_ROUNDS_NOTE}`)
     expect(noteAt > 0 && events[noteAt + 1] === 'show roles').toBe(true)
     expect(shownBlock(run, 'roles')).toEqual(proposalLines(kept, full.changes))
@@ -1436,7 +1461,7 @@ describe('frameworkStep', () => {
       kind: 'accepted',
       value: { roles: roles.map(role => withFramework(role, 'superpowers')), repoDefault: null },
     })
-    expect(run.asked).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
+    expect(firstLines(run.asked)).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs).toEqual([
       { options: ['Same for all roles', 'Per role'], header: 'Framework' },
       { options: BOTH_OPTIONS, header: 'Framework' },
@@ -1448,7 +1473,7 @@ describe('frameworkStep', () => {
     const result = valueOf(await frameworkStep(run.io, ambiguous, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
     expect(result.repoDefault).toBeNull()
-    expect(run.asked).toEqual([
+    expect(firstLines(run.asked)).toEqual([
       AMBIGUOUS_QUESTION,
       'Framework for PM (pm)?',
       'Framework for Team Lead (tl)?',
@@ -1462,7 +1487,7 @@ describe('frameworkStep', () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
     const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
-    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
+    expect(firstLines(run.asked)).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework' })
   })
 
@@ -1471,7 +1496,9 @@ describe('frameworkStep', () => {
     const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['none', 'none', 'none'])
     const refusal = "'superpowers' isn't one of: GSD, none - a role runs one framework."
-    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION, `${refusal}\n${FRAMEWORK_ALL_QUESTION}`])
+    const all = withContext(FRAMEWORK_ALL_QUESTION, teamContextLine(roles))
+    expect(firstLines(run.asked)[0]).toBe(INSTALLED_QUESTION)
+    expect(run.asked.slice(1)).toEqual([all, `${refusal}\n${all}`])
   })
 
   test('a dismissed or unread framework question is never a choice: the step is cancelled (A1)', async () => {
@@ -1581,7 +1608,7 @@ describe('runInit framework and recommendations', () => {
     const refusal =
       'Cannot set security to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
       'security keeps its framework.'
-    expect(run.asked).toContain(`${refusal}\n${ADJUST_QUESTION}`)
+    expect(run.asked.some(question => question.startsWith(`${refusal}\n${ADJUST_QUESTION}\n`))).toBe(true)
     expect(run.logged).not.toContain(refusal)
   })
 
@@ -1600,6 +1627,11 @@ function answersWithout(prefix: string): Readonly<Record<string, string>> {
 }
 
 describe('durationStep', () => {
+  /** PM, Team Lead and Security: the team the duration is asked for. */
+  const roles = proposeRoles(repoScan()).roles
+  /** The duration question as it is asked: the question, then the ids it applies to (D-136). */
+  const ASKED = withContext(DURATION_QUESTION, durationContextLine(roles))
+
   test('the duration question offers 4h first, then 2h and 8h, and the list is frozen', () => {
     expect(DURATION_QUESTION).toBe('Autopilot duration for roles?')
     expect(DURATION_OPTIONS).toEqual(['4h', '2h', '8h'])
@@ -1616,8 +1648,8 @@ describe('durationStep', () => {
     ]
     for (const [answer, duration] of cases) {
       const run = memIo(memWorld({}), [answer])
-      expect(await durationStep(run.io)).toEqual({ kind: 'accepted', value: duration })
-      expect(run.asked).toEqual([DURATION_QUESTION])
+      expect(await durationStep(run.io, roles)).toEqual({ kind: 'accepted', value: duration })
+      expect(run.asked).toEqual([ASKED])
       expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration' }])
       expect(run.logged).toEqual([])
     }
@@ -1625,26 +1657,26 @@ describe('durationStep', () => {
 
   test('zero and more than 168 hours are asked again with why on top, and a duration after them is taken', async () => {
     const run = memIo(memWorld({}), ['0', '200h', '2h'])
-    expect(await durationStep(run.io)).toEqual({ kind: 'accepted', value: '2h' })
+    expect(await durationStep(run.io, roles)).toEqual({ kind: 'accepted', value: '2h' })
     const accepts = 'a duration such as 4h, 90m or 1h30m, at most 168h'
     expect(run.asked).toEqual([
-      DURATION_QUESTION,
-      `'0' isn't one of: ${accepts}.\n${DURATION_QUESTION}`,
-      `'200h' isn't one of: ${accepts}.\n${DURATION_QUESTION}`,
+      ASKED,
+      `'0' isn't one of: ${accepts}.\n${ASKED}`,
+      `'200h' isn't one of: ${accepts}.\n${ASKED}`,
     ])
   })
 
   test('three answers outside the grammar cancel with no usable answer, and nothing is taken (A1)', async () => {
     const run = memIo(memWorld({}), ['soon', 'soon', 'soon', '4h'])
-    expect(await durationStep(run.io)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    expect(await durationStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
     expect(run.asked).toHaveLength(MAX_ASKS)
     expect(run.logged).toEqual([])
   })
 
   test('a dismissed duration question is cancelled at once with the reason, which the step never prints', async () => {
     const run = memIo(memWorld({}), [])
-    expect(await durationStep(run.io)).toEqual({ kind: 'cancelled', reason: DURATION_DISMISSED_REASON })
-    expect(run.asked).toEqual([DURATION_QUESTION])
+    expect(await durationStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: DURATION_DISMISSED_REASON })
+    expect(run.asked).toEqual([ASKED])
     expect(run.logged).toEqual([])
     expect(DURATION_DISMISSED_REASON).toBe('The autopilot duration question was dismissed or not answered.')
   })
@@ -1656,10 +1688,10 @@ describe('durationStep', () => {
     const recommendedAt = events.indexOf('show recommendations')
     expect(recommendedAt).not.toBe(-1)
     expect(events.indexOf(`ask ${DURATION_QUESTION}`) > recommendedAt).toBe(true)
-    expect(run.asked.filter(question => question === DURATION_QUESTION)).toHaveLength(1)
+    expect(firstLines(run.asked).filter(question => question === DURATION_QUESTION)).toHaveLength(1)
     const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(dismissed.asked.at(-1)).toBe(DURATION_QUESTION)
+    expect(firstLines(dismissed.asked).at(-1)).toBe(DURATION_QUESTION)
     expect(dismissed.logged.at(-1)).toBe(DURATION_DISMISSED_REASON)
     expect(dismissed.logged.filter(text => text === DURATION_DISMISSED_REASON)).toHaveLength(1)
   })
@@ -1671,13 +1703,17 @@ describe('modelStep', () => {
     ...role,
     autopilot: { ...role.autopilot, duration: '90m' },
   }))
-  const MODEL_ALL = 'Model and effort for all roles?'
+  /** The one model question after `Same for all roles`, as asked: with every family and effort under it (D-136). */
+  const MODEL_ALL_LINE = 'Model and effort for all roles?'
+  const MODEL_ALL = withContext(MODEL_ALL_LINE, MODEL_EFFORT_CONTEXT)
+  /** The first model question as asked for these five roles: their ids under it (D-136). */
+  const MODE_ASKED = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
 
   test('the first model question offers Same for all roles first, then Per role', async () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'opus + medium'])
     await modelStep(run.io, roles)
     expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
-    expect(run.asked[0]).toBe(MODEL_MODE_QUESTION)
+    expect(run.asked[0]).toBe(MODE_ASKED)
     expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model' })
   })
 
@@ -1687,7 +1723,7 @@ describe('modelStep', () => {
     expect(modelled.map(role => [role.id, role.model, role.effort])).toEqual(
       roles.map(role => [role.id, 'sonnet', 'high']),
     )
-    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL])
+    expect(run.asked).toEqual([MODE_ASKED, MODEL_ALL])
     expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'], header: 'Model' })
     expect(run.logged).toEqual([])
   })
@@ -1697,12 +1733,14 @@ describe('modelStep', () => {
     const run = memIo(memWorld({}), answers)
     const modelled = valueOf(await modelStep(run.io, roles))
     expect(run.asked).toEqual([
-      MODEL_MODE_QUESTION,
-      'Model and effort for PM (pm)?',
-      'Model and effort for Team Lead (tl)?',
-      'Model and effort for BE (be)?',
-      'Model and effort for QA (qa)?',
-      'Model and effort for Security (security)?',
+      MODE_ASKED,
+      ...[
+        'Model and effort for PM (pm)?',
+        'Model and effort for Team Lead (tl)?',
+        'Model and effort for BE (be)?',
+        'Model and effort for QA (qa)?',
+        'Model and effort for Security (security)?',
+      ].map(question => withContext(question, MODEL_EFFORT_CONTEXT)),
     ])
     const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model' }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
@@ -1720,9 +1758,9 @@ describe('modelStep', () => {
     const run = memIo(memWorld({}), ['Per role', 'opus + medium', 'sonnet + high'])
     const modelled = valueOf(await modelStep(run.io, [be, { ...be, id: 'be-api' }]))
     expect(run.asked).toEqual([
-      MODEL_MODE_QUESTION,
-      'Model and effort for Backend (be)?',
-      'Model and effort for Backend (be-api)?',
+      withContext(MODEL_MODE_QUESTION, 'Roles: be, be-api.'),
+      withContext('Model and effort for Backend (be)?', MODEL_EFFORT_CONTEXT),
+      withContext('Model and effort for Backend (be-api)?', MODEL_EFFORT_CONTEXT),
     ])
     expect(modelled.map(role => [role.id, role.model, role.effort])).toEqual([
       ['be', 'opus', 'medium'],
@@ -1735,7 +1773,7 @@ describe('modelStep', () => {
     const modelled = valueOf(await modelStep(run.io, roles))
     expect(modelled.map(role => [role.model, role.effort])).toEqual(roles.map(() => ['opus', 'high']))
     expect(run.asked).toEqual([
-      MODEL_MODE_QUESTION,
+      MODE_ASKED,
       MODEL_ALL,
       `${modelEffortRefusal('sonet + high')}\n${MODEL_ALL}`,
       `${modelEffortRefusal('high high')}\n${MODEL_ALL}`,
@@ -1748,7 +1786,7 @@ describe('modelStep', () => {
     const run = memIo(memWorld({}), ['Same for all roles', ...refused, 'opus + high'])
     expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
     expect(run.asked).toEqual([
-      MODEL_MODE_QUESTION,
+      MODE_ASKED,
       MODEL_ALL,
       `${modelEffortRefusal('claude-opus-5-5 high')}\n${MODEL_ALL}`,
       `${modelEffortRefusal('opus')}\n${MODEL_ALL}`,
@@ -1792,8 +1830,9 @@ describe('modelStep', () => {
   test('init asks the model questions right after the duration, and a dismissed one cancels init', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    const at = run.asked.indexOf(DURATION_QUESTION)
-    expect(run.asked.slice(at + 1, at + 3)).toEqual([MODEL_MODE_QUESTION, MODEL_ALL])
+    const asked = firstLines(run.asked)
+    const at = asked.indexOf(DURATION_QUESTION)
+    expect(asked.slice(at + 1, at + 3)).toEqual([MODEL_MODE_QUESTION, MODEL_ALL_LINE])
     const dismissed = memIo(gitWorld(), answersWithout('Model and effort for'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(dismissed.asked.at(-1)).toBe(MODEL_ALL)
@@ -1822,11 +1861,14 @@ describe('assignmentStep', () => {
   })
   const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
   const CODEX_QUESTION = 'Which roles get codex skills (2)? (e.g. BE, QA, or none)'
+  /** The two questions as asked: the team's role ids and what giving the item means under each (D-136). */
+  const SENTRY_ASKED = withContext(SENTRY_QUESTION, mcpContextLine(roles))
+  const CODEX_ASKED = withContext(CODEX_QUESTION, skillsContextLine(roles))
 
   test('the tables decide the known names; each unknown server and skill group is asked once', async () => {
     const run = memIo(memWorld({}), ['be', 'All roles'])
     const assigned = valueOf(await assignmentStep(run.io, roles, setup))
-    expect(run.asked).toEqual([SENTRY_QUESTION, CODEX_QUESTION])
+    expect(run.asked).toEqual([SENTRY_ASKED, CODEX_ASKED])
     expect(run.specs).toEqual([
       { options: ROLE_LIST_OPTIONS, header: 'MCP' },
       { options: ROLE_LIST_OPTIONS, header: 'Skills' },
@@ -1860,7 +1902,7 @@ describe('assignmentStep', () => {
     const assigned = valueOf(await assignmentStep(run.io, roles, setup))
     expect(roleIn(assigned, 'be').mcp).toEqual(['sentry'])
     const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
-    expect(run.asked).toEqual([SENTRY_QUESTION, `${refusal}\n${SENTRY_QUESTION}`, CODEX_QUESTION])
+    expect(run.asked).toEqual([SENTRY_ASKED, `${refusal}\n${SENTRY_ASKED}`, CODEX_ASKED])
   })
 
   test('three unreadable answers or a dismissal cancel with their reason, and no answer is kept (A1)', async () => {
@@ -1956,7 +1998,7 @@ describe('history hints', () => {
     ])
     const run = memIo(memWorld({}), NONE_FOR_ALL)
     valueOf(await assignmentStep(run.io, roles, setup, hints))
-    expect(run.asked).toEqual([
+    expect(firstLines(run.asked)).toEqual([
       SENTRY_QUESTION,
       'Which roles get your own skills (1)? (used 5 times in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (2)? (used 3 times in recent sessions) (e.g. BE, QA, or none)',
@@ -1968,7 +2010,7 @@ describe('history hints', () => {
     for (const hints of [undefined, new Map<string, number>(), new Map([['not-asked', 4]])]) {
       const run = memIo(memWorld({}), NONE_FOR_ALL)
       valueOf(await assignmentStep(run.io, roles, setup, hints))
-      expect(run.asked).toEqual(PLAIN_QUESTIONS)
+      expect(firstLines(run.asked)).toEqual(PLAIN_QUESTIONS)
     }
   })
 
@@ -1988,7 +2030,8 @@ describe('history hints', () => {
       { name: 'my-skill', source: 'user' },
     ]
     const world = historyGitWorld({ commands, files: { [`${HISTORY_DIR}/a.jsonl`]: `${skillCall}\n${skillCall}` } })
-    const skillAsks = (run: MemRun): string[] => run.asked.filter(question => / skills \(\d+\)\?/.test(question))
+    const skillAsks = (run: MemRun): string[] =>
+      firstLines(run.asked).filter(question => / skills \(\d+\)\?/.test(question))
     const scanned = memIo(world, { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
     await runInit(scanned.io, { dryRun: true })
     expect(skillAsks(scanned)).toEqual([
@@ -2016,7 +2059,7 @@ describe('history hints', () => {
       'Review the plan': ['assignments', 'Confirm'],
     })
     await runInit(run.io, { dryRun: true })
-    expect(between(run.asked, REVIEW_ASKED)).toEqual([
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([
       'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
     ])
@@ -2048,11 +2091,13 @@ describe('memoryStep', () => {
     'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
   const MEMORY_QUESTION = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
   const PROJECT_QUESTION = 'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)'
+  /** A memory question as asked: the team's role ids and the never-shown promise under it (D-136). */
+  const asAsked = (question: string): string => withContext(question, memoryContextLine(roles))
 
   test('one question per group that is there: the global CLAUDE.md, the auto-memories, the project', async () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await memoryStep(run.io, roles, found))
-    expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION])
+    expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
     const spec = { options: ROLE_LIST_OPTIONS, header: 'Memory' }
     expect(run.specs).toEqual([spec, spec, spec])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
@@ -2075,7 +2120,8 @@ describe('memoryStep', () => {
   test('only the groups the scan found are asked, and with none found nothing is asked', async () => {
     const run = memIo(memWorld({}), ['qa'])
     const given = valueOf(await memoryStep(run.io, roles, emptySetupScan({ memoryFiles: ['a.md', 'b.md'] })))
-    expect(run.asked).toEqual(['Which roles get the auto-memories for this repo (a.md, b.md)? (e.g. PM, TL, or none)'])
+    const question = 'Which roles get the auto-memories for this repo (a.md, b.md)? (e.g. PM, TL, or none)'
+    expect(run.asked).toEqual([asAsked(question)])
     expect(roleIn(given, 'qa').instructions).toEqual(['auto-memory'])
     const none = memIo(memWorld({}), [])
     expect(await memoryStep(none.io, roles, emptySetupScan())).toEqual({ kind: 'accepted', value: roles })
@@ -2086,7 +2132,12 @@ describe('memoryStep', () => {
     const again = memIo(memWorld({}), ['cto', 'pm', 'None', 'None'])
     expect(roleIn(valueOf(await memoryStep(again.io, roles, found)), 'pm').instructions).toEqual(['global-claude-md'])
     const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
-    expect(again.asked).toEqual([GLOBAL_QUESTION, `${refusal}\n${GLOBAL_QUESTION}`, MEMORY_QUESTION, PROJECT_QUESTION])
+    expect(again.asked).toEqual([
+      asAsked(GLOBAL_QUESTION),
+      `${refusal}\n${asAsked(GLOBAL_QUESTION)}`,
+      asAsked(MEMORY_QUESTION),
+      asAsked(PROJECT_QUESTION),
+    ])
     const cases: readonly (readonly [readonly string[], string])[] = [
       [['cto', 'cto', 'cto'], NO_USABLE_ANSWER_REASON],
       [[], MEMORY_DISMISSED_REASON],
@@ -2120,6 +2171,8 @@ describe('carryStep', () => {
   const twoNames = emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } })
   const ENV_QUESTION =
     'Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)'
+  /** The env question as asked: the team's role ids and where the values come from under it (D-136). */
+  const ENV_ASKED = withContext(ENV_QUESTION, envContextLine(roles))
 
   /** A hook script registered for an event in the user settings. */
   function hook(script: string, event = 'PreToolUse'): HookScript {
@@ -2129,7 +2182,7 @@ describe('carryStep', () => {
   test('the env question is asked once, and every role carries the picked names only', async () => {
     const run = memIo(memWorld({}), ['JIRA_URL'])
     const carried = valueOf(await carryStep(run.io, roles, twoNames))
-    expect(run.asked).toEqual([ENV_QUESTION])
+    expect(run.asked).toEqual([ENV_ASKED])
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env' }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(carried.map(role => role.carry)).toEqual(roles.map(() => carry))
@@ -2141,7 +2194,7 @@ describe('carryStep', () => {
     const carried = valueOf(await carryStep(all.io, roles, twoNames))
     expect(carried.every(role => role.carry.env.join() === 'API_KEY,JIRA_URL')).toBe(true)
     const refusal = `'API_KEY=x' isn't one of: "None", "All of them", or names from the list, typed exactly.`
-    expect(all.asked).toEqual([ENV_QUESTION, `${refusal}\n${ENV_QUESTION}`])
+    expect(all.asked).toEqual([ENV_ASKED, `${refusal}\n${ENV_ASKED}`])
     const none = valueOf(await carryStep(memIo(memWorld({}), ['None']).io, roles, twoNames))
     expect(none.every(role => role.carry.env.length === 0)).toBe(true)
   })
@@ -2229,8 +2282,9 @@ describe('carryStep', () => {
   test('init asks the assignment, memory and env questions after the model questions, in that order', async () => {
     const run = memIo(secretWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    const modelAt = run.asked.indexOf('Model and effort for all roles?')
-    expect(run.asked.slice(modelAt + 1, modelAt + 7)).toEqual([
+    const asked = firstLines(run.asked)
+    const modelAt = asked.indexOf('Model and effort for all roles?')
+    expect(asked.slice(modelAt + 1, modelAt + 7)).toEqual([
       'Which roles get the sentry MCP server? (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
@@ -2238,7 +2292,7 @@ describe('carryStep', () => {
       'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
-    expect(run.asked[modelAt + 7]).toBe(GIT_POLICY_QUESTION)
+    expect(asked[modelAt + 7]).toBe(GIT_POLICY_QUESTION)
   })
 
   test('no env, settings or file value of the secret world reaches a question, log or pane (T-02-34)', async () => {
@@ -2483,8 +2537,9 @@ describe('hunkStep', () => {
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
     const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, INIT_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
-    const policyAt = run.asked.indexOf(GIT_POLICY_QUESTION)
-    const [env, ...hunks] = run.asked.slice(policyAt - 4, policyAt).map(question => question.split('\n')[0])
+    const asked = firstLines(run.asked)
+    const policyAt = asked.indexOf(GIT_POLICY_QUESTION)
+    const [env, ...hunks] = asked.slice(policyAt - 4, policyAt)
     expect(env?.startsWith('Which env variables do roles carry?')).toBe(true)
     expect(hunks).toEqual([
       '.planning/config.json: mode',
@@ -2539,6 +2594,15 @@ const NOT_A_FOLDER = 'it is not a folder in this repo'
 /** What launchStartStep gives for the folder apps/web of the repo. */
 const APPS_WEB = { kind: 'accepted', value: { kind: 'dir', path: 'apps/web' } }
 
+/** The team the launcher start is asked for: PM, Team Lead and Security, whose ids its context line names (D-136). */
+const LAUNCH_TEAM = proposeRoles(repoScan()).roles
+
+/** The launcher start question as asked for LAUNCH_TEAM: whose launchers start there, under it (D-136). */
+const LAUNCH_ASKED = withContext(LAUNCH_START_QUESTION, launchContextLine(LAUNCH_TEAM))
+
+/** The launcher folder question as asked: that the folder must stay inside the repo, under it (D-136). */
+const DIR_ASKED = withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT)
+
 describe('launchStartStep', () => {
   test('the launcher start question is asked once for the repo with three options, none preselected', () => {
     expect(LAUNCH_START_QUESTION).toBe(
@@ -2566,8 +2630,8 @@ describe('launchStartStep', () => {
     ]
     for (const [answer, start] of cases) {
       const run = memIo(memWorld({}), [answer])
-      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'accepted', value: start })
-      expect(run.asked).toEqual([LAUNCH_START_QUESTION])
+      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual({ kind: 'accepted', value: start })
+      expect(run.asked).toEqual([LAUNCH_ASKED])
       expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
     }
   })
@@ -2576,8 +2640,8 @@ describe('launchStartStep', () => {
     for (const first of ['Another folder in this repo', 'other']) {
       for (const folder of ['apps/web', 'apps/web/', ' apps/web ']) {
         const run = memIo(FOLDER_WORLD, [first, folder])
-        expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
-        expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION])
+        expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
+        expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
         expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir' })
         expect(run.logged).toEqual([])
       }
@@ -2588,13 +2652,13 @@ describe('launchStartStep', () => {
     const bad = ['../x', '/etc', 'a b', '${HOME}', 'missing', 'apps/readme.md', 'apps/linked']
     for (const answer of bad) {
       const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
-      expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
+      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
       const problem = ['missing', 'apps/readme.md', 'apps/linked'].includes(answer) ? NOT_A_FOLDER : UNSAFE_FOLDER
       expect(run.logged).toEqual([])
       expect(run.asked).toEqual([
-        LAUNCH_START_QUESTION,
-        LAUNCH_DIR_QUESTION,
-        `${cannotUse(answer, problem)}\n${LAUNCH_DIR_QUESTION}`,
+        LAUNCH_ASKED,
+        DIR_ASKED,
+        `${cannotUse(answer, problem)}\n${DIR_ASKED}`,
       ])
     }
   })
@@ -2602,24 +2666,25 @@ describe('launchStartStep', () => {
   test('a folder reached through a linked parent that leaves the repo is refused, and asked again', async () => {
     const run = memIo(FOLDER_WORLD, ['other', 'vendor/ui', 'apps/web'])
     const outside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/elsewhere/vendor/ui' }
-    expect(await launchStartStep(withStat(run, '/repo/vendor/ui', outside), '/repo')).toEqual(APPS_WEB)
+    expect(await launchStartStep(withStat(run, '/repo/vendor/ui', outside), '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
     expect(run.logged).toEqual([])
     expect(run.asked).toEqual([
-      LAUNCH_START_QUESTION,
-      LAUNCH_DIR_QUESTION,
-      `${cannotUse('vendor/ui', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      LAUNCH_ASKED,
+      DIR_ASKED,
+      `${cannotUse('vendor/ui', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
   })
 
   test('a folder whose stat has no real path is refused, and asked again', async () => {
     const run = memIo(FOLDER_WORLD, ['other', 'apps/unresolved', 'apps/web'])
     const unresolved: PortStat = { kind: 'dir', size: 0, isLink: false }
-    expect(await launchStartStep(withStat(run, '/repo/apps/unresolved', unresolved), '/repo')).toEqual(APPS_WEB)
+    const io = withStat(run, '/repo/apps/unresolved', unresolved)
+    expect(await launchStartStep(io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
     expect(run.logged).toEqual([])
     expect(run.asked).toEqual([
-      LAUNCH_START_QUESTION,
-      LAUNCH_DIR_QUESTION,
-      `${cannotUse('apps/unresolved', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      LAUNCH_ASKED,
+      DIR_ASKED,
+      `${cannotUse('apps/unresolved', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
   })
 
@@ -2627,26 +2692,27 @@ describe('launchStartStep', () => {
     const run = memIo(FOLDER_WORLD, ['other', 'packages/api'])
     const inside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/repo/packages/api' }
     const chosen = { kind: 'accepted', value: { kind: 'dir', path: 'packages/api' } }
-    expect(await launchStartStep(withStat(run, '/repo/packages/api', inside), '/repo')).toEqual(chosen)
-    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION])
+    expect(await launchStartStep(withStat(run, '/repo/packages/api', inside), '/repo', LAUNCH_TEAM)).toEqual(chosen)
+    expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
     expect(run.logged).toEqual([])
   })
 
   test('a refused folder is shown cleaned and capped in the line that says why', async () => {
     const answer = `a${BIDI_OVERRIDE} ${'x'.repeat(200)}`
     const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
-    await launchStartStep(run.io, '/repo')
-    expect(run.asked[2]).toBe(`${cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`)
+    await launchStartStep(run.io, '/repo', LAUNCH_TEAM)
+    expect(run.asked[2]).toBe(`${cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)}\n${DIR_ASKED}`)
     expect(run.logged).toEqual([])
   })
 
   test(`${MAX_ASKS} unusable folders cancel with the rounds reason, and nothing was chosen`, async () => {
     const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b', 'apps/web'])
-    expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON })
+    const rounds = { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
+    expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(rounds)
     expect(run.asked.slice(1)).toEqual([
-      LAUNCH_DIR_QUESTION,
-      `${cannotUse('../a', UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
-      `${cannotUse('missing', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      DIR_ASKED,
+      `${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`,
+      `${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
     expect(run.logged).toEqual([])
     expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
@@ -2655,7 +2721,8 @@ describe('launchStartStep', () => {
   test('Cancel init or a dismissal at the folder question cancels with its reason', async () => {
     for (const answers of [['other', 'Cancel init'], ['other', ' cancel INIT '], ['other']]) {
       const run = memIo(FOLDER_WORLD, answers)
-      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON })
+      const cancelled = { kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON }
+      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(cancelled)
     }
     expect(LAUNCH_DIR_CANCELLED_REASON).toBe('The launcher folder question was dismissed or cancelled.')
   })
@@ -2667,7 +2734,7 @@ describe('launchStartStep', () => {
     ]
     for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason })
+      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual({ kind: 'cancelled', reason })
     }
     expect(LAUNCH_START_DISMISSED_REASON).toBe('The launcher start question was dismissed or not answered.')
   })
@@ -2681,8 +2748,9 @@ describe('launchStartStep', () => {
   test('init asks where launchers start once, right after the git policy, and names it after the policy', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
-    expect(run.asked[run.asked.indexOf(GIT_POLICY_QUESTION) + 1]).toBe(LAUNCH_START_QUESTION)
-    expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
+    const asked = firstLines(run.asked)
+    expect(asked[asked.indexOf(GIT_POLICY_QUESTION) + 1]).toBe(LAUNCH_START_QUESTION)
+    expect(asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
     const lines = reply.split('\n')
     expect(lines.slice(lines.indexOf(policyLine('definitions')))).toEqual([
       policyLine('definitions'),
@@ -2715,7 +2783,7 @@ describe('launchStartStep', () => {
     )
     const run = memIo(gitWorld(), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked.at(-1)).toBe(LAUNCH_START_QUESTION)
+    expect(firstLines(run.asked).at(-1)).toBe(LAUNCH_START_QUESTION)
     expect(run.logged.at(-1)).toBe(LAUNCH_START_DISMISSED_REASON)
   })
 })
@@ -2869,7 +2937,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       ],
       ['framework mode', io => frameworkStep(io, choice, roles), '"Same for all roles", "Per role"'],
       ['security', io => securityInstallStep(io, SECURITY_KEYS), '"Install", "Not now"'],
-      ['duration', io => durationStep(io), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
+      ['duration', io => durationStep(io, roles), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
       ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
       ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
@@ -2879,7 +2947,7 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => carryStep(io, roles, emptySetupScan({ carry: envNames })),
         '"None", "All of them", or names from the list, typed exactly',
       ],
-      ['launch', io => launchStartStep(io, '/repo'), launch],
+      ['launch', io => launchStartStep(io, '/repo', roles), launch],
       ['git policy', io => gitPolicyStep(io), 'definitions, all, ignore'],
     ]
     for (const [name, step, accepts] of steps) {
@@ -2893,13 +2961,10 @@ describe('refusal re-ask (G-02-6b)', () => {
     const answers = { ...INIT_ANSWERS, 'Framework for': 'both', [BOTH_REFUSAL]: 'both' }
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    const at = run.asked.indexOf(FRAMEWORK_ALL_QUESTION)
+    const all = withContext(FRAMEWORK_ALL_QUESTION, 'Roles: pm, tl, security.')
+    const at = run.asked.indexOf(all)
     expect(at).toBeGreaterThan(0)
-    expect(run.asked.slice(at)).toEqual([
-      FRAMEWORK_ALL_QUESTION,
-      `${BOTH_REFUSAL}\n${FRAMEWORK_ALL_QUESTION}`,
-      `${BOTH_REFUSAL}\n${FRAMEWORK_ALL_QUESTION}`,
-    ])
+    expect(run.asked.slice(at)).toEqual([all, `${BOTH_REFUSAL}\n${all}`, `${BOTH_REFUSAL}\n${all}`])
     expect(run.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
     expect(run.logged.filter(text => text === NO_USABLE_ANSWER_REASON)).toHaveLength(1)
   })
@@ -2908,7 +2973,7 @@ describe('refusal re-ask (G-02-6b)', () => {
     const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const run = memIo(world, answersWithout('Framework for'))
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked.at(-1)).toBe(FRAMEWORK_ALL_QUESTION)
+    expect(firstLines(run.asked).at(-1)).toBe(FRAMEWORK_ALL_QUESTION)
     expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
   })
 
@@ -2916,9 +2981,9 @@ describe('refusal re-ask (G-02-6b)', () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'opus', 'high high'])
     const roles = [templateRole('pm')]
     expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
-    const all = 'Model and effort for all roles?'
+    const all = withContext('Model and effort for all roles?', MODEL_EFFORT_CONTEXT)
     expect(run.asked).toEqual([
-      MODEL_MODE_QUESTION,
+      withContext(MODEL_MODE_QUESTION, 'Roles: pm.'),
       all,
       `${modelEffortRefusal('sonet + high')}\n${all}`,
       `${modelEffortRefusal('opus')}\n${all}`,
@@ -2930,16 +2995,17 @@ describe('refusal re-ask (G-02-6b)', () => {
 
   test('the launcher folder loop puts its refusal on top of the next ask; the cap keeps its reason', async () => {
     const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', 'apps/web'])
-    expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
+    expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
     expect(run.asked).toEqual([
-      LAUNCH_START_QUESTION,
-      LAUNCH_DIR_QUESTION,
-      `${cannotUse('../a', UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
-      `${cannotUse('missing', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      LAUNCH_ASKED,
+      DIR_ASKED,
+      `${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`,
+      `${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
     expect(run.logged).toEqual([])
     const capped = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b'])
-    expect(await launchStartStep(capped.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON })
+    const rounds = { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
+    expect(await launchStartStep(capped.io, '/repo', LAUNCH_TEAM)).toEqual(rounds)
   })
 
   test('the Adjust loop puts the message of a change it cannot apply on top of the next ask', async () => {
@@ -2947,12 +3013,14 @@ describe('refusal re-ask (G-02-6b)', () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'drop fe', 'Show the roles', 'Done adjusting'])
     const kept = roles.filter(role => role.id !== 'fe')
     expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
+    const before = withContext(ADJUST_QUESTION, adjustContextLine(roles))
+    const after = withContext(ADJUST_QUESTION, adjustContextLine(kept))
     expect(run.asked).toEqual([
-      ADJUST_QUESTION,
-      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${ADJUST_QUESTION}`,
-      `no role "zz"\n${ADJUST_QUESTION}`,
-      ADJUST_QUESTION,
-      ADJUST_QUESTION,
+      before,
+      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${before}`,
+      `no role "zz"\n${before}`,
+      after,
+      after,
     ])
     expect(run.logged).toEqual([])
   })
@@ -2964,6 +3032,7 @@ describe('refusal re-ask (G-02-6b)', () => {
     expect(run.asked[1]?.split('\n')).toEqual([
       'Could not read that change: deletefe. Use add, drop, rename or framework.',
       ADJUST_QUESTION,
+      adjustContextLine(roles),
     ])
   })
 })
@@ -3101,6 +3170,182 @@ describe('question chips (G-02-3c)', () => {
   })
 })
 
+/** The text of the first question a run asked that starts with `start`; a missing one stops the test. */
+function askedOf(run: MemRun, start: string): string {
+  const found = run.asked.find(question => question.startsWith(start))
+  if (found === undefined) throw new Error(`no question starts with ${start}`)
+
+  return found
+}
+
+/** The context line of the git policy question: what each policy keeps in git (D-136). */
+const GIT_POLICY_CONTEXT_TEXT =
+  'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. ' +
+  'Ignore all: nothing in .cadre/ is committed.'
+
+describe('question context lines (G-02-1)', () => {
+  /** The roles of the git fixture worlds, which hold no source: PM, Team Lead and Security. */
+  const TEAM = 'pm, tl, security'
+
+  test('withContext puts the context, cleaned as a report cell, on the line after the question (T-02-55)', () => {
+    expect(withContext('Use these roles?', 'Proposed: PM (pm).')).toBe('Use these roles?\nProposed: PM (pm).')
+    expect(withContext('Q?', `a\nb${BIDI_OVERRIDE}c`)).toBe('Q?\nabc')
+    expect(withContext('Q?', 'x'.repeat(300))).toBe(`Q?\n${'x'.repeat(239)}…`)
+  })
+
+  test('scanContextLine names the stack and each kind of finding, or none', () => {
+    const repo = repoScan({
+      languages: ['JavaScript', 'TypeScript'],
+      findings: [
+        { kind: 'be', label: 'express', evidence: 'package.json' },
+        { kind: 'e2e', label: 'Playwright config', evidence: 'playwright.config.ts' },
+        { kind: 'fe', label: 'next', evidence: 'package.json' },
+        { kind: 'fe', label: 'react', evidence: 'package.json' },
+        { kind: 'test', label: 'vitest', evidence: 'package.json' },
+      ],
+      hasSource: true,
+    })
+    expect(scanContextLine(repo)).toBe(
+      'Scan: stack JavaScript, TypeScript; frontend next, react; backend express; tests vitest; E2E Playwright config.',
+    )
+    expect(scanContextLine(repoScan())).toBe('Scan: stack none; frontend none; backend none; tests none; E2E none.')
+  })
+
+  test('rolesContextLine names each role by title and id, then how many changes the scan made', () => {
+    const roles = [templateRole('pm'), templateRole('be')]
+    const change: RoleChange = { roleId: 'fe', change: 'dropped', reason: 'r', evidence: [] }
+    expect(rolesContextLine(roles, [])).toBe('Proposed: PM (pm), BE (be).')
+    expect(rolesContextLine(roles, [change])).toBe('Proposed: PM (pm), BE (be); 1 change from the scan.')
+    expect(rolesContextLine(roles, [change, change])).toBe('Proposed: PM (pm), BE (be); 2 changes from the scan.')
+  })
+
+  test('reviewContextLine is the plan summary, the git policy line and the launcher line', () => {
+    const plan: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }
+    expect(reviewContextLine(plan, 'definitions', { kind: 'git-root' })).toBe(
+      'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks; ' +
+        'Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root',
+    )
+    expect(reviewContextLine(plan, 'ignore', { kind: 'dir', path: 'apps/web' })).toBe(
+      'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks; ' +
+        'Git policy: ignore all of .cadre/; Launchers start in: apps/web/ under the git root',
+    )
+  })
+
+  test('every question of every run but the hunks carries a context line on its second line', async () => {
+    const runs = Object.values(await questionRuns())
+    const isHunk = (question: string): boolean => question.startsWith('.planning/config.json: ')
+    const bare = runs.flatMap(run => run.asked.filter(question => !isHunk(question) && question.split('\n').length < 2))
+    expect(runs.every(run => run.asked.length > 0)).toBe(true)
+    expect(bare).toEqual([])
+  })
+
+  test('a hunk question gets no extra line: it already carries the file, the before and after, and why', async () => {
+    const { perRole } = await questionRuns()
+    const hunks = perRole.asked.filter(question => question.startsWith('.planning/config.json: '))
+    expect(hunks.map(question => question.split('\n').at(-1))).toEqual([
+      'Required for unattended GSD roles.',
+      'Required for unattended GSD roles.',
+      'Optional.',
+    ])
+  })
+
+  test('each kind of question carries the context line of its row, exactly, on its second and last line', async () => {
+    const runs = await questionRuns()
+    const cases: readonly (readonly [MemRun, string, string])[] = [
+      [
+        runs.plain,
+        CLAUDE_JSON_QUESTION,
+        'Without it, init still finds MCP servers in .mcp.json, your plugins and this session.',
+      ],
+      [runs.history, HISTORY_PREFIX, 'Scan: stack none; frontend none; backend none; tests none; E2E none.'],
+      [runs.plain, ROLES_QUESTION, 'Proposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.'],
+      [runs.adjusted, ADJUST_QUESTION, `Roles now: ${TEAM}.`],
+      [
+        runs.adjusted,
+        DESCRIBE_QUESTION,
+        'For example: a PM, one full-stack developer, and a QA who also covers security.',
+      ],
+      [runs.perRole, FRAMEWORK_QUESTION_PREFIX, `Roles: ${TEAM}.`],
+      [runs.perRole, 'Framework for PM (pm)?', `Roles: ${TEAM}.`],
+      [
+        runs.security,
+        SECURITY_INSTALL_PREFIX,
+        'Nothing is installed before you confirm the final review, and a --dry-run installs nothing.',
+      ],
+      [runs.plain, DURATION_QUESTION, `Applies to every role: ${TEAM}.`],
+      [runs.plain, MODEL_MODE_QUESTION, `Roles: ${TEAM}.`],
+      [
+        runs.plain,
+        'Model and effort for all roles?',
+        'Models: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.',
+      ],
+      [
+        runs.perRole,
+        'Which roles get the sentry MCP server?',
+        `Roles: ${TEAM}. A role not given the server cannot use it.`,
+      ],
+      [
+        runs.perRole,
+        'Which roles get codex skills',
+        `Roles: ${TEAM}. A role given these skills can run them in its session; a role not given them cannot.`,
+      ],
+      [runs.perRole, 'Which roles get your global', `Roles: ${TEAM}. Their content is never shown or committed.`],
+      [
+        runs.perRole,
+        'Which env variables',
+        `Roles: ${TEAM}. Every role carries the same names; values are filled in at launch.`,
+      ],
+      [runs.plain, LAUNCH_START_QUESTION, `The launcher of each role (${TEAM}) starts its session there.`],
+      [runs.folder, LAUNCH_DIR_QUESTION, 'It must be a folder inside this repo; a link that leads out is refused.'],
+      [runs.plain, GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT_TEXT],
+      [
+        runs.conflict,
+        ROLE_QUESTION,
+        'Keep mine leaves your edited file as it is; Take new writes the new version over it.',
+      ],
+    ]
+    for (const [run, start, context] of cases) {
+      expect([start, askedOf(run, start).split('\n').slice(1)]).toEqual([start, [context]])
+    }
+  })
+
+  test('the framework question for all roles carries the team too', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
+    await frameworkStep(run.io, { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }, proposeRoles(repoScan()).roles)
+    expect(run.asked[1]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
+  })
+
+  test('the review question carries the plan summary, git policy and launcher start, then its hint', async () => {
+    const { plain } = await questionRuns()
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const context =
+      `Summary: ${files.length + 2} create, 0 change, 0 leave, 0 conflict, 0 hunks; ` +
+      'Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root'
+    expect(askedOf(plain, REVIEW_QUESTION).split('\n')).toEqual([REVIEW_QUESTION, context, REVIEW_TYPE_HINT])
+  })
+
+  test('a refusal still goes on top: the refusal, then the question, then its context (D-136)', async () => {
+    const run = memIo(memWorld({}), ['soon', '4h'])
+    expect(await durationStep(run.io, [templateRole('pm'), templateRole('qa')])).toEqual({
+      kind: 'accepted',
+      value: '4h',
+    })
+    const asked = `${DURATION_QUESTION}\nApplies to every role: pm, qa.`
+    const refusal = "'soon' isn't one of: a duration such as 4h, 90m or 1h30m, at most 168h."
+    expect(run.asked).toEqual([asked, `${refusal}\n${asked}`])
+  })
+
+  test('the Adjust context line names the roles as they are now, after each change', async () => {
+    const run = memIo(memWorld({}), ['drop fe', 'drop zz', 'Done adjusting'])
+    await adjustLoop(run.io, proposeRoles(FULL_SCAN).roles, FRAMEWORKS)
+    expect(run.asked).toEqual([
+      `${ADJUST_QUESTION}\nRoles now: pm, tl, be, fe, qa, security.`,
+      `${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
+      `no role "zz"\n${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
+    ])
+  })
+})
+
 describe('init helpers', () => {
   test('commandRefusal names the given command wherever a detect refusal names detect', () => {
     expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
@@ -3183,7 +3428,7 @@ describe('init helpers', () => {
   test('gitPolicyStep accepts a policy; a dismissal or unknown answers are cancelled with its reason', async () => {
     const run = memIo(memWorld({}), ['Commit all'])
     expect(await gitPolicyStep(run.io)).toEqual({ kind: 'accepted', value: 'all' })
-    expect(run.asked).toEqual([GIT_POLICY_QUESTION])
+    expect(run.asked).toEqual([withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)])
     expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS, header: 'Git policy' }])
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], GIT_POLICY_DISMISSED_REASON],
@@ -3858,13 +4103,17 @@ function queuedIo(world: MemWorld, answers: Readonly<Record<string, string | rea
   return { ...run, io }
 }
 
-/** The questions asked after the first ask of `question` and before its second. */
+/**
+ * The first lines of the questions asked after the first ask of `question` and before its second (firstLines): every
+ * question is matched by its first line, since it carries its context line on its second line (D-136).
+ */
 function between(asked: readonly string[], question: string): string[] {
-  const first = asked.indexOf(question)
-  const second = asked.indexOf(question, first + 1)
+  const lines = firstLines(asked)
+  const first = lines.indexOf(question)
+  const second = lines.indexOf(question, first + 1)
   if (first === -1 || second === -1) throw new Error(`${question} was not asked twice`)
 
-  return asked.slice(first + 1, second)
+  return lines.slice(first + 1, second)
 }
 
 /** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
@@ -3943,8 +4192,9 @@ describe('reviewStep', () => {
     expect(expected).toContain('warning: the root was given through a link')
     const reviews = run.shown.filter(block => block.key === 'review')
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
-    expect(events[events.indexOf(`ask ${REVIEW_ASKED}`) - 1]).toBe('show review')
-    expect(run.specs[run.asked.indexOf(REVIEW_ASKED)]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
+    expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
+    const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3954,8 +4204,8 @@ describe('reviewStep', () => {
       'Git policy': ['Commit definitions (default)', 'Ignore all of .cadre/'],
     })
     const reply = await runInit(run.io, { dryRun: true })
-    expect(between(run.asked, REVIEW_ASKED)).toEqual([GIT_POLICY_QUESTION])
-    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([GIT_POLICY_QUESTION])
+    expect(firstLines(run.asked).filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
     expect(run.shown.filter(block => block.key === 'review')).toHaveLength(2)
     const team = await defaultRoles(gitWorld())
     const files = await plannedFiles(gitWorld(), team, { gitPolicy: 'ignore' })
@@ -3982,7 +4232,7 @@ describe('reviewStep', () => {
       'Model and effort for': ['opus + medium', 'sonnet + high'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(between(run.asked, REVIEW_ASKED)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
     expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
   })
 
@@ -3998,14 +4248,15 @@ describe('reviewStep', () => {
       'Autopilot duration': ['4h', '90m'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(between(run.asked, REVIEW_ASKED)).toEqual([DURATION_QUESTION])
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([DURATION_QUESTION])
     expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
   })
 
   test('each typed item re-asks only its own questions, in the order init first asked them', async () => {
     const first = memIo(everyStepWorld(), INIT_ANSWERS)
     await runInit(first.io, { dryRun: true })
-    const firstPass = first.asked.slice(first.asked.indexOf(ROLES_QUESTION), first.asked.indexOf(GIT_POLICY_QUESTION))
+    const firstAsked = firstLines(first.asked)
+    const firstPass = firstAsked.slice(firstAsked.indexOf(ROLES_QUESTION), firstAsked.indexOf(GIT_POLICY_QUESTION))
     const assignments = ['Which roles get the sentry', 'Which roles get codex']
     const cases: readonly (readonly [string, readonly string[]])[] = [
       ['duration', [DURATION_QUESTION]],
@@ -4022,21 +4273,22 @@ describe('reviewStep', () => {
       expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
       const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
       expect(expected).not.toHaveLength(0)
-      expect([word, between(run.asked, REVIEW_ASKED)]).toEqual([word, expected])
+      expect([word, between(run.asked, REVIEW_QUESTION)]).toEqual([word, expected])
     }
   })
 
   test('Change roles re-asks the roles and every per-role step, and shows the recommendations again', async () => {
     const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': ['Change roles', 'Confirm'] })
     await runInit(run.io, { dryRun: true })
-    const firstPass = run.asked.slice(run.asked.indexOf(ROLES_QUESTION), run.asked.indexOf(GIT_POLICY_QUESTION))
+    const asked = firstLines(run.asked)
+    const firstPass = asked.slice(asked.indexOf(ROLES_QUESTION), asked.indexOf(GIT_POLICY_QUESTION))
     expect(firstPass).toContain(DURATION_QUESTION)
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
-    expect(between(run.asked, REVIEW_ASKED)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
     expect(run.shown.filter(block => block.key === 'recommendations')).toHaveLength(2)
-    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
-    expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
+    expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
+    expect(asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
   })
 
   test('Change roles starts from the current team, so an earlier Adjust stays', async () => {
@@ -4050,7 +4302,7 @@ describe('reviewStep', () => {
     const proposals = run.shown.filter(block => block.key === 'roles')
     expect(proposals).toHaveLength(3)
     expect(proposals.at(-1)?.lines.join('\n')).not.toContain('Security (security)')
-    expect(run.asked.filter(question => question === ADJUST_QUESTION)).toHaveLength(2)
+    expect(firstLines(run.asked).filter(question => question === ADJUST_QUESTION)).toHaveLength(2)
     expect([...kinds.keys()].filter(path => path.startsWith('.cadre/security/'))).toEqual([])
     expect(kinds.get('.cadre/pm/role.json')).toBe('create')
   })
@@ -4064,7 +4316,7 @@ describe('reviewStep', () => {
       'Review the plan': ['Change roles', 'Confirm'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(run.asked.filter(question => question === DESCRIBE_QUESTION)).toHaveLength(1)
+    expect(firstLines(run.asked).filter(question => question === DESCRIBE_QUESTION)).toHaveLength(1)
     expect(kinds.get('.cadre/security/role.json')).toBe('create')
   })
 
@@ -4099,7 +4351,7 @@ describe('reviewStep', () => {
         'Where should the role launchers start': ['Git root of this repo', 'The folder I run it from'],
       })
       const lines = (await runInit(run.io, { dryRun: true })).split('\n')
-      expect(between(run.asked, REVIEW_ASKED)).toEqual([LAUNCH_START_QUESTION])
+      expect(between(run.asked, REVIEW_QUESTION)).toEqual([LAUNCH_START_QUESTION])
       const startLine = lines[lines.indexOf(policyLine('definitions')) + 1]
       expect(startLine).toBe('Launchers start in: the folder they are run from')
     }
@@ -4108,17 +4360,19 @@ describe('reviewStep', () => {
   test(`after ${MAX_REVIEW_ROUNDS} review rounds without Confirm init cancels with the reason (A1)`, async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'model' })
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
+    const asked = firstLines(run.asked)
+    expect(asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(asked.at(-1)).toBe(REVIEW_QUESTION)
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
   test('a go-back picked at the last review round cancels at once and asks none of its questions (A3)', async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'git policy' })
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
+    const asked = firstLines(run.asked)
+    expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(asked.at(-1)).toBe(REVIEW_QUESTION)
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
@@ -4131,8 +4385,10 @@ describe('reviewStep', () => {
       'or duration, model, assignments, memory, env, hunks.'
     const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe', [refusal]: 'maybe' })
     expect(await runInit(unread.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    const again = `${refusal}\n${REVIEW_ASKED}`
-    expect(unread.asked.slice(-MAX_ASKS)).toEqual([REVIEW_ASKED, again, again])
+    const reviewAsked = unread.asked.at(-MAX_ASKS) ?? ''
+    expect(reviewAsked.startsWith(`${REVIEW_QUESTION}\n`)).toBe(true)
+    const again = `${refusal}\n${reviewAsked}`
+    expect(unread.asked.slice(-MAX_ASKS)).toEqual([reviewAsked, again, again])
     expect(unread.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
   })
 
@@ -4168,7 +4424,7 @@ describe('reviewStep', () => {
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     const askedBefore = run.asked.length
     const again = await runInit(run.io, { dryRun: true })
-    expect(run.asked[askedBefore]).toBe(CLAUDE_JSON_QUESTION)
+    expect(run.asked[askedBefore]).toBe(withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT))
     expect(again).toBe(await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true }))
   })
 })
@@ -4248,7 +4504,7 @@ describe('consent declines first (G-02-11)', () => {
     const answers = { ...INIT_ANSWERS, 'Read ~/.claude.json': claudeJsonFirst, [HISTORY_PREFIX]: historyFirst }
     const run = memIo(historyGitWorld({ files }), answers)
     expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
-    expect(run.asked.slice(0, 2)).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
+    expect(firstLines(run.asked.slice(0, 2))).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
     expect(run.reads.filter(path => path === '/home/u/.claude.json' || path.endsWith('.jsonl'))).toEqual([])
     expect(run.shown.map(block => block.key)).not.toContain('history')
   })
@@ -4277,9 +4533,11 @@ describe('review question hint (G-02-7)', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const asked = run.asked.filter(question => question.startsWith('Review the plan'))
-    expect(asked).toEqual([reviewQuestion(null)])
-    expect(events[events.indexOf(`ask ${reviewQuestion(null)}`) - 1]).toBe('show review')
-    expect(run.specs[run.asked.indexOf(reviewQuestion(null))]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
+    expect(firstLines(asked)).toEqual([REVIEW_QUESTION])
+    expect(asked[0]?.endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
+    expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
+    const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
@@ -4288,7 +4546,7 @@ describe('review question hint (G-02-7)', () => {
     expect(items.map(parseReviewItem)).toEqual(items)
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': ['model', 'Confirm'] })
     expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
-    expect(between(run.asked, reviewQuestion(null))).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
   })
 })
 
@@ -4862,7 +5120,7 @@ function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question.startsWith(`${REVIEW_QUESTION}\n`) && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -4894,7 +5152,7 @@ function listedLinkAfterConfirm(run: MemRun, folder: string, name: string): Init
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question.startsWith(`${REVIEW_QUESTION}\n`) && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -4938,8 +5196,9 @@ describe('init apply (D-105)', () => {
       { path: '/repo/.gitignore', text: ignore, isWritten: true },
       { path: '/repo/.cadre/manifest.json', text: await manifestOf(desired), isWritten: true },
     ])
-    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
-    expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(1)
+    const asked = firstLines(run.asked)
+    expect(asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
   })
 
   test('each launcher is made executable with /bin/chmod 755 right after its own write (LNCH-01)', async () => {
@@ -5135,6 +5394,9 @@ const EDITED_ROLE = 'edited by hand\n'
 /** The Keep mine / Take new question of BE's ROLE.md (D-67). */
 const ROLE_QUESTION = conflictQuestion('.cadre/be/ROLE.md')
 
+/** The conflict question of BE's ROLE.md as asked: what each answer does on its second line (D-136). */
+const ROLE_ASKED = withContext(ROLE_QUESTION, CONFLICT_CONTEXT)
+
 /** What the repo after an init holds once BE's ROLE.md was edited: the world, the planned files and BE's ROLE.md. */
 type EditedRole = {
   readonly world: MemWorld
@@ -5175,7 +5437,7 @@ function editedAfterConfirm(run: MemRun, path: string, text: string): InitIo {
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question.startsWith(`${REVIEW_QUESTION}\n`) && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -5192,9 +5454,9 @@ describe('init apply conflicts (D-67)', () => {
     const { world } = await editedRoleWorld()
     const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
-    const reviewAt = run.asked.indexOf(REVIEW_ASKED)
+    const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     expect(reviewAt).toBeGreaterThan(0)
-    expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_QUESTION])
+    expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_ASKED])
     expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS, header: 'Conflict' })
   })
 
@@ -5219,7 +5481,7 @@ describe('init apply conflicts (D-67)', () => {
     const host = memHost(hostWorld({}))
     const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Keep mine' })
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
-    expect(run.asked.at(-1)).toBe(ROLE_QUESTION)
+    expect(run.asked.at(-1)).toBe(ROLE_ASKED)
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
     expect(host.calls).toEqual([])
     expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
@@ -5246,7 +5508,7 @@ describe('init apply conflicts (D-67)', () => {
       }
       const asked = memIo(world, unread)
       await runInit(asked.io, { dryRun: false, host: memHost(hostWorld({})).io })
-      expect(asked.asked.slice(-2)).toEqual([`${refusal}\n${ROLE_QUESTION}`, `${refusal}\n${ROLE_QUESTION}`])
+      expect(asked.asked.slice(-2)).toEqual([`${refusal}\n${ROLE_ASKED}`, `${refusal}\n${ROLE_ASKED}`])
     },
   )
 
@@ -5256,8 +5518,9 @@ describe('init apply conflicts (D-67)', () => {
     for (const world of [fullWorld(), withWrites(fullWorld(), first.writes)]) {
       const run = memIo(world, INIT_ANSWERS)
       await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
-      expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
-      expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(1)
+      const asked = firstLines(run.asked)
+      expect(asked.at(-1)).toBe(REVIEW_QUESTION)
+      expect(asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
     }
   })
 
@@ -5268,7 +5531,7 @@ describe('init apply conflicts (D-67)', () => {
     const run = memIo({ ...world, files: { ...world.files, ...matching } }, INIT_ANSWERS)
     const io = editedAfterConfirm(run, '/repo/.cadre/be/ROLE.md', EDITED_ROLE)
     const reply = await runInit(io, { dryRun: false, host: host.io })
-    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
+    expect(firstLines(run.asked).at(-1)).toBe(REVIEW_QUESTION)
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
     expect(host.calls).toEqual([])
     expect(opKinds(reply).get('.cadre/be/ROLE.md')).toBe('conflict')
@@ -5595,7 +5858,7 @@ describe('security plugin installs (decision #39)', () => {
       const run = memIo(memWorld({}), [answer])
       const result = await securityInstallStep(run.io, SECURITY_KEYS)
       expect([answer, result]).toEqual([answer, { kind: 'accepted', value }])
-      expect(run.asked).toEqual([securityInstallQuestion(SECURITY_KEYS)])
+      expect(run.asked).toEqual([withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)])
       expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security' }])
     }
   })
@@ -5613,7 +5876,7 @@ describe('security plugin installs (decision #39)', () => {
     }
     const refused = memIo(memWorld({}), ['yes', 'Install'])
     await securityInstallStep(refused.io, SECURITY_KEYS)
-    const question = securityInstallQuestion(SECURITY_KEYS)
+    const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
     expect(refused.asked).toEqual([question, `'yes' isn't one of: "Install", "Not now".\n${question}`])
   })
 

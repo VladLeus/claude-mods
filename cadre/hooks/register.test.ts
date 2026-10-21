@@ -6,6 +6,7 @@ import { sha256Hex } from './hash'
 import {
   CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
+  GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
   GIT_POLICY_QUESTION,
   INIT_CANCELLED,
@@ -21,6 +22,7 @@ import {
   regenNoRole,
   REVIEW_QUESTION,
   ROLES_QUESTION,
+  withContext,
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
@@ -132,6 +134,14 @@ type HostLog = {
   readonly panes: string[]
   readonly paneWrites: unknown[]
   readonly writes: string[]
+}
+
+/**
+ * The first line of each dialog question the fake host saw, as `ask <first line>`: every init question carries its
+ * context line on its second line (D-136).
+ */
+function askHeads(log: HostLog): string[] {
+  return log.asks.map(ask => ask.split('\n')[0] ?? '')
 }
 
 /**
@@ -1126,8 +1136,9 @@ describe('cadre init with a faked host', () => {
     expect(lines[lines.indexOf(policyLine('definitions')) + 1]).toBe('Launchers start in: the git root')
     expect(out.text).not.toContain('new worktrees')
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
-    expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
-    const launchAsk = log.asks[log.asks.indexOf(POLICY_ASK) + 1] ?? ''
+    const asks = askHeads(log)
+    expect(asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
+    const launchAsk = asks[asks.indexOf(POLICY_ASK) + 1] ?? ''
     expect(launchAsk.startsWith('ask Where should the role launchers start')).toBe(true)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.ops).not.toContain('process.run')
@@ -1173,8 +1184,8 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const hunkAts = log.asks.flatMap((ask, at) => (ask.startsWith('ask .planning/config.json:') ? [at] : []))
-    const modelAt = log.asks.indexOf('ask Model and effort for all roles?')
-    const policyAt = log.asks.indexOf(POLICY_ASK)
+    const modelAt = askHeads(log).indexOf('ask Model and effort for all roles?')
+    const policyAt = askHeads(log).indexOf(POLICY_ASK)
     expect(hunkAts).toHaveLength(2)
     expect(modelAt).not.toBe(-1)
     expect(hunkAts.map(at => at > modelAt && at < policyAt)).toEqual([true, true])
@@ -1217,7 +1228,7 @@ describe('cadre init with a faked host', () => {
     const log = newLog()
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Commit all' } }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const at = log.asks.indexOf(POLICY_ASK)
+    const at = askHeads(log).indexOf(POLICY_ASK)
     expect(at).toBeGreaterThanOrEqual(0)
     expect(log.askOptions[at]).toEqual(['Commit definitions (default)', 'Commit all', 'Ignore all of .cadre/'])
   })
@@ -1308,7 +1319,7 @@ describe('cadre init with a faked host', () => {
     expect(out.text).toBe('init cancelled, nothing written')
     expect(out.text).not.toContain('dismissed')
     expect(log.logs.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
-    expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(1)
+    expect(askHeads(log).filter(ask => ask === POLICY_ASK)).toHaveLength(1)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
@@ -1319,8 +1330,9 @@ describe('cadre init with a faked host', () => {
     const answers = { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' }
     fakeHost(on, initWorld({ answers }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    const again = `ask ${refusal}\n${GIT_POLICY_QUESTION}`
-    expect(log.asks.slice(log.asks.indexOf(POLICY_ASK))).toEqual([POLICY_ASK, again, again])
+    const asked = `ask ${withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)}`
+    const again = `ask ${refusal}\n${withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)}`
+    expect(log.asks.slice(log.asks.indexOf(asked))).toEqual([asked, again, again])
     expect(refusal).toBe("'whatever' isn't one of: definitions, all, ignore.")
     expect(log.logs.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
     expect(out.text).toBe('init cancelled, nothing written')
@@ -1433,7 +1445,7 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(INIT_CANCELLED)
-    expect(log.asks).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
+    expect(askHeads(log)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
     expect(paneLines(log, 'scan')[0]).toBe('Repo scan (read-only):')
     expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
@@ -2045,7 +2057,7 @@ describe('Phase 2 faked-host matrix', () => {
     fakeHost(on, historyHostWorld(), log)
     const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
-    const at = log.asks.indexOf(`ask ${HISTORY_QUESTION}`)
+    const at = askHeads(log).indexOf(`ask ${HISTORY_QUESTION}`)
     expect(at).toBeGreaterThanOrEqual(0)
     expect(log.askOptions[at]).toEqual(['No, skip it', 'Yes, scan names and counts'])
     expect(log.ops).toContain(`fs.list ${HISTORY_DIR}`)
