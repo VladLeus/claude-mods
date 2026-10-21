@@ -2072,7 +2072,7 @@ export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not
 export const REVIEW_ROUNDS_REASON =
   `The review question was asked ${MAX_REVIEW_ROUNDS} times without "Confirm": nothing was chosen.`
 
-/** The last line of the review summary: the items a person may type to go back to one that has no button (D-43). */
+/** The items a person may type at the review to go back to one that has no button (D-43). */
 export const REVIEW_HINT = 'To change something else, type one of: duration, model, assignments, memory, env, hunks.'
 
 /**
@@ -2238,10 +2238,12 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
 }
 
 /**
- * The summary the review shows before its question (D-43): the role titles and ids, every scope card, the file plan
- * with its hunks and warnings as renderPlan prints them (so neither is printed twice), the scan warnings of the run,
- * kept for this review, the security plugins Confirm installs when the person answered Install for any (decision
- * #39), each key cleaned and capped as a report cell is (decision #69 B7), and REVIEW_HINT last.
+ * The summary the review shows before its question (D-43 as amended by D-134), in this order: the role titles and
+ * ids, every scope card, the file plan with its hunks, its warnings and the `.gitignore` block rows as renderPlan
+ * prints them (so none is printed twice), the git policy line, the launcher-start line, IGNORE_ALL_NOTE when the policy
+ * is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan warnings of
+ * the run, kept for this review, and last the security plugins Confirm installs when the person answered Install for
+ * any (decision #39), each key cleaned and capped as a report cell is (decision #69 B7).
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
@@ -2252,9 +2254,11 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
     ...draft.roles.map(role => `  ${role.title} (${role.id})`),
     ...cardLines(draft.roles, scopes),
     ...renderPlan(plan),
+    policyLine(draft.policy),
+    launchLine(draft.launchStart),
+    ...(draft.policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
-    REVIEW_HINT,
   ]
 }
 

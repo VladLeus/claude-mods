@@ -340,8 +340,10 @@ const OPEN_BLOCK_WARNING =
 
 /**
  * The `.gitignore` op: the marked block merged into what is there. A file that is not there is created; one that
- * already holds the merged text is left; any other is changed, and only the block differs. A file that cannot be read,
- * or whose block never ends, plans nothing and says so, because guessing could overwrite the user's lines (T-02-18).
+ * already holds the merged text is left; any other is changed, and only the block differs. Created, changed or left,
+ * the op carries the block it plans as its detail rows, the markers included, so the review and the reply show what
+ * the block holds (PLAN-03, D-134). A file that cannot be read, or whose block never ends, plans nothing and says so,
+ * because guessing could overwrite the user's lines (T-02-18).
  */
 function ignorePart(gitignore: PlanInput['gitignore']): Part {
   if (gitignore === null) return { ops: [], warnings: [] }
@@ -351,8 +353,9 @@ function ignorePart(gitignore: PlanInput['gitignore']): Part {
   const merged = mergeIgnoreBlock(existing, lines)
   if (merged === null) return { ops: [], warnings: [OPEN_BLOCK_WARNING] }
   const kind: FileOpKind = existing === null ? 'create' : merged === existing ? 'leave' : 'change'
+  const detail = [IGNORE_BEGIN, ...lines, IGNORE_END]
 
-  return { ops: [{ kind, path: GITIGNORE_PATH, mode: 'file', note: null }], warnings: [] }
+  return { ops: [{ kind, path: GITIGNORE_PATH, mode: 'file', note: null, detail }], warnings: [] }
 }
 
 /** The warning for a path the plan will not touch: PLAN-06 allows only `.cadre/` and the root `.gitignore`. */
@@ -542,14 +545,18 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
   return (await planWithManifest(input)).plan
 }
 
-/** The rows of one file op: the kind and path, `(executable)` for a launcher, and the note under the path. */
+/**
+ * The rows of one file op: the kind and path, `(executable)` for a launcher, the note under the path, then one row per
+ * detail line (the `.gitignore` block, PLAN-03), each indented like the note and cleaned as a report cell.
+ */
 function fileRows(op: FileOp): string[] {
   const flag = op.mode === 'exec' ? ' (executable)' : ''
   const rows = [`  ${pad(op.kind, KIND_WIDTH)}${reportText(op.path)}${flag}`]
   const note = op.note === null ? '' : reportText(op.note)
   if (note !== '') rows.push(`${DETAIL_INDENT}${note}`)
+  const detail = op.detail ?? []
 
-  return rows
+  return [...rows, ...detail.map(line => `${DETAIL_INDENT}${reportText(line)}`)]
 }
 
 /** The rows of one hunk: the file, the key before and after with its flags, and the command under it. */
@@ -565,8 +572,9 @@ function hunkRows(op: HunkOp): string[] {
 
 /**
  * The plan as the lines init prints (PLAN-01): `File plan:`, one row per op in plan order with the kind padded to a
- * column, any warnings, and a summary that counts each kind and the hunks with their accepted ones. Every value that
- * comes from outside is cleaned and capped as reportText does, so a hostile path or note cannot add a line.
+ * column and its note and detail rows under it (the `.gitignore` block, PLAN-03), any warnings, and a summary that
+ * counts each kind and the hunks with their accepted ones. Every value that comes from outside is cleaned and capped
+ * as reportText does, so a hostile path or note cannot add a line.
  */
 export function renderPlan(plan: Plan): string[] {
   const counts: Record<FileOpKind, number> = { create: 0, change: 0, leave: 0, conflict: 0 }

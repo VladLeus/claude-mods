@@ -849,12 +849,17 @@ export type DesiredFile = {
 /** What the plan does to one file (D-67): create, change, leave, or conflict (a user-edited file). */
 export type FileOpKind = 'create' | 'change' | 'leave' | 'conflict'
 
-/** One planned file operation: what happens to one path, with its mode and an optional note. */
+/** One planned file operation: what happens to one path, with its mode, an optional note and optional detail rows. */
 export type FileOp = {
   readonly kind: FileOpKind
   readonly path: string
   readonly mode: FileMode
   readonly note: string | null
+  /**
+   * Rows shown under the path: the lines the .gitignore op writes between the cadre markers, markers included
+   * (PLAN-03). Absent for every other op.
+   */
+  readonly detail?: readonly string[]
 }
 
 /** One framework autonomy change shown as before/after and accepted one by one (ROLE-04, D-70). */

@@ -2870,11 +2870,16 @@ async function plannedFiles(
   return desiredFiles({ roles, scopes, state, only: null })
 }
 
-/** The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy`. */
+/**
+ * The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy` and, for a
+ * team with a Security role, the security reports line, as init plans the block (decision #39). The `.gitignore` op
+ * shows the block lines (PLAN-03), so a block planned without that line would differ.
+ */
 async function emptyDiskPlan(
   desired: readonly DesiredFile[],
   policy: GitPolicy,
   hunks: readonly HunkOp[] = [],
+  hasSecurityRole = false,
 ): Promise<Plan> {
   return buildPlan({
     desired,
@@ -2882,11 +2887,14 @@ async function emptyDiskPlan(
     manifest: null,
     manifestState: 'absent',
     carried: [],
-    gitignore: { disk: { state: 'absent' }, lines: gitignoreLines(policy, null) },
+    gitignore: { disk: { state: 'absent' }, lines: gitignoreLines(policy, null, hasSecurityRole) },
     hunks,
     cadreVersion: '0.2.0',
   })
 }
+
+/** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
+const GIT_TEAM_HAS_SECURITY = true
 
 /** The text of each file at its absolute path under /repo. */
 function onDisk(files: readonly DesiredFile[]): Record<string, string> {
@@ -3037,7 +3045,7 @@ describe('init plan', () => {
     const result = await planStep(memIo(gitWorld(), {}).io, input)
     expect(result.state).toEqual(stateOf(team))
     const desired = desiredFiles({ roles: team, scopes, state: result.state, only: null })
-    expect(result.plan).toEqual(await emptyDiskPlan(desired, 'definitions', hunks))
+    expect(result.plan).toEqual(await emptyDiskPlan(desired, 'definitions', hunks, GIT_TEAM_HAS_SECURITY))
     const files = result.plan.ops.filter((op): op is FileOp => op.kind !== 'hunk')
     const paths = [...desired.map(file => file.path), '.cadre/manifest.json', '.gitignore'].sort(compareText)
     expect(files.map(op => [op.kind, op.path])).toEqual(paths.map(path => ['create', path]))
@@ -3145,7 +3153,8 @@ describe('init plan', () => {
 
   test('init --dry-run replies with the plan of desiredFiles and buildPlan, the policy, start and note', async () => {
     const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
-    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const plan = await emptyDiskPlan(files, 'definitions', [], GIT_TEAM_HAS_SECURITY)
     expect(reply.split('\n')).toEqual([
       'cadre init --dry-run',
       ...renderPlan(plan),
@@ -3491,7 +3500,8 @@ describe('reviewStep', () => {
     expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
     expect(run.shown.filter(block => block.key === 'review')).toHaveLength(2)
     const team = await defaultRoles(gitWorld())
-    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), team, { gitPolicy: 'ignore' }), 'ignore')
+    const files = await plannedFiles(gitWorld(), team, { gitPolicy: 'ignore' })
+    const plan = await emptyDiskPlan(files, 'ignore', [], GIT_TEAM_HAS_SECURITY)
     expect(reply.split('\n')).toEqual([
       'cadre init --dry-run',
       ...renderPlan(plan),
@@ -4418,7 +4428,8 @@ describe('init apply (D-105)', () => {
   test('the reply is the plan as written, the policy and the start, then the applied lines (D-105)', async () => {
     const host = memHost(hostWorld({}))
     const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
-    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const plan = await emptyDiskPlan(files, 'definitions', [], GIT_TEAM_HAS_SECURITY)
     expect(reply.split('\n')).toEqual([
       'cadre init',
       ...renderPlan(plan),
@@ -4441,7 +4452,8 @@ describe('init apply (D-105)', () => {
 
   test('init --dry-run is the Phase 2 reply byte for byte, and no option type gives a dry run a host', async () => {
     const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
-    const plan = await emptyDiskPlan(await plannedFiles(gitWorld(), await defaultRoles(gitWorld())), 'definitions')
+    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const plan = await emptyDiskPlan(files, 'definitions', [], GIT_TEAM_HAS_SECURITY)
     const start = 'Launchers start in: the git root'
     const lines = ['cadre init --dry-run', ...renderPlan(plan), policyLine('definitions'), start, DRY_RUN_NOTE]
     expect(reply).toBe(lines.join('\n'))
