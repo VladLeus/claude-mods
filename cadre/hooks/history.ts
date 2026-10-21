@@ -212,13 +212,16 @@ export function historyQuestion(total: number): string {
   )
 }
 
-/** Each answer to the history question with what it allows: only the yes reads a transcript (D-59). */
+/** Each history answer with what it allows, the declining one first: only the yes reads a transcript (D-59). */
 const HISTORY_CONSENTS: readonly { readonly label: string; readonly isAllowed: boolean }[] = Object.freeze([
-  { label: 'Yes, scan names and counts', isAllowed: true },
   { label: 'No, skip it', isAllowed: false },
+  { label: 'Yes, scan names and counts', isAllowed: true },
 ])
 
-/** The answers to the history question, yes first; nothing is preselected (D-59). */
+/**
+ * The answers to the history question. The declining answer is first because the engine dialog starts with its first
+ * option focused (pre-checked on desktop), so a quick Submit declines (D-58, D-59 as amended by D-134).
+ */
 export const HISTORY_OPTIONS: readonly string[] = Object.freeze(HISTORY_CONSENTS.map(consent => consent.label))
 
 /** Whether an answer allows the scan, matched trimmed and in any case; null when it names neither answer. */

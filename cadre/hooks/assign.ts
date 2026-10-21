@@ -523,12 +523,29 @@ export function parseEnvNames(answer: string, available: readonly string[]): rea
   return sortedUnique(words)
 }
 
+/** The most scanned names a question shows before it counts the rest: the env and memory questions (D-135). */
+const MAX_SHOWN_NAMES = 5
+
 /**
- * The question for the env variable names roles carry (D-60). The scanned names are cleaned and cut to 60 code points
- * each; values are never read, so none can be shown.
+ * The scanned names as a question shows them (D-135): the first MAX_SHOWN_NAMES, each cleaned and cut to 60 code
+ * points, then `+N more` when more remain, joined with `, `; empty with no name. It only shapes the text: a name past
+ * the fifth is still an answer the question takes.
+ */
+export function cappedNames(names: readonly string[]): string {
+  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
+  const rest = names.length - shown.length
+  const items = rest > 0 ? [...shown, `+${rest} more`] : shown
+
+  return items.join(', ')
+}
+
+/**
+ * The question for the env variable names roles carry (D-60, D-135). It shows the scanned names as cappedNames gives
+ * them, at most five and then how many more; the side pane lists every name before it is asked. Values are never
+ * read, so none can be shown.
  */
 export function envQuestion(names: readonly string[]): string {
-  const shown = names.map(name => clean(name, MAX_SHOWN_NAME_CHARS)).join(', ')
+  const shown = cappedNames(names)
 
   return `Which env variables do roles carry? Names: ${shown} (values are never stored; e.g. API_KEY, or none)`
 }
@@ -540,21 +557,14 @@ export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Ob
   'project-claude-md': 'the project CLAUDE.md',
 })
 
-/** The most names a memory question shows before it counts the rest. */
-const MAX_SHOWN_NAMES = 5
-
 /** The hint that ends a memory question. */
 const MEMORY_ANSWER_HINT = '(e.g. PM, TL, or none)'
 
-/** The names a memory question shows, in brackets: the first five cleaned, then how many more. Empty with no name. */
+/** The names a memory question shows, in brackets, as cappedNames gives them. Empty with no name. */
 function shownNames(names: readonly string[]): string {
   if (names.length === 0) return ''
 
-  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
-  const rest = names.length - shown.length
-  const items = rest > 0 ? [...shown, `+${rest} more`] : shown
-
-  return ` (${items.join(', ')})`
+  return ` (${cappedNames(names)})`
 }
 
 /**

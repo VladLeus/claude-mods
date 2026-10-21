@@ -384,8 +384,8 @@ export type InitFacts = {
   readonly gsdUserDir: string | null
 }
 
-/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133). */
-export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review'
+/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135). */
+export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review' | 'env'
 
 /** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
 export type ShownBlock = {

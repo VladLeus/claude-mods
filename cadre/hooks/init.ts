@@ -220,7 +220,10 @@ const GIT_POLICIES: readonly GitPolicyEntry[] =
     { label: 'Ignore all of .cadre/', word: 'ignore', policy: 'ignore' },
   ])
 
-/** The git policy choices in the fixed order default, all, ignore; nothing is preselected (D-65). */
+/**
+ * The git policy choices in the order default, all, ignore: the dialog focuses the first option; the order is fixed
+ * (D-65).
+ */
 export const GIT_POLICY_OPTIONS: readonly string[] = Object.freeze(GIT_POLICIES.map(entry => entry.label))
 
 /** Each git policy dialog label with the policy it stands for. */
@@ -346,13 +349,14 @@ function noteLine(io: InitIo, line: string): void {
   io.log(reportText(line))
 }
 
-/** The side-pane titles of D-133: the bold title of each kind of block the cadre init pane shows. */
+/** The side-pane titles of D-133 and D-135: the bold title of each kind of block the cadre init pane shows. */
 export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   scan: 'Scan',
   history: 'Session history',
   roles: 'Roles',
   recommendations: 'Recommendations',
   review: 'Review',
+  env: 'Env variables',
 })
 
 /**
@@ -482,13 +486,16 @@ export async function initGuard(io: InitIo, command: 'init' | 'regen'): Promise<
 export const CLAUDE_JSON_QUESTION =
   'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.'
 
-/** Each consent answer with what it allows: only the yes reads ~/.claude.json (D-58). */
+/** Each consent answer with what it allows, the declining one first: only the yes reads ~/.claude.json (D-58). */
 const CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'Yes, read names only', value: true },
   { label: 'No, skip it', value: false },
+  { label: 'Yes, read names only', value: true },
 ])
 
-/** The answers to the consent question, yes first; nothing is preselected (D-58). */
+/**
+ * The answers to the consent question. The declining answer is first because the engine dialog starts with its first
+ * option focused (pre-checked on desktop), so a quick Submit declines (D-58, D-59 as amended by D-134).
+ */
 export const CLAUDE_JSON_OPTIONS: readonly string[] = Object.freeze(CONSENTS.map(entry => entry.label))
 
 /** Whether a consent answer allows reading ~/.claude.json; null when it names neither answer (D-58). */
@@ -624,7 +631,10 @@ const ROLES_CHOICES: readonly Labelled<RolesChoice>[] = Object.freeze([
   { label: 'Describe my own structure', value: 'describe' },
 ])
 
-/** The answers to the roles question, in the fixed order use, adjust, describe; nothing is preselected (D-46). */
+/**
+ * The answers to the roles question, in the order use, adjust, describe: the dialog focuses the first option; the
+ * order is fixed (D-46).
+ */
 export const ROLES_OPTIONS: readonly string[] = Object.freeze(ROLES_CHOICES.map(entry => entry.label))
 
 /** The free-text question for the person's own role structure (ROLE-02); its answer is all the model sees (D-83). */
@@ -1069,9 +1079,9 @@ export const FRAMEWORK_DISMISSED_REASON = 'A framework question was dismissed or
 /**
  * DET-03's question for an ambiguous or installed-only choice (D-73, D-86): the reason, then `Same for all roles` or
  * `Per role`, then the framework once for every role or for each role in role order. The options are the frameworks
- * of the choice in SUPPORTED_IDS order, then `none (built-in)`, with nothing preselected (D-07). Every role stores its
- * answer and there is no repo default. A dismissed question is cancelled with FRAMEWORK_DISMISSED_REASON, never a
- * choice (D-45).
+ * of the choice in SUPPORTED_IDS order, then `none (built-in)`: the dialog focuses the first option; the order is
+ * fixed (D-07). Every role stores its answer and there is no repo default. A dismissed question is cancelled with
+ * FRAMEWORK_DISMISSED_REASON, never a choice (D-45).
  */
 async function askFrameworks(
   io: InitIo,
@@ -1165,7 +1175,10 @@ const SECURITY_INSTALLS: readonly Labelled<boolean>[] = Object.freeze([
   { label: 'Not now', value: false },
 ])
 
-/** The answers to the security plugins question, Install first; nothing is preselected (decision #39). */
+/**
+ * The answers to the security plugins question, Install first: the dialog focuses the first option; the order is fixed
+ * (decision #39).
+ */
 export const SECURITY_INSTALL_OPTIONS: readonly string[] = Object.freeze(SECURITY_INSTALLS.map(entry => entry.label))
 
 /** Why init cancels when the security plugins question is dismissed or not answered (decision #39, A1, D-45). */
@@ -1452,27 +1465,33 @@ export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */
 const SECRET_READ_GUARD = /^gsd-secret-read-guard\.(?:js|cjs|sh)$/
 
+/** The first line of the side-pane block that lists every scanned env name before the env question (D-135). */
+const ENV_PANE_HEADING = 'Env variable names in your settings (values are never read):'
+
 /**
- * The env variable names roles carry (D-60): none when the scan found no name, else the answer to the one env question
- * (envQuestion), None, All of them or typed names that were scanned (parseEnvNames). Null when the question is
- * dismissed or never answered with such names.
+ * The env variable names roles carry (D-60): none when the scan found no name, and then nothing is shown or asked.
+ * Else the side pane first lists every scanned name, one per row (D-135), since the question shows only the first
+ * five (envQuestion), so All of them never covers a name the person cannot see; then the answer to the one env
+ * question is None, All of them or typed names that were scanned (parseEnvNames). Null when the question is dismissed
+ * or never answered with such names.
  */
 async function carriedEnv(io: InitIo, names: readonly string[]): Promise<readonly string[] | null> {
   if (names.length === 0) return []
   const parse = (answer: string): readonly string[] | null => parseEnvNames(answer, names)
+  await showBlock(io, 'env', [ENV_PANE_HEADING, ...names.map(name => `  ${name}`)])
 
   return askChoice(io, envQuestion(names), { options: ENV_OPTIONS }, parse)
 }
 
 /**
- * The carried settings step (D-60, D-62, D-84). When the user settings define env variables, one question lists their
- * names and asks which ones roles carry; with none, nothing is asked. Every role carries the same: the picked names,
- * never a value; `autoCompactWindow` and `statusLine` when the user settings set them; and the GSD secret read guard,
- * the one hook carried, when any settings source registers it: launch renders it from the user, project and local
- * settings (D-103). Hooks registered in project settings load in roles that start at the git root, and the card lists
- * them as loaded by project settings (D-122). A dismissal, or MAX_ASKS answers that name no scanned variable, gives
- * the cancel reason ENV_DISMISSED_REASON (A1). No env or settings value is read, stored or printed (T-02-34); the
- * roles it is given never change.
+ * The carried settings step (D-60, D-62, D-84). When the user settings define env variables, the side pane lists their
+ * names and one question asks which ones roles carry (carriedEnv, D-135); with none, nothing is shown or asked. Every
+ * role carries the same: the picked names, never a value; `autoCompactWindow` and `statusLine` when the user settings
+ * set them; and the GSD secret read guard, the one hook carried, when any settings source registers it: launch renders
+ * it from the user, project and local settings (D-103). Hooks registered in project settings load in roles that start
+ * at the git root, and the card lists them as loaded by project settings (D-122). A dismissal, or MAX_ASKS answers that
+ * name no scanned variable, gives the cancel reason ENV_DISMISSED_REASON (A1). No env or settings value is read,
+ * stored or printed (T-02-34); the roles it is given never change.
  */
 export async function carryStep(
   io: InitIo,
@@ -1578,7 +1597,10 @@ const LAUNCH_STARTS: readonly LaunchStartEntry[] = Object.freeze([
   { label: 'Another folder in this repo', word: 'other', choice: 'dir' },
 ])
 
-/** The answers to the launcher start question, in the fixed order git root, here, another folder; none preselected. */
+/**
+ * The answers to the launcher start question, in the order git root, here, another folder: the dialog focuses the
+ * first option; the order is fixed.
+ */
 export const LAUNCH_START_OPTIONS: readonly string[] = Object.freeze(LAUNCH_STARTS.map(entry => entry.label))
 
 /** Each launcher start dialog label with what it picks. */

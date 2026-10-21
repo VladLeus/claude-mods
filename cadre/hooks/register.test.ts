@@ -2038,7 +2038,7 @@ describe('Phase 2 faked-host matrix', () => {
     expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     const at = log.asks.indexOf(`ask ${HISTORY_QUESTION}`)
     expect(at).toBeGreaterThanOrEqual(0)
-    expect(log.askOptions[at]).toEqual(['Yes, scan names and counts', 'No, skip it'])
+    expect(log.askOptions[at]).toEqual(['No, skip it', 'Yes, scan names and counts'])
     expect(log.ops).toContain(`fs.list ${HISTORY_DIR}`)
     expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([])
     expect(log.ops.filter(op => op.endsWith('.jsonl'))).toEqual([])
