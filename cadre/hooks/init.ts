@@ -13,6 +13,7 @@ import type {
   InitLocations,
   InstructionGroup,
   InstructionHandout,
+  InstructionPart,
   InstructionScan,
   InstructionTopic,
   LaunchStart,
@@ -1886,13 +1887,6 @@ export async function memoryStep(
   )
 }
 
-/**
- * The one-line note a plain init prints before the whole-file questions while the instruction parts flow runs only
- * under --dry-run (G-02-1f; user answer 2026-10-21). The gate and this note go once the parts can be written.
- */
-export const PARTS_DRY_RUN_ONLY_NOTE =
-  'This cadre version shows instruction parts only in --dry-run; a plain init asks the whole-file questions.'
-
 /** What the instruction step gives (G-02-1f): the roles with their instruction groups, and how it handed them out. */
 export type Instructed = {
   readonly roles: readonly RoleSpec[]
@@ -1914,7 +1908,7 @@ function hasSetupFiles(setup: SetupScan): boolean {
   return setup.hasGlobalClaudeMd || setup.claudeMd.length > 0 || setup.memoryFiles.length > 0
 }
 
-/** Whether a dry run found anything to hand out: what the setup scan found, a rule file or AGENTS.md (G-02-1f). */
+/** Whether init found anything to hand out: what the setup scan found, a rule file or AGENTS.md (G-02-1f). */
 function hasInstructionFiles(setup: SetupScan, repo: RepoNames): boolean {
   return hasSetupFiles(setup) || (repo.rules ?? []).length > 0 || repo.hasAgentsMd
 }
@@ -1935,23 +1929,6 @@ const WHOLE: InstructionHandout = { kind: 'whole' }
 /** The whole-file questions of D-63 (memoryStep), handed out as `whole`; a cancel keeps its reason (A1). */
 async function wholeFiles(io: InitIo, roles: readonly RoleSpec[], setup: SetupScan): Promise<StepResult<Instructed>> {
   return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: WHOLE }))
-}
-
-/**
- * A plain init while the parts flow runs only under --dry-run (G-02-1f), as before the parts flow: with nothing the
- * whole-file questions ask about it hands out `none` and notes nothing; else PARTS_DRY_RUN_ONLY_NOTE as one note, then
- * the whole-file questions (wholeFiles). No content consent is asked, `.claude/rules` and AGENTS.md are not looked at,
- * and nothing is read.
- */
-async function dryRunOnlyNote(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
-): Promise<StepResult<Instructed>> {
-  if (!hasSetupFiles(setup)) return nothingToHandOut(roles)
-  await noteLine(io, PARTS_DRY_RUN_ONLY_NOTE)
-
-  return wholeFiles(io, roles, setup)
 }
 
 /**
@@ -2017,7 +1994,7 @@ async function recommendedRoles(
  * first (instructionLines), then the entry question and its answers (handoutStep), with the topics as items and then
  * the memories. Whole files asks the whole-file questions (memoryStep); the other answers keep the topics and memories
  * with the roles given each, and give every role no D-63 group. The read, the topics and the answers live in memory
- * for this run only.
+ * for this run; only the repo parts a role was given are planned, as its built CLAUDE.md (repoPartsOf, planStep).
  */
 async function handOutParts(
   io: InitIo,
@@ -2089,24 +2066,21 @@ async function partsFlow(
 }
 
 /**
- * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps). A plain init (`isDryRun` false)
- * runs as before the parts flow (dryRunOnlyNote): no content consent, PARTS_DRY_RUN_ONLY_NOTE and the whole-file
- * questions (memoryStep), handed out as `whole`, or `none` with nothing they ask about. A dry run first lists
- * `.claude/rules` and stats AGENTS.md, by name only (repoInstructionNames); with no global CLAUDE.md, no CLAUDE.md in
- * the repo chain, no rule file, no AGENTS.md and no memory file it asks nothing, hands out `none` and gives every role
- * no group. Else it asks the content consent (contentAsk), so no instruction or memory text is read before a yes: No
- * asks the whole-file questions, and Yes runs the parts flow (partsFlow). A dismissal of any of its questions is
- * cancelled with that question's reason, and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON (A1).
- * Nothing is written, and the roles it is given never change.
+ * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps), the same in a plain init and in
+ * --dry-run. It first lists `.claude/rules` and stats AGENTS.md, by name only (repoInstructionNames); with no global
+ * CLAUDE.md, no CLAUDE.md in the repo chain, no rule file, no AGENTS.md and no memory file it asks nothing, hands out
+ * `none` and gives every role no group. Else it asks the content consent (contentAsk), so no instruction or memory
+ * text is read before a yes: No asks the whole-file questions (memoryStep), handed out as `whole`, and Yes runs the
+ * parts flow (partsFlow). A dismissal of any of its questions is cancelled with that question's reason, and MAX_ASKS
+ * answers it cannot read with NO_USABLE_ANSWER_REASON (A1). The step writes nothing, and the roles it is given never
+ * change; the repo parts it hands out reach the plan through the draft (repoPartsOf).
  */
 export async function instructionsStep(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
   locations: InitLocations,
-  isDryRun: boolean,
 ): Promise<StepResult<Instructed>> {
-  if (!isDryRun) return dryRunOnlyNote(io, roles, setup)
   const repo = await repoInstructionNames(io, locations.root)
   if (!hasInstructionFiles(setup, repo)) return nothingToHandOut(roles)
   const consent = choiceResult(await askChoice(io, contentAsk(setup, repo)), CONTENT_DISMISSED_REASON)
@@ -2532,13 +2506,35 @@ async function readPaths(io: InitIo, root: string, paths: readonly string[]): Pr
 }
 
 /**
+ * The parts each role was given that were read from the repo, by role id (G-02-1f Storage split): for a parts
+ * hand-out, every part of every topic the role was given, with source `repo`, in read order; a role given only global
+ * parts maps to none. Empty for the whole-file questions and for none. A part of the global CLAUDE.md is left out, so
+ * it never reaches a file in the repo (T-02-69); memories are not parts.
+ */
+function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly InstructionPart[]> {
+  if (handout.kind !== 'parts') return new Map()
+  const { scan, topics, given } = handout
+  const roleIds = new Set(topics.flatMap(topic => given.get(topic.id) ?? []))
+
+  return new Map(
+    Array.from(roleIds, (roleId): [string, InstructionPart[]] => {
+      const owned = topics.filter(topic => given.get(topic.id)?.includes(roleId) === true)
+      const partIds = new Set(owned.flatMap(topic => topic.partIds))
+
+      return [roleId, scan.parts.filter(part => part.source === 'repo' && partIds.has(part.id))]
+    }),
+  )
+}
+
+/**
  * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
- * desiredFiles gives every file from it; the repo state also records the consent answer, so regen knows whether it
- * may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the
- * manifest) and the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never
- * read. planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the
- * ignore block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
+ * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role `repoParts` gives repo
+ * parts to (G-02-1f); the repo state also records the consent answer, so regen knows whether it may read
+ * ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and the
+ * root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never read.
+ * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
+ * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
  * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
  * The result also holds what apply writes the plan from: the desired files, the manifest the plan records and the
  * merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be merged, since
@@ -2556,9 +2552,11 @@ export async function planStep(
     readonly repo: RepoScan
     readonly locations: InitLocations
     readonly readUserMcp: boolean
+    /** The parts each role was given, by role id (repoPartsOf); absent plans no built role file. */
+    readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
   },
 ): Promise<PlanResult> {
-  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp } = input
+  const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp, repoParts } = input
   const cadreVersion = (await io.cadreVersion()) ?? 'unknown'
   const state: CadreState = {
     schema: 1,
@@ -2569,7 +2567,8 @@ export async function planStep(
     launchStart,
     readUserMcp,
   }
-  const desired = desiredFiles({ roles, scopes, state, only: null })
+  const parts = repoParts === undefined ? {} : { repoParts }
+  const desired = desiredFiles({ roles, scopes, state, only: null, ...parts })
   const disk = await readPaths(io, locations.root, planReadPaths(desired))
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
@@ -2880,7 +2879,7 @@ export type Draft = {
   readonly pluginInstalls: readonly string[]
   /**
    * How the instruction files were handed out (G-02-1f): none, the whole-file questions, or the parts with their
-   * topics, held in memory for this run only.
+   * topics, held in memory for this run; the plan builds each role's CLAUDE.md from its repo parts (repoPartsOf).
    */
   readonly instructions: InstructionHandout
   readonly policy: GitPolicy
@@ -2914,22 +2913,21 @@ function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult
 /**
  * The per-role steps after the duration (D-52, D-53, D-60, G-02-1f, ROLE-04), in this order: model and effort
  * (modelStep), MCP servers and skills with the history hints (assignmentStep), instructions and memories
- * (instructionsStep, which runs the instruction parts only when `isDryRun`), carried settings (carryStep), then the
- * autonomy hunks of the frameworks the roles run on (hunkStep). The first cancelled step ends it with its reason (A1).
+ * (instructionsStep), carried settings (carryStep), then the autonomy hunks of the frameworks the roles run on
+ * (hunkStep). The first cancelled step ends it with its reason (A1).
  */
 async function perRoleSteps(
   io: InitIo,
   base: DraftBase,
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
-  isDryRun: boolean,
 ): Promise<StepResult<Omit<Team, 'duration' | 'changes' | 'pluginInstalls'>>> {
   const { gathered, locations } = base
   const modelled = await modelStep(io, roles)
   if (modelled.kind === 'cancelled') return modelled
   const assigned = await assignmentStep(io, modelled.value, gathered.setup, base.hints)
   if (assigned.kind === 'cancelled') return assigned
-  const instructed = await instructionsStep(io, assigned.value, gathered.setup, locations, isDryRun)
+  const instructed = await instructionsStep(io, assigned.value, gathered.setup, locations)
   if (instructed.kind === 'cancelled') return instructed
   const { instructions } = instructed.value
   const carried = await carryStep(io, instructed.value.roles, gathered.setup)
@@ -2948,16 +2946,14 @@ async function perRoleSteps(
  * then perRoleSteps. When claude-security was asked about, every role that stands for Security gets its review skill
  * on Install and loses it on Not now (withSecuritySkill) before the duration. Init runs it once from the proposal;
  * Change roles runs it again from the current team with the scan changes it was accepted with (A6) and the duration it
- * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. `isDryRun` is
- * whether the run is --dry-run, which the instruction step needs (instructionsStep). The first cancelled step ends it
- * with its reason (A1).
+ * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. The first
+ * cancelled step ends it with its reason (A1).
  */
 async function teamStep(
   io: InitIo,
   base: DraftBase,
   start: RoleProposal,
   duration: string | null,
-  isDryRun: boolean,
 ): Promise<StepResult<Team>> {
   const { gathered } = base
   const chosen = await rolesStep(io, base.proposal, base.installed, start)
@@ -2977,7 +2973,7 @@ async function teamStep(
   const asked = duration === null ? await durationStep(io, team) : accepted(duration)
   if (asked.kind === 'cancelled') return asked
   const kept = asked.value
-  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault, isDryRun)
+  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
 
   return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, pluginInstalls, ...decided }))
 }
@@ -2985,21 +2981,15 @@ async function teamStep(
 /**
  * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
  * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
- * duration kept (teamStep, given `isDryRun` as the run is). The duration, model, assignment, memory and env steps run
- * again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a name away;
- * memory goes back to the instruction hand-out it had (instructionsAgain). A cancelled step ends the review with its
- * reason (A1).
+ * duration kept (teamStep). The duration, model, assignment, memory and env steps run again on the current roles and
+ * decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
+ * instruction hand-out it had (instructionsAgain). A cancelled step ends the review with its reason (A1).
  */
-async function goBack(
-  io: InitIo,
-  draft: Draft,
-  item: Exclude<ReviewItem, 'confirm'>,
-  isDryRun: boolean,
-): Promise<StepResult<Draft>> {
+async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confirm'>): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
     case 'roles': {
-      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration, isDryRun)
+      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration)
 
       return mapped(team, decided => ({ ...draft, ...decided }))
     }
@@ -3078,18 +3068,18 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
  * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
  * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
- * files (planStep), shows the summary in the side pane (reviewLines, D-133) and asks reviewQuestion with the context
- * line of that plan, cleaned as a report cell (reviewContextLine, D-136), and REVIEW_OPTIONS; an item word may be typed
- * under "Other" (parseReviewItem), and any other answer is asked again with why on top. Confirm accepts the plan just
- * shown, with the state it was planned with and the draft it was built from (Reviewed). A go-back re-asks that one item
- * (goBack, given `isDryRun` as the run is), and the next round shows the summary again. A dismissal
- * (REVIEW_DISMISSED_REASON), MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled go-back step is
- * cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm
+ * files (planStep) with each role's repo parts (repoPartsOf, G-02-1f), shows the summary in the side pane (reviewLines,
+ * D-133) and asks reviewQuestion with the context line of that plan, cleaned as a report cell (reviewContextLine,
+ * D-136), and REVIEW_OPTIONS; an item word may be typed under "Other" (parseReviewItem), and any other answer is asked
+ * again with why on top. Confirm accepts the plan just shown, with the state it was planned with and the draft it was
+ * built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the summary again. A
+ * dismissal (REVIEW_DISMISSED_REASON), MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled
+ * go-back step is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm
  * (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back picked at the last round
  * cancels at once and asks none of that item's questions (A3). The review itself writes nothing: Confirm is the consent
  * apply writes the plan on (D-105).
  */
-export async function reviewStep(io: InitIo, draft: Draft, isDryRun: boolean): Promise<StepResult<Reviewed>> {
+export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
   let current = draft
   for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
     const setup = setupAfterInstalls(current.gathered.setup, current.pluginInstalls)
@@ -3105,6 +3095,7 @@ export async function reviewStep(io: InitIo, draft: Draft, isDryRun: boolean): P
       repo: current.gathered.repo,
       locations: current.locations,
       readUserMcp: current.readUserMcp,
+      repoParts: repoPartsOf(current.instructions),
     })
     await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
     const ask = {
@@ -3118,7 +3109,7 @@ export async function reviewStep(io: InitIo, draft: Draft, isDryRun: boolean): P
     const item = picked.value
     if (item === 'confirm') return accepted({ draft: current, planned })
     if (round === MAX_REVIEW_ROUNDS - 1) break
-    const changed = await goBack(io, current, item, isDryRun)
+    const changed = await goBack(io, current, item)
     if (changed.kind === 'cancelled') return changed
     current = changed.value
   }
@@ -3228,9 +3219,10 @@ async function installPlugins(
  *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
  *    a problem (noHomeInstallText).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep), all from the setup with the plugins just installed (setupAfterInstalls), so
- *    ROLE.md is rendered and hashed after the hunks ran (D-120) and a Security role's settings enable claude-security
- *    once it is installed. The hunk runs above keep the setup of the scan.
+ *    again from the disk (planStep, with each role's repo parts of the draft, repoPartsOf), all from the setup with the
+ *    plugins just installed (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a
+ *    Security role's settings enable claude-security once it is installed. The hunk runs above keep the setup of the
+ *    scan.
  * 6. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
  *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
  *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
@@ -3289,6 +3281,7 @@ export async function applyConfirmed(
     repo: gathered.repo,
     locations,
     readUserMcp: draft.readUserMcp,
+    repoParts: repoPartsOf(draft.instructions),
   })
   const steps = await applySteps({ ...planned, choices })
   const written = await writeSteps(io, host, locations.root, steps)
@@ -3316,19 +3309,20 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
- * MCP servers and skills, the instructions and memories (instructionsStep: in --dry-run the content consent and the
- * instruction parts, else the whole-file questions; G-02-1f), the carried env names, and the autonomy hunks of the
- * frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start
- * (launchStartStep), shows the one final review with every role's scope card for that start (the one place the cards
- * are shown; reviewLines, ROLE-06, A5) and the exact file plan, where the person confirms or goes back to change one
- * item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
- * installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new for each
- * conflicted file (D-67), running the accepted hunks first, then installing the security plugins answered Install from
- * the home folder, and writing the plan made again from the disk (D-120), and replies with the plan as written and what
- * the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind before it uses the value,
- * and for a cancelled step prints the reason as its own line and answers cancelledReply with the step's reason (D-45),
- * so only values the person accepted reach the steps after it, and nothing is written or installed before Confirm.
- * Every answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * MCP servers and skills, the instructions and memories (instructionsStep: the content consent, then the instruction
+ * parts or the whole-file questions; G-02-1f), the carried env names, and the autonomy hunks of the frameworks in use.
+ * It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start (launchStartStep),
+ * shows the one final review with every role's scope card for that start (the one place the cards are shown;
+ * reviewLines, ROLE-06, A5) and the exact file plan, each role's built CLAUDE.md included, where the person confirms or
+ * goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that
+ * nothing was written, and installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine
+ * or Take new for each conflicted file (D-67), running the accepted hunks first, then installing the security plugins
+ * answered Install from the home folder, and writing the plan made again from the disk (D-120), and replies with the
+ * plan as written and what the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind
+ * before it uses the value, and for a cancelled step prints the reason as its own line and answers cancelledReply with
+ * the step's reason (D-45), so only values the person accepted reach the steps after it, and nothing is written or
+ * installed before Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45,
+ * D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')
@@ -3355,7 +3349,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     proposal,
     hints: historyHints(history.value),
   }
-  const team = await teamStep(io, base, proposal, null, options.dryRun)
+  const team = await teamStep(io, base, proposal, null)
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
 
   const policy = await gitPolicyStep(io)
@@ -3365,7 +3359,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
 
   const draft = { ...base, ...team.value, policy: policy.value, launchStart: launch.value }
-  const reviewed = await reviewStep(io, draft, options.dryRun)
+  const reviewed = await reviewStep(io, draft)
   if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
   const { plan, state } = reviewed.value.planned
   if (options.dryRun) return initReplyText(plan, state.gitPolicy, state.launchStart, null)

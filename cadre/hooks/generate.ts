@@ -1,10 +1,18 @@
-import type { CadreState, CompiledScope, DesiredFile, FrameworkId, LaunchStart, RoleSpec } from '../types'
+import type {
+  CadreState,
+  CompiledScope,
+  DesiredFile,
+  FrameworkId,
+  InstructionPart,
+  LaunchStart,
+  RoleSpec,
+} from '../types'
 import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { clean, compareText } from './facts'
 import { MAX_ROLE_CHARS } from './kickoff'
 import { PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
-import { cardList } from './render'
+import { cardList, reportText } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
 
@@ -141,6 +149,40 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
   ]
 
   return `${lines.join('\n')}\n`
+}
+
+/** How the marker of a part with no heading names it: the text before the first heading of its file (G-02-1f). */
+const TOP_OF_FILE = '(top of file)'
+
+/**
+ * The marker line above a part in a built role file (G-02-1f): `<!-- from <file> > <heading or (top of file)> -->`.
+ * The file and the heading are cleaned as a report cell, so no character of either can add a line or hide text.
+ */
+function partMarker(part: InstructionPart): string {
+  const heading = part.heading === '' ? TOP_OF_FILE : reportText(part.heading)
+
+  return `<!-- from ${reportText(part.file)} > ${heading} -->`
+}
+
+/** A part's text as a built role file holds it: as read, each `\r\n` written `\n`, its line ends at the end dropped. */
+function partBody(text: string): string {
+  return text.replaceAll('\r\n', '\n').replace(/\n+$/, '')
+}
+
+/**
+ * The text of `.cadre/<id>/CLAUDE.md`, the instructions built for a role from the parts it was given (G-02-1f Storage
+ * split, D-140). The first line says the file is built and how to change it, a blank line follows, then each part in
+ * the order given, which is read order: its marker (partMarker) and its text as read (partBody), a blank line between
+ * two parts. Every line ends in `\n`, and the text ends with exactly one. It holds whatever parts it is given:
+ * desiredFiles gives it a role's repo parts only, so no part of the global CLAUDE.md reaches a repo file (T-02-69).
+ */
+export function roleClaudeMdText(id: string, parts: readonly InstructionPart[]): string {
+  const header =
+    `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
+    `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
+  const blocks = parts.map(part => `${partMarker(part)}\n${partBody(part.text)}`)
+
+  return `${[header, ...blocks].join('\n\n')}\n`
 }
 
 /** A word a shell reads as itself without quotes: letters, digits and `_ . / = : @ + -`. */
@@ -503,6 +545,12 @@ export type GenerateInput = {
   readonly state: CadreState
   /** The id of the one role regen re-renders; null for init, which generates every role and the repo state. */
   readonly only: string | null
+  /**
+   * The instruction parts each role was given, by role id, in read order (G-02-1f Storage split): only those read from
+   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Absent for the whole-file questions and for regen and
+   * /cadre start, which then build no such file.
+   */
+  readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
 }
 
 /** The repo-relative path of the index, which lists every role. */
@@ -512,11 +560,28 @@ const INDEX_PATH = '.cadre/INDEX.md'
 const STATE_PATH = '.cadre/cadre.json'
 
 /**
- * The files of one role: the five in its folder and its launcher, each with the framework its scope was compiled for,
- * the launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
- * role.
+ * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
+ * were read from the repo (roleClaudeMdText); none when it was given no such part. A part of the global CLAUDE.md is
+ * dropped here, so it never reaches a file in the repo (T-02-69).
  */
-function roleFiles(role: RoleSpec, scope: CompiledScope | undefined, start: LaunchStart): DesiredFile[] {
+function builtFiles(id: string, parts: readonly InstructionPart[]): DesiredFile[] {
+  const repo = parts.filter(part => part.source === 'repo')
+  if (repo.length === 0) return []
+
+  return [{ path: rolePath(id, 'CLAUDE.md'), content: roleClaudeMdText(id, repo), mode: 'file' }]
+}
+
+/**
+ * The files of one role: the five in its folder, its built CLAUDE.md when it was given repo parts (builtFiles), and its
+ * launcher, each with the framework its scope was compiled for, the launcher starting where `start` says. A role with
+ * no scope gives none, so nothing is generated from a half-known role.
+ */
+function roleFiles(
+  role: RoleSpec,
+  scope: CompiledScope | undefined,
+  start: LaunchStart,
+  parts: readonly InstructionPart[],
+): DesiredFile[] {
   if (scope === undefined) return []
 
   return [
@@ -525,13 +590,15 @@ function roleFiles(role: RoleSpec, scope: CompiledScope | undefined, start: Laun
     { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
+    ...builtFiles(role.id, parts),
     { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope, start), mode: 'exec' },
   ]
 }
 
 /**
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
- * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/` and its launcher `.cadre/bin/<id>`, which starts where
+ * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` when `repoParts`
+ * gives it a part read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
  * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. With `only` set (regen,
  * D-68) just that role's files and the index are given, since the index lists every role. Generation is pure: it holds
  * no state between calls, so two runs cannot interleave, and it never changes its input.
@@ -539,7 +606,9 @@ function roleFiles(role: RoleSpec, scope: CompiledScope | undefined, start: Laun
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
-  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart))
+  const files = selected.flatMap(role =>
+    roleFiles(role, scopes.get(role.id), state.launchStart, input.repoParts?.get(role.id) ?? []),
+  )
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
   if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
 

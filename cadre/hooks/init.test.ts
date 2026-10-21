@@ -2947,7 +2947,7 @@ describe('instruction parts (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
     const roles = [templateRole('pm', { instructions: ['global-claude-md'] })]
-    const none = await instructionsStep(memIo(memWorld({}), []).io, roles, emptySetupScan(), DEFAULT_LOCATIONS, true)
+    const none = await instructionsStep(memIo(memWorld({}), []).io, roles, emptySetupScan(), DEFAULT_LOCATIONS)
     expect(none).toEqual({
       kind: 'accepted',
       value: { roles: [templateRole('pm')], instructions: { kind: 'none' } },
@@ -2959,7 +2959,7 @@ describe('instruction parts (G-02-1f)', () => {
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
     const groups: readonly InstructionGroup[] = ['auto-memory']
     const roles = proposeRoles(repoScan()).roles.map(role => ({ ...role, instructions: groups }))
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS, true))
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.roles.map(role => role.instructions)).toEqual([[], [], []])
     const handout = partsOf(value.instructions)
     expect(handout.topics.map(topic => topic.title)).toEqual(['Security rules', 'Git and commits'])
@@ -3076,7 +3076,7 @@ describe('instruction parts (G-02-1f)', () => {
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
     const roles = proposeRoles(repoScan()).roles
     const io = memIo(partsWorld(), answers).io
-    const value = valueOf(await instructionsStep(io, roles, setup, DEFAULT_LOCATIONS, true))
+    const value = valueOf(await instructionsStep(io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.instructions).toEqual({ kind: 'whole' })
     expect(value.roles.map(role => role.instructions)).toEqual([['global-claude-md'], [], []])
   })
@@ -3110,7 +3110,9 @@ describe('instruction parts (G-02-1f)', () => {
   test('the repo chain is read after the global file, and its parts are named by their repo path', async () => {
     const run = memIo(chainWorld(), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.reads.filter(path => path.endsWith('CLAUDE.md'))).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
+    // The plan also reads the path of each built role file, to classify it against the disk (G-02-1f, PLAN-04).
+    const instructionReads = run.reads.filter(path => path.endsWith('CLAUDE.md') && !path.includes('/.cadre/'))
+    expect(instructionReads).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
     expect(run.prompts[0]).toContain('P2 | CLAUDE.md | Rules | # Rules')
     expect(shownBlock(run, 'instructions')).toContain('    from: CLAUDE.md > Rules')
   })
@@ -3218,7 +3220,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
   test('the rule file is a repo part of the hand-out, with its file, heading and source', async () => {
     const roles = proposeRoles(repoScan()).roles
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS, true))
+    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS))
     expect(value.instructions.kind).toBe('parts')
     const handout = partsOf(value.instructions)
     expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
@@ -3454,7 +3456,7 @@ describe('memories one by one (G-02-1f)', () => {
     const roles = proposeRoles(repoScan()).roles
     const setup = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['MEMORY.md', 'squad.md', 'workflow.md'] })
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS, true))
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.instructions.kind).toBe('parts')
     const handout = partsOf(value.instructions)
     expect(Object.keys(handout.scan)).toContain('memories')
@@ -3519,7 +3521,7 @@ describe('memories one by one (G-02-1f)', () => {
     const roles = proposeRoles(repoScan()).roles
     const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
-    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations, true))
+    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations))
     expect(value.instructions.kind).toBe('parts')
     const { scan } = partsOf(value.instructions)
     expect(Object.keys(scan)).toContain('memories')
