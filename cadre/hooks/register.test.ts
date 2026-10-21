@@ -327,6 +327,8 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
   const base = regenHostWorld()
   const launcher = { path: '.cadre/bin/be', sha256: await sha256Hex(START_LAUNCHER), mode: 'exec' }
   const done = { exitCode: 0, stdout: '' }
+  // BE's private instructions folder, which the render makes and links from .runtime (D-140 q1-b).
+  const privateFolder = `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/be/instructions`
 
   return {
     ...base,
@@ -343,6 +345,8 @@ async function startHostWorld(over: Partial<World> = {}): Promise<World> {
       'git rev-parse --path-format=absolute --git-common-dir': { exitCode: 0, stdout: '/repo/.git\n' },
       [`/bin/mkdir -p -- ${START_RUNTIME}`]: done,
       [`/bin/mkdir -p -- ${START_RUNTIME}/overlay`]: done,
+      [`/bin/mkdir -p -- ${privateFolder}`]: done,
+      [`/bin/ln -sfn ${privateFolder} ${START_RUNTIME}/private-instructions`]: done,
     },
     isWriteAllowed: true,
     ...over,
@@ -1606,7 +1610,7 @@ describe('cadre start with a faked host', () => {
     const mkdirOp = runOps[mkdirAt] ?? -1
     expect(mkdirOp).toBeGreaterThanOrEqual(0)
     expect(log.ops.findIndex(op => op.startsWith('fs.write '))).toBeGreaterThan(mkdirOp)
-    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
     const runAt = lines.indexOf('Run this in a terminal to start role be:')
     expect(runAt).toBeGreaterThan(1)
     expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')

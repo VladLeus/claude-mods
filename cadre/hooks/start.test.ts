@@ -623,6 +623,71 @@ describe('runtime render links', () => {
   })
 })
 
+/** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
+const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
+
+/** The link in BE's .runtime to its private instructions folder, which its launcher adds (D-140 q1-b). */
+const PRIVATE_LINK: OverlayLink = { path: `${RUNTIME}/private-instructions`, target: PRIVATE_FOLDER }
+
+/** BE's plan with the private instructions link and no other link, as /cadre start renders it (D-140 q1-b). */
+const PRIVATE_PLAN: LaunchPlan = { ...BE_PLAN, links: [PRIVATE_LINK] }
+
+/** The private instructions folder of BE in the start worlds, whose git common dir is /repo/.git (D-91, D-140). */
+async function startPrivateFolder(): Promise<string> {
+  return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/be/instructions`
+}
+
+describe('built files reach the session (G-02-1f)', () => {
+  test('a render makes the folder the private link points at after the .runtime folders, then the link', () => {
+    expect(renderSteps(input({ plan: PRIVATE_PLAN })).steps).toEqual([
+      { kind: 'mkdir', path: RUNTIME },
+      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      { kind: 'mkdir', path: PRIVATE_FOLDER },
+      { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
+      ...fileWritesOf(PRIVATE_PLAN),
+      INBOX_WRITE,
+      STAMP_WRITE,
+    ])
+  })
+
+  test('an earlier link at .runtime/private-instructions is removed first; a real folder there is kept', () => {
+    const stale = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: LINK_OUT }) }))
+    const kept = rendered({ [PRIVATE_LINK.path]: folder(PRIVATE_LINK.path) })
+    const real = renderSteps(input({ plan: PRIVATE_PLAN, stats: kept }))
+    const atLink = stale.steps.filter(step => step.path === PRIVATE_LINK.path)
+
+    expect(atLink.map(step => step.kind)).toEqual(['remove', 'link'])
+    expect(real.steps.filter(step => step.kind === 'link')).toEqual([])
+    expect(real.warnings).toEqual([
+      '.cadre/be/.runtime/private-instructions is a real file or folder, not a link: not replaced',
+    ])
+  })
+
+  test('runStart links .runtime/private-instructions to the role memory instructions folder and makes it', async () => {
+    const start = await startBe(await appliedWorld())
+    const privateFolder = await startPrivateFolder()
+
+    expect(renderRuns(start).map(call => call.argv)).toEqual([
+      ['/bin/mkdir', '-p', '--', RUNTIME],
+      ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`],
+      ['/bin/mkdir', '-p', '--', privateFolder],
+      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
+    ])
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+  })
+
+  test('a whole-files role gets the same link and folder: the folder its launcher adds is there, empty', async () => {
+    const whole = templateRole('be', { instructions: ['project-claude-md'] })
+    const start = await startBe(await appliedWorld(whole))
+    const privateFolder = await startPrivateFolder()
+
+    expect(start.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)).toEqual([
+      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
+    ])
+    expect(writtenPaths(start).filter(path => path.startsWith(privateFolder))).toEqual([])
+  })
+})
+
 /** The argv that asks git for the absolute common dir of the repo (D-98). */
 const GIT_ARGV = ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']
 
@@ -1279,11 +1344,14 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     expect(writtenPaths(start)).toEqual(written.map(name => `${RUNTIME}/${name}`))
     expect(start.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { cwd: '/home/u', timeoutMs: 10_000 } })
     expect(start.calls[1]?.argv).toEqual(GIT_ARGV)
+    const privateFolder = await startPrivateFolder()
     expect(renderRuns(start)).toEqual([
       { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: { timeoutMs: 10_000 } },
       { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: { timeoutMs: 10_000 } },
+      { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: { timeoutMs: 10_000 } },
+      { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: { timeoutMs: 10_000 } },
     ])
-    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).'])
+    expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
     expect(runAt).toBeGreaterThan(1)
     expect(lines[runAt + 1]).toBe('  /repo/.cadre/bin/be')
     expect(launcherCommand('/repo', 'be')).toBe('/repo/.cadre/bin/be')
@@ -1387,7 +1455,7 @@ describe('runStart warnings and links (D-102)', () => {
     expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
   })
 
-  test('one skill link reads (1 link) and is made before any write; the MCP note precedes the command', async () => {
+  test('a skill link and the private link read (2 links), made before any write; the MCP note first', async () => {
     const base = await appliedWorld(templateRole('be', { mcp: ['redmine'] }))
     const world = { ...base, dirs: { ...base.dirs, '/home/u/.claude/skills': [entry('create-handoff-doc', 'dir')] } }
     const host = memHost(hostWorld({ runs: [CLAUDE_OK, GIT_OK] }))
@@ -1409,9 +1477,11 @@ describe('runStart warnings and links (D-102)', () => {
     const skill = `${RUNTIME}/overlay/.claude/skills/create-handoff-doc`
     const notRead = lines.indexOf(`warning: ${NOT_READ}`)
 
-    expect(lines[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    const privateFolder = await startPrivateFolder()
+    expect(lines[1]).toBe('Rendered .cadre/be/.runtime/ (2 links).')
     expect(host.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)).toEqual([
       ['/bin/ln', '-sfn', '/home/u/.claude/skills/create-handoff-doc', skill],
+      ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
     ])
     expect(order.indexOf('run /bin/ln')).toBeGreaterThan(-1)
     expect(order.indexOf('write')).toBeGreaterThan(order.indexOf('run /bin/ln'))
@@ -1498,8 +1568,8 @@ describe('runStart launcher drift and secrets (LNCH-04, T-03-32)', () => {
 /** The launcher command of BE in the start worlds, as the reply prints it, two spaces in. */
 const COMMAND_LINE = '  /repo/.cadre/bin/be'
 
-/** The first two lines of the reply of a render of BE that made no link. */
-const RENDERED_LINES = ['cadre start be', 'Rendered .cadre/be/.runtime/ (0 links).']
+/** The first two lines of the reply of a render of BE that made only its private instructions link (D-140). */
+const RENDERED_LINES = ['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).']
 
 /** A fake host rule that answers pbcopy with this run; null is a host with no pbcopy, or one that refused the run. */
 function pbcopyRule(result: HostRun | null): HostRunRule {

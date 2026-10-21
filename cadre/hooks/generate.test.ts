@@ -1040,8 +1040,16 @@ const BE_FLAGS = [
   '--effort medium',
   '--permission-mode auto',
   '--add-dir "$root"/.cadre/be/.runtime/overlay',
+  '--add-dir "$root"/.cadre/be',
+  '--add-dir "$root"/.cadre/be/.runtime/private-instructions',
   '--mcp-config "$root"/.cadre/be/.runtime/mcp.json',
 ].join(' ')
+
+/**
+ * The first words of every exec line: env sets the variable that makes the engine load the CLAUDE.md of each added
+ * folder, for claude alone (D-140 q1-b).
+ */
+const EXEC_PREFIX: readonly string[] = ['exec', 'env', 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1', 'claude']
 
 /** The line that finds the repo from the launcher's own folder, so a run from another folder cannot misfire (A2). */
 const ROOT_LINE = 'root=$(cd -- "$(dirname -- "$0")" && git rev-parse --show-toplevel)'
@@ -1089,6 +1097,8 @@ const BE_PROBE_FLAGS = [
   '--effort medium',
   '--permission-mode auto',
   '--add-dir "$root"/.cadre/be/.runtime/overlay',
+  '--add-dir "$root"/.cadre/be',
+  '--add-dir "$root"/.cadre/be/.runtime/private-instructions',
   '--mcp-config "$root"/.cadre/be/.runtime/mcp.json',
 ].join(' ')
 
@@ -1208,7 +1218,8 @@ const BE_LAUNCHER = [
     `run /cadre start be' >&2; exit 1; }`,
   beProbeRun(''),
   ...VERDICT_LINES,
-  `exec claude ${BE_FLAGS} -- "$(cat "$root"/.cadre/be/kickoff.txt)"`,
+  `exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude ${BE_FLAGS} -- ` +
+    '"$(cat "$root"/.cadre/be/kickoff.txt)"',
   '',
 ].join('\n')
 
@@ -1278,8 +1289,7 @@ describe('launcher', () => {
 
     expect(text).toBe(BE_LAUNCHER)
     expect(execWords(text)).toEqual([
-      'exec',
-      'claude',
+      ...EXEC_PREFIX,
       ...shellWords(BE_FLAGS),
       '--',
       '$(cat "$root"/.cadre/be/kickoff.txt)',
@@ -1438,8 +1448,7 @@ describe('launcher', () => {
           const rootDir = start.kind === 'git-root' ? [] : ['--add-dir', '$root']
 
           expect(execWords(launcherText(role, scope, start))).toEqual([
-            'exec',
-            'claude',
+            ...EXEC_PREFIX,
             ...anchoredFlags(scope.flags),
             ...rootDir,
             '--',
@@ -1458,8 +1467,21 @@ describe('launcher', () => {
       '$root/.cadre/be/.runtime/settings.json',
       '$root/.cadre/be/ROLE.md',
       '$root/.cadre/be/.runtime/overlay',
+      '$root/.cadre/be',
+      '$root/.cadre/be/.runtime/private-instructions',
       '$root/.cadre/be/.runtime/mcp.json',
     ])
+  })
+
+  test('only the exec line sets CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1, through env, for claude', () => {
+    const be = templateRole('be')
+    for (const start of LAUNCH_STARTS) {
+      const lines = launcherText(be, scopeOf(be, 'gsd', [be]), start).split('\n')
+      const setting = lines.filter(line => line.includes('CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD'))
+
+      expect(setting).toEqual([lines.find(line => line.startsWith('exec ')) ?? 'no exec line'])
+      expect(execWords(lines.join('\n')).slice(0, 4)).toEqual(EXEC_PREFIX)
+    }
   })
 
   test('on the strict MCP route the last flag word is --strict-mcp-config, before the --', () => {
@@ -1478,8 +1500,7 @@ describe('launcher', () => {
     const hostile: CompiledScope = { ...scope, flags }
 
     expect(execWords(launcherText(be, hostile, { kind: 'git-root' }))).toEqual([
-      'exec',
-      'claude',
+      ...EXEC_PREFIX,
       ...anchoredFlags(scope.flags),
       '--add-dir',
       `$root/${hostileWord}`,

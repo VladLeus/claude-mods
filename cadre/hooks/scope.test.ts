@@ -155,6 +155,10 @@ const PM_FLAGS: readonly string[] = [
   'auto',
   '--add-dir',
   '.cadre/pm/.runtime/overlay',
+  '--add-dir',
+  '.cadre/pm',
+  '--add-dir',
+  '.cadre/pm/.runtime/private-instructions',
   '--mcp-config',
   '.cadre/pm/.runtime/mcp.json',
 ]
@@ -258,9 +262,22 @@ describe('compileScope', () => {
       'acceptEdits',
       '--add-dir',
       '.cadre/be/.runtime/overlay',
+      '--add-dir',
+      '.cadre/be',
+      '--add-dir',
+      '.cadre/be/.runtime/private-instructions',
       '--mcp-config',
       '.cadre/be/.runtime/mcp.json',
     ])
+  })
+
+  test('the role folder and its private instructions link are added directories, repo-relative (D-140 q1-b)', () => {
+    const flags = compileScope(templateRole('qa'), context()).flags
+    const added = flags.flatMap((flag, index) => (flags[index - 1] === '--add-dir' ? [flag] : []))
+
+    expect(added).toEqual(['.cadre/qa/.runtime/overlay', '.cadre/qa', '.cadre/qa/.runtime/private-instructions'])
+    expect(flags[flags.indexOf('--append-system-prompt-file') + 1]).toBe('.cadre/qa/ROLE.md')
+    expect(added.filter(path => path.startsWith('/') || path.startsWith('~'))).toEqual([])
   })
 
   test('on the strict MCP route the last flag is --strict-mcp-config and the others are unchanged', () => {
