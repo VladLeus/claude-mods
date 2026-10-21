@@ -384,8 +384,8 @@ export type InitFacts = {
   readonly gsdUserDir: string | null
 }
 
-/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135). */
-export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review' | 'env' | 'notes'
+/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f). */
+export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review' | 'env' | 'notes' | 'instructions'
 
 /** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
 export type ShownBlock = {
@@ -515,6 +515,63 @@ export type RoleAutopilot = {
 
 /** An instruction or memory group a role may be given at launch (D-63). Only the group is stored, never content. */
 export type InstructionGroup = 'global-claude-md' | 'auto-memory' | 'project-claude-md'
+
+/** Where an instruction part was read from (G-02-1f Sources): the user's config folder, or the repo. */
+export type PartSource = 'global' | 'repo'
+
+/**
+ * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, cut at its `#` and `##`
+ * headings. `id` is `P<n>` in read order; `file` is the file in display form, `~/.claude/CLAUDE.md` style for the
+ * config folder and repo-relative for a repo file; `heading` is '' for the text before the first heading. `text` is
+ * the section as read, its heading line included, held in memory for this run only: it is never written, logged,
+ * shown, asked or put in a reply.
+ */
+export type InstructionPart = {
+  readonly id: string
+  readonly file: string
+  readonly heading: string
+  readonly source: PartSource
+  readonly text: string
+}
+
+/**
+ * One topic the model grouped parts into, across files (G-02-1f Part unit): `id` is `T<n>`, the title and summary are
+ * cleaned and capped, and `partIds` names the parts it holds; every part is in exactly one topic.
+ */
+export type InstructionTopic = {
+  readonly id: string
+  readonly title: string
+  readonly summary: string
+  readonly partIds: readonly string[]
+}
+
+/**
+ * What one consented read of the instruction files gave (G-02-1f): the parts in read order, the files they came from
+ * (display form, read order, once each) and the read warnings. The text is held in memory for this run only.
+ */
+export type InstructionScan = {
+  readonly parts: readonly InstructionPart[]
+  readonly files: readonly string[]
+  readonly warnings: readonly string[]
+}
+
+/**
+ * How init handed out the instruction files (G-02-1f): `none` when there was nothing to hand out, `whole` for the D-63
+ * whole-file questions, and `parts` for the topics: the read, the topics, the roles the model recommended for each
+ * topic (keyed by topic id; a usable recommendation names every topic, and the map is empty when the model gave none)
+ * and the roles the person gave each topic (keyed by topic id; a topic no role was given stays with the root session
+ * only). The text read is held in memory for this run only: nothing is written, and originals are never edited.
+ */
+export type InstructionHandout =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'whole' }
+  | {
+      readonly kind: 'parts'
+      readonly scan: InstructionScan
+      readonly topics: readonly InstructionTopic[]
+      readonly recommended: ReadonlyMap<string, readonly string[]>
+      readonly given: ReadonlyMap<string, readonly string[]>
+    }
 
 /** What a role carries from the init user's settings, as names only; values are rendered at launch (D-60, D-84). */
 export type RoleCarry = {

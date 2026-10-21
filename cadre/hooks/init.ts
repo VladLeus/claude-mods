@@ -12,6 +12,9 @@ import type {
   InitIo,
   InitLocations,
   InstructionGroup,
+  InstructionHandout,
+  InstructionScan,
+  InstructionTopic,
   LaunchStart,
   Manifest,
   ManifestEntry,
@@ -71,7 +74,7 @@ import {
   showBlock,
   withContext,
 } from './ask'
-import type { AskResult, StepResult } from './ask'
+import type { AskResult, ChoiceAsk, StepResult } from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -110,9 +113,30 @@ import {
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import { desiredFiles } from './generate'
+import { handoutStep } from './handout'
 import { sha256Hex } from './hash'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
+import {
+  CONTENT_DISMISSED_REASON,
+  CONTENT_OPTIONS,
+  CONTENT_QUESTION,
+  contentContextLine,
+  fallbackTopics,
+  HANDOUT_DISMISSED_REASON,
+  instructionLines,
+  instructionReviewLines,
+  instructionsEntry,
+  parseContentConsent,
+  parseRecommendation,
+  parseTopics,
+  readInstructionFiles,
+  RECOMMEND_SYSTEM,
+  recommendPrompt,
+  topicItems,
+  TOPICS_SYSTEM,
+  topicsPrompt,
+} from './instructions'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
@@ -1652,6 +1676,195 @@ export async function memoryStep(
   )
 }
 
+/**
+ * The one-line note a plain init prints before the whole-file questions while the instruction parts flow runs only
+ * under --dry-run (G-02-1f; user answer 2026-10-21). The gate and this note go once the parts can be written.
+ */
+export const PARTS_DRY_RUN_ONLY_NOTE =
+  'This cadre version shows instruction parts only in --dry-run; a plain init asks the whole-file questions.'
+
+/** What the instruction step gives (G-02-1f): the roles with their instruction groups, and how it handed them out. */
+export type Instructed = {
+  readonly roles: readonly RoleSpec[]
+  readonly instructions: InstructionHandout
+}
+
+/** What the parts flow found before the hand-out: the read, its topics and the roles recommended for each topic. */
+type PartsFound = {
+  readonly scan: InstructionScan
+  readonly topics: readonly InstructionTopic[]
+  readonly recommended: ReadonlyMap<string, readonly string[]>
+}
+
+/** Whether the user-setup scan found anything to hand out: the global CLAUDE.md, a chain file or a memory file. */
+function hasInstructionFiles(setup: SetupScan): boolean {
+  return setup.hasGlobalClaudeMd || setup.claudeMd.length > 0 || setup.memoryFiles.length > 0
+}
+
+/** The roles with no instruction group: nothing to hand out, or the parts flow, gives no D-63 group to any role. */
+function withoutGroups(roles: readonly RoleSpec[]): RoleSpec[] {
+  return roles.map(role => ({ ...role, instructions: [] }))
+}
+
+/** The whole-files hand-out: the D-63 group questions were asked. */
+const WHOLE: InstructionHandout = { kind: 'whole' }
+
+/** The whole-file questions of D-63 (memoryStep), handed out as `whole`; a cancel keeps its reason (A1). */
+async function wholeFiles(io: InitIo, roles: readonly RoleSpec[], setup: SetupScan): Promise<StepResult<Instructed>> {
+  return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: WHOLE }))
+}
+
+/**
+ * A plain init while the parts flow runs only under --dry-run (G-02-1f): PARTS_DRY_RUN_ONLY_NOTE as one note, then the
+ * whole-file questions (wholeFiles); no content consent is asked and nothing is read.
+ */
+async function dryRunOnlyNote(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+): Promise<StepResult<Instructed>> {
+  await noteLine(io, PARTS_DRY_RUN_ONLY_NOTE)
+
+  return wholeFiles(io, roles, setup)
+}
+
+/**
+ * The content consent as askChoice asks it (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what the scan found
+ * on its second line (contentContextLine), No, skip it first, and the Instructions chip.
+ */
+function contentAsk(setup: SetupScan): ChoiceAsk<boolean> {
+  return {
+    question: withContext(CONTENT_QUESTION, contentContextLine(setup)),
+    spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions },
+    parse: parseContentConsent,
+    accepts: quotedLabels(CONTENT_OPTIONS),
+  }
+}
+
+/**
+ * The topics of a read (G-02-1f Part unit): one model call groups the parts across files (topicsPrompt, TOPICS_SYSTEM).
+ * A reply parseTopics cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then each
+ * file is one topic (fallbackTopics). The model has no tools (D-83), and only its checked topics are kept.
+ */
+async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonly InstructionTopic[]> {
+  const partIds = scan.parts.map(part => part.id)
+  let errors: readonly string[] = []
+  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    const reply = await io.complete(topicsPrompt(scan.parts, errors), TOPICS_SYSTEM)
+    const parsed = reply === null ? null : parseTopics(reply, partIds)
+    if (parsed?.kind === 'ok') return parsed.topics
+    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
+  }
+
+  return fallbackTopics(scan)
+}
+
+/**
+ * The roles recommended for each topic (G-02-1f Recommendation): a second model call reads each role's work and the
+ * topics (recommendPrompt, RECOMMEND_SYSTEM). A reply parseRecommendation cannot take is sent back with its exact
+ * errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no topic is recommended to any role: the map is empty.
+ */
+async function recommendedRoles(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  topics: readonly InstructionTopic[],
+): Promise<ReadonlyMap<string, readonly string[]>> {
+  const topicIds = topics.map(topic => topic.id)
+  const roleIds = roles.map(role => role.id)
+  let errors: readonly string[] = []
+  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    const reply = await io.complete(recommendPrompt(roles, topics, errors), RECOMMEND_SYSTEM)
+    const parsed = reply === null ? null : parseRecommendation(reply, topicIds, roleIds)
+    if (parsed?.kind === 'ok') return parsed.recommended
+    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
+  }
+
+  return new Map()
+}
+
+/**
+ * The hand-out of what the parts flow found (G-02-1f Entry choices): the instructions block in the side pane first
+ * (instructionLines), then the entry question and its answers (handoutStep). Whole files asks the whole-file questions
+ * (memoryStep); the other answers keep the topics with the roles given each, and give every role no D-63 group. The
+ * read, the topics and the answers live in memory for this run only.
+ */
+async function handOutParts(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  found: PartsFound,
+): Promise<StepResult<Instructed>> {
+  const { scan, topics, recommended } = found
+  await showBlock(io, 'instructions', instructionLines(scan, topics, recommended))
+  const items = topicItems(scan, topics, recommended)
+  const outcome = await handoutStep(io, instructionsEntry(scan, topics), items, roles, HANDOUT_DISMISSED_REASON)
+  if (outcome.kind === 'cancelled') return outcome
+  if (outcome.value.kind === 'whole') return wholeFiles(io, roles, setup)
+  const instructions: InstructionHandout = { kind: 'parts', scan, topics, recommended, given: outcome.value.given }
+
+  return accepted({ roles: withoutGroups(roles), instructions })
+}
+
+/**
+ * A consented read that gave no part (G-02-1f): its read warnings, if any, in the instructions block, so each is
+ * shown, then the whole-file questions (memoryStep), so the memories keep today's question.
+ */
+async function noPartRead(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  scan: InstructionScan,
+): Promise<StepResult<Instructed>> {
+  if (scan.warnings.length > 0) await showBlock(io, 'instructions', instructionLines(scan, [], new Map()))
+
+  return wholeFiles(io, roles, setup)
+}
+
+/**
+ * The parts flow after a yes (G-02-1f): it reads the instruction files (readInstructionFiles); a read with no part
+ * goes to the whole-file questions (noPartRead); else the model groups the parts into topics across files, a second
+ * call recommends roles for them, and the person hands them out (handOutParts).
+ */
+async function partsFlow(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  locations: InitLocations,
+): Promise<StepResult<Instructed>> {
+  const { root, home, configDir } = locations
+  const scan = await readInstructionFiles(io, { root, home, configDir })
+  if (scan.parts.length === 0) return noPartRead(io, roles, setup, scan)
+  const topics = await groupedTopics(io, scan)
+  const recommended = await recommendedRoles(io, roles, topics)
+
+  return handOutParts(io, roles, setup, { scan, topics, recommended })
+}
+
+/**
+ * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps). With no global CLAUDE.md, no
+ * CLAUDE.md in the repo chain and no memory file it asks nothing, hands out `none` and gives every role no group. A
+ * plain init (`isDryRun` false) asks no content consent: it notes PARTS_DRY_RUN_ONLY_NOTE and asks the whole-file
+ * questions (memoryStep), handed out as `whole`. A dry run asks the content consent first (contentAsk), so no
+ * instruction or memory text is read before a yes: No asks the whole-file questions, and Yes runs the parts flow
+ * (partsFlow). A dismissal of any of its questions is cancelled with that question's reason, and MAX_ASKS answers it
+ * cannot read with NO_USABLE_ANSWER_REASON (A1). Nothing is written, and the roles it is given never change.
+ */
+export async function instructionsStep(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  locations: InitLocations,
+  isDryRun: boolean,
+): Promise<StepResult<Instructed>> {
+  if (!hasInstructionFiles(setup)) return accepted({ roles: withoutGroups(roles), instructions: { kind: 'none' } })
+  if (!isDryRun) return dryRunOnlyNote(io, roles, setup)
+  const consent = choiceResult(await askChoice(io, contentAsk(setup)), CONTENT_DISMISSED_REASON)
+  if (consent.kind === 'cancelled') return consent
+  if (!consent.value) return wholeFiles(io, roles, setup)
+
+  return partsFlow(io, roles, setup, locations)
+}
+
 /** The buttons of the env question: no name or every scanned name; names are typed under "Other" (D-60). */
 const ENV_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, ALL_ENV_OPTION])
 
@@ -2397,6 +2610,11 @@ export type Draft = {
    * (applyConfirmed).
    */
   readonly pluginInstalls: readonly string[]
+  /**
+   * How the instruction files were handed out (G-02-1f): none, the whole-file questions, or the parts with their
+   * topics, held in memory for this run only.
+   */
+  readonly instructions: InstructionHandout
   readonly policy: GitPolicy
   readonly launchStart: LaunchStart
 }
@@ -2415,9 +2633,10 @@ type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'install
 
 /**
  * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
- * with (A6), the repo default, the hunks and the security plugins to install after Confirm (decision #39).
+ * with (A6), the repo default, the hunks, the security plugins to install after Confirm (decision #39) and how the
+ * instruction files were handed out (G-02-1f).
  */
-type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks' | 'pluginInstalls'>
+type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks' | 'pluginInstalls' | 'instructions'>
 
 /** A step result with its value turned into another; a cancelled result stays cancelled with its reason (A1). */
 function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult<U> {
@@ -2425,30 +2644,32 @@ function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult
 }
 
 /**
- * The per-role steps after the duration (D-52, D-53, D-60, D-63, ROLE-04), in this order: model and effort
+ * The per-role steps after the duration (D-52, D-53, D-60, G-02-1f, ROLE-04), in this order: model and effort
  * (modelStep), MCP servers and skills with the history hints (assignmentStep), instructions and memories
- * (memoryStep), carried settings (carryStep), then the autonomy hunks of the frameworks the roles run on (hunkStep).
- * The first cancelled step ends it with its reason (A1).
+ * (instructionsStep, which runs the instruction parts only when `isDryRun`), carried settings (carryStep), then the
+ * autonomy hunks of the frameworks the roles run on (hunkStep). The first cancelled step ends it with its reason (A1).
  */
 async function perRoleSteps(
   io: InitIo,
   base: DraftBase,
   roles: readonly RoleSpec[],
   repoDefault: FrameworkId | null,
+  isDryRun: boolean,
 ): Promise<StepResult<Omit<Team, 'duration' | 'changes' | 'pluginInstalls'>>> {
   const { gathered, locations } = base
   const modelled = await modelStep(io, roles)
   if (modelled.kind === 'cancelled') return modelled
   const assigned = await assignmentStep(io, modelled.value, gathered.setup, base.hints)
   if (assigned.kind === 'cancelled') return assigned
-  const instructed = await memoryStep(io, assigned.value, gathered.setup)
+  const instructed = await instructionsStep(io, assigned.value, gathered.setup, locations, isDryRun)
   if (instructed.kind === 'cancelled') return instructed
-  const carried = await carryStep(io, instructed.value, gathered.setup)
+  const { instructions } = instructed.value
+  const carried = await carryStep(io, instructed.value.roles, gathered.setup)
   if (carried.kind === 'cancelled') return carried
   const team = carried.value
   const hunks = await hunkStep(io, { roles: team, repoDefault, gathered, locations })
 
-  return mapped(hunks, answered => ({ roles: team, repoDefault, hunks: answered }))
+  return mapped(hunks, answered => ({ roles: team, repoDefault, hunks: answered, instructions }))
 }
 
 /**
@@ -2459,14 +2680,16 @@ async function perRoleSteps(
  * then perRoleSteps. When claude-security was asked about, every role that stands for Security gets its review skill
  * on Install and loses it on Not now (withSecuritySkill) before the duration. Init runs it once from the proposal;
  * Change roles runs it again from the current team with the scan changes it was accepted with (A6) and the duration it
- * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. The first
- * cancelled step ends it with its reason (A1).
+ * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. `isDryRun` is
+ * whether the run is --dry-run, which the instruction step needs (instructionsStep). The first cancelled step ends it
+ * with its reason (A1).
  */
 async function teamStep(
   io: InitIo,
   base: DraftBase,
   start: RoleProposal,
   duration: string | null,
+  isDryRun: boolean,
 ): Promise<StepResult<Team>> {
   const { gathered } = base
   const chosen = await rolesStep(io, base.proposal, base.installed, start)
@@ -2486,7 +2709,7 @@ async function teamStep(
   const asked = duration === null ? await durationStep(io, team) : accepted(duration)
   if (asked.kind === 'cancelled') return asked
   const kept = asked.value
-  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
+  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault, isDryRun)
 
   return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, pluginInstalls, ...decided }))
 }
@@ -2494,15 +2717,20 @@ async function teamStep(
 /**
  * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
  * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
- * duration kept (teamStep). The duration, model, assignment, memory and env steps run again on the current roles and
- * decide the whole list they ask about (A3), so a narrower answer takes a name away. A cancelled step ends the review
- * with its reason (A1).
+ * duration kept (teamStep, given `isDryRun` as the run is). The duration, model, assignment, memory and env steps run
+ * again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a name away. A
+ * cancelled step ends the review with its reason (A1).
  */
-async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confirm'>): Promise<StepResult<Draft>> {
+async function goBack(
+  io: InitIo,
+  draft: Draft,
+  item: Exclude<ReviewItem, 'confirm'>,
+  isDryRun: boolean,
+): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
     case 'roles': {
-      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration)
+      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration, isDryRun)
 
       return mapped(team, decided => ({ ...draft, ...decided }))
     }
@@ -2523,8 +2751,15 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
         ...draft,
         roles: assigned,
       }))
-    case 'memory':
-      return mapped(await memoryStep(io, roles, gathered.setup), instructed => ({ ...draft, roles: instructed }))
+    case 'memory': {
+      const instructions = draft.instructions.kind === 'none' ? draft.instructions : WHOLE
+
+      return mapped(await memoryStep(io, roles, gathered.setup), (instructed): Draft => ({
+        ...draft,
+        roles: instructed,
+        instructions,
+      }))
+    }
     case 'env':
       return mapped(await carryStep(io, roles, gathered.setup), carried => ({ ...draft, roles: carried }))
     case 'hunks': {
@@ -2536,12 +2771,24 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
 }
 
 /**
+ * The review rows of the instruction parts (G-02-1f): per role the topics it was given and the topics kept with the
+ * root session only (instructionReviewLines), for the parts flow only; none for the whole-file questions or none.
+ */
+function handoutLines(draft: Draft): string[] {
+  const handout = draft.instructions
+  if (handout.kind !== 'parts') return []
+
+  return instructionReviewLines(draft.roles, handout.topics, handout.given)
+}
+
+/**
  * The summary the review shows before its question (D-43 as amended by D-134), in this order: the role titles and
- * ids, every scope card, the file plan with its hunks, its warnings and the `.gitignore` block rows as renderPlan
- * prints them (so none is printed twice), the git policy line, the launcher-start line, IGNORE_ALL_NOTE when the policy
- * is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan warnings of
- * the run, kept for this review, and last the security plugins Confirm installs when the person answered Install for
- * any (decision #39), each key cleaned and capped as a report cell is (decision #69 B7).
+ * ids, every scope card, for the instruction parts flow the topics per role (handoutLines, G-02-1f), the file plan with
+ * its hunks, its warnings and the `.gitignore` block rows as renderPlan prints them (so none is printed twice), the git
+ * policy line, the launcher-start line, IGNORE_ALL_NOTE when the policy is `ignore`, so both items with a review button
+ * of their own can be checked before Confirm, then the scan warnings of the run, kept for this review, and last the
+ * security plugins Confirm installs when the person answered Install for any (decision #39), each key cleaned and
+ * capped as a report cell is (decision #69 B7).
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
@@ -2551,6 +2798,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
     'Roles:',
     ...draft.roles.map(role => `  ${role.title} (${role.id})`),
     ...cardLines(draft.roles, scopes),
+    ...handoutLines(draft),
     ...renderPlan(plan),
     policyLine(draft.policy),
     launchLine(draft.launchStart),
@@ -2568,13 +2816,14 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * line of that plan, cleaned as a report cell (reviewContextLine, D-136), and REVIEW_OPTIONS; an item word may be typed
  * under "Other" (parseReviewItem), and any other answer is asked again with why on top. Confirm accepts the plan just
  * shown, with the state it was planned with and the draft it was built from (Reviewed). A go-back re-asks that one item
- * (goBack), and the next round shows the summary again. A dismissal (REVIEW_DISMISSED_REASON), MAX_ASKS answers it
- * cannot read (NO_USABLE_ANSWER_REASON), or a cancelled go-back step is cancelled with its reason, and so is a run that
- * has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is
- * used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that item's questions (A3). The
- * review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ * (goBack, given `isDryRun` as the run is), and the next round shows the summary again. A dismissal
+ * (REVIEW_DISMISSED_REASON), MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled go-back step is
+ * cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm
+ * (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back picked at the last round
+ * cancels at once and asks none of that item's questions (A3). The review itself writes nothing: Confirm is the consent
+ * apply writes the plan on (D-105).
  */
-export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
+export async function reviewStep(io: InitIo, draft: Draft, isDryRun: boolean): Promise<StepResult<Reviewed>> {
   let current = draft
   for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
     const setup = setupAfterInstalls(current.gathered.setup, current.pluginInstalls)
@@ -2603,7 +2852,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
     const item = picked.value
     if (item === 'confirm') return accepted({ draft: current, planned })
     if (round === MAX_REVIEW_ROUNDS - 1) break
-    const changed = await goBack(io, current, item)
+    const changed = await goBack(io, current, item, isDryRun)
     if (changed.kind === 'cancelled') return changed
     current = changed.value
   }
@@ -2801,7 +3050,8 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
- * MCP servers and skills, the instruction and memory groups, the carried env names, and the autonomy hunks of the
+ * MCP servers and skills, the instructions and memories (instructionsStep: in --dry-run the content consent and the
+ * instruction parts, else the whole-file questions; G-02-1f), the carried env names, and the autonomy hunks of the
  * frameworks in use. It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start
  * (launchStartStep), shows the one final review with every role's scope card for that start (the one place the cards
  * are shown; reviewLines, ROLE-06, A5) and the exact file plan, where the person confirms or goes back to change one
@@ -2839,7 +3089,7 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     proposal,
     hints: historyHints(history.value),
   }
-  const team = await teamStep(io, base, proposal, null)
+  const team = await teamStep(io, base, proposal, null, options.dryRun)
   if (team.kind === 'cancelled') return cancelReply(io, team.reason)
 
   const policy = await gitPolicyStep(io)
@@ -2848,7 +3098,8 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   const launch = await launchStartStep(io, guard.locations.root, team.value.roles)
   if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
 
-  const reviewed = await reviewStep(io, { ...base, ...team.value, policy: policy.value, launchStart: launch.value })
+  const draft = { ...base, ...team.value, policy: policy.value, launchStart: launch.value }
+  const reviewed = await reviewStep(io, draft, options.dryRun)
   if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
   const { plan, state } = reviewed.value.planned
   if (options.dryRun) return initReplyText(plan, state.gitPolicy, state.launchStart, null)

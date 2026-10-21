@@ -2123,6 +2123,7 @@ describe('Phase 2 faked-host matrix', () => {
         ...INIT_ANSWERS,
         'Read ~/.claude.json': 'Yes, read names only',
         "Scan this repo's session history": 'Yes, scan names and counts',
+        'Read your CLAUDE.md files': 'No, skip it',
       },
     })
     // The world holds every fixture, so a clean reply means the scans dropped them, not that they were never there.

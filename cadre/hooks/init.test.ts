@@ -275,6 +275,12 @@ function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
   return memWorld({ dirs: { '/repo/.git': [] }, ...over })
 }
 
+/**
+ * INIT_ANSWERS with the content consent of the instruction parts declined (G-02-1f), so a dry run in a world with a
+ * CLAUDE.md or a memory asks the whole-file questions of D-63, as it did before the consent.
+ */
+const PARTS_DECLINED: Readonly<Record<string, string>> = { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'No, skip it' }
+
 /** The port of a run that also records every path it was asked to stat, in order. */
 function withStats(run: MemRun): { readonly io: InitIo; readonly stats: string[] } {
   const stats: string[] = []
@@ -1049,6 +1055,7 @@ describe('init pane (G-02-1)', () => {
       review: 'Review',
       env: 'Env variables',
       notes: 'Notes',
+      instructions: 'Instruction parts',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -2319,9 +2326,6 @@ const PARTS_ANSWERS: Readonly<Record<string, string>> = {
   [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
 }
 
-/** INIT_ANSWERS with the content consent declined, so the whole-file questions of D-63 are asked. */
-const PARTS_DECLINED: Readonly<Record<string, string>> = { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'No, skip it' }
-
 /** The whole-file question of the global CLAUDE.md (D-63), as memoryStep asks it. */
 const GLOBAL_GROUP_QUESTION =
   'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
@@ -2436,6 +2440,7 @@ describe('instruction parts (G-02-1f)', () => {
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const asked = firstLines(run.asked)
+    expect(asked).toContain(CONTENT_QUESTION)
     expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBeGreaterThan(asked.indexOf(CONTENT_QUESTION))
     expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
     expect(run.prompts).toEqual([])
@@ -2680,23 +2685,24 @@ describe('carryStep', () => {
   })
 
   test('init asks the assignment, memory and env questions after the model questions, in that order', async () => {
-    const run = memIo(secretWorld(), INIT_ANSWERS)
+    const run = memIo(secretWorld(), PARTS_DECLINED)
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const modelAt = asked.indexOf('Model and effort for all roles?')
-    expect(asked.slice(modelAt + 1, modelAt + 7)).toEqual([
+    expect(asked.slice(modelAt + 1, modelAt + 8)).toEqual([
       'Which roles get the sentry MCP server? (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
+      CONTENT_QUESTION,
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
       'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)',
       'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
-    expect(asked[modelAt + 7]).toBe(GIT_POLICY_QUESTION)
+    expect(asked[modelAt + 8]).toBe(GIT_POLICY_QUESTION)
   })
 
   test('no env, settings or file value of the secret world reaches a question, log or pane (T-02-34)', async () => {
-    const run = memIo(secretWorld(), { ...INIT_ANSWERS, 'Which env variables': 'All of them' })
+    const run = memIo(secretWorld(), { ...PARTS_DECLINED, 'Which env variables': 'All of them' })
     const reply = await runInit(run.io, { dryRun: true })
     expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(6)
     const text = [...run.asked, ...run.logged, ...paneText(run), reply].join('\n')
@@ -2936,7 +2942,7 @@ describe('hunkStep', () => {
   })
 
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {
-    const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, INIT_ANSWERS)
+    const run = memIo({ ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }, PARTS_DECLINED)
     const reply = await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const policyAt = asked.indexOf(GIT_POLICY_QUESTION)
@@ -2950,7 +2956,7 @@ describe('hunkStep', () => {
     expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
     const text = [...run.asked, ...run.logged, ...paneText(run), reply].join('\n')
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
-    const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, INIT_ANSWERS)
+    const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, PARTS_DECLINED)
     const provenReply = await runInit(proven.io, { dryRun: true })
     expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
     const provenText = [...proven.asked, ...proven.logged, ...paneText(proven), provenReply].join('\n')
@@ -3208,7 +3214,7 @@ describe('runInit cancel reasons (A1)', () => {
     const sentryNone = { 'Which roles get the sentry': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
       world: secretWorld(),
-      answers: { ...answersWithout('Which roles get'), ...sentryNone },
+      answers: { ...answersWithout('Which roles get'), ...sentryNone, [CONTENT_QUESTION]: 'No, skip it' },
       question: 'Which roles get your global ~/.claude/CLAUDE.md',
       reason: MEMORY_DISMISSED_REASON,
     }
@@ -3220,7 +3226,10 @@ describe('runInit cancel reasons (A1)', () => {
       dismissedAt(gitWorld(), 'Model and effort for', 'Model and effort for all roles?', MODEL_DISMISSED_REASON),
       dismissedAt(secretWorld(), 'Which roles get', 'Which roles get the sentry', ASSIGNMENT_DISMISSED_REASON),
       memory,
-      dismissedAt(secretWorld(), 'Which env variables', 'Which env variables', ENV_DISMISSED_REASON),
+      {
+        ...dismissedAt(secretWorld(), 'Which env variables', 'Which env variables', ENV_DISMISSED_REASON),
+        answers: { ...answersWithout('Which env variables'), [CONTENT_QUESTION]: 'No, skip it' },
+      },
       dismissedAt(gsd, '.planning/config.json:', '.planning/config.json: mode', HUNK_DISMISSED_REASON),
       dismissedAt(gitWorld(), 'Git policy', GIT_POLICY_QUESTION, GIT_POLICY_DISMISSED_REASON),
       dismissedAt(
@@ -3473,6 +3482,8 @@ type QuestionRuns = {
   readonly folder: MemRun
   /** A plain init with a conflicted file, answered Take new. */
   readonly conflict: MemRun
+  /** The content consent answered Yes on a world with a global CLAUDE.md, then Accept recommendations (G-02-1f). */
+  readonly parts: MemRun
 }
 
 /** Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change. */
@@ -3486,7 +3497,7 @@ async function questionRuns(): Promise<QuestionRuns> {
     'Describe your role structure': DESCRIPTION,
   })
   await runInit(adjusted.io, { dryRun: true })
-  const perRole = memIo(everyStepWorld(), { ...INIT_ANSWERS, 'Which framework do the roles use': 'Per role' })
+  const perRole = memIo(everyStepWorld(), { ...PARTS_DECLINED, 'Which framework do the roles use': 'Per role' })
   await runInit(perRole.io, { dryRun: true })
   const security = memIo(gitWorld(), { ...INIT_ANSWERS, 'Install from claude-plugins-official': 'Install' })
   await runInit(security.io, { dryRun: true })
@@ -3501,8 +3512,10 @@ async function questionRuns(): Promise<QuestionRuns> {
   const { world } = await editedRoleWorld()
   const conflict = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
   await runInit(conflict.io, { dryRun: false, host: memHost(hostWorld({})).io })
+  const parts = memIo(partsWorld(), PARTS_ANSWERS)
+  await runInit(parts.io, { dryRun: true })
 
-  return { plain, adjusted, perRole, security, history, folder, conflict }
+  return { plain, adjusted, perRole, security, history, folder, conflict, parts }
 }
 
 /** The dialog spec of the first question a run asked that starts with `start`; a missing one stops the test. */
@@ -3529,6 +3542,7 @@ describe('question chips (G-02-3c)', () => {
       mcp: 'MCP',
       skills: 'Skills',
       memory: 'Memory',
+      instructions: 'Instructions',
       env: 'Env',
       launch: 'Launch',
       launchDir: 'Launch dir',
@@ -3574,6 +3588,9 @@ describe('question chips (G-02-3c)', () => {
       [runs.perRole, 'Which roles get your global', 'Memory'],
       [runs.perRole, 'Which roles get the auto-memories', 'Memory'],
       [runs.perRole, 'Which roles get the project CLAUDE.md', 'Memory'],
+      [runs.perRole, CONTENT_QUESTION, 'Instructions'],
+      [runs.parts, CONTENT_QUESTION, 'Instructions'],
+      [runs.parts, INSTRUCTIONS_ENTRY_QUESTION, 'Instructions'],
       [runs.perRole, 'Which env variables', 'Env'],
       [runs.perRole, '.planning/config.json: mode', 'Hunk 1 of 3'],
       [runs.perRole, '.planning/config.json: hooks.context_warnings', 'Hunk 3 of 3'],
@@ -3725,6 +3742,12 @@ describe('question context lines (G-02-1)', () => {
         `Roles: ${TEAM}. A role given these skills can run them in its session; a role not given them cannot.`,
       ],
       [runs.perRole, 'Which roles get your global', `Roles: ${TEAM}. Their content is never shown or committed.`],
+      [runs.parts, CONTENT_QUESTION, GLOBAL_ONLY_FOUND],
+      [
+        runs.parts,
+        INSTRUCTIONS_ENTRY_QUESTION,
+        '2 topics from 1 file; the pane shows each with the roles it is recommended for.',
+      ],
       [
         runs.perRole,
         'Which env variables',
@@ -4426,7 +4449,7 @@ describe('init plan', () => {
       ]),
     )
     const answers = {
-      ...INIT_ANSWERS,
+      ...PARTS_DECLINED,
       'Autopilot duration': '90m',
       'Model and effort: same': 'Per role',
       ...modelAnswers,
@@ -4688,7 +4711,7 @@ describe('reviewStep', () => {
   })
 
   test('each typed item re-asks only its own questions, in the order init first asked them', async () => {
-    const first = memIo(everyStepWorld(), INIT_ANSWERS)
+    const first = memIo(everyStepWorld(), PARTS_DECLINED)
     await runInit(first.io, { dryRun: true })
     const firstAsked = firstLines(first.asked)
     const firstPass = firstAsked.slice(firstAsked.indexOf(ROLES_QUESTION), firstAsked.indexOf(GIT_POLICY_QUESTION))
@@ -4704,7 +4727,7 @@ describe('reviewStep', () => {
       ['hunks', ['.planning/config.json: ']],
     ]
     for (const [word, prefixes] of cases) {
-      const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': [word, 'Confirm'] })
+      const run = queuedIo(everyStepWorld(), { ...PARTS_DECLINED, 'Review the plan': [word, 'Confirm'] })
       const reply = await runInit(run.io, { dryRun: true })
       expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
       const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
@@ -4714,7 +4737,7 @@ describe('reviewStep', () => {
   })
 
   test('Change roles re-asks the roles and every per-role step, and shows the recommendations again', async () => {
-    const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': ['Change roles', 'Confirm'] })
+    const run = queuedIo(everyStepWorld(), { ...PARTS_DECLINED, 'Review the plan': ['Change roles', 'Confirm'] })
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const firstPass = asked.slice(asked.indexOf(ROLES_QUESTION), asked.indexOf(GIT_POLICY_QUESTION))
@@ -4843,7 +4866,7 @@ describe('reviewStep', () => {
 
   test('one answer script gives init and --dry-run the same lines but the first and the ending (PLAN-02)', async () => {
     const answers = {
-      ...INIT_ANSWERS,
+      ...PARTS_DECLINED,
       'Review the plan': ['git policy', 'Confirm'],
       'Git policy': ['Commit all', 'Ignore all of .cadre/'],
     }

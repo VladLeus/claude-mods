@@ -7,6 +7,8 @@ import type {
   Facts,
   FrameworkId,
   GitPolicy,
+  InstructionScan,
+  InstructionTopic,
   KickoffContext,
   LaunchStart,
   Plan,
@@ -141,6 +143,7 @@ import {
   MODEL_MODE_QUESTION,
   NEXT_STEP_NOTE,
   NOT_INTERACTIVE_REPLY,
+  PARTS_DRY_RUN_ONLY_NOTE,
   policyLine,
   proposalLines,
   REGEN_BAD_MANIFEST,
@@ -173,6 +176,28 @@ import {
   truncatedLine,
 } from './init'
 import type { ApplyOutcome } from './init'
+import {
+  CONTENT_DISMISSED_REASON,
+  CONTENT_OPTIONS,
+  CONTENT_QUESTION,
+  contentContextLine,
+  entryContextLine,
+  fallbackTopics,
+  HANDOUT_DISMISSED_REASON,
+  INSTRUCTIONS_ENTRY_OPTIONS,
+  INSTRUCTIONS_ENTRY_QUESTION,
+  instructionLines,
+  instructionReviewLines,
+  instructionsEntry,
+  overSizeWarning,
+  RECOMMEND_SYSTEM,
+  topicContextLine,
+  topicHeader,
+  topicItems,
+  topicQuestion,
+  TOPICS_SYSTEM,
+  unreadableWarning,
+} from './instructions'
 import { UNNAMED_ROLE } from './kickoff'
 import { RUNTIME_SETTINGS_KEYS } from './launch'
 import {
@@ -369,6 +394,27 @@ const OUTCOME: ApplyOutcome = {
 }
 
 const PLAN: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }
+
+/** A read of a global CLAUDE.md with a Security section, text before it and one read warning (G-02-1f). */
+const PART_SCAN: InstructionScan = {
+  parts: [
+    { id: 'P1', file: '~/.claude/CLAUDE.md', heading: '', source: 'global', text: 'Intro.\n' },
+    { id: 'P2', file: '~/.claude/CLAUDE.md', heading: 'Security', source: 'global', text: '# Security\nNo secrets.\n' },
+  ],
+  files: ['~/.claude/CLAUDE.md'],
+  warnings: [unreadableWarning('CLAUDE.md')],
+}
+
+/** The one topic of PART_SCAN, as the model groups it. */
+const PART_TOPIC: InstructionTopic = {
+  id: 'T1',
+  title: 'Security rules',
+  summary: 'How secrets stay out of the repo.',
+  partIds: ['P1', 'P2'],
+}
+
+/** The roles recommended for PART_TOPIC. */
+const PART_RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([['T1', ['security']]])
 
 const POLICIES: readonly GitPolicy[] = ['definitions', 'all', 'ignore']
 
@@ -613,6 +659,34 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
       initReplyText(PLAN, 'all', { kind: 'git-root' }, null),
     ],
   ],
+  ['init', 'PARTS_DRY_RUN_ONLY_NOTE', PARTS_DRY_RUN_ONLY_NOTE],
+  ['instructions', 'CONTENT_QUESTION', CONTENT_QUESTION],
+  ['instructions', 'CONTENT_OPTIONS', CONTENT_OPTIONS],
+  ['instructions', 'CONTENT_DISMISSED_REASON', CONTENT_DISMISSED_REASON],
+  ['instructions', 'contentContextLine', contentContextLine(SETUP)],
+  ['instructions', 'INSTRUCTIONS_ENTRY_QUESTION', INSTRUCTIONS_ENTRY_QUESTION],
+  ['instructions', 'INSTRUCTIONS_ENTRY_OPTIONS', INSTRUCTIONS_ENTRY_OPTIONS],
+  ['instructions', 'entryContextLine', entryContextLine(PART_SCAN, [PART_TOPIC])],
+  ['instructions', 'instructionsEntry', instructionsEntry(PART_SCAN, [PART_TOPIC])],
+  ['instructions', 'HANDOUT_DISMISSED_REASON', HANDOUT_DISMISSED_REASON],
+  ['instructions', 'topicQuestion', topicQuestion(PART_TOPIC)],
+  ['instructions', 'topicContextLine', topicContextLine(PART_TOPIC, PART_SCAN.parts, ['security'])],
+  ['instructions', 'topicHeader', [topicHeader(1, 2), topicHeader(100, 200)]],
+  ['instructions', 'topicItems', topicItems(PART_SCAN, [PART_TOPIC], PART_RECOMMENDED)],
+  ['instructions', 'unreadableWarning', unreadableWarning('CLAUDE.md')],
+  ['instructions', 'overSizeWarning', overSizeWarning('CLAUDE.md')],
+  ['instructions', 'TOPICS_SYSTEM', TOPICS_SYSTEM],
+  ['instructions', 'RECOMMEND_SYSTEM', RECOMMEND_SYSTEM],
+  ['instructions', 'fallbackTopics', fallbackTopics(PART_SCAN)],
+  [
+    'instructions',
+    'instructionLines',
+    [
+      instructionLines(PART_SCAN, [PART_TOPIC], PART_RECOMMENDED),
+      instructionLines(PART_SCAN, fallbackTopics(PART_SCAN), new Map()),
+    ],
+  ],
+  ['instructions', 'instructionReviewLines', instructionReviewLines(TEAM, [PART_TOPIC], PART_RECOMMENDED)],
   ['kickoff', 'UNNAMED_ROLE', UNNAMED_ROLE],
   ['launch', 'RUNTIME_SETTINGS_KEYS', RUNTIME_SETTINGS_KEYS],
   ['plan', 'MANIFEST_PATH', MANIFEST_PATH],
