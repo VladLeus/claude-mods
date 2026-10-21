@@ -427,7 +427,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.askOptions.push((asked?.options ?? []).map(option => option.label))
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
-    if (question === REVIEW_QUESTION) isReviewAnswered = true
+    if (question.startsWith(REVIEW_QUESTION)) isReviewAnswered = true
 
     return { result: { questions: e.questions, answers: { [question]: answer } } }
   })
@@ -1199,7 +1199,7 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'Ignore all of .cadre/' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
-    expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
+    expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees")
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
@@ -1207,7 +1207,7 @@ describe('cadre init with a faked host', () => {
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': ' Ignore ' } }), newLog())
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toContain('Git policy: ignore all of .cadre/')
-    expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees (Phase 3.1)")
+    expect(out.text.split('\n')).toContain("role definitions won't exist in new worktrees")
   })
 
   test('the dialog shows the three policies in the fixed order, default first', async ($, on) => {

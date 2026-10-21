@@ -151,6 +151,8 @@ import {
   REVIEW_OPTIONS,
   REVIEW_QUESTION,
   REVIEW_ROUNDS_REASON,
+  REVIEW_TYPE_HINT,
+  reviewQuestion,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_OPTIONS,
@@ -226,6 +228,9 @@ import type { HostRunRule, MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
+
+/** The review question as reviewStep asks it: the question, then the typed-item hint on its last line (D-134). */
+const REVIEW_ASKED = reviewQuestion(null)
 
 /** A session in the git repo /repo: its `.git` folder is there, and `over` changes the fields it names. */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
@@ -1944,7 +1949,7 @@ describe('history hints', () => {
       'Review the plan': ['assignments', 'Confirm'],
     })
     await runInit(run.io, { dryRun: true })
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual([
+    expect(between(run.asked, REVIEW_ASKED)).toEqual([
       'Which roles get your own skills (1)? (used 1 time in recent sessions) (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
     ])
@@ -3417,7 +3422,9 @@ function everyStepWorld(): MemWorld {
 
 describe('reviewStep', () => {
   test('the review question, its four buttons, the hint and the round cap are fixed (D-43, A2)', () => {
-    expect(REVIEW_QUESTION).toBe('Review the plan above. Confirm it, or go back to change one item.')
+    expect(REVIEW_QUESTION).toBe(
+      'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
+    )
     expect(REVIEW_OPTIONS).toEqual(['Confirm', 'Change roles', 'Change git policy', 'Change launcher start'])
     expect(Object.isFrozen(REVIEW_OPTIONS)).toBe(true)
     expect(REVIEW_HINT).toBe('To change something else, type one of: duration, model, assignments, memory, env, hunks.')
@@ -3485,8 +3492,8 @@ describe('reviewStep', () => {
     expect(expected).toContain('warning: the root was given through a link')
     const reviews = run.shown.filter(block => block.key === 'review')
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
-    expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
-    expect(run.specs[run.asked.indexOf(REVIEW_QUESTION)]).toEqual({ options: REVIEW_OPTIONS })
+    expect(events[events.indexOf(`ask ${REVIEW_ASKED}`) - 1]).toBe('show review')
+    expect(run.specs[run.asked.indexOf(REVIEW_ASKED)]).toEqual({ options: REVIEW_OPTIONS })
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3496,7 +3503,7 @@ describe('reviewStep', () => {
       'Git policy': ['Commit definitions (default)', 'Ignore all of .cadre/'],
     })
     const reply = await runInit(run.io, { dryRun: true })
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual([GIT_POLICY_QUESTION])
+    expect(between(run.asked, REVIEW_ASKED)).toEqual([GIT_POLICY_QUESTION])
     expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
     expect(run.shown.filter(block => block.key === 'review')).toHaveLength(2)
     const team = await defaultRoles(gitWorld())
@@ -3524,7 +3531,7 @@ describe('reviewStep', () => {
       'Model and effort for': ['opus + medium', 'sonnet + high'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
+    expect(between(run.asked, REVIEW_ASKED)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
     expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
   })
 
@@ -3540,7 +3547,7 @@ describe('reviewStep', () => {
       'Autopilot duration': ['4h', '90m'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual([DURATION_QUESTION])
+    expect(between(run.asked, REVIEW_ASKED)).toEqual([DURATION_QUESTION])
     expect(files.map(file => kinds.get(file.path))).toEqual(files.map(() => 'leave'))
   })
 
@@ -3564,7 +3571,7 @@ describe('reviewStep', () => {
       expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
       const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
       expect(expected).not.toHaveLength(0)
-      expect([word, between(run.asked, REVIEW_QUESTION)]).toEqual([word, expected])
+      expect([word, between(run.asked, REVIEW_ASKED)]).toEqual([word, expected])
     }
   })
 
@@ -3575,7 +3582,7 @@ describe('reviewStep', () => {
     expect(firstPass).toContain(DURATION_QUESTION)
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
-    expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
+    expect(between(run.asked, REVIEW_ASKED)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
     expect(run.shown.filter(block => block.key === 'recommendations')).toHaveLength(2)
     expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
     expect(run.asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
@@ -3641,7 +3648,7 @@ describe('reviewStep', () => {
         'Where should the role launchers start': ['Git root of this repo', 'The folder I run it from'],
       })
       const lines = (await runInit(run.io, { dryRun: true })).split('\n')
-      expect(between(run.asked, REVIEW_QUESTION)).toEqual([LAUNCH_START_QUESTION])
+      expect(between(run.asked, REVIEW_ASKED)).toEqual([LAUNCH_START_QUESTION])
       const startLine = lines[lines.indexOf(policyLine('definitions')) + 1]
       expect(startLine).toBe('Launchers start in: the folder they are run from')
     }
@@ -3650,9 +3657,9 @@ describe('reviewStep', () => {
   test(`after ${MAX_REVIEW_ROUNDS} review rounds without Confirm init cancels with the reason (A1)`, async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'model' })
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
+    expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(run.asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
@@ -3660,7 +3667,7 @@ describe('reviewStep', () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'git policy' })
     expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(run.asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
-    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
@@ -3670,7 +3677,7 @@ describe('reviewStep', () => {
     expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
     const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe' })
     expect(await runInit(unread.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(unread.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_ASKS)
+    expect(unread.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(MAX_ASKS)
     expect(unread.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
   })
 
@@ -3761,6 +3768,44 @@ describe('review shows policy and launcher start (G-02-3)', () => {
     expect(review.slice(reviewAt, reviewAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
     expect(reply.slice(replyAt, replyAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
     expect(IGNORE_ROWS.slice(-2)).toEqual(['            CLAUDE-SECURITY-*/', '            # <<< cadre'])
+  })
+})
+
+describe('review question hint (G-02-7)', () => {
+  test('reviewQuestion(null) is the question, then the typed-item hint on its own last line', () => {
+    expect(REVIEW_TYPE_HINT).toBe(
+      'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
+    )
+    expect(reviewQuestion(null)).toBe(
+      'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n' +
+        'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
+    )
+    expect(reviewQuestion(null)).toBe(`${REVIEW_QUESTION}\n${REVIEW_TYPE_HINT}`)
+  })
+
+  test('a context line sits on its own line between the question and the hint, which always ends the text', () => {
+    const context = 'Roles: PM, Team Lead, Security; 22 files planned.'
+    expect(reviewQuestion(context).split('\n')).toEqual([REVIEW_QUESTION, context, REVIEW_TYPE_HINT])
+    for (const given of [null, context]) expect(reviewQuestion(given).endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
+  })
+
+  test('reviewStep asks it with the four buttons, once, right after it shows the review block', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    const asked = run.asked.filter(question => question.startsWith('Review the plan'))
+    expect(asked).toEqual([reviewQuestion(null)])
+    expect(events[events.indexOf(`ask ${reviewQuestion(null)}`) - 1]).toBe('show review')
+    expect(run.specs[run.asked.indexOf(reviewQuestion(null))]).toEqual({ options: REVIEW_OPTIONS })
+  })
+
+  test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
+    const items = ['duration', 'model', 'assignments', 'memory', 'env', 'hunks']
+    expect(items.every(item => REVIEW_TYPE_HINT.includes(item))).toBe(true)
+    expect(items.map(parseReviewItem)).toEqual(items)
+    const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': ['model', 'Confirm'] })
+    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    expect(between(run.asked, reviewQuestion(null))).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
   })
 })
 
@@ -4334,7 +4379,7 @@ function linkAfterConfirm(run: MemRun, path: string, realPath: string): InitIo {
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -4366,7 +4411,7 @@ function listedLinkAfterConfirm(run: MemRun, folder: string, name: string): Init
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -4410,8 +4455,8 @@ describe('init apply (D-105)', () => {
       { path: '/repo/.gitignore', text: ignore, isWritten: true },
       { path: '/repo/.cadre/manifest.json', text: await manifestOf(desired), isWritten: true },
     ])
-    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
-    expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
+    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
+    expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(1)
   })
 
   test('each launcher is made executable with /bin/chmod 755 right after its own write (LNCH-01)', async () => {
@@ -4647,7 +4692,7 @@ function editedAfterConfirm(run: MemRun, path: string, text: string): InitIo {
     ...run.io,
     ask: async (question, spec) => {
       const answer = await run.io.ask(question, spec)
-      if (question === REVIEW_QUESTION && parseReviewItem(answer) === 'confirm') isConfirmed = true
+      if (question === REVIEW_ASKED && parseReviewItem(answer) === 'confirm') isConfirmed = true
 
       return answer
     },
@@ -4664,7 +4709,7 @@ describe('init apply conflicts (D-67)', () => {
     const { world } = await editedRoleWorld()
     const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
-    const reviewAt = run.asked.indexOf(REVIEW_QUESTION)
+    const reviewAt = run.asked.indexOf(REVIEW_ASKED)
     expect(reviewAt).toBeGreaterThan(0)
     expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_QUESTION])
     expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS })
@@ -4723,8 +4768,8 @@ describe('init apply conflicts (D-67)', () => {
     for (const world of [fullWorld(), withWrites(fullWorld(), first.writes)]) {
       const run = memIo(world, INIT_ANSWERS)
       await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
-      expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
-      expect(run.asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(1)
+      expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
+      expect(run.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(1)
     }
   })
 
@@ -4735,7 +4780,7 @@ describe('init apply conflicts (D-67)', () => {
     const run = memIo({ ...world, files: { ...world.files, ...matching } }, INIT_ANSWERS)
     const io = editedAfterConfirm(run, '/repo/.cadre/be/ROLE.md', EDITED_ROLE)
     const reply = await runInit(io, { dryRun: false, host: host.io })
-    expect(run.asked.at(-1)).toBe(REVIEW_QUESTION)
+    expect(run.asked.at(-1)).toBe(REVIEW_ASKED)
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
     expect(host.calls).toEqual([])
     expect(opKinds(reply).get('.cadre/be/ROLE.md')).toBe('conflict')

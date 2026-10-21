@@ -286,7 +286,7 @@ describe('BUILTIN_ADAPTER', () => {
       plan: ['.cadre/<role>/.runtime/plan.md'],
     })
     expect(BUILTIN_ADAPTER.verify).toEqual([
-      "the project's test and lint commands (from the Phase 2 repo scan)",
+      "the project's test and lint commands (from the repo scan)",
       'a reviewer subagent',
     ])
     expect(BUILTIN_ADAPTER.doneSignal).toEqual({
