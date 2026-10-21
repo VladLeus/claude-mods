@@ -117,3 +117,92 @@ describe('handoutStep', () => {
     expect(JSON.stringify([ROLES, ITEMS])).toBe(before)
   })
 })
+
+/** A topic item with this id, title, chip and recommended roles; its context line names the title. */
+function topicItem(id: string, title: string, header: string, recommended: readonly string[]): HandoutItem {
+  return { id, question: `Which roles get "${title}"?`, context: `About ${title}.`, header, recommended }
+}
+
+/** Three items: the first recommended to Security, the second to the Team Lead, the third to no role. */
+const THREE_ITEMS: readonly HandoutItem[] = [
+  topicItem('T1', 'Security rules', 'Topic 1/3', ['security']),
+  topicItem('T2', 'Git and commits', 'Topic 2/3', ['tl']),
+  topicItem('T3', 'Release notes', 'Topic 3/3', []),
+]
+
+/** An item question as it is asked: the question, then its context line (D-136). */
+function itemAsked(item: HandoutItem | undefined): string {
+  return item === undefined ? 'missing item' : withContext(item.question, item.context)
+}
+
+/** The refusal on top of an item question asked again after the answer `cto` (D-136). */
+const CTO_REFUSAL = `'cto' isn't one of: "Yes", "No", or role ids from: pm, tl, security.`
+
+describe('handoutStep one by one', () => {
+  test('Go part by part asks each item once, in order, with its context line, its chip and Yes / No', async () => {
+    const run = memIo(memWorld({}), ['Go part by part', 'Yes', 'No'])
+    await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
+    expect(run.asked).toEqual([ENTRY_ASKED, itemAsked(ITEMS[0]), itemAsked(ITEMS[1])])
+    expect(run.specs.slice(1)).toEqual([
+      { options: ['Yes', 'No'], header: 'Topic 1/2' },
+      { options: ['Yes', 'No'], header: 'Topic 2/2' },
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test('Yes gives an item its recommended roles, No none, and a typed role list gives that list', async () => {
+    const run = memIo(memWorld({}), ['Go part by part', 'Yes', 'No', 'tl, security'])
+    const result = await handoutStep(run.io, ENTRY, THREE_ITEMS, ROLES, DISMISSED)
+    expect(givenOf(result)).toEqual([
+      ['T1', ['security']],
+      ['T2', []],
+      ['T3', ['tl', 'security']],
+    ])
+  })
+
+  test('Yes on an item recommended to no role gives it none; none and all work as they do elsewhere', async () => {
+    const run = memIo(memWorld({}), ['Go part by part', ' NO ', 'all', 'yes'])
+    const result = await handoutStep(run.io, ENTRY, THREE_ITEMS, ROLES, DISMISSED)
+    expect(givenOf(result)).toEqual([
+      ['T1', []],
+      ['T2', ['pm', 'tl', 'security']],
+      ['T3', []],
+    ])
+    const none = memIo(memWorld({}), ['Go part by part', 'None', 'Yes'])
+    expect(givenOf(await handoutStep(none.io, ENTRY, ITEMS, ROLES, DISMISSED))).toEqual([
+      ['T1', []],
+      ['T2', []],
+    ])
+  })
+
+  test('an answer it cannot read is asked again with why on top: Yes, No or the role ids', async () => {
+    const run = memIo(memWorld({}), ['Go part by part', 'cto', 'Security', 'No'])
+    const result = await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
+    expect(givenOf(result)).toEqual([
+      ['T1', ['security']],
+      ['T2', []],
+    ])
+    expect(run.asked.slice(1, 3)).toEqual([itemAsked(ITEMS[0]), `${CTO_REFUSAL}\n${itemAsked(ITEMS[0])}`])
+  })
+
+  test('a dismissed item cancels with the reason given; three unreadable answers with no usable answer', async () => {
+    const dismissed = memIo(memWorld({}), ['Go part by part', 'Yes'])
+    expect(await handoutStep(dismissed.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
+      kind: 'cancelled',
+      reason: DISMISSED,
+    })
+    expect(dismissed.asked).toHaveLength(3)
+    const exhausted = memIo(memWorld({}), ['Go part by part', 'cto', 'cto', 'cto', 'Yes'])
+    expect(await handoutStep(exhausted.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
+      kind: 'cancelled',
+      reason: NO_USABLE_ANSWER_REASON,
+    })
+    expect(exhausted.asked).toHaveLength(4)
+  })
+
+  test('with no item, Go part by part asks nothing more and gives every item, none, its roles', async () => {
+    const run = memIo(memWorld({}), ['Go part by part'])
+    expect(givenOf(await handoutStep(run.io, ENTRY, [], ROLES, DISMISSED))).toEqual([])
+    expect(run.asked).toEqual([ENTRY_ASKED])
+  })
+})

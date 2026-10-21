@@ -2339,6 +2339,36 @@ const PARTS_REVIEW_ROWS = [
   'Kept with the root session only: 0 topics',
 ]
 
+/** A global CLAUDE.md with three sections, for the part-by-part runs (G-02-1f Part by part). */
+const THREE_GLOBAL = `${PARTS_GLOBAL}## Releases\nWrite release notes.\n`
+
+/** The model's grouping of THREE_GLOBAL: one topic per section. */
+const THREE_TOPICS_REPLY = JSON.stringify({
+  topics: [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Git and commits', summary: 'How commits are made.', parts: ['P2'] },
+    { title: 'Release notes', summary: 'How releases are written up.', parts: ['P3'] },
+  ],
+})
+
+/** The six-role repo of fullWorld whose user has THREE_GLOBAL, with its grouping and a recommendation per topic. */
+function threePartsWorld(): MemWorld {
+  return partsWorld({
+    dirs: { '/repo/.git': [], ...FULL_DIRS },
+    files: { ...FULL_FILES, [GLOBAL_CLAUDE_MD]: THREE_GLOBAL },
+    replies: [THREE_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl","be"],"T3":["pm"]}}'],
+  })
+}
+
+/** Part by part on THREE_PARTS: Yes to the first topic, No to the second, and be and qa typed for the third. */
+const PART_BY_PART_ANSWERS: Readonly<Record<string, string>> = {
+  ...PARTS_ANSWERS,
+  [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part',
+  'Which roles get "Security rules"': 'Yes',
+  'Which roles get "Git and commits"': 'No',
+  'Which roles get "Release notes"': 'be, qa',
+}
+
 /** The instructions block of the plan's dry run (G-02-1f). */
 const PARTS_BLOCK = [
   'Read for this run only (nothing is written):',
@@ -2566,6 +2596,89 @@ describe('instruction parts (G-02-1f)', () => {
     expect(run.prompts).toHaveLength(3)
     expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
     expect(shownBlock(run, 'instructions')).toEqual(PARTS_BLOCK)
+  })
+
+  test('Go part by part with Yes, No and be, qa: first topic its roles, the second none, the third two', async () => {
+    const run = memIo(threePartsWorld(), PART_BY_PART_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+    expect(review.slice(at, at + 8)).toEqual([
+      'Instructions per role:',
+      '  pm: none',
+      '  tl: none',
+      '  be: 1 topic: Release notes',
+      '  fe: none',
+      '  qa: 1 topic: Release notes',
+      '  security: 1 topic: Security rules',
+      'Kept with the root session only: 1 topic',
+    ])
+  })
+
+  test('each topic is asked once, in order, with its context line, its Topic i/n chip and Yes / No', async () => {
+    const run = memIo(threePartsWorld(), PART_BY_PART_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const topics = run.asked.filter(question => question.startsWith('Which roles get "'))
+    expect(topics).toEqual([
+      withContext(
+        'Which roles get "Security rules"?',
+        'How secrets stay out of the repo. From: ~/.claude/CLAUDE.md > Security. Recommended: security.',
+      ),
+      withContext(
+        'Which roles get "Git and commits"?',
+        'How commits are made. From: ~/.claude/CLAUDE.md > Git. Recommended: tl, be.',
+      ),
+      withContext(
+        'Which roles get "Release notes"?',
+        'How releases are written up. From: ~/.claude/CLAUDE.md > Releases. Recommended: pm.',
+      ),
+    ])
+    const at = run.asked.indexOf(topics[0] ?? 'missing')
+    expect(run.specs.slice(at, at + 3)).toEqual(
+      ['Topic 1/3', 'Topic 2/3', 'Topic 3/3'].map(header => ({ options: ['Yes', 'No'], header })),
+    )
+  })
+
+  test('Whole files asks the whole-file questions unchanged and hands out whole (D-63)', async () => {
+    const run = memIo(partsWorld(), { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' })
+    await runInit(run.io, { dryRun: true })
+    const asked = firstLines(run.asked)
+    expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBe(asked.indexOf(INSTRUCTIONS_ENTRY_QUESTION) + 1)
+    expect(shownBlock(run, 'review')).not.toContain('Instructions per role:')
+    const answers = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files', 'Which roles get': 'pm' }
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const roles = proposeRoles(repoScan()).roles
+    const io = memIo(partsWorld(), answers).io
+    const value = valueOf(await instructionsStep(io, roles, setup, DEFAULT_LOCATIONS, true))
+    expect(value.instructions).toEqual({ kind: 'whole' })
+    expect(value.roles.map(role => role.instructions)).toEqual([['global-claude-md'], [], []])
+  })
+
+  test('the review item memory goes back to the entry question with the same parts, no read, no call', async () => {
+    const run = queuedIo(partsWorld(), {
+      ...PARTS_ANSWERS,
+      [INSTRUCTIONS_ENTRY_QUESTION]: ['Accept recommendations', 'Go part by part'],
+      'Review the plan': ['memory', 'Confirm'],
+    })
+    expect((await runInit(run.io, { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(between(run.asked, REVIEW_QUESTION)).toEqual([
+      INSTRUCTIONS_ENTRY_QUESTION,
+      'Which roles get "Security rules"?',
+      'Which roles get "Git and commits"?',
+    ])
+    expect([run.reads.filter(path => path === GLOBAL_CLAUDE_MD).length, run.prompts.length]).toEqual([1, 2])
+    expect(run.shown.filter(block => block.key === 'instructions')).toHaveLength(2)
+    expect(shownBlock(run, 'review')).toContain('Kept with the root session only: 2 topics')
+  })
+
+  test('the review item memory after No, or with nothing to hand out, asks as before', async () => {
+    const declined = queuedIo(partsWorld(), { ...PARTS_DECLINED, 'Review the plan': ['memory', 'Confirm'] })
+    await runInit(declined.io, { dryRun: true })
+    expect(between(declined.asked, REVIEW_QUESTION)).toEqual([GLOBAL_GROUP_QUESTION])
+    const empty = queuedIo(gitWorld(), { ...PARTS_ANSWERS, 'Review the plan': ['memory', 'Confirm'] })
+    await runInit(empty.io, { dryRun: true })
+    expect(between(empty.asked, REVIEW_QUESTION)).toEqual([])
   })
 })
 
