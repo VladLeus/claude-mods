@@ -93,13 +93,17 @@ import {
   modelEffortRefusal,
   NONE_OPTION,
   orderGroupsByUse,
+  ownSkillIds,
   ownSkillLines,
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
+  parseSkillRecommendation,
   PER_ROLE,
   SAME_FOR_ALL,
   skillGroupQuestion,
+  SKILLS_SYSTEM,
+  skillsPrompt,
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import {
@@ -1579,21 +1583,62 @@ function ownSkillsOf(skills: readonly SkillRef[], groups: readonly SkillGroup[])
 }
 
 /**
+ * The roles recommended for each of the user's own skills (G-02-1b): one model call reads each role's work and each
+ * skill's name, purpose and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take
+ * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no skill is recommended to any role:
+ * the map is empty. The model has no tools (D-83), and only its checked skill and role ids are kept.
+ */
+async function recommendedSkillRoles(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  skills: readonly SkillRef[],
+  counts: ReadonlyMap<string, number>,
+): Promise<ReadonlyMap<string, readonly string[]>> {
+  const skillIds = ownSkillIds(skills)
+  const roleIds = roles.map(role => role.id)
+  let errors: readonly string[] = []
+  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    const reply = await io.complete(skillsPrompt(roles, skills, counts, errors), SKILLS_SYSTEM)
+    const parsed = reply === null ? null : parseSkillRecommendation(reply, skillIds, roleIds)
+    if (parsed?.kind === 'ok') return parsed.recommended
+    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
+  }
+
+  return new Map()
+}
+
+/**
+ * The own-skills block (G-02-1b): nothing with no skill of the user's own; else the model recommends roles for each
+ * (recommendedSkillRoles), and the side pane shows every skill with what it does, its own use count and the roles
+ * recommended for it, or that the model gave no usable recommendation (ownSkillLines).
+ */
+async function showOwnSkills(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  skills: readonly SkillRef[],
+  counts: ReadonlyMap<string, number>,
+): Promise<void> {
+  if (skills.length === 0) return
+  const recommended = await recommendedSkillRoles(io, roles, skills, counts)
+  await showBlock(io, 'skills', ownSkillLines(skills, counts, recommended))
+}
+
+/**
  * The MCP and skill step (D-53, ISO-04). The servers and skills the name tables decide go to their roles with no
  * question (classifyMcp, classifySkills), and infra servers and handoff and framework skills are never asked about.
  * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
  * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
  * any other role is asked again (parseRoleList, T-02-33). Before any skill group is asked, when the user has skills
- * that no plugin adds, the side pane shows them with what each does, its own use count and the roles recommended for
- * it (ownSkillLines, G-02-1b, D-139). The step decides the whole list of each name it asks about: every role first
- * loses those names, then each name joins the `mcp` or `skills` list of the roles its answer names
- * (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3). With `hints`,
- * the command and skill counts of the history scan, the skill groups are asked busiest first and each question says how
- * often its group was used (orderGroupsByUse, skillGroupQuestion); without hints, or with none that count, the
- * questions and their order are the same as without the scan (D-59). Only an answer to every question gives roles: a
- * dismissal gives the cancel reason ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question
- * NO_USABLE_ANSWER_REASON (A1, D-136). The roles it is given never change.
+ * that no plugin adds, a model call recommends roles for each and the side pane shows them with what each does, its
+ * own use count and the roles recommended for it (showOwnSkills, G-02-1b, D-139). The step decides the whole list of
+ * each name it asks about: every role first loses those names, then each name joins the `mcp` or `skills` list of the
+ * roles its answer names (assignToRoles), so running the step again sets that list, and the names the tables decide
+ * stay (A3). With `hints`, the command and skill counts of the history scan, the skill groups are asked busiest first
+ * and each question says how often its group was used (orderGroupsByUse, skillGroupQuestion); without hints, or with
+ * none that count, the questions and their order are the same as without the scan (D-59). Only an answer to every
+ * question gives roles: a dismissal gives the cancel reason ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it
+ * cannot read at one question NO_USABLE_ANSWER_REASON (A1, D-136). The roles it is given never change.
  */
 export async function assignmentStep(
   io: InitIo,
@@ -1616,8 +1661,7 @@ export async function assignmentStep(
   }))
   const servers = await askAssignments(io, roles, serverItems)
   if (servers.kind === 'cancelled') return servers
-  const own = ownSkillsOf(setup.skills, skills.groups)
-  if (own.length > 0) await showBlock(io, 'skills', ownSkillLines(own, counts, new Map()))
+  await showOwnSkills(io, roles, ownSkillsOf(setup.skills, skills.groups), counts)
   const grouped = await askAssignments(io, roles, groupItems)
   if (grouped.kind === 'cancelled') return grouped
   const asked = new Set([...mcp.unknown])
