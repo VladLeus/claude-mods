@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../types'
+import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, PaneKey, RepoEntry, ShownBlock } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
 import { BUILTIN_ADAPTER } from './builtin'
 import { clean } from './facts'
@@ -9,10 +9,11 @@ import {
   adaptersReportLines,
   cardList,
   choiceLine,
-  chunkLines,
   detectReportLines,
   detectText,
   pad,
+  paneRows,
+  paneView,
   reportText,
   shown,
   STATUS_LABEL,
@@ -483,15 +484,61 @@ describe('adaptersReportLines', () => {
   })
 })
 
-describe('chunkLines', () => {
-  test('groups lines into chunks that fit the cap when joined with a newline', () => {
-    expect(chunkLines(['aaa', 'bbb', 'ccc'], 7)).toEqual(['aaa\nbbb', 'ccc'])
-    expect(chunkLines(['aaa', 'bbb', 'ccc'], 11)).toEqual(['aaa\nbbb\nccc'])
+/** A side-pane block of this kind, titled with its key, holding these lines (by default one line named after it). */
+function paneBlock(key: PaneKey, lines: readonly string[] = [`${key} line`]): ShownBlock {
+  return { key, title: key, lines }
+}
+
+describe('paneView', () => {
+  test('a new block goes first and the other blocks keep their order', () => {
+    const scan = paneBlock('scan')
+    const history = paneBlock('history')
+    const roles = paneBlock('roles')
+    expect(paneView([scan, history], roles)).toEqual([roles, scan, history])
   })
 
-  test('a line longer than the cap stays whole in a chunk of its own, and no lines give no chunks', () => {
-    expect(chunkLines(['a', 'x'.repeat(10), 'b'], 5)).toEqual(['a', 'x'.repeat(10), 'b'])
-    expect(chunkLines([], 2000)).toEqual([])
+  test('a block shown again replaces the block of its key and moves to the top', () => {
+    const roles = paneBlock('roles')
+    const scan2 = paneBlock('scan', ['Repo scan (read-only):', '  stack: TypeScript'])
+    expect(paneView([roles, paneBlock('scan')], scan2)).toEqual([scan2, roles])
+    expect(paneView([], scan2)).toEqual([scan2])
+  })
+
+  test('it never changes the blocks it is given', () => {
+    const blocks = [paneBlock('roles'), paneBlock('scan')]
+    const before = JSON.stringify(blocks)
+    paneView(blocks, paneBlock('roles', ['changed']))
+    expect(JSON.stringify(blocks)).toBe(before)
+  })
+})
+
+describe('paneRows', () => {
+  test('a block gives its title row, then one row per line', () => {
+    expect(paneRows([{ key: 'scan', title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'] }])).toEqual([
+      { text: 'Scan', isTitle: true },
+      { text: 'Repo scan (read-only):', isTitle: false },
+      { text: '  stack: none', isTitle: false },
+    ])
+  })
+
+  test('one empty row parts two blocks, none comes after the last, and no blocks give no rows', () => {
+    expect(paneRows([paneBlock('review', ['a']), paneBlock('scan', ['b'])])).toEqual([
+      { text: 'review', isTitle: true },
+      { text: 'a', isTitle: false },
+      { text: '', isTitle: false },
+      { text: 'scan', isTitle: true },
+      { text: 'b', isTitle: false },
+    ])
+    expect(paneRows([])).toEqual([])
+  })
+
+  test('every title and line is cleaned as a report cell, so none can add a row or hide text (T-02-48)', () => {
+    const bell = String.fromCharCode(7)
+    const long = 'x'.repeat(300)
+    const rows = paneRows([{ key: 'scan', title: `Sc\nan${BIDI_OVERRIDE}`, lines: [`a\nb${bell}`, long] }])
+    expect(rows.map(row => row.text)).toEqual(['Scan', 'ab', reportText(long)])
+    expect(rows.filter(row => CONTROL_OR_FORMAT.test(row.text) || row.text.includes('\n'))).toEqual([])
+    expect(Array.from(rows[2]?.text ?? '')).toHaveLength(240)
   })
 })
 

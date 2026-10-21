@@ -1443,6 +1443,29 @@ describe('cadre init with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
+  test('init --dry-run keeps every block in the pane, newest first, and logs one-line notes only', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
+    expect(paneOf(log).map(block => block.title)).toEqual(['Review', 'Recommendations', 'Roles', 'Scan'])
+    expect(log.logs.every(text => !text.includes('\n'))).toBe(true)
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('the first block of a run replaces whatever an earlier run left in the pane (D-133)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const firstRun = log.paneWrites.length
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const restart = log.paneWrites[firstRun]
+    expect(Array.isArray(restart) ? restart.filter(isPaneBlock).map(block => block.key) : []).toEqual(['scan'])
+    expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
+  })
+
   test('the init port never reads a folder: a folder the scans probe is checked and left unread', async ($, on) => {
     const log = newLog()
     const folders = ['/repo/.cadre', '/home/u/.claude/agents']
@@ -1486,11 +1509,11 @@ describe('cadre init with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
-  test('init --dry-run logs the security plugin lines and commands under the recommendations (#39)', async ($, on) => {
+  test('init --dry-run shows the security plugin lines and commands under the recommendations (#39)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const lines = log.logs.flatMap(text => text.split('\n'))
+    const lines = paneLines(log, 'recommendations')
     const headingAt = lines.indexOf('Recommendations (print-only; init asks before it installs any):')
     const claudeSecurity =
       "- claude-security for Security: claude-security gives the Security role Anthropic's review skill " +
@@ -1869,7 +1892,7 @@ describe('Phase 2 faked-host matrix', () => {
       const frameworkAsks = log.asks.filter(ask => ask.startsWith(`ask ${FRAMEWORK_QUESTION_PREFIX}`))
       expect(frameworkAsks.length).toBe(expected.frameworkAsks)
       if (expected.card === null) return
-      expect(log.logs.join('\n')).toContain(expected.card)
+      expect(paneLines(log, 'review').join('\n')).toContain(expected.card)
     })
   }
 
@@ -2020,11 +2043,12 @@ describe('Phase 2 faked-host matrix', () => {
     expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([])
     expect(log.ops.filter(op => op.endsWith('.jsonl'))).toEqual([])
     expect(log.logs.join('\n')).not.toContain('Session history')
+    expect(paneLines(log, 'history')).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
   })
 
-  test('history answered Yes: names and counts are logged, never transcript text (SCAN-03, T-02-41)', async ($, on) => {
+  test('history answered Yes: names and counts are shown, never transcript text (SCAN-03, T-02-41)', async ($, on) => {
     const log = newLog()
     const answers = { ...INIT_ANSWERS, "Scan this repo's session history": 'Yes, scan names and counts' }
     const world = historyHostWorld({ answers })
@@ -2036,8 +2060,8 @@ describe('Phase 2 faked-host matrix', () => {
       `fs.read ${HISTORY_DIR}/a.jsonl`,
       `fs.read ${HISTORY_DIR}/b.jsonl`,
     ])
-    expect(log.logs).toContain('Session history (names and counts only):\n  gsd-plan-phase  2')
-    expect(leaks([dry, ...log.logs].join('\n'), ['SENTINEL_SECRET_VALUE'])).toEqual([])
+    expect(paneLines(log, 'history')).toEqual(['Session history (names and counts only):', '  gsd-plan-phase  2'])
+    expect(leaks([dry, ...log.logs, JSON.stringify(log.paneWrites)].join('\n'), ['SENTINEL_SECRET_VALUE'])).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
   })
@@ -2093,7 +2117,11 @@ describe('Phase 2 faked-host matrix', () => {
     expect(paneLines(log, 'scan').join('\n')).toContain('MCP servers: datadog, linear, sentry')
     expect(paneLines(log, 'scan').join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
     expect(log.ops).toContain(`fs.read ${HISTORY_DIR}/${token}.jsonl`)
-    expect(log.logs).toContain('Session history (names and counts only):\n  codex:rescue  1\n  gsd-plan-phase  1')
+    expect(paneLines(log, 'history')).toEqual([
+      'Session history (names and counts only):',
+      '  codex:rescue  1',
+      '  gsd-plan-phase  1',
+    ])
     // Every value the pane's state was set to, so a block shown and later replaced is scanned too.
     const pane = JSON.stringify(log.paneWrites)
     const shown = [out.text, ...log.logs, pane, ...log.asks, ...log.askOptions.flat()].join('\n')

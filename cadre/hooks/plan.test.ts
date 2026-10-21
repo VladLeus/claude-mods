@@ -37,7 +37,6 @@ import {
   stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
-import { chunkLines } from './render'
 import { parseManifest } from './scan'
 import { BIDI_OVERRIDE } from './testkit'
 
@@ -1289,33 +1288,6 @@ describe('plan conflicts and limits', () => {
       ])
     })
   })
-
-  describe('chunkLines', () => {
-    test('groups lines so that each chunk, joined with a newline, fits in the cap', () => {
-      expect(chunkLines(['aaa', 'bbb', 'ccc'], 7)).toEqual(['aaa\nbbb', 'ccc'])
-      expect(chunkLines(['aaa', 'bbb', 'ccc'], 11)).toEqual(['aaa\nbbb\nccc'])
-      expect(chunkLines(['aaa', 'bbb', 'ccc'], 6)).toEqual(['aaa', 'bbb', 'ccc'])
-    })
-
-    test('no lines give no chunks, and an empty line is kept as a line', () => {
-      expect(chunkLines([], 2000)).toEqual([])
-      expect(chunkLines(['a', '', 'b'], 100)).toEqual(['a\n\nb'])
-      expect(chunkLines([''], 100)).toEqual([''])
-    })
-
-    test('a line longer than the cap stays whole in a chunk of its own', () => {
-      const long = 'x'.repeat(10)
-
-      expect(chunkLines(['a', long, 'b'], 5)).toEqual(['a', long, 'b'])
-    })
-
-    test('counts UTF-16 units, as the host does, so an astral character counts as two', () => {
-      const emoji = String.fromCodePoint(0x1f600)
-
-      expect(chunkLines([emoji, emoji], 5)).toEqual([`${emoji}\n${emoji}`])
-      expect(chunkLines([emoji, emoji], 4)).toEqual([emoji, emoji])
-    })
-  })
 })
 
 /**
@@ -1521,16 +1493,6 @@ describe('plan properties', () => {
       'leave .cadre/bin/be',
       'change .cadre/manifest.json',
     ])
-  })
-
-  test('P9: the lines of a big plan fit in chunks of 2000 characters that join back to the same text', async () => {
-    const files = Array.from({ length: 120 }, (_, index) => file(`.cadre/${'r'.repeat(150)}${index}/role.json`, '{}\n'))
-    const lines = renderPlan(await buildPlan(input({ desired: files })))
-    const chunks = chunkLines(lines, 2000)
-
-    expect(chunks.length).toBeGreaterThan(1)
-    expect(chunks.filter(chunk => chunk.length > 2000)).toEqual([])
-    expect(chunks.join('\n')).toBe(lines.join('\n'))
   })
 })
 
