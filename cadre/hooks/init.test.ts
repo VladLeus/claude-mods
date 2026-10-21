@@ -123,6 +123,7 @@ import {
   MODEL_MODE_QUESTION,
   modelStep,
   NEXT_STEP_NOTE,
+  NO_USABLE_ANSWER_REASON,
   noStateReply,
   NOT_INTERACTIVE_REPLY,
   PANE_TITLES,
@@ -137,7 +138,9 @@ import {
   proposalLines,
   provenUserDir,
   PYTHON_TIMEOUT_MS,
+  quotedLabels,
   readTeam,
+  refusalLine,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
   REGEN_NO_MANIFEST,
@@ -174,6 +177,7 @@ import {
 import type {
   AdjustOutcome,
   ApplyOutcome,
+  ChoiceAsk,
   Gathered,
   InitOptions,
   RegenOptions,
@@ -675,15 +679,19 @@ describe('runInit', () => {
     expect(run.logged).toEqual([CONSENT_DISMISSED_REASON])
   })
 
-  test('consentStep accepts yes or no; a dismissal or unknown answers are cancelled with the reason (A1)', async () => {
+  test('consentStep accepts yes or no; a dismissal or unknown answers cancel with their reasons (A1)', async () => {
     const yes = memIo(memWorld({}), ['Yes, read names only'])
     expect(await consentStep(yes.io)).toEqual({ kind: 'accepted', value: true })
     expect(yes.asked).toEqual([CLAUDE_JSON_QUESTION])
     expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS }])
     expect(await consentStep(memIo(memWorld({}), [' no, SKIP it ']).io)).toEqual({ kind: 'accepted', value: false })
-    for (const answers of [[], ['maybe', 'maybe', 'maybe']]) {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], CONSENT_DISMISSED_REASON],
+      [['maybe', 'maybe', 'maybe'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await consentStep(run.io)).toEqual({ kind: 'cancelled', reason: CONSENT_DISMISSED_REASON })
+      expect(await consentStep(run.io)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(CONSENT_DISMISSED_REASON).toBe('The ~/.claude.json question was dismissed or not answered.')
@@ -959,6 +967,10 @@ function valueOf<T>(result: StepResult<T>): T {
 /** The fallback sentence that ends the line init prints when the described structure cannot be used. */
 const FALLBACK_END = 'Using the template proposal; you can still adjust it.'
 
+/** The refusal on top of the describe question when it is asked again after a blank answer (D-136). */
+const EMPTY_DESCRIPTION =
+  `An empty answer isn't one of: a description of your roles, "Use the template instead", "Cancel init".`
+
 describe('proposalLines', () => {
   test('the proposal lists each role with its title, id and purpose, then each scan change with its reason', () => {
     const proposal = proposeRoles(SOURCE_SCAN)
@@ -1038,27 +1050,32 @@ describe('describeStep', () => {
     const reply = JSON.stringify({ roles: badIds })
     const run = memIo(memWorld({ replies: [reply, reply, reply] }), [DESCRIPTION])
     const result = await describeStep(run.io)
-    if (result === null || result.kind !== 'fallback') throw new Error('no fallback')
+    if (result.kind !== 'fallback') throw new Error('no fallback')
     expect(result.message.startsWith('Could not use the described structure: ')).toBe(true)
     expect(result.message.endsWith(FALLBACK_END)).toBe(true)
     expect(Array.from(result.message).length <= 240).toBe(true)
   })
 
-  test('a blank description is asked again and never sent to the model', async () => {
+  test('a blank description is asked again with why on top, and never sent to the model', async () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), ['   ', '', DESCRIPTION])
     expect(await describeStep(run.io)).toEqual({ kind: 'roles', roles: DESCRIBED_ROLES })
-    expect(run.asked).toEqual([DESCRIBE_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION])
+    const again = `${EMPTY_DESCRIPTION}\n${DESCRIBE_QUESTION}`
+    expect(run.asked).toEqual([DESCRIBE_QUESTION, again, again])
     expect(run.prompts).toHaveLength(1)
   })
 
-  test('the template answer makes no model call, and Cancel init or a dismissal cancels', async () => {
+  test('the template answer makes no model call; Cancel init, a dismissal or 3 blank answers cancel', async () => {
     const template = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), ['Use the template instead'])
     expect(await describeStep(template.io)).toEqual({ kind: 'template' })
     expect(template.prompts).toEqual([])
+    const cancelledBy = { kind: 'cancelled', reason: DESCRIBE_CANCELLED_REASON }
     const cancel = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), ['Cancel init'])
-    expect(await describeStep(cancel.io)).toBeNull()
+    expect(await describeStep(cancel.io)).toEqual(cancelledBy)
     expect(cancel.prompts).toEqual([])
-    expect(await describeStep(memIo(memWorld({}), []).io)).toBeNull()
+    expect(await describeStep(memIo(memWorld({}), []).io)).toEqual(cancelledBy)
+    const blank = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), ['', ' ', '  ', DESCRIPTION])
+    expect(await describeStep(blank.io)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    expect([blank.asked.length, blank.prompts]).toEqual([MAX_ASKS, []])
     expect(DESCRIBE_OPTIONS).toEqual(['Use the template instead', 'Cancel init'])
     expect(Object.isFrozen(DESCRIBE_OPTIONS)).toBe(true)
   })
@@ -1095,13 +1112,15 @@ describe('adjustLoop', () => {
     expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
   })
 
-  test('a line it cannot read and a change it cannot apply each print an exact message', async () => {
+  test('a line it cannot read and a change it cannot apply each put their exact message on the next ask', async () => {
     const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'Done adjusting'])
     expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles })
-    expect(run.logged).toEqual([
-      'Could not read that change: delete fe. Use add, drop, rename or framework.',
-      'no role "zz"',
+    expect(run.asked).toEqual([
+      ADJUST_QUESTION,
+      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${ADJUST_QUESTION}`,
+      `no role "zz"\n${ADJUST_QUESTION}`,
     ])
+    expect(run.logged).toEqual([])
   })
 
   test('Show the roles shows the current roles in the pane and asks again', async () => {
@@ -1130,7 +1149,7 @@ describe('adjustLoop', () => {
     expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
     expect(run.asked).toHaveLength(MAX_ADJUST_ROUNDS)
     expect(MAX_ADJUST_ROUNDS).toBe(30)
-    expect(run.logged.at(-1)).toBe(ADJUST_ROUNDS_NOTE)
+    expect(run.logged).toEqual([ADJUST_ROUNDS_NOTE])
     expect(ADJUST_ROUNDS_NOTE).toBe(
       'Adjust took 30 answers without "Done adjusting": showing the roles as they are now.',
     )
@@ -1139,17 +1158,19 @@ describe('adjustLoop', () => {
   test('Adjust refuses a framework not installed, names the installed ones, and the role keeps its own', async () => {
     const run = memIo(memWorld({}), ['framework qa superpowers', 'Done adjusting'])
     expect(await adjustLoop(run.io, roles, ['gsd', 'none'])).toEqual({ kind: 'adjusted', roles })
-    expect(run.logged).toEqual([
+    const refusal =
       'Cannot set qa to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
-        'qa keeps its framework.',
-    ])
+      'qa keeps its framework.'
+    expect(run.asked).toEqual([ADJUST_QUESTION, `${refusal}\n${ADJUST_QUESTION}`])
+    expect(run.logged).toEqual([])
   })
 
   test('Adjust applies an installed framework; a role it does not know gets the unknown-role message', async () => {
     const run = memIo(memWorld({}), ['framework qa gsd', 'framework nosuch superpowers', 'Done adjusting'])
     const adjusted = rolesOf(await adjustLoop(run.io, roles, ['gsd', 'none']))
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('gsd')
-    expect(run.logged).toEqual(['no role "nosuch"'])
+    expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, `no role "nosuch"\n${ADJUST_QUESTION}`])
+    expect(run.logged).toEqual([])
   })
 
   test('none is always installed, so a role can always be set to the built-in fallback', async () => {
@@ -1157,9 +1178,10 @@ describe('adjustLoop', () => {
     const adjusted = rolesOf(await adjustLoop(run.io, roles, ['none']))
     expect(adjusted?.find(role => role.id === 'qa')?.framework).toBe('none')
     expect(adjusted?.find(role => role.id === 'be')?.framework).toBeUndefined()
-    expect(run.logged).toEqual([
-      'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.',
-    ])
+    const refusal =
+      'Cannot set be to gsd: it is not installed for this repo (installed: none (built-in)). be keeps its framework.'
+    expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, `${refusal}\n${ADJUST_QUESTION}`])
+    expect(run.logged).toEqual([])
   })
 
   test('installedFrameworks lists the supported ones in use or installed, in SUPPORTED_IDS order, then none', () => {
@@ -1237,7 +1259,12 @@ describe('rolesStep', () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), answers)
     expect(await rolesStep(run.io, proposal, FRAMEWORKS)).toEqual({ kind: 'accepted', value: proposal })
     expect(run.prompts).toEqual([])
-    expect(run.asked).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
+    expect(run.asked).toEqual([
+      ROLES_QUESTION,
+      DESCRIBE_QUESTION,
+      `${EMPTY_DESCRIPTION}\n${DESCRIBE_QUESTION}`,
+      ROLES_QUESTION,
+    ])
   })
 
   test('the prompt holds the typed text as a JSON string and no name the scans found', async () => {
@@ -1264,12 +1291,14 @@ describe('rolesStep', () => {
     expect(shownBlock(run, 'roles').join('\n')).toContain('Docs writer (docs)')
   })
 
-  test('a dismissal at any point of the step cancels it with the reason of that question (A1)', async () => {
+  test('a dismissal or 3 unreadable answers at any point cancel the step with their reason (A1)', async () => {
     const scripts: readonly (readonly [readonly string[], string])[] = [
       [[], ROLES_DISMISSED_REASON],
       [['Adjust them'], ADJUST_DISMISSED_REASON],
       [['Describe my own structure'], DESCRIBE_CANCELLED_REASON],
       [['Describe my own structure', 'Cancel init'], DESCRIBE_CANCELLED_REASON],
+      [['maybe', 'maybe', 'maybe'], NO_USABLE_ANSWER_REASON],
+      [['Describe my own structure', '', '', ''], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of scripts) {
       expect(await rolesStep(memIo(memWorld({}), answers).io, proposal, FRAMEWORKS)).toEqual({
@@ -1430,21 +1459,24 @@ describe('frameworkStep', () => {
     expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'] })
   })
 
-  test('a typed framework that is not offered is asked again; a typed id that is offered counts', async () => {
+  test('a typed framework that is not offered is asked again with why on top; an offered id counts', async () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'superpowers', ' NONE '])
     const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['none', 'none', 'none'])
-    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION, FRAMEWORK_ALL_QUESTION])
+    const refusal = "'superpowers' isn't one of: GSD, none - a role runs one framework."
+    expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION, `${refusal}\n${FRAMEWORK_ALL_QUESTION}`])
   })
 
-  test('a dismissed framework question is never a choice: the step is cancelled with the reason (A1)', async () => {
-    const scripts = [[], ['Same for all roles'], ['Per role', 'GSD'], ['what', 'ever', 'else']]
-    for (const answers of scripts) {
+  test('a dismissed or unread framework question is never a choice: the step is cancelled (A1)', async () => {
+    const scripts: readonly (readonly [readonly string[], string])[] = [
+      [[], FRAMEWORK_DISMISSED_REASON],
+      [['Same for all roles'], FRAMEWORK_DISMISSED_REASON],
+      [['Per role', 'GSD'], FRAMEWORK_DISMISSED_REASON],
+      [['what', 'ever', 'else'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of scripts) {
       const run = memIo(memWorld({}), answers)
-      expect(await frameworkStep(run.io, ambiguous, roles)).toEqual({
-        kind: 'cancelled',
-        reason: FRAMEWORK_DISMISSED_REASON,
-      })
+      expect(await frameworkStep(run.io, ambiguous, roles)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(FRAMEWORK_DISMISSED_REASON).toBe('A framework question was dismissed or not answered.')
@@ -1539,10 +1571,11 @@ describe('runInit framework and recommendations', () => {
     ]
     const run = memIo(gitWorld({ facts: { facts: gsdOnly, gsdUserDir: null } }), answers)
     await runInit(run.io, { dryRun: true })
-    expect(run.logged).toContain(
+    const refusal =
       'Cannot set security to superpowers: it is not installed for this repo (installed: GSD, none (built-in)). ' +
-        'security keeps its framework.',
-    )
+      'security keeps its framework.'
+    expect(run.asked).toContain(`${refusal}\n${ADJUST_QUESTION}`)
+    expect(run.logged).not.toContain(refusal)
   })
 
   test('a dismissed framework question cancels init and prints why (A1)', async () => {
@@ -1583,15 +1616,20 @@ describe('durationStep', () => {
     }
   })
 
-  test('zero and more than 168 hours are asked again, and a duration after them is taken', async () => {
+  test('zero and more than 168 hours are asked again with why on top, and a duration after them is taken', async () => {
     const run = memIo(memWorld({}), ['0', '200h', '2h'])
     expect(await durationStep(run.io)).toEqual({ kind: 'accepted', value: '2h' })
-    expect(run.asked).toEqual([DURATION_QUESTION, DURATION_QUESTION, DURATION_QUESTION])
+    const accepts = 'a duration such as 4h, 90m or 1h30m, at most 168h'
+    expect(run.asked).toEqual([
+      DURATION_QUESTION,
+      `'0' isn't one of: ${accepts}.\n${DURATION_QUESTION}`,
+      `'200h' isn't one of: ${accepts}.\n${DURATION_QUESTION}`,
+    ])
   })
 
-  test('three answers outside the grammar are cancelled with the reason, and nothing is taken (A1)', async () => {
+  test('three answers outside the grammar cancel with no usable answer, and nothing is taken (A1)', async () => {
     const run = memIo(memWorld({}), ['soon', 'soon', 'soon', '4h'])
-    expect(await durationStep(run.io)).toEqual({ kind: 'cancelled', reason: DURATION_DISMISSED_REASON })
+    expect(await durationStep(run.io)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
     expect(run.asked).toHaveLength(MAX_ASKS)
     expect(run.logged).toEqual([])
   })
@@ -1685,20 +1723,30 @@ describe('modelStep', () => {
     ])
   })
 
-  test('a model that is no family alias prints the refusal line and is asked again (A4)', async () => {
+  test('a model that is no family alias puts the refusal line on top of the next ask (A4)', async () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'high high', 'opus + high'])
     const modelled = valueOf(await modelStep(run.io, roles))
     expect(modelled.map(role => [role.model, role.effort])).toEqual(roles.map(() => ['opus', 'high']))
-    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL, MODEL_ALL, MODEL_ALL])
-    expect(run.logged).toEqual([modelEffortRefusal('sonet + high'), modelEffortRefusal('high high')])
+    expect(run.asked).toEqual([
+      MODEL_MODE_QUESTION,
+      MODEL_ALL,
+      `${modelEffortRefusal('sonet + high')}\n${MODEL_ALL}`,
+      `${modelEffortRefusal('high high')}\n${MODEL_ALL}`,
+    ])
+    expect(run.logged).toEqual([])
   })
 
-  test('MAX_ASKS refused models, a pinned id among them, cancel with the reason after the refusal lines', async () => {
+  test('MAX_ASKS refused models, a pinned id among them, cancel with no usable answer (A4, D-136)', async () => {
     const refused = ['claude-opus-5-5 high', 'opus', 'sonet high']
     const run = memIo(memWorld({}), ['Same for all roles', ...refused, 'opus + high'])
-    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
-    expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL, MODEL_ALL, MODEL_ALL])
-    expect(run.logged).toEqual(refused.map(answer => modelEffortRefusal(answer)))
+    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    expect(run.asked).toEqual([
+      MODEL_MODE_QUESTION,
+      MODEL_ALL,
+      `${modelEffortRefusal('claude-opus-5-5 high')}\n${MODEL_ALL}`,
+      `${modelEffortRefusal('opus')}\n${MODEL_ALL}`,
+    ])
+    expect(run.logged).toEqual([])
   })
 
   test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', async () => {
@@ -1719,11 +1767,16 @@ describe('modelStep', () => {
     expect(run.asked.filter(question => /threshold/i.test(question))).toEqual([])
   })
 
-  test('a dismissal or unlisted answer at any model question cancels with the reason, no roles (A1)', async () => {
-    const scripts = [[], ['Same for all roles'], ['Per role', 'opus + medium'], ['nope', 'nope', 'nope']]
-    for (const answers of scripts) {
+  test('a dismissal or unlisted answers at any model question cancel with their reason, no roles (A1)', async () => {
+    const scripts: readonly (readonly [readonly string[], string])[] = [
+      [[], MODEL_DISMISSED_REASON],
+      [['Same for all roles'], MODEL_DISMISSED_REASON],
+      [['Per role', 'opus + medium'], MODEL_DISMISSED_REASON],
+      [['nope', 'nope', 'nope'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of scripts) {
       const run = memIo(memWorld({}), answers)
-      expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
+      expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(MODEL_DISMISSED_REASON).toBe('A model and effort question was dismissed or not answered.')
@@ -1792,20 +1845,23 @@ describe('assignmentStep', () => {
     expect(roleIn(assigned, 'security').skills).toEqual(['security-review'])
   })
 
-  test('an answer that names a role the team does not have is asked again', async () => {
+  test('an answer that names a role the team does not have is asked again with why on top', async () => {
     const run = memIo(memWorld({}), ['cto', 'be', 'None'])
     const assigned = valueOf(await assignmentStep(run.io, roles, setup))
     expect(roleIn(assigned, 'be').mcp).toEqual(['sentry'])
-    expect(run.asked).toEqual([SENTRY_QUESTION, SENTRY_QUESTION, CODEX_QUESTION])
+    const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
+    expect(run.asked).toEqual([SENTRY_QUESTION, `${refusal}\n${SENTRY_QUESTION}`, CODEX_QUESTION])
   })
 
-  test('three unreadable answers or a dismissal cancel with the reason, and no answer is kept (A1)', async () => {
-    for (const answers of [['cto', 'cto', 'cto'], [], ['be']]) {
+  test('three unreadable answers or a dismissal cancel with their reason, and no answer is kept (A1)', async () => {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [['cto', 'cto', 'cto'], NO_USABLE_ANSWER_REASON],
+      [[], ASSIGNMENT_DISMISSED_REASON],
+      [['be'], ASSIGNMENT_DISMISSED_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await assignmentStep(run.io, roles, setup)).toEqual({
-        kind: 'cancelled',
-        reason: ASSIGNMENT_DISMISSED_REASON,
-      })
+      expect(await assignmentStep(run.io, roles, setup)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(ASSIGNMENT_DISMISSED_REASON).toBe(
@@ -2015,13 +2071,19 @@ describe('memoryStep', () => {
     expect(none.asked).toEqual([])
   })
 
-  test('an unknown role is asked again; three such answers or a dismissal cancel with the reason (A1)', async () => {
+  test('an unknown role is asked again; three such answers or a dismissal cancel with their reason (A1)', async () => {
     const again = memIo(memWorld({}), ['cto', 'pm', 'None', 'None'])
     expect(roleIn(valueOf(await memoryStep(again.io, roles, found)), 'pm').instructions).toEqual(['global-claude-md'])
-    expect(again.asked).toEqual([GLOBAL_QUESTION, GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION])
-    for (const answers of [['cto', 'cto', 'cto'], [], ['pm', 'pm']]) {
+    const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
+    expect(again.asked).toEqual([GLOBAL_QUESTION, `${refusal}\n${GLOBAL_QUESTION}`, MEMORY_QUESTION, PROJECT_QUESTION])
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [['cto', 'cto', 'cto'], NO_USABLE_ANSWER_REASON],
+      [[], MEMORY_DISMISSED_REASON],
+      [['pm', 'pm'], MEMORY_DISMISSED_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await memoryStep(run.io, roles, found)).toEqual({ kind: 'cancelled', reason: MEMORY_DISMISSED_REASON })
+      expect(await memoryStep(run.io, roles, found)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(MEMORY_DISMISSED_REASON).toBe(
@@ -2067,7 +2129,8 @@ describe('carryStep', () => {
     const all = memIo(memWorld({}), ['API_KEY=x', 'All of them'])
     const carried = valueOf(await carryStep(all.io, roles, twoNames))
     expect(carried.every(role => role.carry.env.join() === 'API_KEY,JIRA_URL')).toBe(true)
-    expect(all.asked).toEqual([ENV_QUESTION, ENV_QUESTION])
+    const refusal = `'API_KEY=x' isn't one of: "None", "All of them", or names from the list, typed exactly.`
+    expect(all.asked).toEqual([ENV_QUESTION, `${refusal}\n${ENV_QUESTION}`])
     const none = valueOf(await carryStep(memIo(memWorld({}), ['None']).io, roles, twoNames))
     expect(none.every(role => role.carry.env.length === 0)).toBe(true)
   })
@@ -2139,10 +2202,14 @@ describe('carryStep', () => {
     }
   })
 
-  test('a dismissal or three answers that name no scanned variable cancel with the reason (A1)', async () => {
-    for (const answers of [[], ['HOME', 'jira_url', 'API_KEY JIRA_URL=1']]) {
+  test('a dismissal or three answers that name no scanned variable cancel with their reason (A1)', async () => {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], ENV_DISMISSED_REASON],
+      [['HOME', 'jira_url', 'API_KEY JIRA_URL=1'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await carryStep(run.io, roles, twoNames)).toEqual({ kind: 'cancelled', reason: ENV_DISMISSED_REASON })
+      expect(await carryStep(run.io, roles, twoNames)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(ENV_DISMISSED_REASON).toBe('The env variables question was dismissed or not answered.')
@@ -2380,20 +2447,23 @@ describe('hunkStep', () => {
     expect(run.logged).toEqual([attendedNote(['mode', 'workflow.text_mode'])])
   })
 
-  test('only Accept accepts: an answer that is neither Accept nor Decline is asked again', async () => {
+  test('only Accept accepts: an answer that is neither Accept nor Decline is asked again with why on top', async () => {
     const run = memIo(configWorld('{}'), ['yes', 'Accept', 'DECLINE'])
     const hunks = valueOf(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS))))
     expect(hunks.map(hunk => hunk.isAccepted)).toEqual([true, false])
     expect(run.asked).toHaveLength(3)
+    expect(run.asked[1]).toBe(`'yes' isn't one of: "Accept", "Decline".\n${run.asked[0] ?? ''}`)
   })
 
-  test('a dismissal or three unlisted answers cancel with the reason; no earlier Accept is kept (A1)', async () => {
-    for (const answers of [[], ['Accept'], ['yes', 'ok', 'sure']]) {
+  test('a dismissal or three unlisted answers cancel with their reason; no earlier Accept is kept (A1)', async () => {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], HUNK_DISMISSED_REASON],
+      [['Accept'], HUNK_DISMISSED_REASON],
+      [['yes', 'ok', 'sure'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(configWorld('{}'), answers)
-      expect(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))).toEqual({
-        kind: 'cancelled',
-        reason: HUNK_DISMISSED_REASON,
-      })
+      expect(await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(HUNK_DISMISSED_REASON).toBe('A hunk question was dismissed or not answered.')
@@ -2444,7 +2514,7 @@ function withStat(run: MemRun, path: string, stat: PortStat): InitIo {
   return { ...run.io, stat: async asked => (asked === path ? stat : run.io.stat(asked)) }
 }
 
-/** The line init logs for a launcher folder it cannot use. */
+/** The line on top of the folder question when it is asked again after a folder it cannot use (D-136). */
 function cannotUse(answer: string, problem: string): string {
   return `Cannot use ${answer}: ${problem}.`
 }
@@ -2503,14 +2573,18 @@ describe('launchStartStep', () => {
     }
   })
 
-  test('an unsafe or missing folder, a file or a link out of the repo is refused with why, asked again', async () => {
+  test('an unsafe or missing folder, a file or a link out of the repo is asked again with why on top', async () => {
     const bad = ['../x', '/etc', 'a b', '${HOME}', 'missing', 'apps/readme.md', 'apps/linked']
     for (const answer of bad) {
       const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
       expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
       const problem = ['missing', 'apps/readme.md', 'apps/linked'].includes(answer) ? NOT_A_FOLDER : UNSAFE_FOLDER
-      expect(run.logged).toEqual([cannotUse(answer, problem)])
-      expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+      expect(run.logged).toEqual([])
+      expect(run.asked).toEqual([
+        LAUNCH_START_QUESTION,
+        LAUNCH_DIR_QUESTION,
+        `${cannotUse(answer, problem)}\n${LAUNCH_DIR_QUESTION}`,
+      ])
     }
   })
 
@@ -2518,16 +2592,24 @@ describe('launchStartStep', () => {
     const run = memIo(FOLDER_WORLD, ['other', 'vendor/ui', 'apps/web'])
     const outside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/elsewhere/vendor/ui' }
     expect(await launchStartStep(withStat(run, '/repo/vendor/ui', outside), '/repo')).toEqual(APPS_WEB)
-    expect(run.logged).toEqual([cannotUse('vendor/ui', NOT_A_FOLDER)])
-    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+    expect(run.logged).toEqual([])
+    expect(run.asked).toEqual([
+      LAUNCH_START_QUESTION,
+      LAUNCH_DIR_QUESTION,
+      `${cannotUse('vendor/ui', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+    ])
   })
 
   test('a folder whose stat has no real path is refused, and asked again', async () => {
     const run = memIo(FOLDER_WORLD, ['other', 'apps/unresolved', 'apps/web'])
     const unresolved: PortStat = { kind: 'dir', size: 0, isLink: false }
     expect(await launchStartStep(withStat(run, '/repo/apps/unresolved', unresolved), '/repo')).toEqual(APPS_WEB)
-    expect(run.logged).toEqual([cannotUse('apps/unresolved', NOT_A_FOLDER)])
-    expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION, LAUNCH_DIR_QUESTION])
+    expect(run.logged).toEqual([])
+    expect(run.asked).toEqual([
+      LAUNCH_START_QUESTION,
+      LAUNCH_DIR_QUESTION,
+      `${cannotUse('apps/unresolved', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+    ])
   })
 
   test('a folder whose real path lies inside the repo is still chosen', async () => {
@@ -2543,13 +2625,19 @@ describe('launchStartStep', () => {
     const answer = `a${BIDI_OVERRIDE} ${'x'.repeat(200)}`
     const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
     await launchStartStep(run.io, '/repo')
-    expect(run.logged).toEqual([cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)])
+    expect(run.asked[2]).toBe(`${cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`)
+    expect(run.logged).toEqual([])
   })
 
   test(`${MAX_ASKS} unusable folders cancel with the rounds reason, and nothing was chosen`, async () => {
     const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b', 'apps/web'])
     expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON })
-    expect(run.asked.filter(question => question === LAUNCH_DIR_QUESTION)).toHaveLength(MAX_ASKS)
+    expect(run.asked.slice(1)).toEqual([
+      LAUNCH_DIR_QUESTION,
+      `${cannotUse('../a', UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      `${cannotUse('missing', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+    ])
+    expect(run.logged).toEqual([])
     expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
   })
 
@@ -2562,12 +2650,13 @@ describe('launchStartStep', () => {
   })
 
   test('a dismissed or never answered start question cancels with its reason', async () => {
-    for (const answers of [[], ['somewhere', 'else', 'again']]) {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], LAUNCH_START_DISMISSED_REASON],
+      [['somewhere', 'else', 'again'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await launchStartStep(run.io, '/repo')).toEqual({
-        kind: 'cancelled',
-        reason: LAUNCH_START_DISMISSED_REASON,
-      })
+      expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'cancelled', reason })
     }
     expect(LAUNCH_START_DISMISSED_REASON).toBe('The launcher start question was dismissed or not answered.')
   })
@@ -2672,6 +2761,202 @@ describe('runInit cancel reasons (A1)', () => {
   })
 })
 
+describe('refusal re-ask (G-02-6b)', () => {
+  /** The git policy question as an askChoice ask, with the words its refusal lists. */
+  const POLICY: ChoiceAsk<GitPolicy> = {
+    question: GIT_POLICY_QUESTION,
+    spec: { options: GIT_POLICY_OPTIONS },
+    parse: parseGitPolicy,
+    accepts: 'definitions, all, ignore',
+  }
+  /** The refusal of the framework question when GSD and superpowers are offered: the user's own example (D-136). */
+  const BOTH_REFUSAL = "'both' isn't one of: GSD, superpowers, none - a role runs one framework."
+
+  test('askChoice gives the answer parse takes as answered, asked once with the question as it is', async () => {
+    const run = memIo(memWorld({}), ['Commit all'])
+    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'all' })
+    expect(run.asked).toEqual([GIT_POLICY_QUESTION])
+    expect(run.specs).toEqual([POLICY.spec])
+  })
+
+  test('askChoice gives dismissed at once for a dismissal, and asks nothing after it', async () => {
+    const run = memIo(memWorld({}), [])
+    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'dismissed' })
+    expect(run.asked).toEqual([GIT_POLICY_QUESTION])
+  })
+
+  test('an answer parse does not take is asked again: the refusal on the first line, then the question', async () => {
+    const run = memIo(memWorld({}), ['nonsense', 'Commit all'])
+    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'all' })
+    expect(run.asked).toEqual([
+      GIT_POLICY_QUESTION,
+      `'nonsense' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test(`${MAX_ASKS} answers parse does not take give exhausted, with no fourth ask (A1)`, async () => {
+    const run = memIo(memWorld({}), ['a', 'b', 'c', 'Commit all'])
+    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'exhausted' })
+    expect(run.asked).toEqual([
+      GIT_POLICY_QUESTION,
+      `'a' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
+      `'b' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
+    ])
+    expect(MAX_ASKS).toBe(3)
+  })
+
+  test('an empty answer is refused with its own words, and is never a choice', async () => {
+    const run = memIo(memWorld({}), ['   ', 'ignore'])
+    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'ignore' })
+    expect(run.asked[1]).toBe(`An empty answer isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`)
+    for (const answer of ['', '   ', String.fromCharCode(7)]) {
+      expect([answer, refusalLine(answer, 'x')]).toEqual([answer, "An empty answer isn't one of: x."])
+    }
+  })
+
+  test("refusalLine says why: the user's own example for both at a framework question", () => {
+    expect(refusalLine('both', 'GSD, superpowers, none - a role runs one framework')).toBe(BOTH_REFUSAL)
+    expect(refusalLine('  both  ', 'x')).toBe("'both' isn't one of: x.")
+  })
+
+  test('the typed answer is trimmed, cleaned and cut to 40 code points, so it cannot forge a line (T-02-54)', () => {
+    const escape = String.fromCharCode(27)
+    const hostile = `a\nwarning: forged${escape}[2J${BIDI_OVERRIDE}b`
+    const line = refusalLine(hostile, 'x')
+    expect(line).toBe("'awarning: forged[2Jb' isn't one of: x.")
+    expect(line.includes('\n') || line.includes(escape) || line.includes(BIDI_OVERRIDE)).toBe(false)
+    expect(refusalLine('y'.repeat(60), 'x')).toBe(`'${'y'.repeat(39)}…' isn't one of: x.`)
+  })
+
+  test('quotedLabels puts each option label in double quotes, joined with a comma', () => {
+    expect(quotedLabels(['Same for all roles', 'Per role'])).toBe('"Same for all roles", "Per role"')
+    expect(quotedLabels(CLAUDE_JSON_OPTIONS)).toBe('"No, skip it", "Yes, read names only"')
+    expect(quotedLabels([])).toBe('')
+  })
+
+  test('running out of tries has its own reason, distinct from every dismissed reason (D-136)', () => {
+    expect(NO_USABLE_ANSWER_REASON).toBe('No usable answer after 3 tries.')
+    const dismissed = [CONSENT_DISMISSED_REASON, FRAMEWORK_DISMISSED_REASON, REVIEW_DISMISSED_REASON]
+    expect(dismissed).not.toContain(NO_USABLE_ANSWER_REASON)
+  })
+
+  test('each question lists the answers it takes in its refusal', async () => {
+    const roles = proposeRoles(repoScan()).roles
+    const choice: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+    const roleList = '"None", "All roles", or role ids from: pm, tl, security'
+    const launch =
+      '"Git root of this repo", "The folder I run it from", "Another folder in this repo" ' +
+      '(or type git root, in here or other)'
+    const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
+    const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
+      ['consent', io => consentStep(io), '"No, skip it", "Yes, read names only"'],
+      [
+        'roles',
+        io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
+        '"Use these roles", "Adjust them", "Describe my own structure"',
+      ],
+      ['framework mode', io => frameworkStep(io, choice, roles), '"Same for all roles", "Per role"'],
+      ['security', io => securityInstallStep(io, SECURITY_KEYS), '"Install", "Not now"'],
+      ['duration', io => durationStep(io), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
+      ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
+      ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
+      ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
+      ['memory', io => memoryStep(io, roles, emptySetupScan({ hasGlobalClaudeMd: true })), roleList],
+      [
+        'env',
+        io => carryStep(io, roles, emptySetupScan({ carry: envNames })),
+        '"None", "All of them", or names from the list, typed exactly',
+      ],
+      ['launch', io => launchStartStep(io, '/repo'), launch],
+      ['git policy', io => gitPolicyStep(io), 'definitions, all, ignore'],
+    ]
+    for (const [name, step, accepts] of steps) {
+      const run = memIo(memWorld({}), ['zzz'])
+      await step(run.io)
+      expect([name, run.asked[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
+    }
+  })
+
+  test("a dry run that types 'both' three times at the framework question cancels with no usable answer", async () => {
+    const answers = { ...INIT_ANSWERS, 'Framework for': 'both', [BOTH_REFUSAL]: 'both' }
+    const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    const at = run.asked.indexOf(FRAMEWORK_ALL_QUESTION)
+    expect(at).toBeGreaterThan(0)
+    expect(run.asked.slice(at)).toEqual([
+      FRAMEWORK_ALL_QUESTION,
+      `${BOTH_REFUSAL}\n${FRAMEWORK_ALL_QUESTION}`,
+      `${BOTH_REFUSAL}\n${FRAMEWORK_ALL_QUESTION}`,
+    ])
+    expect(run.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
+    expect(run.logged.filter(text => text === NO_USABLE_ANSWER_REASON)).toHaveLength(1)
+  })
+
+  test('Esc at the framework question still cancels init with its own dismissed reason (D-45)', async () => {
+    const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
+    const run = memIo(world, answersWithout('Framework for'))
+    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(run.asked.at(-1)).toBe(FRAMEWORK_ALL_QUESTION)
+    expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
+  })
+
+  test('the model loop puts its refusal on top of the next ask; three refused answers cancel (A4)', async () => {
+    const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'opus', 'high high'])
+    const roles = [templateRole('pm')]
+    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    const all = 'Model and effort for all roles?'
+    expect(run.asked).toEqual([
+      MODEL_MODE_QUESTION,
+      all,
+      `${modelEffortRefusal('sonet + high')}\n${all}`,
+      `${modelEffortRefusal('opus')}\n${all}`,
+    ])
+    expect(run.logged).toEqual([])
+    const dismissed = memIo(memWorld({}), ['Same for all roles', 'sonet + high'])
+    expect(await modelStep(dismissed.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
+  })
+
+  test('the launcher folder loop puts its refusal on top of the next ask; the cap keeps its reason', async () => {
+    const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', 'apps/web'])
+    expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
+    expect(run.asked).toEqual([
+      LAUNCH_START_QUESTION,
+      LAUNCH_DIR_QUESTION,
+      `${cannotUse('../a', UNSAFE_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+      `${cannotUse('missing', NOT_A_FOLDER)}\n${LAUNCH_DIR_QUESTION}`,
+    ])
+    expect(run.logged).toEqual([])
+    const capped = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b'])
+    expect(await launchStartStep(capped.io, '/repo')).toEqual({ kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON })
+  })
+
+  test('the Adjust loop puts the message of a change it cannot apply on top of the next ask', async () => {
+    const roles = proposeRoles(FULL_SCAN).roles
+    const run = memIo(memWorld({}), ['delete fe', 'drop zz', 'drop fe', 'Show the roles', 'Done adjusting'])
+    const kept = roles.filter(role => role.id !== 'fe')
+    expect(await adjustLoop(run.io, roles, FRAMEWORKS)).toEqual({ kind: 'adjusted', roles: kept })
+    expect(run.asked).toEqual([
+      ADJUST_QUESTION,
+      `Could not read that change: delete fe. Use add, drop, rename or framework.\n${ADJUST_QUESTION}`,
+      `no role "zz"\n${ADJUST_QUESTION}`,
+      ADJUST_QUESTION,
+      ADJUST_QUESTION,
+    ])
+    expect(run.logged).toEqual([])
+  })
+
+  test('a typed line break in an Adjust change cannot add a line to the next ask (T-02-54)', async () => {
+    const roles = proposeRoles(FULL_SCAN).roles
+    const run = memIo(memWorld({}), ['delete\nfe', 'Done adjusting'])
+    await adjustLoop(run.io, roles, FRAMEWORKS)
+    expect(run.asked[1]?.split('\n')).toEqual([
+      'Could not read that change: deletefe. Use add, drop, rename or framework.',
+      ADJUST_QUESTION,
+    ])
+  })
+})
+
 describe('init helpers', () => {
   test('commandRefusal names the given command wherever a detect refusal names detect', () => {
     expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
@@ -2756,9 +3041,13 @@ describe('init helpers', () => {
     expect(await gitPolicyStep(run.io)).toEqual({ kind: 'accepted', value: 'all' })
     expect(run.asked).toEqual([GIT_POLICY_QUESTION])
     expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS }])
-    for (const answers of [[], ['whatever', 'whatever', 'whatever']]) {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], GIT_POLICY_DISMISSED_REASON],
+      [['whatever', 'whatever', 'whatever'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const dismissed = memIo(memWorld({}), answers)
-      expect(await gitPolicyStep(dismissed.io)).toEqual({ kind: 'cancelled', reason: GIT_POLICY_DISMISSED_REASON })
+      expect(await gitPolicyStep(dismissed.io)).toEqual({ kind: 'cancelled', reason })
       expect(dismissed.asked).toHaveLength(Math.max(1, answers.length))
       expect(dismissed.logged).toEqual([])
     }
@@ -2797,11 +3086,11 @@ describe('init helpers', () => {
     }
   })
 
-  test('askChoice gives null after exactly two asks for an invalid answer followed by a dismissal', async () => {
+  test('askChoice gives dismissed after exactly two asks for an invalid answer followed by a dismissal', async () => {
     const run = memIo(memWorld({}), ['nonsense'])
-    const policy = await askChoice(run.io, 'Git policy?', { options: GIT_POLICY_OPTIONS }, parseGitPolicy)
-    expect(policy).toBeNull()
-    expect(run.asked).toEqual(['Git policy?', 'Git policy?'])
+    const ask = { question: 'Git policy?', spec: { options: GIT_POLICY_OPTIONS }, parse: parseGitPolicy, accepts: 'x' }
+    expect(await askChoice(run.io, ask)).toEqual({ kind: 'dismissed' })
+    expect(run.asked).toEqual(['Git policy?', "'nonsense' isn't one of: x.\nGit policy?"])
   })
 
   describe('the init port read decisions', () => {
@@ -3689,14 +3978,18 @@ describe('reviewStep', () => {
     expect(run.logged.at(-1)).toBe(REVIEW_ROUNDS_REASON)
   })
 
-  test('a dismissed review, or three answers it cannot read, cancels init with the reason (A1)', async () => {
+  test('a dismissed review, or three answers it cannot read, cancels init with its reason (A1)', async () => {
     const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
     expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
-    const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe' })
+    const refusal =
+      `'maybe' isn't one of: "Confirm", "Change roles", "Change git policy", "Change launcher start", ` +
+      'or duration, model, assignments, memory, env, hunks.'
+    const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe', [refusal]: 'maybe' })
     expect(await runInit(unread.io, { dryRun: true })).toBe(INIT_CANCELLED)
-    expect(unread.asked.filter(question => question === REVIEW_ASKED)).toHaveLength(MAX_ASKS)
-    expect(unread.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
+    const again = `${refusal}\n${REVIEW_ASKED}`
+    expect(unread.asked.slice(-MAX_ASKS)).toEqual([REVIEW_ASKED, again, again])
+    expect(unread.logged.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
   })
 
   test("a go-back step that is dismissed cancels init with that step's reason, printed once (A1)", async () => {
@@ -4792,19 +5085,24 @@ describe('init apply conflicts (D-67)', () => {
     'a dismissed conflict question, or MAX_ASKS answers that are neither, cancels init and writes and runs nothing',
     async () => {
       const { world } = await editedRoleWorld()
-      const reason = 'A Keep mine or Take new question was dismissed or not answered.'
-      const cases: readonly (readonly [Readonly<Record<string, string>>, number])[] = [
-        [INIT_ANSWERS, 1],
-        [{ ...INIT_ANSWERS, [ROLE_QUESTION]: 'maybe' }, MAX_ASKS],
+      const dismissed = 'A Keep mine or Take new question was dismissed or not answered.'
+      const refusal = `'maybe' isn't one of: "Keep mine", "Take new".`
+      const unread = { ...INIT_ANSWERS, [ROLE_QUESTION]: 'maybe', [refusal]: 'maybe' }
+      const cases: readonly (readonly [Readonly<Record<string, string>>, number, string])[] = [
+        [INIT_ANSWERS, 1, dismissed],
+        [unread, MAX_ASKS, NO_USABLE_ANSWER_REASON],
       ]
-      for (const [answers, asks] of cases) {
+      for (const [answers, asks, reason] of cases) {
         const host = memHost(hostWorld({}))
         const run = memIo(world, answers)
         expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(INIT_CANCELLED)
-        expect(run.asked.filter(question => question === ROLE_QUESTION)).toHaveLength(asks)
+        expect(run.asked.filter(question => question.includes(ROLE_QUESTION))).toHaveLength(asks)
         expect(run.logged.at(-1)).toBe(reason)
         expect([host.writes, host.calls]).toEqual([[], []])
       }
+      const asked = memIo(world, unread)
+      await runInit(asked.io, { dryRun: false, host: memHost(hostWorld({})).io })
+      expect(asked.asked.slice(-2)).toEqual([`${refusal}\n${ROLE_QUESTION}`, `${refusal}\n${ROLE_QUESTION}`])
     },
   )
 
@@ -5159,15 +5457,20 @@ describe('security plugin installs (decision #39)', () => {
   })
 
   test('a dismissal, or three answers that are neither, cancels the step with its reason (A1, D-45)', async () => {
-    for (const answers of [[], ['yes', 'later', 'Install them']]) {
+    const cases: readonly (readonly [readonly string[], string])[] = [
+      [[], 'The security plugins question was dismissed or not answered.'],
+      [['yes', 'later', 'Install them'], NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await securityInstallStep(run.io, SECURITY_KEYS)).toEqual({
-        kind: 'cancelled',
-        reason: 'The security plugins question was dismissed or not answered.',
-      })
+      expect(await securityInstallStep(run.io, SECURITY_KEYS)).toEqual({ kind: 'cancelled', reason })
       expect(run.asked).toHaveLength(answers.length === 0 ? 1 : MAX_ASKS)
       expect(run.logged).toEqual([])
     }
+    const refused = memIo(memWorld({}), ['yes', 'Install'])
+    await securityInstallStep(refused.io, SECURITY_KEYS)
+    const question = securityInstallQuestion(SECURITY_KEYS)
+    expect(refused.asked).toEqual([question, `'yes' isn't one of: "Install", "Not now".\n${question}`])
   })
 
   test('withSecuritySkill gives the skill once to each role standing for Security, or takes it away', () => {

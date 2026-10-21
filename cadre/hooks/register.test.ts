@@ -7,13 +7,16 @@ import {
   CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
   GIT_POLICY_DISMISSED_REASON,
+  GIT_POLICY_QUESTION,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
+  NO_USABLE_ANSWER_REASON,
   NOT_INTERACTIVE_REPLY,
   policyLine,
+  refusalLine,
   REGEN_NO_STATE,
   regenNoRole,
   REVIEW_QUESTION,
@@ -1311,9 +1314,15 @@ describe('cadre init with a faked host', () => {
 
   test('an answer that is not a listed choice is asked again, three asks in all, then init cancels', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Git policy': 'whatever' } }), log)
+    // The asks after a refused answer start with the refusal (D-136), so the world answers that start too.
+    const refusal = refusalLine('whatever', 'definitions, all, ignore')
+    const answers = { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' }
+    fakeHost(on, initWorld({ answers }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    expect(log.asks.filter(ask => ask === POLICY_ASK)).toHaveLength(3)
+    const again = `ask ${refusal}\n${GIT_POLICY_QUESTION}`
+    expect(log.asks.slice(log.asks.indexOf(POLICY_ASK))).toEqual([POLICY_ASK, again, again])
+    expect(refusal).toBe("'whatever' isn't one of: definitions, all, ignore.")
+    expect(log.logs.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
     expect(out.text).toBe('init cancelled, nothing written')
   })
 

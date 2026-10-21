@@ -19,7 +19,7 @@ import {
   UNLISTED_HISTORY_NOTE,
 } from './history'
 import type { HistoryScan } from './history'
-import { PANE_TITLES } from './init'
+import { NO_USABLE_ANSWER_REASON, PANE_TITLES } from './init'
 import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from './testkit'
 import type { MemWorld } from './testkit'
 
@@ -28,6 +28,9 @@ const DIR = '/home/u/.claude/projects/-repo'
 
 /** The heading every history block starts with. */
 const HEADING = 'Session history (names and counts only):'
+
+/** The refusal on top of the history question when it is asked again after the answer `maybe` (D-136). */
+const MAYBE_REFUSAL = `'maybe' isn't one of: "No, skip it", "Yes, scan names and counts".`
 
 /** The transcript of the plan's example: two kept commands, one Skill call and a command name that is dropped. */
 const EXAMPLE = [
@@ -371,9 +374,10 @@ describe('history scan', () => {
     const unread = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe'])
     expect(await historyStep(unread.io, DEFAULT_LOCATIONS)).toEqual({
       kind: 'cancelled',
-      reason: HISTORY_DISMISSED_REASON,
+      reason: NO_USABLE_ANSWER_REASON,
     })
-    expect(unread.asked).toEqual([historyQuestion(1), historyQuestion(1), historyQuestion(1)])
+    const again = `${MAYBE_REFUSAL}\n${historyQuestion(1)}`
+    expect(unread.asked).toEqual([historyQuestion(1), again, again])
     expect(unread.reads).toEqual([])
   })
 
@@ -448,5 +452,29 @@ describe('consent declines first (G-02-11)', () => {
     const result = await historyStep(run.io, DEFAULT_LOCATIONS)
     expect([result.kind, result.kind === 'accepted' && result.value !== 'skipped']).toEqual(['accepted', true])
     expect(run.reads).toEqual([`${DIR}/a.jsonl`])
+  })
+})
+
+describe('refusal re-ask (G-02-6b)', () => {
+  test('an answer the history question cannot read is asked again with why on top, then counts', async () => {
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'No, skip it'])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(run.asked).toEqual([historyQuestion(1), `${MAYBE_REFUSAL}\n${historyQuestion(1)}`])
+    expect([run.reads, run.logged]).toEqual([[], []])
+  })
+
+  test('three answers it cannot read cancel with no usable answer; no transcript is read (A1, D-136)', async () => {
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe', 'Yes, scan names and counts'])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    expect(run.asked).toHaveLength(3)
+    expect([run.reads, run.shown, run.logged]).toEqual([[], [], []])
+  })
+
+  test('Esc after a refused answer still cancels with the dismissed reason of the history question', async () => {
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe'])
+    const dismissed = { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual(dismissed)
+    expect(run.asked).toHaveLength(2)
+    expect(run.reads).toEqual([])
   })
 })
