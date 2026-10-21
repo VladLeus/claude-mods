@@ -209,6 +209,32 @@ export const MAX_ASKS = 3
  */
 export const NO_USABLE_ANSWER_REASON = `No usable answer after ${MAX_ASKS} tries.`
 
+/**
+ * The chip set of G-02-3c (D-136): the header chip of each kind of init question, a name of 12 characters at most (the
+ * engine's limit for a chip), so no init dialog falls back to the engine's generic chip. A hunk question keeps its own
+ * `Hunk i of n` chip (hunkQuestion).
+ */
+export const ASK_HEADERS = Object.freeze({
+  claudeJson: 'claude.json',
+  history: 'History',
+  roles: 'Roles',
+  adjust: 'Adjust',
+  describe: 'Describe',
+  framework: 'Framework',
+  security: 'Security',
+  duration: 'Duration',
+  model: 'Model',
+  mcp: 'MCP',
+  skills: 'Skills',
+  memory: 'Memory',
+  env: 'Env',
+  launch: 'Launch',
+  launchDir: 'Launch dir',
+  gitPolicy: 'Git policy',
+  review: 'Review',
+  conflict: 'Conflict',
+})
+
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
 
@@ -265,7 +291,7 @@ const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
 export async function gitPolicyStep(io: InitIo): Promise<StepResult<GitPolicy>> {
   const ask = {
     question: GIT_POLICY_QUESTION,
-    spec: { options: GIT_POLICY_OPTIONS },
+    spec: { options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy },
     parse: parseGitPolicy,
     accepts: GIT_POLICY_ACCEPTS,
   }
@@ -585,7 +611,7 @@ export const CONSENT_DISMISSED_REASON = 'The ~/.claude.json question was dismiss
 export async function consentStep(io: InitIo): Promise<StepResult<boolean>> {
   const ask = {
     question: CLAUDE_JSON_QUESTION,
-    spec: { options: CLAUDE_JSON_OPTIONS },
+    spec: { options: CLAUDE_JSON_OPTIONS, header: ASK_HEADERS.claudeJson },
     parse: parseConsent,
     accepts: quotedLabels(CLAUDE_JSON_OPTIONS),
   }
@@ -876,7 +902,7 @@ async function proposeFromText(io: InitIo, text: string): Promise<Described> {
 export async function describeStep(io: InitIo): Promise<Described> {
   const ask = {
     question: DESCRIBE_QUESTION,
-    spec: { options: DESCRIBE_OPTIONS },
+    spec: { options: DESCRIBE_OPTIONS, header: ASK_HEADERS.describe },
     parse: parseDescribeAnswer,
     accepts: DESCRIBE_ACCEPTS,
   }
@@ -954,10 +980,11 @@ export async function adjustLoop(
   roles: readonly RoleSpec[],
   installed: readonly FrameworkId[],
 ): Promise<AdjustOutcome> {
+  const spec = { options: ADJUST_OPTIONS, header: ASK_HEADERS.adjust }
   let current = roles
   let refusal: string | null = null
   for (let round = 0; round < MAX_ADJUST_ROUNDS; round += 1) {
-    const answer = await askOnce(io, askedText(ADJUST_QUESTION, refusal), { options: ADJUST_OPTIONS })
+    const answer = await askOnce(io, askedText(ADJUST_QUESTION, refusal), spec)
     if (answer === null) return { kind: 'cancelled', reason: ADJUST_DISMISSED_REASON }
     refusal = null
     const choice = labelled(ADJUST_CHOICES, answer)
@@ -1016,7 +1043,7 @@ async function afterProposed(
   await showBlock(io, 'roles', proposalLines(state.roles, state.changes))
   const ask = {
     question: ROLES_QUESTION,
-    spec: { options: ROLES_OPTIONS },
+    spec: { options: ROLES_OPTIONS, header: ASK_HEADERS.roles },
     parse: parseRolesChoice,
     accepts: quotedLabels(ROLES_OPTIONS),
   }
@@ -1202,12 +1229,12 @@ async function askFrameworks(
   roles: readonly RoleSpec[],
 ): Promise<StepResult<Framed>> {
   const allowed: readonly FrameworkId[] = [...SUPPORTED_IDS.filter(id => choice.ids.includes(id)), 'none']
-  const spec = { options: allowed.map(id => FRAMEWORK_LABELS[id]) }
+  const spec = { options: allowed.map(id => FRAMEWORK_LABELS[id]), header: ASK_HEADERS.framework }
   const parse = (answer: string): FrameworkId | null => parseFramework(answer, allowed)
   const accepts = `${allowed.map(id => FRAMEWORK_WORDS[id]).join(', ')} - a role runs one framework`
   const modeAsk = {
     question: `${FRAMEWORK_QUESTION_PREFIX} (asked because ${frameworkReason(choice)})`,
-    spec: { options: ANSWER_MODE_OPTIONS },
+    spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.framework },
     parse: parseAnswerMode,
     accepts: quotedLabels(ANSWER_MODE_OPTIONS),
   }
@@ -1319,7 +1346,7 @@ export async function securityInstallStep(
   if (keys.length === 0) return accepted([])
   const ask = {
     question: securityInstallQuestion(keys),
-    spec: { options: SECURITY_INSTALL_OPTIONS },
+    spec: { options: SECURITY_INSTALL_OPTIONS, header: ASK_HEADERS.security },
     parse: (answer: string): boolean | null => labelled(SECURITY_INSTALLS, answer),
     accepts: quotedLabels(SECURITY_INSTALL_OPTIONS),
   }
@@ -1372,7 +1399,7 @@ const DURATION_ACCEPTS = 'a duration such as 4h, 90m or 1h30m, at most 168h'
 export async function durationStep(io: InitIo): Promise<StepResult<string>> {
   const ask = {
     question: DURATION_QUESTION,
-    spec: { options: DURATION_OPTIONS },
+    spec: { options: DURATION_OPTIONS, header: ASK_HEADERS.duration },
     parse: parseDuration,
     accepts: DURATION_ACCEPTS,
   }
@@ -1413,9 +1440,10 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
  * cell, on top of the next ask. After MAX_ASKS refused answers it gives `exhausted`, so a cap is never a choice (A1).
  */
 async function askModelEffort(io: InitIo, question: string): Promise<AskResult<Pick<RoleSpec, 'model' | 'effort'>>> {
+  const spec = { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model }
   let refusal: string | null = null
   for (let asked = 0; asked < MAX_ASKS; asked += 1) {
-    const answer = await askOnce(io, askedText(question, refusal), { options: MODEL_EFFORT_OPTIONS })
+    const answer = await askOnce(io, askedText(question, refusal), spec)
     if (answer === null) return { kind: 'dismissed' }
     const value = parseModelEffort(answer)
     if (value !== null) return { kind: 'answered', value }
@@ -1437,7 +1465,7 @@ async function askModelEffort(io: InitIo, question: string): Promise<AskResult<P
 export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<readonly RoleSpec[]>> {
   const modeAsk = {
     question: MODEL_MODE_QUESTION,
-    spec: { options: ANSWER_MODE_OPTIONS },
+    spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.model },
     parse: parseAnswerMode,
     accepts: quotedLabels(ANSWER_MODE_OPTIONS),
   }
@@ -1470,6 +1498,8 @@ export const ASSIGNMENT_DISMISSED_REASON =
 /** One question on which roles get an item, and the names its answer gives them. */
 type AssignItem = {
   readonly question: string
+  /** The chip of its dialog: ASK_HEADERS.mcp for a server, ASK_HEADERS.skills for a skill group (G-02-3c). */
+  readonly header: string
   readonly names: readonly string[]
 }
 
@@ -1498,7 +1528,7 @@ async function askAssignments(
   const accepts = roleListAccepts(roles)
   const assignments: NameAssignment[] = []
   for (const item of items) {
-    const ask = { question: item.question, spec: { options: ROLE_LIST_OPTIONS }, parse, accepts }
+    const ask = { question: item.question, spec: { options: ROLE_LIST_OPTIONS, header: item.header }, parse, accepts }
     const roleIds = choiceResult(await askChoice(io, ask), ASSIGNMENT_DISMISSED_REASON)
     if (roleIds.kind === 'cancelled') return roleIds
     assignments.push(...item.names.map(name => ({ name, roleIds: roleIds.value })))
@@ -1530,9 +1560,10 @@ export async function assignmentStep(
   const mcp = classifyMcp(setup.mcp, roles)
   const skills = classifySkills(setup.skills, roles)
   const counts = hints ?? new Map<string, number>()
-  const serverItems = mcp.unknown.map(name => ({ question: mcpQuestion(name), names: [name] }))
+  const serverItems = mcp.unknown.map(name => ({ question: mcpQuestion(name), header: ASK_HEADERS.mcp, names: [name] }))
   const groupItems = orderGroupsByUse(skills.groups, counts).map(group => ({
     question: skillGroupQuestion(group, groupUses(group, counts)),
+    header: ASK_HEADERS.skills,
     names: group.names,
   }))
   const servers = await askAssignments(io, roles, serverItems)
@@ -1599,7 +1630,8 @@ export async function memoryStep(
   for (const group of INSTRUCTION_ORDER) {
     const names = groupNames(group, setup)
     if (names === null) continue
-    const ask = { question: memoryQuestion(group, names), spec: { options: ROLE_LIST_OPTIONS }, parse, accepts }
+    const spec = { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory }
+    const ask = { question: memoryQuestion(group, names), spec, parse, accepts }
     const roleIds = choiceResult(await askChoice(io, ask), MEMORY_DISMISSED_REASON)
     if (roleIds.kind === 'cancelled') return roleIds
     given.set(group, roleIds.value)
@@ -1640,7 +1672,8 @@ async function carriedEnv(io: InitIo, names: readonly string[]): Promise<StepRes
   if (names.length === 0) return accepted([])
   const parse = (answer: string): readonly string[] | null => parseEnvNames(answer, names)
   await showBlock(io, 'env', [ENV_PANE_HEADING, ...names.map(name => `  ${name}`)])
-  const ask = { question: envQuestion(names), spec: { options: ENV_OPTIONS }, parse, accepts: ENV_ACCEPTS }
+  const spec = { options: ENV_OPTIONS, header: ASK_HEADERS.env }
+  const ask = { question: envQuestion(names), spec, parse, accepts: ENV_ACCEPTS }
 
   return choiceResult(await askChoice(io, ask), ENV_DISMISSED_REASON)
 }
@@ -1843,9 +1876,10 @@ async function launchDirProblem(io: InitIo, root: string, path: string): Promise
  * (LAUNCH_DIR_ROUNDS_REASON).
  */
 async function launchDirStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
+  const spec = { options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir }
   let refusal: string | null = null
   for (let asked = 0; asked < MAX_ASKS; asked += 1) {
-    const answer = await askOnce(io, askedText(LAUNCH_DIR_QUESTION, refusal), { options: LAUNCH_DIR_OPTIONS })
+    const answer = await askOnce(io, askedText(LAUNCH_DIR_QUESTION, refusal), spec)
     const isCancel = answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel'
     if (isCancel) return cancelled(LAUNCH_DIR_CANCELLED_REASON)
     const trimmed = answer.trim()
@@ -1872,7 +1906,7 @@ const LAUNCH_START_ACCEPTS = `${quotedLabels(LAUNCH_START_OPTIONS)} (or type git
 export async function launchStartStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
   const ask = {
     question: LAUNCH_START_QUESTION,
-    spec: { options: LAUNCH_START_OPTIONS },
+    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch },
     parse: parseLaunchChoice,
     accepts: LAUNCH_START_ACCEPTS,
   }
@@ -2517,7 +2551,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
     await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
     const ask = {
       question: reviewQuestion(null),
-      spec: { options: REVIEW_OPTIONS },
+      spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review },
       parse: parseReviewItem,
       accepts: REVIEW_ACCEPTS,
     }
@@ -2653,7 +2687,7 @@ export async function applyConfirmed(
   for (const path of conflictPaths(reviewed.planned.plan)) {
     const ask = {
       question: conflictQuestion(path),
-      spec: { options: CONFLICT_OPTIONS },
+      spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict },
       parse: parseConflictAnswer,
       accepts: quotedLabels(CONFLICT_OPTIONS),
     }

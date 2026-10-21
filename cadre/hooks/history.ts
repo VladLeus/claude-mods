@@ -1,7 +1,7 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { asciiLower } from './assign'
 import { compareText } from './facts'
-import { askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels } from './init'
+import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels } from './init'
 import type { StepResult } from './init'
 import { reportText } from './render'
 import { listingState } from './scan'
@@ -294,7 +294,7 @@ export async function historyStep(
   if (listed.total === 0) return skippedWith(io, NO_HISTORY_NOTE)
   const ask = {
     question: historyQuestion(listed.total),
-    spec: { options: HISTORY_OPTIONS },
+    spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history },
     parse: parseHistoryConsent,
     accepts: quotedLabels(HISTORY_OPTIONS),
   }
