@@ -172,6 +172,7 @@ import {
   securityInstallQuestion,
   skillsContextLine,
   teamContextLine,
+  truncatedLine,
   withContext,
 } from './init'
 import type { ApplyOutcome } from './init'
@@ -220,7 +221,7 @@ import {
   proposeRoles,
   ROLE_TEMPLATE,
 } from './roles'
-import { MARKER_ROWS, SKIP_DIRS, SOURCE_EXTENSIONS } from './scan'
+import { MANIFEST_FILES, MARKER_ROWS, SKIP_DIRS, SOURCE_EXTENSIONS } from './scan'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'
 import {
   COPIED_LINE,
@@ -294,15 +295,38 @@ const SCOPES: ReadonlyMap<string, CompiledScope> = new Map(
   TEAM.map((role): [string, CompiledScope] => [role.id, compileScope(role, CONTEXT)]),
 )
 
-/** A repo scan with a finding, a language, a code folder, a warning, and a walk that stopped at its cap. */
+/** A repo scan with a finding, a language, a code folder, a warning, and a deeper folder listed only in part. */
 const REPO: RepoScan = {
   findings: [{ kind: 'fe', label: 'react', evidence: 'package.json' }],
   languages: ['TypeScript'],
   codeDirs: ['src'],
   hasSource: true,
   isTruncated: true,
+  cappedFolders: ['src/generated'],
+  isOverallCapped: false,
   cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
   warnings: ['could not read package.json (treated as unknown)'],
+}
+
+/**
+ * A trainual-like Rails repo scan (02-UAT test 1, D-137): Rails from the Gemfile, react, RSpec and system specs found,
+ * and two deeper folders listed only in part.
+ */
+const RAILS_REPO: RepoScan = {
+  findings: [
+    { kind: 'be', label: 'rails', evidence: 'Gemfile' },
+    { kind: 'e2e', label: 'Rails system specs', evidence: 'spec/system' },
+    { kind: 'fe', label: 'react', evidence: 'package.json' },
+    { kind: 'test', label: 'RSpec config', evidence: '.rspec' },
+  ],
+  languages: ['JavaScript', 'Ruby'],
+  codeDirs: ['app', 'spec'],
+  hasSource: true,
+  isTruncated: true,
+  cappedFolders: ['app/models', 'app/views'],
+  isOverallCapped: false,
+  cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
+  warnings: [],
 }
 
 const PROPOSAL = proposeRoles(REPO)
@@ -572,7 +596,12 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'REGEN_NO_MANIFEST', REGEN_NO_MANIFEST],
   ['init', 'REGEN_BAD_MANIFEST', REGEN_BAD_MANIFEST],
   ['init', 'policyLine', POLICIES.map(policyLine)],
-  ['init', 'scanSummaryLines', scanSummaryLines(REPO, SETUP)],
+  ['init', 'scanSummaryLines', [scanSummaryLines(REPO, SETUP), scanSummaryLines(RAILS_REPO, SETUP)]],
+  [
+    'init',
+    'truncatedLine',
+    [REPO, RAILS_REPO].flatMap(repo => [truncatedLine(repo), truncatedLine({ ...repo, isOverallCapped: true })]),
+  ],
   ['init', 'scanWarningLines', scanWarningLines(REPO.warnings)],
   ['init', 'proposalLines', proposalLines(PROPOSAL.roles, PROPOSAL.changes)],
   ['init', 'frameworkRoleQuestion', frameworkRoleQuestion(BE)],
@@ -636,6 +665,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['roles', 'chainLines', chainLines(TEAM)],
   ['scan', 'SKIP_DIRS', SKIP_DIRS],
   ['scan', 'SOURCE_EXTENSIONS', SOURCE_EXTENSIONS],
+  ['scan', 'MANIFEST_FILES', MANIFEST_FILES],
   ['scan', 'MARKER_ROWS', MARKER_ROWS],
   ['scope', 'SECRET_READ_DENY', SECRET_READ_DENY],
   ['scope', 'MEMORY_PATTERN', MEMORY_PATTERN],

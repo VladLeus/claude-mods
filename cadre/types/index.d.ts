@@ -641,8 +641,15 @@ export type RepoScan = {
   /** Top-level repo-relative folders that hold source files, sorted (PM's best-effort Read deny). */
   readonly codeDirs: readonly string[]
   readonly hasSource: boolean
-  /** True when the walk stopped at the 2000-entry cap; the depth limit alone never sets it. */
+  /**
+   * True exactly when cappedFolders is not empty or isOverallCapped is true; the depth limit alone never sets it
+   * (D-137).
+   */
   readonly isTruncated: boolean
+  /** Folders below the first level whose listing stopped at MAX_FOLDER_ENTRIES (D-137). */
+  readonly cappedFolders: readonly string[]
+  /** True when the walk stopped at the 20,000-entry safety cap (D-137). */
+  readonly isOverallCapped: boolean
   readonly cadre: {
     readonly dir: ReadState
     readonly manifest: Manifest | null

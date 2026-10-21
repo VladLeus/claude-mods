@@ -131,8 +131,20 @@ export function autopilotReply(state: RunState, command: 'init' | 'regen'): stri
  */
 export const MAX_SCAN_DEPTH = 3
 
-/** The most entries the walk looks at over all folders; it stops there and the scan says it is truncated (D-55). */
-export const MAX_SCAN_ENTRIES = 2000
+/**
+ * The most entries the walk takes from one folder below the first level; the root and every first-level folder are
+ * listed in full unless the overall safety cap stops the walk (D-137).
+ */
+export const MAX_FOLDER_ENTRIES = 200
+
+/** The deepest folder the walk lists in full: the root is depth 0 and a first-level folder depth 1 (D-137). */
+const MAX_FULL_DEPTH = 1
+
+/**
+ * The overall safety cap on entries over the whole walk (user answer 2026-10-21, D-137); it stops the walk where it is
+ * reached.
+ */
+export const MAX_SCAN_ENTRIES = 20_000
 
 /**
  * Folders the walk never lists, at any depth: version control and tool state, installed dependencies, build output,
@@ -533,12 +545,16 @@ type Seen = {
   readonly depth: number
 }
 
-/** What the walk saw in breadth-first order, the names it skipped, its warnings, and whether it hit the entry cap. */
+/**
+ * What the walk saw in breadth-first order, the names it skipped, its warnings, the deeper folders it listed only in
+ * part (sorted), and whether it stopped at the overall safety cap (D-137).
+ */
 type Walk = {
   readonly seen: readonly Seen[]
   readonly hidden: readonly string[]
   readonly warnings: readonly string[]
-  readonly isTruncated: boolean
+  readonly cappedFolders: readonly string[]
+  readonly isOverallCapped: boolean
 }
 
 /** The absolute path of a folder to list: the root for the empty path, else below the root. */
@@ -572,15 +588,26 @@ function listWarning(path: string): string {
 
 /**
  * Lists the repo breadth-first, each listing sorted by name: folders at depth 0 to MAX_SCAN_DEPTH - 1, never a link or
- * one of SKIP_DIRS, and at most MAX_SCAN_ENTRIES entries over all of them. It is truncated only when it hits the entry
- * cap; a folder left unlisted for depth is by design and is not a truncation. A listing that fails is a warning, not an
- * empty folder. An entry name that `clean` would change is skipped and reported.
+ * one of SKIP_DIRS (D-55, D-137). The root and every first-level folder are listed in full; a deeper folder gives at
+ * most its first MAX_FOLDER_ENTRIES entries in name order, its path is recorded, and the walk goes on with the next
+ * folder, so one huge folder cannot end the walk. Independent of that, the walk stops once it has counted
+ * MAX_SCAN_ENTRIES entries in all and records that it reached the safety cap. A folder left unlisted for depth is by
+ * design and is not recorded. A listing that fails is a warning, not an empty folder. An entry name that `clean` would
+ * change is skipped and reported.
  */
 async function walk(io: InitIo, base: string): Promise<Walk> {
   const seen: Seen[] = []
   const hidden: string[] = []
   const warnings: string[] = []
+  const capped: string[] = []
   const queue: Folder[] = [{ path: '', depth: 0 }]
+  const result = (isOverallCapped: boolean): Walk => ({
+    seen,
+    hidden,
+    warnings,
+    cappedFolders: [...capped].sort(compareText),
+    isOverallCapped,
+  })
   let count = 0
   // The queue grows while it is walked, which is what makes the walk breadth-first.
   for (const folder of queue) {
@@ -589,8 +616,11 @@ async function walk(io: InitIo, base: string): Promise<Walk> {
       warnings.push(listWarning(folder.path))
       continue
     }
-    for (const entry of sortedByName(listing)) {
-      if (count >= MAX_SCAN_ENTRIES) return { seen, hidden, warnings, isTruncated: true }
+    const sorted = sortedByName(listing)
+    const isCapped = folder.depth > MAX_FULL_DEPTH && sorted.length > MAX_FOLDER_ENTRIES
+    if (isCapped) capped.push(folder.path)
+    for (const entry of isCapped ? sorted.slice(0, MAX_FOLDER_ENTRIES) : sorted) {
+      if (count >= MAX_SCAN_ENTRIES) return result(true)
       count += 1
       if (isChangedByClean(entry.name, MAX_ENTRY_NAME_CHARS)) {
         hidden.push(entry.name)
@@ -605,7 +635,7 @@ async function walk(io: InitIo, base: string): Promise<Walk> {
     }
   }
 
-  return { seen, hidden, warnings, isTruncated: false }
+  return result(false)
 }
 
 /** The findings so far, one per kind and label. */
@@ -994,10 +1024,11 @@ function sortedFindings(found: Findings): ScanFinding[] {
  * The read-only repo scan (SCAN-01, D-55, D-137): the stack, the backend and frontend frameworks, tests and E2E, each
  * finding with the repo-relative path that proves it, plus the source languages and the top-level code folders, and
  * what an earlier run left in `.cadre/` (D-67). It walks through the port with bounded depth and entries
- * (MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES), never follows a link, and reads only the dependency names of the package.json
- * files in the root and one folder down, then of the root manifests of MANIFEST_FILES, and the two state files of
- * `.cadre/`, all through readRepoFile. A listing or read that fails is a warning, never an absence. It writes nothing
- * and runs nothing.
+ * (MAX_SCAN_DEPTH, MAX_FOLDER_ENTRIES in each deeper folder, MAX_SCAN_ENTRIES in all), records the deeper folders it
+ * listed only in part and a stop at the safety cap, never follows a link, and reads only the dependency names of the
+ * package.json files in the root and one folder down, then of the root manifests of MANIFEST_FILES, and the two state
+ * files of `.cadre/`, all through readRepoFile. A listing or read that fails is a warning, never an absence. It writes
+ * nothing and runs nothing.
  */
 export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, trimSlash(root))
@@ -1022,10 +1053,29 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
     languages,
     codeDirs: codeDirsOf(walked.seen),
     hasSource: languages.length > 0,
-    isTruncated: walked.isTruncated,
+    isTruncated: walked.cappedFolders.length > 0 || walked.isOverallCapped,
+    cappedFolders: walked.cappedFolders,
+    isOverallCapped: walked.isOverallCapped,
     cadre,
     warnings,
   }
+}
+
+/**
+ * The facts a scan that listed a deeper folder only in part, or stopped at the safety cap, may have missed (D-137), in
+ * this order: `stack` when no language was found, `tests` when there is no test finding and `E2E` when there is no
+ * E2E finding, the same rule for both caps. Empty when nothing was capped. The frontend and the backend are never
+ * named: they come only from root and first-level files, which the folder cap never limits.
+ */
+export function undecidedFacts(repo: RepoScan): string[] {
+  if (repo.cappedFolders.length === 0 && !repo.isOverallCapped) return []
+  const hasKind = (kind: ScanKind): boolean => repo.findings.some(finding => finding.kind === kind)
+
+  return [
+    ...(repo.languages.length === 0 ? ['stack'] : []),
+    ...(hasKind('test') ? [] : ['tests']),
+    ...(hasKind('e2e') ? [] : ['E2E']),
+  ]
 }
 
 /** The root and each folder above it, nearest first, then the file system root as the empty string. */

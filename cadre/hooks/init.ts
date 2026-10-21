@@ -136,11 +136,13 @@ import {
   findGitTop,
   gitRootRefusal,
   isSafeRelativePath,
+  MAX_FOLDER_ENTRIES,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
   parseCadreState,
   readRepoFile,
   scanRepo,
+  undecidedFacts,
 } from './scan'
 import type { CommandWord } from './scan'
 import { compileScope, pluginName, scopeCardLines } from './scope'
@@ -675,8 +677,51 @@ export async function gatherScans(
   return { facts, repo, setup }
 }
 
-/** The line the summary adds when the walk stopped at the entry cap. */
-const TRUNCATED_LINE = `  truncated: the scan stopped after ${MAX_SCAN_ENTRIES} entries; later files were not scanned`
+/** How a partial line names a walk that stopped at its overall safety cap (D-137). */
+const SAFETY_CAP_TEXT = `the scan stopped at the ${MAX_SCAN_ENTRIES.toLocaleString('en-US')}-entry safety cap`
+
+/** What a partial line says the scan found (D-137): the facts that may be incomplete, or that all were found. */
+function partialFactsText(repo: RepoScan): string {
+  const facts = undecidedFacts(repo)
+  if (facts.length === 0) return 'stack, tests and E2E were all found'
+
+  return `may be incomplete: ${facts.join(', ')}`
+}
+
+/** The partial line for the deeper folders listed only in part (D-137); null when no folder was capped. */
+function folderCapLine(repo: RepoScan): string | null {
+  const count = repo.cappedFolders.length
+  if (count === 0) return null
+  const folders = count === 1 ? 'folder' : 'folders'
+  const listed = `${count} deeper ${folders} listed only in part (the first ${MAX_FOLDER_ENTRIES} entries each)`
+
+  return `  partial: ${listed}; ${partialFactsText(repo)}`
+}
+
+/**
+ * The summary line of a scan that did not list everything (G-02-1e, D-137). A walk that stopped at the safety cap is
+ * named first, in place of the folder wording: `  partial: the scan stopped at the 20,000-entry safety cap; ...`.
+ * Else, with deeper folders listed only in part: `  partial: <n> deeper folder(s) listed only in part (the first 200
+ * entries each); ...`. Either way the line ends with the facts that may be incomplete (undecidedFacts) or with
+ * `stack, tests and E2E were all found`. Null when nothing was capped.
+ */
+export function truncatedLine(repo: RepoScan): string | null {
+  if (repo.isOverallCapped) return `  partial: ${SAFETY_CAP_TEXT}; ${partialFactsText(repo)}`
+
+  return folderCapLine(repo)
+}
+
+/**
+ * The partial lines of the scan summary (D-137): truncatedLine, then, when the safety cap stopped a walk that had also
+ * listed deeper folders only in part, the folder line after it.
+ */
+function partialLines(repo: RepoScan): string[] {
+  const first = truncatedLine(repo)
+  if (first === null) return []
+  const folders = repo.isOverallCapped ? folderCapLine(repo) : null
+
+  return folders === null ? [first] : [first, folders]
+}
 
 /** Names joined with a comma, or `none` when there are none. */
 function namesOrNone(names: readonly string[]): string {
@@ -704,10 +749,11 @@ function pluginSummary(plugins: readonly string[]): string {
 
 /**
  * The scans as init shows them in the side pane before any role question (SCAN-01, SCAN-02, D-133): the repo part
- * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and a line when the walk stopped at the entry cap),
- * then the user setup as names and counts only. Each setup line gives its counts first and its name list last, and a
- * list shows 12 names cleaned and capped, then counts the rest, so a long list never pushes a count past the 240 code
- * points a line keeps (B2). No setting value, file content or warning is part of it.
+ * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
+ * folder only in part or stopped at its safety cap, D-137), then the user setup as names and counts only. Each setup
+ * line gives its counts first and its name list last, and a list shows 12 names cleaned and capped, then counts the
+ * rest, so a long list never pushes a count past the 240 code points a line keeps (B2). No setting value, file content
+ * or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
   const stack = `stack: ${namesOrNone(repo.languages)}`
@@ -720,7 +766,7 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
     `  ${stack}; ${sides}`,
     `  tests: ${findingLabels(repo, 'test')}; E2E: ${findingLabels(repo, 'e2e')}`,
     `  existing .cadre/: ${cadreSummary(repo.cadre)}`,
-    ...(repo.isTruncated ? [TRUNCATED_LINE] : []),
+    ...partialLines(repo),
     'User setup (names only):',
     `  plugins: ${pluginSummary(setup.plugins)}`,
     `  skills: ${setup.skills.length}; agents: ${setup.agents.length}; MCP servers: ${mcp}`,

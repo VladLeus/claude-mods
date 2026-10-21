@@ -615,6 +615,8 @@ function repoScan(over: Partial<RepoScan> = {}): RepoScan {
     codeDirs: [],
     hasSource: false,
     isTruncated: false,
+    cappedFolders: [],
+    isOverallCapped: false,
     cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
     warnings: [],
     ...over,
