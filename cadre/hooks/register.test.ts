@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import {
+  CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
   GIT_POLICY_DISMISSED_REASON,
+  INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   MANIFEST_SKIPPED_NOTE,
@@ -15,6 +17,7 @@ import {
   REGEN_NO_STATE,
   regenNoRole,
   REVIEW_QUESTION,
+  ROLES_QUESTION,
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
@@ -89,6 +92,8 @@ type World = {
   readonly surfaces: readonly string[]
   /** Makes `session.surfaces` refuse, as a host that cannot say whether anyone is there. */
   readonly denySurfaces: boolean
+  /** Makes `ui.open` and the write of the init pane's state refuse, as a host that cannot place or keep the pane. */
+  readonly denyPane: boolean
   /**
    * Question prefix to the answer the dialog gives. The longest prefix a question starts with wins, so a test stays
    * valid when a later plan adds questions; a question no prefix matches is dismissed, as Esc does.
@@ -111,7 +116,8 @@ type World = {
 /**
  * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
  * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
- * option labels each dialog showed, each text the plugin logged to the transcript, and each path it wrote, in order.
+ * option labels each dialog showed, each text the plugin logged to the transcript, each side pane it opened as
+ * `ui.open <id> <title>`, each value it set the init pane's state to (D-133), and each path it wrote, in order.
  */
 type HostLog = {
   readonly ops: string[]
@@ -120,6 +126,8 @@ type HostLog = {
   readonly asks: string[]
   readonly askOptions: string[][]
   readonly logs: string[]
+  readonly panes: string[]
+  readonly paneWrites: unknown[]
   readonly writes: string[]
 }
 
@@ -127,7 +135,8 @@ type HostLog = {
  * Host ops that would change something or reach beyond the read-only reads (a second process call, the network, an
  * MCP tool, a tool registration); `/cadre detect`, every --dry-run and every refusal must never reach one, and only
  * plain init and regen write, in a world whose isWriteAllowed lets `fs.write` through. `process.spawn` is forbidden
- * too, but streams, so fakeHost hooks it with a generator. `process.run` is not here: it is logged, and only the
+ * too, but streams, so fakeHost hooks it with a generator. `state.set` is forbidden too, except the init pane's own
+ * state (D-133, T-02-49), so fakeHost hooks it on its own. `process.run` is not here: it is logged, and only the
  * user-level identity call and the launcher chmods of an apply may use it.
  */
 const FORBIDDEN_OPS: readonly string[] = [
@@ -135,7 +144,6 @@ const FORBIDDEN_OPS: readonly string[] = [
   'store.set',
   'store.delete',
   'env.set',
-  'state.set',
   'http.fetch',
   'mcp.call',
   'tool.register',
@@ -143,7 +151,39 @@ const FORBIDDEN_OPS: readonly string[] = [
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
-  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [], writes: [] }
+  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [], panes: [], paneWrites: [], writes: [] }
+}
+
+/** One block of the init side pane as the fake host saw its state written (D-133). */
+type PaneBlock = {
+  readonly key: string
+  readonly title: string
+  readonly lines: readonly string[]
+}
+
+/** Whether a value in the init pane's state is one block: a key, a title and its lines, all text. */
+function isPaneBlock(value: unknown): value is PaneBlock {
+  if (!isObject(value)) return false
+  const { key, title, lines } = value
+
+  return (
+    typeof key === 'string' &&
+    typeof title === 'string' &&
+    Array.isArray(lines) &&
+    lines.every(line => typeof line === 'string')
+  )
+}
+
+/** The init pane as it stands after a run, newest block first: the last value its state was set to (D-133). */
+function paneOf(log: HostLog): PaneBlock[] {
+  const last = log.paneWrites.at(-1)
+
+  return Array.isArray(last) ? last.filter(isPaneBlock) : []
+}
+
+/** The lines of the init pane's block of this key; empty when the pane has no such block. */
+function paneLines(log: HostLog, key: string): readonly string[] {
+  return paneOf(log).find(block => block.key === key)?.lines ?? []
 }
 
 /**
@@ -181,6 +221,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     undefinedReads: [],
     surfaces: ['terminal'],
     denySurfaces: false,
+    denyPane: false,
     answers: {},
     now: 1_000_000,
     sessionId: 's1',
@@ -340,9 +381,11 @@ function hasPath(world: World, path: string): boolean {
 /**
  * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs,
  * process and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript
- * text is kept in `log.logs`. The model answers `world.replies` in order. A process call answers its runResults entry,
- * else `runtime`. `fs.write` is answered as done, and its path kept in `log.writes`, only when `world.isWriteAllowed`.
- * Every other forbidden op is answered with a refusal, so a call to one would show up in the log and fail its call.
+ * text is kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is
+ * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. The model answers `world.replies` in
+ * order. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path
+ * kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state
+ * included, is answered with a refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
@@ -354,6 +397,24 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.logs.push(e.text)
 
     return { value: undefined }
+  })
+  on('ui.open', async (_$, e) => {
+    log.panes.push(`ui.open ${e.id} ${e.title}`)
+    if (world.denyPane) return { deny: 'no pane' }
+
+    return { value: { isPlaced: true } }
+  })
+  // The init pane's blocks are the plugin's own state (D-133, T-02-49); a write of any other state is forbidden.
+  on('state.set', async (_$, e, next) => {
+    if (e.plugin !== 'cadre' || e.key !== 'initPane') {
+      log.ops.push('forbidden state.set')
+
+      return { deny: 'detect uses no such op' }
+    }
+    log.paneWrites.push(e.value)
+    if (world.denyPane) return { deny: 'no pane state' }
+
+    return next(e)
   })
   // Set once the review question is answered; only a world with linkAfterReview reads it.
   let isReviewAnswered = false
@@ -1340,19 +1401,46 @@ describe('cadre init with a faked host', () => {
     expect(second.text).toBe(first.text)
   })
 
-  test('init guards before it scans, asks the ~/.claude.json consent first and logs both scans', async ($, on) => {
+  test('init guards before it scans, asks the ~/.claude.json consent first and shows both scans', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.asks[0]?.startsWith('ask Read ~/.claude.json for MCP server names?')).toBe(true)
-    const lines = log.logs.flatMap(text => text.split('\n'))
-    expect(lines.some(line => line.startsWith('Repo scan (read-only):'))).toBe(true)
+    const lines = paneLines(log, 'scan')
+    expect(lines[0]).toBe('Repo scan (read-only):')
     expect(lines).toContain('User setup (names only):')
+    expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
     const guardAt = log.ops.indexOf('fs.exists /home/u/.claude/autopilot/s1.json')
     expect(guardAt >= 0 && guardAt < log.ops.indexOf('fs.list /repo')).toBe(true)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.ops.filter(op => op === 'process.run').length <= 1).toBe(true)
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+  })
+
+  test('init --dry-run opens the cadre-init pane before the first question after the scan', async ($, on) => {
+    const log = newLog()
+    // With no session history the roles question is the first one after the scan, so a dismissal ends init there.
+    fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text).toBe(INIT_CANCELLED)
+    expect(log.asks).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+    expect(paneLines(log, 'scan')[0]).toBe('Repo scan (read-only):')
+    expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('init --dry-run still replies with its plan when the host refuses the pane (T-02-50)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ denyPane: true }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text).toContain('File plan:')
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+    expect(log.paneWrites.length).toBeGreaterThan(0)
+    expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
   test('the init port never reads a folder: a folder the scans probe is checked and left unread', async ($, on) => {
@@ -1954,7 +2042,7 @@ describe('Phase 2 faked-host matrix', () => {
     expect(log.runs).toEqual([])
   })
 
-  test('no secret or home path reaches the reply or a log line, consent given (SCAN-02, PLAN-05)', async ($, on) => {
+  test('no secret or home path reaches the reply, logs or pane, consent given (SCAN-02, PLAN-05)', async ($, on) => {
     const [apiKey, bearer, token, sentinel] = SECRET_FIXTURES
     const mcpJson = { mcpServers: { linear: { command: 'npx', env: { LINEAR_API_KEY: apiKey } } } }
     const claudeJson = {
@@ -2002,11 +2090,13 @@ describe('Phase 2 faked-host matrix', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
-    expect(log.logs.join('\n')).toContain('MCP servers: datadog, linear, sentry')
-    expect(log.logs.join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
+    expect(paneLines(log, 'scan').join('\n')).toContain('MCP servers: datadog, linear, sentry')
+    expect(paneLines(log, 'scan').join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
     expect(log.ops).toContain(`fs.read ${HISTORY_DIR}/${token}.jsonl`)
     expect(log.logs).toContain('Session history (names and counts only):\n  codex:rescue  1\n  gsd-plan-phase  1')
-    const shown = [out.text, ...log.logs, ...log.asks, ...log.askOptions.flat()].join('\n')
+    // Every value the pane's state was set to, so a block shown and later replaced is scanned too.
+    const pane = JSON.stringify(log.paneWrites)
+    const shown = [out.text, ...log.logs, pane, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })

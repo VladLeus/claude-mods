@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, TemplateRoleId } from '../types'
+import type { AskSpec, ShownBlock, TemplateRoleId } from '../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { scanSetup } from './setup'
 import {
@@ -248,6 +248,17 @@ describe('testkit', () => {
     run.io.log('first')
     run.io.log('second')
     expect(run.logged).toEqual(['first', 'second'])
+  })
+
+  test('show records each block in the order shown, resolves at once and logs nothing (D-133)', async () => {
+    const run = memIo(memWorld({}), [])
+    const scan: ShownBlock = { key: 'scan', title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'] }
+    const roles: ShownBlock = { key: 'roles', title: 'Roles', lines: [] }
+    await run.io.show(scan)
+    await run.io.show(roles)
+    await run.io.show(scan)
+    expect(run.shown).toEqual([scan, roles, scan])
+    expect(run.logged).toEqual([])
   })
 
   test('the other members give the values of the world', async () => {

@@ -245,7 +245,10 @@ function withStats(run: MemRun): { readonly io: InitIo; readonly stats: string[]
   return { io, stats }
 }
 
-/** The port of a run that also records its questions and log entries in one list, in the order they happened. */
+/**
+ * The port of a run that also records its questions, log entries and side-pane blocks (as `show <key>`) in one list,
+ * in the order they happened.
+ */
 function withEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
   const events: string[] = []
   const io: InitIo = {
@@ -258,6 +261,10 @@ function withEvents(run: MemRun): { readonly io: InitIo; readonly events: string
     log: text => {
       events.push(`log ${text}`)
       run.io.log(text)
+    },
+    show: async block => {
+      events.push(`show ${block.key}`)
+      await run.io.show(block)
     },
   }
 
@@ -665,16 +672,17 @@ describe('runInit', () => {
     expect(CONSENT_DISMISSED_REASON).toBe('The ~/.claude.json question was dismissed or not answered.')
   })
 
-  test('right after the consent init logs the repo scan and the user setup, before the next question', async () => {
+  test('after the consent init shows the repo scan and user setup in the pane, before the next question', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
-    expect(events[1]?.startsWith('log Repo scan (read-only):\n')).toBe(true)
-    expect(events[1]).toContain('\nUser setup (names only):\n')
+    expect(events[1]).toBe('show scan')
+    expect(run.shown[0]?.lines[0]).toBe('Repo scan (read-only):')
+    expect(run.shown[0]?.lines).toContain('User setup (names only):')
   })
 
-  test('init prints every scan warning right after the scan summary, in the same entry, before the roles', async () => {
+  test('init shows every scan warning right after the summary, in the same pane block, before the roles', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const facts = { facts: { ...EMPTY_FACTS, warnings: ['a settings file could not be read'] }, gsdUserDir: null }
     const run = memIo(gitWorld({ locations, facts }), INIT_ANSWERS)
@@ -687,7 +695,8 @@ describe('runInit', () => {
       'warning: the root was given through a link',
       'warning: a settings file could not be read',
     ])
-    expect(events[1]).toBe(`log ${[...summary, ...warnings].join('\n')}`)
+    expect(events[1]).toBe('show scan')
+    expect(run.shown[0]).toEqual({ key: 'scan', title: 'Scan', lines: [...summary, ...warnings] })
     expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
     expect(events[3]?.startsWith('log Proposed roles:\n')).toBe(true)
   })
@@ -699,7 +708,8 @@ describe('runInit', () => {
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
     expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
-    expect(events[1]).toBe(`log ${scanSummaryLines(gathered.repo, gathered.setup).join('\n')}`)
+    expect(events[1]).toBe('show scan')
+    expect(run.shown[0]?.lines).toEqual(scanSummaryLines(gathered.repo, gathered.setup))
   })
 
   test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
@@ -753,7 +763,7 @@ describe('runInit history step (SCAN-03, D-59)', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
-    expect(events[1]?.startsWith('log Repo scan (read-only):\n')).toBe(true)
+    expect(events[1]).toBe('show scan')
     expect(events[2]).toBe(`ask ${historyQuestion(1)}`)
     expect(events[3]?.startsWith('log Proposed roles:\n')).toBe(true)
     expect(events[4]).toBe(`ask ${ROLES_QUESTION}`)
@@ -785,6 +795,34 @@ describe('runInit history step (SCAN-03, D-59)', () => {
     await runInit(io, { dryRun: true })
     expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
     expect(run.asked.filter(question => question.startsWith(HISTORY_PREFIX))).toEqual([])
+  })
+})
+
+describe('init pane (G-02-1)', () => {
+  test('a dry run shows the scan as the first pane block, titled Scan, and logs none of it', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.shown[0]?.key).toBe('scan')
+    expect(run.shown[0]?.title).toBe('Scan')
+    expect(run.shown[0]?.lines[0]).toBe('Repo scan (read-only):')
+    expect(run.logged.filter(text => text.startsWith('Repo scan'))).toEqual([])
+  })
+
+  test('the scan is one pane block, shown once, right before the history question', async () => {
+    const run = memIo(historyGitWorld(), INIT_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(events.slice(0, 3)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, 'show scan', `ask ${historyQuestion(1)}`])
+    expect(run.shown.filter(block => block.key === 'scan')).toHaveLength(1)
+  })
+
+  test('each scan line is cleaned as a report cell: a value cannot add a row or hide text (T-02-48)', async () => {
+    const hostile = `a link\nwarning: forged${BIDI_OVERRIDE}\u0007`
+    const run = memIo(gitWorld({ locations: { ...DEFAULT_LOCATIONS, warnings: [hostile] } }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const lines = run.shown[0]?.lines ?? []
+    expect(lines).toContain('warning: a linkwarning: forged')
+    expect(lines.filter(line => /[\n\u0007‮]/u.test(line))).toEqual([])
   })
 })
 
