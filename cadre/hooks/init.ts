@@ -19,6 +19,7 @@ import type {
   Manifest,
   ManifestEntry,
   McpRoute,
+  MemoryItem,
   Plan,
   PortEntry,
   PortRead,
@@ -127,6 +128,7 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  memoryItems,
   parseContentConsent,
   parseRecommendation,
   parseTopics,
@@ -186,7 +188,7 @@ import {
 } from './scan'
 import type { CommandWord } from './scan'
 import { compileScope, pluginName, scopeCardLines } from './scope'
-import { scanSetup } from './setup'
+import { mangledProjectDir, scanSetup, userDirOf } from './setup'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =
@@ -1779,21 +1781,24 @@ async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonl
 }
 
 /**
- * The roles recommended for each topic (G-02-1f Recommendation): a second model call reads each role's work and the
- * topics (recommendPrompt, RECOMMEND_SYSTEM). A reply parseRecommendation cannot take is sent back with its exact
- * errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no topic is recommended to any role: the map is empty.
+ * The roles recommended for each topic and each memory (G-02-1f Recommendation, Memories): a second model call reads
+ * each role's work, the topics and the memories by file and summary (recommendPrompt, RECOMMEND_SYSTEM). A reply
+ * parseRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no
+ * topic or memory is recommended to any role: the map is empty.
  */
 async function recommendedRoles(
   io: InitIo,
   roles: readonly RoleSpec[],
   topics: readonly InstructionTopic[],
+  memories: readonly MemoryItem[],
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const topicIds = topics.map(topic => topic.id)
+  const memoryIds = memories.map(memory => memory.id)
   const roleIds = roles.map(role => role.id)
   let errors: readonly string[] = []
   for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(recommendPrompt(roles, topics, errors), RECOMMEND_SYSTEM)
-    const parsed = reply === null ? null : parseRecommendation(reply, topicIds, roleIds)
+    const reply = await io.complete(recommendPrompt(roles, topics, memories, errors), RECOMMEND_SYSTEM)
+    const parsed = reply === null ? null : parseRecommendation(reply, topicIds, memoryIds, roleIds)
     if (parsed?.kind === 'ok') return parsed.recommended
     errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
   }
@@ -1802,10 +1807,11 @@ async function recommendedRoles(
 }
 
 /**
- * The hand-out of what the parts flow found (G-02-1f Entry choices): the instructions block in the side pane first
- * (instructionLines), then the entry question and its answers (handoutStep). Whole files asks the whole-file questions
- * (memoryStep); the other answers keep the topics with the roles given each, and give every role no D-63 group. The
- * read, the topics and the answers live in memory for this run only.
+ * The hand-out of what the parts flow found (G-02-1f Entry choices, Memories): the instructions block in the side pane
+ * first (instructionLines), then the entry question and its answers (handoutStep), with the topics as items and then
+ * the memories. Whole files asks the whole-file questions (memoryStep); the other answers keep the topics and memories
+ * with the roles given each, and give every role no D-63 group. The read, the topics and the answers live in memory
+ * for this run only.
  */
 async function handOutParts(
   io: InitIo,
@@ -1815,7 +1821,7 @@ async function handOutParts(
 ): Promise<StepResult<Instructed>> {
   const { scan, topics, recommended } = found
   await showBlock(io, 'instructions', instructionLines(scan, topics, recommended))
-  const items = topicItems(scan, topics, recommended)
+  const items = [...topicItems(scan, topics, recommended), ...memoryItems(scan.memories, recommended)]
   const outcome = await handoutStep(io, instructionsEntry(scan, topics), items, roles, HANDOUT_DISMISSED_REASON)
   if (outcome.kind === 'cancelled') return outcome
   if (outcome.value.kind === 'whole') return wholeFiles(io, roles, setup)
@@ -1825,8 +1831,8 @@ async function handOutParts(
 }
 
 /**
- * A consented read that gave no part (G-02-1f): its read warnings, if any, in the instructions block, so each is
- * shown, then the whole-file questions (memoryStep), so the memories keep today's question.
+ * A consented read that gave no part and no memory (G-02-1f): its read warnings, if any, in the instructions block,
+ * so each is shown, then the whole-file questions (memoryStep).
  */
 async function noPartRead(
   io: InitIo,
@@ -1840,9 +1846,23 @@ async function noPartRead(
 }
 
 /**
- * The parts flow after a yes (G-02-1f): it reads the instruction files (readInstructionFiles: the setup scan's chain
- * and the rule files and AGENTS.md init found by name); a read with no part goes to the whole-file questions
- * (noPartRead); else the model groups the parts into topics across files, a second call recommends roles for them, and
+ * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
+ * project folder (mangledProjectDir) under `<user folder>/projects`, for the root as resolved, then as given, once
+ * each; none with no user folder.
+ */
+function memoryFoldersOf(locations: InitLocations): string[] {
+  const userDir = userDirOf(locations)
+  if (userDir === null) return []
+  const projects = new Set([locations.root, locations.givenRoot].map(mangledProjectDir))
+
+  return Array.from(projects, project => `${userDir}/projects/${project}/memory`)
+}
+
+/**
+ * The parts flow after a yes (G-02-1f): it reads the instruction files and the memories (readInstructionFiles: the
+ * setup scan's chain, the rule files and AGENTS.md init found by name, and the memory folders of this repo); a read
+ * with no part and no memory goes to the whole-file questions (noPartRead); else the model groups the parts into
+ * topics across files (no call without a part), a second call recommends roles for the topics and the memories, and
  * the person hands them out (handOutParts).
  */
 async function partsFlow(
@@ -1853,10 +1873,11 @@ async function partsFlow(
   repo: RepoNames,
 ): Promise<StepResult<Instructed>> {
   const { root, home, configDir } = locations
-  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd, ...repo })
-  if (scan.parts.length === 0) return noPartRead(io, roles, setup, scan)
-  const topics = await groupedTopics(io, scan)
-  const recommended = await recommendedRoles(io, roles, topics)
+  const memoryFolders = memoryFoldersOf(locations)
+  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd, ...repo, memoryFolders })
+  if (scan.parts.length === 0 && scan.memories.length === 0) return noPartRead(io, roles, setup, scan)
+  const topics = scan.parts.length === 0 ? [] : await groupedTopics(io, scan)
+  const recommended = await recommendedRoles(io, roles, topics, scan.memories)
 
   return handOutParts(io, roles, setup, { scan, topics, recommended })
 }
@@ -2809,14 +2830,15 @@ async function goBack(
 }
 
 /**
- * The review rows of the instruction parts (G-02-1f): per role the topics it was given and the topics kept with the
- * root session only (instructionReviewLines), for the parts flow only; none for the whole-file questions or none.
+ * The review rows of the instruction parts (G-02-1f): per role the topics and memories it was given, and the topics
+ * and memories kept with the root session only (instructionReviewLines), for the parts flow only; none for the
+ * whole-file questions or none.
  */
 function handoutLines(draft: Draft): string[] {
   const handout = draft.instructions
   if (handout.kind !== 'parts') return []
 
-  return instructionReviewLines(draft.roles, handout.topics, handout.given)
+  return instructionReviewLines(draft.roles, handout.topics, handout.scan.memories, handout.given)
 }
 
 /**

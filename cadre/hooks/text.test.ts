@@ -11,6 +11,7 @@ import type {
   InstructionTopic,
   KickoffContext,
   LaunchStart,
+  MemoryItem,
   Plan,
   ProbeExpectation,
   RepoScan,
@@ -189,10 +190,16 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  MEMORY_UNLISTED_WARNING,
+  memoryItemContextLine,
+  memoryItemHeader,
+  memoryItemQuestion,
+  memoryItems,
   moreDocsWarning,
   morePartsWarning,
   outsideWarning,
   overSizeWarning,
+  NO_MEMORY_SUMMARY,
   RECOMMEND_SYSTEM,
   repoImportWarning,
   RULES_UNLISTED_WARNING,
@@ -401,13 +408,26 @@ const OUTCOME: ApplyOutcome = {
 
 const PLAN: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }
 
-/** A read of a global CLAUDE.md with a Security section, text before it and one read warning (G-02-1f). */
+/** The one auto-memory of PART_SCAN, with its MEMORY.md summary (G-02-1f Memories). */
+const PART_MEMORY: MemoryItem = {
+  id: 'M1',
+  file: 'squad.md',
+  folder: '/home/u/.claude/projects/-repo/memory',
+  summary: 'Unsigned commits on per-phase branches.',
+  hash: 'hash of squad.md',
+}
+
+/**
+ * A read of a global CLAUDE.md with a Security section, text before it, one auto-memory and one read warning
+ * (G-02-1f).
+ */
 const PART_SCAN: InstructionScan = {
   parts: [
     { id: 'P1', file: '~/.claude/CLAUDE.md', heading: '', source: 'global', text: 'Intro.\n' },
     { id: 'P2', file: '~/.claude/CLAUDE.md', heading: 'Security', source: 'global', text: '# Security\nNo secrets.\n' },
   ],
   files: ['~/.claude/CLAUDE.md'],
+  memories: [PART_MEMORY],
   warnings: [unreadableWarning('CLAUDE.md')],
 }
 
@@ -419,8 +439,11 @@ const PART_TOPIC: InstructionTopic = {
   partIds: ['P1', 'P2'],
 }
 
-/** The roles recommended for PART_TOPIC. */
-const PART_RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([['T1', ['security']]])
+/** The roles recommended for PART_TOPIC and PART_MEMORY. */
+const PART_RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
+  ['T1', ['security']],
+  ['M1', ['tl']],
+])
 
 const POLICIES: readonly GitPolicy[] = ['definitions', 'all', 'ignore']
 
@@ -686,6 +709,11 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['instructions', 'topicContextLine', topicContextLine(PART_TOPIC, PART_SCAN.parts, ['security'])],
   ['instructions', 'topicHeader', [topicHeader(1, 2), topicHeader(100, 200)]],
   ['instructions', 'topicItems', topicItems(PART_SCAN, [PART_TOPIC], PART_RECOMMENDED)],
+  ['instructions', 'NO_MEMORY_SUMMARY', NO_MEMORY_SUMMARY],
+  ['instructions', 'memoryItemQuestion', memoryItemQuestion(PART_MEMORY)],
+  ['instructions', 'memoryItemContextLine', memoryItemContextLine(PART_MEMORY, ['tl'])],
+  ['instructions', 'memoryItemHeader', [memoryItemHeader(1, 2), memoryItemHeader(10, 100)]],
+  ['instructions', 'memoryItems', memoryItems(PART_SCAN.memories, PART_RECOMMENDED)],
   ['instructions', 'unreadableWarning', unreadableWarning('CLAUDE.md')],
   ['instructions', 'overSizeWarning', overSizeWarning('CLAUDE.md')],
   ['instructions', 'outsideWarning', outsideWarning('~/work/CLAUDE.md')],
@@ -694,6 +722,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['instructions', 'morePartsWarning', morePartsWarning(6)],
   ['instructions', 'RULES_UNLISTED_WARNING', RULES_UNLISTED_WARNING],
   ['instructions', 'moreDocsWarning', moreDocsWarning(3)],
+  ['instructions', 'MEMORY_UNLISTED_WARNING', MEMORY_UNLISTED_WARNING],
   ['instructions', 'TOPICS_SYSTEM', TOPICS_SYSTEM],
   ['instructions', 'RECOMMEND_SYSTEM', RECOMMEND_SYSTEM],
   ['instructions', 'fallbackTopics', fallbackTopics(PART_SCAN)],
@@ -705,7 +734,11 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
       instructionLines(PART_SCAN, fallbackTopics(PART_SCAN), new Map()),
     ],
   ],
-  ['instructions', 'instructionReviewLines', instructionReviewLines(TEAM, [PART_TOPIC], PART_RECOMMENDED)],
+  [
+    'instructions',
+    'instructionReviewLines',
+    instructionReviewLines(TEAM, [PART_TOPIC], PART_SCAN.memories, PART_RECOMMENDED),
+  ],
   ['kickoff', 'UNNAMED_ROLE', UNNAMED_ROLE],
   ['launch', 'RUNTIME_SETTINGS_KEYS', RUNTIME_SETTINGS_KEYS],
   ['plan', 'MANIFEST_PATH', MANIFEST_PATH],

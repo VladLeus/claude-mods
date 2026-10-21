@@ -546,21 +546,38 @@ export type InstructionTopic = {
 }
 
 /**
+ * One auto-memory of this repo as an item of the hand-out (G-02-1f Memories): `id` is `M<n>` in file-name order;
+ * `file` is its file name; `folder` is the absolute memory folder that listed it, the one of the root as resolved
+ * first, and it is never shown; `summary` is the one-line summary of its MEMORY.md index line, cleaned and capped, or
+ * `No summary in MEMORY.md.`; `hash` is the SHA-256 of its text, for regen. Its text is never kept.
+ */
+export type MemoryItem = {
+  readonly id: string
+  readonly file: string
+  readonly folder: string
+  readonly summary: string
+  readonly hash: string
+}
+
+/**
  * What one consented read of the instruction files gave (G-02-1f): the parts in read order, the files they came from
- * (display form, read order, once each) and the read warnings. The text is held in memory for this run only.
+ * (display form, read order, once each), the auto-memories of this repo in file-name order and the read warnings. The
+ * text is held in memory for this run only.
  */
 export type InstructionScan = {
   readonly parts: readonly InstructionPart[]
   readonly files: readonly string[]
+  readonly memories: readonly MemoryItem[]
   readonly warnings: readonly string[]
 }
 
 /**
  * How init handed out the instruction files (G-02-1f): `none` when there was nothing to hand out, `whole` for the D-63
- * whole-file questions, and `parts` for the topics: the read, the topics, the roles the model recommended for each
- * topic (keyed by topic id; a usable recommendation names every topic, and the map is empty when the model gave none)
- * and the roles the person gave each topic (keyed by topic id; a topic no role was given stays with the root session
- * only). The text read is held in memory for this run only: nothing is written, and originals are never edited.
+ * whole-file questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended
+ * for each topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is
+ * empty when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role
+ * was given stays with the root session only). The text read is held in memory for this run only: nothing is written,
+ * and originals are never edited.
  */
 export type InstructionHandout =
   | { readonly kind: 'none' }
