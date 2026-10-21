@@ -20,6 +20,7 @@ import type {
   InitFacts,
   InitIo,
   InstructionGroup,
+  InstructionHandout,
   LaunchStart,
   ManifestEntry,
   PaneKey,
@@ -120,6 +121,7 @@ import {
   initGuard,
   initReplyText,
   installedFrameworks,
+  instructionsStep,
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_CONTEXT,
   LAUNCH_DIR_OPTIONS,
@@ -150,6 +152,7 @@ import {
   NOT_INTERACTIVE_REPLY,
   parseGitPolicy,
   parseReviewItem,
+  PARTS_DRY_RUN_ONLY_NOTE,
   planStep,
   PLUGIN_RUN_TIMEOUT_MS,
   pluginVersionOf,
@@ -201,6 +204,15 @@ import {
   withSecuritySkill,
 } from './init'
 import type { AdjustOutcome, ApplyOutcome, Gathered, InitOptions, RegenOptions, ReviewItem } from './init'
+import {
+  CONTENT_DISMISSED_REASON,
+  CONTENT_OPTIONS,
+  CONTENT_QUESTION,
+  INSTRUCTIONS_ENTRY_QUESTION,
+  parseContentConsent,
+  RECOMMEND_SYSTEM,
+  TOPICS_SYSTEM,
+} from './instructions'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import {
   attendedNote,
@@ -2270,6 +2282,285 @@ describe('memoryStep', () => {
     expect(run.reads).toEqual([])
     expect(run.listed).toEqual([])
     expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+/** The global CLAUDE.md of the fixture user, which the parts flow reads after a yes (G-02-1f). */
+const GLOBAL_CLAUDE_MD = '/home/u/.claude/CLAUDE.md'
+
+/** The global CLAUDE.md of the parts flow: a Security section and a Git section, as the plan's dry run has it. */
+const PARTS_GLOBAL = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
+
+/** The model's grouping of PARTS_GLOBAL: P1 in T1 'Security rules' and P2 in T2 'Git and commits'. */
+const PARTS_TOPICS_REPLY = JSON.stringify({
+  topics: [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Git and commits', summary: 'How commits are made.', parts: ['P2'] },
+  ],
+})
+
+/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl. */
+const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]}}'
+
+/**
+ * A git repo whose user has PARTS_GLOBAL as the global CLAUDE.md, with the grouping and the recommendation replies in
+ * that order; `over` changes the fields it names.
+ */
+function partsWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const replies = [PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY]
+
+  return gitWorld({ files: { [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL }, replies, ...over })
+}
+
+/** INIT_ANSWERS with the content consent answered Yes and the entry question Accept recommendations. */
+const PARTS_ANSWERS: Readonly<Record<string, string>> = {
+  ...INIT_ANSWERS,
+  [CONTENT_QUESTION]: 'Yes, read them',
+  [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
+}
+
+/** INIT_ANSWERS with the content consent declined, so the whole-file questions of D-63 are asked. */
+const PARTS_DECLINED: Readonly<Record<string, string>> = { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'No, skip it' }
+
+/** The whole-file question of the global CLAUDE.md (D-63), as memoryStep asks it. */
+const GLOBAL_GROUP_QUESTION =
+  'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
+
+/** The review rows of the plan's dry run: Security gets T1, the Team Lead T2, and PM nothing. */
+const PARTS_REVIEW_ROWS = [
+  'Instructions per role:',
+  '  pm: none',
+  '  tl: 1 topic: Git and commits',
+  '  security: 1 topic: Security rules',
+  'Kept with the root session only: 0 topics',
+]
+
+/** The instructions block of the plan's dry run (G-02-1f). */
+const PARTS_BLOCK = [
+  'Read for this run only (nothing is written):',
+  '  Security rules: How secrets stay out of the repo.',
+  '    from: ~/.claude/CLAUDE.md > Security',
+  '    recommended: security',
+  '  Git and commits: How commits are made.',
+  '    from: ~/.claude/CLAUDE.md > Git',
+  '    recommended: tl',
+]
+
+/** The content consent context line of a world with only the global CLAUDE.md (G-02-1f). */
+const GLOBAL_ONLY_FOUND =
+  'Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 memories. No keeps the whole-file questions.'
+
+/** The topics and hand-out of a parts outcome; any other outcome stops the test with its kind. */
+function partsOf(handout: InstructionHandout): Extract<InstructionHandout, { readonly kind: 'parts' }> {
+  if (handout.kind !== 'parts') throw new Error(`not the parts flow: ${handout.kind}`)
+
+  return handout
+}
+
+/** The port of withEvents that also records each read, as `read <path>`, in the same list in call order. */
+function withReadEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
+  const traced = withEvents(run)
+  const io: InitIo = {
+    ...traced.io,
+    read: async (path, maxBytes) => {
+      traced.events.push(`read ${path}`)
+
+      return traced.io.read(path, maxBytes)
+    },
+  }
+
+  return { io, events: traced.events }
+}
+
+describe('instruction parts (G-02-1f)', () => {
+  test('a dry run answered Yes and Accept recommendations shows the per-role topics after the cards', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+    const lastCard = review.map(line => line.startsWith('Scope card: ')).lastIndexOf(true)
+    expect(review.slice(at, at + PARTS_REVIEW_ROWS.length)).toEqual(PARTS_REVIEW_ROWS)
+    expect([lastCard > 0, at > lastCard, review.indexOf('File plan:')]).toEqual([true, true, at + 5])
+  })
+
+  test('the instructions block shows each topic, its sources and roles, right before the entry question', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(run.shown.filter(block => block.key === 'instructions')).toEqual([
+      { key: 'instructions', title: 'Instruction parts', lines: PARTS_BLOCK },
+    ])
+    const entryAt = events.indexOf(`ask ${INSTRUCTIONS_ENTRY_QUESTION}`)
+    expect([entryAt > 0, events[entryAt - 1]]).toEqual([true, 'show instructions'])
+  })
+
+  test('the consent and entry questions carry their context lines, No first and the Instructions chip', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const consentAt = firstLines(run.asked).indexOf(CONTENT_QUESTION)
+    const entryAt = firstLines(run.asked).indexOf(INSTRUCTIONS_ENTRY_QUESTION)
+    expect(run.asked[consentAt]).toBe(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
+    expect(run.specs[consentAt]).toEqual({ options: ['No, skip it', 'Yes, read them'], header: 'Instructions' })
+    const entryContext = '2 topics from 1 file; the pane shows each with the roles it is recommended for.'
+    expect(run.asked[entryAt]).toBe(withContext(INSTRUCTIONS_ENTRY_QUESTION, entryContext))
+    const options = ['Accept recommendations', 'Go part by part', 'Whole files']
+    expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions' })
+  })
+
+  test('no instruction file is read before the content consent answer; the global file once (T-02-60)', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const { io, events } = withReadEvents(run)
+    await runInit(io, { dryRun: true })
+    const consentAt = events.indexOf(`ask ${CONTENT_QUESTION}`)
+    const readAt = events.indexOf(`read ${GLOBAL_CLAUDE_MD}`)
+    expect([consentAt > 0, readAt > consentAt]).toEqual([true, true])
+    expect(run.reads.filter(path => path === GLOBAL_CLAUDE_MD)).toHaveLength(1)
+  })
+
+  test('the grouping prompt holds the parts; the recommendation prompt holds the roles and the topics', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const [grouping = '', recommending = ''] = run.prompts
+    expect(run.prompts).toHaveLength(2)
+    expect(grouping.startsWith(`${TOPICS_SYSTEM}\n---\n`)).toBe(true)
+    expect(grouping).toContain('P1 | ~/.claude/CLAUDE.md | Security | # Security Never commit secrets.')
+    expect(grouping).toContain('P2 | ~/.claude/CLAUDE.md | Git | ## Git Use signed commits.')
+    expect(recommending.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
+    expect(recommending).toContain('T1 | Security rules | How secrets stay out of the repo.')
+    expect(recommending).toContain('security | Security | ')
+  })
+
+  test('No, skip it reads nothing, calls no model and asks the whole-file questions unchanged (D-63)', async () => {
+    const run = memIo(partsWorld(), PARTS_DECLINED)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    const asked = firstLines(run.asked)
+    expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBeGreaterThan(asked.indexOf(CONTENT_QUESTION))
+    expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
+    expect(run.prompts).toEqual([])
+    expect(run.shown.map(block => block.key)).not.toContain('instructions')
+    expect(shownBlock(run, 'review')).not.toContain('Instructions per role:')
+  })
+
+  test('option 0 of the content consent never consents: a dry run answering it reads no instruction file', async () => {
+    const [first = 'missing'] = CONTENT_OPTIONS
+    expect(parseContentConsent(first)).toBe(false)
+    const run = memIo(partsWorld(), { ...PARTS_ANSWERS, [CONTENT_QUESTION]: first })
+    await runInit(run.io, { dryRun: true })
+    expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
+    expect(firstLines(run.asked)).toContain(GLOBAL_GROUP_QUESTION)
+  })
+
+  test('a plain init asks no content consent, notes once that parts are --dry-run only, asks whole files', async () => {
+    expect(PARTS_DRY_RUN_ONLY_NOTE).toBe(
+      'This cadre version shows instruction parts only in --dry-run; a plain init asks the whole-file questions.',
+    )
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: false, host: memHost(hostWorld({})).io })
+    expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
+    expect(run.logged.filter(text => text === PARTS_DRY_RUN_ONLY_NOTE)).toHaveLength(1)
+    const noteAt = events.indexOf(`log ${PARTS_DRY_RUN_ONLY_NOTE}`)
+    expect(events.indexOf(`ask ${GLOBAL_GROUP_QUESTION}`)).toBeGreaterThan(noteAt)
+    expect([run.reads.includes(GLOBAL_CLAUDE_MD), run.prompts]).toEqual([false, []])
+  })
+
+  test('a repo with only memories gets the step; a yes that finds no part asks the memories question', async () => {
+    const memory = '/home/u/.claude/projects/-repo/memory'
+    const world = gitWorld({
+      dirs: { '/repo/.git': [], [memory]: [entry('notes.md')] },
+      files: { [`${memory}/notes.md`]: 'SENTINEL_SECRET_VALUE' },
+    })
+    const run = memIo(world, { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'Yes, read them' })
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    const found =
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 1 memory. No keeps the whole-file questions.'
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
+    const memories = 'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)'
+    expect(firstLines(run.asked)).toContain(memories)
+    expect([run.prompts, run.reads.includes(`${memory}/notes.md`)]).toEqual([[], false])
+  })
+
+  test('a repo with nothing to hand out asks no content consent and leaves every role no group', async () => {
+    const run = memIo(gitWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
+    const roles = [templateRole('pm', { instructions: ['global-claude-md'] })]
+    const none = await instructionsStep(memIo(memWorld({}), []).io, roles, emptySetupScan(), DEFAULT_LOCATIONS, true)
+    expect(none).toEqual({
+      kind: 'accepted',
+      value: { roles: [templateRole('pm')], instructions: { kind: 'none' } },
+    })
+  })
+
+  test('the parts flow gives every role no instruction group and keeps the hand-out in memory only', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const groups: readonly InstructionGroup[] = ['auto-memory']
+    const roles = proposeRoles(repoScan()).roles.map(role => ({ ...role, instructions: groups }))
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS, true))
+    expect(value.roles.map(role => role.instructions)).toEqual([[], [], []])
+    const handout = partsOf(value.instructions)
+    expect(handout.topics.map(topic => topic.title)).toEqual(['Security rules', 'Git and commits'])
+    expect([...handout.given.entries()]).toEqual([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+    ])
+    expect([...handout.recommended.entries()]).toEqual([...handout.given.entries()])
+    expect(handout.scan.files).toEqual(['~/.claude/CLAUDE.md'])
+    expect(handout.scan.parts.map(part => [part.id, part.file, part.heading, part.source])).toEqual([
+      ['P1', '~/.claude/CLAUDE.md', 'Security', 'global'],
+      ['P2', '~/.claude/CLAUDE.md', 'Git', 'global'],
+    ])
+  })
+
+  test('a dismissed content consent cancels init with its reason, having read nothing (A1)', async () => {
+    const answers = Object.fromEntries(Object.entries(PARTS_ANSWERS).filter(([key]) => key !== CONTENT_QUESTION))
+    const run = memIo(partsWorld(), answers)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(CONTENT_DISMISSED_REASON))
+    expect(firstLines(run.asked).at(-1)).toBe(CONTENT_QUESTION)
+    expect(run.logged.at(-1)).toBe(CONTENT_DISMISSED_REASON)
+    expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
+  })
+
+  test('each model call is retried with its exact errors, up to 3 calls, then falls back (G-02-1f)', async () => {
+    const run = memIo(partsWorld({ replies: ['nope', 'still nope', null, '{}', '[]', 'no'] }), PARTS_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(run.prompts).toHaveLength(6)
+    expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
+    expect(run.prompts[3]?.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
+    expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object')).toBe(true)
+    const block = shownBlock(run, 'instructions')
+    expect(block.slice(1, 4)).toEqual([
+      '  ~/.claude/CLAUDE.md: All of ~/.claude/CLAUDE.md',
+      '    from: ~/.claude/CLAUDE.md > Security',
+      '    from: ~/.claude/CLAUDE.md > Git',
+    ])
+    expect(block.slice(-2)).toEqual([
+      'The model gave no usable recommendation: no role gets a part unless you pick one.',
+      'The model could not group the parts: each file is one topic.',
+    ])
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+    expect(review.slice(at, at + 5)).toEqual([
+      'Instructions per role:',
+      '  pm: none',
+      '  tl: none',
+      '  security: none',
+      'Kept with the root session only: 1 topic',
+    ])
+  })
+
+  test('a call that fails once and then works uses the second reply and its retry carries the errors', async () => {
+    const replies = ['nope', PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY]
+    const run = memIo(partsWorld({ replies }), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts).toHaveLength(3)
+    expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
+    expect(shownBlock(run, 'instructions')).toEqual(PARTS_BLOCK)
   })
 })
 
