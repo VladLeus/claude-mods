@@ -2415,7 +2415,8 @@ const PARTS_BLOCK = [
 
 /** The content consent context line of a world with only the global CLAUDE.md (G-02-1f). */
 const GLOBAL_ONLY_FOUND =
-  'Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 memories. No keeps the whole-file questions.'
+  'Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 0 memories. ' +
+  'No keeps the whole-file questions.'
 
 /** The topics and hand-out of a parts outcome; any other outcome stops the test with its kind. */
 function partsOf(handout: InstructionHandout): Extract<InstructionHandout, { readonly kind: 'parts' }> {
@@ -2544,7 +2545,8 @@ describe('instruction parts (G-02-1f)', () => {
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const found =
-      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 1 memory. No keeps the whole-file questions.'
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 1 memory. ' +
+      'No keeps the whole-file questions.'
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
     const memories = 'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)'
     expect(firstLines(run.asked)).toContain(memories)
@@ -2726,7 +2728,8 @@ describe('instruction parts (G-02-1f)', () => {
     const run = memIo(chainWorld({ ancestors: [ancestor('/home/u/work'), ancestor('/repo')] }), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
     const found =
-      'Found: global CLAUDE.md yes, 2 CLAUDE.md files in the repo chain, 0 memories. No keeps the whole-file questions.'
+      'Found: global CLAUDE.md yes, 2 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 0 memories. ' +
+      'No keeps the whole-file questions.'
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
   })
 
@@ -2767,6 +2770,170 @@ describe('instruction parts (G-02-1f)', () => {
       'warning: ~/work/CLAUDE.md is outside the repo and your config folder: not read',
       'warning: could not read CLAUDE.md (treated as unknown)',
     ])
+  })
+})
+
+/** The rules folder of the fixture repo, which init lists by name before the content consent (G-02-1f Sources). */
+const RULES_DIR = '/repo/.claude/rules'
+
+/** A sentence of a rule file that must never be shown, asked or logged (T-02-61). */
+const RULE_SENTENCE = 'LEAKY-RULE-SENTENCE stays with the model'
+
+/** A sentence of a doc a repo file links to that must never be shown, asked or logged (T-02-65). */
+const DOC_SENTENCE = 'LEAKY-DOC-SENTENCE stays with the model'
+
+/**
+ * A git repo whose only instruction file is the rule file `.claude/rules/security.md` with a Secrets section, as the
+ * plan's dry run has it; the model groups it into one topic recommended to Security. `over` changes the fields it
+ * names.
+ */
+function rulesWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({
+    dirs: { '/repo/.git': [], [RULES_DIR]: [entry('security.md')] },
+    files: { [`${RULES_DIR}/security.md`]: `# Secrets\n${RULE_SENTENCE}.\n` },
+    replies: [
+      '{"topics":[{"title":"Secrets","summary":"How secrets are kept.","parts":["P1"]}]}',
+      '{"topics":{"T1":["security"]},"memories":{}}',
+    ],
+    ...over,
+  })
+}
+
+/** The content consent context line of rulesWorld: one rule file and nothing else (G-02-1f). */
+const RULES_ONLY_FOUND =
+  'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 1 rule file, AGENTS.md no, 0 memories. ' +
+  'No keeps the whole-file questions.'
+
+describe('rules and AGENTS.md in init (G-02-1f)', () => {
+  test('a dry run on a repo with only .claude/rules/security.md asks the content consent, counting it', async () => {
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, RULES_ONLY_FOUND))
+  })
+
+  test('after a yes the rule file is a part offered to the grouping call and shown by its location', async () => {
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | Secrets | # Secrets')
+    expect(shownBlock(run, 'instructions')).toEqual([
+      'Read for this run only (nothing is written):',
+      '  Secrets: How secrets are kept.',
+      '    from: .claude/rules/security.md > Secrets',
+      '    recommended: security',
+    ])
+  })
+
+  test('the rule file is a repo part of the hand-out, with its file, heading and source', async () => {
+    const roles = proposeRoles(repoScan()).roles
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS, true))
+    expect(value.instructions.kind).toBe('parts')
+    const handout = partsOf(value.instructions)
+    expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
+      ['.claude/rules/security.md', 'Secrets', 'repo'],
+    ])
+    expect([...handout.given.entries()]).toEqual([['T1', ['security']]])
+  })
+
+  test('init lists .claude/rules by name before the consent and reads the rule file only after a yes', async () => {
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    const traced = withReadEvents(run)
+    const io: InitIo = {
+      ...traced.io,
+      list: async path => {
+        traced.events.push(`list ${path}`)
+
+        return traced.io.list(path)
+      },
+    }
+    await runInit(io, { dryRun: true })
+    const listAt = traced.events.indexOf(`list ${RULES_DIR}`)
+    const consentAt = traced.events.indexOf(`ask ${CONTENT_QUESTION}`)
+    const readAt = traced.events.indexOf(`read ${RULES_DIR}/security.md`)
+    expect([listAt >= 0, consentAt > listAt, readAt > consentAt]).toEqual([true, true, true])
+  })
+
+  test('No, skip it reads no rule file and calls no model', async () => {
+    const run = memIo(rulesWorld(), PARTS_DECLINED)
+    await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toContain(CONTENT_QUESTION)
+    expect([run.reads.includes(`${RULES_DIR}/security.md`), run.prompts]).toEqual([false, []])
+  })
+
+  test('a repo with only AGENTS.md asks the content consent; after a yes AGENTS.md is a repo part', async () => {
+    const world = gitWorld({
+      files: { '/repo/AGENTS.md': '# Agents\nWork in small steps.\n' },
+      replies: [
+        '{"topics":[{"title":"Agents","summary":"How agents work.","parts":["P1"]}]}',
+        '{"topics":{"T1":["tl"]},"memories":{}}',
+      ],
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const found =
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md yes, 0 memories. ' +
+      'No keeps the whole-file questions.'
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, found))
+    expect(run.prompts[0]).toContain('P1 | AGENTS.md | Agents | # Agents')
+  })
+
+  test('a rules folder that cannot be listed counts 0, and its warning shows in the block after a yes', async () => {
+    const run = memIo(partsWorld({ unknownPaths: [RULES_DIR] }), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.asked).toContain(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
+    expect(shownBlock(run, 'instructions')).toContain('warning: could not list .claude/rules (treated as unknown)')
+  })
+
+  test('a doc the repo CLAUDE.md links to is read as a repo part after the chain', async () => {
+    const topics = [
+      { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+      { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2', 'P3'] },
+    ]
+    const world = chainWorld({
+      files: {
+        [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+        '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\nSee [the guide](docs/guide.md).\n`,
+        '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
+      },
+      replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'],
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts[0]).toContain('P3 | docs/guide.md | Guide | # Guide')
+    expect(shownBlock(run, 'instructions')).toContain('    from: docs/guide.md > Guide')
+  })
+
+  test('rule and doc text never reaches a question, a log line, the pane or the reply (T-02-61)', async () => {
+    const world = rulesWorld({
+      files: {
+        [`${RULES_DIR}/security.md`]: `# Secrets\n${RULE_SENTENCE}.\nSee [the guide](../../docs/guide.md).\n`,
+        '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
+      },
+      replies: [
+        '{"topics":[{"title":"Secrets","summary":"How secrets are kept.","parts":["P1","P2"]}]}',
+        '{"topics":{"T1":["security"]},"memories":{}}',
+      ],
+    })
+    const run = memIo(world, { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' })
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toContain('Which roles get "Secrets"?')
+    const shown = [
+      ...run.asked,
+      ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
+      ...run.logged,
+      ...paneText(run),
+      reply,
+    ].join('\n')
+    expect(leaks(shown, [RULE_SENTENCE, DOC_SENTENCE])).toEqual([])
+    expect(leaks(run.prompts[0] ?? '', [RULE_SENTENCE, DOC_SENTENCE])).toEqual([RULE_SENTENCE, DOC_SENTENCE])
+  })
+
+  test('a plain init on a repo with only rule files lists nothing more and asks no instruction question', async () => {
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
+    expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
+    expect([run.logged.includes(PARTS_DRY_RUN_ONLY_NOTE), run.listed.includes(RULES_DIR)]).toEqual([false, false])
   })
 })
 

@@ -14,12 +14,16 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  moreDocsWarning,
   parseContentConsent,
   parseRecommendation,
   parseTopics,
   readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
+  referencedDocs,
+  repoInstructionNames,
+  RULES_UNLISTED_WARNING,
   splitSections,
   topicContextLine,
   topicHeader,
@@ -29,7 +33,7 @@ import {
   topicsPrompt,
 } from './instructions'
 import type { InstructionSources } from './instructions'
-import { BIDI_OVERRIDE, emptySetupScan, memIo, memWorld, templateRole } from './testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, templateRole } from './testkit'
 import type { MemWorld } from './testkit'
 
 /** The global CLAUDE.md of the cases: a Security section and a Git section, as the plan's dry run has it. */
@@ -450,17 +454,27 @@ describe('instruction questions (G-02-1f)', () => {
     expect(parseContentConsent('yes')).toBeNull()
   })
 
-  test('the content consent context line counts the global file, the repo chain and the memories', () => {
+  test('the content consent context line counts the global file, the chain, the rules, AGENTS.md, the memories', () => {
     const found = emptySetupScan({ hasGlobalClaudeMd: true, claudeMd: ['<repo>/CLAUDE.md'], memoryFiles: ['a.md'] })
-    expect(contentContextLine(found)).toBe(
-      'Found: global CLAUDE.md yes, 1 CLAUDE.md file in the repo chain, 1 memory. No keeps the whole-file questions.',
+    expect(contentContextLine(found, { rules: ['security.md'], hasAgentsMd: true })).toBe(
+      'Found: global CLAUDE.md yes, 1 CLAUDE.md file in the repo chain, 1 rule file, AGENTS.md yes, 1 memory. ' +
+        'No keeps the whole-file questions.',
     )
     const more = emptySetupScan({ claudeMd: ['~/CLAUDE.md', '<repo>/CLAUDE.md'], memoryFiles: ['a.md', 'b.md'] })
-    expect(contentContextLine(more)).toBe(
-      'Found: global CLAUDE.md no, 2 CLAUDE.md files in the repo chain, 2 memories. No keeps the whole-file questions.',
+    expect(contentContextLine(more, { rules: ['a.md', 'b.md'], hasAgentsMd: false })).toBe(
+      'Found: global CLAUDE.md no, 2 CLAUDE.md files in the repo chain, 2 rule files, AGENTS.md no, 2 memories. ' +
+        'No keeps the whole-file questions.',
     )
-    expect(contentContextLine(emptySetupScan())).toBe(
-      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 memories. No keeps the whole-file questions.',
+    expect(contentContextLine(emptySetupScan(), { rules: [], hasAgentsMd: false })).toBe(
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 0 memories. ' +
+        'No keeps the whole-file questions.',
+    )
+  })
+
+  test('a rules folder that could not be listed counts 0 rule files in the context line', () => {
+    expect(contentContextLine(emptySetupScan(), { rules: null, hasAgentsMd: true })).toBe(
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md yes, 0 memories. ' +
+        'No keeps the whole-file questions.',
     )
   })
 
@@ -527,9 +541,12 @@ describe('instruction questions (G-02-1f)', () => {
 /** The config folder of the fixture user, where the global CLAUDE.md lives. */
 const CONFIG = '/home/u/.claude'
 
-/** Where the reader reads in the fixtures: the repo /repo, the home /home/u, no CLAUDE_CONFIG_DIR, and this chain. */
+/**
+ * Where the reader reads in the fixtures: the repo /repo, the home /home/u, no CLAUDE_CONFIG_DIR, this chain, no rule
+ * file and no AGENTS.md.
+ */
 function sourcesOf(chain: readonly string[] = []): InstructionSources {
-  return { root: '/repo', home: '/home/u', configDir: null, chain }
+  return { root: '/repo', home: '/home/u', configDir: null, chain, rules: [], hasAgentsMd: false }
 }
 
 /** A world of the fixture user with these files; `over` changes the other fields it names. */
@@ -744,9 +761,169 @@ describe('readInstructionFiles', () => {
 
   test('with no config folder nothing global is read, and the chain still is', async () => {
     const run = memIo(filesWorld({ '/repo/CLAUDE.md': '# R\n' }), [])
-    const sources = { root: '/repo', home: null, configDir: null, chain: ['<repo>/CLAUDE.md'] }
+    const sources = { ...sourcesOf(['<repo>/CLAUDE.md']), home: null }
     const scan = await readInstructionFiles(run.io, sources)
     expect(placesOf(scan)).toEqual([['CLAUDE.md', 'R', 'repo']])
     expect(run.reads).toEqual(['/repo/CLAUDE.md'])
+  })
+})
+
+/** The rules folder of the fixture repo. */
+const RULES = '/repo/.claude/rules'
+
+/** The sources of sourcesOf with these rule file names, null for a rules folder not listed, and AGENTS.md or not. */
+function repoSources(
+  chain: readonly string[],
+  rules: readonly string[] | null,
+  hasAgentsMd: boolean,
+): InstructionSources {
+  return { ...sourcesOf(chain), rules, hasAgentsMd }
+}
+
+describe('rules, AGENTS.md and referenced docs', () => {
+  test('referencedDocs gives the relative .md links that land in the repo, once each, in text order', () => {
+    const text = [
+      'Read [the guide](docs/guide.md), [setup](./docs/setup.md#install) and [notes](../notes.md "Notes").',
+      'Again [the guide](docs/guide.md); out of the repo [x](../../outside.md).',
+    ].join('\n')
+    expect(referencedDocs(text, '/repo/pkg', '/repo')).toEqual([
+      '/repo/pkg/docs/guide.md',
+      '/repo/pkg/docs/setup.md',
+      '/repo/notes.md',
+    ])
+  })
+
+  test('a link with a scheme, an absolute path, another extension, only an anchor or a folder is no doc', () => {
+    const text = [
+      '[web](https://example.com/a.md) [mail](mailto:x@y.md) [abs](/repo/a.md)',
+      '[txt](docs/a.txt) [top](#top) [dir](docs/) [query](docs/a.md?raw=1)',
+    ].join('\n')
+    expect(referencedDocs(text, '/repo', '/repo')).toEqual([])
+  })
+
+  test('after the chain: each rule file in name order, then AGENTS.md, then the docs repo files link to', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\nRead [the guide](docs/guide.md).\n',
+        [`${RULES}/a.md`]: '# A\n',
+        [`${RULES}/b.md`]: '# B\nSee [the style](../../docs/style.md).\n',
+        '/repo/AGENTS.md': '# Agents\nSee [the guide](docs/guide.md) and [the design](docs/arch.md).\n',
+        '/repo/docs/guide.md': '# Guide\n',
+        '/repo/docs/style.md': '# Style\n',
+        '/repo/docs/arch.md': '# Arch\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, repoSources(['<repo>/CLAUDE.md'], ['b.md', 'a.md'], true))
+    expect(run.reads).toEqual([
+      `${CONFIG}/CLAUDE.md`,
+      '/repo/CLAUDE.md',
+      `${RULES}/a.md`,
+      `${RULES}/b.md`,
+      '/repo/AGENTS.md',
+      '/repo/docs/guide.md',
+      '/repo/docs/style.md',
+      '/repo/docs/arch.md',
+    ])
+    expect(placesOf(scan)).toEqual([
+      ['CLAUDE.md', 'R', 'repo'],
+      ['.claude/rules/a.md', 'A', 'repo'],
+      ['.claude/rules/b.md', 'B', 'repo'],
+      ['AGENTS.md', 'Agents', 'repo'],
+      ['docs/guide.md', 'Guide', 'repo'],
+      ['docs/style.md', 'Style', 'repo'],
+      ['docs/arch.md', 'Arch', 'repo'],
+    ])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('docs come from the repo files read, one level: a doc a doc links to is not read', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n[a](docs/a.md)\n',
+        '/repo/docs/a.md': '# A\n[b](b.md)\n',
+        '/repo/docs/b.md': '# B\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.parts.map(found => found.heading)).toEqual(['R', 'A'])
+    expect(run.reads).not.toContain('/repo/docs/b.md')
+  })
+
+  test('at most 20 docs are read, in first-seen order; the rest are counted in one warning', async () => {
+    const names = Array.from({ length: 23 }, (_, at) => `d${String(at + 1).padStart(2, '0')}.md`)
+    const docs = Object.fromEntries(names.map(name => [`/repo/docs/${name}`, `# ${name}\n`]))
+    const links = names.map(name => `[${name}](docs/${name})`).join('\n')
+    const run = memIo(filesWorld({ ...docs, '/repo/CLAUDE.md': `# R\n${links}\n` }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    const read = names.slice(0, 20).map(name => `docs/${name}`)
+    expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md', ...read])
+    expect(run.reads).not.toContain('/repo/docs/d21.md')
+    expect(scan.warnings).toEqual(['3 more referenced docs were not read'])
+    expect(moreDocsWarning(3)).toBe('3 more referenced docs were not read')
+  })
+
+  test('a doc already read, as a chain import or a rule file, is read once and not counted toward 20', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n@docs/a.md\n[a](docs/a.md) [rule](.claude/rules/x.md) [b](docs/b.md)\n',
+        '/repo/docs/a.md': '# A\n',
+        [`${RULES}/x.md`]: '# X\n',
+        '/repo/docs/b.md': '# B\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, repoSources(['<repo>/CLAUDE.md'], ['x.md'], false))
+    expect(scan.parts.map(found => found.heading)).toEqual(['R', 'A', 'X', 'B'])
+    expect(run.reads.filter(path => path.startsWith('/repo/'))).toEqual([
+      '/repo/CLAUDE.md',
+      '/repo/docs/a.md',
+      `${RULES}/x.md`,
+      '/repo/docs/b.md',
+    ])
+  })
+
+  test('a rules folder that could not be listed is a warning, and no rule file is read', async () => {
+    const run = memIo(filesWorld({ [`${RULES}/a.md`]: '# A\n' }), [])
+    const scan = await readInstructionFiles(run.io, repoSources([], null, false))
+    expect(scan.warnings).toEqual([RULES_UNLISTED_WARNING])
+    expect(RULES_UNLISTED_WARNING).toBe('could not list .claude/rules (treated as unknown)')
+    expect(run.reads).not.toContain(`${RULES}/a.md`)
+  })
+
+  test('AGENTS.md is read only when it was found before the consent', async () => {
+    const run = memIo(filesWorld({ '/repo/AGENTS.md': '# Agents\n' }), [])
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect([scan.parts, run.reads.includes('/repo/AGENTS.md')]).toEqual([[], false])
+  })
+
+  test('a rule file that links out of the repo is refused and never read (readRepoFile)', async () => {
+    const world = filesWorld({ [`${RULES}/a.md`]: '# A\n' }, { realPaths: { [`${RULES}/a.md`]: '/home/u/secret.md' } })
+    const run = memIo(world, [])
+    const scan = await readInstructionFiles(run.io, repoSources([], ['a.md'], false))
+    expect([scan.parts, run.reads.includes(`${RULES}/a.md`)]).toEqual([[], false])
+    expect(scan.warnings).toEqual(['could not read .claude/rules/a.md (treated as unknown)'])
+  })
+
+  test('repoInstructionNames lists the .md files of .claude/rules and stats AGENTS.md, reading nothing', async () => {
+    const world = memWorld({
+      dirs: { [RULES]: [entry('b.md'), entry('a.md'), entry('notes.txt'), entry('sub', 'dir'), link('l.md')] },
+      files: { '/repo/AGENTS.md': '# Agents\n', [`${RULES}/a.md`]: 'SENTINEL', [`${RULES}/b.md`]: 'SENTINEL' },
+    })
+    const run = memIo(world, [])
+    expect(await repoInstructionNames(run.io, '/repo')).toEqual({ rules: ['a.md', 'b.md'], hasAgentsMd: true })
+    expect([run.reads, run.listed]).toEqual([[], [RULES]])
+  })
+
+  test('no rules folder gives no rule file; one that cannot be listed or links out gives null', async () => {
+    const none = memIo(memWorld({}), [])
+    expect(await repoInstructionNames(none.io, '/repo')).toEqual({ rules: [], hasAgentsMd: false })
+    const unknown = memIo(memWorld({ dirs: { [RULES]: [entry('a.md')] }, unknownPaths: [RULES] }), [])
+    expect((await repoInstructionNames(unknown.io, '/repo')).rules).toBeNull()
+    const linkedOut = { dirs: { [RULES]: [entry('a.md')] }, realPaths: { [RULES]: '/elsewhere/rules' } }
+    const outside = memIo(memWorld(linkedOut), [])
+    expect((await repoInstructionNames(outside.io, '/repo')).rules).toBeNull()
+    expect(outside.listed).toEqual([])
   })
 })
