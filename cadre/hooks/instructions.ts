@@ -11,14 +11,26 @@ import type {
   InstructionScan,
   InstructionTopic,
   PartSource,
+  PortEntry,
   RoleSpec,
   SetupScan,
 } from '../types'
 import { ASK_HEADERS } from './ask'
-import { clean, displayPath, idLabel, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash, utf8Bytes } from './facts'
+import {
+  clean,
+  displayPath,
+  idLabel,
+  isDirInsideRoot,
+  isObject,
+  MAX_READ_BYTES,
+  parseJsonValue,
+  sortedUnique,
+  trimSlash,
+  utf8Bytes,
+} from './facts'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports } from './launch'
-import { readRepoFile } from './scan'
+import { missingState, readRepoFile } from './scan'
 import { userDirOf } from './setup'
 
 /**
@@ -69,16 +81,28 @@ function counted(count: number, one: string, many: string): string {
 /** What the last sentence of the content consent context line says: a No keeps today's questions (D-63). */
 const CONTENT_NO_TEXT = 'No keeps the whole-file questions.'
 
-/**
- * The context line of the content consent (G-02-1f, D-136): what the user-setup scan found, by name only (the global
- * CLAUDE.md, the CLAUDE.md files of the repo chain and the memory files), and that No keeps the whole-file questions.
- */
-export function contentContextLine(setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>): string {
-  const global = setup.hasGlobalClaudeMd ? 'yes' : 'no'
-  const chain = counted(setup.claudeMd.length, 'CLAUDE.md file', 'CLAUDE.md files')
-  const memories = counted(setup.memoryFiles.length, 'memory', 'memories')
+/** A fact as the content consent context line says it: yes or no. */
+function yesNo(isThere: boolean): string {
+  return isThere ? 'yes' : 'no'
+}
 
-  return `Found: global CLAUDE.md ${global}, ${chain} in the repo chain, ${memories}. ${CONTENT_NO_TEXT}`
+/**
+ * The context line of the content consent (G-02-1f, D-136): what init found before it reads anything, by name only
+ * (the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules`, the root AGENTS.md
+ * and the memory files), and that No keeps the whole-file questions. A rules folder that could not be listed counts
+ * 0 rule files.
+ */
+export function contentContextLine(
+  setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
+  repo: Pick<InstructionSources, 'rules' | 'hasAgentsMd'>,
+): string {
+  const global = yesNo(setup.hasGlobalClaudeMd)
+  const chain = counted(setup.claudeMd.length, 'CLAUDE.md file', 'CLAUDE.md files')
+  const rules = counted(repo.rules?.length ?? 0, 'rule file', 'rule files')
+  const memories = counted(setup.memoryFiles.length, 'memory', 'memories')
+  const found = `global CLAUDE.md ${global}, ${chain} in the repo chain, ${rules}, AGENTS.md ${yesNo(repo.hasAgentsMd)}`
+
+  return `Found: ${found}, ${memories}. ${CONTENT_NO_TEXT}`
 }
 
 /** The entry question of the instruction hand-out (G-02-1f Entry choices). */
@@ -302,14 +326,102 @@ export function splitSections(text: string): Section[] {
 
 /**
  * Where the instruction files are read from (G-02-1f Sources): the repo root, the home folder and CLAUDE_CONFIG_DIR
- * as resolved (the config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude`; userDirOf), and the CLAUDE.md files of
- * the repo chain in display form, outermost first, as the user-setup scan names them (SetupScan.claudeMd).
+ * as resolved (the config folder is CLAUDE_CONFIG_DIR, else `<home>/.claude`; userDirOf), the CLAUDE.md files of the
+ * repo chain in display form, outermost first, as the user-setup scan names them (SetupScan.claudeMd), and what init
+ * found of the repo's own files before the content consent, by name only (repoInstructionNames).
  */
 export type InstructionSources = {
   readonly root: string
   readonly home: string | null
   readonly configDir: string | null
   readonly chain: readonly string[]
+  /** The `.md` file names in `<root>/.claude/rules`, in name order; null when that folder could not be listed. */
+  readonly rules: readonly string[] | null
+  /** Whether `<root>/AGENTS.md` was a file when init looked, before the content consent. */
+  readonly hasAgentsMd: boolean
+}
+
+/** The repo folder that holds the rule files (G-02-1f Sources), below the root. */
+const RULES_FOLDER = '.claude/rules'
+
+/** The repo file of the agent instructions other tools read (G-02-1f Sources), at the root. */
+const AGENTS_FILE = 'AGENTS.md'
+
+/** The extension of a rule file and of a memory file. */
+const MARKDOWN_EXTENSION = '.md'
+
+/** The names of the regular files in a listing that end in `.md`; a folder, a link or another kind is not one. */
+function markdownFileNames(entries: readonly PortEntry[]): string[] {
+  return entries
+    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN_EXTENSION))
+    .map(entry => entry.name)
+}
+
+/**
+ * The rule file names of the repo (G-02-1f Sources), by name only: `.claude/rules` is listed only when its stat shows
+ * a folder whose real path is inside the repo (isDirInsideRoot, WR-02), and its `.md` files are given in name order. A
+ * folder that is not there has none; one that could not be stat-ed or listed, or that links out of the repo, is null.
+ */
+async function ruleNames(io: InitIo, root: string): Promise<readonly string[] | null> {
+  const folder = joinedPath(root, RULES_FOLDER)
+  const stat = await io.stat(folder)
+  if (stat === null) return (await missingState(io, folder)) === 'absent' ? [] : null
+  if (!isDirInsideRoot(stat, root)) return null
+  const entries = await io.list(folder)
+
+  return entries === null ? null : sortedUnique(markdownFileNames(entries))
+}
+
+/**
+ * What init finds of the repo's own instruction files before the content consent (G-02-1f Sources, D-57), by name
+ * only: the `.md` files of `.claude/rules` in name order, null when that folder could not be listed (ruleNames), and
+ * whether the root AGENTS.md is a file, by its stat. No file is read.
+ */
+export async function repoInstructionNames(
+  io: InitIo,
+  root: string,
+): Promise<Pick<InstructionSources, 'rules' | 'hasAgentsMd'>> {
+  const rules = await ruleNames(io, root)
+  const agents = await io.stat(joinedPath(root, AGENTS_FILE))
+
+  return { rules, hasAgentsMd: agents?.kind === 'file' }
+}
+
+/** A markdown link `[text](target)`: its target, up to the first white space or closing parenthesis. */
+const MARKDOWN_LINK = /\[[^\]\n]*\]\(\s*([^\s)]+)[^)\n]*\)/g
+
+/** A URI scheme at the start of a link target, such as `https:` or `mailto:`. */
+const LINK_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
+
+/** An absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it. */
+function resolvedPath(path: string): string {
+  const kept: string[] = []
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') kept.pop()
+    else kept.push(segment)
+  }
+
+  return `/${kept.join('/')}`
+}
+
+/**
+ * The repo docs a file links to (G-02-1f Sources): the target of each markdown link `[text](target)` that is a
+ * relative path ending in `.md` (no scheme, not absolute; its `#` part is dropped), resolved against the folder of the
+ * file (`fileDir`) with every `.` and `..` segment resolved away, and kept only when it lands inside the repo; as
+ * absolute paths, once each, in the order the text gives them. It reads nothing.
+ */
+export function referencedDocs(text: string, fileDir: string, root: string): string[] {
+  const inside = `${trimSlash(root)}/`
+  const found: string[] = []
+  for (const match of text.matchAll(MARKDOWN_LINK)) {
+    const target = (match[1] ?? '').split('#')[0] ?? ''
+    if (!target.endsWith(MARKDOWN_EXTENSION) || target.startsWith('/') || LINK_SCHEME.test(target)) continue
+    const path = resolvedPath(`${fileDir}/${target}`)
+    if (path.startsWith(inside)) found.push(path)
+  }
+
+  return Array.from(new Set(found))
 }
 
 /** The most import levels followed below a file the read starts from (G-02-1f Sources). */
@@ -323,6 +435,17 @@ const MAX_TOTAL_BYTES = 2 * MAX_READ_BYTES
 
 /** The most parts offered to the model and the hand-out (G-02-1f Part unit); the rest stay with the root session. */
 const MAX_PARTS = 200
+
+/** The most docs the read repo files link to that one read takes (G-02-1f Sources); the rest are counted. */
+const MAX_REFERENCED_DOCS = 20
+
+/** The warning when `.claude/rules` could not be listed before the consent (G-02-1f Sources): no rule file is read. */
+export const RULES_UNLISTED_WARNING = 'could not list .claude/rules (treated as unknown)'
+
+/** The warning for the docs past MAX_REFERENCED_DOCS that the read repo files link to (G-02-1f Sources): not read. */
+export function moreDocsWarning(count: number): string {
+  return `${count} more referenced docs were not read`
+}
 
 /** The warning for a file the port could not read (G-02-1f): its display form, never its path. */
 export function unreadableWarning(file: string): string {
@@ -383,6 +506,8 @@ type ReadState = {
   readonly sizes: number[]
   /** The files left unread once the read reached MAX_TOTAL_BYTES; any entry means the read has stopped. */
   readonly unread: string[]
+  /** Every repo file read, in read order: the docs they link to are read last (readDocs). */
+  readonly repoFiles: ReadFile[]
 }
 
 /** The display prefix of a path in the repo. */
@@ -459,7 +584,8 @@ function addParts(state: ReadState, file: string, source: PartSource, text: stri
 
 /**
  * A text the port read, kept within the total (G-02-1f Sources): when it would take the read past MAX_TOTAL_BYTES the
- * read stops and the file is counted unread; else it is split into parts and given back for its imports.
+ * read stops and the file is counted unread; else it is split into parts and given back for its imports, and a repo
+ * file is kept for the docs it links to.
  */
 function keptText(
   state: ReadState,
@@ -473,8 +599,10 @@ function keptText(
   state.sizes.push(bytes)
   const source: PartSource = place.kind === 'repo' ? 'repo' : 'global'
   addParts(state, file, source, text)
+  const read: ReadFile = { text, dir: folderOf(place.path), source }
+  if (source === 'repo') state.repoFiles.push(read)
 
-  return { text, dir: folderOf(place.path), source }
+  return read
 }
 
 /**
@@ -541,6 +669,39 @@ async function readChain(state: ReadState): Promise<void> {
 }
 
 /**
+ * The rule files of `.claude/rules`, in name order, as listed before the consent (G-02-1f Sources); a folder that
+ * could not be listed is RULES_UNLISTED_WARNING, and no rule file is read.
+ */
+async function readRules(state: ReadState): Promise<void> {
+  const { root, rules } = state.sources
+  if (rules === null) {
+    state.warnings.push(RULES_UNLISTED_WARNING)
+
+    return
+  }
+  for (const name of sortedUnique(rules)) await readOne(state, joinedPath(root, `${RULES_FOLDER}/${name}`), false)
+}
+
+/** The root AGENTS.md, only when it was a file before the consent (G-02-1f Sources). */
+async function readAgentsMd(state: ReadState): Promise<void> {
+  if (!state.sources.hasAgentsMd) return
+  await readOne(state, joinedPath(state.sources.root, AGENTS_FILE), false)
+}
+
+/**
+ * The docs the repo files read so far link to (G-02-1f Sources; referencedDocs): one level, so a doc's own links are
+ * not followed; each once, in first-seen order, skipping a file the read already reached, at most MAX_REFERENCED_DOCS,
+ * and the rest counted in moreDocsWarning.
+ */
+async function readDocs(state: ReadState): Promise<void> {
+  const linked = state.repoFiles.flatMap(file => referencedDocs(file.text, file.dir, state.sources.root))
+  const docs = Array.from(new Set(linked)).filter(path => !state.seen.has(path))
+  for (const path of docs.slice(0, MAX_REFERENCED_DOCS)) await readOne(state, path, true)
+  const rest = docs.length - MAX_REFERENCED_DOCS
+  if (rest > 0) state.warnings.push(moreDocsWarning(rest))
+}
+
+/**
  * What a read gave (G-02-1f): the first MAX_PARTS parts, the files they came from in read order, once each, and the
  * warnings, then how many files the total left unread and how many parts were not offered.
  */
@@ -560,13 +721,14 @@ function scanOf(state: ReadState): InstructionScan {
  * Reads the instruction files after the content consent (G-02-1f Sources), in this order: the global
  * `<config folder>/CLAUDE.md`, then its @imports (claudeMdImports) depth first, at most 3 import levels and 20 imported
  * files; then the repo chain, outermost first (SetupScan.claudeMd), then the chain files' @imports the same way with a
- * budget of their own. Each file is read once. A path in the repo is a 'repo' part, read only through readRepoFile, so
- * a link that leads out of the repo is never read; a path in the config folder is a 'global' part; any other path is
- * not read and gets a warning, and so does any file a repo file imports from outside the repo, the config folder
- * included (night-run AUTO-PICK #3). Each file is read with MAX_READ_BYTES and one over it is not split; the read
- * stops at 512 KiB in all and counts the files it did not read; parts past the 200th are not offered. A missing file
- * is quiet, and one the port could not read is a warning. The text is held in memory for this run only: nothing is
- * written.
+ * budget of their own; then each rule file of `.claude/rules` in name order, then the root AGENTS.md, then the docs
+ * the repo files read link to (one level, at most 20; readDocs). Each file is read once. A path in the repo is a
+ * 'repo' part, read only through readRepoFile, so a link that leads out of the repo is never read; a path in the
+ * config folder is a 'global' part; any other path is not read and gets a warning, and so does any file a repo file
+ * imports from outside the repo, the config folder included (night-run AUTO-PICK #3). Each file is read with
+ * MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not read;
+ * parts past the 200th are not offered. A missing file is quiet, and one the port could not read is a warning. The
+ * text is held in memory for this run only: nothing is written.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
   const state: ReadState = {
@@ -578,9 +740,13 @@ export async function readInstructionFiles(io: InitIo, sources: InstructionSourc
     seen: new Set(),
     sizes: [],
     unread: [],
+    repoFiles: [],
   }
   await readGlobal(state)
   await readChain(state)
+  await readRules(state)
+  await readAgentsMd(state)
+  await readDocs(state)
 
   return scanOf(state)
 }

@@ -133,10 +133,12 @@ import {
   readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
+  repoInstructionNames,
   topicItems,
   TOPICS_SYSTEM,
   topicsPrompt,
 } from './instructions'
+import type { InstructionSources } from './instructions'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
@@ -1696,14 +1698,27 @@ type PartsFound = {
   readonly recommended: ReadonlyMap<string, readonly string[]>
 }
 
-/** Whether the user-setup scan found anything to hand out: the global CLAUDE.md, a chain file or a memory file. */
-function hasInstructionFiles(setup: SetupScan): boolean {
+/** What init finds of the repo's own instruction files before the content consent, by name only (G-02-1f Sources). */
+type RepoNames = Pick<InstructionSources, 'rules' | 'hasAgentsMd'>
+
+/** Whether the setup scan found what the whole-file questions ask about: the global CLAUDE.md, a chain or a memory. */
+function hasSetupFiles(setup: SetupScan): boolean {
   return setup.hasGlobalClaudeMd || setup.claudeMd.length > 0 || setup.memoryFiles.length > 0
+}
+
+/** Whether a dry run found anything to hand out: what the setup scan found, a rule file or AGENTS.md (G-02-1f). */
+function hasInstructionFiles(setup: SetupScan, repo: RepoNames): boolean {
+  return hasSetupFiles(setup) || (repo.rules ?? []).length > 0 || repo.hasAgentsMd
 }
 
 /** The roles with no instruction group: nothing to hand out, or the parts flow, gives no D-63 group to any role. */
 function withoutGroups(roles: readonly RoleSpec[]): RoleSpec[] {
   return roles.map(role => ({ ...role, instructions: [] }))
+}
+
+/** Nothing to hand out (G-02-1f): no question is asked, the hand-out is `none` and every role gets no group. */
+function nothingToHandOut(roles: readonly RoleSpec[]): StepResult<Instructed> {
+  return accepted({ roles: withoutGroups(roles), instructions: { kind: 'none' } })
 }
 
 /** The whole-files hand-out: the D-63 group questions were asked. */
@@ -1715,26 +1730,30 @@ async function wholeFiles(io: InitIo, roles: readonly RoleSpec[], setup: SetupSc
 }
 
 /**
- * A plain init while the parts flow runs only under --dry-run (G-02-1f): PARTS_DRY_RUN_ONLY_NOTE as one note, then the
- * whole-file questions (wholeFiles); no content consent is asked and nothing is read.
+ * A plain init while the parts flow runs only under --dry-run (G-02-1f), as before the parts flow: with nothing the
+ * whole-file questions ask about it hands out `none` and notes nothing; else PARTS_DRY_RUN_ONLY_NOTE as one note, then
+ * the whole-file questions (wholeFiles). No content consent is asked, `.claude/rules` and AGENTS.md are not looked at,
+ * and nothing is read.
  */
 async function dryRunOnlyNote(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
 ): Promise<StepResult<Instructed>> {
+  if (!hasSetupFiles(setup)) return nothingToHandOut(roles)
   await noteLine(io, PARTS_DRY_RUN_ONLY_NOTE)
 
   return wholeFiles(io, roles, setup)
 }
 
 /**
- * The content consent as askChoice asks it (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what the scan found
- * on its second line (contentContextLine), No, skip it first, and the Instructions chip.
+ * The content consent as askChoice asks it (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on
+ * its second line (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first,
+ * and the Instructions chip.
  */
-function contentAsk(setup: SetupScan): ChoiceAsk<boolean> {
+function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> {
   return {
-    question: withContext(CONTENT_QUESTION, contentContextLine(setup)),
+    question: withContext(CONTENT_QUESTION, contentContextLine(setup, repo)),
     spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions },
     parse: parseContentConsent,
     accepts: quotedLabels(CONTENT_OPTIONS),
@@ -1821,18 +1840,20 @@ async function noPartRead(
 }
 
 /**
- * The parts flow after a yes (G-02-1f): it reads the instruction files (readInstructionFiles); a read with no part
- * goes to the whole-file questions (noPartRead); else the model groups the parts into topics across files, a second
- * call recommends roles for them, and the person hands them out (handOutParts).
+ * The parts flow after a yes (G-02-1f): it reads the instruction files (readInstructionFiles: the setup scan's chain
+ * and the rule files and AGENTS.md init found by name); a read with no part goes to the whole-file questions
+ * (noPartRead); else the model groups the parts into topics across files, a second call recommends roles for them, and
+ * the person hands them out (handOutParts).
  */
 async function partsFlow(
   io: InitIo,
   roles: readonly RoleSpec[],
   setup: SetupScan,
   locations: InitLocations,
+  repo: RepoNames,
 ): Promise<StepResult<Instructed>> {
   const { root, home, configDir } = locations
-  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd })
+  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd, ...repo })
   if (scan.parts.length === 0) return noPartRead(io, roles, setup, scan)
   const topics = await groupedTopics(io, scan)
   const recommended = await recommendedRoles(io, roles, topics)
@@ -1841,13 +1862,15 @@ async function partsFlow(
 }
 
 /**
- * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps). With no global CLAUDE.md, no
- * CLAUDE.md in the repo chain and no memory file it asks nothing, hands out `none` and gives every role no group. A
- * plain init (`isDryRun` false) asks no content consent: it notes PARTS_DRY_RUN_ONLY_NOTE and asks the whole-file
- * questions (memoryStep), handed out as `whole`. A dry run asks the content consent first (contentAsk), so no
- * instruction or memory text is read before a yes: No asks the whole-file questions, and Yes runs the parts flow
- * (partsFlow). A dismissal of any of its questions is cancelled with that question's reason, and MAX_ASKS answers it
- * cannot read with NO_USABLE_ANSWER_REASON (A1). Nothing is written, and the roles it is given never change.
+ * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps). A plain init (`isDryRun` false)
+ * runs as before the parts flow (dryRunOnlyNote): no content consent, PARTS_DRY_RUN_ONLY_NOTE and the whole-file
+ * questions (memoryStep), handed out as `whole`, or `none` with nothing they ask about. A dry run first lists
+ * `.claude/rules` and stats AGENTS.md, by name only (repoInstructionNames); with no global CLAUDE.md, no CLAUDE.md in
+ * the repo chain, no rule file, no AGENTS.md and no memory file it asks nothing, hands out `none` and gives every role
+ * no group. Else it asks the content consent (contentAsk), so no instruction or memory text is read before a yes: No
+ * asks the whole-file questions, and Yes runs the parts flow (partsFlow). A dismissal of any of its questions is
+ * cancelled with that question's reason, and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON (A1).
+ * Nothing is written, and the roles it is given never change.
  */
 export async function instructionsStep(
   io: InitIo,
@@ -1856,13 +1879,14 @@ export async function instructionsStep(
   locations: InitLocations,
   isDryRun: boolean,
 ): Promise<StepResult<Instructed>> {
-  if (!hasInstructionFiles(setup)) return accepted({ roles: withoutGroups(roles), instructions: { kind: 'none' } })
   if (!isDryRun) return dryRunOnlyNote(io, roles, setup)
-  const consent = choiceResult(await askChoice(io, contentAsk(setup)), CONTENT_DISMISSED_REASON)
+  const repo = await repoInstructionNames(io, locations.root)
+  if (!hasInstructionFiles(setup, repo)) return nothingToHandOut(roles)
+  const consent = choiceResult(await askChoice(io, contentAsk(setup, repo)), CONTENT_DISMISSED_REASON)
   if (consent.kind === 'cancelled') return consent
   if (!consent.value) return wholeFiles(io, roles, setup)
 
-  return partsFlow(io, roles, setup, locations)
+  return partsFlow(io, roles, setup, locations, repo)
 }
 
 /**
