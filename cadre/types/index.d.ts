@@ -300,8 +300,8 @@ export type UnsupportedMarker = {
 }
 
 /**
- * The adapter choice for a repo. Only `chosen` picks an adapter. `ambiguous` and `installed-only` never
- * preselect one, and `unsupported` and `none` name what was found instead.
+ * The adapter choice for a repo. Only `chosen` picks an adapter. `ambiguous` and `installed-only` never choose one for
+ * the person, and `unsupported` and `none` name what was found instead.
  */
 export type Choice =
   | {
@@ -312,7 +312,7 @@ export type Choice =
       readonly reason: string
     }
   | {
-      /** Two or more frameworks are in use; nothing is preselected and the person is asked. */
+      /** Two or more frameworks are in use; no framework is chosen for the person and they are asked. */
       readonly kind: 'ambiguous'
       readonly ids: readonly FrameworkId[]
     }
@@ -641,11 +641,6 @@ export type RepoScan = {
   /** Top-level repo-relative folders that hold source files, sorted (PM's best-effort Read deny). */
   readonly codeDirs: readonly string[]
   readonly hasSource: boolean
-  /**
-   * True exactly when cappedFolders is not empty or isOverallCapped is true; the depth limit alone never sets it
-   * (D-137).
-   */
-  readonly isTruncated: boolean
   /** Folders below the first level whose listing stopped at MAX_FOLDER_ENTRIES (D-137). */
   readonly cappedFolders: readonly string[]
   /** True when the walk stopped at the 20,000-entry safety cap (D-137). */

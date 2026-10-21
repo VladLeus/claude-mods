@@ -251,7 +251,7 @@ describe('scanRepo', () => {
     expect(scan.languages).toEqual(['TypeScript'])
     expect(scan.codeDirs).toEqual(['src'])
     expect(scan.hasSource).toBe(true)
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
     expect(scan.warnings).toEqual([])
   })
 
@@ -281,7 +281,7 @@ describe('scanRepo', () => {
     expect(scan.languages).toEqual([])
     expect(scan.codeDirs).toEqual([])
     expect(scan.hasSource).toBe(false)
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
     expect(scan.warnings).toEqual([])
   })
 
@@ -329,7 +329,7 @@ describe('scanRepo', () => {
       label: 'JS/TS test files',
       evidence: 'a/b/three.test.ts',
     })
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
   })
 
   test('the skip folders are never listed, at the root or deeper', async () => {
@@ -346,7 +346,7 @@ describe('scanRepo', () => {
 
     expect(walkedFolders(run.listed)).toEqual(['/repo', '/repo/src'])
     expect(scan.findings).toEqual([])
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
   })
 
   test('a link is never walked into, whether the host calls it other or dir', async () => {
@@ -378,7 +378,7 @@ describe('scanRepo', () => {
       },
     })
 
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
     expect(scan.languages).toEqual(['TypeScript'])
   })
 
@@ -524,7 +524,7 @@ describe('scanRepo', () => {
       expect(scan.findings).toEqual([])
       expect(scan.hasSource).toBe(false)
       expect(scan.languages).toEqual([])
-      expect(scan.isTruncated).toBe(false)
+      expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
     }
   })
 
@@ -1485,7 +1485,7 @@ describe('per-folder cap (G-02-1e)', () => {
     expect(scan.languages).toEqual(['TypeScript'])
     expect(scan.cappedFolders).toEqual(['a/b'])
     expect(scan.isOverallCapped).toBe(false)
-    expect(scan.isTruncated).toBe(true)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(true)
   })
 
   test('a folder two levels down with exactly 200 entries is listed in full and not recorded', async () => {
@@ -1496,7 +1496,7 @@ describe('per-folder cap (G-02-1e)', () => {
 
     expect(findingOf(scan, 'test', 'JS/TS test files')).toEqual(jsTests('a/b/g.test.ts'))
     expect(scan.cappedFolders).toEqual([])
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
   })
 
   test('a marker in a later folder two levels down is still found after a huge one', async () => {
@@ -1526,7 +1526,7 @@ describe('per-folder cap (G-02-1e)', () => {
     expect(findingOf(scan, 'test', 'JS/TS test files')).toEqual(jsTests('root.spec.ts'))
     expect(scan.codeDirs).toEqual(['big'])
     expect(scan.cappedFolders).toEqual([])
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
   })
 
   test('the deeper folders listed only in part are sorted, whatever order the walk met them in', async () => {
@@ -1547,7 +1547,7 @@ describe('per-folder cap (G-02-1e)', () => {
     const scan = await scanOf({ dirs: { '/repo': [...plainFiles(MAX_SCAN_ENTRIES), entry('zz.test.ts')] } })
 
     expect(scan.isOverallCapped).toBe(true)
-    expect(scan.isTruncated).toBe(true)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(true)
     expect(scan.cappedFolders).toEqual([])
     expect(findingOf(scan, 'test', 'JS/TS test files')).toBeUndefined()
   })
@@ -1556,7 +1556,7 @@ describe('per-folder cap (G-02-1e)', () => {
     const scan = await scanOf({ dirs: { '/repo': [...plainFiles(MAX_SCAN_ENTRIES - 1), entry('zz.test.ts')] } })
 
     expect(scan.isOverallCapped).toBe(false)
-    expect(scan.isTruncated).toBe(false)
+    expect(scan.cappedFolders.length > 0 || scan.isOverallCapped).toBe(false)
     expect(findingOf(scan, 'test', 'JS/TS test files')).toEqual(jsTests('zz.test.ts'))
   })
 

@@ -1053,7 +1053,6 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
     languages,
     codeDirs: codeDirsOf(walked.seen),
     hasSource: languages.length > 0,
-    isTruncated: walked.cappedFolders.length > 0 || walked.isOverallCapped,
     cappedFolders: walked.cappedFolders,
     isOverallCapped: walked.isOverallCapped,
     cadre,

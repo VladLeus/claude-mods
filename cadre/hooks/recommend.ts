@@ -144,7 +144,7 @@ const ACCEPT_OPTION = 'Accept'
 /** The dialog button that declines a hunk; a typed answer of the same word counts the same, in any case. */
 const DECLINE_OPTION = 'Decline'
 
-/** The buttons of a hunk question, in this order; nothing is preselected. */
+/** The buttons of a hunk question, in this order: the dialog focuses the first option; the order is fixed. */
 const HUNK_OPTIONS: readonly string[] = Object.freeze([ACCEPT_OPTION, DECLINE_OPTION])
 
 /** The last line of a hunk question for a change autonomy cannot work without. */

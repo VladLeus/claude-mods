@@ -36,8 +36,8 @@ import { reportText } from './render'
 export type ConflictChoice = 'mine' | 'new'
 
 /**
- * The buttons of a conflict question, in this order; nothing is preselected (D-67). A typed answer of the same words,
- * or of `mine` or `new` alone, counts the same, in any case.
+ * The buttons of a conflict question, in this order: the dialog focuses the first option; the order is fixed (D-67). A
+ * typed answer of the same words, or of `mine` or `new` alone, counts the same, in any case.
  */
 export const CONFLICT_OPTIONS: readonly string[] = Object.freeze(['Keep mine', 'Take new'])
 

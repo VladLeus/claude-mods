@@ -91,8 +91,8 @@ export function isFrameworkId(value: unknown): value is FrameworkId {
 /**
  * The adapter choice for a repo, decided from the detections alone. Only `chosen` picks an adapter. A user pick is
  * honoured when it is in use, or when nothing is in use and it is installed; `none` is always honoured. A pick of a
- * supported id that is neither in use nor installed is ignored. Two or more
- * frameworks in use is `ambiguous`, so nothing is preselected (D-07). Installed-only never chooses (D-29).
+ * supported id that is neither in use nor installed is ignored. Two or more frameworks in use is `ambiguous`, so no
+ * framework is chosen for the person and they are asked (D-07). Installed-only never chooses (D-29).
  */
 export function chooseFramework(detections: readonly Detection[], userPick: FrameworkId | null): Choice {
   const inUse = SUPPORTED_IDS.filter(id => hasStatus(detections, id, 'in-use'))

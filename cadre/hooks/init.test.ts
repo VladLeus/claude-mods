@@ -320,7 +320,6 @@ function repoScan(over: Partial<RepoScan> = {}): RepoScan {
     languages: [],
     codeDirs: [],
     hasSource: false,
-    isTruncated: false,
     cappedFolders: [],
     isOverallCapped: false,
     cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
@@ -569,14 +568,14 @@ describe('scanSummaryLines', () => {
   })
 
   test('a scan that listed a deeper folder only in part says so after the .cadre/ line (G-02-1e)', () => {
-    const lines = scanSummaryLines(repoScan({ isTruncated: true, cappedFolders: ['app/views'] }), emptySetupScan())
+    const lines = scanSummaryLines(repoScan({ cappedFolders: ['app/views'] }), emptySetupScan())
     expect(lines[4]).toBe(`  partial: 1 deeper folder ${IN_PART}; may be incomplete: stack, tests, E2E`)
     expect(lines[5]).toBe('User setup (names only):')
     expect(scanSummaryLines(repoScan(), emptySetupScan())).toHaveLength(8)
   })
 
   test('a scan stopped at the safety cap that also capped folders shows the safety line, then the folder line', () => {
-    const repo = repoScan({ isTruncated: true, cappedFolders: ['a/b', 'c/d'], isOverallCapped: true })
+    const repo = repoScan({ cappedFolders: ['a/b', 'c/d'], isOverallCapped: true })
     const lines = scanSummaryLines(repo, emptySetupScan())
     expect(lines.slice(4, 7)).toEqual([
       `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
@@ -652,7 +651,6 @@ function foundAll(over: Partial<RepoScan>): RepoScan {
       { kind: 'test', label: 'RSpec config', evidence: '.rspec' },
     ],
     hasSource: true,
-    isTruncated: true,
     ...over,
   })
 }
@@ -664,7 +662,7 @@ describe('truncatedLine (G-02-1e)', () => {
   })
 
   test('one deeper folder listed only in part names the facts it found nothing for: folder for 1', () => {
-    expect(truncatedLine(repoScan({ isTruncated: true, cappedFolders: ['app/views'] }))).toBe(
+    expect(truncatedLine(repoScan({ cappedFolders: ['app/views'] }))).toBe(
       `  partial: 1 deeper folder ${IN_PART}; may be incomplete: stack, tests, E2E`,
     )
   })
@@ -682,7 +680,7 @@ describe('truncatedLine (G-02-1e)', () => {
   })
 
   test('a stop at the safety cap is named in place of the folder wording, with the same facts rule', () => {
-    expect(truncatedLine(repoScan({ isTruncated: true, isOverallCapped: true }))).toBe(
+    expect(truncatedLine(repoScan({ isOverallCapped: true }))).toBe(
       `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
     )
     expect(truncatedLine(foundAll({ isOverallCapped: true }))).toBe(
@@ -691,7 +689,7 @@ describe('truncatedLine (G-02-1e)', () => {
   })
 
   test('with the safety cap reached and folders capped, truncatedLine gives the safety line first', () => {
-    const repo = repoScan({ isTruncated: true, cappedFolders: ['a/b'], isOverallCapped: true })
+    const repo = repoScan({ cappedFolders: ['a/b'], isOverallCapped: true })
     expect(truncatedLine(repo)).toBe(`  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`)
   })
 
@@ -2696,7 +2694,7 @@ const LAUNCH_ASKED = withContext(LAUNCH_START_QUESTION, launchContextLine(LAUNCH
 const DIR_ASKED = withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT)
 
 describe('launchStartStep', () => {
-  test('the launcher start question is asked once for the repo with three options, none preselected', () => {
+  test('the launcher start question is asked once for the repo with three options in a fixed order', () => {
     expect(LAUNCH_START_QUESTION).toBe(
       'Where should the role launchers start their sessions? (asked once for this repo)',
     )

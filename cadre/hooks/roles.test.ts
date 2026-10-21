@@ -52,7 +52,6 @@ function scan(over: Partial<RepoScan>): RepoScan {
     languages: [],
     codeDirs: [],
     hasSource: true,
-    isTruncated: false,
     cappedFolders: [],
     isOverallCapped: false,
     cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
@@ -228,7 +227,7 @@ describe('proposeRoles', () => {
       { findings: [REACT] },
       { findings: [EXPRESS, JS_TESTS] },
       { findings: [REACT, EXPRESS, JS_TESTS, E2E, TS_LANG], languages: ['TypeScript'] },
-      { hasSource: false, isTruncated: true },
+      { hasSource: false, cappedFolders: ['a/b'] },
     ]
 
     for (const over of scans) {
