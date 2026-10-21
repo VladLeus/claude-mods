@@ -93,12 +93,12 @@ describe('history scan', () => {
     expect(HISTORY_NAME_PATTERN.source).toBe('^[a-z0-9][a-z0-9:_-]{0,63}$')
   })
 
-  test('the question names the session count and the 50 read; its answers are fixed, yes first, and frozen', () => {
+  test('the question names the session count and the 50 read; its answers are fixed, No first, and frozen', () => {
     expect(historyQuestion(12)).toBe(
       "Scan this repo's session history (12 sessions; the newest 50 are read) for frequently used commands and " +
         'skills? Only names and counts are kept.',
     )
-    expect(HISTORY_OPTIONS).toEqual(['Yes, scan names and counts', 'No, skip it'])
+    expect(HISTORY_OPTIONS).toEqual(['No, skip it', 'Yes, scan names and counts'])
     expect(Object.isFrozen(HISTORY_OPTIONS)).toBe(true)
     expect(HISTORY_DISMISSED_REASON).toBe('The session history question was dismissed or not answered.')
     expect(NO_HISTORY_NOTE).toBe('No session history for this repo.')
@@ -425,5 +425,28 @@ describe('history scan', () => {
     expect(pane).toContain('  codex:rescue  1')
     const shown = [JSON.stringify(result), ...run.logged, pane].join('\n')
     expect(leaks(shown, ['SENTINEL_SECRET_VALUE', '/home/u'])).toEqual([])
+  })
+})
+
+describe('consent declines first (G-02-11)', () => {
+  test('the history question lists No, skip it first, so a quick Submit declines; the labels are unchanged', () => {
+    expect(HISTORY_OPTIONS[0]).toBe('No, skip it')
+    expect([...HISTORY_OPTIONS].sort()).toEqual(['No, skip it', 'Yes, scan names and counts'])
+  })
+
+  test('option 0 of the history question declines and reads no transcript (T-02-51)', async () => {
+    const [first = ''] = HISTORY_OPTIONS
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [first])
+    expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
+    expect(run.asked).toEqual([historyQuestion(1)])
+    expect([run.reads, run.shown, run.logged]).toEqual([[], [], []])
+  })
+
+  test('option 1 of the history question consents and reads the transcript', async () => {
+    const [, second = ''] = HISTORY_OPTIONS
+    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [second])
+    const result = await historyStep(run.io, DEFAULT_LOCATIONS)
+    expect([result.kind, result.kind === 'accepted' && result.value !== 'skipped']).toEqual(['accepted', true])
+    expect(run.reads).toEqual([`${DIR}/a.jsonl`])
   })
 })

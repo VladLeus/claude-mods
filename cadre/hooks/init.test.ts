@@ -40,6 +40,7 @@ import type { HunkRun } from './apply'
 import {
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
+  envQuestion,
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
   SECURITY_GUIDANCE_PLUGIN,
@@ -48,7 +49,7 @@ import {
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
-import { HISTORY_DISMISSED_REASON, historyQuestion, NO_HISTORY_NOTE } from './history'
+import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -650,8 +651,8 @@ describe('runInit', () => {
     expect(CLAUDE_JSON_QUESTION).toBe(
       'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
     )
-    expect(run.specs[0]).toEqual({ options: ['Yes, read names only', 'No, skip it'] })
-    expect(CLAUDE_JSON_OPTIONS).toEqual(['Yes, read names only', 'No, skip it'])
+    expect(run.specs[0]).toEqual({ options: ['No, skip it', 'Yes, read names only'] })
+    expect(CLAUDE_JSON_OPTIONS).toEqual(['No, skip it', 'Yes, read names only'])
     expect(Object.isFrozen(CLAUDE_JSON_OPTIONS)).toBe(true)
   })
 
@@ -895,6 +896,7 @@ describe('init pane (G-02-1)', () => {
       roles: 'Roles',
       recommendations: 'Recommendations',
       review: 'Review',
+      env: 'Env variables',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -2070,11 +2072,29 @@ describe('carryStep', () => {
     expect(none.every(role => role.carry.env.length === 0)).toBe(true)
   })
 
+  test('the side pane lists every scanned env name right before the env question, names only (D-135)', async () => {
+    const names = Array.from({ length: 40 }, (_, at) => `CADRE_UAT_NAME_${String(at + 1).padStart(2, '0')}`)
+    const forty = emptySetupScan({ carry: { ...noCarry, envNames: names } })
+    const run = memIo(memWorld({}), ['CADRE_UAT_NAME_40'])
+    const { io, events } = withEvents(run)
+    const carried = valueOf(await carryStep(io, roles, forty))
+    expect(run.shown).toEqual([
+      {
+        key: 'env',
+        title: 'Env variables',
+        lines: ['Env variable names in your settings (values are never read):', ...names.map(name => `  ${name}`)],
+      },
+    ])
+    expect(events).toEqual(['show env', `ask ${envQuestion(names)}`])
+    expect(envQuestion(names)).toContain('+35 more')
+    expect(carried.map(role => role.carry.env)).toEqual(roles.map(() => ['CADRE_UAT_NAME_40']))
+  })
+
   test('with no env names nothing is asked; autoCompactWindow and the status line are carried when set', async () => {
     const run = memIo(memWorld({}), [])
     const set = emptySetupScan({ carry: { ...noCarry, autoCompactWindow: 800000, hasStatusLine: true } })
     const carried = valueOf(await carryStep(run.io, roles, set))
-    expect(run.asked).toEqual([])
+    expect([run.asked, run.shown]).toEqual([[], []])
     const carry = { autoCompactWindow: true, statusLine: true, env: [], hooks: [] }
     expect(carried.map(role => role.carry)).toEqual(roles.map(() => carry))
     const bare = valueOf(await carryStep(memIo(memWorld({}), []).io, roles, emptySetupScan()))
@@ -3766,6 +3786,34 @@ describe('review shows policy and launcher start (G-02-3)', () => {
     expect(review.slice(reviewAt, reviewAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
     expect(reply.slice(replyAt, replyAt + IGNORE_ROWS.length)).toEqual(IGNORE_ROWS)
     expect(IGNORE_ROWS.slice(-2)).toEqual(['            CLAUDE-SECURITY-*/', '            # <<< cadre'])
+  })
+})
+
+describe('consent declines first (G-02-11)', () => {
+  test('the ~/.claude.json question lists No, skip it first, so a quick Submit declines; labels unchanged', () => {
+    expect(CLAUDE_JSON_OPTIONS[0]).toBe('No, skip it')
+    expect([...CLAUDE_JSON_OPTIONS].sort()).toEqual(['No, skip it', 'Yes, read names only'])
+  })
+
+  test('option 0 of the ~/.claude.json question declines and option 1 consents (T-02-51)', async () => {
+    const [first = '', second = ''] = CLAUDE_JSON_OPTIONS
+    expect(await consentStep(memIo(memWorld({}), [first]).io)).toEqual({ kind: 'accepted', value: false })
+    expect(await consentStep(memIo(memWorld({}), [second]).io)).toEqual({ kind: 'accepted', value: true })
+  })
+
+  test('a dry run answering each consent with its option 0 reads no ~/.claude.json and no transcript', async () => {
+    const [claudeJsonFirst = ''] = CLAUDE_JSON_OPTIONS
+    const [historyFirst = ''] = HISTORY_OPTIONS
+    const files = {
+      '/home/u/.claude.json': '{"mcpServers":{"linear":{}}}',
+      [`${HISTORY_DIR}/a.jsonl`]: '<command-name>/gsd-plan-phase</command-name>',
+    }
+    const answers = { ...INIT_ANSWERS, 'Read ~/.claude.json': claudeJsonFirst, [HISTORY_PREFIX]: historyFirst }
+    const run = memIo(historyGitWorld({ files }), answers)
+    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    expect(run.asked.slice(0, 2)).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
+    expect(run.reads.filter(path => path === '/home/u/.claude.json' || path.endsWith('.jsonl'))).toEqual([])
+    expect(run.shown.map(block => block.key)).not.toContain('history')
   })
 })
 

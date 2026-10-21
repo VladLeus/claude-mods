@@ -5,6 +5,7 @@ import {
   ALL_ENV_OPTION,
   ALL_OPTION,
   assignToRoles,
+  cappedNames,
   classifyMcp,
   classifySkills,
   EFFORTS,
@@ -874,5 +875,52 @@ describe('answer parsers', () => {
     expect(memoryQuestion('auto-memory', [])).toBe(
       'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)',
     )
+  })
+})
+
+/** The env question for names as the dialog shows them, between its fixed start and end (D-60). */
+function envAsk(shown: string): string {
+  return `Which env variables do roles carry? Names: ${shown} (values are never stored; e.g. API_KEY, or none)`
+}
+
+/** This many env names, NAME_01 on, in order. */
+function envNames(count: number): string[] {
+  return Array.from({ length: count }, (_, at) => `NAME_${String(at + 1).padStart(2, '0')}`)
+}
+
+describe('env question cap (G-02-5)', () => {
+  test('cappedNames shows five names at most, then counts the rest; no name gives no text', () => {
+    expect(cappedNames(envNames(5))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05')
+    expect(cappedNames(envNames(6))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more')
+    expect(cappedNames(envNames(40))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more')
+    expect(cappedNames([])).toBe('')
+  })
+
+  test('cappedNames cleans each name it shows and cuts it to 60 code points', () => {
+    const ellipsis = String.fromCodePoint(0x2026)
+    expect(cappedNames([`A${BIDI_OVERRIDE}B`, 'X'.repeat(70)])).toBe(`AB, ${'X'.repeat(59)}${ellipsis}`)
+  })
+
+  test('the env question lists all of 5 names, 5 of 6 with +1 more and 5 of 40 with +35 more', () => {
+    expect(envQuestion(envNames(5))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05'))
+    expect(envQuestion(envNames(6))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more'))
+    expect(envQuestion(envNames(40))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more'))
+  })
+
+  test('the memory question keeps its text: the same cap in brackets, or no brackets with no name', () => {
+    expect(memoryQuestion('auto-memory', envNames(6))).toBe(
+      autoMemoryAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more'),
+    )
+    expect(memoryQuestion('auto-memory', [])).toBe(
+      'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)',
+    )
+  })
+
+  test('All of them still picks every scanned name, and a typed name past the fifth still counts (D-60)', () => {
+    const names = envNames(40)
+    expect(parseEnvNames(ALL_ENV_OPTION, names)).toEqual(names)
+    expect(parseEnvNames('all', names)).toEqual(names)
+    expect(parseEnvNames('NAME_40, NAME_06', names)).toEqual(['NAME_06', 'NAME_40'])
+    expect(parseEnvNames('NAME_41', names)).toBeNull()
   })
 })
