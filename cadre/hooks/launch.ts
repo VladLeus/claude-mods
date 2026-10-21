@@ -62,6 +62,13 @@ export type LaunchUser = {
   }[]
   /** The CLAUDE.md files the engine loads for the root: the root's, `.claude/CLAUDE.md` and every ancestor's. */
   readonly claudeMd: readonly string[]
+  /** The rule files the engine loads for the root: `<root>/.claude/rules/<name>.md`, files and links (G-02-1f). */
+  readonly rules: readonly string[]
+  /**
+   * The built role files of the repo: `<root>/.cadre/<id>/CLAUDE.md` of every folder there that has one, the folders
+   * of roles no longer on the team included (G-02-1f).
+   */
+  readonly roleClaudeMds: readonly string[]
   /** `<userDir>/CLAUDE.md` first, then the files it imports as the caller resolved them; empty with no global file. */
   readonly globalClaudeMd: readonly string[]
   /** File names in the auto-memory folder of `root`. */
@@ -486,13 +493,28 @@ function memoryLinks(id: string, user: LaunchUser): LinkSet {
 }
 
 /**
- * What a role gets of the user's instructions and memories, from the D-63 answers (D-98). Under
- * `--setting-sources project` the user-level CLAUDE.md never loads, while the project's and every ancestor's does
- * (P11). So without the 'project-claude-md' group every CLAUDE.md of the loaded chain is excluded, and with it none
- * is. The global CLAUDE.md with its imports is linked into `.runtime/instructions/global/` only for
- * 'global-claude-md', and this repo's memory files into `.runtime/instructions/memory/` only for 'auto-memory': a role
- * is narrow by default, whatever exists on disk. Delivering the linked files into the session is Phase 3 wiring
- * (D-100).
+ * The CLAUDE.md files a role must not load, sorted and once each (P11, G-02-1f). A role with no instruction group is a
+ * parts-flow role, since the parts hand-out gives every role none: it loads only its built files, so every CLAUDE.md
+ * of the loaded chain, every rule file and every other role's built `.cadre/<other>/CLAUDE.md` is excluded, never its
+ * own `<root>/.cadre/<id>/CLAUDE.md` (T-02-70). A role with groups keeps the whole-files rule: without
+ * 'project-claude-md' every CLAUDE.md of the loaded chain is excluded, and with it none is.
+ */
+function claudeMdExcludesOf(role: RoleSpec, user: LaunchUser): string[] {
+  if (role.instructions.includes('project-claude-md')) return []
+  if (role.instructions.length > 0) return sortedUnique(user.claudeMd)
+  const own = `${user.root}/.cadre/${role.id}/CLAUDE.md`
+  const others = user.roleClaudeMds.filter(path => path !== own)
+
+  return sortedUnique([...user.claudeMd, ...user.rules, ...others])
+}
+
+/**
+ * What a role gets of the user's instructions and memories, from the D-63 answers (D-98) or the parts flow (G-02-1f).
+ * Under `--setting-sources project` the user-level CLAUDE.md never loads, while the project's and every ancestor's
+ * does, and so do the rule files (P11): the excludes of claudeMdExcludesOf keep a role to what it was given. The
+ * global CLAUDE.md with its imports is linked into `.runtime/instructions/global/` only for 'global-claude-md', and
+ * this repo's memory files into `.runtime/instructions/memory/` only for 'auto-memory': a role is narrow by default,
+ * whatever exists on disk. Delivering the linked files into the session is Phase 3 wiring (D-100).
  */
 export function instructionPlan(
   role: RoleSpec,
@@ -502,7 +524,7 @@ export function instructionPlan(
   const memories = role.instructions.includes('auto-memory') ? memoryLinks(role.id, user) : NO_LINKS
 
   return {
-    claudeMdExcludes: role.instructions.includes('project-claude-md') ? [] : sortedUnique(user.claudeMd),
+    claudeMdExcludes: claudeMdExcludesOf(role, user),
     links: sortedLinks([...globals.links, ...memories.links]),
     warnings: [...globals.warnings, ...memories.warnings],
   }

@@ -124,6 +124,8 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
     env: {},
     hooks: [],
     claudeMd: [],
+    rules: [],
+    roleClaudeMds: [],
     globalClaudeMd: [],
     memoryFiles: [],
     givenMemoryFiles: [],

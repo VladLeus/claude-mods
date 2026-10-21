@@ -613,6 +613,46 @@ async function userAgentsOf(io: InitIo, userDir: string): Promise<string[]> {
   return sortedUnique(names.map(name => name.slice(0, -MARKDOWN_EXTENSION.length)))
 }
 
+/** Whether a listed entry is a file or a link: a linked file loads like one, so it is counted too (fails closed). */
+function isFileOrLink(entry: PortEntry): boolean {
+  return entry.kind === 'file' || entry.isLink
+}
+
+/**
+ * The rule files the engine loads for the root (G-02-1f, T-02-70): `<root>/.claude/rules/<name>` for each entry of
+ * that folder named `*.md` that is a file or a link, absolute and sorted. A listing that fails counts as empty.
+ */
+async function rulesOf(io: InitIo, root: string): Promise<string[]> {
+  const folder = `${root}/.claude/rules`
+  const entries = (await io.list(folder)) ?? []
+  const rules = entries.filter(entry => isFileOrLink(entry) && entry.name.endsWith(MARKDOWN_EXTENSION))
+
+  return sortedUnique(rules.map(entry => `${folder}/${entry.name}`))
+}
+
+/** The file name of a role's built instructions in its folder (G-02-1f). */
+const ROLE_CLAUDE_MD = 'CLAUDE.md'
+
+/**
+ * The built role files of the repo (G-02-1f, T-02-70): `<root>/.cadre/<name>/CLAUDE.md` for each folder or link that
+ * `<root>/.cadre` lists with a plain name whose own listing holds a `CLAUDE.md` file or link, the folders of roles no
+ * longer on the team included, so excluding them fails closed; absolute and sorted. A listing that fails counts as
+ * empty.
+ */
+async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
+  const cadre = `${root}/.cadre`
+  const listed = (await io.list(cadre)) ?? []
+  const folders = listed.filter(item => (item.kind === 'dir' || item.isLink) && isPlainName(item.name))
+  const found: string[] = []
+  for (const folder of folders) {
+    const entries = (await io.list(`${cadre}/${folder.name}`)) ?? []
+    if (!entries.some(item => item.name === ROLE_CLAUDE_MD && isFileOrLink(item))) continue
+    found.push(`${cadre}/${folder.name}/${ROLE_CLAUDE_MD}`)
+  }
+
+  return sortedUnique(found)
+}
+
 /**
  * The git common dir as git gives it at the repo root: its output without the final line break, which must start
  * with `/`. Null when the host rejects the run, it exits non-zero or its output is not an absolute path.
@@ -633,9 +673,10 @@ async function gitCommonDirOf(host: HostIo, root: string): Promise<string | null
  *   it, else as git gave it, with its SHA-256: they name the role memory folders (roleMemoryDir, D-20, D-91);
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
  *   the launch start (launchHooksOf, D-103);
- * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the global CLAUDE.md with its imports, the
- *   `.md` files of the memory folders of the root as resolved and as given, the user's skills and agents, and the code
- *   dirs given.
+ * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
+ *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
+ *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
+ *   skills and agents, and the code dirs given.
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
  * any run, and with START_NO_GIT_DIR when git gives no absolute path. No setting value, hook command or file text is
  * ever part of a refusal or a warning.
@@ -671,6 +712,8 @@ export async function gatherLaunchUser(
       ...launchSettingsOf(await io.settings('user')),
       hooks,
       claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),
+      rules: await rulesOf(io, locations.root),
+      roleClaudeMds: await roleClaudeMdsOf(io, locations.root),
       globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
       memoryFiles: await memoryFilesOf(io, userDir, locations.root),
       givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
