@@ -192,6 +192,7 @@ import {
   securityInstallStep,
   skillsContextLine,
   teamContextLine,
+  truncatedLine,
   withContext,
   withSecuritySkill,
 } from './init'
@@ -326,6 +327,8 @@ function repoScan(over: Partial<RepoScan> = {}): RepoScan {
     codeDirs: [],
     hasSource: false,
     isTruncated: false,
+    cappedFolders: [],
+    isOverallCapped: false,
     cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
     warnings: [],
     ...over,
@@ -497,6 +500,12 @@ describe('gatherScans', () => {
   })
 })
 
+/** The middle of the partial line for deeper folders listed only in part (D-137). */
+const IN_PART = 'listed only in part (the first 200 entries each)'
+
+/** How the partial line names a walk that stopped at its overall safety cap (D-137). */
+const SAFETY_CAP = 'the scan stopped at the 20,000-entry safety cap'
+
 describe('scanSummaryLines', () => {
   test('an empty repo and setup are summed up with none and zero for every part', () => {
     expect(scanSummaryLines(repoScan(), emptySetupScan())).toEqual([
@@ -565,11 +574,21 @@ describe('scanSummaryLines', () => {
     expect(shown('unknown', 'unknown')).toBe('  existing .cadre/: unknown (manifest unknown)')
   })
 
-  test('a scan that stopped at the entry cap says so after the .cadre/ line', () => {
-    const lines = scanSummaryLines(repoScan({ isTruncated: true }), emptySetupScan())
-    expect(lines[4]).toBe('  truncated: the scan stopped after 2000 entries; later files were not scanned')
+  test('a scan that listed a deeper folder only in part says so after the .cadre/ line (G-02-1e)', () => {
+    const lines = scanSummaryLines(repoScan({ isTruncated: true, cappedFolders: ['app/views'] }), emptySetupScan())
+    expect(lines[4]).toBe(`  partial: 1 deeper folder ${IN_PART}; may be incomplete: stack, tests, E2E`)
     expect(lines[5]).toBe('User setup (names only):')
     expect(scanSummaryLines(repoScan(), emptySetupScan())).toHaveLength(8)
+  })
+
+  test('a scan stopped at the safety cap that also capped folders shows the safety line, then the folder line', () => {
+    const repo = repoScan({ isTruncated: true, cappedFolders: ['a/b', 'c/d'], isOverallCapped: true })
+    const lines = scanSummaryLines(repo, emptySetupScan())
+    expect(lines.slice(4, 7)).toEqual([
+      `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
+      `  partial: 2 deeper folders ${IN_PART}; may be incomplete: stack, tests, E2E`,
+      'User setup (names only):',
+    ])
   })
 
   test('the setup part counts plugins, skills, agents and memories and names MCP servers and CLAUDE.md files', () => {
@@ -627,6 +646,65 @@ describe('scanSummaryLines', () => {
       `  skills: 0; agents: 0; MCP servers: ${shownName}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${shownName}`,
     ])
+  })
+})
+
+/** A repo scan with every fact found: a language, a test finding and an E2E finding; `over` changes the rest. */
+function foundAll(over: Partial<RepoScan>): RepoScan {
+  return repoScan({
+    languages: ['Ruby'],
+    findings: [
+      { kind: 'e2e', label: 'Rails system specs', evidence: 'spec/system' },
+      { kind: 'test', label: 'RSpec config', evidence: '.rspec' },
+    ],
+    hasSource: true,
+    isTruncated: true,
+    ...over,
+  })
+}
+
+describe('truncatedLine (G-02-1e)', () => {
+  test('nothing capped gives no line', () => {
+    expect(truncatedLine(repoScan())).toBeNull()
+    expect(truncatedLine(repoScan({ languages: ['Ruby'], hasSource: true }))).toBeNull()
+  })
+
+  test('one deeper folder listed only in part names the facts it found nothing for: folder for 1', () => {
+    expect(truncatedLine(repoScan({ isTruncated: true, cappedFolders: ['app/views'] }))).toBe(
+      `  partial: 1 deeper folder ${IN_PART}; may be incomplete: stack, tests, E2E`,
+    )
+  })
+
+  test('several deeper folders say folders, and only the facts not found may be incomplete', () => {
+    const repo = foundAll({ findings: [{ kind: 'test', label: 'RSpec config', evidence: '.rspec' }] })
+    const capped = { ...repo, cappedFolders: ['app/models', 'app/views', 'spec/models'] }
+    expect(truncatedLine(capped)).toBe(`  partial: 3 deeper folders ${IN_PART}; may be incomplete: E2E`)
+  })
+
+  test('with stack, tests and E2E all found the line says so', () => {
+    expect(truncatedLine(foundAll({ cappedFolders: ['app/views', 'spec/system'] }))).toBe(
+      `  partial: 2 deeper folders ${IN_PART}; stack, tests and E2E were all found`,
+    )
+  })
+
+  test('a stop at the safety cap is named in place of the folder wording, with the same facts rule', () => {
+    expect(truncatedLine(repoScan({ isTruncated: true, isOverallCapped: true }))).toBe(
+      `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
+    )
+    expect(truncatedLine(foundAll({ isOverallCapped: true }))).toBe(
+      `  partial: ${SAFETY_CAP}; stack, tests and E2E were all found`,
+    )
+  })
+
+  test('with the safety cap reached and folders capped, truncatedLine gives the safety line first', () => {
+    const repo = repoScan({ isTruncated: true, cappedFolders: ['a/b'], isOverallCapped: true })
+    expect(truncatedLine(repo)).toBe(`  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`)
+  })
+
+  test('a real walk over 20,000 entries gives the safety-cap line', async () => {
+    const files = Array.from({ length: 20_001 }, (_, at) => entry(`f${String(at).padStart(5, '0')}.txt`))
+    const repo = await scanRepo(memIo(memWorld({ dirs: { '/repo': files } }), []).io, '/repo')
+    expect(truncatedLine(repo)).toBe(`  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`)
   })
 })
 
