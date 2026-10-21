@@ -327,7 +327,7 @@ describe('history scan', () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': EXAMPLE }), ['No, skip it'])
     expect(await historyStep(run.io, DEFAULT_LOCATIONS)).toEqual({ kind: 'accepted', value: 'skipped' })
     expect(run.asked).toEqual([historyQuestion(2)])
-    expect(run.specs).toEqual([{ options: HISTORY_OPTIONS }])
+    expect(run.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History' }])
     expect(run.reads).toEqual([])
     expect(run.logged).toEqual([])
     expect(run.shown).toEqual([])

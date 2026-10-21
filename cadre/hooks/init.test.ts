@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  AskSpec,
   CadreState,
   Choice,
   CompiledScope,
@@ -58,6 +59,7 @@ import {
   adjustLoop,
   APPLIED_NONE_NOTE,
   appliedLines,
+  ASK_HEADERS,
   askChoice,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
@@ -655,7 +657,7 @@ describe('runInit', () => {
     expect(CLAUDE_JSON_QUESTION).toBe(
       'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
     )
-    expect(run.specs[0]).toEqual({ options: ['No, skip it', 'Yes, read names only'] })
+    expect(run.specs[0]).toEqual({ options: ['No, skip it', 'Yes, read names only'], header: 'claude.json' })
     expect(CLAUDE_JSON_OPTIONS).toEqual(['No, skip it', 'Yes, read names only'])
     expect(Object.isFrozen(CLAUDE_JSON_OPTIONS)).toBe(true)
   })
@@ -683,7 +685,7 @@ describe('runInit', () => {
     const yes = memIo(memWorld({}), ['Yes, read names only'])
     expect(await consentStep(yes.io)).toEqual({ kind: 'accepted', value: true })
     expect(yes.asked).toEqual([CLAUDE_JSON_QUESTION])
-    expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS }])
+    expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS, header: 'claude.json' }])
     expect(await consentStep(memIo(memWorld({}), [' no, SKIP it ']).io)).toEqual({ kind: 'accepted', value: false })
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], CONSENT_DISMISSED_REASON],
@@ -1008,7 +1010,7 @@ describe('describeStep', () => {
     const run = memIo(memWorld({ replies: [DESCRIBED_REPLY] }), [DESCRIPTION])
     expect(await describeStep(run.io)).toEqual({ kind: 'roles', roles: DESCRIBED_ROLES })
     expect(run.asked).toEqual([DESCRIBE_QUESTION])
-    expect(run.specs[0]).toEqual({ options: ['Use the template instead', 'Cancel init'] })
+    expect(run.specs[0]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe' })
   })
 
   test('the prompt is the propose system text and the description as a JSON string', async () => {
@@ -1095,7 +1097,7 @@ describe('adjustLoop', () => {
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(run.asked).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
-    expect(run.specs[0]).toEqual({ options: ['Done adjusting', 'Show the roles'] })
+    expect(run.specs[0]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust' })
   })
 
   test('rename and framework change one role and keep the others', async () => {
@@ -1220,7 +1222,8 @@ describe('rolesStep', () => {
     expect(run.shown).toEqual([{ key: 'roles', title: 'Roles', lines }])
     expect(run.logged).toEqual([])
     expect(run.asked).toEqual([ROLES_QUESTION])
-    expect(run.specs[0]).toEqual({ options: ['Use these roles', 'Adjust them', 'Describe my own structure'] })
+    const options = ['Use these roles', 'Adjust them', 'Describe my own structure']
+    expect(run.specs[0]).toEqual({ options, header: 'Roles' })
     expect(ROLES_QUESTION).toBe('Use these roles?')
     expect(ROLES_OPTIONS).toEqual(['Use these roles', 'Adjust them', 'Describe my own structure'])
     expect(Object.isFrozen(ROLES_OPTIONS)).toBe(true)
@@ -1434,7 +1437,10 @@ describe('frameworkStep', () => {
       value: { roles: roles.map(role => withFramework(role, 'superpowers')), repoDefault: null },
     })
     expect(run.asked).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
-    expect(run.specs).toEqual([{ options: ['Same for all roles', 'Per role'] }, { options: BOTH_OPTIONS }])
+    expect(run.specs).toEqual([
+      { options: ['Same for all roles', 'Per role'], header: 'Framework' },
+      { options: BOTH_OPTIONS, header: 'Framework' },
+    ])
   })
 
   test('ambiguous: Per role asks each role by title and id, in role order, with both frameworks and none', async () => {
@@ -1448,7 +1454,7 @@ describe('frameworkStep', () => {
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
-    const each = { options: BOTH_OPTIONS }
+    const each = { options: BOTH_OPTIONS, header: 'Framework' }
     expect(run.specs.slice(1)).toEqual([each, each, each])
   })
 
@@ -1457,7 +1463,7 @@ describe('frameworkStep', () => {
     const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
     expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
     expect(run.asked).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
-    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'] })
+    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework' })
   })
 
   test('a typed framework that is not offered is asked again with why on top; an offered id counts', async () => {
@@ -1499,7 +1505,7 @@ describe('frameworkStep', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
     const run = memIo(memWorld({}), ['Per role', 'GSD', 'GSD', 'GSD'])
     await frameworkStep(run.io, reversed, roles)
-    const each = { options: BOTH_OPTIONS }
+    const each = { options: BOTH_OPTIONS, header: 'Framework' }
     expect(run.specs.slice(1)).toEqual([each, each, each])
     for (const spec of run.specs) {
       expect(spec.options.length).toBeGreaterThanOrEqual(2)
@@ -1612,7 +1618,7 @@ describe('durationStep', () => {
       const run = memIo(memWorld({}), [answer])
       expect(await durationStep(run.io)).toEqual({ kind: 'accepted', value: duration })
       expect(run.asked).toEqual([DURATION_QUESTION])
-      expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'] }])
+      expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration' }])
       expect(run.logged).toEqual([])
     }
   })
@@ -1672,7 +1678,7 @@ describe('modelStep', () => {
     await modelStep(run.io, roles)
     expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
     expect(run.asked[0]).toBe(MODEL_MODE_QUESTION)
-    expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'] })
+    expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model' })
   })
 
   test('Same for all roles asks once more and gives every role that model family and effort', async () => {
@@ -1682,7 +1688,7 @@ describe('modelStep', () => {
       roles.map(role => [role.id, 'sonnet', 'high']),
     )
     expect(run.asked).toEqual([MODEL_MODE_QUESTION, MODEL_ALL])
-    expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'] })
+    expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'], header: 'Model' })
     expect(run.logged).toEqual([])
   })
 
@@ -1698,7 +1704,7 @@ describe('modelStep', () => {
       'Model and effort for QA (qa)?',
       'Model and effort for Security (security)?',
     ])
-    const each = { options: MODEL_EFFORT_OPTIONS }
+    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model' }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
     expect(modelled.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
       'pm: opus medium',
@@ -1804,7 +1810,7 @@ function roleIn(roles: readonly RoleSpec[] | null, id: string): RoleSpec {
 }
 
 /** The buttons of every question on which roles get an item. */
-const ROLE_LIST_SPEC = { options: ['None', 'All roles'] }
+const ROLE_LIST_OPTIONS = ['None', 'All roles']
 
 describe('assignmentStep', () => {
   /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
@@ -1821,7 +1827,10 @@ describe('assignmentStep', () => {
     const run = memIo(memWorld({}), ['be', 'All roles'])
     const assigned = valueOf(await assignmentStep(run.io, roles, setup))
     expect(run.asked).toEqual([SENTRY_QUESTION, CODEX_QUESTION])
-    expect(run.specs).toEqual([ROLE_LIST_SPEC, ROLE_LIST_SPEC])
+    expect(run.specs).toEqual([
+      { options: ROLE_LIST_OPTIONS, header: 'MCP' },
+      { options: ROLE_LIST_OPTIONS, header: 'Skills' },
+    ])
     expect(assigned.map(role => [role.id, role.mcp])).toEqual([
       ['pm', ['jira']],
       ['tl', ['jira']],
@@ -2044,7 +2053,8 @@ describe('memoryStep', () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await memoryStep(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION])
-    expect(run.specs).toEqual([ROLE_LIST_SPEC, ROLE_LIST_SPEC, ROLE_LIST_SPEC])
+    const spec = { options: ROLE_LIST_OPTIONS, header: 'Memory' }
+    expect(run.specs).toEqual([spec, spec, spec])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
       ['pm', ['global-claude-md', 'project-claude-md']],
       ['tl', ['global-claude-md', 'project-claude-md']],
@@ -2120,7 +2130,7 @@ describe('carryStep', () => {
     const run = memIo(memWorld({}), ['JIRA_URL'])
     const carried = valueOf(await carryStep(run.io, roles, twoNames))
     expect(run.asked).toEqual([ENV_QUESTION])
-    expect(run.specs).toEqual([{ options: ['None', 'All of them'] }])
+    expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env' }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(carried.map(role => role.carry)).toEqual(roles.map(() => carry))
     expect(run.logged).toEqual([])
@@ -2558,7 +2568,7 @@ describe('launchStartStep', () => {
       const run = memIo(memWorld({}), [answer])
       expect(await launchStartStep(run.io, '/repo')).toEqual({ kind: 'accepted', value: start })
       expect(run.asked).toEqual([LAUNCH_START_QUESTION])
-      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS })
+      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
     }
   })
 
@@ -2568,7 +2578,7 @@ describe('launchStartStep', () => {
         const run = memIo(FOLDER_WORLD, [first, folder])
         expect(await launchStartStep(run.io, '/repo')).toEqual(APPS_WEB)
         expect(run.asked).toEqual([LAUNCH_START_QUESTION, LAUNCH_DIR_QUESTION])
-        expect(run.specs[1]).toEqual({ options: ['Cancel init'] })
+        expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir' })
         expect(run.logged).toEqual([])
       }
     }
@@ -2958,6 +2968,139 @@ describe('refusal re-ask (G-02-6b)', () => {
   })
 })
 
+/**
+ * The runs the chip and context-line specs read (G-02-3c, G-02-1), on the testkit world: between them every kind of
+ * init question is asked at least once.
+ */
+type QuestionRuns = {
+  /** The default dry run of INIT_ANSWERS. */
+  readonly plain: MemRun
+  /** Adjust, then Describe, whose model gives no text, so the template comes back. */
+  readonly adjusted: MemRun
+  /** The framework asked per role, on a world where every per-role step asks. */
+  readonly perRole: MemRun
+  /** The security plugins asked, and answered Install. */
+  readonly security: MemRun
+  /** The history question answered Yes. */
+  readonly history: MemRun
+  /** A launcher folder typed. */
+  readonly folder: MemRun
+  /** A plain init with a conflicted file, answered Take new. */
+  readonly conflict: MemRun
+}
+
+/** Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change. */
+async function questionRuns(): Promise<QuestionRuns> {
+  const plain = memIo(gitWorld(), INIT_ANSWERS)
+  await runInit(plain.io, { dryRun: true })
+  const adjusted = queuedIo(gitWorld({ replies: [] }), {
+    ...INIT_ANSWERS,
+    'Use these roles?': ['Adjust them', 'Describe my own structure', 'Use these roles'],
+    'Adjust the roles': 'Done adjusting',
+    'Describe your role structure': DESCRIPTION,
+  })
+  await runInit(adjusted.io, { dryRun: true })
+  const perRole = memIo(everyStepWorld(), { ...INIT_ANSWERS, 'Which framework do the roles use': 'Per role' })
+  await runInit(perRole.io, { dryRun: true })
+  const security = memIo(gitWorld(), { ...INIT_ANSWERS, 'Install from claude-plugins-official': 'Install' })
+  await runInit(security.io, { dryRun: true })
+  const history = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+  await runInit(history.io, { dryRun: true })
+  const folder = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), {
+    ...INIT_ANSWERS,
+    'Where should the role launchers start': 'Another folder in this repo',
+    'Type the folder the launchers start in': 'apps/web',
+  })
+  await runInit(folder.io, { dryRun: true })
+  const { world } = await editedRoleWorld()
+  const conflict = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Take new' })
+  await runInit(conflict.io, { dryRun: false, host: memHost(hostWorld({})).io })
+
+  return { plain, adjusted, perRole, security, history, folder, conflict }
+}
+
+/** The dialog spec of the first question a run asked that starts with `start`; a missing one stops the test. */
+function specOf(run: MemRun, start: string): AskSpec {
+  const at = run.asked.findIndex(question => question.startsWith(start))
+  const spec = run.specs[at]
+  if (spec === undefined) throw new Error(`no question starts with ${start}`)
+
+  return spec
+}
+
+describe('question chips (G-02-3c)', () => {
+  test('ASK_HEADERS names the chip of each kind of question, at most 12 characters each, and is frozen', () => {
+    expect(ASK_HEADERS).toEqual({
+      claudeJson: 'claude.json',
+      history: 'History',
+      roles: 'Roles',
+      adjust: 'Adjust',
+      describe: 'Describe',
+      framework: 'Framework',
+      security: 'Security',
+      duration: 'Duration',
+      model: 'Model',
+      mcp: 'MCP',
+      skills: 'Skills',
+      memory: 'Memory',
+      env: 'Env',
+      launch: 'Launch',
+      launchDir: 'Launch dir',
+      gitPolicy: 'Git policy',
+      review: 'Review',
+      conflict: 'Conflict',
+    })
+    expect(Object.isFrozen(ASK_HEADERS)).toBe(true)
+    expect(Object.values(ASK_HEADERS).filter(chip => Array.from(chip).length > 12)).toEqual([])
+  })
+
+  test('every question of every run has a chip: a non-empty string of at most 12 code points', async () => {
+    const runs = Object.values(await questionRuns())
+    const isChip = (header: string | undefined): boolean =>
+      header !== undefined && header.length > 0 && Array.from(header).length <= 12
+    const unchipped = runs.flatMap(run => run.asked.filter((_, at) => !isChip(run.specs[at]?.header)))
+    expect(runs.every(run => run.specs.length > 0 && run.specs.length === run.asked.length)).toBe(true)
+    expect(unchipped).toEqual([])
+  })
+
+  test('every chip of ASK_HEADERS is seen at least once across the runs', async () => {
+    const runs = Object.values(await questionRuns())
+    const seen = new Set(runs.flatMap(run => run.specs.map(spec => spec.header)))
+    expect(Object.values(ASK_HEADERS).filter(chip => !seen.has(chip))).toEqual([])
+  })
+
+  test('each question gets the chip of its kind; the hunk questions keep Hunk i of n', async () => {
+    const runs = await questionRuns()
+    const cases: readonly (readonly [MemRun, string, string])[] = [
+      [runs.plain, 'Read ~/.claude.json', 'claude.json'],
+      [runs.history, HISTORY_PREFIX, 'History'],
+      [runs.plain, 'Use these roles?', 'Roles'],
+      [runs.adjusted, 'Adjust the roles', 'Adjust'],
+      [runs.adjusted, 'Describe your role structure', 'Describe'],
+      [runs.perRole, 'Which framework do the roles use', 'Framework'],
+      [runs.perRole, 'Framework for PM (pm)?', 'Framework'],
+      [runs.security, 'Install from claude-plugins-official', 'Security'],
+      [runs.plain, 'Autopilot duration', 'Duration'],
+      [runs.plain, 'Model and effort: same', 'Model'],
+      [runs.plain, 'Model and effort for all roles?', 'Model'],
+      [runs.perRole, 'Which roles get the sentry MCP server?', 'MCP'],
+      [runs.perRole, 'Which roles get codex skills', 'Skills'],
+      [runs.perRole, 'Which roles get your global', 'Memory'],
+      [runs.perRole, 'Which roles get the auto-memories', 'Memory'],
+      [runs.perRole, 'Which roles get the project CLAUDE.md', 'Memory'],
+      [runs.perRole, 'Which env variables', 'Env'],
+      [runs.perRole, '.planning/config.json: mode', 'Hunk 1 of 3'],
+      [runs.perRole, '.planning/config.json: hooks.context_warnings', 'Hunk 3 of 3'],
+      [runs.plain, 'Where should the role launchers start', 'Launch'],
+      [runs.folder, 'Type the folder the launchers start in', 'Launch dir'],
+      [runs.plain, 'Git policy', 'Git policy'],
+      [runs.plain, 'Review the plan', 'Review'],
+      [runs.conflict, ROLE_QUESTION, 'Conflict'],
+    ]
+    for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
+  })
+})
+
 describe('init helpers', () => {
   test('commandRefusal names the given command wherever a detect refusal names detect', () => {
     expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
@@ -3041,7 +3184,7 @@ describe('init helpers', () => {
     const run = memIo(memWorld({}), ['Commit all'])
     expect(await gitPolicyStep(run.io)).toEqual({ kind: 'accepted', value: 'all' })
     expect(run.asked).toEqual([GIT_POLICY_QUESTION])
-    expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS }])
+    expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS, header: 'Git policy' }])
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], GIT_POLICY_DISMISSED_REASON],
       [['whatever', 'whatever', 'whatever'], NO_USABLE_ANSWER_REASON],
@@ -3801,7 +3944,7 @@ describe('reviewStep', () => {
     const reviews = run.shown.filter(block => block.key === 'review')
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
     expect(events[events.indexOf(`ask ${REVIEW_ASKED}`) - 1]).toBe('show review')
-    expect(run.specs[run.asked.indexOf(REVIEW_ASKED)]).toEqual({ options: REVIEW_OPTIONS })
+    expect(run.specs[run.asked.indexOf(REVIEW_ASKED)]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -4136,7 +4279,7 @@ describe('review question hint (G-02-7)', () => {
     const asked = run.asked.filter(question => question.startsWith('Review the plan'))
     expect(asked).toEqual([reviewQuestion(null)])
     expect(events[events.indexOf(`ask ${reviewQuestion(null)}`) - 1]).toBe('show review')
-    expect(run.specs[run.asked.indexOf(reviewQuestion(null))]).toEqual({ options: REVIEW_OPTIONS })
+    expect(run.specs[run.asked.indexOf(reviewQuestion(null))]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
@@ -5052,7 +5195,7 @@ describe('init apply conflicts (D-67)', () => {
     const reviewAt = run.asked.indexOf(REVIEW_ASKED)
     expect(reviewAt).toBeGreaterThan(0)
     expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_QUESTION])
-    expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS })
+    expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS, header: 'Conflict' })
   })
 
   test('Take new writes the desired ROLE.md and no copy, and the manifest records its new hash', async () => {
@@ -5453,7 +5596,7 @@ describe('security plugin installs (decision #39)', () => {
       const result = await securityInstallStep(run.io, SECURITY_KEYS)
       expect([answer, result]).toEqual([answer, { kind: 'accepted', value }])
       expect(run.asked).toEqual([securityInstallQuestion(SECURITY_KEYS)])
-      expect(run.specs).toEqual([{ options: ['Install', 'Not now'] }])
+      expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security' }])
     }
   })
 
