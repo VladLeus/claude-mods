@@ -1,7 +1,7 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { asciiLower } from './assign'
 import { compareText } from './facts'
-import { askChoice, PANE_TITLES } from './init'
+import { askChoice, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels } from './init'
 import type { StepResult } from './init'
 import { reportText } from './render'
 import { listingState } from './scan'
@@ -278,9 +278,9 @@ function skippedWith(io: InitIo, note: string): StepResult<'skipped'> {
  * either way it asks nothing and the scan is skipped. Otherwise it asks historyQuestion with the session count:
  * `No, skip it` skips the scan and reads no transcript, and `Yes, scan names and counts` runs scanHistory over the
  * newest sessions and shows historyLines as the side pane's Session history block, each line cleaned as a report cell
- * (D-133). A dismissal, or MAX_ASKS answers that name neither, is cancelled with HISTORY_DISMISSED_REASON, which init
- * prints (A1, D-45). It runs no process, and no other step needs its result: the counts are only hints for the skill
- * questions.
+ * (D-133). Any other answer is asked again with why on top (D-136). A dismissal is cancelled with
+ * HISTORY_DISMISSED_REASON and MAX_ASKS answers that name neither with NO_USABLE_ANSWER_REASON, which init prints (A1,
+ * D-45). It runs no process, and no other step needs its result: the counts are only hints for the skill questions.
  */
 export async function historyStep(
   io: InitIo,
@@ -292,10 +292,16 @@ export async function historyStep(
   const listed = await listSessions(io, dir)
   if (listed === null) return skippedWith(io, UNLISTED_HISTORY_NOTE)
   if (listed.total === 0) return skippedWith(io, NO_HISTORY_NOTE)
-  const question = historyQuestion(listed.total)
-  const isAllowed = await askChoice(io, question, { options: HISTORY_OPTIONS }, parseHistoryConsent)
-  if (isAllowed === null) return { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
-  if (!isAllowed) return { kind: 'accepted', value: 'skipped' }
+  const ask = {
+    question: historyQuestion(listed.total),
+    spec: { options: HISTORY_OPTIONS },
+    parse: parseHistoryConsent,
+    accepts: quotedLabels(HISTORY_OPTIONS),
+  }
+  const answer = await askChoice(io, ask)
+  if (answer.kind === 'dismissed') return { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
+  if (answer.kind === 'exhausted') return { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
+  if (!answer.value) return { kind: 'accepted', value: 'skipped' }
   const scan = await scanHistory(io, dir, listed.sessions)
   await io.show({ key: 'history', title: PANE_TITLES.history, lines: historyLines(scan).map(reportText) })
 

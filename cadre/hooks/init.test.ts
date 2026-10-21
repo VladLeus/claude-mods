@@ -885,10 +885,11 @@ describe('init pane (G-02-1)', () => {
   })
 
   test('Adjust shows the roles in a roles block when asked to Show the roles', async () => {
+    // A change the team can take: a refused one puts its message on top of the next ask, which no key starts.
     const run = queuedIo(gitWorld(), {
       ...INIT_ANSWERS,
       'Use these roles?': ['Adjust them', 'Use these roles'],
-      'Adjust the roles': ['drop fe', 'Show the roles', 'Done adjusting'],
+      'Adjust the roles': ['drop security', 'Show the roles', 'Done adjusting'],
     })
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
