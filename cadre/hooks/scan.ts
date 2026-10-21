@@ -17,6 +17,7 @@ import { isRoleId } from './command'
 import {
   clean,
   compareText,
+  fieldKeysOf,
   hiddenNameWarnings,
   isChangedByClean,
   isFileInsideRoot,
@@ -194,8 +195,9 @@ export const MANIFEST_FILES: Readonly<Record<ManifestKind, string>> = Object.fre
 
 /**
  * One row of the marker table (D-55, D-137): what proves a `kind` of finding, shown with `label`. `dep` is a
- * dependency name in a package.json, `file` matches the name of a file, `dir` is the exact name of a folder, and
- * `manifest` with `name` is a dependency name the root manifest of that kind lists.
+ * dependency name in a package.json, `file` matches the name of a file, `dir` is the exact name of a folder,
+ * `manifest` with `name` is a dependency name the root manifest of that kind lists, and `path` matches the whole
+ * repo-relative path of an entry of the `entry` kind that is not a link.
  */
 export type MarkerRow = {
   readonly kind: ScanKind
@@ -205,6 +207,7 @@ export type MarkerRow = {
     | { readonly file: RegExp }
     | { readonly dir: string }
     | { readonly manifest: ManifestKind; readonly name: string }
+    | { readonly path: RegExp; readonly entry: 'file' | 'dir' }
 }
 
 /** A row that a dependency name in a package.json proves; its label is the package name. */
@@ -227,11 +230,18 @@ function manifestRow(kind: ScanKind, label: string, manifest: ManifestKind, name
   return { kind, label, match: Object.freeze({ manifest, name }) }
 }
 
+/** A row that the whole repo-relative path of a file or a folder proves, never a link's (D-137). */
+function pathRow(kind: ScanKind, label: string, entry: 'file' | 'dir', path: RegExp): MarkerRow {
+  return { kind, label, match: Object.freeze({ path, entry }) }
+}
+
 /**
  * The marker table (SCAN-01, D-55, D-137), frozen with every row and match. It holds test file name patterns beside
  * the test configs, because a repo such as this one has many `*.test.ts` files and no jest or vitest config, and must
- * still show tests so QA is not dropped. The manifest rows find the backends a root manifest names, such as Rails from
- * the Gemfile.
+ * still show tests so QA is not dropped. The manifest rows find the backends and the E2E gems a root manifest names,
+ * and the path rows find Rails, its system specs and tests, and Cucumber features by where they sit in the repo. Some
+ * facts are found in two places, so their kind and label are shared by two rows; the first evidence the scan meets is
+ * kept.
  */
 export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   depRow('fe', 'react'),
@@ -247,11 +257,30 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   manifestRow('be', 'rails', 'gemfile', 'rails'),
   manifestRow('be', 'sinatra', 'gemfile', 'sinatra'),
   manifestRow('be', 'hanami', 'gemfile', 'hanami'),
+  manifestRow('be', 'django', 'pyproject', 'django'),
+  manifestRow('be', 'flask', 'pyproject', 'flask'),
+  manifestRow('be', 'fastapi', 'pyproject', 'fastapi'),
+  manifestRow('be', 'django', 'requirements', 'django'),
+  manifestRow('be', 'flask', 'requirements', 'flask'),
+  manifestRow('be', 'fastapi', 'requirements', 'fastapi'),
+  manifestRow('be', 'gin', 'gomod', 'github.com/gin-gonic/gin'),
+  manifestRow('be', 'echo', 'gomod', 'github.com/labstack/echo'),
+  manifestRow('be', 'fiber', 'gomod', 'github.com/gofiber/fiber'),
+  manifestRow('be', 'chi', 'gomod', 'github.com/go-chi/chi'),
+  manifestRow('be', 'actix-web', 'cargo', 'actix-web'),
+  manifestRow('be', 'axum', 'cargo', 'axum'),
+  manifestRow('be', 'rocket', 'cargo', 'rocket'),
+  manifestRow('be', 'laravel/framework', 'composer', 'laravel/framework'),
+  manifestRow('be', 'symfony', 'composer', 'symfony/framework-bundle'),
+  manifestRow('be', 'symfony', 'composer', 'symfony/symfony'),
   depRow('test', 'jest'),
   depRow('test', 'vitest'),
   depRow('test', 'mocha'),
   depRow('e2e', '@playwright/test'),
   depRow('e2e', 'cypress'),
+  manifestRow('e2e', 'capybara', 'gemfile', 'capybara'),
+  manifestRow('e2e', 'selenium-webdriver', 'gemfile', 'selenium-webdriver'),
+  manifestRow('e2e', 'cuprite', 'gemfile', 'cuprite'),
   fileRow('lang', 'JavaScript/TypeScript (package.json)', /^package\.json$/),
   fileRow('lang', 'Ruby (Gemfile)', /^Gemfile$/),
   fileRow('lang', 'Go (go.mod)', /^go\.mod$/),
@@ -269,6 +298,10 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   fileRow('e2e', 'Playwright config', /^playwright\.config\./),
   fileRow('e2e', 'Cypress config', /^cypress\.config\./),
   dirRow('e2e', 'Cypress folder', 'cypress'),
+  pathRow('be', 'rails', 'file', /^config\/application\.rb$/),
+  pathRow('e2e', 'Rails system specs', 'dir', /^spec\/system$/),
+  pathRow('e2e', 'Rails system tests', 'dir', /^test\/system$/),
+  pathRow('e2e', 'Cucumber features', 'file', /^features\/(?:[^/]+\/)?[^/]+\.feature$/),
 ])
 
 /** A repo path as a warning shows it: cleaned and capped. */
@@ -585,10 +618,14 @@ function addFinding(found: Findings, kind: ScanKind, label: string, evidence: st
   found.set(key, { kind, label, evidence })
 }
 
-/** Whether a marker row names an entry: a file row by the file's name, a folder row by the folder's name. */
+/**
+ * Whether a marker row names an entry: a file row by the file's name, a folder row by the folder's name, and a path row
+ * by the whole repo-relative path of an entry of its kind that is not a link (D-137).
+ */
 function rowNames(row: MarkerRow, entry: Seen): boolean {
   if ('file' in row.match) return entry.kind === 'file' && row.match.file.test(entry.name)
   if ('dir' in row.match) return entry.kind === 'dir' && row.match.dir === entry.name
+  if ('path' in row.match) return entry.kind === row.match.entry && !entry.isLink && row.match.path.test(entry.path)
 
   return false
 }
@@ -651,17 +688,224 @@ export function gemfileGems(text: string): string[] {
   return [...gems]
 }
 
-/** The dependency names the root manifest of a kind lists, by the parser of that kind (D-137). */
-function manifestNames(kind: ManifestKind, text: string): readonly string[] {
+/** The names that are not empty, in the order given and each once. */
+function namesOnce(names: readonly string[]): string[] {
+  return [...new Set(names.filter(name => name !== ''))]
+}
+
+/** The leading run of letters, digits, `_`, `.` and `-` of a text: a dependency name before its version or extras. */
+const NAME_RUN = /^[A-Za-z0-9_.-]*/
+
+/** A Python dependency name as the scan compares it (D-137): the leading name run, lowercased, with `_` as `-`. */
+function pythonName(text: string): string {
+  return (NAME_RUN.exec(text)?.[0] ?? '').toLowerCase().replaceAll('_', '-')
+}
+
+/** The name of a TOML table header line such as `[dependencies]` or `[[bin]]`, trimmed; null for any other line. */
+function tableOf(line: string): string | null {
+  if (!line.startsWith('[')) return null
+  const inner = line.replace(/^\[+/, '')
+  const end = inner.indexOf(']')
+
+  return (end < 0 ? inner : inner.slice(0, end)).trim()
+}
+
+/** The key of a TOML `key = value` line: the text before the first `=`, trimmed, with no opening quote; else null. */
+function keyOf(line: string): string | null {
+  const at = line.indexOf('=')
+  if (at < 0) return null
+
+  return line.slice(0, at).trim().replace(/^["']/, '')
+}
+
+/**
+ * The quoted strings of one line of a TOML array, up to the `]` that closes the array or a `#` comment outside a
+ * string, and whether the array closed on this line.
+ */
+function arrayLine(text: string): { readonly strings: readonly string[]; readonly isClosed: boolean } {
+  const strings: string[] = []
+  let quote = ''
+  let current = ''
+  for (const char of text) {
+    if (quote !== '' && char !== quote) {
+      current += char
+      continue
+    }
+    if (quote !== '') {
+      strings.push(current)
+      quote = ''
+      current = ''
+      continue
+    }
+    if (char === '#') break
+    if (char === ']') return { strings, isClosed: true }
+    if (char === '"' || char === "'") quote = char
+  }
+
+  return { strings, isClosed: false }
+}
+
+/** The `[project]` key whose array lists the runtime dependencies of a pyproject.toml. */
+const PROJECT_DEPENDENCIES = 'dependencies'
+
+/**
+ * The dependencies a pyproject.toml lists (D-137), in file order and each once: every quoted string of the
+ * `dependencies = [ ... ]` array of the `[project]` table, on one line or several, and every key before `=` in the
+ * `[tool.poetry.dependencies]` table. A name is the leading run of letters, digits, `_`, `.` and `-`, lowercased, with
+ * `_` as `-`, so a version, an extra or a marker is never kept. Every other table is passed over.
+ */
+export function pyprojectDeps(text: string): string[] {
+  const names: string[] = []
+  let table = ''
+  let isInArray = false
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (isInArray) {
+      const part = arrayLine(line)
+      names.push(...part.strings.map(pythonName))
+      isInArray = !part.isClosed
+      continue
+    }
+    const header = tableOf(line)
+    if (header !== null) {
+      table = header
+      continue
+    }
+    if (table === 'tool.poetry.dependencies') {
+      names.push(pythonName(keyOf(line) ?? ''))
+      continue
+    }
+    if (table !== 'project' || keyOf(line) !== PROJECT_DEPENDENCIES) continue
+    const value = line.slice(line.indexOf('=') + 1).trim()
+    if (!value.startsWith('[')) continue
+    const part = arrayLine(value.slice(1))
+    names.push(...part.strings.map(pythonName))
+    isInArray = !part.isClosed
+  }
+
+  return namesOnce(names)
+}
+
+/**
+ * The dependencies a requirements.txt lists (D-137), in file order and each once: the name of every line that, trimmed,
+ * does not start with `#` or `-`, by the name rule of pyprojectDeps, so a comment and an option such as `-r base.txt`
+ * give nothing.
+ */
+export function requirementsDeps(text: string): string[] {
+  const lines = text.split('\n').map(line => line.trim())
+
+  return namesOnce(lines.filter(line => !line.startsWith('#') && !line.startsWith('-')).map(pythonName))
+}
+
+/** A go.mod line that requires one module: `require`, spaces, then the module path (not the `(` of a block). */
+const REQUIRE_LINE = /^require\s+([^\s(]\S*)/
+
+/** The go.mod line that opens a require block. */
+const REQUIRE_BLOCK = /^require\s*\($/
+
+/** A Go module path's trailing major version, such as `/v4`. */
+const MAJOR_VERSION = /\/v\d+$/
+
+/** A go.mod line, trimmed, without its `//` comment. */
+function goLine(raw: string): string {
+  const line = raw.trim()
+  const at = line.indexOf('//')
+
+  return (at < 0 ? line : line.slice(0, at)).trim()
+}
+
+/**
+ * The modules a go.mod requires (D-137), in file order and each once: the module path of every `require <path>
+ * <version>` line and of every line inside a `require (` ... `)` block, with a trailing `/v<digits>` removed, so
+ * `github.com/labstack/echo/v4` is `github.com/labstack/echo`. A comment, a version and every other directive give
+ * nothing.
+ */
+export function goModules(text: string): string[] {
+  const modules: string[] = []
+  let isInBlock = false
+  for (const raw of text.split('\n')) {
+    const line = goLine(raw)
+    if (isInBlock && line === ')') {
+      isInBlock = false
+      continue
+    }
+    if (isInBlock) {
+      modules.push((line.split(/\s+/)[0] ?? '').replace(MAJOR_VERSION, ''))
+      continue
+    }
+    if (REQUIRE_BLOCK.test(line)) {
+      isInBlock = true
+      continue
+    }
+    const required = REQUIRE_LINE.exec(line)?.[1]
+    if (required !== undefined) modules.push(required.replace(MAJOR_VERSION, ''))
+  }
+
+  return namesOnce(modules)
+}
+
+/** The leading run of letters, digits, `_` and `-` of a text: a crate name, which the `.` of a dotted key ends. */
+const CRATE_RUN = /^[A-Za-z0-9_-]*/
+
+/** The start of the name of a Cargo.toml table that holds one dependency, such as `[dependencies.rocket]`. */
+const CRATE_TABLE = 'dependencies.'
+
+/** A crate name from the start of a TOML key or table name, without an opening quote. */
+function crateName(text: string): string {
+  return CRATE_RUN.exec(text.replace(/^["']/, ''))?.[0] ?? ''
+}
+
+/**
+ * The crates a Cargo.toml depends on (D-137), in file order and each once: every key before `=` in the `[dependencies]`
+ * table, a dotted key such as `tokio.workspace` by its first part, and the name of every `[dependencies.<name>]` table.
+ * The dev, build and target dependency tables are passed over.
+ */
+export function cargoDeps(text: string): string[] {
+  const names: string[] = []
+  let table = ''
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    const header = tableOf(line)
+    if (header !== null && header.startsWith(CRATE_TABLE)) names.push(crateName(header.slice(CRATE_TABLE.length)))
+    if (header !== null) {
+      table = header
+      continue
+    }
+    if (table === 'dependencies') names.push(crateName(keyOf(line) ?? ''))
+  }
+
+  return namesOnce(names)
+}
+
+/**
+ * The packages a composer.json requires (D-137), in file order and each once: the keys of `require` and
+ * `require-dev`. Null when the text is not a JSON object, so the scan warns that it could not parse it.
+ */
+export function composerDeps(text: string): string[] | null {
+  const value = parseJsonValue(text)?.value
+  if (!isObject(value)) return null
+
+  return namesOnce([...fieldKeysOf(value, 'require'), ...fieldKeysOf(value, 'require-dev')])
+}
+
+/**
+ * The dependency names the root manifest of a kind lists, by the parser of that kind (D-137); null when the text
+ * cannot be parsed (only a composer.json, which must be JSON).
+ */
+function manifestNames(kind: ManifestKind, text: string): readonly string[] | null {
   switch (kind) {
     case 'gemfile':
       return gemfileGems(text)
     case 'pyproject':
+      return pyprojectDeps(text)
     case 'requirements':
+      return requirementsDeps(text)
     case 'gomod':
+      return goModules(text)
     case 'cargo':
+      return cargoDeps(text)
     case 'composer':
-      return []
+      return composerDeps(text)
   }
 }
 
@@ -688,14 +932,16 @@ function manifestsOf(seen: readonly Seen[]): ManifestKind[] {
  * Adds a finding for each name the root manifest of a kind lists that a manifest row of that kind names, with the
  * manifest's path as evidence (D-137, T-02-57). It reads through readRepoFile, so a link out of the repo is refused,
  * and at most MAX_READ_BYTES. Only the names a row names are kept, never a version, a source or any other text.
- * Returns the warning when the file cannot be read, else null.
+ * Returns the warning when the file cannot be read, or a composer.json cannot be parsed, else null.
  */
 async function readManifest(found: Findings, io: InitIo, root: string, kind: ManifestKind): Promise<string | null> {
   const path = MANIFEST_FILES[kind]
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
   if (read.state !== 'text') return `could not read ${shown(path)} (treated as unknown)`
+  const listed = manifestNames(kind, read.text)
+  if (listed === null) return `could not parse ${shown(path)} as JSON (treated as unknown)`
 
-  const names = new Set(manifestNames(kind, read.text))
+  const names = new Set(listed)
   for (const row of MARKER_ROWS) {
     if (!('manifest' in row.match) || row.match.manifest !== kind) continue
     if (names.has(row.match.name)) addFinding(found, row.kind, row.label, path)
