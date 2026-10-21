@@ -108,7 +108,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
     spec: Object.freeze(['.cadre/<role>/.runtime/spec.md']),
     plan: Object.freeze(['.cadre/<role>/.runtime/plan.md']),
   }),
-  verify: Object.freeze(["the project's test and lint commands (from the Phase 2 repo scan)", 'a reviewer subagent']),
+  verify: Object.freeze(["the project's test and lint commands (from the repo scan)", 'a reviewer subagent']),
   doneSignal: Object.freeze({
     artifact: '.cadre/<role>/.runtime/DONE.md',
     check: 'the file exists and says what was done and how it was verified',

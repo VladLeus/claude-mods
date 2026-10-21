@@ -198,7 +198,7 @@ function regenManifestSkippedNote(id: string): string {
 }
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
-export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees (Phase 3.1)"
+export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees"
 
 /** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
 export const MAX_ASKS = 3
@@ -2005,8 +2005,30 @@ export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart,
   ].join('\n')
 }
 
-/** The final review question (D-43): the person confirms the plan shown or goes back to change one item. */
-export const REVIEW_QUESTION = 'Review the plan above. Confirm it, or go back to change one item.'
+/**
+ * The first line of the final review question (D-43, D-134): the person confirms the plan the side pane shows, or goes
+ * back to change one item. reviewQuestion gives the whole question text.
+ */
+export const REVIEW_QUESTION =
+  'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.'
+
+/**
+ * The last line of the review question (D-134): how to change an item that has no button of its own, by typing its
+ * word under "Other". It is part of the question itself, which every surface draws, so the dialog never depends on the
+ * pane for it. This reverses 02-13 user decision 2, which kept the question text unchanged and put the hint under the
+ * review summary instead.
+ */
+export const REVIEW_TYPE_HINT = 'Use a button, or type duration, model, assignments, memory, env or hunks under Other.'
+
+/**
+ * The review question as the dialog shows it (D-134): REVIEW_QUESTION, then the context line on its own line when there
+ * is one, and REVIEW_TYPE_HINT on the last line, so the text always ends with the typed-item hint.
+ */
+export function reviewQuestion(context: string | null): string {
+  if (context === null) return `${REVIEW_QUESTION}\n${REVIEW_TYPE_HINT}`
+
+  return `${REVIEW_QUESTION}\n${context}\n${REVIEW_TYPE_HINT}`
+}
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -2071,9 +2093,6 @@ export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not
 /** Why init cancels once the review question was asked MAX_REVIEW_ROUNDS times without Confirm (A1). */
 export const REVIEW_ROUNDS_REASON =
   `The review question was asked ${MAX_REVIEW_ROUNDS} times without "Confirm": nothing was chosen.`
-
-/** The items a person may type at the review to go back to one that has no button (D-43). */
-export const REVIEW_HINT = 'To change something else, type one of: duration, model, assignments, memory, env, hunks.'
 
 /**
  * What one init run holds in memory while the person reviews the plan (D-43, D-45, D-82): where it runs and what the
@@ -2266,7 +2285,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
  * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
  * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
- * files (planStep), shows the summary in the side pane (reviewLines, D-133) and asks REVIEW_QUESTION with
+ * files (planStep), shows the summary in the side pane (reviewLines, D-133) and asks reviewQuestion(null) with
  * REVIEW_OPTIONS; an item word may be typed under "Other" (parseReviewItem). Confirm accepts the plan just shown, with
  * the state it was planned with and the draft it was built from (Reviewed). A go-back re-asks that one item (goBack),
  * and the next round shows the summary again. A dismissal, MAX_ASKS answers it cannot read, or a cancelled go-back step
@@ -2293,7 +2312,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
       readUserMcp: current.readUserMcp,
     })
     await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
-    const item = await askChoice(io, REVIEW_QUESTION, { options: REVIEW_OPTIONS }, parseReviewItem)
+    const item = await askChoice(io, reviewQuestion(null), { options: REVIEW_OPTIONS }, parseReviewItem)
     if (item === null) return cancelled(REVIEW_DISMISSED_REASON)
     if (item === 'confirm') return accepted({ draft: current, planned })
     if (round === MAX_REVIEW_ROUNDS - 1) break

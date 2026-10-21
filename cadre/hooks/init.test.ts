@@ -147,7 +147,6 @@ import {
   repoGuard,
   resolvedFramework,
   REVIEW_DISMISSED_REASON,
-  REVIEW_HINT,
   REVIEW_OPTIONS,
   REVIEW_QUESTION,
   REVIEW_ROUNDS_REASON,
@@ -3421,13 +3420,12 @@ function everyStepWorld(): MemWorld {
 }
 
 describe('reviewStep', () => {
-  test('the review question, its four buttons, the hint and the round cap are fixed (D-43, A2)', () => {
+  test('the review question, its four buttons and the round cap are fixed (D-43, A2)', () => {
     expect(REVIEW_QUESTION).toBe(
       'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
     )
     expect(REVIEW_OPTIONS).toEqual(['Confirm', 'Change roles', 'Change git policy', 'Change launcher start'])
     expect(Object.isFrozen(REVIEW_OPTIONS)).toBe(true)
-    expect(REVIEW_HINT).toBe('To change something else, type one of: duration, model, assignments, memory, env, hunks.')
     expect(MAX_REVIEW_ROUNDS).toBe(10)
     expect(REVIEW_DISMISSED_REASON).toBe('The review question was dismissed or not answered.')
     expect(REVIEW_ROUNDS_REASON).toBe('The review question was asked 10 times without "Confirm": nothing was chosen.')
