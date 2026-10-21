@@ -35,7 +35,8 @@ import {
 } from './recommend'
 import type { GsdToolContext, HunkCandidate } from './recommend'
 import { standsFor } from './roles'
-import { BIDI_OVERRIDE, emptySetupScan, session, skillRef } from './testkit'
+import { scanRepo } from './scan'
+import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from './testkit'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
 function row(key: string): SettingProposal {
@@ -710,6 +711,25 @@ describe('recommend', () => {
     const scan = repoScan({ findings: [E2E] })
     const setup = emptySetupScan({ mcp: [session('chrome-devtools')] })
 
+    expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([])
+  })
+
+  test('a Rails repo scanned with spec/system gets no Playwright MCP line for FE (G-02-1d)', async () => {
+    const world = memWorld({
+      dirs: {
+        '/repo': [entry('Gemfile'), entry('app', 'dir'), entry('spec', 'dir')],
+        '/repo/app': [entry('user.rb')],
+        '/repo/spec': [entry('system', 'dir')],
+        '/repo/spec/system': [entry('login_spec.rb')],
+      },
+      files: { '/repo/Gemfile': "gem 'rails'" },
+    })
+    const scan = await scanRepo(memIo(world, []).io, '/repo')
+    const setup = emptySetupScan({ mcp: [session('chrome-devtools')] })
+
+    expect(scan.findings.filter(finding => finding.kind === 'e2e')).toEqual([
+      { kind: 'e2e', label: 'Rails system specs', evidence: 'spec/system' },
+    ])
     expect(recommend({ roles: [FE], frameworks: ['gsd'], scan, setup })).toEqual([])
   })
 
