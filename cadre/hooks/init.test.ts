@@ -2252,6 +2252,90 @@ describe('skill purpose in init (D-139)', () => {
   })
 })
 
+/** The first row of the own-skills block (G-02-1b). */
+const OWN_SKILLS_HEADING =
+  'Skills with no plugin (a role given a skill can run it in its session; a role not given it cannot):'
+
+/** The last row of the own-skills block when the model gave no usable recommendation (G-02-1b). */
+const NO_SKILL_RECOMMENDATION = 'The model gave no usable recommendation: no role gets a skill unless you pick one.'
+
+/**
+ * A git repo with two of the user's own skills, deploy-notes described and my-skill not, and these replies of the
+ * model; `over` changes the fields it names.
+ */
+function ownSkillsWorld(replies: readonly (string | null)[], over: Partial<MemWorld> = {}): MemWorld {
+  const commands = [
+    { name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' },
+    { name: 'my-skill', source: 'project' },
+  ]
+
+  return gitWorld({ commands, replies, ...over })
+}
+
+/** The system prompt and the prompt of a run's completion at `at`, as memIo records them. */
+function completionAt(run: MemRun, at: number): { readonly system: string; readonly prompt: string } {
+  const [system = '', prompt = ''] = (run.prompts[at] ?? '').split('\n---\n')
+
+  return { system, prompt }
+}
+
+describe('skill recommendation in init (G-02-1b)', () => {
+  test('a dry run asks the model once and shows the roles it recommends on each skill row', async () => {
+    const run = memIo(ownSkillsWorld(['{"skills":{"S1":["security","tl"],"S2":[]}}']), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts).toHaveLength(1)
+    const { system, prompt } = completionAt(run, 0)
+    expect(system).toContain('Answer only with JSON of the shape {"skills":{"S1":["be"]}}')
+    expect(prompt.split('\n').slice(-2)).toEqual([
+      'S1 | deploy-notes | Write the release notes for a deploy. | used 0 times',
+      'S2 | my-skill | (no description) | used 0 times',
+    ])
+    expect(shownBlock(run, 'skills')).toEqual([
+      OWN_SKILLS_HEADING,
+      '  deploy-notes: Write the release notes for a deploy.',
+      '    recommended: tl, security',
+      '  my-skill: No description.',
+      '    recommended: none',
+    ])
+  })
+
+  test('three replies it cannot take are retried with their exact errors, then the fallback row', async () => {
+    const replies = ['not json', '{"skills":{"S9":["pm"]}}', '{"skills":{"S1":"tl"}}']
+    const run = memIo(ownSkillsWorld(replies), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts).toHaveLength(MAX_PROPOSE_ATTEMPTS)
+    expect(completionAt(run, 1).prompt.split('\n').slice(-2)).toEqual([
+      'Your previous reply had these errors; fix all of them:',
+      '- the reply is not JSON',
+    ])
+    expect(completionAt(run, 2).prompt.split('\n').at(-1)).toBe('- unknown skill "S9"')
+    expect(shownBlock(run, 'skills')).toEqual([
+      OWN_SKILLS_HEADING,
+      '  deploy-notes: Write the release notes for a deploy.',
+      '    recommended: none',
+      '  my-skill: No description.',
+      '    recommended: none',
+      NO_SKILL_RECOMMENDATION,
+    ])
+  })
+
+  test('a model that gives no text is asked three times, told so, and the block shows the fallback row', async () => {
+    const run = memIo(ownSkillsWorld([]), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts).toHaveLength(MAX_PROPOSE_ATTEMPTS)
+    expect(completionAt(run, 2).prompt.split('\n').at(-1)).toBe('- the model gave no text')
+    expect(shownBlock(run, 'skills').at(-1)).toBe(NO_SKILL_RECOMMENDATION)
+  })
+
+  test('a run with no skill of its own makes no recommendation call and shows no skills block', async () => {
+    const commands = [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Rescue.' }]
+    const run = memIo(gitWorld({ commands, replies: ['{"skills":{}}'] }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts).toEqual([])
+    expect(run.shown.map(block => block.key)).not.toContain('skills')
+  })
+})
+
 describe('memoryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
   /** A global CLAUDE.md, one auto-memory and the project CLAUDE.md: all three groups are there. */
