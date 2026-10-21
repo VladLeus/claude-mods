@@ -176,14 +176,35 @@ export const SOURCE_EXTENSIONS: Readonly<Record<string, string>> = Object.freeze
 /** The dependency groups of a package.json whose names count; optionalDependencies and the rest do not (D-55). */
 const DEPENDENCY_GROUPS: readonly string[] = Object.freeze(['dependencies', 'devDependencies', 'peerDependencies'])
 
+/** A manifest the scan reads beside the package.json files, by the one root file it is read from (D-137). */
+type ManifestKind = 'gemfile' | 'pyproject' | 'requirements' | 'gomod' | 'cargo' | 'composer'
+
 /**
- * One row of the marker table (D-55): what proves a `kind` of finding, shown with `label`. `dep` is a dependency name
- * in a package.json, `file` matches the name of a file, and `dir` is the exact name of a folder.
+ * The root file each manifest kind is read from (D-137), in the order the scan reads them. Only these names count,
+ * and only in the repo root, so no other manifest is ever read.
+ */
+export const MANIFEST_FILES: Readonly<Record<ManifestKind, string>> = Object.freeze({
+  gemfile: 'Gemfile',
+  pyproject: 'pyproject.toml',
+  requirements: 'requirements.txt',
+  gomod: 'go.mod',
+  cargo: 'Cargo.toml',
+  composer: 'composer.json',
+})
+
+/**
+ * One row of the marker table (D-55, D-137): what proves a `kind` of finding, shown with `label`. `dep` is a
+ * dependency name in a package.json, `file` matches the name of a file, `dir` is the exact name of a folder, and
+ * `manifest` with `name` is a dependency name the root manifest of that kind lists.
  */
 export type MarkerRow = {
   readonly kind: ScanKind
   readonly label: string
-  readonly match: { readonly dep: string } | { readonly file: RegExp } | { readonly dir: string }
+  readonly match:
+    | { readonly dep: string }
+    | { readonly file: RegExp }
+    | { readonly dir: string }
+    | { readonly manifest: ManifestKind; readonly name: string }
 }
 
 /** A row that a dependency name in a package.json proves; its label is the package name. */
@@ -201,10 +222,16 @@ function dirRow(kind: ScanKind, label: string, dir: string): MarkerRow {
   return { kind, label, match: Object.freeze({ dir }) }
 }
 
+/** A row that a dependency name in the root manifest of a kind proves (D-137). */
+function manifestRow(kind: ScanKind, label: string, manifest: ManifestKind, name: string): MarkerRow {
+  return { kind, label, match: Object.freeze({ manifest, name }) }
+}
+
 /**
- * The marker table (SCAN-01, D-55), frozen with every row and match. It holds test file name patterns beside the test
- * configs, because a repo such as this one has many `*.test.ts` files and no jest or vitest config, and must still
- * show tests so QA is not dropped.
+ * The marker table (SCAN-01, D-55, D-137), frozen with every row and match. It holds test file name patterns beside
+ * the test configs, because a repo such as this one has many `*.test.ts` files and no jest or vitest config, and must
+ * still show tests so QA is not dropped. The manifest rows find the backends a root manifest names, such as Rails from
+ * the Gemfile.
  */
 export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   depRow('fe', 'react'),
@@ -217,6 +244,9 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   depRow('be', 'fastify'),
   depRow('be', 'koa'),
   depRow('be', 'hono'),
+  manifestRow('be', 'rails', 'gemfile', 'rails'),
+  manifestRow('be', 'sinatra', 'gemfile', 'sinatra'),
+  manifestRow('be', 'hanami', 'gemfile', 'hanami'),
   depRow('test', 'jest'),
   depRow('test', 'vitest'),
   depRow('test', 'mocha'),
@@ -603,6 +633,77 @@ async function readDependencies(found: Findings, io: InitIo, root: string, path:
   return null
 }
 
+/** A Gemfile line, trimmed, that declares a gem: `gem`, spaces, and a name in matching single or double quotes. */
+const GEM_LINE = /^gem\s+(['"])([A-Za-z0-9_.-]+)\1/
+
+/**
+ * The gems a Gemfile declares (D-137), in file order and each once: the quoted name of every line that, trimmed,
+ * starts with `gem`, spaces and a single- or double-quoted name of letters, digits, `_`, `.` and `-`, a line inside a
+ * group block included. A commented line gives nothing, and a version or any other argument is never kept.
+ */
+export function gemfileGems(text: string): string[] {
+  const gems = new Set<string>()
+  for (const line of text.split('\n')) {
+    const name = GEM_LINE.exec(line.trim())?.[2]
+    if (name !== undefined) gems.add(name)
+  }
+
+  return [...gems]
+}
+
+/** The dependency names the root manifest of a kind lists, by the parser of that kind (D-137). */
+function manifestNames(kind: ManifestKind, text: string): readonly string[] {
+  switch (kind) {
+    case 'gemfile':
+      return gemfileGems(text)
+    case 'pyproject':
+    case 'requirements':
+    case 'gomod':
+    case 'cargo':
+    case 'composer':
+      return []
+  }
+}
+
+/** Whether a text is a manifest kind, a key of MANIFEST_FILES. */
+function isManifestKind(value: string): value is ManifestKind {
+  return Object.hasOwn(MANIFEST_FILES, value)
+}
+
+/**
+ * The root manifests the walk saw, in MANIFEST_FILES order (D-137): each a file or a link in the root listing, so
+ * reading a link can be refused with a warning instead of the file being passed over without a word. A manifest one
+ * folder down or deeper is never read.
+ */
+function manifestsOf(seen: readonly Seen[]): ManifestKind[] {
+  const isRootFile = (entry: Seen): boolean => entry.depth === 0 && (entry.kind === 'file' || entry.isLink)
+  const names = new Set(seen.filter(isRootFile).map(entry => entry.name))
+
+  return Object.keys(MANIFEST_FILES)
+    .filter(isManifestKind)
+    .filter(kind => names.has(MANIFEST_FILES[kind]))
+}
+
+/**
+ * Adds a finding for each name the root manifest of a kind lists that a manifest row of that kind names, with the
+ * manifest's path as evidence (D-137, T-02-57). It reads through readRepoFile, so a link out of the repo is refused,
+ * and at most MAX_READ_BYTES. Only the names a row names are kept, never a version, a source or any other text.
+ * Returns the warning when the file cannot be read, else null.
+ */
+async function readManifest(found: Findings, io: InitIo, root: string, kind: ManifestKind): Promise<string | null> {
+  const path = MANIFEST_FILES[kind]
+  const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
+  if (read.state !== 'text') return `could not read ${shown(path)} (treated as unknown)`
+
+  const names = new Set(manifestNames(kind, read.text))
+  for (const row of MARKER_ROWS) {
+    if (!('manifest' in row.match) || row.match.manifest !== kind) continue
+    if (names.has(row.match.name)) addFinding(found, row.kind, row.label, path)
+  }
+
+  return null
+}
+
 /** The language of a source file by its extension; null for any other entry, a dotfile and a name with no dot. */
 function languageOf(entry: Seen): string | null {
   if (entry.kind !== 'file') return null
@@ -644,12 +745,13 @@ function sortedFindings(found: Findings): ScanFinding[] {
 }
 
 /**
- * The read-only repo scan (SCAN-01, D-55): the stack, the backend and frontend frameworks, tests and E2E, each finding
- * with the repo-relative path that proves it, plus the source languages and the top-level code folders, and what an
- * earlier run left in `.cadre/` (D-67). It walks through the port with bounded depth and entries (MAX_SCAN_DEPTH,
- * MAX_SCAN_ENTRIES), never follows a link, and reads only the dependency names of the package.json files in the root
- * and one folder down, and the two state files of `.cadre/`, all through readRepoFile. A listing or read that fails
- * is a warning, never an absence. It writes nothing and runs nothing.
+ * The read-only repo scan (SCAN-01, D-55, D-137): the stack, the backend and frontend frameworks, tests and E2E, each
+ * finding with the repo-relative path that proves it, plus the source languages and the top-level code folders, and
+ * what an earlier run left in `.cadre/` (D-67). It walks through the port with bounded depth and entries
+ * (MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES), never follows a link, and reads only the dependency names of the package.json
+ * files in the root and one folder down, then of the root manifests of MANIFEST_FILES, and the two state files of
+ * `.cadre/`, all through readRepoFile. A listing or read that fails is a warning, never an absence. It writes nothing
+ * and runs nothing.
  */
 export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, trimSlash(root))
@@ -659,6 +761,11 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   // One file at a time and in walk order, so the first path that names a dependency is always the same one.
   for (const path of packageFilesOf(walked.seen)) {
     const problem = await readDependencies(found, io, root, path)
+    if (problem !== null) warnings.push(problem)
+  }
+  // Then the root manifests, one at a time in MANIFEST_FILES order, for the same reason (D-137).
+  for (const kind of manifestsOf(walked.seen)) {
+    const problem = await readManifest(found, io, root, kind)
     if (problem !== null) warnings.push(problem)
   }
   const cadre = await readCadre(io, root, warnings)
