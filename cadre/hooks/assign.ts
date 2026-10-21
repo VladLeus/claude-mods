@@ -337,6 +337,75 @@ export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
   return `Which roles get ${label} skills (${group.names.length})?${usesText(uses)} ${ROLE_ANSWER_HINT}`
 }
 
+/**
+ * The sessions the history scan reads (HISTORY_MAX_SESSIONS of history.ts, D-59), repeated here because history.ts
+ * imports this module; a test pins that the two agree.
+ */
+const HISTORY_SESSIONS = 50
+
+/** What a skill's purpose reads when the engine gave the skill no description (D-139, G-02-1b). */
+export const NO_SKILL_PURPOSE = 'No description.'
+
+/**
+ * How often the history scan saw one skill, as the own-skills block and questions say it (G-02-1b): `<n> time(s) in
+ * the last 50 sessions`, the skill's own count, never a group total.
+ */
+export function skillUsesText(count: number): string {
+  return `${count} ${count === 1 ? 'time' : 'times'} in the last ${HISTORY_SESSIONS} sessions`
+}
+
+/** The first row of the own-skills block (G-02-1b): which skills it lists, and what giving one to a role means. */
+const OWN_SKILLS_HEADING =
+  'Skills with no plugin (a role given a skill can run it in its session; a role not given it cannot):'
+
+/** The last row of the own-skills block when the model gave no usable recommendation (G-02-1b). */
+const NO_SKILL_RECOMMENDATION_ROW = 'The model gave no usable recommendation: no role gets a skill unless you pick one.'
+
+/** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
+function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
+  return counts.get(asciiLower(name)) ?? 0
+}
+
+/** Role ids as an own-skills row names them: joined with `, `, or `none` for none. */
+function roleIdsText(ids: readonly string[]): string {
+  return ids.length === 0 ? 'none' : ids.join(', ')
+}
+
+/** The id the recommendation gives an own skill (G-02-1b): S1, S2, ... by its place in the list. */
+function ownSkillId(index: number): string {
+  return `S${index + 1}`
+}
+
+/**
+ * One own skill's rows in the block: its name and purpose, then its own use count (left out at 0) and the roles
+ * recommended for it.
+ */
+function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): string[] {
+  const used = count === 0 ? '' : `used ${skillUsesText(count)}; `
+
+  return [`  ${skill.name}: ${skill.purpose ?? NO_SKILL_PURPOSE}`, `    ${used}recommended: ${roleIdsText(ids)}`]
+}
+
+/**
+ * The own-skills block of the side pane (G-02-1b, D-139): OWN_SKILLS_HEADING, then per skill, in the order given, its
+ * name and purpose (NO_SKILL_PURPOSE when the engine gave none) and a row with how often the history scan saw it
+ * (skillUsesText; left out at 0, which a run without the history scan gives) and the roles recommended for it, or
+ * none. `recommended` is keyed S1, S2, ... by the skills' places in the list; an empty map means the model gave no
+ * usable recommendation, and then a last row says so.
+ */
+export function ownSkillLines(
+  skills: readonly SkillRef[],
+  uses: ReadonlyMap<string, number>,
+  recommended: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const rows = skills.flatMap((skill, index) =>
+    ownSkillRows(skill, skillCount(skill.name, uses), recommended.get(ownSkillId(index)) ?? []),
+  )
+  const notes = skills.length > 0 && recommended.size === 0 ? [NO_SKILL_RECOMMENDATION_ROW] : []
+
+  return [OWN_SKILLS_HEADING, ...rows, ...notes]
+}
+
 /** Records a role id under the lowercase form of a name, unless the name is blank or an earlier role holds it. */
 function addRoleName(names: Map<string, string>, name: string, id: string): void {
   const key = name.trim().toLowerCase()

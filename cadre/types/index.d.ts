@@ -384,8 +384,20 @@ export type InitFacts = {
   readonly gsdUserDir: string | null
 }
 
-/** The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f). */
-export type PaneKey = 'scan' | 'history' | 'roles' | 'recommendations' | 'review' | 'env' | 'notes' | 'instructions'
+/**
+ * The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f,
+ * G-02-1b).
+ */
+export type PaneKey =
+  | 'scan'
+  | 'history'
+  | 'roles'
+  | 'recommendations'
+  | 'review'
+  | 'env'
+  | 'notes'
+  | 'instructions'
+  | 'skills'
 
 /** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
 export type ShownBlock = {
@@ -735,6 +747,11 @@ export type RepoScan = {
 export type SkillRef = {
   readonly name: string
   readonly plugin: string | null
+  /**
+   * The skill's one-line description, cleaned and cut to 120 code points; in memory only, for the questions and the
+   * recommendation call; never written (D-139).
+   */
+  readonly purpose?: string
 }
 
 /** Where an MCP server name was seen (D-57, D-58). */
@@ -755,7 +772,10 @@ export type CarryFacts = {
   readonly envNames: readonly string[]
 }
 
-/** What the user-setup scan kept: names, counts and booleans only (SCAN-02, D-57). */
+/**
+ * What the user-setup scan kept: names, counts and booleans only (SCAN-02, D-57), and each skill's purpose, which is
+ * held in memory and never written (D-139).
+ */
 export type SetupScan = {
   /**
    * The plugin keys set true in enabledPlugins of any settings source, the repo's own included, and the keys installed

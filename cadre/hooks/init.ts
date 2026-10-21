@@ -32,6 +32,7 @@ import type {
   ScanKind,
   ScopeContext,
   SetupScan,
+  SkillRef,
   WriteStat,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
@@ -92,6 +93,7 @@ import {
   modelEffortRefusal,
   NONE_OPTION,
   orderGroupsByUse,
+  ownSkillLines,
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
@@ -99,7 +101,7 @@ import {
   SAME_FOR_ALL,
   skillGroupQuestion,
 } from './assign'
-import type { NameAssignment } from './assign'
+import type { NameAssignment, SkillGroup } from './assign'
 import {
   clean,
   detectRefusal,
@@ -1562,13 +1564,30 @@ async function askAssignments(
 }
 
 /**
+ * The user's own skills the step asks about (G-02-1b): each skill of the group no plugin adds, as the setup scan gave
+ * it, so with its purpose (D-139), in the group's order; none when there is no such group.
+ */
+function ownSkillsOf(skills: readonly SkillRef[], groups: readonly SkillGroup[]): SkillRef[] {
+  const own = groups.find(group => group.plugin === null)
+  if (own === undefined) return []
+
+  return own.names.flatMap(name => {
+    const found = skills.find(skill => skill.plugin === null && skill.name === name)
+
+    return found === undefined ? [] : [found]
+  })
+}
+
+/**
  * The MCP and skill step (D-53, ISO-04). The servers and skills the name tables decide go to their roles with no
  * question (classifyMcp, classifySkills), and infra servers and handoff and framework skills are never asked about.
  * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
  * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
- * any other role is asked again (parseRoleList, T-02-33). The step decides the whole list of each name it asks about:
- * every role first loses those names, then each name joins the `mcp` or `skills` list of the roles its answer names
+ * any other role is asked again (parseRoleList, T-02-33). Before any skill group is asked, when the user has skills
+ * that no plugin adds, the side pane shows them with what each does, its own use count and the roles recommended for
+ * it (ownSkillLines, G-02-1b, D-139). The step decides the whole list of each name it asks about: every role first
+ * loses those names, then each name joins the `mcp` or `skills` list of the roles its answer names
  * (assignToRoles), so running the step again sets that list, and the names the tables decide stay (A3). With `hints`,
  * the command and skill counts of the history scan, the skill groups are asked busiest first and each question says how
  * often its group was used (orderGroupsByUse, skillGroupQuestion); without hints, or with none that count, the
@@ -1597,6 +1616,8 @@ export async function assignmentStep(
   }))
   const servers = await askAssignments(io, roles, serverItems)
   if (servers.kind === 'cancelled') return servers
+  const own = ownSkillsOf(setup.skills, skills.groups)
+  if (own.length > 0) await showBlock(io, 'skills', ownSkillLines(own, counts, new Map()))
   const grouped = await askAssignments(io, roles, groupItems)
   if (grouped.kind === 'cancelled') return grouped
   const asked = new Set([...mcp.unknown])

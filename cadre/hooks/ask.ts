@@ -186,8 +186,8 @@ export async function noteLine(io: InitIo, line: string): Promise<void> {
 }
 
 /**
- * The side-pane titles of D-133 and D-135, the notes block of the batch-1 review S1 and the instruction parts block of
- * G-02-1f: the bold title of each kind of block the cadre init pane shows.
+ * The side-pane titles of D-133 and D-135, the notes block of the batch-1 review S1, the instruction parts block of
+ * G-02-1f and the own-skills block of G-02-1b: the bold title of each kind of block the cadre init pane shows.
  */
 export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   scan: 'Scan',
@@ -198,6 +198,7 @@ export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   env: 'Env variables',
   notes: 'Notes',
   instructions: 'Instruction parts',
+  skills: 'Your own skills',
 })
 
 /**

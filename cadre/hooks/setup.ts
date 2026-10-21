@@ -10,6 +10,7 @@ import type {
   SkillRef,
 } from '../types'
 import {
+  clean,
   compareText,
   displayPath,
   fieldKeysOf,
@@ -68,6 +69,8 @@ const MAX_SETTINGS_KEYS = 100
 export const CLAUDE_JSON_MAX_BYTES = 4 * 1024 * 1024
 /** Code points a command, MCP server or agent name keeps; a longer name is dropped, with a warning. */
 const MAX_REF_NAME_CHARS = 100
+/** Code points a skill's purpose keeps: its one-line description, cleaned and cut to this (D-139). */
+const MAX_SKILL_PURPOSE_CHARS = 120
 /** Code points a memory file name keeps; the longest name a file system allows. */
 const MAX_FILE_NAME_CHARS = 255
 /** The extension of an agent file and of a memory file. */
@@ -229,14 +232,33 @@ function skillItems(value: unknown): Record<string, unknown>[] {
     .filter(item => typeof item.source === 'string' && !UNNAMED_SOURCES.includes(item.source))
 }
 
-/** One command as a name and the plugin that adds it; null when the name, or a plugin that is given, is not a name. */
+/**
+ * A command's description as its skill keeps it (D-139): cleaned and cut to MAX_SKILL_PURPOSE_CHARS code points; null
+ * for a description that is missing, not a string, or blank once cleaned.
+ */
+function purposeOf(description: unknown): string | null {
+  const purpose = clean(description, MAX_SKILL_PURPOSE_CHARS)
+
+  return purpose.trim() === '' ? null : purpose
+}
+
+/** A skill by its name and plugin, with its purpose only when it has one (D-139). */
+function skillOf(name: string, plugin: string | null, purpose: string | null): SkillRef {
+  return purpose === null ? { name, plugin } : { name, plugin, purpose }
+}
+
+/**
+ * One command as a name, the plugin that adds it and its purpose (purposeOf); null when the name, or a plugin that is
+ * given, is not a name.
+ */
 function skillRefOf(item: Record<string, unknown>): SkillRef | null {
   const { name, plugin } = item
   if (!isCommandName(name)) return null
-  if (item.source !== 'plugin' || plugin === undefined) return { name, plugin: null }
+  const purpose = purposeOf(item.description)
+  if (item.source !== 'plugin' || plugin === undefined) return skillOf(name, null, purpose)
   if (!isCommandName(plugin)) return null
 
-  return { name, plugin }
+  return skillOf(name, plugin, purpose)
 }
 
 /** Skills in the order of their names, then of their plugins, a command with no plugin first. */
@@ -245,10 +267,12 @@ function bySkill(first: SkillRef, second: SkillRef): number {
 }
 
 /**
- * The skills and plugin commands of a `$.command.list()` answer, by name and the plugin that adds each (SCAN-02, D-57).
- * Built-in commands and MCP prompts are dropped, and so is a command whose name, or whose plugin, is not a plain name
- * of at most 100 characters. A description, a hint and every other field is never read, so none can be kept. A name is
- * listed once for each plugin, sorted by name. Anything but a list gives [].
+ * The skills and plugin commands of a `$.command.list()` answer, by name, the plugin that adds each and its purpose
+ * (SCAN-02, D-57, D-139). Built-in commands and MCP prompts are dropped, and so is a command whose name, or whose
+ * plugin, is not a plain name of at most 100 characters. A string description is kept as the skill's purpose, cleaned
+ * and cut to MAX_SKILL_PURPOSE_CHARS code points, in memory only, for the questions and the recommendation call; it is
+ * never written (D-139), and a blank or missing one gives no purpose. A hint and every other field is never read, so
+ * none can be kept. A name is listed once for each plugin, sorted by name. Anything but a list gives [].
  */
 export function projectCommands(value: unknown): SkillRef[] {
   const found = new Map<string, SkillRef>()
