@@ -510,6 +510,30 @@ describe('paneView', () => {
     paneView(blocks, paneBlock('roles', ['changed']))
     expect(JSON.stringify(blocks)).toBe(before)
   })
+
+  test('a notes block shown again keeps the old notes before its own lines and goes first (S1)', () => {
+    const notesA = paneBlock('notes', ['note 1'])
+    const notesB = paneBlock('notes', ['note 2'])
+    const scan = paneBlock('scan')
+    const blocks = [notesA, scan]
+    const before = JSON.stringify(blocks)
+    const merged = { key: 'notes', title: notesB.title, lines: [...notesA.lines, ...notesB.lines] }
+    expect(paneView(blocks, notesB)).toEqual([merged, scan])
+    expect(JSON.stringify(blocks)).toBe(before)
+  })
+
+  test('the first notes block goes first, as any new block does (S1)', () => {
+    const notesA = paneBlock('notes', ['note 1'])
+    const scan = paneBlock('scan')
+    expect(paneView([scan], notesA)).toEqual([notesA, scan])
+  })
+
+  test('a block of another key still replaces its own and moves to the top, above the notes (S1)', () => {
+    const notesA = paneBlock('notes', ['note 1'])
+    const scan = paneBlock('scan')
+    const roles2 = paneBlock('roles', ['changed'])
+    expect(paneView([notesA, paneBlock('roles'), scan], roles2)).toEqual([roles2, notesA, scan])
+  })
 })
 
 describe('paneRows', () => {

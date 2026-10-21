@@ -86,6 +86,7 @@ import {
   APPLIED_NONE_NOTE,
   appliedLines,
   ASSIGNMENT_DISMISSED_REASON,
+  cancelledReply,
   cardLines,
   CLAUDE_JSON_CONTEXT,
   CLAUDE_JSON_OPTIONS,
@@ -416,8 +417,8 @@ const RECOMMENDATIONS = recommend({
  * simple input (helpText, detectText with and without the adapters view, and every `*Question`, `*Line`, `*Lines` and
  * `*Text` builder). Any plan that adds an exported user text adds it here, so the check below covers it. Left out:
  * register.tsx and testkit.ts, numbers and patterns, and the helpers that only compare, clean or parse a value they
- * are given (compareText, parseVersionText, visibleText, asciiLine, cleanKickoffText, probeText, reportText and
- * lastLogText), which add no text of their own.
+ * are given (compareText, parseVersionText, visibleText, asciiLine, cleanKickoffText, probeText, reportText,
+ * contextText and lastLogText), which add no text of their own.
  */
 const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['adapters', 'ADAPTERS', ADAPTERS],
@@ -514,6 +515,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'INIT_HOME_ROOT_REPLY', INIT_HOME_ROOT_REPLY],
   ['init', 'INIT_FILE_SYSTEM_ROOT_REPLY', INIT_FILE_SYSTEM_ROOT_REPLY],
   ['init', 'INIT_CANCELLED', INIT_CANCELLED],
+  ['init', 'cancelledReply', cancelledReply(NO_USABLE_ANSWER_REASON)],
   ['init', 'teamContextLine', teamContextLine(TEAM)],
   ['init', 'GIT_POLICY_CONTEXT', GIT_POLICY_CONTEXT],
   ['init', 'CLAUDE_JSON_CONTEXT', CLAUDE_JSON_CONTEXT],

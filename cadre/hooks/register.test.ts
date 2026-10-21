@@ -5,12 +5,12 @@ import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import {
+  cancelledReply,
   CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
   GIT_POLICY_QUESTION,
-  INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   MANIFEST_SKIPPED_NOTE,
@@ -20,6 +20,7 @@ import {
   REGEN_NO_STATE,
   regenNoRole,
   REVIEW_QUESTION,
+  ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
 } from './init'
 import { stableJson } from './plan'
@@ -1314,8 +1315,7 @@ describe('cadre init with a faked host', () => {
     const log = newLog()
     fakeHost(on, initWorld({ answers: answersWithout('Git policy') }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(out.text).toBe('init cancelled, nothing written')
-    expect(out.text).not.toContain('dismissed')
+    expect(out.text).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
     expect(log.logs.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
     expect(askHeads(log).filter(ask => ask === POLICY_ASK)).toHaveLength(1)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
@@ -1333,7 +1333,7 @@ describe('cadre init with a faked host', () => {
     expect(log.asks.slice(log.asks.indexOf(asked))).toEqual([asked, again, again])
     expect(refusal).toBe("'whatever' isn't one of: definitions, all, ignore.")
     expect(log.logs.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
-    expect(out.text).toBe('init cancelled, nothing written')
+    expect(out.text).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
   })
 
   test('init --dry-run makes no process call; plain init runs the accepted hunks, then the chmods', async ($, on) => {
@@ -1442,7 +1442,7 @@ describe('cadre init with a faked host', () => {
     // With no session history the roles question is the first one after the scan, so a dismissal ends init there.
     fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(out.text).toBe(INIT_CANCELLED)
+    expect(out.text).toBe(cancelledReply(ROLES_DISMISSED_REASON))
     expect(askHeads(log)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
     expect(paneLines(log, 'scan')[0]).toBe('Repo scan (read-only):')

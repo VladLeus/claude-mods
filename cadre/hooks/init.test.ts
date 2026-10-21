@@ -73,6 +73,7 @@ import {
   appliedLines,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
+  cancelledReply,
   cardLines,
   carryStep,
   CLAUDE_JSON_CONTEXT,
@@ -683,9 +684,22 @@ describe('truncatedLine (G-02-1e)', () => {
     expect(truncatedLine(repoScan({ isOverallCapped: true }))).toBe(
       `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
     )
+  })
+
+  test('a stop at the safety cap with every fact found says the scan stopped early, never all found (N7)', () => {
     expect(truncatedLine(foundAll({ isOverallCapped: true }))).toBe(
-      `  partial: ${SAFETY_CAP}; stack, tests and E2E were all found`,
+      '  partial: the scan stopped at the 20,000-entry safety cap; ' +
+        'the scan stopped early; stack, tests and E2E may be incomplete',
     )
+  })
+
+  test('with the safety cap and a capped folder, both partial lines end with the stopped-early tail (N7)', () => {
+    const repo = foundAll({ cappedFolders: ['a/b'], isOverallCapped: true })
+    const partial = scanSummaryLines(repo, emptySetupScan()).filter(line => line.startsWith('  partial: '))
+    expect(partial).toEqual([
+      `  partial: ${SAFETY_CAP}; the scan stopped early; stack, tests and E2E may be incomplete`,
+      `  partial: 1 deeper folder ${IN_PART}; the scan stopped early; stack, tests and E2E may be incomplete`,
+    ])
   })
 
   test('with the safety cap reached and folders capped, truncatedLine gives the safety line first', () => {
@@ -788,7 +802,7 @@ describe('runInit', () => {
 
   test('a dismissed consent cancels init before any scan and prints why (A1)', async () => {
     const run = memIo(gitWorld(), {})
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(CONSENT_DISMISSED_REASON))
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION])
     expect(run.listed).toEqual([])
     expect(run.reads).toEqual([STATUS_PATH])
@@ -867,7 +881,7 @@ describe('runInit', () => {
   test('a dismissed roles question cancels init and prints why', async () => {
     const answers = Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== 'Use these roles?'))
     const run = memIo(gitWorld(), answers)
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(ROLES_DISMISSED_REASON))
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, ROLES_QUESTION])
     expect(run.logged.at(-1)).toBe(ROLES_DISMISSED_REASON)
   })
@@ -875,7 +889,7 @@ describe('runInit', () => {
   test('a roles step that hits its round cap prints the reason as its own line and asks nothing after it', async () => {
     const answers = { ...INIT_ANSWERS, 'Use these roles?': 'Adjust them', 'Adjust the roles': 'Done adjusting' }
     const run = memIo(gitWorld(), answers)
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(ROLE_ROUNDS_REASON))
     expect(run.logged.at(-1)).toBe(ROLE_ROUNDS_REASON)
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(MAX_ROLE_ROUNDS)
     expect(firstLines(run.asked).filter(line => line !== ROLES_QUESTION && line !== ADJUST_QUESTION)).toEqual([
@@ -927,7 +941,7 @@ describe('runInit history step (SCAN-03, D-59)', () => {
 
   test('a dismissed history question cancels init, prints why and asks nothing after it (A1)', async () => {
     const run = memIo(historyGitWorld(), answersWithout(HISTORY_PREFIX))
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(HISTORY_DISMISSED_REASON))
     expect(firstLines(run.asked)).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
     expect(run.logged.at(-1)).toBe(HISTORY_DISMISSED_REASON)
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
@@ -1022,6 +1036,7 @@ describe('init pane (G-02-1)', () => {
       recommendations: 'Recommendations',
       review: 'Review',
       env: 'Env variables',
+      notes: 'Notes',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -1272,6 +1287,7 @@ describe('adjustLoop', () => {
     expect(run.asked).toHaveLength(MAX_ADJUST_ROUNDS)
     expect(MAX_ADJUST_ROUNDS).toBe(30)
     expect(run.logged).toEqual([ADJUST_ROUNDS_NOTE])
+    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: [ADJUST_ROUNDS_NOTE] }])
     expect(ADJUST_ROUNDS_NOTE).toBe(
       'Adjust took 30 answers without "Done adjusting": showing the roles as they are now.',
     )
@@ -1373,7 +1389,9 @@ describe('rolesStep', () => {
     expect(run.logged).toHaveLength(1)
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
     expect(reason?.endsWith(FALLBACK_END)).toBe(true)
-    expect(run.shown[1]?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
+    expect(run.shown.map(block => block.key)).toEqual(['roles', 'notes', 'roles'])
+    expect(run.shown[1]).toEqual({ key: 'notes', title: 'Notes', lines: run.logged })
+    expect(run.shown[2]?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
     expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
 
@@ -1462,7 +1480,7 @@ describe('rolesStep', () => {
     })
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     const noteAt = events.indexOf(`log ${ADJUST_ROUNDS_NOTE}`)
-    expect(noteAt > 0 && events[noteAt + 1] === 'show roles').toBe(true)
+    expect(noteAt > 0 && events[noteAt + 1] === 'show notes' && events[noteAt + 2] === 'show roles').toBe(true)
     expect(shownBlock(run, 'roles')).toEqual(proposalLines(kept, full.changes))
   })
 
@@ -1612,6 +1630,7 @@ describe('frameworkStep', () => {
     const run = memIo(memWorld({}), {})
     expect(await frameworkStep(run.io, unsupported, roles)).toEqual(builtIn)
     expect(run.logged).toEqual([choiceLine(unsupported)])
+    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: [choiceLine(unsupported)] }])
     const none = memIo(memWorld({}), {})
     expect(await frameworkStep(none.io, { kind: 'none' }, roles)).toEqual(builtIn)
     expect(none.asked).toEqual([])
@@ -1706,7 +1725,7 @@ describe('runInit framework and recommendations', () => {
     const kept = Object.entries(INIT_ANSWERS).filter(([key]) => !key.startsWith('Which framework'))
     const answers = Object.fromEntries(kept)
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(FRAMEWORK_DISMISSED_REASON))
     expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
   })
 })
@@ -1780,7 +1799,7 @@ describe('durationStep', () => {
     expect(events.indexOf(`ask ${DURATION_QUESTION}`) > recommendedAt).toBe(true)
     expect(firstLines(run.asked).filter(question => question === DURATION_QUESTION)).toHaveLength(1)
     const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
-    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(DURATION_DISMISSED_REASON))
     expect(firstLines(dismissed.asked).at(-1)).toBe(DURATION_QUESTION)
     expect(dismissed.logged.at(-1)).toBe(DURATION_DISMISSED_REASON)
     expect(dismissed.logged.filter(text => text === DURATION_DISMISSED_REASON)).toHaveLength(1)
@@ -1924,7 +1943,7 @@ describe('modelStep', () => {
     const at = asked.indexOf(DURATION_QUESTION)
     expect(asked.slice(at + 1, at + 3)).toEqual([MODEL_MODE_QUESTION, MODEL_ALL_LINE])
     const dismissed = memIo(gitWorld(), answersWithout('Model and effort for'))
-    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(MODEL_DISMISSED_REASON))
     expect(dismissed.asked.at(-1)).toBe(MODEL_ALL)
     expect(dismissed.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
   })
@@ -2518,6 +2537,7 @@ describe('hunkStep', () => {
     const run = memIo(configWorld('{"mode":"interactive"}'), ['Accept', 'Decline'])
     await hunkStep(run.io, input('gsd', gatheredOf(PROVEN_FACTS)))
     expect(run.logged).toEqual([attendedNote(['workflow.text_mode'])])
+    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: [attendedNote(['workflow.text_mode'])] }])
     expect(run.logged).toEqual([
       'attended: GSD needs a person until workflow.text_mode is set as proposed',
     ])
@@ -2653,7 +2673,7 @@ describe('hunkStep', () => {
     expect(plain.logged.some(text => text.startsWith('attended:'))).toBe(false)
     const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const dismissed = memIo(world, answersWithout('.planning/config.json:'))
-    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(HUNK_DISMISSED_REASON))
     expect(dismissed.logged.at(-1)).toBe(HUNK_DISMISSED_REASON)
   })
 })
@@ -2872,7 +2892,7 @@ describe('launchStartStep', () => {
       Object.entries(INIT_ANSWERS).filter(([key]) => key !== 'Where should the role launchers start'),
     )
     const run = memIo(gitWorld(), answers)
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(LAUNCH_START_DISMISSED_REASON))
     expect(firstLines(run.asked).at(-1)).toBe(LAUNCH_START_QUESTION)
     expect(run.logged.at(-1)).toBe(LAUNCH_START_DISMISSED_REASON)
   })
@@ -2922,11 +2942,27 @@ describe('runInit cancel reasons (A1)', () => {
     ]
     for (const { world, answers, question, reason } of cases) {
       const run = memIo(world, answers)
-      expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+      expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(reason))
       expect(run.asked.at(-1)?.slice(0, question.length)).toBe(question)
       expect(run.logged.at(-1)).toBe(reason)
       expect(run.logged.filter(text => text === reason)).toHaveLength(1)
     }
+  })
+})
+
+describe('cancel reply (S1)', () => {
+  test('cancelledReply is INIT_CANCELLED, a colon and the reason cleaned as a report cell', () => {
+    expect(cancelledReply(NO_USABLE_ANSWER_REASON)).toBe(
+      'init cancelled, nothing written: No usable answer after 3 tries.',
+    )
+    expect(cancelledReply('a\nb')).toBe('init cancelled, nothing written: ab')
+  })
+
+  test('three unreadable git policy answers reply with the reason, which is still logged once', async () => {
+    const refusal = refusalLine('whatever', 'definitions, all, ignore')
+    const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' })
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
+    expect(run.logged.filter(text => text === NO_USABLE_ANSWER_REASON)).toHaveLength(1)
   })
 })
 
@@ -3050,7 +3086,7 @@ describe('refusal re-ask (G-02-6b)', () => {
   test("a dry run that types 'both' three times at the framework question cancels with no usable answer", async () => {
     const answers = { ...INIT_ANSWERS, 'Framework for': 'both', [BOTH_REFUSAL]: 'both' }
     const run = memIo(gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }), answers)
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
     const all = withContext(FRAMEWORK_ALL_QUESTION, 'Roles: pm, tl, security.')
     const at = run.asked.indexOf(all)
     expect(at).toBeGreaterThan(0)
@@ -3062,7 +3098,7 @@ describe('refusal re-ask (G-02-6b)', () => {
   test('Esc at the framework question still cancels init with its own dismissed reason (D-45)', async () => {
     const world = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
     const run = memIo(world, answersWithout('Framework for'))
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(FRAMEWORK_DISMISSED_REASON))
     expect(firstLines(run.asked).at(-1)).toBe(FRAMEWORK_ALL_QUESTION)
     expect(run.logged.at(-1)).toBe(FRAMEWORK_DISMISSED_REASON)
   })
@@ -3277,10 +3313,28 @@ describe('question context lines (G-02-1)', () => {
   /** The roles of the git fixture worlds, which hold no source: PM, Team Lead and Security. */
   const TEAM = 'pm, tl, security'
 
-  test('withContext puts the context, cleaned as a report cell, on the line after the question (T-02-55)', () => {
+  test('withContext puts the context, cleaned and cut at 400 code points, on the next line (T-02-55, N2)', () => {
     expect(withContext('Use these roles?', 'Proposed: PM (pm).')).toBe('Use these roles?\nProposed: PM (pm).')
     expect(withContext('Q?', `a\nb${BIDI_OVERRIDE}c`)).toBe('Q?\nabc')
-    expect(withContext('Q?', 'x'.repeat(300))).toBe(`Q?\n${'x'.repeat(239)}…`)
+    expect(withContext('Q?', 'x'.repeat(400))).toBe(`Q?\n${'x'.repeat(400)}`)
+    expect(withContext('Q?', 'x'.repeat(500))).toBe(`Q?\n${'x'.repeat(399)}…`)
+  })
+
+  test('a review question carries a context line of 300 code points whole (N2)', async () => {
+    const reviewContext = async (path: string): Promise<string> => {
+      const run = memIo(gitWorld({ dirs: { '/repo/.git': [], [`/repo/${path}`]: [] } }), {
+        ...INIT_ANSWERS,
+        'Where should the role launchers start': 'Another folder in this repo',
+        'Type the folder the launchers start in': path,
+      })
+      await runInit(run.io, { dryRun: true })
+
+      return run.asked.find(question => question.startsWith(`${REVIEW_QUESTION}\n`))?.split('\n')[1] ?? ''
+    }
+    const path = `apps${'x'.repeat(300 - Array.from(await reviewContext('apps')).length)}`
+    const line = await reviewContext(path)
+    expect(Array.from(line)).toHaveLength(300)
+    expect(line.endsWith(`Launchers start in: ${path}/ under the git root`)).toBe(true)
   })
 
   test('scanContextLine names the stack and each kind of finding, or none', () => {
@@ -4134,7 +4188,7 @@ describe('init plan', () => {
   test('a dismissed git policy cancels init before any card; the port has no way to write (D-45, A5)', async () => {
     const run = memIo(gitWorld(), answersWithout('Git policy'))
     const { io, events } = withEvents(run)
-    expect(await runInit(io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(io, { dryRun: true })).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
     expect(events.filter(event => event.includes('Scope card: '))).toEqual([])
     expect(run.logged.at(-1)).toBe(GIT_POLICY_DISMISSED_REASON)
     // statForWrite only stats a path before a write (#44); no member of the port can write.
@@ -4360,7 +4414,8 @@ describe('reviewStep', () => {
     ]
     for (const [word, prefixes] of cases) {
       const run = queuedIo(everyStepWorld(), { ...INIT_ANSWERS, 'Review the plan': [word, 'Confirm'] })
-      expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+      const reply = await runInit(run.io, { dryRun: true })
+      expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
       const expected = firstPass.filter(question => prefixes.some(prefix => question.startsWith(prefix)))
       expect(expected).not.toHaveLength(0)
       expect([word, between(run.asked, REVIEW_QUESTION)]).toEqual([word, expected])
@@ -4417,7 +4472,8 @@ describe('reviewStep', () => {
       'Describe your role structure': DESCRIPTION,
       'Review the plan': ['Change roles', 'Confirm'],
     })
-    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
     const proposals = run.shown.filter(block => block.key === 'roles')
     expect(proposals).toHaveLength(3)
     expect(proposals.at(-1)?.lines.slice(-2)).toEqual(['Changes from the scan:', '  none'])
@@ -4426,7 +4482,8 @@ describe('reviewStep', () => {
   test("Change roles shows the template team with the template's scan changes, as first shown (A6)", async () => {
     const answers = { ...INIT_ANSWERS, 'Review the plan': ['Change roles', 'Confirm'] }
     const run = queuedIo(gitWorld({ replies: [DESCRIBED_REPLY] }), answers)
-    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
     const proposals = run.shown.filter(block => block.key === 'roles')
     expect(proposals).toHaveLength(2)
     expect(proposals.at(-1)).toEqual(proposals[0])
@@ -4449,7 +4506,7 @@ describe('reviewStep', () => {
 
   test(`after ${MAX_REVIEW_ROUNDS} review rounds without Confirm init cancels with the reason (A1)`, async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'model' })
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(REVIEW_ROUNDS_REASON))
     const asked = firstLines(run.asked)
     expect(asked.filter(question => question === REVIEW_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(asked.filter(question => question === MODEL_MODE_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
@@ -4459,7 +4516,7 @@ describe('reviewStep', () => {
 
   test('a go-back picked at the last review round cancels at once and asks none of its questions (A3)', async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'git policy' })
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(REVIEW_ROUNDS_REASON))
     const asked = firstLines(run.asked)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(MAX_REVIEW_ROUNDS)
     expect(asked.at(-1)).toBe(REVIEW_QUESTION)
@@ -4468,13 +4525,13 @@ describe('reviewStep', () => {
 
   test('a dismissed review, or three answers it cannot read, cancels init with its reason (A1)', async () => {
     const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
-    expect(await runInit(dismissed.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
     expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
     const refusal =
       `'maybe' isn't one of: "Confirm", "Change roles", "Change git policy", "Change launcher start", ` +
       'or duration, model, assignments, memory, env, hunks.'
     const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe', [refusal]: 'maybe' })
-    expect(await runInit(unread.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(unread.io, { dryRun: true })).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
     const reviewAsked = unread.asked.at(-MAX_ASKS) ?? ''
     expect(reviewAsked.startsWith(`${REVIEW_QUESTION}\n`)).toBe(true)
     const again = `${refusal}\n${reviewAsked}`
@@ -4488,7 +4545,7 @@ describe('reviewStep', () => {
       'Review the plan': ['model', 'Confirm'],
       'Model and effort: same': ['Same for all roles', null],
     })
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(MODEL_DISMISSED_REASON))
     expect(run.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
     expect(run.logged.filter(text => text === MODEL_DISMISSED_REASON)).toHaveLength(1)
   })
@@ -4511,7 +4568,7 @@ describe('reviewStep', () => {
 
   test('a cancelled run keeps nothing: the next run on the same port starts fresh (D-45, D-82)', async () => {
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': [null, 'Confirm'] })
-    expect(await runInit(run.io, { dryRun: true })).toBe(INIT_CANCELLED)
+    expect(await runInit(run.io, { dryRun: true })).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
     const askedBefore = run.asked.length
     const again = await runInit(run.io, { dryRun: true })
     expect(run.asked[askedBefore]).toBe(withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT))
@@ -4593,7 +4650,8 @@ describe('consent declines first (G-02-11)', () => {
     }
     const answers = { ...INIT_ANSWERS, 'Read ~/.claude.json': claudeJsonFirst, [HISTORY_PREFIX]: historyFirst }
     const run = memIo(historyGitWorld({ files }), answers)
-    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
     expect(firstLines(run.asked.slice(0, 2))).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
     expect(run.reads.filter(path => path === '/home/u/.claude.json' || path.endsWith('.jsonl'))).toEqual([])
     expect(run.shown.map(block => block.key)).not.toContain('history')
@@ -4635,7 +4693,8 @@ describe('review question hint (G-02-7)', () => {
     expect(items.every(item => REVIEW_TYPE_HINT.includes(item))).toBe(true)
     expect(items.map(parseReviewItem)).toEqual(items)
     const run = queuedIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': ['model', 'Confirm'] })
-    expect(await runInit(run.io, { dryRun: true })).not.toBe(INIT_CANCELLED)
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([MODEL_MODE_QUESTION, 'Model and effort for all roles?'])
   })
 })
@@ -5347,7 +5406,8 @@ describe('init apply (D-105)', () => {
     expect(await runInit(home.io, { dryRun: false, host: refused.io })).toBe(INIT_HOME_ROOT_REPLY)
     const cancelled = memHost(hostWorld({}))
     const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
-    expect(await runInit(dismissed.io, { dryRun: false, host: cancelled.io })).toBe(INIT_CANCELLED)
+    const reply = await runInit(dismissed.io, { dryRun: false, host: cancelled.io })
+    expect(reply).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
     expect([refused.writes, refused.calls, cancelled.writes, cancelled.calls]).toEqual([[], [], [], []])
   })
 
@@ -5591,7 +5651,7 @@ describe('init apply conflicts (D-67)', () => {
       for (const [answers, asks, reason] of cases) {
         const host = memHost(hostWorld({}))
         const run = memIo(world, answers)
-        expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(INIT_CANCELLED)
+        expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(cancelledReply(reason))
         expect(run.asked.filter(question => question.includes(ROLE_QUESTION))).toHaveLength(asks)
         expect(run.logged.at(-1)).toBe(reason)
         expect([host.writes, host.calls]).toEqual([[], []])
@@ -6062,7 +6122,8 @@ describe('security plugin installs (decision #39)', () => {
   test('a dismissed install question cancels init with its reason, and nothing is written or run (A1)', async () => {
     const run = memIo(gitWorld(), answersWithout('Install from claude-plugins-official'))
     const host = memHost(hostWorld({ runs: INSTALLS_OK }))
-    expect(await runInit(run.io, { dryRun: false, host: host.io })).toBe(INIT_CANCELLED)
+    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    expect(reply).toBe(cancelledReply(SECURITY_INSTALL_DISMISSED_REASON))
     expect(run.asked.at(-1)?.startsWith(BOTH_QUESTION_START)).toBe(true)
     expect(run.logged.at(-1)).toBe('The security plugins question was dismissed or not answered.')
     expect([host.calls, host.writes]).toEqual([[], []])
