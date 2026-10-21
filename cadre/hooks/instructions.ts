@@ -636,30 +636,35 @@ function leftUnread(state: ReadState, file: string): null {
   return null
 }
 
-/** Adds a file's sections as parts, `P<n>` in read order, with the file and source each comes from. */
-function addParts(state: ReadState, file: string, source: PartSource, text: string): void {
+/**
+ * Adds a file's sections as parts, `P<n>` in read order, with the file and source each comes from and the SHA-256 of
+ * its text (sha256Hex), for regen (G-02-1f Regen).
+ */
+async function addParts(state: ReadState, file: string, source: PartSource, text: string): Promise<void> {
   for (const section of splitSections(text)) {
-    state.parts.push({ id: `P${state.parts.length + 1}`, file, heading: section.heading, source, text: section.text })
+    const { heading, text: partText } = section
+    const hash = await sha256Hex(partText)
+    state.parts.push({ id: `P${state.parts.length + 1}`, file, heading, source, text: partText, hash })
   }
 }
 
 /**
  * A text the port read, kept within the total (G-02-1f Sources): when it would take the read past MAX_TOTAL_BYTES the
- * read stops and the file is counted unread; else it is split into parts and given back for its imports, and a repo
- * file is kept for the docs it links to.
+ * read stops and the file is counted unread; else it is split into hashed parts and given back for its imports, and a
+ * repo file is kept for the docs it links to.
  */
-function keptText(
+async function keptText(
   state: ReadState,
   place: Exclude<Place, { readonly kind: 'outside' }>,
   text: string,
-): ReadFile | null {
+): Promise<ReadFile | null> {
   const file = fileOf(place, state.sources)
   const bytes = utf8Bytes(text)
   const total = state.sizes.reduce((sum, size) => sum + size, 0)
   if (total + bytes > MAX_TOTAL_BYTES) return leftUnread(state, file)
   state.sizes.push(bytes)
   const source: PartSource = place.kind === 'repo' ? 'repo' : 'global'
-  addParts(state, file, source, text)
+  await addParts(state, file, source, text)
   const read: ReadFile = { text, dir: folderOf(place.path), source }
   if (source === 'repo') state.repoFiles.push(read)
 

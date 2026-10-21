@@ -48,9 +48,12 @@ import type { MemWorld } from './testkit'
 /** The global CLAUDE.md of the cases: a Security section and a Git section, as the plan's dry run has it. */
 const GLOBAL_TEXT = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
 
-/** A part of the global CLAUDE.md with this id, heading and text; `file` changes the file it comes from. */
+/**
+ * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes
+ * from.
+ */
 function part(id: string, heading: string, text: string, file = '~/.claude/CLAUDE.md'): InstructionPart {
-  return { id, file, heading, source: 'global', text }
+  return { id, file, heading, source: 'global', text, hash: `hash of ${id}` }
 }
 
 /** The two parts of GLOBAL_TEXT, in read order. */

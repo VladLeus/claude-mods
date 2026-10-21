@@ -520,11 +520,12 @@ export type InstructionGroup = 'global-claude-md' | 'auto-memory' | 'project-cla
 export type PartSource = 'global' | 'repo'
 
 /**
- * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, cut at its `#` and `##`
- * headings. `id` is `P<n>` in read order; `file` is the file in display form, `~/.claude/CLAUDE.md` style for the
- * config folder and repo-relative for a repo file; `heading` is '' for the text before the first heading. `text` is
- * the section as read, its heading line included, held in memory for this run only: it is never written, logged,
- * shown, asked or put in a reply.
+ * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, a rule file, AGENTS.md or a doc
+ * a repo file links to, cut at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the file in display
+ * form, `~/.claude/CLAUDE.md` style for the config folder and repo-relative for a repo file; `heading` is '' for the
+ * text before the first heading. `text` is the section as read, its heading line included, held in memory for this run
+ * only: it is never written, logged, shown, asked or put in a reply. `hash` is the SHA-256 of `text` as 64 lowercase
+ * hex characters, for regen (G-02-1f Regen): the same text gives the same hash, whatever file it is in.
  */
 export type InstructionPart = {
   readonly id: string
@@ -532,6 +533,7 @@ export type InstructionPart = {
   readonly heading: string
   readonly source: PartSource
   readonly text: string
+  readonly hash: string
 }
 
 /**

@@ -423,8 +423,15 @@ const PART_MEMORY: MemoryItem = {
  */
 const PART_SCAN: InstructionScan = {
   parts: [
-    { id: 'P1', file: '~/.claude/CLAUDE.md', heading: '', source: 'global', text: 'Intro.\n' },
-    { id: 'P2', file: '~/.claude/CLAUDE.md', heading: 'Security', source: 'global', text: '# Security\nNo secrets.\n' },
+    { id: 'P1', file: '~/.claude/CLAUDE.md', heading: '', source: 'global', text: 'Intro.\n', hash: 'hash of P1' },
+    {
+      id: 'P2',
+      file: '~/.claude/CLAUDE.md',
+      heading: 'Security',
+      source: 'global',
+      text: '# Security\nNo secrets.\n',
+      hash: 'hash of P2',
+    },
   ],
   files: ['~/.claude/CLAUDE.md'],
   memories: [PART_MEMORY],
