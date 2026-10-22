@@ -12,6 +12,7 @@ import {
   epicCreatedText,
   epicExcludesFailedReply,
   epicKeyOf,
+  epicListFailedReply,
   epicLookup,
   epicManyBranchesReply,
   epicManyPmReply,
@@ -22,6 +23,7 @@ import {
   epicRecordText,
   epicSlug,
   epicStepArgv,
+  epicStepFailedReply,
   EXCLUDES_CONFIG_ARGV,
   EXCLUDES_FILE,
   excludesText,
@@ -535,6 +537,32 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     expect(config.reply).toContain('made no links')
     expect([...linkRuns(config), ...linkRuns(noGitDir)]).toEqual([])
   })
+
+  test('a failed step stops the mirror there, and the record keeps only the links that ran (03.1-W2 S4)', async () => {
+    const failed = rule(['/bin/ln', '-s', '--', '/repo/node_modules', `${BARE_WORKTREE}/node_modules`], 1)
+    const ignored = rule(LS_IGNORED_ARGV('/repo'), 0, 'dist/\0node_modules/\0thoughts/\0')
+    const gitDir = rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`)
+    const run = await epic(await teamWorld(), [failed, ignored, gitDir], 'PROJ-1', '')
+
+    expect(run.reply).toBe(epicStepFailedReply('node_modules'))
+    expect(stepRuns(run)).toEqual(['link dist', 'link node_modules'])
+    expect(parseEpicRecord(lastWrite(run, BARE_RECORD) ?? '')?.links).toEqual(['dist'])
+  })
+
+  test('a failed or rejected ls-files run stops before the excludes file and any step (03.1-W2 S4)', async () => {
+    const failures = [
+      rule(LS_OTHERS_ARGV('/repo'), 128),
+      rule(LS_OTHERS_ARGV('/repo'), null),
+      rule(LS_IGNORED_ARGV('/repo'), 128),
+    ]
+    for (const failure of failures) {
+      const run = await epic(await teamWorld(), [failure, ...NODE_MODULES_RULES], 'PROJ-1', '')
+
+      expect(run.reply).toBe(epicListFailedReply('PROJ-1'))
+      expect(run.writes.filter(write => write.path === BARE_EXCLUDES)).toEqual([])
+      expect(run.calls.filter(call => (call.argv[0] ?? '').startsWith('/bin/'))).toEqual([])
+    }
+  })
 })
 
 /** A mirror step as `<kind> <path below BARE_WORKTREE>`, the form the mirror rule specs compare. */
@@ -669,6 +697,17 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
     expect(plan.steps).toEqual([])
     expect(plan.warnings).toEqual([mirrorLinkedParentWarning('vendor/cache')])
     expect(plan.warnings[0]).toContain('vendor/cache')
+  })
+
+  test('a reuse plans nothing below a target the worktree lists, and warns of nothing (03.1-W2 S3)', () => {
+    const main = new Map([
+      ['', [entry('thoughts', 'dir')]],
+      ['thoughts', [entry('x.log')]],
+    ])
+    const plan = planOf(['thoughts', 'thoughts/x.log'], main, new Map([['', [link('thoughts')]]]))
+
+    expect(plan.steps).toEqual([])
+    expect(plan.warnings).toEqual([])
   })
 
   test('nothing is planned below a planned link, while an entry below a real folder is still linked', () => {
@@ -822,12 +861,20 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
 
   test('a reuse links only what is missing, and its excludes file and record keep what was recorded', async () => {
     const recorded = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x', links: ['node_modules'], copies: ['.env'] }
-    const run = await epic(await keptWorld(epicRecordText(recorded)), KEPT_RULES)
+    const kept = await keptWorld(epicRecordText(recorded))
+    // main shows a regular .env too, so a copy over the worktree's own .env would run /bin/cp (03.1-W2 S4).
+    const world = {
+      ...kept,
+      files: { ...kept.files, '/repo/.env': 'MAIN=1\n' },
+      dirs: { ...kept.dirs, '/repo': [entry('.env')] },
+    }
+    const run = await epic(world, KEPT_RULES)
     const excludes = `${KEPT_GIT_DIR}/${EXCLUDES_FILE}`
     const isConfig = (argv: readonly string[]) => argv.includes('--worktree') || argv.includes('true')
     const configs = run.calls.map(call => call.argv).filter(isConfig)
 
     expect(linkRuns(run)).toEqual([['/bin/ln', '-s', '--', '/repo/dist', `${KEPT_WORKTREE}/dist`]])
+    expect(run.calls.filter(call => call.argv[0] === '/bin/cp')).toEqual([])
     expect(lastWrite(run, excludes)).toBe(excludesText('', ['dist', 'node_modules']))
     expect(configs).toEqual([WORKTREE_CONFIG_ARGV('/repo'), EXCLUDES_CONFIG_ARGV(KEPT_WORKTREE, excludes)])
     expect(parseEpicRecord(lastWrite(run, `${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`) ?? '')).toEqual({
