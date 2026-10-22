@@ -1,11 +1,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { EpicRecord, HostIo, HostRun, ManifestEntry, MemoryItem, PortEntry, RoleSpec } from '../types'
+import type {
+  AskSpec,
+  EpicRecord,
+  HostIo,
+  HostRun,
+  ManifestEntry,
+  MemoryItem,
+  PortEntry,
+  RoleSpec,
+  TerminalChoice,
+} from '../types'
 import { instructionsRecordPath, instructionsRecordText } from './apply'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
   EPIC_BRANCHES_ARGV,
+  EPIC_CANCELLED,
   EPIC_NO_PM,
   EPIC_RECORD_FILE,
   epicAddFailedReply,
@@ -25,6 +36,7 @@ import {
   epicPathExistsReply,
   epicPmOf,
   epicRecordText,
+  epicRolesQuestion,
   epicSlug,
   epicStepArgv,
   epicStepFailedReply,
@@ -61,14 +73,17 @@ import {
   COPIED_LINE,
   GIT_COMMON_DIR_ARGV,
   launcherChangedReply,
+  launcherCommand,
   mainCheckoutOf,
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   runStart,
+  TERMINAL_MAC_ONLY,
+  terminalPlan,
   worktreeClaudeMd,
 } from './start'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
-import type { HostCall, HostRunRule, HostWrite, MemHost, MemWorld } from './testkit'
+import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'
 
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
 const WORKTREE = '/repo/.claude/worktrees/proj-1-add-retry'
@@ -99,9 +114,12 @@ const BASE_RULES: readonly HostRunRule[] = [MAIN_CHECKOUT, CLAUDE_OK]
 /** PM and BE, in the order cadre.json lists them in the epic worlds. */
 const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
 
-/** A git repo at /repo; `over` changes the fields it names. */
+/**
+ * A git repo at /repo; `over` changes the fields it names. It has no dialog, as in `claude -p`, so /cadre epic opens
+ * every role without asking (D-166); the role picker specs set `interactive` to ask.
+ */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return memWorld({ dirs: { '/repo/.git': [] }, ...over })
+  return memWorld({ interactive: false, dirs: { '/repo/.git': [] }, ...over })
 }
 
 /**
@@ -155,6 +173,16 @@ type EpicRun = {
   readonly calls: readonly HostCall[]
   /** Each write as `write <path>` and each run as its argv joined by spaces, in the order of their shared counter. */
   readonly events: readonly string[]
+  /** Every question the run asked, and the dialog spec of each, in order. */
+  readonly asked: readonly string[]
+  readonly specs: readonly AskSpec[]
+}
+
+/** What else an epic run is given: the answers to its questions, the host's environment and the `--terminal` value. */
+type EpicExtra = {
+  readonly answers?: readonly string[] | Readonly<Record<string, string>>
+  readonly env?: HostWorld['env']
+  readonly terminal?: Exclude<TerminalChoice, 'none'>
 }
 
 /** The fake host of the epic specs and what it was asked: each write and run numbered by one counter they share. */
@@ -167,11 +195,11 @@ type EpicHost = MemHost & {
 
 /**
  * The fake host of the epic specs, on top of memHost: these run rules first, then BASE_RULES; any other argv exits 0
- * with no output. Each write and each run also takes the next value of one counter they share, so a spec can tell
- * whether a file was written before a command ran.
+ * with no output, and `env` holds the variables that are set. Each write and each run also takes the next value of one
+ * counter they share, so a spec can tell whether a file was written before a command ran.
  */
-function epicHost(runs: readonly HostRunRule[]): EpicHost {
-  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES] }))
+function epicHost(runs: readonly HostRunRule[], env: HostWorld['env'] = {}): EpicHost {
+  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES], env }))
   const writeAt: number[] = []
   const callAt: number[] = []
   let counter = 0
@@ -204,18 +232,21 @@ function eventsOf(host: EpicHost): string[] {
 
 /**
  * runEpic of `key` and `title` (PROJ-1 and Add retry by default) over `world`, with these run rules first and then
- * BASE_RULES; any other argv exits 0 with no output.
+ * BASE_RULES; any other argv exits 0 with no output. `extra` gives the answers (none by default, so a question is
+ * dismissed), the host's environment and the `--terminal` value (`auto` by default).
  */
 async function epic(
   world: MemWorld,
   runs: readonly HostRunRule[],
   key = 'PROJ-1',
   title = 'Add retry',
+  extra: EpicExtra = {},
 ): Promise<EpicRun> {
-  const host = epicHost(runs)
-  const reply = await runEpic(memIo(world, {}).io, host.io, { key, title, terminal: 'auto' })
+  const host = epicHost(runs, extra.env)
+  const io = memIo(world, extra.answers ?? {})
+  const reply = await runEpic(io.io, host.io, { key, title, terminal: extra.terminal ?? 'auto' })
 
-  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host) }
+  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host), asked: io.asked, specs: io.specs }
 }
 
 /** The argv of every `git worktree add` the run asked for. */
@@ -1086,6 +1117,121 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
       COPIED_LINE,
     ])
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
+  })
+})
+
+/** PM, TL and BE, in the order cadre.json lists them in the role picker specs. */
+const TRIO: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('be')]
+
+/** The ids of the roles an epic run rendered into BARE_WORKTREE: the role of each `.runtime/stamp` write, in order. */
+function stampedRoles(run: EpicRun): string[] {
+  const folder = `${BARE_WORKTREE}/.cadre/`
+  const stamp = '/.runtime/stamp'
+  const paths = run.writes.map(write => write.path).filter(path => path.startsWith(folder) && path.endsWith(stamp))
+
+  return paths.map(path => path.slice(folder.length, -stamp.length))
+}
+
+/** renderWorld of `roles` in a session with a dialog, so /cadre epic asks which roles to open (D-166). */
+async function askingWorld(roles: readonly RoleSpec[] = TEAM): Promise<MemWorld> {
+  return { ...(await renderWorld(roles)), interactive: true }
+}
+
+describe('the role picker (D-145, D-166)', () => {
+  test('one question offers all roles and PM only under Epic roles, and PM only renders only the PM', async () => {
+    const run = await epic(await askingWorld(TRIO), RENDER_RULES, 'PROJ-1', '', { answers: ['PM only'] })
+
+    expect(run.asked).toEqual([epicRolesQuestion(3)])
+    expect(run.specs).toEqual([{ options: ['All 3 roles (Recommended)', 'PM only'], header: 'Epic roles' }])
+    expect(stampedRoles(run)).toEqual(['pm'])
+  })
+
+  test('typed role ids render those roles and PM in cadre.json order; an unknown id is asked again', async () => {
+    const typed = await epic(await askingWorld(TRIO), RENDER_RULES, 'PROJ-1', '', { answers: ['be'] })
+    const retried = await epic(await askingWorld(TRIO), RENDER_RULES, 'PROJ-1', '', { answers: ['be, zz', 'be'] })
+
+    expect(stampedRoles(typed)).toEqual(['pm', 'be'])
+    expect(retried.asked).toHaveLength(2)
+    expect(retried.asked[1]?.startsWith("'be, zz' isn't one of: ")).toBe(true)
+    expect(stampedRoles(retried)).toEqual(['pm', 'be'])
+  })
+
+  test('a dismissed role question cancels before anything is created', async () => {
+    const run = await epic(await askingWorld(), RENDER_RULES, 'PROJ-1', '')
+
+    expect(run.reply).toBe(EPIC_CANCELLED)
+    expect(run.calls.map(call => call.argv)).toEqual([CHECKOUT_ARGV('/repo')])
+    expect(stampedRoles(run)).toEqual([])
+  })
+
+  test('with no dialog, as in claude -p, every role opens unasked, and a team of one role is not asked', async () => {
+    const quiet = await epic(await renderWorld(TRIO), RENDER_RULES, 'PROJ-1', '')
+    const alone = await epic(await askingWorld([templateRole('pm')]), RENDER_RULES, 'PROJ-1', '')
+
+    expect(quiet.asked).toEqual([])
+    expect(stampedRoles(quiet)).toEqual(['pm', 'tl', 'be'])
+    expect(alone.asked).toEqual([])
+    expect(stampedRoles(alone)).toEqual(['pm'])
+  })
+
+  test('only the picked roles have their launcher checked: a changed one not picked stops nothing', async () => {
+    const world = await askingWorld()
+    const changed = { ...world, files: { ...world.files, '/repo/.cadre/bin/be': 'changed\n' } }
+    const pmOnly = await epic(changed, RENDER_RULES, 'PROJ-1', '', { answers: ['PM only'] })
+    const all = await epic(changed, RENDER_RULES, 'PROJ-1', '', { answers: ['All 2 roles (Recommended)'] })
+
+    expect(stampedRoles(pmOnly)).toEqual(['pm'])
+    expect(all.reply).toBe(launcherChangedReply('be'))
+    expect(stampedRoles(all)).toEqual([])
+  })
+})
+
+/** The host naming macOS, the one host where /cadre epic opens terminals (D-132). */
+const DARWIN = rule(['/usr/bin/uname', '-s'], 0, 'Darwin\n')
+
+describe('opening each picked role inside the epic worktree (D-145, D-167)', () => {
+  test('on macOS in iTerm each role opens in a new tab with its worktree command, and nothing is copied', async () => {
+    const env = { TERM_PROGRAM: 'iTerm.app' }
+    const run = await epic(await renderWorld(), [...RENDER_RULES, DARWIN], 'PROJ-1', '', { env })
+    const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript').map(call => call.argv.at(-1))
+
+    expect(opens).toEqual([epicCommand('pm'), epicCommand('be')])
+    expect(run.reply.split('\n').slice(-2)).toEqual([
+      '  pm: opened in a new iTerm tab or window',
+      '  be: opened in a new iTerm tab or window',
+    ])
+    expect(copiedTexts(run)).toEqual([])
+  })
+
+  test('off macOS nothing opens: the refusal shows once, each command is printed, and all are copied', async () => {
+    const linux = rule(['/usr/bin/uname', '-s'], 0, 'Linux\n')
+    const run = await epic(await renderWorld(), [...RENDER_RULES, linux], 'PROJ-1', '')
+    const lines = run.reply.split('\n')
+    const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript' || call.argv[0] === 'tmux')
+
+    expect(opens).toEqual([])
+    expect(lines.filter(line => line === TERMINAL_MAC_ONLY)).toHaveLength(1)
+    expect(lines.slice(-3)).toEqual([`  pm: ${epicCommand('pm')}`, `  be: ${epicCommand('be')}`, COPIED_LINE])
+    expect(copiedTexts(run)).toEqual([`${epicCommand('pm')}\n${epicCommand('be')}`])
+  })
+
+  test('--terminal=tmux opens a window per role in the worktree; one that fails is printed and copied', async () => {
+    const command = launcherCommand(BARE_WORKTREE, 'be')
+    const input = { tmux: null, termProgram: null, isMacOs: true, id: 'be', root: BARE_WORKTREE, command }
+    const plan = terminalPlan({ ...input, choice: 'tmux' })
+    const failed = plan.kind === 'open' ? [rule(plan.argv, 1)] : []
+    const rules = [...RENDER_RULES, DARWIN, ...failed]
+    const run = await epic(await renderWorld(), rules, 'PROJ-1', '', { terminal: 'tmux' })
+    const windows = run.calls.filter(call => call.argv[0] === 'tmux').map(call => call.argv.slice(0, 6))
+
+    expect(failed).toHaveLength(1)
+    expect(windows).toEqual(['pm', 'be'].map(id => ['tmux', 'new-window', '-n', `cadre-${id}`, '-c', BARE_WORKTREE]))
+    expect(run.reply.split('\n').slice(-3)).toEqual([
+      '  pm: opened in a new tmux window',
+      `  be: ${epicCommand('be')}`,
+      COPIED_LINE,
+    ])
+    expect(copiedTexts(run)).toEqual([epicCommand('be')])
   })
 })
 

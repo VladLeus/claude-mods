@@ -91,9 +91,11 @@ import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
 import {
   EPIC_BRANCH_PREFIX,
+  EPIC_CANCELLED,
   EPIC_NO_PM,
   EPIC_NO_WORKTREE_LIST,
   EPIC_RECORD_FILE,
+  EPIC_ROLES_HEADER,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicBadKeyReply,
@@ -110,6 +112,7 @@ import {
   epicOldLauncherReply,
   epicPathExistsReply,
   epicRecordText,
+  epicRolesQuestion,
   epicStepFailedReply,
   epicWorktreeLauncherLine,
   EXCLUDES_FILE,
@@ -855,6 +858,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ],
   ['epic', 'epicOldLauncherReply', [epicOldLauncherReply(['be']), epicOldLauncherReply(['pm', 'be'])]],
   ['epic', 'epicWorktreeLauncherLine', epicWorktreeLauncherLine('be')],
+  ['epic', 'EPIC_ROLES_HEADER', EPIC_ROLES_HEADER],
+  ['epic', 'epicRolesQuestion', epicRolesQuestion(3)],
+  ['epic', 'EPIC_CANCELLED', EPIC_CANCELLED],
   [
     'epic',
     'epicRecordText',
