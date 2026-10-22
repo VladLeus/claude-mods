@@ -796,6 +796,41 @@ export function improverDismissedWarning(path: string): string {
   return `the improver question for ${path} was dismissed: the file stays as built`
 }
 
+/** The most other files the reply warning of one improver run names; the improver block names them all (D-141). */
+const MAX_NAMED_OTHERS = 3
+
+/**
+ * The reply warning for an improver run that changed other files in its folder (D-141, T-02-75), the risk the person
+ * accepted in place of a scratch copy: how many, the folder, the first MAX_NAMED_OTHERS shown paths and how many more,
+ * and that the pane lists them. They are not undone.
+ */
+export function otherChangesWarning(folder: string, paths: readonly string[]): string {
+  const named = paths.slice(0, MAX_NAMED_OTHERS)
+  const rest = paths.length - named.length
+  const listed = rest === 0 ? named.join(', ') : `${named.join(', ')}, +${rest} more`
+  const count = countedNoun(paths.length, 'other file', 'other files')
+
+  return `the improver also changed ${count} in ${folder}: ${listed}; review them (listed in the pane)`
+}
+
+/**
+ * The rows of the improver block that name the other files an improver run changed (D-141, T-02-75): a heading with
+ * the run's folder, then one row per shown path; none when there is none.
+ */
+export function otherFilesLines(folder: string, paths: readonly string[]): string[] {
+  if (paths.length === 0) return []
+
+  return [`Other files changed by the improver in ${folder}:`, ...paths.map(path => `  ${path}`)]
+}
+
+/**
+ * The reply warning for an improver run's folder that held more files than one look checks (D-141, T-02-75): how many
+ * files a change of was not checked.
+ */
+export function uncheckedFilesWarning(count: number, folder: string): string {
+  return `${countedNoun(count, 'file', 'files')} in ${folder} ${count === 1 ? 'was' : 'were'} not checked`
+}
+
 /**
  * Why an improver run failed, or null when it exited 0 (D-141, T-02-77): `it exited with <code>` for any other exit;
  * for a run the host gave no result for, `it timed out` when it lasted IMPROVER_TIMEOUT_MS or longer by the clock,
@@ -829,21 +864,22 @@ export type ImproverOutcome = ImproverTally & {
    * that failed.
    */
   readonly restores: readonly BuiltFile[]
-  /** The reply warning of each per-file question that got no usable answer. */
+  /**
+   * The reply warnings of the pass, file by file: a per-file question that got no usable answer, the other files a run
+   * changed, and the files of a run's folder that were not checked.
+   */
   readonly warnings: readonly string[]
 }
 
-/** What the pass did with one built file: left it as it is, kept the person's accepted text, or gives it back. */
-type ImprovedFile =
-  | { readonly kind: 'left' }
-  | { readonly kind: 'accepted'; readonly text: string }
-  | { readonly kind: 'restore'; readonly warning: string | null }
-
-/** A built file the pass leaves as it is. */
-const LEFT: ImprovedFile = Object.freeze({ kind: 'left' })
-
-/** A built file the pass gives back to be written as built, with no warning. */
-const RESTORE: ImprovedFile = Object.freeze({ kind: 'restore', warning: null })
+/**
+ * What the pass did with one built file: the text the person accepted (null when the file stays or goes back as
+ * built), whether it goes back to be written as built, and the reply warnings of its run.
+ */
+type ImprovedFile = {
+  readonly accepted: string | null
+  readonly isRestored: boolean
+  readonly warnings: readonly string[]
+}
 
 /**
  * A built file as the improver pass reads it, before and after its run (D-141, T-02-76): only a regular file that is
@@ -867,60 +903,178 @@ function isSameRead(before: PortRead, after: PortRead): boolean {
   return before.state === after.state
 }
 
-/** Where the improver pass shows a path from: the home folder and the repo of the run, and CLAUDE_CONFIG_DIR. */
+/** Where the improver pass shows a path from: the repo and the home folder of the run, and CLAUDE_CONFIG_DIR. */
 type ShownFrom = Pick<InitLocations, 'home' | 'root' | 'configDir'>
 
-/** A built file as the pass names it: a repo file by its repo path, a private one as displayPath shows it (`~/...`). */
-function shownBuiltPath(file: BuiltFile, from: ShownFrom): string {
-  if (file.repoPath !== null) return reportText(file.repoPath)
+/** A path as the improver pass shows it: one under the repo as a repo-relative path, else as displayPath shows it. */
+function shownPathOf(path: string, from: ShownFrom): string {
+  const base = `${trimSlash(from.root)}/`
+  if (path.startsWith(base)) return reportText(path.slice(base.length))
 
-  return displayPath(file.path, from.home, from.root, from.configDir)
+  return displayPath(path, from.home, from.root, from.configDir)
+}
+
+/** The most files one look at an improver run's folder reads (D-141, T-02-75); more are counted as not checked. */
+const MAX_SNAPSHOT_FILES = 200
+
+/** How many levels of sub-folders below an improver run's folder a look lists: its sub-folders and theirs (D-141). */
+const SNAPSHOT_LEVELS = 2
+
+/** What a look keeps for a file it found past MAX_SNAPSHOT_FILES: it was not read. */
+const UNCHECKED = 'unchecked'
+
+/** What a look keeps for a file it could not read. */
+const UNREAD = 'unknown'
+
+/**
+ * One look at the folder an improver run starts in (D-141, T-02-75): for each file found, by absolute path, the
+ * sha256Hex of its text, its size when it is over MAX_READ_BYTES, UNREAD when it could not be read, or UNCHECKED past
+ * MAX_SNAPSHOT_FILES.
+ */
+type Snapshot = ReadonlyMap<string, string>
+
+/** What a look keeps for one file: the hash of its text, its size over the read cap, or UNREAD. */
+async function fileMark(io: InitIo, path: string): Promise<string> {
+  const read = await io.read(path, MAX_READ_BYTES)
+  if (read.state === 'text') return sha256Hex(read.text)
+  if (read.state === 'too-large') return `too-large ${read.bytes}`
+
+  return UNREAD
 }
 
 /**
- * One file of the improver pass (G-02-1f, D-141). It reads the file (builtRead), runs improverArgv in the folder that
- * holds it with IMPROVER_TIMEOUT_MS, the clock read around the run, and reads it again; the file changed when the two
- * reads differ and it no longer holds the built text. A failed run (improverFailure) notes why and gives a changed file
- * back as built, asking nothing. An unchanged file is noted. A changed file cadre cannot read is noted and given back.
- * Else the improver block shows its diff from the built text and the per-file question is asked: Accept keeps the new
- * text, Keep original gives the file back, and a question with no usable answer gives it back with a warning.
+ * A look at the folder an improver run starts in (folderSnapshot, D-141, T-02-75): the folder and its sub-folders
+ * SNAPSHOT_LEVELS levels down are listed, a link never listed into but kept like a file, so it is read through; a
+ * folder that cannot be listed adds nothing, and `except`, the built file itself, is left out. The first
+ * MAX_SNAPSHOT_FILES files in path order are read, up to MAX_READ_BYTES each (fileMark); the rest are kept UNCHECKED.
  */
-async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: ShownFrom): Promise<ImprovedFile> {
-  const shownPath = shownBuiltPath(file, from)
-  const before = await builtRead(io, file, from.root)
-  const started = await io.now()
-  const run = await host.run(improverArgv(file.path), { cwd: parentOf(file.path), timeoutMs: IMPROVER_TIMEOUT_MS })
-  const ended = await io.now()
-  const after = await builtRead(io, file, from.root)
+async function folderSnapshot(io: InitIo, folder: string, except: string): Promise<Snapshot> {
+  const found: string[] = []
+  let level: readonly string[] = [folder]
+  for (let depth = 0; depth <= SNAPSHOT_LEVELS && level.length > 0; depth += 1) {
+    const below: string[] = []
+    for (const listed of level) {
+      for (const entry of (await io.list(listed)) ?? []) {
+        const into = entry.kind === 'dir' && !entry.isLink ? below : found
+        into.push(`${listed}/${entry.name}`)
+      }
+    }
+    level = below
+  }
+  const marks = new Map<string, string>()
+  for (const [index, path] of sortedUnique(found.filter(path => path !== except)).entries()) {
+    marks.set(path, index < MAX_SNAPSHOT_FILES ? await fileMark(io, path) : UNCHECKED)
+  }
+
+  return marks
+}
+
+/** What two looks at an improver run's folder show (D-141, T-02-75): the other files changed, and the unchecked. */
+type FolderChanges = {
+  readonly paths: readonly string[]
+  readonly unchecked: number
+}
+
+/**
+ * The other files an improver run changed (D-141, T-02-75), in path order: each path one look has and the other has
+ * not (added or removed), and each whose mark differs (changed, or became unreadable); a path both looks found but one
+ * of them did not read is counted as not checked instead.
+ */
+function folderChanges(before: Snapshot, after: Snapshot): FolderChanges {
+  const paths: string[] = []
+  let unchecked = 0
+  for (const path of sortedUnique([...before.keys(), ...after.keys()])) {
+    const was = before.get(path)
+    const now = after.get(path)
+    const isUnchecked = was === UNCHECKED || now === UNCHECKED
+    if (was !== undefined && now !== undefined && isUnchecked) unchecked += 1
+    if (was === undefined || now === undefined || (!isUnchecked && was !== now)) paths.push(path)
+  }
+
+  return { paths, unchecked }
+}
+
+/**
+ * What became of the built file of an improver run (D-141, T-02-76): its run `failed` (improverFailure), with whether
+ * the run changed it anyway; `unchanged`, it still holds the built text or reads as it did before the run;
+ * `unreadable`, it changed into something cadre cannot read and show (builtRead); or `changed`, with its new text and
+ * its diff from the built text.
+ */
+type BuiltState =
+  | { readonly kind: 'failed'; readonly reason: string; readonly isChanged: boolean }
+  | { readonly kind: 'unchanged' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'changed'; readonly text: string; readonly diff: LineDiff }
+
+/** What became of a built file, from its reads before and after its run and why the run failed, if it did. */
+function builtState(file: BuiltFile, before: PortRead, after: PortRead, failure: string | null): BuiltState {
   const isAsBuilt = after.state === 'text' && after.text === file.text
   const isChanged = !isAsBuilt && !isSameRead(before, after)
+  if (failure !== null) return { kind: 'failed', reason: failure, isChanged }
+  if (!isChanged) return { kind: 'unchanged' }
+  if (after.state !== 'text') return { kind: 'unreadable' }
+
+  return { kind: 'changed', text: after.text, diff: lineDiff(file.text, after.text) }
+}
+
+/** The note of a built file the person is not asked about (D-141): why the run failed, no change, or unreadable. */
+function stateNote(state: Exclude<BuiltState, { readonly kind: 'changed' }>, path: string): string {
+  if (state.kind === 'failed') return improverFailedNote(path, state.reason)
+  if (state.kind === 'unchanged') return improverNoChangeNote(path)
+
+  return improverUnreadableNote(path)
+}
+
+/**
+ * One file of the improver pass (G-02-1f, D-141). It reads the file (builtRead) and looks at its folder
+ * (folderSnapshot), runs improverArgv in that folder with IMPROVER_TIMEOUT_MS, the clock read around the run, then
+ * reads and looks again. Other files the run changed in the folder, and files it could not check, are reply warnings
+ * and rows of the improver block; they are never undone. A file whose run failed, that did not change, or that changed
+ * into something cadre cannot read gets its note and no question; a failed run's change and an unreadable file go back
+ * as built. A changed file's diff from the built text is shown in the improver block and the per-file question is
+ * asked: Accept keeps the new text, Keep original gives the file back, and a question with no usable answer gives it
+ * back with a warning.
+ */
+async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: ShownFrom): Promise<ImprovedFile> {
+  const folder = parentOf(file.path)
+  const shownPath = shownPathOf(file.path, from)
+  const shownFolder = shownPathOf(folder, from)
+  const before = await builtRead(io, file, from.root)
+  const beforeFolder = await folderSnapshot(io, folder, file.path)
+  const started = await io.now()
+  const run = await host.run(improverArgv(file.path), { cwd: folder, timeoutMs: IMPROVER_TIMEOUT_MS })
+  const ended = await io.now()
+  const after = await builtRead(io, file, from.root)
+  const others = folderChanges(beforeFolder, await folderSnapshot(io, folder, file.path))
+  const otherPaths = others.paths.map(path => shownPathOf(path, from))
+  const otherLines = otherFilesLines(shownFolder, otherPaths)
+  const warnings = [
+    ...(otherPaths.length === 0 ? [] : [otherChangesWarning(shownFolder, otherPaths)]),
+    ...(others.unchecked === 0 ? [] : [uncheckedFilesWarning(others.unchecked, shownFolder)]),
+  ]
   const failure = improverFailure(run, started === null || ended === null ? null : ended - started)
-  if (failure !== null) {
-    await noteLine(io, improverFailedNote(shownPath, failure))
+  const state = builtState(file, before, after, failure)
+  if (state.kind !== 'changed') {
+    await noteLine(io, stateNote(state, shownPath))
+    if (otherLines.length > 0) await showBlock(io, 'improver', otherLines)
+    const isRestored = state.kind === 'unreadable' || (state.kind === 'failed' && state.isChanged)
 
-    return isChanged ? RESTORE : LEFT
+    return { accepted: null, isRestored, warnings }
   }
-  if (!isChanged) {
-    await noteLine(io, improverNoChangeNote(shownPath))
-
-    return LEFT
-  }
-  if (after.state !== 'text') {
-    await noteLine(io, improverUnreadableNote(shownPath))
-
-    return RESTORE
-  }
-  const diff = lineDiff(file.text, after.text)
-  await showBlock(io, 'improver', improverBlockLines(shownPath, diff))
+  await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
   const answer = await askChoice(io, {
-    question: withContext(improverQuestion(shownPath), improverContextLine(diff)),
+    question: withContext(improverQuestion(shownPath), improverContextLine(state.diff)),
     spec: { options: IMPROVER_OPTIONS, header: ASK_HEADERS.improver },
     parse: parseImproverAnswer,
     accepts: quotedLabels(IMPROVER_OPTIONS),
   })
-  if (answer.kind !== 'answered') return { kind: 'restore', warning: improverDismissedWarning(shownPath) }
+  if (answer.kind !== 'answered') {
+    return { accepted: null, isRestored: true, warnings: [improverDismissedWarning(shownPath), ...warnings] }
+  }
 
-  return answer.value === 'accept' ? { kind: 'accepted', text: after.text } : RESTORE
+  return answer.value === 'accept'
+    ? { accepted: state.text, isRestored: false, warnings }
+    : { accepted: null, isRestored: true, warnings }
 }
 
 /**
@@ -942,14 +1096,11 @@ export async function improveBuiltFiles(
   let changed = 0
   for (const file of files) {
     const result = await improveOne(io, host, file, from)
-    if (result.kind === 'accepted') {
-      changed += 1
-      if (file.repoPath !== null) accepted.set(file.repoPath, result.text)
-      continue
-    }
-    if (result.kind === 'left') continue
-    restores.push(file)
-    if (result.warning !== null) warnings.push(result.warning)
+    warnings.push(...result.warnings)
+    if (result.isRestored) restores.push(file)
+    if (result.accepted === null) continue
+    changed += 1
+    if (file.repoPath !== null) accepted.set(file.repoPath, result.accepted)
   }
 
   return { accepted, restores, warnings, changed, total: files.length }
