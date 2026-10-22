@@ -90,6 +90,14 @@ import {
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
 import {
+  EPIC_BRANCH_PREFIX,
+  epicAddFailedReply,
+  epicBadKeyReply,
+  epicBadNameReply,
+  epicCreatedText,
+  WORKTREES_DIR,
+} from './epic'
+import {
   countedNoun,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
@@ -640,6 +648,15 @@ const REPORTS: readonly StatusReport[] = [
   { id: 'pm', state: 'unknown', sessionId: null, foundBy: null, lastLog: null, handoff: null, doneMarker: null },
 ]
 
+/** The worktree `/cadre epic PROJ-1 Add retry` makes in /repo, as the epic texts name it, with no warning. */
+const EPIC_WORKTREE = {
+  key: 'PROJ-1',
+  title: 'Add retry',
+  path: '/repo/.claude/worktrees/proj-1-add-retry',
+  branch: 'epic/proj-1-add-retry',
+  warnings: [],
+}
+
 const RECOMMENDATIONS = recommend({
   roles: TEAM,
   frameworks: TEAM.map((): FrameworkId => 'none'),
@@ -760,6 +777,20 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['command', 'RESERVED_ROLE_IDS', RESERVED_ROLE_IDS],
   ['command', 'USAGE_LINES', USAGE_LINES],
   ['command', 'helpText', [helpText(null), helpText('bogus')]],
+  ['epic', 'WORKTREES_DIR', WORKTREES_DIR],
+  ['epic', 'EPIC_BRANCH_PREFIX', EPIC_BRANCH_PREFIX],
+  ['epic', 'epicBadKeyReply', epicBadKeyReply('../x')],
+  ['epic', 'epicBadNameReply', epicBadNameReply('proj-1-Old')],
+  ['epic', 'epicAddFailedReply', [true, false].map(isNew => epicAddFailedReply(EPIC_WORKTREE.branch, isNew))],
+  [
+    'epic',
+    'epicCreatedText',
+    [
+      epicCreatedText({ ...EPIC_WORKTREE, outcome: 'created' }),
+      epicCreatedText({ ...EPIC_WORKTREE, title: '', outcome: 'reused' }),
+      epicCreatedText({ ...EPIC_WORKTREE, outcome: 're-added', warnings: ['a warning'] }),
+    ],
+  ],
   ['facts', 'SOURCE_ORDER', SOURCE_ORDER],
   ['facts', 'HOME_ROOT_REPLY', HOME_ROOT_REPLY],
   ['facts', 'FILE_SYSTEM_ROOT_REPLY', FILE_SYSTEM_ROOT_REPLY],

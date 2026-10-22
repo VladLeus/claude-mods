@@ -239,6 +239,24 @@ describe('status grammar', () => {
   })
 })
 
+describe('epic grammar', () => {
+  test('epic takes its first word as the key, the rest as the title and --terminal as where roles open (D-145)', () => {
+    expect(parseCommand('epic PROJ-1 Add retry')).toEqual({
+      kind: 'epic',
+      key: 'PROJ-1',
+      title: 'Add retry',
+      terminal: 'auto',
+    })
+    expect(parseCommand('epic #123 --terminal=tmux')).toEqual({
+      kind: 'epic',
+      key: '#123',
+      title: '',
+      terminal: 'tmux',
+    })
+    expect(parseCommand('epic')).toEqual({ kind: 'help', unknown: 'epic' })
+  })
+})
+
 describe('takeSwitch', () => {
   test('a switch is taken out of the text and reported on, whatever the spacing around it', () => {
     expect(takeSwitch(' a --dry-run', 'dry-run')).toEqual({ isOn: true, rest: 'a' })
@@ -276,7 +294,7 @@ describe('helpText', () => {
 
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
-    expect(rows).toHaveLength(9)
+    expect(rows).toHaveLength(10)
     const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
     expect(commands).toEqual([
       '/cadre detect',
@@ -288,6 +306,7 @@ describe('helpText', () => {
       '/cadre start <id>',
       '/cadre start <id> --terminal',
       '/cadre status <id>',
+      '/cadre epic <KEY> [title]',
     ])
     const descriptionColumn = ROW_INDENT + COMMAND_COLUMN
     for (const row of rows) {
