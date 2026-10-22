@@ -514,9 +514,9 @@ function excludesLine(path: string): string {
 
 /**
  * The text of the worktree's excludes file (D-147): the user's global excludes text, ended with a newline when it is
- * not empty and has none, then EXCLUDES_HEADING, one excludesLine per link, sorted and once each, and
- * RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link at the worktree root only; a copy gets no line, as main
- * ignores it already (D-172).
+ * not empty and has none, then EXCLUDES_HEADING, one excludesLine per hidden path (each link, and each copy of a
+ * GIT_FILE_NAMES file, 03.1 S1), sorted and once each, and RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link
+ * at the worktree root only; an env file copy gets no line, as main ignores it already (D-172).
  */
 export function excludesText(globalText: string, links: readonly string[]): string {
   const head = globalText === '' || globalText.endsWith('\n') ? globalText : `${globalText}\n`
@@ -614,6 +614,17 @@ const CLAUDE_WORKTREES_CHILD = 'worktrees'
 /** The start of the last segment of a file the mirror copies instead of linking (D-148, D-172). */
 const ENV_PREFIX = '.env'
 
+/**
+ * The last segments of the files git never reads through a link in a work tree (git 2.32+), so the mirror copies them,
+ * as it copies env files, and hides each copy (03.1 S1).
+ */
+const GIT_FILE_NAMES: readonly string[] = ['.gitattributes', '.gitignore', '.mailmap']
+
+/** Whether the last segment of a repo-relative path is one of GIT_FILE_NAMES (03.1 S1). */
+function isGitFile(path: string): boolean {
+  return GIT_FILE_NAMES.includes(path.slice(path.lastIndexOf('/') + 1))
+}
+
 /** A C0 control character or DEL: no gitignore line can hold a name with one (03.1-W2 S2). */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
 
@@ -687,8 +698,9 @@ export function mirrorPaths(
  * - (f) `.claude`: each child of its main listing but `worktrees`, by these same rules;
  * - (g) a path whose name holds a control character, a line break included: nothing, nothing below it, and the
  *   mirrorUnhideableWarning line, as no excludes line can hide it (03.1-W2 S2);
- * - (h) a file whose last segment starts with `.env`, as the main listing of its folder shows (a regular file, not a
- *   link): a copy step, unless the worktree lists its target;
+ * - (h) a file whose last segment starts with `.env`, or is `.gitignore`, `.gitattributes` or `.mailmap`
+ *   (GIT_FILE_NAMES, which git never reads through a link, 03.1 S1), as the main listing of its folder shows (a regular
+ *   file, not a link): a copy step, unless the worktree lists its target;
  * - (i) anything else: a link step to the main checkout's path, unless the worktree lists its target.
  * A link or copy below a folder the worktree does not list gets a mkdir step for each such folder from the top first,
  * once each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
@@ -755,8 +767,9 @@ export function mirrorPlan(input: {
     for (const folder of missing) mkdir(folder)
     placed.add(path)
     const shown = listedEntry(main, path)
-    const isEnvFile = path.slice(path.lastIndexOf('/') + 1).startsWith(ENV_PREFIX)
-    if (isEnvFile && shown !== undefined && shown.kind === 'file' && !shown.isLink) {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    const isCopied = name.startsWith(ENV_PREFIX) || GIT_FILE_NAMES.includes(name)
+    if (isCopied && shown !== undefined && shown.kind === 'file' && !shown.isLink) {
       steps.push({ kind: 'copy', path: `${worktree}/${path}`, source: `${root}/${path}` })
       copies.push(path)
       return
@@ -972,10 +985,11 @@ async function globalExcludesOf(
  * The mirror of the main checkout at `root` into the worktree (D-147, D-148), whose git dir `gitDir` is absolute: the
  * two ls-files runs (a run that fails or cannot start stops it with epicListFailedReply), the folders mirrorPaths
  * names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir: the user's global
- * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, once each (D-163). The worktree
- * is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are idempotent: a write
- * or run that fails stops it with epicExcludesFailedReply, before any step. Each step then runs with its epicStepArgv,
- * and the first one that fails stops it with epicStepFailedReply. What ran before the stop is in the result.
+ * excludes text (globalExcludesOf), then the links `recorded` holds and the plan's own, and each copy of a
+ * GIT_FILE_NAMES file, recorded (`recordedCopies`) or planned, once each (D-163, 03.1 S1). The worktree is pointed at
+ * it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV, on every run, as both are idempotent: a write or run that
+ * fails stops it with epicExcludesFailedReply, before any step. Each step then runs with its epicStepArgv, and the
+ * first one that fails stops it with epicStepFailedReply. What ran before the stop is in the result.
  */
 async function mirrorSteps(
   io: InitIo,
@@ -988,6 +1002,7 @@ async function mirrorSteps(
     readonly key: string
     readonly roleIds: readonly string[]
     readonly recorded: readonly string[]
+    readonly recordedCopies: readonly string[]
   },
 ): Promise<Mirrored> {
   const { root, worktree, key } = input
@@ -1006,7 +1021,8 @@ async function mirrorSteps(
 
   const file = `${input.gitDir}/${EXCLUDES_FILE}`
   const excludesFailed: Mirrored = { failure: epicExcludesFailedReply(key), links: [], copies: [], warnings }
-  const hidden = sortedUnique([...input.recorded, ...plan.links])
+  const gitFileCopies = [...input.recordedCopies, ...plan.copies].filter(isGitFile)
+  const hidden = sortedUnique([...input.recorded, ...plan.links, ...gitFileCopies])
   if (!(await host.write(file, excludesText(global.text, hidden)))) return excludesFailed
   for (const argv of [WORKTREE_CONFIG_ARGV(root), EXCLUDES_CONFIG_ARGV(worktree, file)]) {
     const configured = await host.run(argv, { timeoutMs: GIT_TIMEOUT_MS })
@@ -1306,11 +1322,11 @@ async function renderedLines(
 /**
  * The mirror and render stages of runEpic and their reply (D-147, D-157, D-163, D-164): a worktree whose git dir git
  * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs
- * with the record's links, and the record is written to the git dir with its links and copies joined, once each, with
- * those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A stopped
- * mirror replies with its failure and renders nothing; else the reply is epicCreatedText with what this run linked and
- * copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of the
- * render stage (renderedLines), which renders each picked role into the worktree and opens it there.
+ * with the record's links and copies, and the record is written to the git dir with its links and copies joined, once
+ * each, with those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A
+ * stopped mirror replies with its failure and renders nothing; else the reply is epicCreatedText with what this run
+ * linked and copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the
+ * lines of the render stage (renderedLines), which renders each picked role into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -1338,7 +1354,13 @@ async function mirroredReply(
   const { key } = epic
   const { path, gitDir, record } = worktree
   if (!gitDir.startsWith('/')) return epicExcludesFailedReply(key)
-  const mirrored = await mirrorSteps(io, host, { ...epic, worktree: path, gitDir, recorded: record.links })
+  const mirrored = await mirrorSteps(io, host, {
+    ...epic,
+    worktree: path,
+    gitDir,
+    recorded: record.links,
+    recordedCopies: record.copies,
+  })
   const links = sortedUnique([...record.links, ...mirrored.links])
   const copies = sortedUnique([...record.copies, ...mirrored.copies])
   const isRecorded = await host.write(epicRecordPath(gitDir), epicRecordText({ ...record, links, copies }))
