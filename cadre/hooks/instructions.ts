@@ -1,9 +1,10 @@
 /**
  * The instruction parts of G-02-1f: the content consent, reading the instruction files and splitting them into parts,
  * the prompts and reply parsers of the two model calls (grouping the parts into topics across files, and recommending
- * roles per topic), the side-pane block, the questions of the hand-out and the review rows. Pure: it reads only
- * through the InitIo port it is given, and it never imports init.ts, which imports it. The text is held in memory for
- * this run; it is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
+ * roles per topic), the side-pane block, the questions of the hand-out, the review rows and how regen tells kept,
+ * changed, added and removed parts and memories apart by their hashes (partChanges). Pure: it reads only through the
+ * InitIo port it is given, and it never imports init.ts, which imports it. The text is held in memory for this run; it
+ * is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
  * `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited.
  */
 import type {
@@ -41,6 +42,7 @@ import { sha256Hex } from './hash'
 import { claudeMdImports, resolveSegments } from './launch'
 import { shown } from './render'
 import { cappedErrors, unfenced, withReplyErrors } from './reply'
+import { MAX_HEADING_CHARS } from './roles'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'
 
@@ -305,9 +307,6 @@ export type Section = {
   readonly heading: string
   readonly text: string
 }
-
-/** The most code points a part's heading keeps (G-02-1f Part unit). */
-const MAX_HEADING_CHARS = 80
 
 /** A fence line: up to three spaces, a run of three or more backticks or tildes, then the rest of the line. */
 const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/s
@@ -1362,4 +1361,100 @@ export function instructionReviewLines(
     ...roles.map(role => roleLine(role.id)),
     `Kept with the root session only: ${keptTopics}, ${keptMemories}`,
   ]
+}
+
+/** A part as a role's records name it (G-02-1f Regen): its file, its heading and the SHA-256 of its text. */
+export type PartRecord = Pick<InstructionPart, 'file' | 'heading' | 'hash'>
+
+/** A memory as a role's records name it (G-02-1f Regen): its file and the SHA-256 of its text. */
+export type MemoryRecord = Pick<MemoryItem, 'file' | 'hash'>
+
+/** Parts and memories as regen reads them again from the files a role's records name (G-02-1f Regen, D-142 rg2-a). */
+export type RegenItems = {
+  readonly parts: readonly InstructionPart[]
+  readonly memories: readonly MemoryItem[]
+}
+
+/** The records of a role's parts and memories (G-02-1f Regen). */
+export type RegenRecords = {
+  readonly parts: readonly PartRecord[]
+  readonly memories: readonly MemoryRecord[]
+}
+
+/**
+ * What changed in a role's parts and memories since they were recorded (G-02-1f Regen): `kept`, `changed` and `added`
+ * hold the items as they are now, in the order given; `removed` holds the records no current item matches, in record
+ * order.
+ */
+export type PartChanges = {
+  readonly kept: RegenItems
+  readonly changed: RegenItems
+  readonly added: RegenItems
+  readonly removed: RegenRecords
+}
+
+/** A part or a memory, or a record of one: what partChanges matches by. */
+type Hashed = { readonly file: string; readonly hash: string }
+
+/** One kind of item matched against its records (matchedItems). */
+type Matched<T, R> = {
+  readonly kept: T[]
+  readonly changed: T[]
+  readonly added: T[]
+  readonly removed: R[]
+}
+
+/**
+ * Items matched against records (G-02-1f Regen), each record used once: an item with a record that `isSame` names and
+ * that has its hash is kept; then, in item order, one with a record `isSame` names and another hash is changed; an item
+ * left over whose file a record names is added, and a record left over is removed. Matching the hash first keeps two
+ * sections under one heading apart.
+ */
+function matchedItems<T extends Hashed, R extends Hashed>(
+  items: readonly T[],
+  records: readonly R[],
+  isSame: (record: R, item: T) => boolean,
+): Matched<T, R> {
+  const unused = [...records]
+  const take = (isMatch: (record: R) => boolean): boolean => {
+    const at = unused.findIndex(isMatch)
+    if (at < 0) return false
+    unused.splice(at, 1)
+
+    return true
+  }
+  // Both passes run in item order and use each record once, so they are kept as flags by index.
+  const isKept = items.map(item => take(record => isSame(record, item) && record.hash === item.hash))
+  const isChanged = items.map((item, index) => isKept[index] !== true && take(record => isSame(record, item)))
+  const isLeft = (index: number): boolean => isKept[index] !== true && isChanged[index] !== true
+  const named = new Set(records.map(record => record.file))
+
+  return {
+    kept: items.filter((_, index) => isKept[index] === true),
+    changed: items.filter((_, index) => isChanged[index] === true),
+    added: items.filter((item, index) => isLeft(index) && named.has(item.file)),
+    removed: unused,
+  }
+}
+
+/**
+ * How a role's parts and memories changed since they were recorded (G-02-1f Regen; pure). A recorded part whose file
+ * and heading match a current part with the same hash is kept; same file and heading with another hash is changed; a
+ * current part with no record left to match, in a file the records name, is added; a record no current part matches is
+ * removed, so a section moved to another file is removed and, when the records name that file, added. The same for
+ * memories by file and hash: a memory is its own file, so one no record names is never added; only /cadre init finds a
+ * new file (D-142 rg2-a). Neither input is changed.
+ */
+export function partChanges(stored: RegenRecords, current: RegenItems): PartChanges {
+  const isSamePart = (record: PartRecord, part: InstructionPart): boolean =>
+    record.file === part.file && record.heading === part.heading
+  const parts = matchedItems(current.parts, stored.parts, isSamePart)
+  const memories = matchedItems(current.memories, stored.memories, (record, memory) => record.file === memory.file)
+
+  return {
+    kept: { parts: parts.kept, memories: memories.kept },
+    changed: { parts: parts.changed, memories: memories.changed },
+    added: { parts: parts.added, memories: memories.added },
+    removed: { parts: parts.removed, memories: memories.removed },
+  }
 }

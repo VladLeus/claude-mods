@@ -16,7 +16,7 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { isRoleId, RESERVED_ROLE_IDS } from './command'
-import { clean, idLabel, isObject, parseJsonValue } from './facts'
+import { clean, idLabel, isChangedByClean, isObject, parseJsonValue } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './kickoff'
@@ -741,6 +741,63 @@ function groupsOf(value: unknown): InstructionGroup[] | null {
   return groups
 }
 
+/**
+ * The most code points a part's heading keeps (G-02-1f Part unit): splitSections cuts a heading to it, and a role.json
+ * record of a repo part holds no longer one (parseRoleJson).
+ */
+export const MAX_HEADING_CHARS = 80
+
+/** A SHA-256 as a part record holds it: 64 lowercase hex characters, as sha256Hex gives it. */
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/** The extension of every file a repo part comes from: the read of the instruction files takes only `.md` files. */
+const PART_FILE_EXTENSION = '.md'
+
+/** The repo part records of a role, as RoleSpec holds them (G-02-1f Regen). */
+type PartRecords = NonNullable<RoleSpec['instructionParts']>
+
+/**
+ * Whether a recorded repo part names a file regen may read again (G-02-1f Regen, T-02-78): a path below the repo root,
+ * with no leading `/` and no empty, `.` or `..` segment, that clean leaves as it is, of a `.md` file that is not under
+ * a `.git` folder in any letter case, as the read follows only such files (02-GAPS-B2 M3). Such a record never names a
+ * file outside the repo, and regen reads it through readRepoFile, which follows no link out of the repo.
+ */
+function isRecordedPartFile(file: string): boolean {
+  if (file.startsWith('/') || isChangedByClean(file, Number.POSITIVE_INFINITY)) return false
+  if (!file.endsWith(PART_FILE_EXTENSION)) return false
+  const segments = file.split('/')
+  if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) return false
+
+  return !segments.some(segment => segment.toLowerCase() === '.git')
+}
+
+/**
+ * One repo part record of a role.json object (G-02-1f Regen): a file isRecordedPartFile takes, a heading clean leaves
+ * as it is at MAX_HEADING_CHARS code points, and a SHA-256 in lowercase hex; null for anything else.
+ */
+function partRecordOf(value: unknown): PartRecords[number] | null {
+  if (!isObject(value)) return null
+  const { file, heading, hash } = value
+  if (typeof file !== 'string' || !isRecordedPartFile(file)) return null
+  if (typeof heading !== 'string' || isChangedByClean(heading, MAX_HEADING_CHARS)) return null
+  if (typeof hash !== 'string' || !SHA256_HEX.test(hash)) return null
+
+  return { file, heading, hash }
+}
+
+/**
+ * The repo part records of a role.json object (G-02-1f Regen), in their order: undefined when it has none, as a
+ * role.json written before them; null when they are not a list of records partRecordOf takes.
+ */
+function partRecordsOf(value: unknown): PartRecords | null | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) return null
+  const records = value.map(partRecordOf)
+  const valid = records.filter((record): record is PartRecords[number] => record !== null)
+
+  return valid.length === records.length ? valid : null
+}
+
 /** The id, title, purpose, base and (when it is present) framework of a role.json object; null if one is invalid. */
 function identityOf(
   value: Record<string, unknown>,
@@ -809,7 +866,10 @@ function carryOf(value: unknown): RoleCarry | null {
  * A role.json read back into a role (D-68). The file is committed and anyone can edit it, so every field is checked by
  * type and pattern, and any bad or missing field gives null for the whole file. The schema must be 1 and is dropped;
  * keys that are not part of a role are ignored. A role based on pm with Bash is refused, because PM never has Bash
- * (ROLE-05). The title and purpose are cleaned and capped, not refused.
+ * (ROLE-05). The title and purpose are cleaned and capped, not refused. The repo part records (instructionParts,
+ * G-02-1f Regen) may be absent, as in a role.json written before them; when present, each must name a `.md` file below
+ * the repo root, a heading clean leaves as it is within 80 code points and a lowercase hex SHA-256, or the whole file
+ * gives null (partRecordOf, T-02-78).
  */
 export function parseRoleJson(text: string): RoleSpec | null {
   const json = parseJsonValue(text)
@@ -820,8 +880,11 @@ export function parseRoleJson(text: string): RoleSpec | null {
   const autopilot = autopilotOf(json.value.autopilot)
   const scope = scopeOf(json.value)
   const carry = carryOf(json.value.carry)
+  const records = partRecordsOf(json.value.instructionParts)
   if (identity === null || settings === null || autopilot === null || scope === null || carry === null) return null
+  if (records === null) return null
   if (identity.basedOn === 'pm' && scope.hasBash) return null
+  const role: RoleSpec = { ...identity, ...settings, autopilot, ...scope, carry }
 
-  return { ...identity, ...settings, autopilot, ...scope, carry }
+  return records === undefined ? role : { ...role, instructionParts: records }
 }

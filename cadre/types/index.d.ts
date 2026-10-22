@@ -641,6 +641,13 @@ export type RoleSpec = {
   /** Skill names the role is given, beyond the infra and framework skills every role has (D-53, ISO-04). */
   readonly skills: readonly string[]
   readonly instructions: readonly InstructionGroup[]
+  /**
+   * The repo parts the role was given (G-02-1f Regen), each by its repo-relative file, its heading ('' for the text
+   * before the first heading) and the SHA-256 of its text, so regen can compare them with the files as they are now
+   * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are recorded only
+   * in the role's private instructions.json (D-140 q2-a). Absent in a role.json written before it, which still parses.
+   */
+  readonly instructionParts?: readonly { readonly file: string; readonly heading: string; readonly hash: string }[]
   readonly carry: RoleCarry
 }
 

@@ -83,7 +83,10 @@ export function kickoffText(role: RoleSpec, framework: FrameworkId): string {
   return `/autopilot ${duration} ${threshold} "${kickoffRoleLine(role, framework)}"${flag}\n`
 }
 
-/** The text of `.cadre/<id>/role.json`: the role with schema 1, as stable JSON that parseRoleJson reads back. */
+/**
+ * The text of `.cadre/<id>/role.json`: the role with schema 1, its repo part records included when it has them
+ * (instructionParts, G-02-1f Regen), as stable JSON that parseRoleJson reads back.
+ */
 export function roleJsonText(role: RoleSpec): string {
   return stableJson({ schema: 1, ...role })
 }
