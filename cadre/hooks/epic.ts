@@ -139,14 +139,17 @@ export function epicParentOf(
 /**
  * The refusal when a role's launcher in the main checkout was written before the epic kickoff (D-158): it would start
  * the role with its own kickoff and not the epic's, so /cadre epic stops before it creates anything and names each such
- * role, cleaned, with the /cadre regen that writes its launcher anew.
+ * role, cleaned, with the /cadre regen that writes its launcher anew. As a new epic worktree checks out HEAD
+ * (D-146), a repo that commits `.cadre/` (the `definitions` and `all` policies) is told to commit the regenerated
+ * launchers first, else the worktree holds the old ones and no role opens (03.1-W4 S2).
  */
 export function epicOldLauncherReply(ids: readonly string[]): string {
   const regens = ids.map(id => `/cadre regen ${reportText(id)}`).join(', ')
 
   return (
     `cadre epic stopped before creating anything: the launcher of ${reportText(ids.join(', '))} predates the epic ` +
-    `kickoff and would start without it. Run ${regens}, then /cadre epic again.`
+    `kickoff and would start without it. Run ${regens}. A new epic worktree is made from HEAD, so if this repo ` +
+    'commits .cadre/, commit the regenerated .cadre/bin/ launchers too. Then run /cadre epic again.'
   )
 }
 
