@@ -348,7 +348,7 @@ describe('finding an epic by its key (D-163)', () => {
 })
 
 describe('the epic record (D-164)', () => {
-  test('after the add the record goes to <worktree git dir>/cadre-epic.json, based on the branch or commit', async () => {
+  test('after the add the record goes to <worktree git dir>/cadre-epic.json, based on branch or commit', async () => {
     const created = await epic(await teamWorld(), [
       rule(ADD_ARGV, 0),
       rule(BASE_BRANCH_ARGV('/repo'), 0, 'main\n'),
