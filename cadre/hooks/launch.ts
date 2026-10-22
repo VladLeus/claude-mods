@@ -347,9 +347,10 @@ export const UNDENIED_PRIVATE_WARNING =
 
 /**
  * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an
- * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule.
+ * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule. Exported for the
+ * improver guard (02-GAPS-B3 M1).
  */
-function editWriteRules(path: string, suffix: string): string[] | null {
+export function editWriteRules(path: string, suffix: string): string[] | null {
   if (!isSafeRoot(path)) return null
   const rules = [`Edit(/${path}${suffix})`, `Write(/${path}${suffix})`]
 

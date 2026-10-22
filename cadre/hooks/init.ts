@@ -3645,6 +3645,8 @@ type PrivatePlan = {
   readonly privates: readonly PrivateRole[]
   readonly allowed: ReadonlySet<string>
   readonly problems: readonly string[]
+  /** Every role id of the team to its role memory folder; empty when unknown (02-GAPS-B3 M1). */
+  readonly folders: ReadonlyMap<string, string>
 }
 
 /**
@@ -3680,10 +3682,11 @@ function privatePaths(folders: readonly string[]): ReadonlySet<string> {
 /**
  * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). With a role owed one (privatesOf), the role
  * memory folder of each role is named from the user folder and the git common dir, as /cadre start names it
- * (roleFoldersOf), and `allowed` holds the private text file and the hand-out record of every role of the team: the
- * only paths outside the repo apply may write (privatePaths). The repo's folder name heads each private text file
- * (repoNameOf). With no role owed one, git is not asked and nothing is allowed. With no user folder, or no absolute
- * common dir from git, nothing private is written and privateFoldersUnknownWarning names the roles owed one.
+ * (roleFoldersOf), `folders` maps every role of the team to it (02-GAPS-B3 M1), and `allowed` holds the private text
+ * file and the hand-out record of every role of the team: the only paths outside the repo apply may write
+ * (privatePaths). The repo's folder name heads each private text file (repoNameOf). With no role owed one, git is not
+ * asked and nothing is allowed. With no user folder, or no absolute common dir from git, nothing private is written and
+ * privateFoldersUnknownWarning names the roles owed one.
  */
 async function privatePlanOf(
   io: InitIo,
@@ -3691,7 +3694,7 @@ async function privatePlanOf(
   locations: InitLocations,
   input: { readonly roles: readonly RoleSpec[]; readonly owed: readonly OwedPrivate[] },
 ): Promise<PrivatePlan> {
-  const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [] }
+  const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [], folders: new Map() }
   if (input.owed.length === 0) return none
   const folderOf = await roleFoldersOf(io, host, locations)
   if (folderOf === null) return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
@@ -3701,6 +3704,7 @@ async function privatePlanOf(
     privates: input.owed.map(role => ({ ...role, folder: folderOf(role.id), repo })),
     allowed: privatePaths(input.roles.map(role => folderOf(role.id))),
     problems: [],
+    folders: new Map(input.roles.map((role): [string, string] => [role.id, folderOf(role.id)])),
   }
 }
 
@@ -3745,10 +3749,11 @@ async function privatePlanOf(
  *    became a conflict after the questions.
  * 6a. When claude-md-management is installed, before init or by step 4 with no install problem (the setup made
  *    again from the installs), and a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a
- *    role with a repo part 5a kept, and each private text file), the improver pass runs between the file writes and
- *    the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written built file, in its own folder,
- *    then its diff and the Accept or Keep original question; a kept file is written back as built, and the manifest
- *    records each built file as it ends up. Otherwise no improver runs.
+ *    role with a repo part 5a kept, watching the role's private files and guarded from its `.runtime` folder, and
+ *    each private text file with a global part, never one of the header alone; 02-GAPS-B3 M1, C1), the improver pass
+ *    runs between the file writes and the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written
+ *    built file, in its own folder, then its diff and the Accept or Keep original question; a kept file is written
+ *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs.
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
  *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
  *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
@@ -3814,7 +3819,9 @@ export async function applyConfirmed(
   const steps = await applySteps(input)
   const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
   const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
-  const offered = isImproverReady ? builtRoleFiles(steps, locations.root, withParts) : []
+  const privateFolders = new Set(privatePlan.privates.flatMap(role => (role.parts.length > 0 ? [role.folder] : [])))
+  const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
+  const offered = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const allowed = privatePlan.allowed
   const written =
     offered.length === 0
@@ -4418,9 +4425,12 @@ function memoryPathOf(memory: Pick<RecordedMemory, 'file' | 'folder'>, places: R
   return `${folder}/${file}`
 }
 
-/** A role's private hand-out record found, or why there is none to compare (AUTO-PICK #19 Q5, Q9). */
+/**
+ * A role's private hand-out record found, or why there is none to compare (AUTO-PICK #19 Q5, Q9); with its role memory
+ * folder when it is known (02-GAPS-B3 M1).
+ */
 type PrivateFound =
-  | { readonly kind: 'none' }
+  | { readonly kind: 'none'; readonly folder: string }
   | { readonly kind: 'kept'; readonly warnings: readonly string[] }
   | { readonly kind: 'found'; readonly folder: string; readonly record: InstructionsRecord }
 
@@ -4442,7 +4452,7 @@ async function privateRecordOf(
   if (folderOf === null) return { kind: 'kept', warnings: [privateFoldersUnknownWarning([id])] }
   const folder = folderOf(id)
   const read = await io.read(instructionsRecordPath(folder), MAX_READ_BYTES)
-  if (read.state === 'absent') return { kind: 'none' }
+  if (read.state === 'absent') return { kind: 'none', folder }
   const record = read.state === 'text' ? parseInstructionsRecord(read.text) : null
   if (record === null) return { kind: 'kept', warnings: [unusableRecordWarning(id)] }
 
@@ -4737,8 +4747,9 @@ function recordedRole(role: RoleSpec, side: SideResult): RoleSpec {
  * What regen hands out for its role (G-02-1f Regen, D-142): the role role.json is planned from, with new records when
  * they change (AUTO-PICK #19 Q2), and whether they do; the repo parts its built CLAUDE.md is rebuilt from, null to
  * keep that file as it is (Q4); its private files to rebuild, null for none; the reply lines of what was dropped; the
- * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; and whether
- * a dialog could be shown, so the improver may run after a plain regen.
+ * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; whether a
+ * dialog could be shown, so the improver may run after a plain regen; and the role memory folder, whose private files
+ * the improver run of the built CLAUDE.md watches (02-GAPS-B3 M1).
  */
 type RegenHanded = {
   readonly role: RoleSpec
@@ -4749,6 +4760,8 @@ type RegenHanded = {
   readonly warnings: readonly string[]
   readonly untracked: readonly string[]
   readonly isSession: boolean
+  /** The role memory folder, null when it is not known (02-GAPS-B3 M1). */
+  readonly folder: string | null
 }
 
 /**
@@ -4784,6 +4797,7 @@ async function regenHandout(
     warnings: [],
     untracked: [],
     isSession: false,
+    folder: null,
   }
   if (role.instructionParts === undefined && role.instructionPartsNotGiven === undefined) return accepted(handed)
   const repoRead = await repoSideRead(io, locations.root, role)
@@ -4823,6 +4837,7 @@ async function regenHandout(
     warnings,
     untracked: tracked?.warnings ?? [],
     isSession,
+    folder: found.kind === 'found' || found.kind === 'none' ? found.folder : null,
   })
 }
 
@@ -4922,9 +4937,10 @@ function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome
  * hand-out rebuilds them, whose paths are the only ones outside the repo it may write (privatePaths, T-02-72), run by
  * writeSteps, so a conflicted file is kept and its `.cadre-new` copy written. When claude-md-management is installed
  * and the apply rebuilds a built file with a part in it (builtRoleFiles: the role's built CLAUDE.md with a repo part,
- * its private text file with a global part), the improver pass runs on them in a session (writeImproved, D-141,
- * D-142); where no one can be asked it does not start, and the outcome carries improverNotOfferedWarning. The warnings
- * of the hand-out's git check are its untrackedParts.
+ * watching its private files when its role memory folder is known and guarded from its `.runtime` folder, and its
+ * private text file with a global part; 02-GAPS-B3 M1, C1), the improver pass runs on them in a session
+ * (writeImproved, D-141, D-142); where no one can be asked it does not start, and the outcome carries
+ * improverNotOfferedWarning. The warnings of the hand-out's git check are its untrackedParts.
  */
 async function regenApply(
   io: InitIo,
@@ -4945,14 +4961,15 @@ async function regenApply(
   const allowed = privatePaths(privates.map(owed => owed.folder))
   const withParts = new Set(handed.repoParts !== null && handed.repoParts.length > 0 ? [role.id] : [])
   const isImproverReady = input.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
-  const built = isImproverReady ? builtRoleFiles(steps, locations.root, withParts) : []
-  // A private text file of the header alone has nothing to improve.
-  const offered = built.filter(file => file.repoPath !== null || (privateRole?.parts.length ?? 0) > 0)
-  const isOffered = offered.length > 0 && handed.isSession
+  const privateFolders = new Set(privateRole !== null && privateRole.parts.length > 0 ? [privateRole.folder] : [])
+  const roleFolders = handed.folder === null ? new Map<string, string>() : new Map([[role.id, handed.folder]])
+  const filter = { repoIds: withParts, privateFolders, roleFolders }
+  const built = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
+  const isOffered = built.length > 0 && handed.isSession
   const written = isOffered
-    ? await writeImproved(io, host, { locations, input: applyInput, steps, offered, allowed })
+    ? await writeImproved(io, host, { locations, input: applyInput, steps, offered: built, allowed })
     : await writeSteps(io, host, locations, steps, allowed)
-  const notOffered = offered.length > 0 && !handed.isSession ? [improverNotOfferedWarning(role.id)] : []
+  const notOffered = built.length > 0 && !handed.isSession ? [improverNotOfferedWarning(role.id)] : []
 
   const improverWarnings = [...written.improverWarnings, ...notOffered]
 

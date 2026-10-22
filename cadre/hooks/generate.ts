@@ -180,19 +180,29 @@ function partBody(text: string): string {
 }
 
 /**
+ * The text of a built role file after its header line (02-GAPS-B3 N5): each part under its marker, a blank line before
+ * each, and one final newline; '\n' with no part.
+ */
+export function partsBody(parts: readonly InstructionPart[]): string {
+  if (parts.length === 0) return '\n'
+  const blocks = parts.map(part => `${partMarker(part)}\n${partBody(part.text)}`)
+
+  return `\n\n${blocks.join('\n\n')}\n`
+}
+
+/**
  * The text of `.cadre/<id>/CLAUDE.md`, the instructions built for a role from the parts it was given (G-02-1f Storage
- * split, D-140). The first line says the file is built and how to change it, a blank line follows, then each part in
- * the order given, which is read order: its marker (partMarker) and its text as read (partBody), a blank line between
- * two parts. Every line ends in `\n`, and the text ends with exactly one. It holds whatever parts it is given:
+ * split, D-140). The first line says the file is built and how to change it, then partsBody: a blank line, then each
+ * part in the order given, which is read order, its marker (partMarker) and its text as read (partBody), a blank line
+ * between two parts. Every line ends in `\n`, and the text ends with exactly one. It holds whatever parts it is given:
  * desiredFiles gives it a role's repo parts only, so no part of the global CLAUDE.md reaches a repo file (T-02-69).
  */
 export function roleClaudeMdText(id: string, parts: readonly InstructionPart[]): string {
   const header =
     `<!-- cadre: instructions for role ${id}, built from this repo's CLAUDE.md files, rules and docs. ` +
     `Edit the originals and run /cadre regen ${id}; this file is rebuilt. -->`
-  const blocks = parts.map(part => `${partMarker(part)}\n${partBody(part.text)}`)
 
-  return `${[header, ...blocks].join('\n\n')}\n`
+  return `${header}${partsBody(parts)}`
 }
 
 /** A word a shell reads as itself without quotes: letters, digits and `_ . / = : @ + -`. */

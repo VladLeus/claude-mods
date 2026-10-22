@@ -4139,9 +4139,11 @@ function builtFilesRecord(isInstalled = true): Record<string, string> {
 }
 
 /**
- * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: the
- * rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and once the improver ran for BE's
- * built CLAUDE.md, `files` holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f, D-141).
+ * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: each
+ * write that lands is put in `files`, as a disk holds it, so the improver finds each built file as apply wrote it
+ * (02-GAPS-B3 M1); the rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and once the
+ * improver ran for BE's built CLAUDE.md, `files` holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f,
+ * D-141).
  */
 function improvingHost(
   files: Record<string, string>,
@@ -4155,6 +4157,12 @@ function improvingHost(
   const logged = withHostEvents(host)
   const io: HostIo = {
     ...logged.io,
+    write: async (path, text) => {
+      const isWritten = await logged.io.write(path, text)
+      if (isWritten) files[path] = text
+
+      return isWritten
+    },
     run: async (argv, options) => {
       const result = await logged.io.run(argv, options)
       if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
@@ -8371,6 +8379,13 @@ describe('regen by part hashes (G-02-1f)', () => {
     const host = memHost(hostWorld({ runs: REGEN_RUNS }))
     const io: HostIo = {
       ...host.io,
+      // Each write that lands is on the disk, so the improver finds the rebuilt file as apply wrote it (02-GAPS-B3 M1).
+      write: async (path, text) => {
+        const isWritten = await host.io.write(path, text)
+        if (isWritten) files[path] = text
+
+        return isWritten
+      },
       run: async (argv, options) => {
         const result = await host.io.run(argv, options)
         if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = improved
