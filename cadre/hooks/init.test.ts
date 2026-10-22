@@ -28,6 +28,7 @@ import type {
   MemoryItem,
   PaneKey,
   Plan,
+  PortEntry,
   PortStat,
   RepoScan,
   RoleChange,
@@ -49,6 +50,7 @@ import {
   improverLine,
   improverNoChangeNote,
   instructionsRecordPath,
+  otherChangesWarning,
   instructionsRecordText,
   privateClaudeMdPath,
   privateClaudeMdText,
@@ -4169,6 +4171,33 @@ describe('improver in init (G-02-1f)', () => {
     const reply = await runInit(memIo(builtWorld(), PARTS_DECLINED).io, { dryRun: false, host: host.io })
     expect(improverCalls(host)).toEqual([])
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
+  })
+
+  test('another file the improver changed is named in the reply, neither undone nor recorded (D-141)', async () => {
+    const files = builtFilesRecord()
+    const dirs: Record<string, readonly PortEntry[]> = { '/repo/.git': [], ...FULL_DIRS }
+    const edited = '{"id":"be","edited":true}\n'
+    const { io: improving, host } = improvingHost(files)
+    const io: HostIo = {
+      ...improving,
+      run: async (argv, options) => {
+        const result = await improving.run(argv, options)
+        if (argv.join(' ') !== improverArgv(BE_CLAUDE_MD).join(' ')) return result
+        files['/repo/.cadre/be/role.json'] = edited
+        dirs['/repo/.cadre/be'] = [entry('CLAUDE.md'), entry('role.json')]
+
+        return result
+      },
+    }
+    const run = memIo(builtWorld({ files, dirs }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+    const reply = await runInit(run.io, { dryRun: false, host: io })
+    const warning = otherChangesWarning('.cadre/be', ['.cadre/be/role.json'])
+    expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([`warning: ${warning}`])
+    const roleWrites = host.writes.filter(write => write.path === '/repo/.cadre/be/role.json')
+    expect(roleWrites).toHaveLength(1)
+    expect(writtenManifestText(host)).toContain(await sha256Hex(roleWrites[0]?.text ?? ''))
+    expect(writtenManifestText(host)).not.toContain(await sha256Hex(edited))
+    expect(run.shown.filter(block => block.key === 'improver').at(-1)?.lines).toContain('  .cadre/be/role.json')
   })
 
   test('a dry run holds no host: it runs no improver and asks, shows and replies nothing of it', async () => {

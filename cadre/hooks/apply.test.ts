@@ -52,6 +52,8 @@ import {
   listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
+  otherChangesWarning,
+  otherFilesLines,
   parseConflictAnswer,
   pluginInstallArgv,
   privateCheckPaths,
@@ -64,6 +66,7 @@ import {
   pythonProblem,
   restoreSteps,
   setupAfterInstalls,
+  uncheckedFilesWarning,
   writeProblem,
 } from './apply'
 import type {
@@ -1570,7 +1573,8 @@ describe('improver pass (G-02-1f)', () => {
     }
     const linkRun = memIo(memWorld({ files: linked.files, dirs: linked.dirs, realPaths }), {})
     const outcome = await improveBuiltFiles(linkRun.io, linking, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
-    expect([outcome.restores, linkRun.asked, linkRun.reads]).toEqual([[BE_BUILT_FILE], [], [BE_BUILT_PATH]])
+    const builtReads = linkRun.reads.filter(path => path === BE_BUILT_PATH)
+    expect([outcome.restores, linkRun.asked, builtReads]).toEqual([[BE_BUILT_FILE], [], [BE_BUILT_PATH]])
     expect(linkRun.shown).toEqual([
       { key: 'notes', title: 'Notes', lines: [improverUnreadableNote(BE_BUILT_REPO_PATH)] },
     ])
@@ -1655,5 +1659,184 @@ describe('improver pass (G-02-1f)', () => {
   test('the reply line counts the built files changed and accepted, of all the pass ran for', () => {
     expect(improverLine({ changed: 1, total: 2 })).toBe('Improver: 1 of 2 built files changed and accepted.')
     expect(improverLine({ changed: 0, total: 1 })).toBe('Improver: 0 of 1 built files changed and accepted.')
+  })
+})
+
+/** BE's role folder in the fixture repo: the folder its improver run starts in. */
+const BE_FOLDER = '/repo/.cadre/be'
+
+/** A file of BE's role folder, by its name. */
+function beFile(name: string): string {
+  return `${BE_FOLDER}/${name}`
+}
+
+/** builtDisk with more of BE's role folder: role.json, ROLE.md and kickoff.txt beside the built CLAUDE.md. */
+function roleFolderDisk(): Disk {
+  const disk = builtDisk()
+  for (const [name, content] of [['role.json', '{"id":"be"}\n'], ['ROLE.md', '# BE\n'], ['kickoff.txt', 'go\n']]) {
+    applyEdit(disk, beFile(name ?? ''), content ?? '')
+  }
+
+  return disk
+}
+
+/** The rows of the improver block under the other-files heading: each one a shown path. */
+function otherRows(run: MemRun): string[] {
+  const lines = run.shown.findLast(block => block.key === 'improver')?.lines ?? []
+  const at = lines.findIndex(line => line.startsWith('Other files changed by the improver in '))
+
+  return at < 0 ? [] : lines.slice(at)
+}
+
+describe('improver other changes (G-02-1f, D-141)', () => {
+  test('one other file changed, one added and one removed are named in the block and in a reply warning', async () => {
+    const disk = roleFolderDisk()
+    const edits = {
+      [BE_BUILT_PATH]: BE_IMPROVED,
+      [beFile('role.json')]: '{"id":"be","edited":true}\n',
+      [beFile('ROLE.md')]: null,
+      [beFile('notes.md')]: 'a note\n',
+    }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const others = ['.cadre/be/ROLE.md', '.cadre/be/notes.md', '.cadre/be/role.json']
+    expect(outcome.warnings).toEqual([
+      'the improver also changed 3 other files in .cadre/be: .cadre/be/ROLE.md, .cadre/be/notes.md, ' +
+        '.cadre/be/role.json; review them (listed in the pane)',
+    ])
+    expect(outcome.warnings).toEqual([otherChangesWarning('.cadre/be', others)])
+    expect(otherRows(run)).toEqual(otherFilesLines('.cadre/be', others))
+    expect(otherFilesLines('.cadre/be', others)).toEqual([
+      'Other files changed by the improver in .cadre/be:',
+      '  .cadre/be/ROLE.md',
+      '  .cadre/be/notes.md',
+      '  .cadre/be/role.json',
+    ])
+    expect(run.shown.at(-1)?.lines.slice(0, 1)).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
+    expect([outcome.accepted, outcome.restores]).toEqual([new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]), []])
+    expect(disk.files[beFile('role.json')]).toBe('{"id":"be","edited":true}\n')
+  })
+
+  test('past three other files the warning counts the rest, while the block names every one', async () => {
+    const disk = roleFolderDisk()
+    const names = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+    const edits = Object.fromEntries(names.map(name => [beFile(name), `${name}\n`]))
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk)
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(outcome.warnings).toEqual([
+      'the improver also changed 5 other files in .cadre/be: .cadre/be/a.md, .cadre/be/b.md, .cadre/be/c.md, ' +
+        '+2 more; review them (listed in the pane)',
+    ])
+    expect(otherRows(run)).toHaveLength(6)
+    expect(otherChangesWarning('.cadre/be', ['.cadre/be/a.md'])).toBe(
+      'the improver also changed 1 other file in .cadre/be: .cadre/be/a.md; review them (listed in the pane)',
+    )
+    expect(otherFilesLines('.cadre/be', [])).toEqual([])
+  })
+
+  test('other changes are reported when the built file is unchanged or the run failed; none is undone', async () => {
+    const results: readonly (HostRun | null)[] = [
+      null,
+      { exitCode: 1, stdout: '', stderr: '' },
+      { exitCode: 0, stdout: '', stderr: '' },
+    ]
+    for (const result of results) {
+      const disk = roleFolderDisk()
+      const edits = { [beFile('role.json')]: '{"id":"be","edited":true}\n' }
+      const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]), [beRun(result)])
+      const run = diskIo(disk)
+      const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+      expect(outcome).toEqual({
+        accepted: new Map(),
+        restores: [],
+        warnings: [otherChangesWarning('.cadre/be', ['.cadre/be/role.json'])],
+        changed: 0,
+        total: 1,
+      })
+      expect(run.shown.filter(block => block.key === 'improver').map(block => block.lines)).toEqual([
+        otherFilesLines('.cadre/be', ['.cadre/be/role.json']),
+      ])
+      expect(run.asked).toEqual([])
+    }
+  })
+
+  test('two sub-folder levels are listed, a link is read, never listed into; deeper files are not seen', async () => {
+    const disk = roleFolderDisk()
+    const runtime = beFile('.runtime')
+    applyEdit(disk, `${runtime}/stamp`, '1\n')
+    applyEdit(disk, `${runtime}/instructions/deep/x.md`, 'deep\n')
+    disk.files[`${runtime}/instructions/notes.md`] = 'linked memory\n'
+    disk.dirs[BE_FOLDER] = [...(disk.dirs[BE_FOLDER] ?? []), entry('.runtime', 'dir')]
+    disk.dirs[runtime] = [...(disk.dirs[runtime] ?? []), entry('instructions', 'dir')]
+    disk.dirs[`${runtime}/instructions`] = [link('notes.md'), link('shared'), entry('deep', 'dir')]
+    const edits = {
+      [`${runtime}/stamp`]: '2\n',
+      [`${runtime}/instructions/notes.md`]: 'linked memory, edited\n',
+      [`${runtime}/instructions/deep/x.md`]: 'deep, edited\n',
+    }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk)
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const others = ['.cadre/be/.runtime/instructions/notes.md', '.cadre/be/.runtime/stamp']
+    expect(outcome.warnings).toEqual([otherChangesWarning('.cadre/be', others)])
+    expect(run.listed.filter(path => path.endsWith('/shared') || path.endsWith('/notes.md'))).toEqual([])
+    expect(run.listed).not.toContain(`${runtime}/instructions/deep`)
+    expect(run.listed.filter(path => path === `${runtime}/instructions`)).toHaveLength(2)
+  })
+
+  test('a file that cannot be read after the run counts as changed; one unreadable both times does not', async () => {
+    const disk = roleFolderDisk()
+    const unknownPaths: string[] = [beFile('kickoff.txt')]
+    const host = memHost(hostWorld({}))
+    const breaking: HostIo = {
+      ...host.io,
+      run: async (argv, options) => {
+        unknownPaths.push(beFile('role.json'))
+
+        return host.io.run(argv, options)
+      },
+    }
+    const run = memIo(memWorld({ files: disk.files, dirs: disk.dirs, unknownPaths }), {})
+    const outcome = await improveBuiltFiles(run.io, breaking, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(outcome.warnings).toEqual([otherChangesWarning('.cadre/be', ['.cadre/be/role.json'])])
+  })
+
+  test('past 200 files the rest are counted and reported as not checked; only 200 are read per look', async () => {
+    const disk = builtDisk()
+    const names = Array.from({ length: 205 }, (_, at) => `f${String(at).padStart(3, '0')}.md`)
+    for (const name of names) applyEdit(disk, beFile(name), `${name}\n`)
+    const edits = { [beFile('f204.md')]: 'changed past the cap\n', [beFile('a-new.md')]: 'new\n' }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk)
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    // f199 to f204 and role.json lie past the first 200 files of one look or the other: their change is not checked.
+    expect(outcome.warnings).toEqual([
+      otherChangesWarning('.cadre/be', ['.cadre/be/a-new.md']),
+      uncheckedFilesWarning(7, '.cadre/be'),
+    ])
+    expect(uncheckedFilesWarning(7, '.cadre/be')).toBe('7 files in .cadre/be were not checked')
+    expect(uncheckedFilesWarning(1, '.cadre/be')).toBe('1 file in .cadre/be was not checked')
+    const folderReads = run.reads.filter(path => path.startsWith(`${BE_FOLDER}/`) && path !== BE_BUILT_PATH)
+    expect(folderReads).toHaveLength(400)
+  })
+
+  test('a private run reports a file added in its instructions/ folder, named from the home folder', async () => {
+    const disk = builtDisk()
+    const added = `${SECURITY_DIR}/instructions/notes.md`
+    const { io } = editingHost(disk, new Map([[SECURITY_TEXT_FILE, { [added]: 'a note\n' }]]))
+    const outcome = await improveBuiltFiles(diskIo(disk).io, io, [SECURITY_BUILT_FILE], DEFAULT_LOCATIONS)
+    const folder = '~/.claude/cadre/repo-1a2b3c4d/security/instructions'
+    expect(outcome.warnings).toEqual([otherChangesWarning(folder, [`${folder}/notes.md`])])
+  })
+
+  test('a run with no other change adds no warning and no other-files rows', async () => {
+    const disk = roleFolderDisk()
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect([outcome.warnings, otherRows(run)]).toEqual([[], []])
+    expect(run.reads.filter(path => path === beFile('role.json'))).toHaveLength(2)
   })
 })
