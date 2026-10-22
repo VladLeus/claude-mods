@@ -43,11 +43,17 @@ import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './
 import type { RegenRead } from './init'
 import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { INBOX_FILE, MANIFEST_PATH, PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
+import {
+  INBOX_FILE,
+  MANIFEST_PATH,
+  PRIVATE_INSTRUCTIONS_LINK,
+  PROBE_EXPECTATIONS_FILE,
+  RUNTIME_STAMP_FILE,
+  stableJson,
+} from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { reportText } from './render'
 import { parseManifest, readRepoFile } from './scan'
-import { PRIVATE_INSTRUCTIONS_LINK } from './scope'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeJsonPathOf,
@@ -246,6 +252,17 @@ function unstatedLinkRefusal(id: string, name: string): string {
   return `${what}: remove it and run /cadre start ${role} again`
 }
 
+/**
+ * The refusal when .runtime/private-instructions is a real file or folder, not a link (02-GAPS-B2 N7): a
+ * force-committed folder there would load as the role's private instructions.
+ */
+export function privateLinkRefusal(id: string): string {
+  const role = reportText(id)
+  const what = `.cadre/${role}/.runtime/${PRIVATE_INSTRUCTIONS_LINK} is a real file or folder, not a link`
+
+  return `${what}: remove it and run /cadre start ${role} again`
+}
+
 /** Whether `.runtime` lists a file a render writes as a link while the stat of that file shows no link (#72 A2). */
 function isUnstatedLink(input: RenderInput, runtime: string, name: string): boolean {
   const entries = input.listings.get(runtime) ?? []
@@ -271,7 +288,8 @@ function isUnsafeFile(stat: PortStat | null): boolean {
  * Anything else would let a step write, link or remove through a link, or write onto a folder. A file a render writes
  * that the listing of `.runtime` shows as a link while its stat does not refuses too (unstatedLinkRefusal, #72 A2),
  * so no write rests on what the host's stat makes of a dangling link; a `.runtime` with no listing is taken as empty,
- * as every folder with none is.
+ * as every folder with none is. A real file or folder at `.runtime/private-instructions` refuses last
+ * (privateLinkRefusal, 02-GAPS-B2 N7): the launcher adds that path, so it is never kept.
  */
 function refusalOf(input: RenderInput, runtime: string): string | null {
   const role = statAt(input, roleFolder(input.root, input.id))
@@ -281,6 +299,7 @@ function refusalOf(input: RenderInput, runtime: string): string | null {
   if (folders.some(isUnsafeFolder) || files.some(isUnsafeFile)) return runtimeRefusal(input.id)
   const unstated = WRITTEN_FILES.find(name => isUnstatedLink(input, runtime, name))
   if (unstated !== undefined) return unstatedLinkRefusal(input.id, unstated)
+  if (isRealEntry(statAt(input, `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`))) return privateLinkRefusal(input.id)
 
   return null
 }
@@ -361,6 +380,8 @@ function mkdirFolders(runtime: string, links: readonly OverlayLink[]): string[] 
  * The making of the folder the plan's private instructions link points at (D-140 q1-b): one mkdir when the plan links
  * `.runtime/private-instructions`, so the folder the launcher adds there is always there, empty when the role has no
  * private part; none when the plan has no such link. Its target comes from the role memory folder, never from disk.
+ * The link itself is never kept with a warning: a real file or folder there refuses the render (privateLinkRefusal,
+ * 02-GAPS-B2 N7).
  */
 function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
   const link = input.plan.links.find(candidate => candidate.path === `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`)
@@ -410,7 +431,8 @@ function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
  * real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or
  * replace a file); then the files of fileWrites are written, and the stamp last. A render that stops at any step before
  * the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that refusalOf refuses has no step at
- * all.
+ * all; a real file or folder at the private instructions link is such a refusal, never a kept path with a warning
+ * (02-GAPS-B2 N7).
  */
 export function renderSteps(input: RenderInput): RenderResult {
   const runtime = runtimeFolder(input.root, input.id)

@@ -27,6 +27,7 @@ import {
   isObject,
   MAX_READ_BYTES,
   parseJsonValue,
+  relativeTo,
   sortedUnique,
   trimSlash,
   utf8Bytes,
@@ -161,9 +162,12 @@ export const HANDOUT_DISMISSED_REASON =
 /** How a part with no heading is named: the text before the first heading of its file. */
 const TOP_OF_FILE = '(top of file)'
 
-/** Where a part comes from, as the pane and a topic's context line show it: its file, then its heading (G-02-1f). */
+/**
+ * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, then its heading
+ * (G-02-1f; 02-GAPS-B2 N3: the file is cleaned only where it is shown).
+ */
 function sourceText(part: InstructionPart): string {
-  return `${part.file} > ${part.heading === '' ? TOP_OF_FILE : part.heading}`
+  return `${clean(part.file)} > ${part.heading === '' ? TOP_OF_FILE : part.heading}`
 }
 
 /** The parts a topic holds, in the topic's order; an id no part has is skipped. */
@@ -445,8 +449,11 @@ export async function repoInstructionNames(
   return { rules, hasAgentsMd: agents?.kind === 'file' }
 }
 
-/** A markdown link `[text](target)`: its target, up to the first white space or closing parenthesis. */
-const MARKDOWN_LINK = /\[[^\]\n]*\]\(\s*([^\s)]+)[^)\n]*\)/g
+/**
+ * A markdown link `[text](target)`: its target, up to the first white space or closing parenthesis. It is bounded and
+ * atomic (a lookahead capture with a backreference), so a line with many unclosed links is linear (02-GAPS-B2 M1).
+ */
+const MARKDOWN_LINK = /\[[^\]\n]{0,512}\]\(\s{0,16}(?=([^\s)]{1,512}))\1(?:\s[^)\n]{0,512})?\)/g
 
 /** A URI scheme at the start of a link target, such as `https:` or `mailto:`. */
 const LINK_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
@@ -531,6 +538,14 @@ export function repoImportWarning(file: string): string {
   return `${file} is imported by a repo file and is outside the repo: not read`
 }
 
+/**
+ * The warning for a file a repo file imports or links to that is a dotfile, under .git/ or not a .md file (02-GAPS-B2
+ * M3): it is not read.
+ */
+export function unfollowedImportWarning(file: string): string {
+  return `${file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it`
+}
+
 /** The warning when the read stopped at its total cap (G-02-1f Sources): how many files it did not read. */
 export function totalCapWarning(count: number): string {
   return `stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB in total: ${counted(count, 'file', 'files')} not read`
@@ -546,6 +561,13 @@ type Place =
   | { readonly kind: 'repo'; readonly path: string; readonly relPath: string }
   | { readonly kind: 'global'; readonly path: string }
   | { readonly kind: 'outside'; readonly path: string }
+
+/**
+ * How the read reached a path (02-GAPS-B2 M3): `repo-link` for an import or a doc link of a repo file, which may be
+ * followed only to a plain .md file in the repo (isFollowedLink); `own` for every other path the read starts from or
+ * reaches.
+ */
+type Reach = 'own' | 'repo-link'
 
 /** A file the read split into parts: its text, the folder its imports resolve against, and its source. */
 type ReadFile = {
@@ -610,11 +632,34 @@ function placeOf(path: string, state: ReadState): Place {
   return { kind: 'outside', path }
 }
 
-/** A place as a part and a warning name it: repo-relative in the repo, else in display form (`~/...`). */
+/** A place as a warning names it: repo-relative in the repo, cleaned, else in display form (`~/...`). */
 function fileOf(place: Place, sources: InstructionSources): string {
   if (place.kind === 'repo') return clean(place.relPath)
 
   return displayPath(place.path, sources.home, sources.root, sources.configDir)
+}
+
+/**
+ * A place as a part names it (G-02-1f): the raw repo-relative path in the repo, else the display form, as fileOf gives
+ * it. The raw repo-relative path is the part's identity; it is cleaned only where shown (02-GAPS-B2 N3).
+ */
+function partFileOf(place: Exclude<Place, { readonly kind: 'outside' }>, sources: InstructionSources): string {
+  if (place.kind === 'repo') return place.relPath
+
+  return fileOf(place, sources)
+}
+
+/**
+ * Whether a repo file's import or doc link may be followed to this repo-relative path (02-GAPS-B2 M3): a .md file that
+ * is not a dotfile and has no .git segment, so a hostile @./.env or .git/config is never read.
+ */
+function isFollowedLink(relPath: string): boolean {
+  const segments = relPath.split('/')
+  const last = segments.at(-1) ?? ''
+  if (segments.includes('.git')) return false
+  if (last.startsWith('.')) return false
+
+  return last.endsWith(MARKDOWN_EXTENSION)
 }
 
 /** The folder a path is in: what its imports resolve against. */
@@ -651,14 +696,15 @@ async function addParts(state: ReadState, file: string, source: PartSource, text
 /**
  * A text the port read, kept within the total (G-02-1f Sources): when it would take the read past MAX_TOTAL_BYTES the
  * read stops and the file is counted unread; else it is split into hashed parts and given back for its imports, and a
- * repo file is kept for the docs it links to.
+ * repo file is kept for the docs it links to. The parts name their file by partFileOf: the raw repo-relative path is
+ * the part's identity; it is cleaned only where shown (02-GAPS-B2 N3).
  */
 async function keptText(
   state: ReadState,
   place: Exclude<Place, { readonly kind: 'outside' }>,
   text: string,
 ): Promise<ReadFile | null> {
-  const file = fileOf(place, state.sources)
+  const file = partFileOf(place, state.sources)
   const bytes = utf8Bytes(text)
   const total = state.sizes.reduce((sum, size) => sum + size, 0)
   if (total + bytes > MAX_TOTAL_BYTES) return leftUnread(state, file)
@@ -674,17 +720,23 @@ async function keptText(
 /**
  * Reads one file the read reaches, once (G-02-1f Sources). A path outside the repo and the config folder is not read
  * (outsideWarning), and neither is one a repo file imports from outside the repo (repoImportWarning, night-run
- * AUTO-PICK #3). Once the read has stopped at its total, a file is only counted. A repo file is read through
- * readRepoFile, so a link out of the repo is never read; a config-folder file through the port. A missing file is
- * quiet; one the port could not read and one over MAX_READ_BYTES are warnings.
+ * AUTO-PICK #3). A repo file's import or doc link is followed only to a .md file that is not a dotfile and not under
+ * .git/ (isFollowedLink; else unfollowedImportWarning, 02-GAPS-B2 M3). Once the read has stopped at its total, a file
+ * is only counted. A repo file is read through readRepoFile, so a link out of the repo is never read; a config-folder
+ * file through the port. A missing file is quiet; one the port could not read and one over MAX_READ_BYTES are
+ * warnings.
  */
-async function readOne(state: ReadState, path: string, isRepoImport: boolean): Promise<ReadFile | null> {
+async function readOne(state: ReadState, path: string, reach: Reach): Promise<ReadFile | null> {
   if (state.seen.has(path)) return null
   state.seen.add(path)
   const place = placeOf(path, state)
   const file = fileOf(place, state.sources)
-  if (place.kind === 'outside') return warned(state, isRepoImport ? repoImportWarning(file) : outsideWarning(file))
-  if (isRepoImport && place.kind === 'global') return warned(state, repoImportWarning(file))
+  const isRepoLink = reach === 'repo-link'
+  if (place.kind === 'outside') return warned(state, isRepoLink ? repoImportWarning(file) : outsideWarning(file))
+  if (isRepoLink && place.kind === 'global') return warned(state, repoImportWarning(file))
+  if (isRepoLink && place.kind === 'repo' && !isFollowedLink(place.relPath)) {
+    return warned(state, unfollowedImportWarning(file))
+  }
   if (state.unread.length > 0) return leftUnread(state, file)
   const read =
     place.kind === 'repo'
@@ -705,12 +757,12 @@ async function readOne(state: ReadState, path: string, isRepoImport: boolean): P
  */
 async function readImports(state: ReadState, from: ReadFile, level: number, handled: string[]): Promise<void> {
   if (level >= MAX_IMPORT_LEVELS) return
-  const isRepoImport = from.source === 'repo'
+  const reach: Reach = from.source === 'repo' ? 'repo-link' : 'own'
   for (const path of claudeMdImports(from.text, from.dir, state.sources.home ?? '')) {
     if (handled.length >= MAX_IMPORTED_FILES) return
     if (state.seen.has(path)) continue
     handled.push(path)
-    const read = await readOne(state, path, isRepoImport)
+    const read = await readOne(state, path, reach)
     if (read !== null) await readImports(state, read, level + 1, handled)
   }
 }
@@ -718,7 +770,7 @@ async function readImports(state: ReadState, from: ReadFile, level: number, hand
 /** The global CLAUDE.md, then its imports depth first, with their own budget; nothing with no config folder. */
 async function readGlobal(state: ReadState): Promise<void> {
   if (state.userDir === null) return
-  const global = await readOne(state, joinedPath(state.userDir, 'CLAUDE.md'), false)
+  const global = await readOne(state, joinedPath(state.userDir, 'CLAUDE.md'), 'own')
   if (global === null) return
   await readImports(state, global, 0, [])
 }
@@ -727,7 +779,7 @@ async function readGlobal(state: ReadState): Promise<void> {
 async function readChain(state: ReadState): Promise<void> {
   const files: ReadFile[] = []
   for (const shown of state.sources.chain) {
-    const read = await readOne(state, chainPath(shown, state.sources), false)
+    const read = await readOne(state, chainPath(shown, state.sources), 'own')
     if (read !== null) files.push(read)
   }
   const handled: string[] = []
@@ -745,13 +797,13 @@ async function readRules(state: ReadState): Promise<void> {
 
     return
   }
-  for (const name of sortedUnique(rules)) await readOne(state, joinedPath(root, `${RULES_FOLDER}/${name}`), false)
+  for (const name of sortedUnique(rules)) await readOne(state, joinedPath(root, `${RULES_FOLDER}/${name}`), 'own')
 }
 
 /** The root AGENTS.md, only when it was a file before the consent (G-02-1f Sources). */
 async function readAgentsMd(state: ReadState): Promise<void> {
   if (!state.sources.hasAgentsMd) return
-  await readOne(state, joinedPath(state.sources.root, AGENTS_FILE), false)
+  await readOne(state, joinedPath(state.sources.root, AGENTS_FILE), 'own')
 }
 
 /**
@@ -762,7 +814,7 @@ async function readAgentsMd(state: ReadState): Promise<void> {
 async function readDocs(state: ReadState): Promise<void> {
   const linked = state.repoFiles.flatMap(file => referencedDocs(file.text, file.dir, state.sources.root))
   const docs = Array.from(new Set(linked)).filter(path => !state.seen.has(path))
-  for (const path of docs.slice(0, MAX_REFERENCED_DOCS)) await readOne(state, path, true)
+  for (const path of docs.slice(0, MAX_REFERENCED_DOCS)) await readOne(state, path, 'repo-link')
   const rest = docs.length - MAX_REFERENCED_DOCS
   if (rest > 0) state.warnings.push(moreDocsWarning(rest))
 }
@@ -902,17 +954,20 @@ export async function readMemories(
  * the repo files read link to (one level, at most 20; readDocs). Each file is read once. A path in the repo is a
  * 'repo' part, read only through readRepoFile, so a link that leads out of the repo is never read; a path in the
  * config folder is a 'global' part; any other path is not read and gets a warning, and so does any file a repo file
- * imports from outside the repo, the config folder included (night-run AUTO-PICK #3). Each file is read with
- * MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not read;
- * parts past the 200th are not offered. A missing file is quiet, and one the port could not read is a warning. Last
- * come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. The text is held
- * in memory for this run only: nothing is written.
+ * imports from outside the repo, the config folder included (night-run AUTO-PICK #3). A repo file's imports and doc
+ * links are followed only to .md files that are not dotfiles and not under .git/ (02-GAPS-B2 M3). Each file is read
+ * with MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not
+ * read; parts past the 200th are not offered. A missing file is quiet, and one the port could not read is a warning.
+ * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
+ * folder inside the repo is not used, as userFolderOf never uses one (02-GAPS-B2 N10). The text is held in memory for
+ * this run only: nothing is written.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
+  const userDir = userDirOf(sources)
   const state: ReadState = {
     io,
     sources,
-    userDir: userDirOf(sources),
+    userDir: userDir !== null && relativeTo(userDir, sources.root) === null ? userDir : null,
     parts: [],
     warnings: [],
     seen: new Set(),
@@ -968,11 +1023,14 @@ function preview(text: string): string {
   return Array.from(text.replace(LINE_BREAKS, ' ').trim()).slice(0, MAX_PREVIEW_CHARS).join('')
 }
 
-/** One part as the grouping prompt lists it: id, file, heading or `(top of file)`, and the start of its text. */
+/**
+ * One part as the grouping prompt lists it: id, file (cleaned, 02-GAPS-B2 N3), heading or `(top of file)`, and the
+ * start of its text.
+ */
 function partLine(part: InstructionPart): string {
   const heading = part.heading === '' ? TOP_OF_FILE : part.heading
 
-  return `${part.id} | ${part.file} | ${heading} | ${preview(part.text)}`
+  return `${part.id} | ${clean(part.file)} | ${heading} | ${preview(part.text)}`
 }
 
 /** The prompt lines, then the errors of the previous reply, one per line, when there are any. */

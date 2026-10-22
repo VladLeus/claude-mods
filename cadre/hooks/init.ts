@@ -124,7 +124,15 @@ import {
   utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
-import { desiredFiles } from './generate'
+import {
+  desiredFiles,
+  GIT_TRACKING_UNKNOWN_WARNING,
+  gitTrackedArgv,
+  repoPartFiles,
+  trackedFilesOf,
+  trackedRepoParts,
+  untrackedPartsWarning,
+} from './generate'
 import { handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { sha256Hex } from './hash'
@@ -2605,6 +2613,8 @@ export async function planStep(
  * - `installed`: each security plugin key whose install ran after Confirm and exited 0 (decision #39);
  * - `installProblems`: the text of each security plugin that was not installed, with the command to run by hand
  *   (decision #39); never fatal to the apply;
+ * - `untrackedParts`: the warning of each source file whose repo parts were left out of the built files because git
+ *   does not track it, or GIT_TRACKING_UNKNOWN_WARNING when git could not be asked (02-GAPS-B2 M3);
  * - `manifestSkipped`: whether the manifest was not written because a write before it failed or was refused.
  */
 export type ApplyOutcome = {
@@ -2618,6 +2628,7 @@ export type ApplyOutcome = {
   readonly attended: readonly string[]
   readonly installed: readonly string[]
   readonly installProblems: readonly string[]
+  readonly untrackedParts: readonly string[]
   readonly manifestSkipped: boolean
 }
 
@@ -2688,6 +2699,7 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
     attended: [],
     installed: [],
     installProblems: [],
+    untrackedParts: [],
     manifestSkipped,
   }
 }
@@ -2699,9 +2711,11 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
  * refused. Then one `warning: ` line for each write writeProblem refused (its text), each write the host failed, each
  * chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each
  * framework command that failed (hunkFailureLine), the attended note when a failure made roles attended, each security
- * plugin that was not installed (its installProblems text, decision #39), and `manifestNote` (MANIFEST_SKIPPED_NOTE
- * unless the caller names another) when the manifest was skipped. Then, when security plugins were installed, the line
- * that names them and says to run /reload-plugins (installedLine). NEXT_STEP_NOTE comes last.
+ * plugin that was not installed (its installProblems text, decision #39), each source file whose repo parts were left
+ * out because git does not track it, or that git could not be asked (untrackedParts, 02-GAPS-B2 M3), and
+ * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. Then, when
+ * security plugins were installed, the line that names them and says to run /reload-plugins (installedLine).
+ * NEXT_STEP_NOTE comes last.
  */
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
@@ -2720,6 +2734,7 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
     ...outcome.hunkFailures.map(hunkFailureLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
     ...outcome.installProblems,
+    ...outcome.untrackedParts,
     ...(outcome.manifestSkipped ? [manifestNote] : []),
   ]
   const installed = outcome.installed.length > 0 ? [installedLine(outcome.installed)] : []
@@ -3201,6 +3216,38 @@ async function installPlugins(
   return { installed, installProblems }
 }
 
+/** How long the git tracked-files run may take. */
+const GIT_TRACKED_TIMEOUT_MS = 10_000
+
+/**
+ * The repo parts a plain init may write, with the warnings of those it leaves out (02-GAPS-B2 M3). With no repo part
+ * the map is given back unchanged and git is not asked. Else gitTrackedArgv runs at the repo root through the host:
+ * a run the host rejects or that exits non-zero keeps no repo part (trackedRepoParts with null) and warns
+ * GIT_TRACKING_UNKNOWN_WARNING, so the check fails closed; else only the parts of the files git named are kept, and
+ * each source file it did not name is an untrackedPartsWarning, in file order.
+ */
+async function trackedParts(
+  host: HostIo,
+  root: string,
+  repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
+): Promise<{
+  readonly repoParts: ReadonlyMap<string, readonly InstructionPart[]>
+  readonly warnings: readonly string[]
+}> {
+  const files = repoPartFiles(repoParts)
+  if (files.length === 0) return { repoParts, warnings: [] }
+  const run = await host.run(gitTrackedArgv(files), { cwd: root, timeoutMs: GIT_TRACKED_TIMEOUT_MS })
+  if (run === null || run.exitCode !== 0) {
+    return { repoParts: trackedRepoParts(repoParts, null), warnings: [GIT_TRACKING_UNKNOWN_WARNING] }
+  }
+  const tracked = trackedFilesOf(run.stdout)
+
+  return {
+    repoParts: trackedRepoParts(repoParts, tracked),
+    warnings: files.filter(file => !tracked.has(file)).map(untrackedPartsWarning),
+  }
+}
+
 /**
  * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
  * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
@@ -3219,17 +3266,21 @@ async function installPlugins(
  *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
  *    a problem (noHomeInstallText).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep, with each role's repo parts of the draft, repoPartsOf), all from the setup with the
- *    plugins just installed (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a
- *    Security role's settings enable claude-security once it is installed. The hunk runs above keep the setup of the
- *    scan.
+ *    again from the disk (planStep, with the repo parts 5a keeps), all from the setup with the plugins just installed
+ *    (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a Security role's
+ *    settings enable claude-security once it is installed. The hunk runs above keep the setup of the scan.
+ * 5a. Right before planStep, the repo parts of the draft (repoPartsOf) are checked against git (trackedParts,
+ *    02-GAPS-B2 M3): `git ls-files` runs once at the repo root through the host, under every git policy, and only the
+ *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
+ *    (untrackedParts). The dry run holds no host, so its plan may still list a built file whose untracked parts apply
+ *    then leaves out.
  * 6. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
  *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
  *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
  *    `.cadre-new` copy, as it does for a file that became a conflict after the questions.
- * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), and
- *    the plugins installed and the install problems (installed, installProblems), which the reply prints, each failure
- *    with the command to run (D-106, decision #39).
+ * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
+ *    plugins installed and the install problems (installed, installProblems), and the untracked-parts warnings of 5a
+ *    (untrackedParts), which the reply prints, each failure with the command to run (D-106, decision #39).
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 export async function applyConfirmed(
@@ -3271,6 +3322,7 @@ export async function applyConfirmed(
   const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
   const scopes = compileAll(roles, repoDefault, { ...gathered, setup }, attended, launchStart)
+  const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
   const planned = await planStep(io, {
     roles,
     repoDefault,
@@ -3281,7 +3333,7 @@ export async function applyConfirmed(
     repo: gathered.repo,
     locations,
     readUserMcp: draft.readUserMcp,
-    repoParts: repoPartsOf(draft.instructions),
+    repoParts: tracked.repoParts,
   })
   const steps = await applySteps({ ...planned, choices })
   const written = await writeSteps(io, host, locations.root, steps)
@@ -3292,6 +3344,7 @@ export async function applyConfirmed(
     attended: failures.filter(run => required.has(run.key)).map(run => run.key),
     installed: installs.installed,
     installProblems: installs.installProblems,
+    untrackedParts: tracked.warnings,
   }
 
   return accepted({ planned, outcome })

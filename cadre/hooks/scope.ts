@@ -24,6 +24,7 @@ import {
 } from './assign'
 import { compareText, sortedUnique } from './facts'
 import { freezeRows } from './freeze'
+import { PRIVATE_INSTRUCTIONS_LINK } from './plan'
 import { cardList, reportText, shown } from './render'
 import { chainLines, standsFor } from './roles'
 
@@ -355,12 +356,6 @@ function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay']
 
   return { skills, agents }
 }
-
-/**
- * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder
- * (D-140 q1-b, q2-a), which the launcher adds with `--add-dir` and /cadre start makes on every render.
- */
-export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
 
 /**
  * The launcher flags as argv tokens, a flag and its value each their own token, so a launcher can quote every token

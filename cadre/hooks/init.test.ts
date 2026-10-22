@@ -3607,6 +3607,12 @@ function trackedRun(files: readonly string[]): HostRun {
   return { exitCode: 0, stdout: files.map(file => `${file}${NUL}`).join(''), stderr: '' }
 }
 
+/** The git run of builtWorld: whether git tracks the root CLAUDE.md, the one source of BE's repo parts (M3). */
+const BUILT_GIT_ARGV: readonly string[] = ['git', '--literal-pathspecs', 'ls-files', '-z', '--', 'CLAUDE.md']
+
+/** The host rule of a plain init over builtWorld or the secret world: git tracks the root CLAUDE.md (M3). */
+const BUILT_TRACKED: readonly HostRunRule[] = [{ argv: BUILT_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }]
+
 /** The git runs a host was asked for. */
 function gitCalls(host: MemHost): HostCall[] {
   return host.calls.filter(call => call.argv[0] === 'git')
@@ -3643,7 +3649,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
 
   test('a plain init asks the content consent, runs the parts flow and writes the built file of the role', async () => {
     const run = memIo(builtWorld(), PARTS_ANSWERS)
-    const host = memHost(hostWorld({}))
+    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(firstLines(run.asked)).toContain(CONTENT_QUESTION)
     expect(run.prompts).toHaveLength(2)
@@ -3653,7 +3659,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
   })
 
   test('the global part given to security is written to no file in the repo (T-02-69)', async () => {
-    const host = memHost(hostWorld({}))
+    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
     await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     expect(builtWrites(host).map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
     expect(host.writes.filter(write => write.text.includes(GLOBAL_SENTENCE))).toEqual([])
@@ -3678,7 +3684,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
         '{"topics":{"T1":["tl"]},"memories":{"M1":["tl"]}}',
       ],
     })
-    const host = memHost(hostWorld({}))
+    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
     const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(['/repo/.cadre/tl/CLAUDE.md'])
@@ -5307,6 +5313,7 @@ function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
     attended: [],
     installed: [],
     installProblems: [],
+    untrackedParts: [],
     manifestSkipped: false,
     ...over,
   }

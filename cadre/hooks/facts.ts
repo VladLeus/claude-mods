@@ -394,9 +394,10 @@ export function isSafeConfigDir(value: unknown): boolean {
 
 /**
  * The part of `path` below `base`: '' when they name the same folder, a string starting with `/` when `path` is
- * inside `base`, and null otherwise. A base that is null, empty or `/` is never a folder that contains a path.
+ * inside `base`, and null otherwise. A base that is null, empty or `/` is never a folder that contains a path. It is
+ * exported for the instruction read (02-GAPS-B2 N10).
  */
-function relativeTo(path: string, base: string | null): string | null {
+export function relativeTo(path: string, base: string | null): string | null {
   const trimmed = (base ?? '').replace(/\/+$/, '')
   if (trimmed === '') return null
   if (path === trimmed) return ''

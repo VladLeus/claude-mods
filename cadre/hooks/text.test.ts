@@ -418,6 +418,7 @@ const OUTCOME: ApplyOutcome = {
   attended: ['be'],
   installed: [CLAUDE_SECURITY_PLUGIN],
   installProblems: [installFailureText(SECURITY_GUIDANCE_PLUGIN, true)],
+  untrackedParts: [],
   manifestSkipped: true,
 }
 

@@ -912,7 +912,7 @@ describe('claudeMdImports', () => {
     const started = Date.now()
 
     expect(claudeMdImports(`@${'.'.repeat(300_000)}x`, '/repo', '/home/u')).toEqual([])
-    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(Date.now() - started).toBeLessThanOrEqual(1_999)
   })
 
   test('a sentence mark after an import is still not part of it (M1)', () => {

@@ -1006,7 +1006,7 @@ describe('rules, AGENTS.md and referenced docs', () => {
   test('a line of many unclosed links is read in linear time: no doc, in under 2 s (M1)', () => {
     const started = Date.now()
     expect(referencedDocs('[a](x'.repeat(20_000), '/repo', '/repo')).toEqual([])
-    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(Date.now() - started).toBeLessThanOrEqual(1_999)
   })
 
   test('a link with a scheme, an absolute path, another extension, only an anchor or a folder is no doc', () => {

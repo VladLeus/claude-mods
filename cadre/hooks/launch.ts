@@ -162,8 +162,14 @@ const UNSAFE_ROOT_WARNING =
 /** A token after an `@`: the `@` starts the text or follows white space, and the token runs to the next white space. */
 const IMPORT_TOKEN = /(?:^|\s)@(\S+)/g
 
-/** The characters that end a sentence rather than a path, when they trail an import. */
-const TRAILING_MARKS = /[.,;:!?)\]}>"']+$/
+/**
+ * The characters that end a sentence rather than a path, when they trail an import. The pattern is anchored at the
+ * start of the mark run, so a long run of marks is linear (02-GAPS-B2 M1).
+ */
+const TRAILING_MARKS = /(?<![.,;:!?)\]}>"'])[.,;:!?)\]}>"']+$/
+
+/** The most code points an import token may have; no import path is longer (02-GAPS-B2 M1). */
+const MAX_IMPORT_TOKEN_CHARS = 4_096
 
 /** A relative import with nothing in front of it: a name or path of plain characters that ends in `.md`. */
 const BARE_MARKDOWN = /^[A-Za-z0-9_.]\S*\.md$/i
@@ -380,9 +386,11 @@ function resolveSegments(path: string): string {
 /**
  * The file one import token names, as an absolute path, or null when the token is not an import. A token starts with
  * `~/` (the home), `/`, `./` or `../` (the folder of the importing file), or is a bare relative path that ends in
- * `.md`. A sentence mark after the path is not part of it, and a folder is not a file.
+ * `.md`. A sentence mark after the path is not part of it, and a folder is not a file. A token of more than
+ * MAX_IMPORT_TOKEN_CHARS code points is no import (02-GAPS-B2 M1).
  */
 function importPath(token: string, fileDir: string, home: string): string | null {
+  if (Array.from(token).length > MAX_IMPORT_TOKEN_CHARS) return null
   const path = token.replace(TRAILING_MARKS, '')
   if (path === '' || path.endsWith('/')) return null
   if (path.startsWith('~/')) return resolveSegments(`${home}/${path.slice(2)}`)

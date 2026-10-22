@@ -94,15 +94,24 @@ export const INBOX_FILE = 'inbox.md'
 export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
 
 /**
+ * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder (D-140
+ * q1-b), which the launcher adds with `--add-dir` and /cadre start makes on every render. A link, so it has no trailing
+ * slash: git does not match a link with a folder pattern (02-GAPS-B2 M2).
+ */
+export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
+
+/**
  * The per-user files and folders /cadre start renders into `.cadre/<id>/.runtime/` at launch: the final settings, the
- * MCP file, the skill overlay, the linked instructions, the probe expectations, the inbox and the stamp written last
- * (D-66, D-84, D-102, D-114, D-130). The `all` git policy ignores exactly these.
+ * MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
+ * inbox and the stamp written last (D-66, D-84, D-102, D-114, D-130, 02-GAPS-B2 M2). The `all` git policy ignores
+ * exactly these.
  */
 export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
   'settings.json',
   'mcp.json',
   'overlay/',
   'instructions/',
+  PRIVATE_INSTRUCTIONS_LINK,
   PROBE_EXPECTATIONS_FILE,
   INBOX_FILE,
   RUNTIME_STAMP_FILE,
