@@ -181,6 +181,21 @@ export function sortedUnique(names: readonly string[]): string[] {
   return Array.from(new Set(names)).sort(compareText)
 }
 
+/**
+ * Each value parsed, or null when any value does not parse (02-GAPS-B3 S6): the all-or-nothing list check of the
+ * records.
+ */
+export function allOrNull<T>(values: readonly unknown[], parse: (value: unknown) => T | null): T[] | null {
+  const parsed: T[] = []
+  for (const value of values) {
+    const item = parse(value)
+    if (item === null) return null
+    parsed.push(item)
+  }
+
+  return parsed
+}
+
 /** The own key names of a plain object; [] for anything else. Only the names are read, never the values. */
 export function keysOf(value: unknown): string[] {
   return isObject(value) ? Object.keys(value) : []

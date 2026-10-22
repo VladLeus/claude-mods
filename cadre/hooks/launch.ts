@@ -9,7 +9,7 @@ import {
   roleOwnPaths,
   SECRET_READ_DENY,
 } from './scope'
-import { mangledProjectDir } from './setup'
+import { mangledProjectDir, memoryFolderOf } from './setup'
 
 /**
  * The only settings keys a rendered runtime file may hold (D-84). The render adds a key from this list and nothing
@@ -229,6 +229,9 @@ export function roleMemoryDir(
 /** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
 export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
 
+/** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
+export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
+
 /**
  * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
  * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
@@ -346,6 +349,20 @@ export const UNDENIED_PRIVATE_WARNING =
   'the private instructions folder has a path a permission rule cannot hold: it stays editable'
 
 /**
+ * The warning for a memory folder of the repo whose path no exact rule can hold (02-GAPS-B3 C2): it gets no deny, so
+ * a role could still edit the memories there, through a link or not.
+ */
+export const UNDENIED_MEMORY_FOLDER_WARNING =
+  'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable'
+
+/**
+ * The warning for a hand-out record whose path no exact rule can hold (02-GAPS-B3 C3): it gets no deny, so a role
+ * could still rewrite which memories its next start links.
+ */
+export const UNDENIED_RECORD_WARNING =
+  'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable'
+
+/**
  * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an
  * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule. Exported for the
  * improver guard (02-GAPS-B3 M1).
@@ -390,15 +407,44 @@ function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
 }
 
 /**
+ * The deny of the repo's memory folders (02-GAPS-B3 C2): `Edit(//<folder>/**)` and `Write(//<folder>/**)` for the
+ * memory folder of the root as resolved and as given (memoryFolderOf), once each, so no role edits a memory, through
+ * the links /cadre start makes or the ones under `.runtime/instructions/memory`. A folder an exact rule cannot hold
+ * gets none, and the warning UNDENIED_MEMORY_FOLDER_WARNING comes once.
+ */
+function memoryFolderDeny(user: LaunchUser): DenyResult {
+  const folders = sortedUnique([memoryFolderOf(user.userDir, user.root), memoryFolderOf(user.userDir, user.givenRoot)])
+  const rules = folders.map(folder => editWriteRules(folder, '/**'))
+  const deny = rules.flatMap(rule => rule ?? [])
+
+  return { deny, warnings: rules.includes(null) ? [UNDENIED_MEMORY_FOLDER_WARNING] : [] }
+}
+
+/**
+ * The deny of a role's hand-out record (02-GAPS-B3 C3): `Edit(//<role memory folder>/instructions.json)` and
+ * `Write(...)`, so the role cannot rewrite which memories its next start links. A path an exact rule cannot hold gets
+ * none, with UNDENIED_RECORD_WARNING.
+ */
+function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
+  const rules = editWriteRules(`${roleMemoryDir(user, id)}/${INSTRUCTIONS_RECORD_FILE}`, '')
+
+  return rules === null ? { deny: [], warnings: [UNDENIED_RECORD_WARNING] } : { deny: rules, warnings: [] }
+}
+
+/**
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
  * the deny of the role's private instructions folder, for every role, as every launcher adds that folder
- * (privateInstructionsDeny, 02-GAPS-B2 S3); and for a parts-flow role the read-only deny of the memories /cadre start
- * linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own memories.
+ * (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's memory folders (memoryFolderDeny,
+ * 02-GAPS-B3 C2) and of its hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3); and for a parts-flow role the
+ * read-only deny of the memories /cadre start linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its
+ * MEMORY.md or of its own memories.
  */
 function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
     runtimeDeny(role, scope, user),
     privateInstructionsDeny(user, role.id),
+    memoryFolderDeny(user),
+    instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
   ]
 

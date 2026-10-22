@@ -157,6 +157,7 @@ import {
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import {
+  builtClaudeMdPath,
   desiredFiles,
   GIT_TRACKING_UNKNOWN_WARNING,
   gitTrackedArgv,
@@ -180,7 +181,7 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
-  MEMORY_INDEX_FILE,
+  isMemoryIndexName,
   memoryItems,
   memoryOverSizeWarning,
   NO_MEMORY_SUMMARY,
@@ -4534,12 +4535,12 @@ function globalPathOf(file: string, places: RecordPlaces): string | null {
 
 /**
  * The path of a recorded memory (AUTO-PICK #19 Q9): in a memory folder of this repo, under a plain `.md` file name
- * (isSafeFileName) that is not MEMORY.md in any letter case; else null.
+ * (isSafeFileName) that is not MEMORY.md in any letter case (isMemoryIndexName, 02-GAPS-B3 N2); else null.
  */
 function memoryPathOf(memory: Pick<RecordedMemory, 'file' | 'folder'>, places: RecordPlaces): string | null {
   const { file, folder } = memory
   if (!places.memoryFolders.includes(folder) || !isSafeFileName(file)) return null
-  if (!file.endsWith(MARKDOWN_EXTENSION) || file.toLowerCase() === MEMORY_INDEX_FILE.toLowerCase()) return null
+  if (!file.endsWith(MARKDOWN_EXTENSION) || isMemoryIndexName(file)) return null
 
   return `${folder}/${file}`
 }
@@ -4978,11 +4979,6 @@ function withRecordedHash(manifest: Manifest, path: string, sha256: string): Man
   const others = manifest.files.filter(entry => entry.path !== path)
 
   return { ...manifest, files: [...others, { path, sha256, mode: 'file' }] }
-}
-
-/** The repo-relative path of a role's built CLAUDE.md, as desiredFiles names it (G-02-1f Storage split). */
-function builtClaudeMdPath(id: string): string {
-  return `.cadre/${id}/CLAUDE.md`
 }
 
 /**

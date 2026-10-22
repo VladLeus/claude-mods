@@ -17,7 +17,7 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { isRoleId, RESERVED_ROLE_IDS } from './command'
-import { clean, idLabel, isChangedByClean, isObject, parseJsonValue } from './facts'
+import { allOrNull, clean, idLabel, isChangedByClean, isObject, parseJsonValue } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
 import { freezeRows } from './freeze'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './kickoff'
@@ -797,10 +797,8 @@ export function partRecordOf(value: unknown, isFile: (file: string) => boolean):
 function partRecordsOf(value: unknown): InstructionPartRecord[] | null | undefined {
   if (value === undefined) return undefined
   if (!Array.isArray(value)) return null
-  const records = value.map(item => partRecordOf(item, isRecordedPartFile))
-  const valid = records.filter((record): record is InstructionPartRecord => record !== null)
 
-  return valid.length === records.length ? valid : null
+  return allOrNull(value, item => partRecordOf(item, isRecordedPartFile))
 }
 
 /** The id, title, purpose, base and (when it is present) framework of a role.json object; null if one is invalid. */

@@ -28,7 +28,14 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
-import { INSTRUCTIONS_RECORD_FILE, instructionsRecordPath } from './apply'
+import {
+  instructionsRecordPath,
+  parseInstructionsRecord,
+  privateLevelsProblem,
+  privateModeArgv,
+  roleFolderLevels,
+} from './apply'
+import type { RecordedMemory } from './apply'
 import {
   clean,
   compareText,
@@ -45,8 +52,10 @@ import { desiredFiles, shQuote } from './generate'
 import { sha256Hex } from './hash'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
+import { isMemoryIndexName, MEMORY_INDEX_FILE } from './instructions'
 import {
   claudeMdImports,
+  INSTRUCTIONS_RECORD_FILE,
   isPartsFlowRole,
   isSafeFileName,
   launchPlan,
@@ -121,12 +130,14 @@ export const STALE_LINK_FOLDERS: readonly string[] = Object.freeze([
  * One step of a render, in the order /cadre start runs it; every path is absolute:
  * - `remove`: remove a link, the stamp of an earlier render, or the DONE.md an earlier run left (`/bin/rm -f`);
  * - `mkdir`: make a folder and the folders above it (`/bin/mkdir -p`);
+ * - `chmod`: make a private folder level mode 700 (`/bin/chmod 700`, 02-GAPS-B3 S7);
  * - `link`: make `path` a symbolic link to `target` (`/bin/ln -sfn`);
  * - `write`: write the text to the path; the host writes it, so it has no argv.
  */
 export type RenderStep =
   | { readonly kind: 'remove'; readonly path: string }
   | { readonly kind: 'mkdir'; readonly path: string }
+  | { readonly kind: 'chmod'; readonly path: string }
   | { readonly kind: 'link'; readonly path: string; readonly target: string }
   | { readonly kind: 'write'; readonly path: string; readonly text: string }
 
@@ -412,17 +423,19 @@ function mkdirFolders(runtime: string, links: readonly OverlayLink[]): string[] 
 }
 
 /**
- * The making of the folder the plan's private instructions link points at (D-140 q1-b): one mkdir when the plan links
- * `.runtime/private-instructions`, so the folder the launcher adds there is always there, empty when the role has no
- * private part; none when the plan has no such link. Its target comes from the role memory folder, never from disk.
- * The link itself is never kept with a warning: a real file or folder there refuses the render (privateLinkRefusal,
- * 02-GAPS-B2 N7).
+ * The making of the folder the plan's private instructions link points at (D-140 q1-b): when the plan links
+ * `.runtime/private-instructions`, one mkdir, so the folder the launcher adds there is always there, empty when the
+ * role has no private part, then one chmod 700 per level of its role memory folder from the top (roleFolderLevels,
+ * 02-GAPS-B3 S7), as apply makes them private; none when the plan has no such link. Its target comes from the role
+ * memory folder, never from disk. The link itself is never kept with a warning: a real file or folder there refuses the
+ * render (privateLinkRefusal, 02-GAPS-B2 N7).
  */
 function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
   const link = input.plan.links.find(candidate => candidate.path === `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`)
   if (link === undefined) return []
+  const chmods = roleFolderLevels(parentOf(link.target)).map((path): RenderStep => ({ kind: 'chmod', path }))
 
-  return [mkdirStep(link.target)]
+  return [mkdirStep(link.target), ...chmods]
 }
 
 /**
@@ -475,12 +488,13 @@ function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
  * stops part way never leaves the old stamp beside new files; then the DONE.md an earlier run left
  * (doneMarkerRemovals). Then the links of linkRemovals are removed, an earlier private instructions link included;
  * then `.runtime`, its overlay and each link's folder are made, sorted and once each, and the folder the private
- * instructions link points at (privateFolderSteps, D-140 q1-b); then each link is made, except at a path that holds a
- * real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or
- * replace a file); then the steps in the role memory folder (memorySteps, G-02-1f); then the files of fileWrites are
- * written, and the stamp last. A render that stops at any step before the last leaves no stamp, so the launcher
- * refuses to start (LNCH-03). A render that refusalOf refuses has no step at all; a real file or folder at the private
- * instructions link is such a refusal, never a kept path with a warning (02-GAPS-B2 N7).
+ * instructions link points at, with each level of its role memory folder made mode 700 (privateFolderSteps, D-140
+ * q1-b, 02-GAPS-B3 S7); then each link is made, except at a path that holds a real file or folder, which is kept and
+ * named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or replace a file); then the steps in the role
+ * memory folder (memorySteps, G-02-1f); then the files of fileWrites are written, and the stamp last. A render that
+ * stops at any step before the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that
+ * refusalOf refuses has no step at all; a real file or folder at the private instructions link is such a refusal,
+ * never a kept path with a warning (02-GAPS-B2 N7).
  */
 export function renderSteps(input: RenderInput): RenderResult {
   const runtime = runtimeFolder(input.root, input.id)
@@ -506,11 +520,13 @@ export function renderSteps(input: RenderInput): RenderResult {
 
 /**
  * The argv that runs a step, absolute and with no shell (RESEARCH 3.2): `/bin/rm -f --` for a removal, never `-r`;
- * `/bin/mkdir -p --` for a folder; `/bin/ln -sfn <target> <path>` for a link. A write has none: the host writes it.
+ * `/bin/mkdir -p --` for a folder; `/bin/chmod 700` for a private folder level (privateModeArgv, 02-GAPS-B3 S7);
+ * `/bin/ln -sfn <target> <path>` for a link. A write has none: the host writes it.
  */
 export function renderArgv(step: RenderStep): readonly string[] | null {
   if (step.kind === 'remove') return ['/bin/rm', '-f', '--', step.path]
   if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
+  if (step.kind === 'chmod') return privateModeArgv(step.path)
   if (step.kind === 'link') return ['/bin/ln', '-sfn', step.target, step.path]
 
   return null
@@ -542,6 +558,16 @@ export const START_NO_HOME = 'cadre start needs HOME to render the role files, s
 export const START_NO_GIT_DIR =
   'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; ' +
   'git 2.31 or newer is needed), so it stopped.'
+
+/** The /cadre start refusal for a role memory folder level it would write through (02-GAPS-B3 C5). */
+export function privateFolderRefusal(path: string, reason: 'link' | 'not-folder' | 'unchecked'): string {
+  const stopped = `cadre start stopped: ${path}`
+  const end = 'cadre does not write through it'
+  if (reason === 'link') return `${stopped} is a link; ${end}`
+  if (reason === 'not-folder') return `${stopped} is not a folder; ${end}`
+
+  return `${stopped} could not be checked for links; ${end}`
+}
 
 /**
  * What gatherLaunchUser gives: the launching user's facts with the warnings to show and what to do in the role memory
@@ -771,9 +797,6 @@ export const MEMORY_BLOCK_BEGIN = '<!-- >>> cadre linked memories (read-only; re
 /** The end marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract like MEMORY_BLOCK_BEGIN. */
 export const MEMORY_BLOCK_END = '<!-- <<< cadre linked memories -->'
 
-/** The index file of a memory folder, which the engine reads into the session (D-140 q3-a). */
-const MEMORY_INDEX_FILE = 'MEMORY.md'
-
 /** The lines of a text, each with its own line ending, so joining them gives the text back byte for byte. */
 function linesWithEnds(text: string): string[] {
   return text.split(/(?<=\n)/)
@@ -889,52 +912,16 @@ export function memoryIndexLinkWarning(id: string): string {
   return `the ${MEMORY_INDEX_FILE} of ${reportText(id)} is a link: linked memories are not indexed`
 }
 
-/** A memory the hand-out record names (D-140 q2-a): its file, the memory folder of its original, summary and hash. */
-type RecordedMemory = Pick<MemoryItem, 'file' | 'folder' | 'summary' | 'hash'>
-
-/** Whether a value is a part of a hand-out record: a plain object with a string file, heading and hash. */
-function isRecordedPart(value: unknown): boolean {
-  if (!isObject(value)) return false
-
-  return typeof value.file === 'string' && typeof value.heading === 'string' && typeof value.hash === 'string'
-}
-
 /**
- * A memory of a hand-out record; null for a value that is not a plain object with a string file, folder, summary and
- * hash.
- */
-function recordedMemoryOf(value: unknown): RecordedMemory | null {
-  if (!isObject(value)) return null
-  const { file, folder, summary, hash } = value
-  if (typeof file !== 'string' || typeof folder !== 'string') return null
-  if (typeof summary !== 'string' || typeof hash !== 'string') return null
-
-  return { file, folder, summary, hash }
-}
-
-/**
- * The memories a role's hand-out record names, in its order (D-140 q2-a, instructionsRecordText); null when the text is
- * not such a record: not JSON, not schema 1, or a part or a memory that is not of its shape.
- */
-function recordedMemories(text: string): readonly RecordedMemory[] | null {
-  const record = parseJsonValue(text)?.value
-  if (!isObject(record) || record.schema !== 1) return null
-  const { parts, memories } = record
-  if (!Array.isArray(parts) || !Array.isArray(memories) || !parts.every(isRecordedPart)) return null
-  const found = memories.map(recordedMemoryOf)
-  const valid = found.filter((memory): memory is RecordedMemory => memory !== null)
-
-  return valid.length === found.length ? valid : null
-}
-
-/**
- * Whether a recorded memory may be linked by its name: a plain file name (isSafeFileName) that ends in `.md` and is not
- * MEMORY.md in any letter case, which is the role's own index.
+ * Whether a recorded memory may be linked by its name: a plain file name (isSafeFileName) that ends in `.md`, is not
+ * MEMORY.md in any letter case, which is the role's own index (isMemoryIndexName, 02-GAPS-B3 N2), and holds no `(` or
+ * `)`, as the MEMORY.md block line could not be parsed back (02-GAPS-B3 N8).
  */
 function isLinkableMemory(file: string): boolean {
   if (!isSafeFileName(file) || !file.endsWith(MARKDOWN_EXTENSION)) return false
+  if (file.includes('(') || file.includes(')')) return false
 
-  return file.toLowerCase() !== MEMORY_INDEX_FILE.toLowerCase()
+  return !isMemoryIndexName(file)
 }
 
 /** What /cadre start does with one recorded memory: its link, or none, and the warning to show, or none. */
@@ -994,12 +981,16 @@ async function staleMemoryLinks(
   return sortedUnique(names.filter(name => links.has(name)).map(name => `${folder}/${name}`))
 }
 
-/** The read of the role's hand-out record: the memories it names, none when it is not there, null when unreadable. */
+/**
+ * The read of the role's hand-out record: the memories it names, none when it is not there, null when it cannot be
+ * read or is not a record regen would take (parseInstructionsRecord, 02-GAPS-B3 S6: one parser).
+ */
 async function recordOf(io: InitIo, folder: string): Promise<readonly RecordedMemory[] | null> {
   const read = await io.read(instructionsRecordPath(folder), MAX_READ_BYTES)
   if (read.state === 'absent') return []
+  if (read.state !== 'text') return null
 
-  return read.state === 'text' ? recordedMemories(read.text) : null
+  return parseInstructionsRecord(read.text)?.memories ?? null
 }
 
 /**
@@ -1070,8 +1061,12 @@ async function linkedMemoriesOf(
  *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
  *   whole-files role gets none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
- * any run, and with START_NO_GIT_DIR when git gives no absolute path. No setting value, hook command or file text is
- * ever part of a refusal or a warning.
+ * any run, and with START_NO_GIT_DIR when git gives no absolute path. Then each level of the role memory folder
+ * (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its instructions/ subfolder) is
+ * stat'ed, and `<userDir>` and each level but the last listed, and it refuses with privateFolderRefusal when
+ * privateLevelsProblem finds a level that is a link, is not a folder, or whose parent could not be listed (02-GAPS-B3
+ * C5), before any step runs; `<userDir>` itself is never checked, as a linked config folder is common. No setting
+ * value, hook command or file text is ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -1090,6 +1085,17 @@ export async function gatherLaunchUser(
   if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
+  const levels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
+  const stats = new Map<string, PortStat | null>()
+  for (const level of levels) stats.set(level, await io.stat(level))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of [userDir, ...levels.slice(0, -1)]) listings.set(folder, await io.list(folder))
+  const problem = privateLevelsProblem(levels, stats, listings)
+  if (problem !== null) {
+    const shownPath = displayPath(problem.path, home, locations.root)
+
+    return { kind: 'refuse', text: privateFolderRefusal(shownPath, problem.reason) }
+  }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
   const user: LaunchUser = {
@@ -1586,9 +1592,9 @@ async function renderDiskOf(
 }
 
 /**
- * Runs one step of a render through the host: a write through host.write; a removal, a folder or a link through
- * host.run with its renderArgv, absolute and with no shell, done only when it exits 0. Apply makes the role memory
- * folders of the private files with it too, as a mkdir step (G-02-1f).
+ * Runs one step of a render through the host: a write through host.write; a removal, a folder, a chmod or a link
+ * through host.run with its renderArgv, absolute and with no shell, done only when it exits 0. Apply makes the role
+ * memory folders of the private files with it too, as a mkdir step (G-02-1f).
  */
 export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
   if (step.kind === 'write') return host.write(step.path, step.text)
@@ -1641,7 +1647,8 @@ function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string)
  * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with one exact line, in this order: the
  * repo refusals of repoGuard (in the start wording); the team refusals of readTeam; the launcher refusals of
  * launcherRead (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
- * before anything else is run; the refusals of gatherLaunchUser; and a render refusal. Otherwise it compiles the team
+ * before anything else is run; the refusals of gatherLaunchUser, a role memory folder level it would write through
+ * included (privateFolderRefusal, 02-GAPS-B3 C5); and a render refusal. Otherwise it compiles the team
  * (compileTeam), gathers the launching user and builds the role's LaunchPlan with its private instructions link
  * (withPrivateInstructions, D-140 q1-b), and renders the role's `.runtime/`: the settings, the MCP config
  * (runtimeMcpText), the probe expectations, the links and the private instructions folder, the inbox when there is

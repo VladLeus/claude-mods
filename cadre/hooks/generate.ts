@@ -224,6 +224,11 @@ function rolePath(id: string, name: string): string {
   return `.cadre/${id}/${name}`
 }
 
+/** The repo-relative path of a role's built CLAUDE.md (G-02-1f; 02-GAPS-B3 S6: one home). */
+export function builtClaudeMdPath(id: string): string {
+  return rolePath(id, 'CLAUDE.md')
+}
+
 /** The launcher flags whose value is a repo-relative path, which the launcher writes anchored at the repo root (A2). */
 const PATH_FLAGS: readonly string[] = Object.freeze([
   '--settings',
@@ -599,7 +604,7 @@ function builtFiles(id: string, parts: readonly InstructionPart[] | null): Desir
   if (parts === null) return []
   const repo = parts.filter(part => part.source === 'repo')
 
-  return [{ path: rolePath(id, 'CLAUDE.md'), content: roleClaudeMdText(id, repo), mode: 'file' }]
+  return [{ path: builtClaudeMdPath(id), content: roleClaudeMdText(id, repo), mode: 'file' }]
 }
 
 /**

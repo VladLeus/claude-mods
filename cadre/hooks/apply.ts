@@ -38,6 +38,7 @@ import { ADAPTERS } from './adapters'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import {
+  allOrNull,
   compareText,
   countedNoun,
   displayPath,
@@ -50,9 +51,9 @@ import {
   sortedUnique,
   trimSlash,
 } from './facts'
-import { partsBody } from './generate'
+import { builtClaudeMdPath, partsBody } from './generate'
 import { sha256Hex } from './hash'
-import { editWriteRules, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
+import { editWriteRules, INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
@@ -182,9 +183,6 @@ export type ApplyInput = {
   readonly improved?: ReadonlyMap<string, string>
 }
 
-/** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
-export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
-
 /** The file name of the private text file in PRIVATE_INSTRUCTIONS_FOLDER: a CLAUDE.md, so the engine loads it. */
 const PRIVATE_CLAUDE_MD = 'CLAUDE.md'
 
@@ -219,7 +217,7 @@ export function privateClaudeMdText(id: string, repo: string, parts: readonly In
 }
 
 /** Part records as a hand-out record holds them: file, heading and hash, in the order given. */
-function partRecordsOf(parts: readonly InstructionPartRecord[]): InstructionPartRecord[] {
+function recordsOf(parts: readonly InstructionPartRecord[]): InstructionPartRecord[] {
   return parts.map(({ file, heading, hash }) => ({ file, heading, hash }))
 }
 
@@ -237,8 +235,8 @@ export function instructionsRecordText(
 ): string {
   return stableJson({
     schema: 1,
-    parts: partRecordsOf(parts),
-    ...(partsNotGiven.length === 0 ? {} : { partsNotGiven: partRecordsOf(partsNotGiven) }),
+    parts: recordsOf(parts),
+    ...(partsNotGiven.length === 0 ? {} : { partsNotGiven: recordsOf(partsNotGiven) }),
     memories: memories.map(({ file, folder, summary, hash }) => ({ file, folder, summary, hash })),
   })
 }
@@ -280,10 +278,8 @@ function isRecordedGlobalFile(file: string): boolean {
 /** A list of global part records partRecordOf takes; null when the value is not such a list. */
 function recordedParts(value: unknown): InstructionPartRecord[] | null {
   if (!Array.isArray(value)) return null
-  const parts = value.map(item => partRecordOf(item, isRecordedGlobalFile))
-  const valid = parts.filter((part): part is InstructionPartRecord => part !== null)
 
-  return valid.length === parts.length ? valid : null
+  return allOrNull(value, item => partRecordOf(item, isRecordedGlobalFile))
 }
 
 /** A recorded memory: a text file, folder and summary and a lowercase hex SHA-256; null for anything else. */
@@ -307,11 +303,10 @@ export function parseInstructionsRecord(text: string): InstructionsRecord | null
   if (!isObject(record) || record.schema !== 1 || !Array.isArray(record.memories)) return null
   const parts = recordedParts(record.parts)
   const partsNotGiven = record.partsNotGiven === undefined ? [] : recordedParts(record.partsNotGiven)
-  if (parts === null || partsNotGiven === null) return null
-  const memories = record.memories.map(recordedMemoryOf)
-  const valid = memories.filter((memory): memory is RecordedMemory => memory !== null)
+  const memories = allOrNull(record.memories, recordedMemoryOf)
+  if (parts === null || partsNotGiven === null || memories === null) return null
 
-  return valid.length === memories.length ? { parts, partsNotGiven, memories: valid } : null
+  return { parts, partsNotGiven, memories }
 }
 
 /** One private step per role that has a private file, in the order given (privateFilesOf). */
@@ -629,16 +624,26 @@ function subfolderOf(folder: string): string {
 }
 
 /**
+ * Every folder level of a role memory folder from the top (02-GAPS-B3 S3, S7, C5): <userDir>/cadre, <repo>-<hash8>,
+ * the role memory folder and its instructions/ subfolder. `<userDir>` itself is never a level: a linked config folder
+ * is a common setup.
+ */
+export function roleFolderLevels(folder: string): string[] {
+  const repoFolder = parentOf(folder)
+
+  return [parentOf(repoFolder), repoFolder, folder, subfolderOf(folder)]
+}
+
+/**
  * The folders apply makes private before it writes these files of a role memory folder (02-GAPS-B2 N13), from the
- * top: `<userDir>/cadre`, the repo's folder `<repo>-<hash8>` in it, the role memory folder and, when one of the files
- * lies in it, its instructions/ subfolder. The mkdir run makes the last one and every one above it.
+ * top: the levels of roleFolderLevels, its instructions/ subfolder only when one of the files lies in it. The mkdir
+ * run makes the last one and every one above it.
  */
 export function privateLevels(folder: string, files: readonly PrivateFile[]): string[] {
-  const repoFolder = parentOf(folder)
   const subfolder = subfolderOf(folder)
   const isInSubfolder = files.some(file => file.path.startsWith(`${subfolder}/`))
 
-  return [parentOf(repoFolder), repoFolder, folder, ...(isInSubfolder ? [subfolder] : [])]
+  return roleFolderLevels(folder).filter(level => isInSubfolder || level !== subfolder)
 }
 
 /** The mode of every private folder level (02-GAPS-B2 N13): only the user may list, enter or change it. */
@@ -650,19 +655,23 @@ export function privateModeArgv(path: string): readonly string[] {
 }
 
 /**
- * The way to a private file from its role memory folder down, from the top: the role memory folder, its instructions/
- * subfolder when the file lies in it, and the file.
+ * The way to a private file from the top (02-GAPS-B3 S3): the levels of roleFolderLevels above the role memory folder
+ * (`<userDir>/cadre` and `<repo>-<hash8>`), the role memory folder, its instructions/ subfolder when the file lies in
+ * it, and the file.
  */
 function privateWay(folder: string, path: string): string[] {
   const subfolder = subfolderOf(folder)
+  const isInSubfolder = path.startsWith(`${subfolder}/`)
 
-  return path.startsWith(`${subfolder}/`) ? [folder, subfolder, path] : [folder, path]
+  return [...roleFolderLevels(folder).filter(level => isInSubfolder || level !== subfolder), path]
 }
 
 /**
- * What apply asks before it writes these private files of a role memory folder (G-02-1f, T-02-72), in the order of
- * their ways (privateWay), once each: `stats`, every path on the way to a file, the file included, which apply stats
- * with statForWrite; `listings`, the folder that holds each of them, from the repo's folder down.
+ * What apply asks before it writes these private files of a role memory folder (G-02-1f, T-02-72; 02-GAPS-B3 S3), in
+ * the order of their ways (privateWay), once each: `stats`, every path on the way to a file from `<userDir>/cadre`
+ * down, the file included, which apply stats with statForWrite; `listings`, the folder that holds each of them, from
+ * `<userDir>` down. `<userDir>` itself is never checked for a link, as a linked config folder is common; only its
+ * listing is asked.
  */
 export function privateCheckPaths(
   folder: string,
@@ -701,17 +710,16 @@ function privateFolderOf(path: string): string | null {
 }
 
 /**
- * Why the listings refuse a private write, or null (#72 A2): from the top, each path of the way is looked up in the
- * listing of the folder that holds it, which shows a link as a link, a dangling one included, and one listed as a link
- * refuses. A folder on the way that is there but gave no listing refuses as not checked, while one its stat found
- * absent holds nothing, so the look-up stops there; the repo's folder, which holds the role memory folder, only skips
- * the look-up of the top path when it gave no listing.
+ * Why the listings refuse a private write, or null (#72 A2; 02-GAPS-B3 S3): from the top, each path of the way is
+ * looked up in the listing of the folder that holds it, which shows a link as a link, a dangling one included, and one
+ * listed as a link refuses. A folder that gave no listing refuses as not checked when it is there or was not stat'ed,
+ * `<userDir>` included, while one its stat found absent holds nothing, so the look-up stops there. `<userDir>` itself
+ * is never checked for a link, as a linked config folder is common.
  */
 function privateListingProblem(way: readonly string[], check: PrivateWriteCheck): string | null {
-  for (const [index, path] of way.entries()) {
+  for (const path of way) {
     const folder = parentOf(path)
     const entries = check.listings.get(folder) ?? null
-    if (entries === null && index === 0) continue
     if (entries === null && check.stats.get(folder) === 'absent') return null
     if (entries === null) return LIST_FAILED_REASON
     const name = path.slice(folder.length + 1)
@@ -743,6 +751,32 @@ export function privateWriteProblem(path: string, check: PrivateWriteCheck): str
   if (listed !== null) return `${refused}${listed}`
   const target = stats.at(-1)
   if (typeof target === 'object' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
+
+  return null
+}
+
+/**
+ * Why the levels of a role memory folder must not be written through (02-GAPS-B3 C5, S3), or null: from the top, the
+ * first level that is there and is a link (by its stat or its parent's listing), is not a folder, or whose parent
+ * could not be listed; an absent level ends the look, since mkdir makes it and every one below.
+ */
+export function privateLevelsProblem(
+  levels: readonly string[],
+  stats: ReadonlyMap<string, PortStat | null>,
+  listings: ReadonlyMap<string, readonly PortEntry[] | null>,
+): { readonly path: string; readonly reason: 'link' | 'not-folder' | 'unchecked' } | null {
+  for (const path of levels) {
+    const stat = stats.get(path) ?? null
+    if (stat === null) return null
+    const folder = parentOf(path)
+    const entries = listings.get(folder) ?? null
+    const name = path.slice(folder.length + 1)
+    if (stat.isLink || entries?.some(entry => entry.name === name && entry.isLink) === true) {
+      return { path, reason: 'link' }
+    }
+    if (entries === null) return { path, reason: 'unchecked' }
+    if (stat.kind !== 'dir') return { path, reason: 'not-folder' }
+  }
 
   return null
 }
@@ -806,11 +840,6 @@ export type BuiltFile = {
   readonly runFlags: readonly string[] | null
 }
 
-/** The repo-relative path of a role's built CLAUDE.md, as desiredFiles names it (G-02-1f Storage split). */
-function builtPathOf(id: string): string {
-  return `.cadre/${id}/CLAUDE.md`
-}
-
 /**
  * What builtRoleFiles offers (G-02-1f, D-141; 02-GAPS-B3 M1, C1): the role ids whose built CLAUDE.md holds a repo part,
  * the role memory folders whose private text holds a global part (a header alone has nothing to improve), and each
@@ -832,7 +861,7 @@ export type BuiltFilter = {
  */
 export function builtRoleFiles(steps: readonly ApplyStep[], root: string, filter: BuiltFilter): BuiltFile[] {
   const base = trimSlash(root)
-  const idOf = new Map(Array.from(filter.repoIds, (id): [string, string] => [builtPathOf(id), id]))
+  const idOf = new Map(Array.from(filter.repoIds, (id): [string, string] => [builtClaudeMdPath(id), id]))
 
   return steps.flatMap((step): BuiltFile[] => {
     const id = step.kind === 'write' ? idOf.get(step.path) : undefined

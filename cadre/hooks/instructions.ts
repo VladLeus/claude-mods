@@ -108,10 +108,19 @@ function yesNo(isThere: boolean): string {
 export const MEMORY_INDEX_FILE = 'MEMORY.md'
 
 /**
+ * Whether a file name is the memory index in any letter case (02-GAPS-B3 N2): the engine reads MEMORY.md, and no case
+ * variant is offered as a memory.
+ */
+export function isMemoryIndexName(name: string): boolean {
+  return name.toLowerCase() === MEMORY_INDEX_FILE.toLowerCase()
+}
+
+/**
  * The context line of the content consent (G-02-1f, D-136): what init found before it reads anything, by name only
  * (the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules`, the root AGENTS.md
- * and the memory files, MEMORY.md not counted, as the hand-out never offers it; 02-GAPS-B2 S9), and that No keeps the
- * whole-file questions. A rules folder that could not be listed counts 0 rule files.
+ * and the memory files, MEMORY.md in any letter case not counted, as the hand-out never offers it; 02-GAPS-B2 S9,
+ * 02-GAPS-B3 N2), and that No keeps the whole-file questions. A rules folder that could not be listed counts 0 rule
+ * files.
  */
 export function contentContextLine(
   setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
@@ -120,7 +129,7 @@ export function contentContextLine(
   const global = yesNo(setup.hasGlobalClaudeMd)
   const chain = countedNoun(setup.claudeMd.length, 'CLAUDE.md file', 'CLAUDE.md files')
   const rules = countedNoun(repo.rules?.length ?? 0, 'rule file', 'rule files')
-  const memoryCount = setup.memoryFiles.filter(name => name !== MEMORY_INDEX_FILE).length
+  const memoryCount = setup.memoryFiles.filter(name => !isMemoryIndexName(name)).length
   const memories = countedNoun(memoryCount, 'memory', 'memories')
   const found = `global CLAUDE.md ${global}, ${chain} in the repo chain, ${rules}, AGENTS.md ${yesNo(repo.hasAgentsMd)}`
 
@@ -938,10 +947,11 @@ async function memoryText(io: InitIo, file: MemoryFile, warnings: string[]): Pro
 
 /**
  * The auto-memories of this repo (G-02-1f Memories), read only after the content consent: the memory folders are
- * listed (memoryFiles), MEMORY.md is read first for its index (memoryIndex), then each other `.md` file once, in name
- * order, for its hash only (sha256Hex): `M<n>` in that order, with the folder that listed it and the summary of its
- * index line, or NO_MEMORY_SUMMARY. A memory that could not be read is not offered, so it stays with the root session.
- * No text is kept, neither a memory's nor MEMORY.md's: only file names, folders, summaries and hashes.
+ * listed (memoryFiles), MEMORY.md is read first for its index (memoryIndex), from the file named exactly so, then each
+ * other `.md` file once, in name order, for its hash only (sha256Hex): `M<n>` in that order, with the folder that
+ * listed it and the summary of its index line, or NO_MEMORY_SUMMARY. No letter-case variant of MEMORY.md is offered
+ * (isMemoryIndexName, 02-GAPS-B3 N2). A memory that could not be read is not offered, so it stays with the root
+ * session. No text is kept, neither a memory's nor MEMORY.md's: only file names, folders, summaries and hashes.
  */
 export async function readMemories(
   io: InitIo,
@@ -952,7 +962,7 @@ export async function readMemories(
   const indexFile = files.find(file => file.name === MEMORY_INDEX_FILE)
   const index = memoryIndex(indexFile === undefined ? '' : ((await memoryText(io, indexFile, warnings)) ?? ''))
   const memories: MemoryItem[] = []
-  for (const file of files.filter(found => found.name !== MEMORY_INDEX_FILE)) {
+  for (const file of files.filter(found => !isMemoryIndexName(found.name))) {
     const text = await memoryText(io, file, warnings)
     if (text === null) continue
     const hash = await sha256Hex(text)
