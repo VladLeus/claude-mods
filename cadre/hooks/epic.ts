@@ -546,7 +546,8 @@ export function mirrorPaths(
  * there. The entries are taken sorted, and each, then each child it hands on, gets the first rule that fits:
  * - (a) `.claude/worktrees` and anything below it: nothing;
  * - (b) anything at or below `.cadre/<id>/.runtime` for a role id: nothing, as each worktree renders its own;
- * - (c) a path already planned, or below a planned link or copy: nothing, so no step lands in the main checkout;
+ * - (c) a path already planned or already in the worktree's listing, or below either: nothing, so no step lands in the
+ *   main checkout and a reuse plans no more than the first run did;
  * - (d) a path below a folder the worktree lists as a link (a tracked link in HEAD): nothing, and the
  *   mirrorLinkedParentWarning line;
  * - (e) a protected folder (`.cadre`, `.cadre/bin`, `.cadre/<id>`) or a folder above one: a mkdir step, then each
@@ -608,7 +609,12 @@ export function mirrorPlan(input: {
       for (const child of childrenOf(path).filter(name => name !== CLAUDE_WORKTREES_CHILD)) visit(`${path}/${child}`)
       return
     }
-    if (listedEntry(tree, path) !== undefined) return
+    if (listedEntry(tree, path) !== undefined) {
+      // A target that is there is placed, so nothing below it is mirrored, as below a planned link
+      // (rule c, 03.1-W2 S3).
+      placed.add(path)
+      return
+    }
     if (CONTROL_CHARACTER.test(path)) {
       placed.add(path)
       warnings.push(mirrorUnhideableWarning(path))
