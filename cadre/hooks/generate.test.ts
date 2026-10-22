@@ -635,6 +635,35 @@ describe('roleClaudeMdText (G-02-1f)', () => {
   })
 })
 
+describe('a built file for every role (02-GAPS-B2 S1)', () => {
+  test('with repoParts set every role gets .cadre/<id>/CLAUDE.md, the header alone with no repo part', () => {
+    const roles = [templateRole('pm'), templateRole('be'), templateRole('qa')]
+    const repoParts = new Map([
+      ['be', [RULES_PART]],
+      ['pm', [GLOBAL_PART]],
+    ])
+    const files = desiredFiles(inputOf(roles, 'gsd', { repoParts }))
+
+    expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
+      { path: '.cadre/be/CLAUDE.md', content: roleClaudeMdText('be', [RULES_PART]), mode: 'file' },
+      { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
+      { path: '.cadre/qa/CLAUDE.md', content: `${builtHeader('qa')}\n`, mode: 'file' },
+    ])
+  })
+
+  test('with repoParts set and empty, every role still gets the header-only file; without it, none does', () => {
+    const roles = [templateRole('pm'), templateRole('be')]
+    const empty = desiredFiles(inputOf(roles, 'gsd', { repoParts: new Map() }))
+    const without = desiredFiles(inputOf(roles, 'gsd'))
+
+    expect(empty.filter(file => file.path.endsWith('/CLAUDE.md')).map(file => file.content)).toEqual([
+      `${builtHeader('be')}\n`,
+      `${builtHeader('pm')}\n`,
+    ])
+    expect(without.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([])
+  })
+})
+
 /** The NUL character `git ls-files -z` ends each name with, built at run time. */
 const NUL = String.fromCharCode(0)
 

@@ -860,6 +860,25 @@ describe('gatherLaunchUser (D-98)', () => {
     ])
   })
 
+  test('rule files in sub-folders of .claude/rules are listed, links taken, a failed folder skipped (M4)', async () => {
+    const world = repoWorld({
+      dirs: {
+        '/repo/.git': [],
+        '/repo/.claude/rules': [entry('security.md'), entry('frontend', 'dir'), link('shared'), entry('gone', 'dir')],
+        '/repo/.claude/rules/frontend': [entry('react.md'), entry('notes.txt')],
+        '/repo/.claude/rules/shared': [entry('team.md')],
+      },
+      realPaths: { '/repo/.claude/rules/shared': '/team/rules' },
+    })
+    const gathered = userOf((await gather(world, [GIT_OK])).read)
+
+    expect(gathered.rules).toEqual([
+      '/repo/.claude/rules/frontend/react.md',
+      '/repo/.claude/rules/security.md',
+      '/repo/.claude/rules/shared/team.md',
+    ])
+  })
+
   test('the built role files are the CLAUDE.md of every .cadre folder that has one, stale ones too', async () => {
     const world = repoWorld({
       dirs: {
@@ -1545,6 +1564,15 @@ describe('runStart warnings and links (D-102)', () => {
       '/repo/.cadre/pm/CLAUDE.md',
       '/repo/.claude/rules/security.md',
     ])
+  })
+
+  test("a parts-flow role's rendered settings exclude a rule file in a sub-folder of .claude/rules (M4)", async () => {
+    const base = await appliedWorld()
+    const rules = { '/repo/.claude/rules': [entry('frontend', 'dir')], '/repo/.claude/rules/frontend': [entry('a.md')] }
+    const start = await startBe({ ...base, dirs: { ...base.dirs, ...rules } })
+    const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
+
+    expect(JSON.parse(settings).claudeMdExcludes).toContain('/repo/.claude/rules/frontend/a.md')
   })
 })
 

@@ -22,7 +22,10 @@ import {
   memoryItemQuestion,
   memoryItems,
   moreDocsWarning,
+  morePartsWarning,
   NO_MEMORY_SUMMARY,
+  outsideWarning,
+  overSizeWarning,
   parseContentConsent,
   parseRecommendation,
   parseTopics,
@@ -31,6 +34,7 @@ import {
   RECOMMEND_SYSTEM,
   recommendPrompt,
   referencedDocs,
+  repoImportWarning,
   repoInstructionNames,
   RULES_UNLISTED_WARNING,
   splitSections,
@@ -40,7 +44,9 @@ import {
   topicQuestion,
   TOPICS_SYSTEM,
   topicsPrompt,
+  totalCapWarning,
   unfollowedImportWarning,
+  unreadableWarning,
 } from './instructions'
 import type { InstructionSources } from './instructions'
 import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, templateRole } from './testkit'
@@ -866,14 +872,48 @@ describe('readInstructionFiles', () => {
     expect(scan.parts.map(found => found.heading)).toEqual(['G'])
   })
 
-  test('parts beyond 200 are not offered and stay with the root session', async () => {
-    const sections = Array.from({ length: 205 }, (_, at) => `# H${at + 1}\nbody\n`).join('')
+  test('parts beyond 120 are not offered and stay with the root session; the prompt lists 120 (S6)', async () => {
+    const sections = Array.from({ length: 129 }, (_, at) => `# H${at + 1}\nbody\n`).join('')
     const run = memIo(filesWorld({ [`${CONFIG}/CLAUDE.md`]: sections, '/repo/CLAUDE.md': '# R\n' }), [])
     const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
-    expect(scan.parts).toHaveLength(200)
-    expect(scan.parts.at(-1)?.heading).toBe('H200')
+    expect(scan.parts).toHaveLength(120)
+    expect(scan.parts.at(-1)?.heading).toBe('H120')
     expect(scan.files).toEqual(['~/.claude/CLAUDE.md'])
-    expect(scan.warnings).toEqual(['6 more parts were not offered: they stay with the root session'])
+    expect(scan.warnings).toEqual([morePartsWarning(10)])
+    expect(morePartsWarning(10)).toBe('10 more parts were not offered: they stay with the root session')
+    expect(topicsPrompt(scan.parts, []).split('\n').filter(line => /^P\d+ \| /.test(line))).toHaveLength(120)
+  })
+
+  test('a chain CLAUDE.md above the repo is read as a private global part, not its outside import (S2)', async () => {
+    const run = memIo(
+      filesWorld({
+        '/home/u/work/CLAUDE.md': '# Team\nShared rules.\n@./notes.md\n',
+        '/home/u/work/notes.md': '# Notes\n',
+        '/repo/CLAUDE.md': '# R\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['~/work/CLAUDE.md', '<repo>/CLAUDE.md']))
+    expect(placesOf(scan)).toEqual([
+      ['~/work/CLAUDE.md', 'Team', 'global'],
+      ['CLAUDE.md', 'R', 'repo'],
+    ])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/home/u/work/CLAUDE.md', '/repo/CLAUDE.md'])
+    expect(scan.warnings).toEqual([outsideWarning('~/work/notes.md')])
+  })
+
+  test('every not-read warning says that no role gets the file (S2)', () => {
+    expect(unreadableWarning('CLAUDE.md')).toBe('could not read CLAUDE.md: no role gets it')
+    expect(overSizeWarning('CLAUDE.md')).toBe('CLAUDE.md is over 256 KiB, not split: no role gets it')
+    expect(outsideWarning('/x/a.md')).toBe(
+      '/x/a.md is outside the repo and your config folder, not read: no role gets it',
+    )
+    expect(repoImportWarning('~/a.md')).toBe(
+      '~/a.md is imported by a repo file and is outside the repo, not read: no role gets it',
+    )
+    expect(totalCapWarning(1)).toBe('stopped reading at 512 KiB in total, 1 file not read: no role gets it')
+    expect(totalCapWarning(3)).toBe('stopped reading at 512 KiB in total, 3 files not read: no role gets them')
+    expect(moreDocsWarning(2)).toBe('2 more referenced docs were not read: no role gets them')
   })
 
   test('with no config folder nothing global is read, and the chain still is', async () => {
@@ -1120,6 +1160,21 @@ describe('rules, AGENTS.md and referenced docs', () => {
     const scan = await readInstructionFiles(run.io, repoSources([], ['a.md'], false))
     expect([scan.parts, run.reads.includes(`${RULES}/a.md`)]).toEqual([[], false])
     expect(scan.warnings).toEqual(['could not read .claude/rules/a.md (treated as unknown)'])
+  })
+
+  test('a rule file in a sub-folder of .claude/rules is named, counted and read as a part (M4)', async () => {
+    const world = memWorld({
+      dirs: { [RULES]: [entry('a.md'), entry('frontend', 'dir')], [`${RULES}/frontend`]: [entry('react.md')] },
+      files: { [`${RULES}/a.md`]: '# A\n', [`${RULES}/frontend/react.md`]: '# React\n' },
+    })
+    const names = await repoInstructionNames(memIo(world, []).io, '/repo')
+    expect(names).toEqual({ rules: ['a.md', 'frontend/react.md'], hasAgentsMd: false })
+    expect(contentContextLine(emptySetupScan(), names)).toContain(', 2 rule files, ')
+    const scan = await readInstructionFiles(memIo(world, []).io, repoSources([], names.rules, false))
+    expect(placesOf(scan)).toEqual([
+      ['.claude/rules/a.md', 'A', 'repo'],
+      ['.claude/rules/frontend/react.md', 'React', 'repo'],
+    ])
   })
 
   test('repoInstructionNames lists the .md files of .claude/rules and stats AGENTS.md, reading nothing', async () => {

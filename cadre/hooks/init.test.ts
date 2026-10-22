@@ -65,6 +65,7 @@ import {
   cadreJsonText,
   desiredFiles,
   GIT_TRACKING_UNKNOWN_WARNING,
+  roleClaudeMdText,
   roleJsonText,
   untrackedPartsWarning,
 } from './generate'
@@ -3618,6 +3619,16 @@ function gitCalls(host: MemHost): HostCall[] {
   return host.calls.filter(call => call.argv[0] === 'git')
 }
 
+/** The ids of the roles a plain init wrote a launcher for, in write order, which is path order. */
+function launcherIds(host: MemHost): string[] {
+  const bin = '/repo/.cadre/bin/'
+
+  return host.writes.filter(write => write.path.startsWith(bin)).map(write => write.path.slice(bin.length))
+}
+
+/** A sentence of a team-wide CLAUDE.md above the repo, which no file in the repo may hold (02-GAPS-B2 S2). */
+const TEAM_SENTENCE = 'TEAM-WIDE-SENTENCE stays private'
+
 /**
  * builtWorld whose root CLAUDE.md also imports notes/local.md, which holds `local`; the model groups the global
  * Security section into T1, for security, and the two repo parts into T2 'Repo rules', for be (02-GAPS-B2 M3).
@@ -3727,6 +3738,44 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     await runInit(memIo(localNoteWorld(), PARTS_DECLINED).io, { dryRun: false, host: declined.io })
     expect([gitCalls(globalOnly), gitCalls(declined)]).toEqual([[], []])
     expect(globalOnly.writes.length).toBeGreaterThan(0)
+  })
+
+  test('a plain init after No or after Whole files writes the header-only built file of every role (S1)', async () => {
+    const whole = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' }
+    for (const answers of [PARTS_DECLINED, whole]) {
+      const host = memHost(hostWorld({}))
+      const reply = await runInit(memIo(builtWorld(), answers).io, { dryRun: false, host: host.io })
+      const ids = launcherIds(host)
+      const headers = ids.map(id => ({ path: `/repo/.cadre/${id}/CLAUDE.md`, text: roleClaudeMdText(id, []) }))
+      expect(ids.length).toBeGreaterThan(1)
+      expect(builtWrites(host).map(write => ({ path: write.path, text: write.text }))).toEqual(headers)
+      const rows = reply.split('\n').filter(line => line.endsWith('/CLAUDE.md'))
+      expect(rows).toEqual(ids.map(id => `  create    .cadre/${id}/CLAUDE.md`))
+    }
+  })
+
+  test('a chain CLAUDE.md above the repo is read as a private part and reaches no repo file (S2)', async () => {
+    const topics = [
+      { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+      { title: 'Team rules', summary: 'The rules of the team and the repo.', parts: ['P2', 'P3'] },
+    ]
+    const world = builtWorld({
+      ancestors: [ancestor('/home/u/work'), ancestor('/repo')],
+      files: {
+        ...FULL_FILES,
+        [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+        '/home/u/work/CLAUDE.md': `# Team\n${TEAM_SENTENCE}.\n`,
+        '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+      },
+      replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
+    })
+    const run = memIo(world, PARTS_ANSWERS)
+    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
+    await runInit(run.io, { dryRun: false, host: host.io })
+    expect(run.reads).toContain('/home/u/work/CLAUDE.md')
+    expect(run.prompts[0]).toContain('P2 | ~/work/CLAUDE.md | Team | # Team')
+    expect(host.writes.filter(write => write.text.includes(TEAM_SENTENCE))).toEqual([])
+    expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toContain(BUILT_RULE)
   })
 
   test('a secret in a file git does not track reaches no write (M3, N6)', async () => {

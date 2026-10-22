@@ -992,6 +992,20 @@ describe('scope rules', () => {
   })
 })
 
+describe('the loaded instructions on the card (02-GAPS-B2 N9)', () => {
+  test("every card names the role's built and private instructions as a none rule, after the Skills rule", () => {
+    for (const role of [templateRole('pm'), templateRole('be')]) {
+      const rules = compileScope(role, context()).card.rules
+      const skills = rules.findIndex(found => found.text === 'Skills: only the listed skills are linked')
+      const loads =
+        `Loads .cadre/${role.id}/CLAUDE.md and its private instructions ` +
+        `(<config dir>/cadre/<repo>-<hash8>/${role.id}/instructions/)`
+
+      expect([skills > -1, rules[skills + 1]]).toEqual([true, { text: loads, enforcement: 'none' }])
+    }
+  })
+})
+
 /** Names that sort in their own order: `${prefix}00`, `${prefix}01` and on, `count` of them. */
 function numbered(prefix: string, count: number): string[] {
   return Array.from({ length: count }, (_, index) => `${prefix}${String(index).padStart(2, '0')}`)

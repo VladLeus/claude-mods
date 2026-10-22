@@ -1217,8 +1217,12 @@ describe('instructionPlan', () => {
   })
 })
 
-/** The rule files of the fixture repo, as gatherLaunchUser lists them (G-02-1f). */
-const RULES = ['/repo/.claude/rules/security.md', '/repo/.claude/rules/style.md']
+/** The rule files of the fixture repo, a nested one included, as gatherLaunchUser lists them (G-02-1f, M4). */
+const RULES = [
+  '/repo/.claude/rules/security.md',
+  '/repo/.claude/rules/style.md',
+  '/repo/.claude/rules/frontend/react.md',
+]
 
 /** The built role files of the fixture repo: BE's own, PM's and QA's (G-02-1f). */
 const ROLE_FILES = ['/repo/.cadre/be/CLAUDE.md', '/repo/.cadre/pm/CLAUDE.md', '/repo/.cadre/qa/CLAUDE.md']
@@ -1231,6 +1235,7 @@ describe('parts-flow excludes (G-02-1f)', () => {
     const plan = instructionPlan(templateRole('be'), user({ claudeMd: CHAIN, rules: RULES, roleClaudeMds: ROLE_FILES }))
 
     expect(plan.claudeMdExcludes).toEqual(BE_PARTS_EXCLUDES)
+    expect(plan.claudeMdExcludes).toContain('/repo/.claude/rules/frontend/react.md')
     expect(plan.claudeMdExcludes).not.toContain('/repo/.cadre/be/CLAUDE.md')
   })
 
