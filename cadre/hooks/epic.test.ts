@@ -1654,6 +1654,7 @@ describe('the refusals of epic done (D-169, D-171)', () => {
       'unknown',
     ])
     expect([ran(0), ran(1), ran(128), null].map(mergedStateOf)).toEqual(['merged', 'not-merged', 'unknown', 'unknown'])
+    expect(STATUS_ARGV(WORKTREE)).toEqual(['git', '-C', WORKTREE, 'status', '--porcelain', '--untracked-files=normal'])
   })
 
   test('a record that is missing, does not parse or has no base refuses as no record, with no merge-base', async () => {
