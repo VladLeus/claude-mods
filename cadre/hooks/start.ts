@@ -881,6 +881,14 @@ export function unreadableMemoryIndexWarning(id: string): string {
   return `could not read the ${MEMORY_INDEX_FILE} of ${reportText(id)}: linked memories are not indexed`
 }
 
+/**
+ * The warning for a role's MEMORY.md that is a link (T-02-74): it is never read or written through, so a link put
+ * there cannot make /cadre start write the block into the file it points at.
+ */
+export function memoryIndexLinkWarning(id: string): string {
+  return `the ${MEMORY_INDEX_FILE} of ${reportText(id)} is a link: linked memories are not indexed`
+}
+
 /** A memory the hand-out record names (D-140 q2-a): its file, the memory folder of its original, summary and hash. */
 type RecordedMemory = Pick<MemoryItem, 'file' | 'folder' | 'summary' | 'hash'>
 
@@ -1001,9 +1009,10 @@ async function recordOf(io: InitIo, folder: string): Promise<readonly RecordedMe
  * The role's MEMORY.md is then read: when it is not there, or there with a block both markers end, cadre's block is set
  * to the linked memories in record order (memoryBlockText) and written when its text changes, but never added to a
  * MEMORY.md with no block, or made, for no linked memory; each link the old block listed that is not linked now is
- * removed (staleMemoryLinks). A MEMORY.md that cannot be read, or whose block has no end marker, is left as it is and
- * nothing is removed, with a warning (unreadableMemoryIndexWarning, openMemoryBlockWarning). No other file of the
- * folder is touched, and nothing is ever copied.
+ * removed (staleMemoryLinks). A MEMORY.md that is a link is never read or written through (T-02-74), and one that
+ * cannot be read, or whose block has no end marker, is left as it is too; then nothing is removed, with a warning
+ * (memoryIndexLinkWarning, unreadableMemoryIndexWarning, openMemoryBlockWarning). No other file of the folder is
+ * touched, and nothing is ever copied.
  */
 async function linkedMemoriesOf(
   io: InitIo,
@@ -1023,6 +1032,9 @@ async function linkedMemoriesOf(
     ...outcomes.flatMap(item => item.outcome.warning ?? []),
   ]
   const indexPath = `${folder}/${MEMORY_INDEX_FILE}`
+  if ((await io.stat(indexPath))?.isLink === true) {
+    return { memories: { links, removals: [], index: null }, warnings: [...warnings, memoryIndexLinkWarning(id)] }
+  }
   const indexRead = await io.read(indexPath, MAX_READ_BYTES)
   if (indexRead.state !== 'absent' && indexRead.state !== 'text') {
     return { memories: { links, removals: [], index: null }, warnings: [...warnings, unreadableMemoryIndexWarning(id)] }
