@@ -524,6 +524,21 @@ describe('instructionReviewLines', () => {
     ])
   })
 
+  test('rowsAfter puts the rows it gives for a role right after that role row (02-GAPS-B3 N3)', () => {
+    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, id => [`x ${id}`])).toEqual([
+      'Instructions per role:',
+      '  pm: none',
+      'x pm',
+      '  tl: 1 topic: Git and commits; 0 memories',
+      'x tl',
+      '  security: 1 topic: Security rules; 0 memories',
+      'x security',
+      'Kept with the root session only: 0 topics, 0 memories',
+    ])
+    const none = instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, () => [])
+    expect(none).toEqual(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED))
+  })
+
   test('a role with memories and no topic counts both; a memory no role gets is counted as kept', () => {
     const given = new Map([...RECOMMENDED, ['M1', ['pm', 'security']], ['M2', []]])
     expect(instructionReviewLines(ROLES, TOPICS, MEMORIES, given)).toEqual([

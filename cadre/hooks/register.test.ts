@@ -17,6 +17,8 @@ import {
   NEXT_STEP_NOTE,
   NOT_INTERACTIVE_REPLY,
   policyLine,
+  PRIVATE_FILES_HEADING,
+  privateFoldersUnknownWarning,
   REGEN_NO_STATE,
   regenNoRole,
   REVIEW_QUESTION,
@@ -25,6 +27,7 @@ import {
 } from './init'
 import { stableJson } from './plan'
 import { autopilotReply } from './scan'
+import { GIT_COMMON_DIR_ARGV } from './start'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,
@@ -268,6 +271,18 @@ const GSD_HUNK_RUNS: readonly (readonly string[])[] = [
   ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'mode', 'yolo'],
   ['node', '/home/u/.claude/gsd-core/bin/gsd-tools.cjs', 'config-set', 'workflow.text_mode', 'false'],
 ]
+
+/**
+ * The runs of a plain init in initWorld before its chmods: the accepted GSD hunks, then the git run that names the role
+ * memory folders, which every plain init makes (02-GAPS-B3 C1), all with cwd /repo.
+ */
+const INIT_RUNS: readonly (readonly string[])[] = [...GSD_HUNK_RUNS, GIT_COMMON_DIR_ARGV]
+
+/**
+ * The warning of a plain init of the INIT_ANSWERS team in initWorld, whose git names no common dir: the private files
+ * were not written (02-GAPS-B3 C1).
+ */
+const FOLDERS_UNKNOWN = `warning: ${privateFoldersUnknownWarning(['pm', 'security', 'tl'])}`
 
 /**
  * The repo of initWorld after an init of one BE role on the built-in default: the `.cadre/` folder with its cadre.json,
@@ -1156,8 +1171,8 @@ describe('cadre init with a faked host', () => {
     expect(out.text.split('\n').at(-1)).toBe(NEXT_STEP_NOTE)
     expect(out.text).not.toContain('Dry run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(GSD_HUNK_RUNS)
-    expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(['/repo', '/repo'])
+    expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(INIT_RUNS)
+    expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(['/repo', '/repo', '/repo'])
   })
 
   test('init asks in order: consent, roles, framework, duration, model and effort, git policy', async ($, on) => {
@@ -1351,8 +1366,8 @@ describe('cadre init with a faked host', () => {
     const launchers = planRows(out.text).filter(row => row.path.startsWith('.cadre/bin/'))
     expect(launchers.length).toBeGreaterThan(0)
     const chmods = launchers.map(row => ['/bin/chmod', '755', `/repo/${row.path}`])
-    expect(log.runs).toEqual([...GSD_HUNK_RUNS, ...chmods])
-    expect(log.cwds).toEqual([...GSD_HUNK_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
+    expect(log.runs).toEqual([...INIT_RUNS, ...chmods])
+    expect(log.cwds).toEqual([...INIT_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
   })
 
   test('plain init writes every planned file, the manifest last, and makes each launcher executable', async ($, on) => {
@@ -1367,12 +1382,12 @@ describe('cadre init with a faked host', () => {
     expect(writes.length).toBeGreaterThan(1)
     expect(writes.indexOf('fs.write /repo/.cadre/manifest.json')).toBe(writes.length - 1)
     expect(log.writes).toEqual(writes.map(op => op.slice('fs.write '.length)))
-    expect(log.runs).toEqual(runs)
-    expect(log.cwds).toEqual([...GSD_HUNK_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
+    expect(log.runs).toEqual([...INIT_RUNS, ...chmods])
+    expect(log.cwds).toEqual([...INIT_RUNS.map(() => '/repo'), ...chmods.map(() => '')])
     for (const argv of chmods) expect(log.ops[log.ops.indexOf(`fs.write ${argv[2]}`) + 1]).toBe('process.run')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     const applied = `Applied: wrote ${writes.length} files (3 executable).`
-    expect(out.text.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+    expect(out.text.split('\n').slice(-3)).toEqual([applied, FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
   })
 
   test('init --dry-run in a world that allows writes still writes and runs nothing (PLAN-02)', async ($, on) => {
@@ -1889,13 +1904,17 @@ describe('Phase 2 faked-host matrix', () => {
       expect(dry.split('\n').at(-1)).toBe('Dry run: nothing was written.')
       const plainLines = plain.split('\n')
       const appliedAt = plainLines.findIndex(line => line.startsWith('Applied: '))
-      expect(appliedAt).toBeGreaterThan(0)
-      expect(middleLines(dry)).toEqual(plainLines.slice(1, appliedAt))
+      const dryLines = dry.split('\n')
+      // A --dry-run reply also names the private files Confirm writes, right before its note (02-GAPS-B3 S4).
+      const confirmAt = dryLines.indexOf(PRIVATE_FILES_HEADING)
+      expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
+      expect(dryLines.slice(1, confirmAt)).toEqual(plainLines.slice(1, appliedAt))
       expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
-      // Every hunk the plan shows is accepted and runnable in these worlds, so plain init runs each one (D-120).
-      const hunkRuns = GSD_HUNK_RUNS.slice(0, expected.hunks)
-      expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(hunkRuns)
-      expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(hunkRuns.map(() => '/repo'))
+      // Every hunk the plan shows is accepted and runnable in these worlds, so plain init runs each one (D-120), then
+      // the git run that names the role memory folders (02-GAPS-B3 C1).
+      const runs = [...GSD_HUNK_RUNS.slice(0, expected.hunks), GIT_COMMON_DIR_ARGV]
+      expect(log.runs.filter(run => run[0] !== '/bin/chmod')).toEqual(runs)
+      expect(log.cwds.filter((_, at) => log.runs[at]?.[0] !== '/bin/chmod')).toEqual(runs.map(() => '/repo'))
     })
 
     test(`${name}: every path of the init plan is allowed: .cadre/, .gitignore, GSD hunk (PLAN-06)`, async ($, on) => {

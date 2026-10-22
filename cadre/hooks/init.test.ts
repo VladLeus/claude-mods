@@ -148,11 +148,13 @@ import {
   IMPROVER_INSTALL_DISMISSED_REASON,
   IMPROVER_INSTALL_QUESTION,
   improverNotOfferedWarning,
+  improverRunLine,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
   initGuard,
+  INSTALL_OPTIONS,
   initReplyText,
   installedFrameworks,
   instructionsStep,
@@ -197,6 +199,8 @@ import {
   policyLine,
   portProbeOf,
   portTextOf,
+  PRIVATE_FILES_HEADING,
+  privateFilesRow,
   privateFoldersUnknownWarning,
   proposalLines,
   provenUserDir,
@@ -241,7 +245,6 @@ import {
   scopesFor,
   SECURITY_INSTALL_CONTEXT,
   SECURITY_INSTALL_DISMISSED_REASON,
-  SECURITY_INSTALL_OPTIONS,
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
   securityInstallStep,
@@ -328,6 +331,27 @@ function firstLines(asked: readonly string[]): string[] {
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
   return memWorld({ dirs: { '/repo/.git': [] }, ...over })
 }
+
+/**
+ * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
+ * before its note: the heading, then the private files of each role (02-GAPS-B3 S4).
+ */
+const DEFAULT_CONFIRM_LINES: readonly string[] = [
+  PRIVATE_FILES_HEADING,
+  ...['pm', 'tl', 'security'].map(privateFilesRow),
+]
+
+/**
+ * The private-folders warning of a plain init of the INIT_ANSWERS team in a world whose git gives no common dir: every
+ * plain init names the role memory folders (02-GAPS-B3 C1).
+ */
+const DEFAULT_FOLDERS_UNKNOWN = `warning: ${privateFoldersUnknownWarning(['pm', 'security', 'tl'])}`
+
+/** The private-folders warning of a plain init of the six template roles in a world whose git gives no common dir. */
+const SIX_FOLDERS_UNKNOWN = `warning: ${privateFoldersUnknownWarning(['be', 'fe', 'pm', 'qa', 'security', 'tl'])}`
+
+/** The git run every plain init makes to name the role memory folders (02-GAPS-B3 C1). */
+const COMMON_DIR_CALL: HostCall = { argv: GIT_COMMON_DIR_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }
 
 /**
  * INIT_ANSWERS with the content consent of the instruction parts declined (G-02-1f), so a dry run in a world with a
@@ -2799,8 +2823,11 @@ const GLOBAL_GROUP_QUESTION =
 const PARTS_REVIEW_ROWS = [
   'Instructions per role:',
   '  pm: none',
+  privateFilesRow('pm'),
   '  tl: 1 topic: Git and commits; 0 memories',
+  privateFilesRow('tl'),
   '  security: 1 topic: Security rules; 0 memories',
+  privateFilesRow('security'),
   'Kept with the root session only: 0 topics, 0 memories',
 ]
 
@@ -2918,7 +2945,7 @@ describe('instruction parts (G-02-1f)', () => {
     const at = review.indexOf('Instructions per role:')
     const lastCard = review.map(line => line.startsWith('Scope card: ')).lastIndexOf(true)
     expect(review.slice(at, at + PARTS_REVIEW_ROWS.length)).toEqual(PARTS_REVIEW_ROWS)
-    expect([lastCard > 0, at > lastCard, review.indexOf('File plan:')]).toEqual([true, true, at + 5])
+    expect([lastCard > 0, at > lastCard, review.indexOf('File plan:')]).toEqual([true, true, at + 8])
   })
 
   test('the instructions block shows each topic, its sources and roles, right before the entry question', async () => {
@@ -3080,11 +3107,14 @@ describe('instruction parts (G-02-1f)', () => {
     ])
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 5)).toEqual([
+    expect(review.slice(at, at + 8)).toEqual([
       'Instructions per role:',
       '  pm: none',
+      privateFilesRow('pm'),
       '  tl: none',
+      privateFilesRow('tl'),
       '  security: none',
+      privateFilesRow('security'),
       'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
@@ -3104,14 +3134,20 @@ describe('instruction parts (G-02-1f)', () => {
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 8)).toEqual([
+    expect(review.slice(at, at + 14)).toEqual([
       'Instructions per role:',
       '  pm: none',
+      privateFilesRow('pm'),
       '  tl: none',
+      privateFilesRow('tl'),
       '  be: 1 topic: Release notes; 0 memories',
+      privateFilesRow('be'),
       '  fe: none',
+      privateFilesRow('fe'),
       '  qa: 1 topic: Release notes; 0 memories',
+      privateFilesRow('qa'),
       '  security: 1 topic: Security rules; 0 memories',
+      privateFilesRow('security'),
       'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
@@ -3502,14 +3538,17 @@ describe('memories one by one (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 8)).toEqual([
+    expect(review.slice(at, at + 11)).toEqual([
       'Instructions per role:',
       '  pm: 0 topics; 1 memory',
       LINKED_MEMORIES_ROW,
+      privateFilesRow('pm'),
       '  tl: 0 topics; 1 memory',
       LINKED_MEMORIES_ROW,
+      privateFilesRow('tl'),
       '  security: 1 topic: Security rules; 1 memory',
       LINKED_MEMORIES_ROW,
+      privateFilesRow('security'),
       'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
@@ -3519,12 +3558,15 @@ describe('memories one by one (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 6)).toEqual([
+    expect(review.slice(at, at + 9)).toEqual([
       'Instructions per role:',
       '  pm: none',
+      privateFilesRow('pm'),
       '  tl: 1 topic: Git and commits; 1 memory',
       LINKED_MEMORIES_ROW,
+      privateFilesRow('tl'),
       '  security: 1 topic: Security rules; 0 memories',
+      privateFilesRow('security'),
       'Kept with the root session only: 0 topics, 1 memory',
     ])
   })
@@ -3793,7 +3835,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const run = memIo(builtWorld(), PARTS_ANSWERS)
     const lines = (await runInit(run.io, { dryRun: true })).split('\n')
     const rows = BUILT_TEAM.map(id => `  create    .cadre/${id}/CLAUDE.md`)
-    expect(lines.filter(line => line.includes('CLAUDE.md'))).toEqual(rows)
+    expect(lines.filter(line => line.endsWith('/CLAUDE.md'))).toEqual(rows)
     expect(rows).toContain(BUILT_BE_ROW)
     expect(lines.at(-1)).toBe(DRY_RUN_NOTE)
   })
@@ -3848,8 +3890,10 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toContain(BUILT_RULE)
     const shown = [reply, ...repoWrites(host).map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
-    const tl = await memoryFolder('tl')
-    expect(homeWrites(host).map(write => write.path)).toEqual([privateClaudeMdPath(tl), instructionsRecordPath(tl)])
+    // Every role gets both private files (02-GAPS-B3 C1); only tl's hold the global text and the memory.
+    const folders = await Promise.all(['pm', 'security', 'tl'].map(memoryFolder))
+    const both = folders.flatMap(folder => [privateClaudeMdPath(folder), instructionsRecordPath(folder)])
+    expect(homeWrites(host).map(write => write.path)).toEqual(both)
   })
 
   test('only the parts of files git tracks are written: untracked notes/local.md stays out (M3)', async () => {
@@ -3986,9 +4030,13 @@ describe('private role files (G-02-1f)', () => {
     await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const security = await memoryFolder('security')
     const tl = await memoryFolder('tl')
+    const pm = await memoryFolder('pm')
     const [p1, p2] = [await securityPart(), await gitPart()]
-    // Each record also names the other part of the same file, which the role was not given (AUTO-PICK #19 Q1).
+    // Each record also names the other part of the same file, which the role was not given (AUTO-PICK #19 Q1); pm,
+    // given nothing, gets the header alone and an empty record (02-GAPS-B3 C1).
     expect(homeWrites(host)).toEqual([
+      { path: privateClaudeMdPath(pm), text: privateClaudeMdText('pm', 'repo', []), isWritten: true },
+      { path: instructionsRecordPath(pm), text: instructionsRecordText([], []), isWritten: true },
       { path: privateClaudeMdPath(security), text: privateClaudeMdText('security', 'repo', [p1]), isWritten: true },
       { path: instructionsRecordPath(security), text: instructionsRecordText([p1], [], [p2]), isWritten: true },
       { path: privateClaudeMdPath(tl), text: privateClaudeMdText('tl', 'repo', [p2]), isWritten: true },
@@ -4004,7 +4052,7 @@ describe('private role files (G-02-1f)', () => {
     const firstPrivate = paths.findIndex(path => path.startsWith('/home/u/'))
     const lastPrivate = paths.findLastIndex(path => path.startsWith('/home/u/'))
     expect(paths.slice(0, firstPrivate).every(path => path.startsWith('/repo/'))).toBe(true)
-    expect(paths.slice(firstPrivate, lastPrivate + 1)).toHaveLength(4)
+    expect(paths.slice(firstPrivate, lastPrivate + 1)).toHaveLength(6)
     expect(paths.slice(lastPrivate + 1)).toEqual(['/repo/.cadre/manifest.json'])
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
   })
@@ -4016,6 +4064,7 @@ describe('private role files (G-02-1f)', () => {
     const pm = await memoryFolder('pm')
     const squad = await squadMemory()
     expect(host.writes.filter(write => write.path.startsWith(`${pm}/`))).toEqual([
+      { path: privateClaudeMdPath(pm), text: privateClaudeMdText('pm', 'repo', []), isWritten: true },
       { path: instructionsRecordPath(pm), text: instructionsRecordText([], [squad]), isWritten: true },
     ])
     expect(host.writes.filter(write => write.text.includes(MEMORY_SENTENCE))).toEqual([])
@@ -4066,7 +4115,7 @@ describe('private role files (G-02-1f)', () => {
       const host = memHost(hostWorld({ runs: [rule] }))
       const reply = await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
       expect(homeWrites(host)).toEqual([])
-      expect(reply.split('\n')).toContain(`warning: ${privateFoldersUnknownWarning(['security', 'tl'])}`)
+      expect(reply.split('\n')).toContain(`warning: ${privateFoldersUnknownWarning(['pm', 'security', 'tl'])}`)
       expect(reply.split('\n')).not.toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
       expect(host.writes.map(write => write.path).at(-1)).toBe('/repo/.cadre/manifest.json')
     }
@@ -4198,7 +4247,7 @@ describe('improver in init (G-02-1f)', () => {
     ])
     const firstRun = events.findIndex(event => event.startsWith('run claude -p'))
     const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
-    expect(events[firstRun - 1]).toBe(`write ${instructionsRecordPath(security)}`)
+    expect(events[firstRun - 1]).toBe(`write ${instructionsRecordPath(await memoryFolder('tl'))}`)
     expect(events.slice(lastRun + 1)).toEqual(['write /repo/.cadre/manifest.json'])
     expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE_IMPROVED))
     expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE))
@@ -4336,7 +4385,7 @@ describe('improver install offer (G-02-1f)', () => {
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), improverOffer('Install'))
     const reply = await runInit(run.io, { dryRun: false, host: io })
-    expect(lastReview(run).at(-1)).toBe(IMPROVER_INSTALL_ROW)
+    expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
     const install = host.calls.findIndex(call => call.argv.join(' ') === `claude plugin install ${CLAUDE_MD_PLUGIN}`)
     expect(install).toBeGreaterThanOrEqual(0)
     expect(host.calls[install]?.options).toEqual({ cwd: '/home/u', timeoutMs: 180_000 })
@@ -4392,8 +4441,203 @@ describe('improver install offer (G-02-1f)', () => {
     expect([host.writes, host.calls]).toEqual([[], []])
     const dry = memIo(builtWorld(), improverOffer('Install'))
     const dryReply = await runInit(dry.io, { dryRun: true })
-    expect(lastReview(dry).at(-1)).toBe(IMPROVER_INSTALL_ROW)
+    expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
     expect(dryReply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+  })
+})
+
+/**
+ * The private files of these roles as a plain init writes them when it gives them nothing private: the header-only text
+ * file, then the empty record, role by role in the order given (02-GAPS-B3 C1).
+ */
+async function emptyPrivates(ids: readonly string[]): Promise<HostWrite[]> {
+  const folders = await Promise.all(ids.map(memoryFolder))
+
+  return folders.flatMap((folder, at) => [
+    { path: privateClaudeMdPath(folder), text: privateClaudeMdText(ids[at] ?? '', 'repo', []), isWritten: true },
+    { path: instructionsRecordPath(folder), text: instructionsRecordText([], []), isWritten: true },
+  ])
+}
+
+/** The `/bin/chmod 700` runs of a host: the private folder levels it made private (02-GAPS-B2 N13). */
+function privateChmods(host: MemHost): string[] {
+  const chmods = host.calls.filter(call => call.argv[0] === '/bin/chmod' && call.argv[1] === '700')
+
+  return chmods.map(call => call.argv[2] ?? '')
+}
+
+describe('private files for every role (02-GAPS-B3 C1)', () => {
+  test('after Whole files or No every role gets a header-only text file and an empty record; no improver', async () => {
+    const whole = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' }
+    for (const answers of [PARTS_DECLINED, whole]) {
+      const files = builtFilesRecord()
+      const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+      await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: host.io })
+      expect(homeWrites(host)).toEqual(await emptyPrivates(BUILT_TEAM))
+      expect(host.calls.filter(call => call.argv[1] === 'rev-parse')).toEqual([COMMON_DIR_CALL])
+      expect(improverCalls(host)).toEqual([])
+    }
+    expect(instructionsRecordText([], [])).toBe('{\n  "memories": [],\n  "parts": [],\n  "schema": 1\n}\n')
+  })
+
+  test('git names the role memory folders on every plain init; with no home folder no role gets them', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(host.calls.filter(call => call.argv[1] === 'rev-parse')).toEqual([COMMON_DIR_CALL])
+    expect(homeWrites(host)).toEqual(await emptyPrivates(['pm', 'security', 'tl']))
+    const locations = { ...DEFAULT_LOCATIONS, home: null }
+    const homeless = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const reply = await runInit(memIo(gitWorld({ locations }), INIT_ANSWERS).io, { dryRun: false, host: homeless.io })
+    expect(reply.split('\n')).toContain(DEFAULT_FOLDERS_UNKNOWN)
+    expect([homeless.calls.filter(call => call.argv[0] === 'git'), homeWrites(homeless)]).toEqual([[], []])
+  })
+
+  test('a re-init that gives a role no memory any more writes it an empty record', async () => {
+    const replies = [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["pm"],"M2":[]}}']
+    const first = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(memoriesWorld({ replies }), PARTS_ANSWERS).io, { dryRun: false, host: first.io })
+    const record = instructionsRecordPath(await memoryFolder('pm'))
+    const recordOf = (host: MemHost): string | undefined => host.writes.find(write => write.path === record)?.text
+    expect(recordOf(first)).toBe(instructionsRecordText([], [await squadMemory()]))
+    const again = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const world = withWrites(memoriesWorld({ replies: [PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY] }), first.writes)
+    await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: again.io })
+    expect(recordOf(again)).toBe(instructionsRecordText([], []))
+  })
+})
+
+/** builtWorld's folders once an init wrote `.cadre/`: the root lists it, so the next scan reads its manifest. */
+function builtAfterDirs(): Readonly<Record<string, readonly PortEntry[]>> {
+  return {
+    '/repo/.git': [],
+    ...FULL_DIRS,
+    '/repo': [...FULL_DIRS['/repo'], entry('.cadre', 'dir')],
+    '/repo/.cadre': [],
+  }
+}
+
+describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
+  test('a role whose record is unchanged gets no private step: no write and no chmod of its levels', async () => {
+    const first = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: first.io })
+    expect(homeWrites(first)).toHaveLength(6)
+    const again = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const reply = await runInit(memIo(withWrites(partsWorld(), first.writes), PARTS_ANSWERS).io, {
+      dryRun: false,
+      host: again.io,
+    })
+    expect([homeWrites(again), privateChmods(again)]).toEqual([[], []])
+    expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
+    const security = await memoryFolder('security')
+    const changed = withWrites(partsWorld(), [
+      ...first.writes,
+      { path: instructionsRecordPath(security), text: '{}\n', isWritten: true },
+    ])
+    const third = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(changed, PARTS_ANSWERS).io, { dryRun: false, host: third.io })
+    expect(homeWrites(third).map(write => write.path)).toEqual([
+      privateClaudeMdPath(security),
+      instructionsRecordPath(security),
+    ])
+    expect(privateChmods(third)).toEqual([
+      '/home/u/.claude/cadre',
+      await slugFolder(),
+      security,
+      `${security}/instructions`,
+    ])
+  })
+
+  test('an accepted improver text is kept with its manifest entry while the records are unchanged', async () => {
+    const files = builtFilesRecord()
+    const first = improvingHost(files)
+    const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
+    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: first.io })
+    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
+    const manifest = files['/repo/.cadre/manifest.json'] ?? ''
+    expect(manifest).toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    const again = improvingHost(files)
+    const run = memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers)
+    const reply = await runInit(run.io, { dryRun: false, host: again.io })
+    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+    expect(opKinds(reply).get('.cadre/be/role.json')).toBe('leave')
+    expect([improverCalls(again.host), again.host.writes]).toEqual([[], []])
+    expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
+    expect(files['/repo/.cadre/manifest.json']).toBe(manifest)
+    expect(shownBlock(run, 'review').filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
+    const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
+    expect(opKinds(dry).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+  })
+
+  test('a role whose records changed plans a change of its built file', async () => {
+    const files = builtFilesRecord()
+    const answers = { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }
+    await runInit(memIo(builtWorld({ files }), answers).io, { dryRun: false, host: improvingHost(files).io })
+    files['/repo/CLAUDE.md'] = `# Rules\n${BUILT_RULE} Always.\n`
+    const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
+    expect([opKinds(dry).get(BE_CLAUDE_MD_PATH), opKinds(dry).get('.cadre/be/role.json')]).toEqual([
+      'change',
+      'change',
+    ])
+  })
+})
+
+describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
+  test('the private files row, its heading and the improver line are fixed', () => {
+    expect(privateFilesRow('be')).toBe(
+      '    private files: <config dir>/cadre/<repo>-<hash8>/be/instructions/CLAUDE.md and instructions.json ' +
+        '(outside the repo, never committed)',
+    )
+    expect(PRIVATE_FILES_HEADING).toBe('Private files per role (written after Confirm):')
+    expect([improverRunLine(1), improverRunLine(2)]).toEqual([
+      'After Confirm, claude-md-improver runs on up to 1 built file (claude -p, acceptEdits, up to 5 minutes each); ' +
+        'you accept or keep each change.',
+      'After Confirm, claude-md-improver runs on up to 2 built files (claude -p, acceptEdits, up to 5 minutes each); ' +
+        'you accept or keep each change.',
+    ])
+  })
+
+  test('a whole-files review lists the heading, then the private files of each role in role order', async () => {
+    const whole = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' }
+    const run = memIo(builtWorld(), whole)
+    await runInit(run.io, { dryRun: true })
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf(PRIVATE_FILES_HEADING)
+    const ids = review.filter(line => line.startsWith('Scope card: ')).map(line => /\(([^)]+)\)$/.exec(line)?.[1] ?? '')
+    expect(ids).toHaveLength(6)
+    expect(review.slice(at, at + 7)).toEqual([PRIVATE_FILES_HEADING, ...ids.map(privateFilesRow)])
+    expect(review[at + 7]).toBe('File plan:')
+  })
+
+  test('with claude-md-management in, the review ends with the improver line; without it, it has none', async () => {
+    const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
+    await runInit(installed.io, { dryRun: true })
+    expect(lastReview(installed).at(-1)).toBe(improverRunLine(2))
+    const notNow = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
+    await runInit(notNow.io, { dryRun: true })
+    expect(lastReview(notNow).filter(line => line.startsWith('After Confirm, claude-md-improver'))).toEqual([])
+  })
+
+  test('the --dry-run reply names the private files and the improver before its note, a plain one not', async () => {
+    const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
+    const dry = (await runInit(installed.io, { dryRun: true })).split('\n')
+    const at = dry.indexOf(launchLine({ kind: 'git-root' }))
+    const ids = shownBlock(installed, 'review')
+      .filter(line => line.startsWith('Scope card: '))
+      .map(line => /\(([^)]+)\)$/.exec(line)?.[1] ?? '')
+    expect(dry.slice(at + 1)).toEqual([
+      PRIVATE_FILES_HEADING,
+      ...ids.map(privateFilesRow),
+      improverRunLine(2),
+      DRY_RUN_NOTE,
+    ])
+    const files = builtFilesRecord()
+    const plain = await runInit(memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' }).io, {
+      dryRun: false,
+      host: improvingHost(files).io,
+    })
+    const named = plain.split('\n').filter(line => line === PRIVATE_FILES_HEADING || line.startsWith('After Confirm'))
+    expect(named).toEqual([])
   })
 })
 
@@ -4990,6 +5234,7 @@ describe('launchStartStep', () => {
     expect(lines.slice(lines.indexOf(policyLine('definitions')))).toEqual([
       policyLine('definitions'),
       'Launchers start in: the git root',
+      ...DEFAULT_CONFIRM_LINES,
       DRY_RUN_NOTE,
     ])
   })
@@ -6219,17 +6464,20 @@ describe('init plan', () => {
       ...renderPlan(plan),
       policyLine('definitions'),
       'Launchers start in: the git root',
+      ...DEFAULT_CONFIRM_LINES,
       DRY_RUN_NOTE,
     ])
   })
 
-  test('plain init gives the lines of --dry-run but the first and the ending (PLAN-02, D-105)', async () => {
+  test('plain init gives the lines of --dry-run but the first, the private files and the end (PLAN-02)', async () => {
     const dry = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })).split('\n')
     const host = memHost(hostWorld({}))
     const plain = (await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })).split('\n')
     const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
+    const confirmAt = -1 - DEFAULT_CONFIRM_LINES.length
     expect(appliedAt).toBeGreaterThan(0)
-    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, -1))
+    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt))
+    expect(dry.slice(confirmAt, -1)).toEqual(DEFAULT_CONFIRM_LINES)
     expect([plain[0], plain.at(-1)]).toEqual(['cadre init', NEXT_STEP_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre init --dry-run', DRY_RUN_NOTE])
   })
@@ -6292,9 +6540,12 @@ describe('init plan', () => {
     const world = gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: disk })
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: true })
     const kinds = opKinds(reply)
-    expect(kinds.size).toBe(files.length + 2)
+    // Each built CLAUDE.md as the last apply left it gets no op: its manifest entry is kept (02-GAPS-B3 S1).
+    const built = files.filter(file => file.path.endsWith('/CLAUDE.md')).length
+    const left = files.length + 2 - built
+    expect([built, kinds.size]).toEqual([3, left])
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
-    expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${files.length + 2} leave, 0 conflict, 0 hunks`)
+    expect(reply.split('\n')).toContain(`Summary: 0 create, 0 change, ${left} leave, 0 conflict, 0 hunks`)
   })
 
   test('init stores the consent answer: over a stored yes, yes leaves cadre.json and no changes it (A1)', async () => {
@@ -6541,6 +6792,8 @@ describe('reviewStep', () => {
       'Roles:',
       ...team.map(role => `  ${role.title} (${role.id})`),
       ...cardLines(team, scopes),
+      PRIVATE_FILES_HEADING,
+      ...team.map(role => privateFilesRow(role.id)),
       ...renderPlan(plan),
       policyLine('definitions'),
       launchLine({ kind: 'git-root' }),
@@ -6574,6 +6827,7 @@ describe('reviewStep', () => {
       policyLine('ignore'),
       'Launchers start in: the git root',
       IGNORE_ALL_NOTE,
+      ...DEFAULT_CONFIRM_LINES,
       DRY_RUN_NOTE,
     ])
   })
@@ -6764,7 +7018,7 @@ describe('reviewStep', () => {
     expect(run.logged.filter(text => text === MODEL_DISMISSED_REASON)).toHaveLength(1)
   })
 
-  test('one answer script gives init and --dry-run the same lines but the first and the ending (PLAN-02)', async () => {
+  test('one answer script gives init and --dry-run one plan but the first line, private files and end', async () => {
     const answers = {
       ...PARTS_DECLINED,
       'Review the plan': ['git policy', 'Confirm'],
@@ -6774,10 +7028,11 @@ describe('reviewStep', () => {
     const host = memHost(hostWorld({}))
     const plain = (await runInit(queuedIo(everyStepWorld(), answers).io, { dryRun: false, host: host.io })).split('\n')
     const appliedAt = plain.findIndex(line => line.startsWith('Applied: '))
-    expect(appliedAt).toBeGreaterThan(0)
-    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, -1))
-    expect(dry.slice(1, -1)).toContain('File plan:')
-    expect(dry.slice(1, -1)).toContain(policyLine('ignore'))
+    const confirmAt = dry.indexOf(PRIVATE_FILES_HEADING)
+    expect([appliedAt > 0, confirmAt > 0]).toEqual([true, true])
+    expect(plain.slice(1, appliedAt)).toEqual(dry.slice(1, confirmAt))
+    expect(dry.slice(1, confirmAt)).toContain('File plan:')
+    expect(dry.slice(1, confirmAt)).toContain(policyLine('ignore'))
   })
 
   test('a cancelled run keeps nothing: the next run on the same port starts fresh (D-45, D-82)', async () => {
@@ -7574,7 +7829,8 @@ describe('init apply (D-105)', () => {
     const host = memHost(hostWorld({}))
     const { io, events } = withHostEvents(host)
     await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: io })
-    expect(host.calls).toEqual(EMPTY_REPO_CHMODS.map(argv => ({ argv, options: { timeoutMs: 10_000 } })))
+    const chmods = EMPTY_REPO_CHMODS.map(argv => ({ argv, options: { timeoutMs: 10_000 } }))
+    expect(host.calls).toEqual([COMMON_DIR_CALL, ...chmods])
     for (const argv of EMPTY_REPO_CHMODS) {
       const path = argv[2] ?? ''
       expect(events[events.indexOf(`write ${path}`) + 1]).toBe(`run ${argv.join(' ')}`)
@@ -7592,18 +7848,19 @@ describe('init apply (D-105)', () => {
       policyLine('definitions'),
       'Launchers start in: the git root',
       `Applied: wrote ${host.writes.length} files (3 executable).`,
+      DEFAULT_FOLDERS_UNKNOWN,
       NEXT_STEP_NOTE,
     ])
   })
 
-  test('init again over what it wrote has nothing to write and writes and runs nothing (LNCH-01)', async () => {
+  test('init again over what it wrote writes nothing and runs only git for the memory folders (LNCH-01)', async () => {
     const first = memHost(hostWorld({}))
     await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: false, host: first.io })
     const again = memHost(hostWorld({}))
     const world = withWrites(gitWorld(), first.writes)
     const reply = await runInit(memIo(world, INIT_ANSWERS).io, { dryRun: false, host: again.io })
-    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    expect([again.writes, again.calls]).toEqual([[], []])
+    expect(reply.split('\n').slice(-3)).toEqual([APPLIED_NONE_NOTE, DEFAULT_FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
+    expect([again.writes, again.calls]).toEqual([[], [COMMON_DIR_CALL]])
   })
 
   test('init --dry-run is the Phase 2 reply byte for byte, and no option type gives a dry run a host', async () => {
@@ -7611,7 +7868,14 @@ describe('init apply (D-105)', () => {
     const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
     const plan = await emptyDiskPlan(files, 'definitions', [], GIT_TEAM_HAS_SECURITY)
     const start = 'Launchers start in: the git root'
-    const lines = ['cadre init --dry-run', ...renderPlan(plan), policyLine('definitions'), start, DRY_RUN_NOTE]
+    const lines = [
+      'cadre init --dry-run',
+      ...renderPlan(plan),
+      policyLine('definitions'),
+      start,
+      ...DEFAULT_CONFIRM_LINES,
+      DRY_RUN_NOTE,
+    ]
     expect(reply).toBe(lines.join('\n'))
     // Each constant compiles only while the --dry-run variant of its options type has no host key (T-03-16).
     const isInitHost: DryRunHasHost<InitOptions> = false
@@ -7856,8 +8120,12 @@ describe('init apply conflicts (D-67)', () => {
       { path: '/repo/.cadre/manifest.json', text: manifest, isWritten: true },
     ])
     expect(manifest).not.toBe(world.files['/repo/.cadre/manifest.json'])
-    expect(host.calls).toEqual([])
-    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 2 files (0 executable).', NEXT_STEP_NOTE])
+    expect(host.calls).toEqual([COMMON_DIR_CALL])
+    expect(reply.split('\n').slice(-3)).toEqual([
+      'Applied: wrote 2 files (0 executable).',
+      SIX_FOLDERS_UNKNOWN,
+      NEXT_STEP_NOTE,
+    ])
   })
 
   test('Keep mine leaves ROLE.md, writes only its .cadre-new copy and keeps the manifest', async () => {
@@ -7867,8 +8135,12 @@ describe('init apply conflicts (D-67)', () => {
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(run.asked.at(-1)).toBe(ROLE_ASKED)
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
-    expect(host.calls).toEqual([])
-    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
+    expect(host.calls).toEqual([COMMON_DIR_CALL])
+    expect(reply.split('\n').slice(-3)).toEqual([
+      'Applied: wrote 1 file (0 executable).',
+      SIX_FOLDERS_UNKNOWN,
+      NEXT_STEP_NOTE,
+    ])
   })
 
   test(
@@ -7917,9 +8189,13 @@ describe('init apply conflicts (D-67)', () => {
     const reply = await runInit(io, { dryRun: false, host: host.io })
     expect(firstLines(run.asked).at(-1)).toBe(REVIEW_QUESTION)
     expect(host.writes).toEqual([{ path: '/repo/.cadre/be/ROLE.md.cadre-new', text: role, isWritten: true }])
-    expect(host.calls).toEqual([])
+    expect(host.calls).toEqual([COMMON_DIR_CALL])
     expect(opKinds(reply).get('.cadre/be/ROLE.md')).toBe('conflict')
-    expect(reply.split('\n').slice(-2)).toEqual(['Applied: wrote 1 file (0 executable).', NEXT_STEP_NOTE])
+    expect(reply.split('\n').slice(-3)).toEqual([
+      'Applied: wrote 1 file (0 executable).',
+      SIX_FOLDERS_UNKNOWN,
+      NEXT_STEP_NOTE,
+    ])
   })
 })
 
@@ -7959,12 +8235,14 @@ describe('init apply hunks (D-120)', () => {
       const reply = await runInit(memIo(modeWorld(), INIT_ANSWERS).io, { dryRun: false, host: io })
       expect(host.calls).toEqual([
         { argv: MODE_RUN, options: { cwd: '/repo', timeoutMs: 30_000 } },
+        COMMON_DIR_CALL,
         ...EMPTY_REPO_CHMOD_CALLS,
       ])
       expect(events[0]).toBe(`run ${MODE_RUN.join(' ')}`)
-      expect(events[1]?.startsWith('write ')).toBe(true)
+      expect(events[1]).toBe(`run ${GIT_COMMON_DIR_ARGV.join(' ')}`)
+      expect(events[2]?.startsWith('write ')).toBe(true)
       const applied = `Applied: wrote ${host.writes.length} files (3 executable).`
-      expect(reply.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+      expect(reply.split('\n').slice(-3)).toEqual([applied, DEFAULT_FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
     },
   )
 
@@ -7974,10 +8252,11 @@ describe('init apply hunks (D-120)', () => {
       const failed = { exitCode: 1, stdout: '', stderr: 'denied' }
       const host = memHost(hostWorld({ runs: [{ argv: MODE_RUN, result: failed }] }))
       const reply = await runInit(memIo(modeWorld(), INIT_ANSWERS).io, { dryRun: false, host: host.io })
-      expect(reply.split('\n').slice(-4)).toEqual([
+      expect(reply.split('\n').slice(-5)).toEqual([
         `Applied: wrote ${host.writes.length} files (3 executable).`,
         MODE_FAILED,
         `warning: ${attendedNote(['mode'])}`,
+        DEFAULT_FOLDERS_UNKNOWN,
         NEXT_STEP_NOTE,
       ])
       expect(reply).not.toContain('denied')
@@ -8002,7 +8281,7 @@ describe('init apply hunks (D-120)', () => {
     const host = memHost(hostWorld({}))
     const answers = { ...INIT_ANSWERS, '.planning/config.json:': 'Decline' }
     const reply = await runInit(memIo(modeWorld(), answers).io, { dryRun: false, host: host.io })
-    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    expect(host.calls).toEqual([COMMON_DIR_CALL, ...EMPTY_REPO_CHMOD_CALLS])
     expect(reply).not.toContain('failed: run it yourself')
   })
 
@@ -8015,7 +8294,7 @@ describe('init apply hunks (D-120)', () => {
     }
     const host = memHost(hostWorld({}))
     const reply = await runInit(memIo(modeWorld({ facts }), INIT_ANSWERS).io, { dryRun: false, host: host.io })
-    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    expect(host.calls).toEqual([COMMON_DIR_CALL, ...EMPTY_REPO_CHMOD_CALLS])
     const lines = reply.split('\n').map(line => line.trim())
     expect(lines).toContain('run: node .claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo')
     expect(reply).not.toContain('failed: run it yourself')
@@ -8037,7 +8316,7 @@ describe('init apply hunks (D-120)', () => {
         refused.map(path => `warning: refused to write ${path}: ${reason}`),
       )
       expect(lines).toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
-      expect(host.calls).toEqual([])
+      expect(host.calls).toEqual([COMMON_DIR_CALL])
     },
   )
 
@@ -8666,8 +8945,8 @@ describe('security plugin installs (decision #39)', () => {
 
   test('the question start, its two answers, its cancel reason and the install timeout are fixed', () => {
     expect(SECURITY_INSTALL_PREFIX).toBe('Install from claude-plugins-official after you confirm the plan:')
-    expect(SECURITY_INSTALL_OPTIONS).toEqual(['Install', 'Not now'])
-    expect(Object.isFrozen(SECURITY_INSTALL_OPTIONS)).toBe(true)
+    expect(INSTALL_OPTIONS).toEqual(['Install', 'Not now'])
+    expect(Object.isFrozen(INSTALL_OPTIONS)).toBe(true)
     expect(SECURITY_INSTALL_DISMISSED_REASON).toBe('The security plugins question was dismissed or not answered.')
     expect(PLUGIN_RUN_TIMEOUT_MS).toBe(180_000)
   })
@@ -8842,9 +9121,9 @@ describe('security plugin installs (decision #39)', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(run.asked.filter(question => question.startsWith(BOTH_QUESTION_START))).toHaveLength(1)
-    expect(host.calls).toEqual(EMPTY_REPO_CHMOD_CALLS)
+    expect(host.calls).toEqual([COMMON_DIR_CALL, ...EMPTY_REPO_CHMOD_CALLS])
     const applied = `Applied: wrote ${host.writes.length} files (3 executable).`
-    expect(reply.split('\n').slice(-2)).toEqual([applied, NEXT_STEP_NOTE])
+    expect(reply.split('\n').slice(-3)).toEqual([applied, DEFAULT_FOLDERS_UNKNOWN, NEXT_STEP_NOTE])
     const role = host.writes.find(write => write.path === '/repo/.cadre/security/role.json')?.text ?? ''
     expect(role).not.toContain('claude-security')
     const dropped = queuedIo(gitWorld(), {
@@ -8857,7 +9136,7 @@ describe('security plugin installs (decision #39)', () => {
       const quietHost = memHost(hostWorld({ runs: INSTALLS_OK }))
       await runInit(quiet.io, { dryRun: false, host: quietHost.io })
       expect(quiet.asked.some(question => question.startsWith('Install from claude-plugins-official'))).toBe(false)
-      expect(quietHost.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+      expect(quietHost.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([COMMON_DIR_CALL])
     }
   })
 })
@@ -8909,7 +9188,7 @@ describe('security plugin review fixes (#69)', () => {
     const rounds = reviewRounds(run)
     const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
     expect(installLines).toEqual([1, 0])
-    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([COMMON_DIR_CALL])
     const role = host.writes.find(write => write.path === '/repo/.cadre/security/role.json')?.text ?? ''
     expect([role === '', role.includes(CLAUDE_SECURITY_SKILL)]).toEqual([false, false])
   })
@@ -8926,7 +9205,7 @@ describe('security plugin review fixes (#69)', () => {
     const rounds = reviewRounds(run)
     const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
     expect(installLines).toEqual([1, 0])
-    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([COMMON_DIR_CALL])
     const ignore = host.writes.find(write => write.path === '/repo/.gitignore')?.text ?? ''
     expect([ignore.includes('# >>> cadre'), ignore.includes('CLAUDE-SECURITY-*/')]).toEqual([true, false])
     expect(host.writes.some(write => write.path.startsWith('/repo/.cadre/security/'))).toBe(false)
@@ -8982,6 +9261,7 @@ describe('install checks (decision #39)', () => {
       { argv: PYTHON_CHECK, options: PYTHON_OPTIONS },
       { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
       { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+      COMMON_DIR_CALL,
     ])
     expect(PYTHON_TIMEOUT_MS).toBe(5_000)
   })
@@ -9017,6 +9297,7 @@ describe('install checks (decision #39)', () => {
     expect(run.asked.filter(asked => asked.startsWith(question))).toHaveLength(1)
     expect(host.calls.filter(call => call.argv[0] !== '/bin/chmod')).toEqual([
       { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+      COMMON_DIR_CALL,
     ])
   })
 
@@ -9058,6 +9339,7 @@ describe('install checks (decision #39)', () => {
       { argv: MARKETPLACE_ADD, options: PLUGIN_OPTIONS },
       { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
       { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+      COMMON_DIR_CALL,
     ])
     expect(reply).not.toContain('could not install')
     expect(reply.split('\n').slice(-2)).toEqual([BOTH_INSTALLED_LINE, NEXT_STEP_NOTE])
@@ -9077,6 +9359,7 @@ describe('install checks (decision #39)', () => {
       { argv: SECURITY_INSTALL, options: PLUGIN_OPTIONS },
       { argv: MARKETPLACE_ADD, options: PLUGIN_OPTIONS },
       { argv: GUIDANCE_INSTALL, options: PLUGIN_OPTIONS },
+      COMMON_DIR_CALL,
     ])
     const lines = reply.split('\n')
     for (const key of SECURITY_KEYS) expect(lines).toContain(installFailedLine(key, true))
@@ -9099,13 +9382,14 @@ describe('install checks (decision #39)', () => {
       SECURITY_INSTALL,
       GUIDANCE_INSTALL,
       GUIDANCE_INSTALL,
+      GIT_COMMON_DIR_ARGV,
     ])
     const lines = reply.split('\n')
     for (const key of SECURITY_KEYS) expect(lines).toContain(installFailedLine(key, false))
     expect(reply).not.toContain('Installed ')
   })
 
-  test('no python3, install or marketplace run has the repo as cwd; only the hunk runs there (T-03-46)', async () => {
+  test('no python3, install or marketplace run has the repo as cwd; only the hunk and git do (T-03-46)', async () => {
     const runs: readonly HostRunRule[] = [PYTHON_OK_RUN, { argv: SECURITY_INSTALL, result: FAILED_RUN }]
     const host = memHost(hostWorld({ runs }))
     await runInit(memIo(modeWorld(), INSTALL_ANSWERS).io, { dryRun: false, host: host.io })
@@ -9118,7 +9402,10 @@ describe('install checks (decision #39)', () => {
       GUIDANCE_INSTALL,
     ])
     expect(installRuns.filter(call => call.options.cwd !== '/home/u')).toEqual([])
-    expect(host.calls.filter(call => call.options.cwd === '/repo').map(call => call.argv)).toEqual([MODE_RUN])
+    expect(host.calls.filter(call => call.options.cwd === '/repo').map(call => call.argv)).toEqual([
+      MODE_RUN,
+      GIT_COMMON_DIR_ARGV,
+    ])
   })
 
   test('the plan is made again with the installed plugins, so only an installed claude-security is on', async () => {
@@ -9167,11 +9454,14 @@ describe('linked memory deny (G-02-1f)', () => {
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
 
-    expect(review.slice(at + 1, at + 5)).toEqual([
+    expect(review.slice(at + 1, at + 8)).toEqual([
       '  pm: none',
+      privateFilesRow('pm'),
       '  tl: 1 topic: Git and commits; 1 memory',
       '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)',
+      privateFilesRow('tl'),
       '  security: 1 topic: Security rules; 0 memories',
+      privateFilesRow('security'),
     ])
     expect(review.filter(line => line === LINKED_MEMORIES_ROW)).toHaveLength(1)
   })

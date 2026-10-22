@@ -911,6 +911,24 @@ describe('linked memories (G-02-1f)', () => {
     ])
   })
 
+  test('after a re-init emptied the record, start removes the old link and leaves the block empty (C1)', async () => {
+    const folder = await startRoleFolder()
+    const own = '# Memory\n'
+    const base = await linkedWorld({
+      [instructionsRecordPath(folder)]: instructionsRecordText([], []),
+      [`${folder}/MEMORY.md`]: `${own}${blockOf(['- [a.md](a.md) \u2014 a'])}`,
+    })
+    const start = await startBe({ ...base, dirs: { ...base.dirs, [folder]: [link('a.md'), entry('MEMORY.md')] } })
+
+    expect(start.calls.filter(call => call.argv[0] === '/bin/rm').map(call => call.argv)).toEqual([
+      ['/bin/rm', '-f', '--', `${folder}/a.md`],
+    ])
+    expect(memoryFolderWrites(start, folder)).toEqual([
+      { path: `${folder}/MEMORY.md`, text: `${own}${blockOf([])}`, isWritten: true },
+    ])
+    expect(linkRuns(start)).toEqual([['/bin/ln', '-sfn', `${folder}/instructions`, `${RUNTIME}/private-instructions`]])
+  })
+
   test('a real file with the name of a memory is never replaced: a warning, no link, not a linked memory', async () => {
     const folder = await startRoleFolder()
     const world = await linkedWorld({ [`${folder}/squad.md`]: "the role's own squad note" })

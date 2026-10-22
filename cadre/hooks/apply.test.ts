@@ -1193,13 +1193,24 @@ describe('private role files (G-02-1f)', () => {
       {
         kind: 'private',
         path: TL_DIR,
-        files: [{ path: `${TL_DIR}/instructions.json`, text: instructionsRecordText([], [SQUAD]) }],
+        files: [
+          { path: `${TL_DIR}/instructions/CLAUDE.md`, text: privateClaudeMdText('tl', 'repo', []) },
+          { path: `${TL_DIR}/instructions.json`, text: instructionsRecordText([], [SQUAD]) },
+        ],
+      },
+      {
+        kind: 'private',
+        path: PM_PRIVATE.folder,
+        files: [
+          { path: `${PM_PRIVATE.folder}/instructions/CLAUDE.md`, text: privateClaudeMdText('pm', 'repo', []) },
+          { path: `${PM_PRIVATE.folder}/instructions.json`, text: instructionsRecordText([], []) },
+        ],
       },
       { kind: 'manifest', path: MANIFEST_PATH, text: stableJson(manifest) },
     ])
   })
 
-  test('a role given only memories gets its record alone, also in a plan with no manifest step', async () => {
+  test('a role given only memories, or nothing, gets both files, also with no manifest step (C1)', async () => {
     const desired = [file(A, 'a\n')]
     const first = await planWithManifest(input({ desired }))
     const disk = new Map([
@@ -1210,8 +1221,21 @@ describe('private role files (G-02-1f)', () => {
     const steps = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, privates: [TL_PRIVATE] })
 
     expect(steps.map(stepLine)).toEqual([`private ${TL_DIR}`])
+    expect(steps.flatMap(step => (step.kind === 'private' ? step.files.map(onDisk => onDisk.path) : []))).toEqual([
+      `${TL_DIR}/instructions/CLAUDE.md`,
+      `${TL_DIR}/instructions.json`,
+    ])
     const nothing = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, privates: [PM_PRIVATE] })
-    expect(nothing).toEqual([])
+    expect(nothing).toEqual([
+      {
+        kind: 'private',
+        path: PM_PRIVATE.folder,
+        files: [
+          { path: `${PM_PRIVATE.folder}/instructions/CLAUDE.md`, text: privateClaudeMdText('pm', 'repo', []) },
+          { path: `${PM_PRIVATE.folder}/instructions.json`, text: instructionsRecordText([], []) },
+        ],
+      },
+    ])
   })
 
   test('every level cadre makes is made private, its instructions/ subfolder only with a file in it (N13)', () => {
@@ -1410,7 +1434,10 @@ describe('regen private files (G-02-1f)', () => {
     expect(await stepsOf({ ...SECURITY_PRIVATE, partsNotGiven: [GIT_PART], rebuild: 'record' })).toEqual([
       { kind: 'private', path: SECURITY_DIR, files: [record] },
     ])
-    expect(await stepsOf(emptied)).toEqual([])
+    // With no rebuild, as init writes them, both files are written, whatever they hold (02-GAPS-B3 C1).
+    expect(await stepsOf(emptied)).toEqual([
+      { kind: 'private', path: SECURITY_DIR, files: [headerOnly, emptyRecord] },
+    ])
   })
 })
 
