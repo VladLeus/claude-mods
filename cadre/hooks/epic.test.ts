@@ -976,6 +976,18 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(run.writes.filter(write => write.path.startsWith(`${runtime}/`))).toEqual([])
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
   })
+
+  test('an epic writes the PM kickoff, with the key, into the worktree right before its stamp (D-158)', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const runtime = `${BARE_WORKTREE}/.cadre/pm/.runtime`
+    const paths = run.writes.map(write => write.path)
+    const kickoff = lastWrite(run, `${runtime}/kickoff.txt`) ?? ''
+
+    expect(kickoff.startsWith('/autopilot ')).toBe(true)
+    expect(kickoff).toContain('PROJ-1')
+    expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
+    expect(paths.indexOf(`${runtime}/stamp`) - paths.indexOf(`${runtime}/kickoff.txt`)).toBe(1)
+  })
 })
 
 /** The settings.json the host was asked to write for role `id` under `root`, parsed; {} when none was written. */

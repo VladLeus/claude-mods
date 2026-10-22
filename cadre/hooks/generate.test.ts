@@ -22,6 +22,7 @@ import {
   desiredFiles,
   GIT_TRACKING_UNKNOWN_WARNING,
   gitTrackedArgv,
+  hasRuntimeKickoff,
   indexMdText,
   kickoffRoleLine,
   kickoffText,
@@ -33,6 +34,7 @@ import {
   roleClaudeMdText,
   roleJsonText,
   roleMdText,
+  RUNTIME_KICKOFF_TEST,
   settingsText,
   shQuote,
   trackedFilesOf,
@@ -1232,6 +1234,13 @@ const BE_FILES_CHECK =
   `[ -f "$root"/.cadre/be/ROLE.md ] && [ -f "$root"/.cadre/be/kickoff.txt ] || { echo 'cadre: .cadre/be/ROLE.md ` +
   `or kickoff.txt is missing: run /cadre regen be' >&2; exit 1; }`
 
+/**
+ * The line of the BE launcher right after `rt=` that picks its kickoff: the epic kickoff /cadre epic writes into
+ * `.runtime` when it is there, else the committed one (D-158).
+ */
+const BE_KICKOFF_LINE =
+  'if [ -f "$rt"/kickoff.txt ]; then kick="$rt"/kickoff.txt; else kick="$root"/.cadre/be/kickoff.txt; fi'
+
 /** The check of a here-start BE launcher that it is run from a folder of its repo (A3). */
 const BE_HERE_CHECK =
   `case "$(pwd -P)/" in "$root"/*) ;; *) { echo 'cadre: run .cadre/bin/be from a folder of its repo' >&2; ` +
@@ -1355,6 +1364,7 @@ const BE_LAUNCHER = [
   BE_GUARD,
   BE_FILES_CHECK,
   'rt="$root"/.cadre/be/.runtime',
+  BE_KICKOFF_LINE,
   'probe=0',
   BE_ARGS,
   'cadre_claude_ok() {',
@@ -1388,8 +1398,7 @@ const BE_LAUNCHER = [
     `run /cadre start be' >&2; exit 1; }`,
   beProbeRun(''),
   ...VERDICT_LINES,
-  `exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude ${BE_FLAGS} -- ` +
-    '"$(cat "$root"/.cadre/be/kickoff.txt)"',
+  `exec env CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude ${BE_FLAGS} -- "$(cat "$kick")"`,
   '',
 ].join('\n')
 
@@ -1462,7 +1471,7 @@ describe('launcher', () => {
       ...EXEC_PREFIX,
       ...shellWords(BE_FLAGS),
       '--',
-      '$(cat "$root"/.cadre/be/kickoff.txt)',
+      '$(cat "$kick")',
     ])
   })
 
@@ -1483,7 +1492,7 @@ describe('launcher', () => {
     const text = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'here' })
 
     expect(text.split('\n').filter(line => line.startsWith('cd '))).toEqual([])
-    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
+    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$kick")'])
   })
 
   test('the dir launcher goes to its folder, the path shell-quoted, and adds the git root (D-127)', () => {
@@ -1492,7 +1501,7 @@ describe('launcher', () => {
     const text = launcherText(be, scope, { kind: 'dir', path: 'apps/web' })
 
     expect(text.split('\n')).toContain('cd -- "$root"/apps/web')
-    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
+    expect(execWords(text).slice(-4)).toEqual(['--add-dir', '$root', '--', '$(cat "$kick")'])
     expect(launcherText(be, scope, { kind: 'dir', path: "a b/it's" }).split('\n')).toContain(
       `cd -- "$root"/'a b/it'\\''s'`,
     )
@@ -1503,7 +1512,7 @@ describe('launcher', () => {
     const words = execWords(launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' }))
 
     expect(words).not.toContain('$root')
-    expect(words.slice(-3)).toEqual(['$root/.cadre/be/.runtime/mcp.json', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
+    expect(words.slice(-3)).toEqual(['$root/.cadre/be/.runtime/mcp.json', '--', '$(cat "$kick")'])
   })
 
   test('in every start the exec line is the only one that starts with exec, after every check of the launcher', () => {
@@ -1581,6 +1590,31 @@ describe('launcher', () => {
     }
   })
 
+  test('every launcher starts with the epic kickoff in .runtime when it is there, else its own (D-158)', () => {
+    for (const start of LAUNCH_STARTS) {
+      for (const role of TEMPLATE_ROLES) {
+        const text = launcherText(role, scopeOf(role, 'gsd', TEMPLATE_ROLES), start)
+        const lines = text.split('\n')
+        const own = `"$root"/.cadre/${role.id}/kickoff.txt`
+
+        expect(lines[lines.findIndex(line => line.startsWith('rt=')) + 1]).toBe(
+          `if [ -f "$rt"/kickoff.txt ]; then kick="$rt"/kickoff.txt; else kick=${own}; fi`,
+        )
+        expect(text.endsWith(' -- "$(cat "$kick")"\n')).toBe(true)
+      }
+    }
+  })
+
+  test('hasRuntimeKickoff tells a launcher that reads the epic kickoff from one written before it (D-158)', () => {
+    const be = templateRole('be')
+    const text = launcherText(be, scopeOf(be, 'gsd', [be]), { kind: 'git-root' })
+    const older = text.replace(`${BE_KICKOFF_LINE}\n`, '')
+
+    expect(hasRuntimeKickoff(text)).toBe(true)
+    expect(older).not.toBe(text)
+    expect(hasRuntimeKickoff(older)).toBe(false)
+  })
+
   test(
     'only the here launcher checks that it is run from a folder of its repo, right before its --probe branch (A3)',
     () => {
@@ -1622,7 +1656,7 @@ describe('launcher', () => {
             ...anchoredFlags(scope.flags),
             ...rootDir,
             '--',
-            `$(cat "$root"/.cadre/${role.id}/kickoff.txt)`,
+            '$(cat "$kick")',
           ])
         }
       }
@@ -1659,7 +1693,7 @@ describe('launcher', () => {
     const scope = scopeOf(be, 'gsd', [be], { mcpRoute: 'strict' })
     const words = execWords(launcherText(be, scope, { kind: 'git-root' }))
 
-    expect(words.slice(-3)).toEqual(['--strict-mcp-config', '--', '$(cat "$root"/.cadre/be/kickoff.txt)'])
+    expect(words.slice(-3)).toEqual(['--strict-mcp-config', '--', '$(cat "$kick")'])
   })
 
   test('a flag that holds a space, a quote or a dollar stays one word, anchored or not', () => {
@@ -1677,7 +1711,7 @@ describe('launcher', () => {
       '--name',
       hostileWord,
       '--',
-      '$(cat "$root"/.cadre/be/kickoff.txt)',
+      '$(cat "$kick")',
     ])
   })
 
@@ -1692,7 +1726,8 @@ describe('launcher', () => {
 
       expect(lines.slice(0, 3).map(line => line.charAt(0))).toEqual(['#', '#', '#'])
       expect(unquoted.filter(line => line.includes('$(z)') || line.includes('`'))).toEqual([])
-      expect(execWords(text).slice(-2)).toEqual(['--', `$(cat "$root"/${shQuote(kickoffPath)})`])
+      expect(execWords(text).slice(-2)).toEqual(['--', '$(cat "$kick")'])
+      expect(lines).toContain(`${RUNTIME_KICKOFF_TEST}"$root"/${shQuote(kickoffPath)}; fi`)
     }
   })
 

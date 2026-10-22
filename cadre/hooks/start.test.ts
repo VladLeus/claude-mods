@@ -22,7 +22,7 @@ import { sha256Hex } from './hash'
 import { compileTeam, readTeam, repoGuard } from './init'
 import { launchPlan, unsafeMemoryNameWarning } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { ignoreLines, stableJson } from './plan'
+import { ignoreLines, RUNTIME_KICKOFF_FILE, stableJson } from './plan'
 import { compileScope } from './scope'
 import { CLAUDE_JSON_MAX_BYTES } from './setup'
 import {
@@ -639,6 +639,36 @@ describe('runtime render links', () => {
     expect(result.steps.filter(step => step.kind === 'remove')).toEqual([{ kind: 'remove', path: `${RUNTIME}/stamp` }])
     expect(result.steps.flatMap(step => renderArgv(step) ?? []).filter(word => word.startsWith('-r'))).toEqual([])
   })
+})
+
+describe('the epic kickoff in .runtime (D-158, D-168)', () => {
+  test('an epic render writes its kickoff into .runtime as the step right before the stamp', () => {
+    expect(renderSteps(input({ kickoff: 'X\n' })).steps).toEqual([
+      { kind: 'mkdir', path: RUNTIME },
+      { kind: 'mkdir', path: `${RUNTIME}/overlay` },
+      ...fileWritesOf(BE_PLAN),
+      INBOX_WRITE,
+      { kind: 'write', path: `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`, text: 'X\n' },
+      STAMP_WRITE,
+    ])
+  })
+
+  test(
+    'a kickoff.txt link is removed before an epic render writes it, a folder there refuses, ' +
+      'and a /cadre start render leaves it alone',
+    () => {
+      const kickoff = `${RUNTIME}/${RUNTIME_KICKOFF_FILE}`
+      const linkedFile = renderSteps(input({ kickoff: 'X\n', stats: rendered({ [kickoff]: LINK_OUT }) }))
+      const folderFile = renderSteps(input({ kickoff: 'X\n', stats: rendered({ [kickoff]: folder(kickoff) }) }))
+      const start = renderSteps(input({ stats: rendered({ [kickoff]: LINK_OUT }) }))
+
+      expect(renderPaths(ROOT, 'be', BE_PLAN, { kickoff: true }).stats).toContain(kickoff)
+      expect(linkedFile.steps[0]).toEqual({ kind: 'remove', path: kickoff })
+      expect(linkedFile.steps.filter(step => step.path === kickoff).map(step => step.kind)).toEqual(['remove', 'write'])
+      expect(folderFile).toEqual({ steps: [], warnings: [], refusal: RUNTIME_REFUSAL })
+      expect(start.steps.filter(step => step.path === kickoff)).toEqual([])
+    },
+  )
 })
 
 /** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
