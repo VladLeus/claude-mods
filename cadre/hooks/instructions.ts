@@ -479,8 +479,11 @@ const MAX_IMPORT_LEVELS = 3
 /** The most imported files read for the global file, and again for the repo chain (G-02-1f Sources). */
 const MAX_IMPORTED_FILES = 20
 
-/** The most UTF-8 bytes one read takes in all, every file together (G-02-1f Sources): 512 KiB. */
-const MAX_TOTAL_BYTES = 2 * MAX_READ_BYTES
+/**
+ * The most UTF-8 bytes one read takes in all, every file together (G-02-1f Sources): 512 KiB; regen holds each side of
+ * a role to it too (02-GAPS-B3 C8).
+ */
+export const MAX_TOTAL_BYTES = 2 * MAX_READ_BYTES
 
 /**
  * The most parts offered to the model and the hand-out (G-02-1f Part unit; 02-GAPS-B2 S6: the grouping reply must fit
@@ -546,6 +549,17 @@ export function repoImportWarning(file: string): string {
  */
 export function unfollowedImportWarning(file: string): string {
   return `${file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it`
+}
+
+/**
+ * The warning for a file of the config folder the read may not take (02-GAPS-B3 M2): not a plain .md file of it, or
+ * under projects/, cadre/ or plugins/ (isReadableConfigFile); it is not read, so no role gets it.
+ */
+export function configFileWarning(file: string): string {
+  return (
+    `${file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or plugins/), ` +
+    'not read: no role gets it'
+  )
 }
 
 /**
@@ -675,6 +689,27 @@ function isFollowedLink(relPath: string): boolean {
   return last.endsWith(MARKDOWN_EXTENSION)
 }
 
+/**
+ * The first folders of the config folder whose files are never handed out (02-GAPS-B3 M2): other repos' memories,
+ * cadre's private files and plugin caches.
+ */
+const HELD_OUT_CONFIG_FOLDERS: readonly string[] = Object.freeze(['projects', 'cadre', 'plugins'])
+
+/**
+ * Whether init may read a file of the config folder, and regen a file a record names there (02-GAPS-B3 M2): under the
+ * folder, ending in .md, with no segment below it that starts with '.', and not under projects/, cadre/ or plugins/
+ * (compared lowercased).
+ */
+export function isReadableConfigFile(path: string, userDir: string): boolean {
+  const folder = trimSlash(userDir)
+  if (!path.startsWith(`${folder}/`)) return false
+  const segments = path.slice(folder.length + 1).split('/')
+  if (segments.some(segment => segment.startsWith('.'))) return false
+  if (HELD_OUT_CONFIG_FOLDERS.includes((segments[0] ?? '').toLowerCase())) return false
+
+  return path.endsWith(MARKDOWN_EXTENSION)
+}
+
 /** The folder a path is in: what its imports resolve against. */
 function folderOf(path: string): string {
   return path.slice(0, path.lastIndexOf('/'))
@@ -749,9 +784,11 @@ async function keptText(
  * ancestor above the repo, is read through the port as a private `global` part (02-GAPS-B2 S2); any other path outside
  * them is not read (outsideWarning), and neither is one a repo file imports from outside the repo (repoImportWarning,
  * night-run AUTO-PICK #3). A repo file's import or doc link is followed only to a .md file that is not a dotfile and
- * not under .git/ (isFollowedLink; else unfollowedImportWarning, 02-GAPS-B2 M3). Once the read has stopped at its
- * total, a file is only counted. A repo file is read through readRepoFile, so a link out of the repo is never read; a
- * config-folder file through the port. A missing file is quiet; one the port could not read and one over
+ * not under .git/ (isFollowedLink; else unfollowedImportWarning, 02-GAPS-B2 M3). A file of the config folder is read
+ * only when it is a plain .md file outside projects/, cadre/ and plugins/ (isReadableConfigFile; else
+ * configFileWarning, 02-GAPS-B3 M2); a chain file above the repo is not held to that rule. Once the read has stopped at
+ * its total, a file is only counted. A repo file is read through readRepoFile, so a link out of the repo is never read;
+ * a config-folder file through the port. A missing file is quiet; one the port could not read and one over
  * MAX_READ_BYTES are warnings.
  */
 async function readOne(state: ReadState, path: string, reach: Reach): Promise<ReadFile | null> {
@@ -765,6 +802,9 @@ async function readOne(state: ReadState, path: string, reach: Reach): Promise<Re
   if (isRepoLink && place.kind === 'global') return warned(state, repoImportWarning(file))
   if (isRepoLink && place.kind === 'repo' && !isFollowedLink(place.relPath)) {
     return warned(state, unfollowedImportWarning(file))
+  }
+  if (placed.kind === 'global' && state.userDir !== null && !isReadableConfigFile(path, state.userDir)) {
+    return warned(state, configFileWarning(file))
   }
   if (state.unread.length > 0) return leftUnread(state, file)
   const read =
@@ -983,9 +1023,10 @@ export async function readMemories(
  * config folder is a 'global' part; any other path is not read and gets a warning, and so does any file a repo file
  * imports from outside the repo, the config folder included (night-run AUTO-PICK #3); but the chain ancestors above
  * the repo are read as private `global` parts (02-GAPS-B2 S2). A repo file's imports and doc links are followed only
- * to .md files that are not dotfiles and not under .git/ (02-GAPS-B2 M3). Each file is read with MAX_READ_BYTES and
- * one over it is not split; the read stops at 512 KiB in all and counts the files it did not read; parts past the
- * 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
+ * to .md files that are not dotfiles and not under .git/ (02-GAPS-B2 M3), and a config-folder file is read only when it
+ * is a plain .md file outside projects/, cadre/ and plugins/ (isReadableConfigFile, 02-GAPS-B3 M2). Each file is read
+ * with MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not
+ * read; parts past the 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
  * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
  * folder inside the repo is not used, as userFolderOf never uses one (02-GAPS-B2 N10). The text is held in memory for
  * this run; it is never logged, shown, asked or put in a reply; a repo part a role is given is written to its

@@ -182,6 +182,8 @@ import {
   instructionReviewLines,
   instructionsEntry,
   isMemoryIndexName,
+  isReadableConfigFile,
+  MAX_TOTAL_BYTES,
   memoryItems,
   memoryOverSizeWarning,
   NO_MEMORY_SUMMARY,
@@ -4231,6 +4233,14 @@ export function unusableRecordWarning(id: string): string {
   )
 }
 
+/**
+ * The warning when regen stopped reading one side of a role at MAX_TOTAL_BYTES (02-GAPS-B3 C8): that side is left as
+ * it is, its parts not compared.
+ */
+export function regenTotalWarning(id: string): string {
+  return `regen stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB for ${id}: its instruction parts were not compared`
+}
+
 /** The repo-relative path of the repo state regen re-renders from. */
 const CADRE_STATE_FILE = '.cadre/cadre.json'
 
@@ -4460,18 +4470,23 @@ type SideRead =
  * A role's repo side read again (G-02-1f Regen, D-142 rg2-a): each file its role.json records name, once, in record
  * order, through readRepoFile (a link out of the repo is never read), split into hashed parts (partsOfText). A missing
  * file has no part, so its records are removed; a file that cannot be read (unreadableWarning) or is over the read cap
- * (overSizeWarning) leaves the whole side as it is (AUTO-PICK #19 Q8), since its parts could not be rebuilt.
+ * (overSizeWarning) leaves the whole side as it is (AUTO-PICK #19 Q8), since its parts could not be rebuilt; so does a
+ * text that would take the side past MAX_TOTAL_BYTES in all, which stops the read (regenTotalWarning, 02-GAPS-B3 C8).
  */
 async function repoSideRead(io: InitIo, root: string, role: RoleSpec): Promise<SideRead> {
   const given = role.instructionParts ?? []
   const notGiven = role.instructionPartsNotGiven ?? []
   const parts: InstructionPart[] = []
   const warnings: string[] = []
+  let total = 0
   for (const file of recordedFiles([...given, ...notGiven])) {
     const read = await readRepoFile(io, root, file, MAX_READ_BYTES)
     if (read.state === 'unknown') warnings.push(unreadableWarning(clean(file)))
     if (read.state === 'too-large') warnings.push(overSizeWarning(clean(file)))
-    if (read.state === 'text') parts.push(...(await partsOfText(file, 'repo', read.text, parts.length)))
+    if (read.state !== 'text') continue
+    total += utf8Bytes(read.text)
+    if (total > MAX_TOTAL_BYTES) return { kind: 'kept', warnings: [regenTotalWarning(role.id)] }
+    parts.push(...(await partsOfText(file, 'repo', read.text, parts.length)))
   }
   if (warnings.length > 0) return { kind: 'kept', warnings }
 
@@ -4522,13 +4537,14 @@ function isPlainPath(path: string): boolean {
 
 /**
  * The path of a recorded global part's file (AUTO-PICK #19 Q9): its display form read back (pathFromDisplay), when
- * that is a plain absolute path (isPlainPath) in the config folder or a CLAUDE.md of the chain above the repo; else
- * null, so a record cannot point regen at any other file.
+ * that is a plain absolute path (isPlainPath) that is a plain .md file of the config folder init may read
+ * (isReadableConfigFile, 02-GAPS-B3 M2) or a CLAUDE.md of the chain above the repo; else null, so a record cannot point
+ * regen at any other file.
  */
 function globalPathOf(file: string, places: RecordPlaces): string | null {
   const path = pathFromDisplay(file, places.sources)
   if (!isPlainPath(path)) return null
-  if (places.userDir !== null && path.startsWith(`${places.userDir}/`)) return path
+  if (places.userDir !== null && isReadableConfigFile(path, places.userDir)) return path
 
   return places.chain.includes(path) ? path : null
 }
@@ -4585,7 +4601,9 @@ async function privateRecordOf(
  * AUTO-PICK #19 Q9), and nothing is read. Then each named file is read once, in record order, through the port and
  * split into hashed global parts (partsOfText), and each memory is read for its hash only, with the folder and summary
  * its record holds (Q10). A missing file or memory is gone; one that cannot be read (unreadableWarning) or is over the
- * read cap (overSizeWarning, memoryOverSizeWarning) leaves the whole side as it is (Q8).
+ * read cap (overSizeWarning, memoryOverSizeWarning) leaves the whole side as it is (Q8); so does a text, a memory's
+ * included, that would take the side past MAX_TOTAL_BYTES in all, which stops the read (regenTotalWarning, 02-GAPS-B3
+ * C8). The repo side has a total of its own.
  */
 async function privateSideRead(
   io: InitIo,
@@ -4609,11 +4627,15 @@ async function privateSideRead(
   }
   const parts: InstructionPart[] = []
   const warnings: string[] = []
+  let total = 0
   for (const { file, path } of named) {
     const read = await io.read(path, MAX_READ_BYTES)
     if (read.state === 'unknown') warnings.push(unreadableWarning(clean(file)))
     if (read.state === 'too-large') warnings.push(overSizeWarning(clean(file)))
-    if (read.state === 'text') parts.push(...(await partsOfText(file, 'global', read.text, parts.length)))
+    if (read.state !== 'text') continue
+    total += utf8Bytes(read.text)
+    if (total > MAX_TOTAL_BYTES) return { kind: 'kept', warnings: [regenTotalWarning(id)] }
+    parts.push(...(await partsOfText(file, 'global', read.text, parts.length)))
   }
   const memories: MemoryItem[] = []
   for (const { memory, path } of linked) {
@@ -4621,6 +4643,8 @@ async function privateSideRead(
     if (read.state === 'unknown') warnings.push(unreadableWarning(clean(memory.file)))
     if (read.state === 'too-large') warnings.push(memoryOverSizeWarning(clean(memory.file)))
     if (read.state !== 'text') continue
+    total += utf8Bytes(read.text)
+    if (total > MAX_TOTAL_BYTES) return { kind: 'kept', warnings: [regenTotalWarning(id)] }
     const { file, folder, summary } = memory
     memories.push({ id: `M${memories.length + 1}`, file, folder, summary, hash: await sha256Hex(read.text) })
   }
