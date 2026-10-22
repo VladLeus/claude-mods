@@ -1531,6 +1531,30 @@ export function linkRemoveArgv(path: string): readonly string[] {
   return ['/bin/rm', '-f', '--', path]
 }
 
+/**
+ * The recorded links /cadre epic done removes itself (D-170, 03.1-W5 M1), as absolute paths in sorted order, once each:
+ * each one the worktree's listing in `tree` shows as a link, with every folder above it listed as a real folder, so no
+ * rm is resolved through a link into the main checkout. Any other recorded path, one below a folder that became a link,
+ * one that is no longer a link, or one whose folders could not be listed, is left to git worktree remove, which never
+ * follows a link.
+ */
+export function epicLinkRemovals(
+  worktree: string,
+  links: readonly string[],
+  tree: ReadonlyMap<string, readonly PortEntry[]>,
+): string[] {
+  const isRealFolder = (folder: string): boolean => {
+    const listed = listedEntry(tree, folder)
+    if (listed === undefined) return false
+
+    return listed.kind === 'dir' && !listed.isLink
+  }
+
+  return sortedUnique(links)
+    .filter(link => foldersAbove(link).every(isRealFolder) && listedEntry(tree, link)?.isLink === true)
+    .map(link => `${worktree}/${link}`)
+}
+
 /** The refusal when git cannot list the worktrees for /cadre epic done (D-152): it fails closed and removes nothing. */
 export const EPIC_DONE_NO_LIST = 'cadre epic done could not list the worktrees from git, so it removed nothing.'
 
@@ -1881,9 +1905,11 @@ async function lockRefusal(host: HostIo, root: string, worktree: DoneWorktree): 
  * cannot tell included. With `--force` one consent question always comes, reasons or not, listing them (forcedRefusal,
  * D-134): only its yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the stale-lock
  * rule (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock refuses, with or
- * without `--force`. Each link the record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`,
- * and then the worktree with REMOVE_ARGV, with `--force` only on the forced path; a remove that fails or cannot run
- * gives epicRemoveFailedReply. The branch is never deleted, and the reply is epicRemovedText.
+ * without `--force`. The worktree's folders are then listed, and each recorded link epicLinkRemovals keeps (listed as a
+ * link, below real folders only) is removed with linkRemoveArgv, in sorted order, never with `-r`; any other recorded
+ * path is left to git (03.1-W5 M1), and then the worktree with REMOVE_ARGV, with `--force` only on the forced path; a
+ * remove that fails or cannot run gives epicRemoveFailedReply. The branch is never deleted, and the reply is
+ * epicRemovedText.
  */
 export async function runEpicDone(
   io: InitIo,
@@ -1923,8 +1949,10 @@ export async function runEpicDone(
   const locked = await lockRefusal(host, main.root, worktree)
   if (locked !== null) return locked
 
-  for (const link of sortedUnique(record?.links ?? [])) {
-    await host.run(linkRemoveArgv(`${path}/${link}`), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
+  const links = sortedUnique(record?.links ?? [])
+  const tree = await listingsOf(io, path, sortedUnique(['', ...links.flatMap(foldersAbove)]))
+  for (const target of epicLinkRemovals(path, links, tree)) {
+    await host.run(linkRemoveArgv(target), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
   }
   const removed = await host.run(REMOVE_ARGV(main.root, path, options.force), { timeoutMs: REMOVE_TIMEOUT_MS })
   if (removed === null || removed.exitCode !== 0) return epicRemoveFailedReply(key)
