@@ -680,14 +680,11 @@ export function epicPathExistsReply(path: string): string {
 }
 
 /**
- * The warning line when the new worktree got no epic record (D-164): git gave no absolute git dir for it, or the write
+ * The warning line when the new worktree got no epic record (D-164): the write of the record to the worktree's git dir
  * failed. The worktree stays and the run goes on; the key is shown cleaned.
  */
 export function epicNoRecordWarning(key: string): string {
-  return (
-    `cadre could not write ${EPIC_RECORD_FILE} for the epic ${reportText(key)}: git gave no git dir for its ` +
-    'worktree, or the write failed.'
-  )
+  return `cadre could not write ${EPIC_RECORD_FILE} for the epic ${reportText(key)}: the write failed.`
 }
 
 /**
