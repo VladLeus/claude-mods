@@ -1,17 +1,31 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HostRun, ManifestEntry, RoleSpec } from '../types'
+import type { EpicRecord, HostRun, ManifestEntry, RoleSpec } from '../types'
 import {
+  BASE_BRANCH_ARGV,
+  BASE_COMMIT_ARGV,
+  EPIC_BRANCHES_ARGV,
   EPIC_NO_PM,
   epicAddFailedReply,
   epicBadKeyReply,
+  epicCreatedText,
   epicKeyOf,
+  epicLookup,
+  epicManyBranchesReply,
   epicManyPmReply,
+  epicManyWorktreesReply,
   epicNotMainReply,
+  epicPathExistsReply,
   epicPmOf,
+  epicRecordText,
   epicSlug,
+  GIT_DIR_ARGV,
+  parseEpicRecord,
+  parseWorktreeList,
   runEpic,
+  WORKTREE_LIST_ARGV,
 } from './epic'
+import type { WorktreeEntry } from './epic'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
@@ -233,5 +247,137 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
 
     expect(run.reply).toBe(claudeTooOldReply('2.1.294 (Claude Code)'))
     expect(worktreeRuns(run)).toEqual([])
+  })
+})
+
+/** The git dir of the new worktree of PROJ-1 Add retry, where its epic record lies (D-164). */
+const GIT_DIR = '/repo/.git/worktrees/proj-1-add-retry'
+
+/** The epic record of PROJ-1 Add retry as a new worktree on a branch of `main` writes it. */
+const RECORD: EpicRecord = {
+  schema: 1,
+  key: 'PROJ-1',
+  slug: 'proj-1-add-retry',
+  title: 'Add retry',
+  branch: BRANCH,
+  base: 'main',
+  createdAt: 1_000_000,
+  links: [],
+  copies: [],
+}
+
+/** A registered worktree that is not the main checkout, on `branch`, not locked. */
+function linkedEntry(path: string, branch: string): WorktreeEntry {
+  return { path, branch, locked: null, isMain: false }
+}
+
+describe('finding an epic by its key (D-163)', () => {
+  test('parseWorktreeList reads each porcelain block: path, branch, lock reason, the first block as main', () => {
+    const porcelain =
+      'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n' +
+      'worktree /repo/.claude/worktrees/proj-1-x\nHEAD b\nbranch refs/heads/epic/proj-1-x\n' +
+      'locked claude agent (pid 42)\n\nworktree /w2\nHEAD c\ndetached\n'
+
+    expect(parseWorktreeList(porcelain)).toEqual([
+      { path: '/repo', branch: 'main', locked: null, isMain: true },
+      { ...linkedEntry('/repo/.claude/worktrees/proj-1-x', 'epic/proj-1-x'), locked: 'claude agent (pid 42)' },
+      { path: '/w2', branch: null, locked: null, isMain: false },
+    ])
+    expect(parseWorktreeList('worktree /repo\nHEAD a\n\nworktree /w\nHEAD b\ndetached\nlocked\n')[1]?.locked).toBe('')
+  })
+
+  test('one worktree on epic/<key> or epic/<key>-... is reused, one kept branch is re-added, else new', () => {
+    const main: WorktreeEntry = { path: '/repo', branch: 'epic/proj-1', locked: null, isMain: true }
+    const x = linkedEntry('/w/x', 'epic/proj-1-x')
+    const exact = linkedEntry('/w/e', 'epic/proj-1')
+    const ten = linkedEntry('/w/t', 'epic/proj-10')
+    const lookup = (worktrees: readonly WorktreeEntry[], branches: readonly string[] = []) =>
+      epicLookup({ worktrees, branches, keySlug: 'proj-1' })
+    const two = lookup([x, exact])
+    const twoText = two.kind === 'refuse' ? two.text : ''
+
+    expect(lookup([main, x, ten])).toEqual({ kind: 'reuse', path: '/w/x', branch: 'epic/proj-1-x' })
+    expect(two).toEqual({ kind: 'refuse', text: epicManyWorktreesReply(['/w/x', '/w/e']) })
+    expect(['/w/x', '/w/e'].filter(path => twoText.includes(path))).toHaveLength(2)
+    expect(lookup([main])).toEqual({ kind: 'new' })
+    expect(lookup([main, ten], ['epic/proj-10'])).toEqual({ kind: 'new' })
+    expect(lookup([], ['epic/proj-1-old'])).toEqual({ kind: 'readd', branch: 'epic/proj-1-old', name: 'proj-1-old' })
+    expect(lookup([], ['epic/proj-1-a', 'epic/proj-1-b'])).toEqual({
+      kind: 'refuse',
+      text: epicManyBranchesReply(['epic/proj-1-a', 'epic/proj-1-b']),
+    })
+    expect(lookup([])).toEqual({ kind: 'new' })
+  })
+
+  test('a kept epic branch with no worktree is added back on that branch, without -b', async () => {
+    const kept = '/repo/.claude/worktrees/proj-1-old'
+    const readd = ['git', '-C', '/repo', 'worktree', 'add', kept, 'epic/proj-1-old']
+    const branches = rule(EPIC_BRANCHES_ARGV('/repo'), 0, 'epic/proj-1-old\n')
+    const run = await epic(await teamWorld(), [branches, rule(readd, 0)])
+
+    expect(addRuns(run)).toEqual([readd])
+    expect(run.reply).toContain(kept)
+  })
+
+  test('a registered worktree of the key is reused: nothing is added, and its record names the title', async () => {
+    const path = '/repo/.claude/worktrees/proj-1-x'
+    const gitDir = '/repo/.git/worktrees/proj-1-x'
+    const porcelain =
+      'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n' +
+      `worktree ${path}\nHEAD b\nbranch refs/heads/epic/proj-1-x\n`
+    const record = epicRecordText({ ...RECORD, slug: 'proj-1-x', title: 'Old title', branch: 'epic/proj-1-x' })
+    const world = await teamWorld()
+    const reused = { ...world, files: { ...world.files, [`${gitDir}/cadre-epic.json`]: record } }
+    const run = await epic(reused, [
+      rule(WORKTREE_LIST_ARGV('/repo'), 0, porcelain),
+      rule(GIT_DIR_ARGV(path), 0, `${gitDir}\n`),
+    ])
+    const reply = { key: 'PROJ-1', title: 'Old title', path, branch: 'epic/proj-1-x', warnings: [] }
+
+    expect(addRuns(run)).toEqual([])
+    expect(run.reply).toBe(epicCreatedText({ ...reply, outcome: 'reused' }))
+  })
+
+  test('a folder at the worktree path that git does not list refuses before anything is added (D-147)', async () => {
+    const world = await teamWorld()
+    const run = await epic({ ...world, dirs: { ...world.dirs, [WORKTREE]: [] } }, [rule(ADD_ARGV, 0)])
+
+    expect(run.reply).toBe(epicPathExistsReply(WORKTREE))
+    expect(addRuns(run)).toEqual([])
+  })
+})
+
+describe('the epic record (D-164)', () => {
+  test('after the add the record goes to <worktree git dir>/cadre-epic.json, based on the branch or commit', async () => {
+    const created = await epic(await teamWorld(), [
+      rule(ADD_ARGV, 0),
+      rule(BASE_BRANCH_ARGV('/repo'), 0, 'main\n'),
+      rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`),
+    ])
+    const detached = await epic(await teamWorld(), [
+      rule(ADD_ARGV, 0),
+      rule(BASE_BRANCH_ARGV('/repo'), 1),
+      rule(BASE_COMMIT_ARGV('/repo'), 0, 'abc123\n'),
+      rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`),
+    ])
+
+    expect(created.calls.map(call => call.argv).filter(argv => argv.includes('--absolute-git-dir'))).toEqual([
+      GIT_DIR_ARGV(WORKTREE),
+    ])
+    expect(created.writes).toEqual([
+      { path: `${GIT_DIR}/cadre-epic.json`, text: epicRecordText(RECORD), isWritten: true },
+    ])
+    expect(detached.writes.map(write => parseEpicRecord(write.text)?.base)).toEqual(['abc123'])
+  })
+
+  test('parseEpicRecord reads back what epicRecordText wrote and refuses a bad shape or an unsafe path', () => {
+    const record: EpicRecord = { ...RECORD, links: ['node_modules', '.claude/settings.local.json'], copies: ['.envrc'] }
+    const bad = (over: Readonly<Record<string, unknown>>) => parseEpicRecord(JSON.stringify({ ...record, ...over }))
+
+    expect(parseEpicRecord(epicRecordText(record))).toEqual(record)
+    expect([bad({ title: undefined }), bad({ schema: 2 }), bad({ branch: 'epic/other' })]).toEqual([null, null, null])
+    for (const path of ['/etc/x', '', 'a/../b', '..', 'a//b', 'a/']) {
+      expect([path, bad({ links: [path] }), bad({ copies: [path] })]).toEqual([path, null, null])
+    }
   })
 })
