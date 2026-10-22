@@ -100,15 +100,18 @@ import {
   epicBadNameReply,
   epicCreatedText,
   epicExcludesFailedReply,
+  epicKickoffText,
   epicListFailedReply,
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
   epicNoRecordWarning,
   epicNotMainReply,
+  epicOldLauncherReply,
   epicPathExistsReply,
   epicRecordText,
   epicStepFailedReply,
+  epicWorktreeLauncherLine,
   EXCLUDES_FILE,
   excludesText,
   globalExcludesWarning,
@@ -139,6 +142,7 @@ import {
   roleClaudeMdText,
   roleJsonText,
   roleMdText,
+  RUNTIME_KICKOFF_TEST,
   settingsText,
   untrackedPartsWarning,
 } from './generate'
@@ -340,6 +344,7 @@ import {
   MANIFEST_PATH,
   planSummary,
   PROBE_EXPECTATIONS_FILE,
+  RUNTIME_KICKOFF_FILE,
   RUNTIME_RENDERED,
   RUNTIME_STAMP_FILE,
   SECURITY_REPORTS_LINE,
@@ -683,6 +688,9 @@ const EPIC_WORKTREE = {
   warnings: [],
 }
 
+/** The epic of EPIC_WORKTREE as its kickoffs name it, on a team whose TL is tl (D-158). */
+const EPIC_KICKOFF = { key: EPIC_WORKTREE.key, title: EPIC_WORKTREE.title, tlId: 'tl' }
+
 const RECOMMENDATIONS = recommend({
   roles: TEAM,
   frameworks: TEAM.map((): FrameworkId => 'none'),
@@ -839,6 +847,16 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['epic', 'globalExcludesWarning', globalExcludesWarning('/home/u/.gitignore_global')],
   [
     'epic',
+    'epicKickoffText',
+    [
+      epicKickoffText({ ...EPIC_KICKOFF, role: templateRole('pm'), isPm: true, parent: null }),
+      epicKickoffText({ ...EPIC_KICKOFF, role: BE, isPm: false, parent: 'tl' }),
+    ],
+  ],
+  ['epic', 'epicOldLauncherReply', [epicOldLauncherReply(['be']), epicOldLauncherReply(['pm', 'be'])]],
+  ['epic', 'epicWorktreeLauncherLine', epicWorktreeLauncherLine('be')],
+  [
+    'epic',
     'epicRecordText',
     epicRecordText({
       schema: 1,
@@ -874,6 +892,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['generate', 'untrackedPartsWarning', untrackedPartsWarning('notes/local.md')],
   ['generate', 'GIT_TRACKING_UNKNOWN_WARNING', GIT_TRACKING_UNKNOWN_WARNING],
   ['generate', 'launcherText', STARTS.map(start => launcherText(BE, BE_SCOPE, start))],
+  ['generate', 'RUNTIME_KICKOFF_TEST', RUNTIME_KICKOFF_TEST],
   ['generate', 'indexMdText', indexMdText(TEAM, SCOPES)],
   ['generate', 'cadreJsonText', cadreJsonText(STATE)],
   ['gsd', 'GSD_HOOK_NOTES', GSD_HOOK_NOTES],
@@ -1100,6 +1119,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['plan', 'IGNORE_END', IGNORE_END],
   ['plan', 'RUNTIME_STAMP_FILE', RUNTIME_STAMP_FILE],
   ['plan', 'INBOX_FILE', INBOX_FILE],
+  ['plan', 'RUNTIME_KICKOFF_FILE', RUNTIME_KICKOFF_FILE],
   ['plan', 'PROBE_EXPECTATIONS_FILE', PROBE_EXPECTATIONS_FILE],
   ['plan', 'RUNTIME_RENDERED', RUNTIME_RENDERED],
   ['plan', 'SECURITY_REPORTS_LINE', SECURITY_REPORTS_LINE],

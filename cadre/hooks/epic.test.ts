@@ -13,18 +13,22 @@ import {
   epicCreatedText,
   epicExcludesFailedReply,
   epicKeyOf,
+  epicKickoffText,
   epicListFailedReply,
   epicLookup,
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
   epicNotMainReply,
+  epicOldLauncherReply,
+  epicParentOf,
   epicPathExistsReply,
   epicPmOf,
   epicRecordText,
   epicSlug,
   epicStepArgv,
   epicStepFailedReply,
+  epicWorktreeLauncherLine,
   EXCLUDES_CONFIG_ARGV,
   EXCLUDES_FILE,
   excludesText,
@@ -47,7 +51,7 @@ import {
 } from './epic'
 import type { EpicStep, WorktreeEntry } from './epic'
 import { isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
-import { cadreJsonText, roleJsonText } from './generate'
+import { cadreJsonText, ROLE_LINE_MAX, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
 import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
 import { stableJson } from './plan'
@@ -100,9 +104,14 @@ function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
   return memWorld({ dirs: { '/repo/.git': [] }, ...over })
 }
 
-/** The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest. */
+/**
+ * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
+ * /cadre epic also wants the line that picks the epic kickoff (D-158).
+ */
 function launcherOf(id: string): string {
-  return `#!/bin/sh\n# the launcher of role ${id}\nexit 0\n`
+  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
+
+  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
 }
 
 /** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
@@ -319,6 +328,19 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
     const run = await epic(changed, [rule(ADD_ARGV, 0)])
 
     expect(run.reply).toBe(launcherChangedReply('be'))
+    expect(worktreeRuns(run)).toEqual([])
+  })
+
+  test('a launcher in main written before the epic kickoff refuses before anything is created (D-158)', async () => {
+    const world = await teamWorld()
+    const old = '#!/bin/sh\n# the launcher of role be, written before the epic kickoff\nexit 0\n'
+    const oldEntry: ManifestEntry = { path: '.cadre/bin/be', sha256: await sha256Hex(old), mode: 'exec' }
+    const manifest = stableJson({ schema: 1, cadreVersion: '0.2.0', files: [await launcherEntry('pm'), oldEntry] })
+    const files = { ...world.files, '/repo/.cadre/bin/be': old, '/repo/.cadre/manifest.json': manifest }
+    const run = await epic({ ...world, files }, [rule(ADD_ARGV, 0)])
+
+    expect(run.reply).toBe(epicOldLauncherReply(['be']))
+    expect(run.reply).toContain('/cadre regen be')
     expect(worktreeRuns(run)).toEqual([])
   })
 
@@ -987,6 +1009,83 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(kickoff).toContain('PROJ-1')
     expect(kickoff.endsWith(' --ask-user\n')).toBe(true)
     expect(paths.indexOf(`${runtime}/stamp`) - paths.indexOf(`${runtime}/kickoff.txt`)).toBe(1)
+  })
+})
+
+/** The quoted role line of a kickoff: what lies between its first and its last double quote. */
+function kickoffLine(kickoff: string): string {
+  return kickoff.slice(kickoff.indexOf('"') + 1, kickoff.lastIndexOf('"'))
+}
+
+describe('the epic kickoff of each role (D-158 to D-160)', () => {
+  test('TL waits for PM, every other role for TL, or for PM when the team has no TL (D-159)', () => {
+    const team = [templateRole('pm'), templateRole('tl'), templateRole('be'), templateRole('qa')]
+    const small = [templateRole('pm'), templateRole('be')]
+    const led = [templateRole('pm'), templateRole('tl', { id: 'lead' }), templateRole('be')]
+
+    expect(team.map(role => epicParentOf(role, team, 'pm'))).toEqual([null, 'pm', 'tl', 'tl'])
+    expect(small.map(role => epicParentOf(role, small, 'pm'))).toEqual([null, 'pm'])
+    expect(led.map(role => epicParentOf(role, led, 'pm'))).toEqual([null, 'pm', 'lead'])
+  })
+
+  test('a worker starts by waiting for its parent and never asks the user; PM always does (D-159, D-160)', async () => {
+    const pm = templateRole('pm')
+    const be = templateRole('be')
+    const team = [
+      { ...pm, autopilot: { ...pm.autopilot, askUser: false } },
+      templateRole('tl'),
+      { ...be, autopilot: { ...be.autopilot, askUser: true } },
+    ]
+    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const kickoff = (id: string) => lastWrite(run, `${BARE_WORKTREE}/.cadre/${id}/.runtime/kickoff.txt`) ?? ''
+
+    expect(kickoff('be')).toContain('session-answer')
+    expect(kickoff('be')).toContain('cadre-tl')
+    expect(kickoff('be')).not.toContain(' --ask-user')
+    expect(kickoff('pm')).toContain('then feed cadre-tl ticket by ticket.')
+    expect(kickoff('pm').endsWith(' --ask-user\n')).toBe(true)
+  })
+
+  test('a kickoff line is at most ROLE_LINE_MAX with the whole key, and keeps its end when it fits', () => {
+    const key = 'K'.repeat(32)
+    const title = 'T'.repeat(200)
+    const linesOf = (size: number) => {
+      const pm = templateRole('pm', { id: 'p'.repeat(size) })
+      const tl = templateRole('tl', { id: 't'.repeat(size), title })
+      const input = { key, title, tlId: tl.id }
+
+      return [
+        kickoffLine(epicKickoffText({ ...input, role: pm, isPm: true, parent: null })),
+        kickoffLine(epicKickoffText({ ...input, role: tl, isPm: false, parent: pm.id })),
+      ]
+    }
+    const [pmLine, tlLine] = linesOf(2)
+
+    for (const line of [...linesOf(2), ...linesOf(24)]) {
+      expect(line.length <= ROLE_LINE_MAX).toBe(true)
+      expect(line).toContain(key)
+    }
+    // With 2-character ids each line with no title fits, so the title is cut and the instruction stays whole.
+    expect(pmLine?.endsWith('ticket by ticket.')).toBe(true)
+    expect(tlLine?.endsWith('what it sends.')).toBe(true)
+  })
+
+  test('a role whose worktree launcher predates the epic kickoff is named, not copied; others go on', async () => {
+    const world = await renderWorld()
+    const old = '#!/bin/sh\n# the launcher of role be on the epic branch, from before the epic kickoff\nexit 0\n'
+    const files = {
+      ...world.files,
+      [`${BARE_WORKTREE}/.cadre/bin/pm`]: launcherOf('pm'),
+      [`${BARE_WORKTREE}/.cadre/bin/be`]: old,
+    }
+    const run = await epic({ ...world, files }, RENDER_RULES, 'PROJ-1', '')
+
+    expect(run.reply.split('\n').slice(-3)).toEqual([
+      `  pm: ${epicCommand('pm')}`,
+      `  be: ${epicWorktreeLauncherLine('be')}`,
+      COPIED_LINE,
+    ])
+    expect(copiedTexts(run)).toEqual([epicCommand('pm')])
   })
 })
 
