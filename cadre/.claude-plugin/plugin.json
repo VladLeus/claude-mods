@@ -1,7 +1,7 @@
 {
   "name": "cadre",
-  "version": "0.3.0",
-  "description": "Split a repo into narrow-scope role sessions: detect, a guided init that writes the confirmed plan, regen, start with the per-launch render and --probe, and status",
+  "version": "0.4.0",
+  "description": "Split a repo into narrow-scope role sessions: detect, a guided init that writes the confirmed plan, regen, start with the per-launch render and --probe, status, and epic worktrees with their role sessions",
   "author": { "name": "VladLeus", "url": "https://github.com/VladLeus" },
   "types": "./types/index.d.ts"
 }
