@@ -2,6 +2,7 @@ import type {
   CadreState,
   EntryKind,
   GitPolicy,
+  HostRun,
   InitIo,
   LaunchStart,
   Manifest,
@@ -1195,6 +1196,44 @@ export async function findGitTop(
   }
 
   return { state: 'none' }
+}
+
+/**
+ * The argv that asks git, at `root`, for its git dir and its common dir, both as absolute paths (D-165): the two are
+ * the same in the main checkout and differ in a linked worktree. /cadre epic and /cadre status both run it.
+ */
+export function CHECKOUT_ARGV(root: string): readonly string[] {
+  return ['git', '-C', root, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']
+}
+
+/**
+ * Which checkout a session root is (D-165): the main checkout, a linked worktree with the main checkout's path when git
+ * names it, or unknown.
+ */
+export type Checkout =
+  | { readonly kind: 'main' }
+  | { readonly kind: 'linked'; readonly main: string | null }
+  | { readonly kind: 'unknown' }
+
+/** The end of a main checkout's git dir, which a linked worktree's common dir has too. */
+const GIT_DIR_END = '/.git'
+
+/**
+ * The checkout a run of CHECKOUT_ARGV tells (D-165), failing closed: a run that exits 0 with exactly two non-empty
+ * lines, both absolute paths, is the main checkout when they are equal, else a linked worktree whose main checkout is
+ * the common dir without its trailing `/.git` (null when it does not end so); anything else, a run the host rejected
+ * included, is unknown.
+ */
+export function checkoutOf(run: HostRun | null): Checkout {
+  if (run === null || run.exitCode !== 0) return { kind: 'unknown' }
+  const lines = run.stdout.split('\n').filter(line => line !== '')
+  const [gitDir, commonDir] = lines
+  if (lines.length !== 2 || gitDir === undefined || commonDir === undefined) return { kind: 'unknown' }
+  if (!gitDir.startsWith('/') || !commonDir.startsWith('/')) return { kind: 'unknown' }
+  if (gitDir === commonDir) return { kind: 'main' }
+  if (!commonDir.endsWith(GIT_DIR_END)) return { kind: 'linked', main: null }
+
+  return { kind: 'linked', main: commonDir.slice(0, -GIT_DIR_END.length) }
 }
 
 /** The cadre commands a refusal is worded for. */

@@ -1314,9 +1314,9 @@ export function renderFailedReply(id: string, path: string): string {
  * this order: a `.cadre/manifest.json` that is missing, cannot be read or is not a valid manifest (START_NO_MANIFEST);
  * a launcher `.cadre/bin/<id>` the manifest holds no entry for, or that is not there (launcherMissingReply); one that
  * cannot be read as a regular file inside the repo, or whose sha256 differs from its entry (launcherChangedReply). Both
- * are read through readRepoFile, so a link out of the repo is never read.
+ * are read through readRepoFile, so a link out of the repo is never read. /cadre epic reuses it for each role (D-165).
  */
-async function launcherRead(io: InitIo, root: string, id: string): Promise<RegenRead<string>> {
+export async function launcherRead(io: InitIo, root: string, id: string): Promise<RegenRead<string>> {
   const manifestRead = await readRepoFile(io, root, MANIFEST_PATH, MAX_READ_BYTES)
   const manifest = manifestRead.state === 'text' ? parseManifest(manifestRead.text) : null
   if (manifest === null) return { kind: 'refuse', text: START_NO_MANIFEST }
@@ -1361,9 +1361,10 @@ function launcherDrift(id: string, onDisk: string, desired: readonly DesiredFile
  * `claude --version` that cannot run or exits non-zero (START_NO_CLAUDE); an output in which parseClaudeVersion reads
  * no version (no line, or more than one, starts with one), or one older than MIN_CLAUDE_VERSION (claudeTooOldReply,
  * with the first line of the output). It runs in the home folder when there is one, as every install run does
- * (T-03-46), so no repo-level settings take part in the one `claude` run of /cadre start (#72 B1).
+ * (T-03-46), so no repo-level settings take part in the one `claude` run of /cadre start (#72 B1). /cadre epic reuses
+ * it before it creates anything (D-165).
  */
-async function claudeRefusal(host: HostIo, home: string | null): Promise<string | null> {
+export async function claudeRefusal(host: HostIo, home: string | null): Promise<string | null> {
   const options = home === null ? {} : { cwd: home }
   const run = await host.run(['claude', '--version'], { ...options, timeoutMs: CLAUDE_VERSION_TIMEOUT_MS })
   if (run === null || run.exitCode !== 0) return START_NO_CLAUDE
