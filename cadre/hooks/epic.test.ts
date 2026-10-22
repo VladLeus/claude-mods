@@ -1028,4 +1028,21 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     )
     expect(run.reply).not.toContain('is not in ~/.claude.json')
   })
+
+  test("an epic role's settings deny main's code dirs as well as the worktree's (03.1-W3 S2, Pitfall 2)", async () => {
+    const world = await renderWorld([templateRole('pm', { hasBash: false }), templateRole('be')])
+    const dirs = {
+      ...world.dirs,
+      '/repo': [...(world.dirs['/repo'] ?? []), entry('src', 'dir')],
+      '/repo/src': [entry('a.ts')],
+    }
+    const run = await epic({ ...world, dirs }, RENDER_RULES, 'PROJ-1', '')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'pm').permissions
+    const deny = isObject(permissions) ? permissions.deny : undefined
+
+    expect(deny).toContain('Read(//repo/src/**)')
+    expect(deny).toContain('Edit(//repo/src/**)')
+    expect(deny).toContain('Read(//repo/.claude/worktrees/proj-1/src/**)')
+    expect(deny).toContain('Edit(//repo/.claude/worktrees/proj-1/src/**)')
+  })
 })
