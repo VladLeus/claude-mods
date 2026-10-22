@@ -2348,3 +2348,21 @@ describe('start review fixes (#63)', () => {
     expect(planFor('iterm')).toEqual({ kind: 'open', name: 'iTerm tab or window', argv: ITERM_ARGV })
   })
 })
+
+describe('linked memory deny (G-02-1f)', () => {
+  test("runStart renders the deny of each linked memory and the private folder into the role's settings", async () => {
+    const folder = await startRoleFolder()
+    const start = await startBe(await linkedWorld())
+    const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
+    const deny: readonly string[] = JSON.parse(settings).permissions?.deny ?? []
+
+    expect(deny.filter(entry => entry.includes(folder.slice(1)))).toEqual([
+      `Edit(/${folder}/instructions/**)`,
+      `Edit(/${folder}/notes.md)`,
+      `Edit(/${folder}/squad.md)`,
+      `Write(/${folder}/instructions/**)`,
+      `Write(/${folder}/notes.md)`,
+      `Write(/${folder}/squad.md)`,
+    ])
+  })
+})

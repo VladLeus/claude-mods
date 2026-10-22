@@ -14,7 +14,9 @@ import { isObject, sortedUnique } from './facts'
 import {
   claudeMdImports,
   instructionPlan,
+  isPartsFlowRole,
   launchPlan,
+  linkedMemoryDeny,
   lintRuntimeDenyPattern,
   memorySlug,
   overlayLinks,
@@ -22,6 +24,8 @@ import {
   roleMemoryDir,
   RUNTIME_SETTINGS_KEYS,
   runtimeDeny,
+  UNDENIED_PRIVATE_WARNING,
+  undeniedMemoryWarning,
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
@@ -139,6 +143,14 @@ function coveredPrefixes(deny: readonly string[]): string[] {
   })
 }
 
+/**
+ * The deny of a role's private instructions folder under its role memory folder `folder` (02-GAPS-B2 S3): Edit and
+ * Write on `<folder>/instructions/**`, written as exact `//` rules.
+ */
+function privateDeny(folder: string): string[] {
+  return [`Edit(/${folder}/instructions/**)`, `Write(/${folder}/instructions/**)`]
+}
+
 /** The runtime deny list of the template BE at /repo: the ~/ denies, and the .env denies made absolute (D-123). */
 const BASH_DENY: readonly string[] = [
   'Read(//repo/**/.env)',
@@ -243,6 +255,7 @@ describe('launch render', () => {
         defaultMode: 'auto',
         deny: [
           'Bash',
+          'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
           'Edit(//repo/cadre/**)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
@@ -251,6 +264,7 @@ describe('launch render', () => {
           'Read(//repo/cadre/**)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
+          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
         ],
       },
       sandbox: { enabled: false },
@@ -261,14 +275,14 @@ describe('launch render', () => {
     expect(plan.warnings).toEqual([])
   })
 
-  test('the permissions of the render hold the deny list of runtimeDeny', () => {
+  test('the permissions of the render hold the deny list of runtimeDeny and the private folder deny (S3)', () => {
     const role = templateRole('pm', { carry: CARRY_ALL })
     const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
     const plan = launchPlan(role, scope, carrier())
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
-      deny: runtimeDeny(role, scope, carrier()).deny,
+      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...privateDeny(roleMemoryDir(carrier(), 'pm'))]),
     })
   })
 
@@ -1717,10 +1731,13 @@ describe('launch properties', () => {
     const results = [...matrixCases(MATRIX_USER), ...matrixCases(unusual)].map(item => {
       const deny = runtimeDeny(item.role, item.scope, item.launcher)
       const leading = item.plan.warnings.slice(0, deny.warnings.length)
+      const memories = isPartsFlowRole(item.role) ? linkedMemoryDeny(item.launcher.linkedMemories).deny : []
+      const own = privateDeny(roleMemoryDir(item.launcher, item.role.id))
+      const expected = sortedUnique([...deny.deny, ...own, ...memories])
 
       return {
         label: item.label,
-        isSameDeny: JSON.stringify(denyOf(item.plan.settings)) === JSON.stringify(deny.deny),
+        isSameDeny: JSON.stringify(denyOf(item.plan.settings)) === JSON.stringify(expected),
         isLedByDeny: JSON.stringify(leading) === JSON.stringify(deny.warnings),
         hasWarnings: deny.warnings.length > 0,
       }
@@ -1894,5 +1911,148 @@ describe('launch properties', () => {
     const { role, scope, plan } = pmCase()
 
     expect(launchProblems({ ...plan, warnings: ['x'] }, role, scope, 'gsd')).toEqual(['warning: x'])
+  })
+})
+
+/** BE's role memory folder for the fixture user (D-20, D-91). */
+const BE_MEMORY = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
+
+/** The link paths of two memories /cadre start linked into BE's memory folder (G-02-1f, D-140 q3-a). */
+const LINKED: readonly string[] = [`${BE_MEMORY}/squad.md`, `${BE_MEMORY}/notes.md`]
+
+/** The file name a path ends in. */
+function fileOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+describe('linked memory deny (G-02-1f)', () => {
+  test('linkedMemoryDeny gives an Edit and a Write rule for each linked path, sorted and once each', () => {
+    const result = linkedMemoryDeny([...LINKED, `${BE_MEMORY}/squad.md`])
+
+    expect(result).toEqual({
+      deny: [
+        'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/notes.md)',
+        'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/squad.md)',
+        'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/notes.md)',
+        'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/squad.md)',
+      ],
+      warnings: [],
+    })
+    expect(result.deny.filter(entry => lintRuntimeDenyPattern(entry) !== null)).toEqual([])
+    expect(linkedMemoryDeny([])).toEqual({ deny: [], warnings: [] })
+  })
+
+  test('a path a permission rule cannot hold is skipped with a warning naming its file: it stays editable', () => {
+    const odd = [
+      `${BE_MEMORY}/../pm/old.md`,
+      `${BE_MEMORY}/a*.md`,
+      `${BE_MEMORY}/my notes.md`,
+      `${BE_MEMORY}/x${BIDI_OVERRIDE}y.md`,
+      'notes/rel.md',
+    ]
+    const result = linkedMemoryDeny([`${BE_MEMORY}/squad.md`, ...odd])
+
+    expect(result.deny).toEqual([`Edit(/${BE_MEMORY}/squad.md)`, `Write(/${BE_MEMORY}/squad.md)`])
+    expect(result.warnings).toEqual(odd.map(path => undeniedMemoryWarning(fileOf(path))))
+    expect(undeniedMemoryWarning('my notes.md')).toBe(
+      'memory my notes.md has a path a permission rule cannot hold: it stays editable',
+    )
+    expect(undeniedMemoryWarning(`x${BIDI_OVERRIDE}y.md`)).toBe(
+      'memory xy.md has a path a permission rule cannot hold: it stays editable',
+    )
+  })
+
+  test('renderRuntimeSettings denies the linked memories of a parts-flow role, never MEMORY.md or its own', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const launcher = user({ linkedMemories: LINKED })
+    const deny = denyOf(renderRuntimeSettings(role, scope, launcher, []))
+    const base = runtimeDeny(role, scope, launcher).deny
+
+    expect(isPartsFlowRole(role)).toBe(true)
+    expect(deny).toEqual(sortedUnique([...base, ...privateDeny(BE_MEMORY), ...linkedMemoryDeny(LINKED).deny]))
+    expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
+      `Edit(/${BE_MEMORY}/instructions/**)`,
+      `Edit(/${BE_MEMORY}/notes.md)`,
+      `Edit(/${BE_MEMORY}/squad.md)`,
+      `Write(/${BE_MEMORY}/instructions/**)`,
+      `Write(/${BE_MEMORY}/notes.md)`,
+      `Write(/${BE_MEMORY}/squad.md)`,
+    ])
+  })
+
+  test('a whole-files role gets no linked memory deny, even with linked paths: only its private folder deny', () => {
+    const role = templateRole('be', { instructions: ['auto-memory'] })
+    const scope = compileScope(role, context())
+    const deny = denyOf(renderRuntimeSettings(role, scope, user({ linkedMemories: LINKED }), []))
+
+    expect(isPartsFlowRole(role)).toBe(false)
+    expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual(privateDeny(BE_MEMORY))
+  })
+
+  test('every role, of either flow, denies Edit and Write on its private instructions folder (S3)', () => {
+    const launcher = user({ userDir: '/cfg', userSkills: GSD_SKILLS })
+    const roles = [templateRole('pm'), templateRole('pm', { instructions: ['global-claude-md'] }), templateRole('be')]
+    const denies = roles.map(role => {
+      const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+
+      return deny.filter(entry => entry.includes('/instructions/'))
+    })
+
+    expect(denies).toEqual([
+      privateDeny('/cfg/cadre/repo-1a2b3c4d/pm'),
+      privateDeny('/cfg/cadre/repo-1a2b3c4d/pm'),
+      privateDeny('/cfg/cadre/repo-1a2b3c4d/be'),
+    ])
+    expect(privateDeny('/cfg/cadre/repo-1a2b3c4d/pm')).toEqual([
+      'Edit(//cfg/cadre/repo-1a2b3c4d/pm/instructions/**)',
+      'Write(//cfg/cadre/repo-1a2b3c4d/pm/instructions/**)',
+    ])
+  })
+
+  test('a private folder or memory path no rule can hold is not denied; the plan warns after runtimeDeny', () => {
+    const role = templateRole('be')
+    const scope = compileScope(role, context())
+    const userDir = '/home/u s/.claude'
+    const linkedMemories = [`${userDir}/cadre/repo-1a2b3c4d/be/a.md`]
+    const launcher = user({ userDir, userSkills: GSD_SKILLS, linkedMemories })
+    const plan = launchPlan(role, scope, launcher)
+    const lead = runtimeDeny(role, scope, launcher).warnings
+
+    expect(denyOf(plan.settings)).toEqual(runtimeDeny(role, scope, launcher).deny)
+    expect(plan.warnings.slice(0, lead.length + 2)).toEqual([
+      ...lead,
+      UNDENIED_PRIVATE_WARNING,
+      undeniedMemoryWarning('a.md'),
+    ])
+    expect(UNDENIED_PRIVATE_WARNING).toBe(
+      'the private instructions folder has a path a permission rule cannot hold: it stays editable',
+    )
+  })
+
+  test('the matrix with a linked memory per role keeps no problem: no infra violation, no own folder denied', () => {
+    const results = FRAMEWORKS.flatMap(framework =>
+      MATRIX_ROLES.flatMap(base =>
+        ASSIGNMENTS.map(([label, assign]) => {
+          const role = assign(base)
+          const scope = matrixScope(role, framework)
+          const folder = roleMemoryDir(MATRIX_USER, role.id)
+          const plan = launchPlan(role, scope, { ...MATRIX_USER, linkedMemories: [`${folder}/squad.md`] })
+          const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`, `Write(/${folder}/squad.md)`] : []
+          const home = denyOf(plan.settings).filter(entry => entry.includes('//home/'))
+          const expected = sortedUnique([...privateDeny(folder), ...memory])
+          const problems = [
+            ...launchProblems(plan, role, scope, framework),
+            ...(JSON.stringify(home) === JSON.stringify(expected) ? [] : [`home denies ${home.join(', ')}`]),
+          ]
+
+          return { problems: problems.map(problem => `${framework} / ${role.id} / ${label}: ${problem}`), memory }
+        }),
+      ),
+    )
+
+    expect(results.flatMap(result => result.problems)).toEqual([])
+    expect(results.filter(result => result.memory.length > 0)).toHaveLength(21)
+    expect(results).toHaveLength(42)
   })
 })

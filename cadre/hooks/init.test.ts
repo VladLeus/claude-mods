@@ -152,6 +152,7 @@ import {
   launchContextLine,
   launchLine,
   launchStartStep,
+  LINKED_MEMORIES_ROW,
   MANIFEST_SKIPPED_NOTE,
   MAX_ADJUST_ROUNDS,
   MAX_PROPOSE_ATTEMPTS,
@@ -3461,11 +3462,14 @@ describe('memories one by one (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 5)).toEqual([
+    expect(review.slice(at, at + 8)).toEqual([
       'Instructions per role:',
       '  pm: 0 topics; 1 memory',
+      LINKED_MEMORIES_ROW,
       '  tl: 0 topics; 1 memory',
+      LINKED_MEMORIES_ROW,
       '  security: 1 topic: Security rules; 1 memory',
+      LINKED_MEMORIES_ROW,
       'Kept with the root session only: 1 topic, 0 memories',
     ])
   })
@@ -3475,10 +3479,11 @@ describe('memories one by one (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     const review = shownBlock(run, 'review')
     const at = review.indexOf('Instructions per role:')
-    expect(review.slice(at, at + 5)).toEqual([
+    expect(review.slice(at, at + 6)).toEqual([
       'Instructions per role:',
       '  pm: none',
       '  tl: 1 topic: Git and commits; 1 memory',
+      LINKED_MEMORIES_ROW,
       '  security: 1 topic: Security rules; 0 memories',
       'Kept with the root session only: 0 topics, 1 memory',
     ])
@@ -8303,5 +8308,33 @@ describe('install checks (decision #39)', () => {
     await runInit(dropped.io, { dryRun: false, host: droppedHost.io })
     expect(ignoreOf(droppedHost)).toContain('# <<< cadre')
     expect(ignoreOf(droppedHost)).not.toContain('CLAUDE-SECURITY')
+  })
+})
+
+describe('linked memory deny (G-02-1f)', () => {
+  test('the review adds the read-only row under each role given a memory, and under no other', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const review = shownBlock(run, 'review')
+    const at = review.indexOf('Instructions per role:')
+
+    expect(review.slice(at + 1, at + 5)).toEqual([
+      '  pm: none',
+      '  tl: 1 topic: Git and commits; 1 memory',
+      '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)',
+      '  security: 1 topic: Security rules; 0 memories',
+    ])
+    expect(review.filter(line => line === LINKED_MEMORIES_ROW)).toHaveLength(1)
+  })
+
+  test('a review with no memory given, or with the content declined, has no read-only row', async () => {
+    const parts = memIo(partsWorld(), PARTS_ANSWERS)
+    const declined = memIo(memoriesWorld(), PARTS_DECLINED)
+    await runInit(parts.io, { dryRun: true })
+    await runInit(declined.io, { dryRun: true })
+
+    expect(shownBlock(parts, 'review')).toContain('Instructions per role:')
+    expect(shownBlock(parts, 'review')).not.toContain(LINKED_MEMORIES_ROW)
+    expect(shownBlock(declined, 'review')).not.toContain(LINKED_MEMORIES_ROW)
   })
 })
