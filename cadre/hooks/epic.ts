@@ -21,11 +21,11 @@ import type {
   TerminalChoice,
 } from '../types'
 import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
-import { asciiLine, kickoffText, ROLE_LINE_MAX, shQuote } from './generate'
+import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { stableJson } from './plan'
 import { reportText } from './render'
-import { standsFor } from './roles'
+import { standIn, standsFor } from './roles'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {
   claudeRefusal,
@@ -63,6 +63,9 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 /** The template role whose role fetches the epic with the tracker MCP (D-143, D-161). */
 const PM_ROLE: TemplateRoleId = 'pm'
+
+/** The template role whose role PM feeds the epic's tickets to, and the other roles wait for (D-144, D-159). */
+const TL_ROLE: TemplateRoleId = 'tl'
 
 /** The refusal when git cannot tell whether the session root is the main checkout (D-165): it fails closed. */
 export const EPIC_UNKNOWN_CHECKOUT =
@@ -108,6 +111,37 @@ export function epicPmOf(
   if (candidates.length > 1) return { kind: 'refuse', text: epicManyPmReply(candidates.map(role => role.id)) }
 
   return { kind: 'ok', id: only.id }
+}
+
+/**
+ * The parent a role of the epic waits for (D-159): none for the PM `pmId`; the PM for the TL, the role standIn finds
+ * for `tl` (the one with id tl, else the first based on tl); the TL for every other role, or the PM when the team has
+ * no TL.
+ */
+export function epicParentOf(
+  role: Pick<RoleSpec, 'id' | 'basedOn'>,
+  roles: readonly Pick<RoleSpec, 'id' | 'basedOn'>[],
+  pmId: string,
+): string | null {
+  if (role.id === pmId) return null
+  const tlId = standIn(TL_ROLE, roles)
+  if (tlId === null || tlId === role.id) return pmId
+
+  return tlId
+}
+
+/**
+ * The refusal when a role's launcher in the main checkout was written before the epic kickoff (D-158): it would start
+ * the role with its own kickoff and not the epic's, so /cadre epic stops before it creates anything and names each such
+ * role, cleaned, with the /cadre regen that writes its launcher anew.
+ */
+export function epicOldLauncherReply(ids: readonly string[]): string {
+  const regens = ids.map(id => `/cadre regen ${reportText(id)}`).join(', ')
+
+  return (
+    `cadre epic stopped before creating anything: the launcher of ${reportText(ids.join(', '))} predates the epic ` +
+    `kickoff and would start without it. Run ${regens}, then /cadre epic again.`
+  )
 }
 
 /**
@@ -938,13 +972,16 @@ function feedTarget(tlId: string | null): string {
   return tlId === null ? 'your roles' : `cadre-${tlId}`
 }
 
+/** What stands between the epic key and its title in PM's epic kickoff line (D-158). */
+const TITLE_SEPARATOR = ': '
+
 /**
  * The role line of PM's epic kickoff (D-158): the epic key, and its title when there is one, then what PM does first:
  * read its ROLE.md and inbox, fetch the epic with its tracker MCP, resolve its gaps (decide, or ask the user), then
  * feed `target` ticket by ticket (D-144).
  */
 function pmEpicSentence(id: string, key: string, title: string, target: string): string {
-  const epic = title === '' ? key : `${key}: ${title}`
+  const epic = title === '' ? key : `${key}${TITLE_SEPARATOR}${title}`
   const next =
     `Read .cadre/${id}/ROLE.md and your inbox, fetch the epic with your tracker MCP, resolve its gaps ` +
     `(decide or ask the user), then feed ${target} ticket by ticket.`
@@ -953,11 +990,52 @@ function pmEpicSentence(id: string, key: string, title: string, target: string):
 }
 
 /**
- * The epic kickoff of the PM role, the text /cadre epic writes to its `.runtime/kickoff.txt` (D-158, D-160): D-79's
- * positional autopilot command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and
- * threshold, the line naming the epic key and title (pmEpicSentence) as one line of printable ASCII capped at
- * ROLE_LINE_MAX (asciiLine), so it holds no quote or backtick and sits inside the command's quotes, then
- * ` --ask-user`, as PM is the one role that asks the user (D-144), and a newline.
+ * The role line of a worker's epic kickoff (D-158): who the role is, the epic key and its ROLE.md, then the wait for
+ * its parent's session `cadre-<parent>` with wait_for reason session-answer, and to work what it sends. With no parent
+ * named it waits with no `from`, so it never names a session that is not its parent.
+ */
+function workerEpicSentence(id: string, key: string, title: string, parent: string | null): string {
+  const from = parent === null ? '' : ` from cadre-${parent}`
+  const wait = `wait for your parent: wait_for reason session-answer${from}, then work what it sends.`
+
+  return `You are ${title} (cadre role ${id}) on epic ${key}. Read .cadre/${id}/ROLE.md, then ${wait}`
+}
+
+/**
+ * PM's epic kickoff line (D-158): the epic title, with its separator, gets what ROLE_LINE_MAX leaves once the rest of
+ * the line is in, so a long title never cuts off the instruction at the end; the whole line is then capped.
+ */
+function pmEpicLine(id: string, key: string, title: string, target: string): string {
+  const room = ROLE_LINE_MAX - pmEpicSentence(id, key, '', target).length - TITLE_SEPARATOR.length
+  const kept = asciiLine(title, room)
+
+  return asciiLine(pmEpicSentence(id, key, kept, target), ROLE_LINE_MAX)
+}
+
+/**
+ * A worker's epic kickoff line (D-158), as kickoffRoleLine budgets its title: the role title gets what ROLE_LINE_MAX
+ * leaves once the rest of the line is in, a title with no ASCII character left gives way to the role id, and the whole
+ * line is then capped.
+ */
+function workerEpicLine(role: RoleSpec, key: string, parent: string | null): string {
+  const room = ROLE_LINE_MAX - workerEpicSentence(role.id, key, '', parent).length
+  const own = asciiLine(role.title, room)
+  const title = own === '' ? asciiLine(role.id, room) : own
+
+  return asciiLine(workerEpicSentence(role.id, key, title, parent), ROLE_LINE_MAX)
+}
+
+/**
+ * The epic kickoff of a role, the text /cadre epic writes to its `.runtime/kickoff.txt` (D-158 to D-160): D-79's
+ * positional autopilot command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and threshold,
+ * and a newline. PM's line names the epic key and title and says to fetch the epic with its tracker MCP, resolve its
+ * gaps (decide or ask the user) and feed the TL `tlId`, else its roles, ticket by ticket, and it ends ` --ask-user`
+ * whatever its role.json says, as PM is the one role that asks the user (D-144). Every other role's line names the role
+ * and the key and says to wait for its parent's session `cadre-<parent>` (epicParentOf) with wait_for reason
+ * session-answer, then work what it sends, and it never carries ` --ask-user` (D-160). Each line is one line of
+ * printable ASCII with no quote or backtick (asciiLine), so it sits inside the command's quotes, at most ROLE_LINE_MAX
+ * long: the epic title (PM) or the role title is cut first, so the key stays whole and the line keeps its end whenever
+ * the line with no title fits.
  */
 export function epicKickoffText(input: {
   readonly role: RoleSpec
@@ -967,11 +1045,25 @@ export function epicKickoffText(input: {
   readonly parent: string | null
   readonly tlId: string | null
 }): string {
-  const { duration, threshold } = input.role.autopilot
-  const title = asciiLine(input.title, ROLE_LINE_MAX)
-  const line = asciiLine(pmEpicSentence(input.role.id, input.key, title, feedTarget(input.tlId)), ROLE_LINE_MAX)
+  const { role, key, title, parent, tlId } = input
+  const { duration, threshold } = role.autopilot
+  if (!input.isPm) return `/autopilot ${duration} ${threshold} "${workerEpicLine(role, key, parent)}"\n`
 
-  return `/autopilot ${duration} ${threshold} "${line}" --ask-user\n`
+  return `/autopilot ${duration} ${threshold} "${pmEpicLine(role.id, key, title, feedTarget(tlId))}" --ask-user\n`
+}
+
+/**
+ * The role line of a role whose launcher in the epic worktree predates the epic kickoff (D-158): the epic branch holds
+ * an older `.cadre/bin/<id>`, which would start the role without its epic kickoff, so the role is not opened. The id is
+ * shown cleaned.
+ */
+export function epicWorktreeLauncherLine(id: string): string {
+  const role = reportText(id)
+
+  return (
+    `not opened: the epic branch holds a launcher .cadre/bin/${role} older than the epic kickoff. ` +
+    `Commit the regenerated .cadre/bin/${role} to the branch and run /cadre epic with the same key again.`
+  )
 }
 
 /**
@@ -981,13 +1073,15 @@ export function epicKickoffText(input: {
  * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
  * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
- * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/` (D-158):
- * PM's from epicKickoffText with the epic key and the worktree's title, every other role's its committed kickoff.txt
- * text. Its lines: one `warning: <id>: <text>` line per render warning, then one line per role, two spaces in:
- * `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at the worktree, D-167), or
- * the render's refusal for that role, which does not stop the others. When any role rendered, the commands are copied
- * through the host with clipboardRun, one per line, and COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a
- * launcher and never starts a background session (D-108, D-167).
+ * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
+ * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf and the team's TL,
+ * D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then one line per role, two spaces
+ * in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at the worktree, D-167),
+ * the render's refusal for that role, which does not stop the others, or epicWorktreeLauncherLine when the role's
+ * launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff); a launcher that cannot be
+ * read keeps its command. When any role has a command, the commands are copied through the host with clipboardRun, one
+ * per line, and COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background
+ * session (D-108, D-167).
  */
 async function renderedLines(
   io: InitIo,
@@ -1003,6 +1097,7 @@ async function renderedLines(
 ): Promise<string[]> {
   const { locations, state, roles, key } = team
   const worktree = epicWorktree.path
+  const tlId = standIn(TL_ROLE, roles)
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
@@ -1016,10 +1111,8 @@ async function renderedLines(
       roleLines.push(`  ${id}: ${regenBadRole(id)}`)
       continue
     }
-    const kickoff =
-      id === team.pmId
-        ? epicKickoffText({ role, key, title: epicWorktree.title, isPm: true, parent: null, tlId: null })
-        : kickoffText(role, scope.card.framework)
+    const parent = epicParentOf(role, roles, team.pmId)
+    const kickoff = epicKickoffText({ role, key, title: epicWorktree.title, isPm: id === team.pmId, parent, tlId })
     const render = await renderRole(io, host, {
       locations: worktreeLocations,
       state,
@@ -1033,8 +1126,14 @@ async function renderedLines(
       roleLines.push(`  ${id}: ${render.text}`)
       continue
     }
-    const command = `cd -- ${shQuote(worktree)} && ${launcherCommand(worktree, id)}`
     warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
+    // A launcher that cannot be read keeps the role: its own checks still run when it starts.
+    const launcher = await io.read(`${worktree}/.cadre/bin/${id}`, MAX_READ_BYTES)
+    if (launcher.state === 'text' && !hasRuntimeKickoff(launcher.text)) {
+      roleLines.push(`  ${id}: ${epicWorktreeLauncherLine(id)}`)
+      continue
+    }
+    const command = `cd -- ${shQuote(worktree)} && ${launcherCommand(worktree, id)}`
     roleLines.push(`  ${id}: ${command}`)
     commands.push(command)
   }
@@ -1094,11 +1193,12 @@ async function mirroredReply(
  * repo refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
  * checkout (epicNotMainReply naming the main checkout, or EPIC_UNKNOWN_CHECKOUT); the team refusals of readTeam, which
  * reads the whole team from the main root; a team with no one PM (epicPmOf, D-161); the first launcher refusal of
- * launcherRead, role by role in cadre.json order; the claude refusals of claudeRefusal (D-107); and a slug isEpicSlug
- * refuses. It then finds the epic by its key (D-163): git lists the worktrees and the epic branches (a run that fails
- * or cannot start refuses with EPIC_NO_WORKTREE_LIST) and epicLookup decides, its refusals included. A reused worktree
- * gets no add, and the reply shows the title of its epic record, else the title typed. Otherwise the worktree
- * `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
+ * launcherRead, role by role in cadre.json order; a launcher written before the epic kickoff (hasRuntimeKickoff), which
+ * epicOldLauncherReply names with every such role (D-158); the claude refusals of claudeRefusal (D-107); and a slug
+ * isEpicSlug refuses. It then finds the epic by its key (D-163): git lists the worktrees and the epic branches (a run
+ * that fails or cannot start refuses with EPIC_NO_WORKTREE_LIST) and epicLookup decides, its refusals included. A
+ * reused worktree gets no add, and the reply shows the title of its epic record, else the title typed. Otherwise the
+ * worktree `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
  * `epic/<slug>` from the current HEAD: a name isEpicSlug refuses, or a path that already exists (epicPathExistsReply),
  * stops it before the one `git worktree add` through the host; an add that fails or cannot start gives
  * epicAddFailedReply, and the branch is never deleted. Its epic record (D-164) holds the key, its name as the slug, the
@@ -1107,14 +1207,15 @@ async function mirroredReply(
  * track or ignores there and the worktree lacks is linked in or copied, hidden from git by the worktree's own excludes
  * file, which keeps the user's global excludes and is set up before the first link; a worktree whose git dir git does
  * not name as an absolute path stops with epicExcludesFailedReply. The record is then written to that git dir with its
- * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new
- * one from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line.
- * Once the mirror ran every step, each role of the team is rendered into the worktree (renderedLines, D-157): the team
- * read from the main root is compiled there, and renderRole renders each role with the worktree as its root, so the
- * team, the manifest and the launchers are never read from the worktree (RESEARCH Pattern 1). Running /cadre epic is
- * the consent to these steps (D-165), so it asks nothing. The reply is epicCreatedText followed by the render stage's
- * lines (one per role: its `cd -- <worktree> && <launcher>` command, copied with the others, or its render refusal),
- * or the reply the mirror stopped with. `options.terminal` is where the roles will open (D-167).
+ * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new one
+ * from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line. Once the
+ * mirror ran every step, each role of the team is rendered into the worktree (renderedLines, D-157): the team read from
+ * the main root is compiled there, and renderRole renders each role with the worktree as its root, so the team, the
+ * manifest and the launchers are never read from the worktree (RESEARCH Pattern 1). Running /cadre epic is the consent
+ * to these steps (D-165), so it asks nothing. The reply is epicCreatedText followed by the render stage's lines (one
+ * per role: its `cd -- <worktree> && <launcher>` command, copied with the others, its render refusal, or the line of a
+ * worktree launcher older than the epic kickoff), or the reply the mirror stopped with. `options.terminal` is where the
+ * roles will open (D-167).
  */
 export async function runEpic(
   io: InitIo,
@@ -1133,10 +1234,13 @@ export async function runEpic(
   if (team.kind === 'refuse') return team.text
   const pm = epicPmOf(team.value.roles)
   if (pm.kind === 'refuse') return pm.text
+  const older: string[] = []
   for (const id of team.value.state.roles) {
     const launcher = await launcherRead(io, root, id)
     if (launcher.kind === 'refuse') return launcher.text
+    if (!hasRuntimeKickoff(launcher.value)) older.push(id)
   }
+  if (older.length > 0) return epicOldLauncherReply(older)
   const claude = await claudeRefusal(host, home)
   if (claude !== null) return claude
 

@@ -161,9 +161,9 @@ export function standsFor(role: Pick<RoleSpec, 'id' | 'basedOn'>, templateId: Te
 
 /**
  * The id of the role that stands for a template role on the team (standsFor): the role with that id first, else the
- * first role based on it; null when there is neither.
+ * first role based on it; null when there is neither. /cadre epic finds the TL with it (D-159).
  */
-function standIn(templateId: TemplateRoleId, roles: readonly ChainRole[]): string | null {
+export function standIn(templateId: TemplateRoleId, roles: readonly ChainRole[]): string | null {
   const members = roles.map(role => (typeof role === 'string' ? { id: role, basedOn: null } : role))
   const byId = members.find(role => role.id === templateId)
   if (byId !== undefined) return byId.id
