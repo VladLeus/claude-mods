@@ -935,12 +935,14 @@ type EpicWorktree = {
  * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
  * main checkout, is compiled there once (compileTeam), and each role, in cadre.json order, is rendered for the worktree
  * by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
- * `.runtime/` it writes is the worktree's own, never main's. Its lines: one `warning: <id>: <text>` line per render
- * warning, then one line per role, two spaces in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>`
- * (launcherCommand rooted at the worktree, D-167), or the render's refusal for that role, which does not stop the
- * others. When any role rendered, the commands are copied through the host with clipboardRun, one per line, and
- * COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session
- * (D-108, D-167).
+ * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
+ * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
+ * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
+ * user's project servers are recorded. Its lines: one `warning: <id>: <text>` line per render warning, then one line
+ * per role, two spaces in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at
+ * the worktree, D-167), or the render's refusal for that role, which does not stop the others. When any role
+ * rendered, the commands are copied through the host with clipboardRun, one per line, and COPIED_LINE or
+ * NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session (D-108, D-167).
  */
 async function renderedLines(
   io: InitIo,
@@ -968,7 +970,7 @@ async function renderedLines(
       role,
       scope,
       codeDirs: gathered.repo.codeDirs,
-      mcpRoots: [worktree],
+      mcpRoots: [worktree, locations.root, locations.givenRoot],
       epic: { mainRoot: locations.root },
     })
     if (render.kind === 'refuse') {

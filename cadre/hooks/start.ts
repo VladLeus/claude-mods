@@ -1658,6 +1658,15 @@ export type EpicRender = {
 }
 
 /**
+ * The CLAUDE.md files an epic role must not load (RESEARCH Pitfall 1): `paths`, which the host lists for the ancestors
+ * of the session's folder, the main checkout, so it does not name the worktree's own, and `<worktree>/CLAUDE.md` and
+ * `<worktree>/.claude/CLAUDE.md`, sorted and once each. Excluding a path that does not exist is harmless (A2).
+ */
+export function worktreeClaudeMd(paths: readonly string[], worktree: string): string[] {
+  return sortedUnique([...paths, `${worktree}/CLAUDE.md`, `${worktree}/.claude/CLAUDE.md`])
+}
+
+/**
  * The render half of /cadre start for one role (D-102), which /cadre epic runs too, once per role, for its epic
  * worktree (D-157): `locations` give the root it renders for, and the caller reads and compiles the team (`state`, the
  * role, its compiled scope and the repo's code dirs) in the session's own root. It gathers the launching user for the
@@ -1670,7 +1679,9 @@ export type EpicRender = {
  * It refuses with the refusals of gatherLaunchUser, a role memory folder level it would write through included
  * (privateFolderRefusal, 02-GAPS-B3 C5), a render refusal, or that failure. Else it gives the number of links the
  * render made and every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
- * `epic` is null for /cadre start, and names the main checkout for /cadre epic.
+ * `epic` is null for /cadre start, which changes nothing. For /cadre epic it names the main checkout, and the user the
+ * LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd, RESEARCH Pitfall 1) and
+ * carries the main checkout as `mainRoot`, whose code dirs get the exact denies the worktree's get (Pitfall 2).
  */
 export async function renderRole(
   io: InitIo,
@@ -1697,7 +1708,15 @@ export async function renderRole(
     role,
   })
   if (launch.kind === 'refuse') return { kind: 'refuse', text: launch.text }
-  const { user } = launch
+  const gathered = launch.user
+  const user: LaunchUser =
+    input.epic === null
+      ? gathered
+      : {
+          ...gathered,
+          claudeMd: worktreeClaudeMd(gathered.claudeMd, locations.root),
+          mainRoot: input.epic.mainRoot,
+        }
   const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
   const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
   const mcp = runtimeMcpText(role, claudeJson, input.mcpRoots, state.readUserMcp)

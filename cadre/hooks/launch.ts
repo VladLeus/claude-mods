@@ -87,6 +87,11 @@ export type LaunchUser = {
    * deny Edit and Write on each of them (linkedMemoryDeny).
    */
   readonly linkedMemories: readonly string[]
+  /**
+   * The main checkout of an epic render (D-157), whose worktree is `root`: its exact code-dir denies are added too
+   * (RESEARCH Pitfall 2). Absent for a render in the session's own root.
+   */
+  readonly mainRoot?: string
 }
 
 /** One symlink the launch plans: `path` is where Phase 3 creates it, `target` is what it points at. Both absolute. */
@@ -433,7 +438,9 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
 
 /**
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
- * the deny of the role's private instructions folder, for every role, as every launcher adds that folder
+ * for an epic render (`mainRoot` set, D-157), runtimeDeny's denies for the main checkout's root too, so its code dirs
+ * get the same exact denies as the worktree's (RESEARCH Pitfall 2), without its warnings, which would repeat the
+ * worktree's; the deny of the role's private instructions folder, for every role, as every launcher adds that folder
  * (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's memory folders (memoryFolderDeny,
  * 02-GAPS-B3 C2) and of its hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3); and for a parts-flow role the
  * read-only deny of the memories /cadre start linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its
@@ -442,6 +449,9 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
 function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
     runtimeDeny(role, scope, user),
+    ...(user.mainRoot === undefined
+      ? []
+      : [{ deny: runtimeDeny(role, scope, { ...user, root: user.mainRoot }).deny, warnings: [] }]),
     privateInstructionsDeny(user, role.id),
     memoryFolderDeny(user),
     instructionsRecordDeny(user, role.id),
