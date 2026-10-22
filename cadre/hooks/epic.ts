@@ -1560,9 +1560,120 @@ export function epicRemoveFailedReply(key: string): string {
   )
 }
 
-/** The reply while a check of /cadre epic done fails: the worktree is kept and nothing is removed. */
-const EPIC_NOT_DONE =
-  'cadre epic done kept the worktree: it is not clean, not merged into its base, or a role still runs there.'
+/**
+ * What the clean check of /cadre epic done found (D-169): `clean` when git shows nothing, `dirty` when it shows a
+ * change, `unknown` when git could not tell.
+ */
+export type CleanState = 'clean' | 'dirty' | 'unknown'
+
+/**
+ * What the merged check of /cadre epic done found (D-169): `merged` or `not-merged` into the recorded base, `unknown`
+ * when git could not tell, `no-record` when no readable epic record names a base to check against.
+ */
+export type MergedState = 'merged' | 'not-merged' | 'unknown' | 'no-record'
+
+/**
+ * The clean check from a STATUS_ARGV run (D-169): clean when it exits 0 with no output, dirty when it exits 0 with
+ * output, unknown when it exits otherwise or could not run, so a status git could not give never reads as clean. The
+ * links are hidden by the worktree's excludes file, and ignored copies do not show.
+ */
+export function cleanStateOf(run: HostRun | null): CleanState {
+  if (run === null || run.exitCode !== 0) return 'unknown'
+
+  return run.stdout === '' ? 'clean' : 'dirty'
+}
+
+/**
+ * The merged check from a MERGED_ARGV run (D-169, RESEARCH Pitfall 7): merged on exit 0, not merged on exit 1, unknown
+ * on any other exit (128 for a name git does not know) or a run that could not run, so it never reads as merged then.
+ */
+export function mergedStateOf(run: HostRun | null): MergedState {
+  if (run === null) return 'unknown'
+  if (run.exitCode === 0) return 'merged'
+
+  return run.exitCode === 1 ? 'not-merged' : 'unknown'
+}
+
+/** The reason the clean check gives (D-169), with its fix: none when the worktree is clean. */
+function cleanProblems(clean: CleanState): string[] {
+  if (clean === 'clean') return []
+  if (clean === 'dirty') return ['git shows changes in the worktree: commit or stash them there']
+
+  return ['git could not tell whether the worktree is clean: run git status there, then commit or stash what it shows']
+}
+
+/**
+ * The reason the merged check gives (D-169), with its fix and the branch and base shown cleaned: none when the branch
+ * is merged; with no base to check against, the missing epic record is named.
+ */
+function mergedProblems(merged: MergedState, branch: string, base: string | null): string[] {
+  if (merged === 'merged') return []
+  const name = reportText(branch)
+  if (merged === 'no-record' || base === null) {
+    return [
+      `the epic record ${EPIC_RECORD_FILE}, which names the branch the worktree was made from, is missing or not ` +
+        `valid, so cadre cannot tell whether ${name} is merged: merge it, then use --force`,
+    ]
+  }
+  const into = reportText(base)
+  if (merged === 'not-merged') return [`the branch ${name} is not merged into ${into}: merge it into ${into}`]
+
+  return [`git could not tell whether ${name} is merged into ${into}: check that ${into} exists, then merge into it`]
+}
+
+/**
+ * The reason the role check gives (D-171), with its fix and the ids shown cleaned: the roles that still run in the
+ * worktree, none when no role does; a team that could not be read gives `role states unknown`, never no reason.
+ */
+function roleProblems(running: readonly string[], teamRead: boolean): string[] {
+  if (!teamRead) {
+    return [
+      'role states unknown: cadre could not read the team in .cadre/, so it cannot tell whether a role still runs ' +
+        'in the worktree: fix the team, or stop every role and use --force',
+    ]
+  }
+  if (running.length === 0) return []
+  const ids = reportText(running.join(', '))
+  if (running.length === 1) return [`the role ${ids} still runs in the worktree: stop it first`]
+
+  return [`the roles ${ids} still run in the worktree: stop them first`]
+}
+
+/**
+ * The reasons /cadre epic done keeps the worktree (D-169, D-171), one line each, in this order: the clean check, the
+ * merged check, then the role check. Each names its fix: commit or stash the changes, merge `branch` into `base`, stop
+ * the roles in `running`. A check that cannot tell is a reason too, never a pass: a status or merge-base git could not
+ * give, no record or no base (`no-record`), and a team that could not be read (`teamRead` false). Empty when every
+ * check passed.
+ */
+export function epicDoneProblems(input: {
+  readonly clean: CleanState
+  readonly merged: MergedState
+  readonly running: readonly string[]
+  readonly teamRead: boolean
+  readonly branch: string
+  readonly base: string | null
+}): string[] {
+  return [
+    ...cleanProblems(input.clean),
+    ...mergedProblems(input.merged, input.branch, input.base),
+    ...roleProblems(input.running, input.teamRead),
+  ]
+}
+
+/**
+ * The refusal of /cadre epic done when a check fails (D-152, D-169, D-171): a head line with the key, cleaned, that
+ * says nothing was removed and that `--force` removes the worktree anyway after one question, then one `- <reason>`
+ * line per reason of epicDoneProblems.
+ */
+export function epicDoneRefusal(key: string, problems: readonly string[]): string {
+  const name = reportText(key)
+  const head =
+    `cadre epic done kept the worktree of the epic ${name} and removed nothing: fix what is below, or run ` +
+    `/cadre epic done ${name} --force to remove it anyway after one question.`
+
+  return [head, ...problems.map(problem => `- ${problem}`)].join('\n')
+}
 
 /** An epic worktree as /cadre epic done finds it: its path, the epic branch checked out there and its lock reason. */
 type DoneWorktree = {
@@ -1582,6 +1693,13 @@ async function doneRecordOf(io: InitIo, host: HostIo, path: string): Promise<Epi
   const read = await io.read(epicRecordPath(gitDir), MAX_READ_BYTES)
 
   return read.state === 'text' ? parseEpicRecord(read.text) : null
+}
+
+/** The merged check (D-169): `no-record` with no base to check against, else what a MERGED_ARGV run at `root` tells. */
+async function mergedOf(host: HostIo, root: string, branch: string, base: string | null): Promise<MergedState> {
+  if (base === null) return 'no-record'
+
+  return mergedStateOf(await host.run(MERGED_ARGV(root, branch, base), { timeoutMs: GIT_TIMEOUT_MS }))
 }
 
 /**
@@ -1614,12 +1732,13 @@ async function runningRoles(
  * refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
  * checkout (epicNotMainReply or EPIC_UNKNOWN_CHECKOUT); a worktree list git cannot give (EPIC_DONE_NO_LIST); no
  * registered worktree on an epic branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The
- * epic record is read from the git dir git names for the worktree. The worktree goes only when git shows it clean
- * (STATUS_ARGV exits 0 with no output), its branch is merged into the recorded base (MERGED_ARGV exits 0) and no role
- * of the team, read from the main checkout, reads `running` there (roleRunState); else it is kept. Each link the
- * record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`, and then the worktree with
- * REMOVE_ARGV, without `--force`; a remove that fails or cannot run gives epicRemoveFailedReply. The branch is never
- * deleted, and the reply is epicRemovedText.
+ * epic record is read from the git dir git names for the worktree. Then all three checks run before any change: clean
+ * (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no record or no base)
+ * and no role of the team, read from the main checkout, reading `running` there (roleRunState, D-171). Any reason of
+ * epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a check that cannot tell included.
+ * Each link the record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`, and then the
+ * worktree with REMOVE_ARGV, without `--force`; a remove that fails or cannot run gives epicRemoveFailedReply. The
+ * branch is never deleted, and the reply is epicRemovedText.
  */
 export async function runEpicDone(
   io: InitIo,
@@ -1647,15 +1766,13 @@ export async function runEpicDone(
   if (worktree === undefined) return epicNotFoundReply(key)
   const { path, branch } = worktree
   const record = await doneRecordOf(io, host, path)
-
-  const status = await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
-  const isClean = status !== null && status.exitCode === 0 && status.stdout === ''
   const base = record?.base ?? null
-  const mergedArgv = base === null ? null : MERGED_ARGV(main.root, branch, base)
-  const merged = mergedArgv === null ? null : await host.run(mergedArgv, { timeoutMs: GIT_TIMEOUT_MS })
-  const isMerged = merged !== null && merged.exitCode === 0
+
+  const clean = cleanStateOf(await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS }))
+  const merged = await mergedOf(host, main.root, branch, base)
   const running = await runningRoles(io, host, main, path)
-  if (!isClean || !isMerged || running === null || running.length > 0) return EPIC_NOT_DONE
+  const problems = epicDoneProblems({ clean, merged, running: running ?? [], teamRead: running !== null, branch, base })
+  if (problems.length > 0) return epicDoneRefusal(key, problems)
 
   for (const link of sortedUnique(record?.links ?? [])) {
     await host.run(linkRemoveArgv(`${path}/${link}`), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
