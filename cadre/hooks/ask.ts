@@ -41,6 +41,7 @@ export const ASK_HEADERS = Object.freeze({
   gitPolicy: 'Git policy',
   review: 'Review',
   conflict: 'Conflict',
+  improver: 'Improver',
 })
 
 /** The most code points the engine shows in a question's chip. */
@@ -197,7 +198,8 @@ export async function noteLine(io: InitIo, line: string): Promise<void> {
 
 /**
  * The side-pane titles of D-133 and D-135, the notes block of the batch-1 review S1, the instruction parts block of
- * G-02-1f and the own-skills block of G-02-1b: the bold title of each kind of block the cadre init pane shows.
+ * G-02-1f, the own-skills block of G-02-1b and the improver's diff block of D-141: the bold title of each kind of block
+ * the cadre init pane shows.
  */
 export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   scan: 'Scan',
@@ -209,6 +211,7 @@ export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
   notes: 'Notes',
   instructions: 'Instruction parts',
   skills: 'Your own skills',
+  improver: 'Improver changes',
 })
 
 /**

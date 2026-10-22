@@ -386,7 +386,7 @@ export type InitFacts = {
 
 /**
  * The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f,
- * G-02-1b).
+ * G-02-1b), the improver's diff of the built file it asks about included (D-141).
  */
 export type PaneKey =
   | 'scan'
@@ -398,6 +398,7 @@ export type PaneKey =
   | 'notes'
   | 'instructions'
   | 'skills'
+  | 'improver'
 
 /** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
 export type ShownBlock = {

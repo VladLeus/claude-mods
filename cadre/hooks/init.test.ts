@@ -5767,6 +5767,8 @@ function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
     untrackedParts: [],
     privateProblems: [],
     manifestSkipped: false,
+    improverWarnings: [],
+    improved: null,
     ...over,
   }
 }

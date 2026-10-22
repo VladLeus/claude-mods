@@ -41,6 +41,7 @@ import {
   applyListPaths,
   applySteps,
   applyStatPaths,
+  builtRoleFiles,
   chmodArgv,
   chmodProblem,
   CONFLICT_OPTIONS,
@@ -49,6 +50,8 @@ import {
   hunkFailureLine,
   hunkRuns,
   hunksAfterRuns,
+  improveBuiltFiles,
+  improverLine,
   installedLine,
   installFailureText,
   instructionsRecordPath,
@@ -64,10 +67,20 @@ import {
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
+  restoreSteps,
   setupAfterInstalls,
   writeProblem,
 } from './apply'
-import type { ApplyStep, ConflictChoice, HunkRun, PrivateFile, PrivateRole } from './apply'
+import type {
+  ApplyInput,
+  ApplyStep,
+  BuiltFile,
+  ConflictChoice,
+  HunkRun,
+  ImproverTally,
+  PrivateFile,
+  PrivateRole,
+} from './apply'
 import {
   accepted,
   ASK_HEADERS,
@@ -2681,7 +2694,11 @@ export async function planStep(
  *   privateFoldersUnknownWarning when the role memory folders could not be named; never a reason to skip the manifest,
  *   which names no private file;
  * - `manifestSkipped`: whether the manifest was not written because a write of a repo file before it failed or was
- *   refused.
+ *   refused;
+ * - `improverWarnings`: the reply warning of each per-file improver question that got no usable answer (G-02-1f,
+ *   D-141);
+ * - `improved`: how many built files the improver changed and the person accepted, of how many the pass ran for; null
+ *   when no improver pass ran.
  */
 export type ApplyOutcome = {
   readonly written: readonly string[]
@@ -2697,7 +2714,28 @@ export type ApplyOutcome = {
   readonly untrackedParts: readonly string[]
   readonly privateProblems: readonly string[]
   readonly manifestSkipped: boolean
+  readonly improverWarnings: readonly string[]
+  readonly improved: ImproverTally | null
 }
+
+/** The outcome of an apply that did nothing: no write, no run, no problem and no improver pass. */
+const NOTHING_APPLIED: ApplyOutcome = Object.freeze({
+  written: [],
+  executable: [],
+  failed: [],
+  refused: [],
+  notExecutable: [],
+  chmodRefusals: [],
+  hunkFailures: [],
+  attended: [],
+  installed: [],
+  installProblems: [],
+  untrackedParts: [],
+  privateProblems: [],
+  manifestSkipped: false,
+  improverWarnings: [],
+  improved: null,
+})
 
 /** How long one launcher chmod may run before it is given up. */
 const CHMOD_TIMEOUT_MS = 10_000
@@ -2834,19 +2872,58 @@ async function writeSteps(
   }
 
   return {
+    ...NOTHING_APPLIED,
     written: [...written],
     executable,
     failed,
     refused,
     notExecutable,
     chmodRefusals,
-    hunkFailures: [],
-    attended: [],
-    installed: [],
-    installProblems: [],
-    untrackedParts: [],
     privateProblems,
     manifestSkipped,
+  }
+}
+
+/**
+ * Runs the steps of a confirmed apply with the improver pass between the file writes and the manifest (G-02-1f,
+ * D-141). writeSteps runs every step but the manifest; the improver pass runs on each offered built file whose write
+ * landed (improveBuiltFiles); then writeSteps runs, with checks made after the improver ran, the write-back of each
+ * file the pass gives back as built (restoreSteps) and the manifest applySteps gives with the accepted texts, so the
+ * manifest hashes each built file as it ends up. As in one writeSteps run, the manifest is skipped when a write of a
+ * repo file before it, the first ones or a write-back, failed or was refused. A file written twice counts once.
+ */
+async function writeImproved(
+  io: InitIo,
+  host: HostIo,
+  apply: {
+    readonly locations: InitLocations
+    readonly input: ApplyInput
+    readonly steps: readonly ApplyStep[]
+    readonly offered: readonly BuiltFile[]
+    readonly allowed: ReadonlySet<string>
+  },
+): Promise<ApplyOutcome> {
+  const { locations, input, allowed } = apply
+  const fileSteps = apply.steps.filter(step => step.kind !== 'manifest')
+  const first = await writeSteps(io, host, locations, fileSteps, allowed)
+  const landed = new Set(first.written)
+  const shownPath = (path: string): string => displayPath(path, locations.home, locations.root, locations.configDir)
+  const files = apply.offered.filter(file => landed.has(file.repoPath ?? shownPath(file.path)))
+  const pass = await improveBuiltFiles(io, host, files, locations)
+  const manifest = (await applySteps({ ...input, improved: pass.accepted })).filter(step => step.kind === 'manifest')
+  const isSkipped = first.failed.length > 0 || first.refused.length > 0
+  const later = [...restoreSteps(pass.restores), ...(isSkipped ? [] : manifest)]
+  const second = later.length === 0 ? NOTHING_APPLIED : await writeSteps(io, host, locations, later, allowed)
+
+  return {
+    ...first,
+    written: [...first.written, ...second.written.filter(path => !landed.has(path))],
+    failed: [...first.failed, ...second.failed],
+    refused: [...first.refused, ...second.refused],
+    privateProblems: [...first.privateProblems, ...second.privateProblems],
+    manifestSkipped: (isSkipped && manifest.length > 0) || second.manifestSkipped,
+    improverWarnings: pass.warnings,
+    improved: files.length === 0 ? null : { changed: pass.changed, total: pass.total },
   }
 }
 
@@ -2860,9 +2937,11 @@ async function writeSteps(
  * attended, each security plugin that was not installed (its installProblems text, decision #39), each source file
  * whose repo parts were left out because git does not track it, or that git could not be asked (untrackedParts,
  * 02-GAPS-B2 M3), each private file that was not written, or the roles whose role memory folders could not be named
- * (privateProblems, G-02-1f), and `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the
- * manifest was skipped. Then, when security plugins were installed, the line that names them and says to run
- * /reload-plugins (installedLine). NEXT_STEP_NOTE comes last.
+ * (privateProblems, G-02-1f), each improver question that got no usable answer (improverWarnings, D-141), and
+ * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. Then, when
+ * security plugins were installed, the line that names them and says to run /reload-plugins (installedLine), and when
+ * an improver pass ran, how many built files it changed and the person accepted (improverLine). NEXT_STEP_NOTE comes
+ * last.
  */
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
@@ -2883,14 +2962,17 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
     ...outcome.installProblems,
     ...outcome.untrackedParts,
     ...outcome.privateProblems,
+    ...outcome.improverWarnings,
     ...(outcome.manifestSkipped ? [manifestNote] : []),
   ]
   const installed = outcome.installed.length > 0 ? [installedLine(outcome.installed)] : []
+  const improved = outcome.improved === null ? [] : [improverLine(outcome.improved)]
 
   return [
     isNothing ? APPLIED_NONE_NOTE : counted,
     ...warnings.map(warning => `warning: ${warning}`),
     ...installed,
+    ...improved,
     NEXT_STEP_NOTE,
   ]
 }
@@ -3488,10 +3570,16 @@ async function privatePlanOf(
  *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
  *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
  *    became a conflict after the questions.
+ * 6a. When a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a role with a repo part 5a
+ *    kept, and each private text file), the improver pass runs between the file writes and the manifest
+ *    (writeImproved, G-02-1f, D-141): one `claude -p` run per written built file, in its own folder, then its diff and
+ *    the Accept or Keep original question; a kept file is written back as built, and the manifest records each built
+ *    file as it ends up.
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
  *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
- *    (untrackedParts) and the private problems of 5b and 6 (privateProblems), which the reply prints, each failure
- *    with the command to run (D-106, decision #39).
+ *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
+ *    (improverWarnings, improved), which the reply prints, each failure with the command to run (D-106, decision
+ *    #39).
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 export async function applyConfirmed(
@@ -3548,8 +3636,15 @@ export async function applyConfirmed(
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
   })
-  const steps = await applySteps({ ...planned, choices, privates: privatePlan.privates })
-  const written = await writeSteps(io, host, locations, steps, privatePlan.allowed)
+  const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
+  const steps = await applySteps(input)
+  const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
+  const offered = builtRoleFiles(steps, locations.root, withParts)
+  const allowed = privatePlan.allowed
+  const written =
+    offered.length === 0
+      ? await writeSteps(io, host, locations, steps, allowed)
+      : await writeImproved(io, host, { locations, input, steps, offered, allowed })
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {
     ...written,
@@ -3584,12 +3679,12 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that
  * nothing was written, and installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine
  * or Take new for each conflicted file (D-67), running the accepted hunks first, then installing the security plugins
- * answered Install from the home folder, and writing the plan made again from the disk (D-120), and replies with the
- * plan as written and what the apply did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind
- * before it uses the value, and for a cancelled step prints the reason as its own line and answers cancelledReply with
- * the step's reason (D-45), so only values the person accepted reach the steps after it, and nothing is written or
- * installed before Confirm. Every answer lives in memory for this one run, and nothing is kept for the next (D-45,
- * D-82).
+ * answered Install from the home folder, and writing the plan made again from the disk (D-120), with the improver
+ * pass on each built role file before the manifest (D-141), and replies with the plan as written and what the apply
+ * did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind before it uses the value, and for a
+ * cancelled step prints the reason as its own line and answers cancelledReply with the step's reason (D-45), so only
+ * values the person accepted reach the steps after it, and nothing is written or installed before Confirm. Every
+ * answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')

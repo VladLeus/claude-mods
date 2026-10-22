@@ -461,6 +461,8 @@ const OUTCOME: ApplyOutcome = {
   untrackedParts: [],
   privateProblems: [privateFoldersUnknownWarning(['be'])],
   manifestSkipped: true,
+  improverWarnings: [],
+  improved: null,
 }
 
 const PLAN: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }

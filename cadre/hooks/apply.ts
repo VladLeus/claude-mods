@@ -7,15 +7,19 @@
  * anywhere but a private file of a confirmed role (T-02-72). The framework commands of the accepted hunks are
  * re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106, D-120). It also gives
  * the argvs and the reply lines of the security plugin installs, with the Python check and the marketplace add, and
- * the setup the plan is made again from after them (decision #39). This module reads, writes and runs nothing: init
- * runs the steps through the host port.
+ * the setup the plan is made again from after them (decision #39). Init runs the steps through the host port. The
+ * improver pass between the file writes and the manifest (G-02-1f, D-141) is the one part that runs here, through the
+ * ports init gives it: each improver run goes through HostIo.run, while its reads and questions go through InitIo,
+ * which can neither write nor run.
  */
 import type {
   DesiredFile,
   FileMode,
   FileOp,
+  HostIo,
   HostRun,
   HunkOp,
+  InitIo,
   InitLocations,
   InstructionPart,
   Manifest,
@@ -23,21 +27,34 @@ import type {
   MemoryItem,
   Plan,
   PortEntry,
+  PortRead,
   PortStat,
   SettingProposal,
   SetupScan,
   WriteStat,
 } from '../types'
 import { ADAPTERS } from './adapters'
+import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
-import { compareText, displayPath, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
+import {
+  compareText,
+  countedNoun,
+  displayPath,
+  isDirInsideRoot,
+  isFileInsideRoot,
+  MAX_READ_BYTES,
+  sortedUnique,
+  trimSlash,
+} from './facts'
 import { roleClaudeMdText } from './generate'
 import { sha256Hex } from './hash'
 import { PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
-import { reportText } from './render'
+import { diffLines, lineDiff, reportText } from './render'
+import type { LineDiff } from './render'
+import { missingState } from './scan'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
 export type ConflictChoice = 'mine' | 'new'
@@ -140,6 +157,12 @@ export type ApplyInput = {
   readonly choices: ReadonlyMap<string, ConflictChoice>
   /** What each role was given that is private, in the order its files are written; absent writes none (regen). */
   readonly privates?: readonly PrivateRole[]
+  /**
+   * The text each built role file ends with after the improver pass, by repo-relative path, for each one whose improved
+   * text the person accepted (G-02-1f, D-141): the manifest records its hash, as it records a file taken new. Absent
+   * before the pass and for regen.
+   */
+  readonly improved?: ReadonlyMap<string, string>
 }
 
 /** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
@@ -305,8 +328,26 @@ function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): D
 }
 
 /**
- * The manifest apply writes: the one the plan records, with the entry of each file taken new replaced by one with its
- * new hash, or added when the plan had none for it (an untracked file), sorted by path (D-67).
+ * The files whose text the manifest records anew (D-67, D-141): each file taken new with its desired text, and each
+ * built role file whose improved text the person accepted (`improved`) with that text, which wins over the desired
+ * text of the same path; each with the mode of its desired file. An improved path with no desired file gives none.
+ */
+function changedFiles(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): DesiredFile[] {
+  const improved = input.improved ?? new Map<string, string>()
+  const taken = takenNew(input, files).filter(file => !improved.has(file.path))
+  const accepted = Array.from(improved).flatMap(([path, content]): DesiredFile[] => {
+    const desired = files.get(path)
+
+    return desired === undefined ? [] : [{ path, content, mode: desired.mode }]
+  })
+
+  return [...taken, ...accepted]
+}
+
+/**
+ * The manifest apply writes: the one the plan records, with the entry of each file taken new or improved replaced by
+ * one with the hash of its new text, or added when the plan had none for it (an untracked file), sorted by path (D-67,
+ * D-141).
  */
 async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]): Promise<Manifest> {
   const paths = new Set(taken.map(file => file.path))
@@ -325,9 +366,10 @@ async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]):
  * the merged block text; a leave writes nothing, and so does a hunk. After the repo files come the private files of
  * each role in `privates`, one step per role that has one (G-02-1f, D-140 q2-a). The manifest comes last, once every
  * file is written, so an apply that stops early never leaves a manifest that claims a file it did not write; it
- * records the new hash of each file taken new and keeps the old entry of each file kept, and never names a private
- * file. There is none when the plan keeps the manifest as a conflict (it could not be read, A6), and none when the
- * plan leaves it and no file was taken new. No step deletes anything.
+ * records the new hash of each file taken new and of each built role file whose improved text the person accepted
+ * (`improved`, D-141), keeps the old entry of each file kept, and never names a private file. There is none when the
+ * plan keeps the manifest as a conflict (it could not be read, A6), and none when the plan leaves it and no file was
+ * taken new or improved. No step deletes anything.
  */
 export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   const files = desiredByPath(input.desired)
@@ -338,10 +380,10 @@ export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   }
   steps.push(...privateSteps(input.privates ?? []))
   const manifestOp = manifestOpOf(input.plan)
-  const taken = takenNew(input, files)
+  const changed = changedFiles(input, files)
   if (manifestOp === null || manifestOp.kind === 'conflict') return steps
-  if (manifestOp.kind === 'leave' && taken.length === 0) return steps
-  const manifest = await manifestAfter(input.manifest, taken)
+  if (manifestOp.kind === 'leave' && changed.length === 0) return steps
+  const manifest = await manifestAfter(input.manifest, changed)
 
   return [...steps, { kind: 'manifest', path: MANIFEST_PATH, text: stableJson(manifest) }]
 }
@@ -617,6 +659,300 @@ export function privateWriteProblem(path: string, check: PrivateWriteCheck): str
   if (typeof target === 'object' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
 
   return null
+}
+
+/** How long one improver run may take before it is given up (G-02-1f, D-141, T-02-77): the file then stays as built. */
+export const IMPROVER_TIMEOUT_MS = 300_000
+
+/**
+ * The argv of one improver run (D-141 imp-b): `claude -p` in acceptEdits, so the run edits the file in place and asks
+ * nothing, then `--` and a prompt that names the claude-md-management:claude-md-improver skill and the file's absolute
+ * path. Init runs it only after Confirm, through the host port, with the folder that holds the file as cwd.
+ */
+export function improverArgv(path: string): readonly string[] {
+  return [
+    'claude',
+    '-p',
+    '--permission-mode',
+    'acceptEdits',
+    '--',
+    `Use the claude-md-management:claude-md-improver skill to improve the file ${path} only.`,
+  ]
+}
+
+/**
+ * One built role file the improver pass offers (G-02-1f, D-141): its absolute path, its repo-relative path when it is
+ * a repo file (`.cadre/<id>/CLAUDE.md`; null for a private text file), and the text cadre built and wrote there.
+ */
+export type BuiltFile = {
+  readonly path: string
+  readonly repoPath: string | null
+  readonly text: string
+}
+
+/** The repo-relative path of a role's built CLAUDE.md, as desiredFiles names it (G-02-1f Storage split). */
+function builtPathOf(id: string): string {
+  return `.cadre/${id}/CLAUDE.md`
+}
+
+/**
+ * The built role files of an apply the improver pass offers, in step order (G-02-1f, D-141): the written
+ * `.cadre/<id>/CLAUDE.md` of each role in `withParts`, the roles whose built file holds a repo part (a header alone
+ * has nothing to improve), and the private text file of each private step, which apply writes only for a role given
+ * a global part (privateFilesOf). A record, a `.cadre-new` copy and every other file are left out. `root` is the repo
+ * root the repo paths lie under.
+ */
+export function builtRoleFiles(
+  steps: readonly ApplyStep[],
+  root: string,
+  withParts: ReadonlySet<string>,
+): BuiltFile[] {
+  const base = trimSlash(root)
+  const built = new Set(Array.from(withParts, builtPathOf))
+
+  return steps.flatMap((step): BuiltFile[] => {
+    if (step.kind === 'write' && built.has(step.path)) {
+      return [{ path: `${base}/${step.path}`, repoPath: step.path, text: step.text }]
+    }
+    if (step.kind !== 'private') return []
+    const textPath = privateClaudeMdPath(step.path)
+
+    return step.files.filter(file => file.path === textPath).map(file => ({ ...file, repoPath: null }))
+  })
+}
+
+/**
+ * The steps that write built role files back as cadre built them, after the improver pass (G-02-1f, D-141, T-02-76): a
+ * repo file as a write of its repo path and a private text file as the private step of its role memory folder, so
+ * each write gets the same checks as the first one. A path that is neither gives none.
+ */
+export function restoreSteps(files: readonly BuiltFile[]): ApplyStep[] {
+  return files.flatMap((file): ApplyStep[] => {
+    if (file.repoPath !== null) return [{ kind: 'write', path: file.repoPath, text: file.text }]
+    const folder = privateFolderOf(file.path)
+
+    return folder === null ? [] : [{ kind: 'private', path: folder, files: [{ path: file.path, text: file.text }] }]
+  })
+}
+
+/** The answers to the per-file improver question, Accept first (D-141). */
+export const IMPROVER_OPTIONS: readonly string[] = Object.freeze(['Accept', 'Keep original'])
+
+/** What the person chose for one improved file: the improver's text, or the text cadre built. */
+type ImproverChoice = 'accept' | 'keep'
+
+/** The answer to the per-file improver question: Accept or Keep original, trimmed and in any case; else null. */
+function parseImproverAnswer(answer: string): ImproverChoice | null {
+  const wanted = answer.trim().toLowerCase()
+  if (wanted === 'accept') return 'accept'
+  if (wanted === 'keep original') return 'keep'
+
+  return null
+}
+
+/** How many lines a diff adds and removes, as the improver block and question say it (D-141). */
+function diffCounts(diff: LineDiff): string {
+  return `${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+}
+
+/** The per-file improver question (D-141): whether to keep the improver's changes to the file at the shown path. */
+export function improverQuestion(path: string): string {
+  return `Accept the improver's changes to ${path}?`
+}
+
+/** The context line of the per-file improver question (D-136, D-141): the size of the change, and where its diff is. */
+export function improverContextLine(diff: LineDiff): string {
+  return `${diffCounts(diff)}; the pane shows the diff.`
+}
+
+/**
+ * The improver block of one file (G-02-1f, D-141): its shown path with how many lines the improver added and removed,
+ * then the changed lines (diffLines).
+ */
+export function improverBlockLines(path: string, diff: LineDiff): string[] {
+  return [`${path}: ${diffCounts(diff)}`, ...diffLines(diff)]
+}
+
+/** The note for a built file the improver ran on and did not change (D-141). */
+export function improverNoChangeNote(path: string): string {
+  return `the improver made no change to ${path}`
+}
+
+/** The note for a built file whose improver run failed (D-141, T-02-77): why, and that the file stays as built. */
+export function improverFailedNote(path: string, reason: string): string {
+  return `the improver did not run for ${path} (${reason}): the file stays as built`
+}
+
+/**
+ * The note for a built file the improver left as something cadre cannot read and show as a diff: gone, a link, not a
+ * regular file, over the read cap or unreadable (D-141, T-02-76); it is written back as built.
+ */
+export function improverUnreadableNote(path: string): string {
+  return `the improver left ${path} unreadable: it is written back as built`
+}
+
+/** The reply warning for a per-file improver question that got no usable answer (D-141): the file stays as built. */
+export function improverDismissedWarning(path: string): string {
+  return `the improver question for ${path} was dismissed: the file stays as built`
+}
+
+/**
+ * Why an improver run failed, or null when it exited 0 (D-141, T-02-77): `it exited with <code>` for any other exit;
+ * for a run the host gave no result for, `it timed out` when it lasted IMPROVER_TIMEOUT_MS or longer by the clock,
+ * since the host gives up a run at its time, else `it could not start`. `elapsedMs` is null when the clock was not
+ * read.
+ */
+export function improverFailure(run: HostRun | null, elapsedMs: number | null): string | null {
+  if (run !== null) return run.exitCode === 0 ? null : `it exited with ${run.exitCode}`
+  if (elapsedMs !== null && elapsedMs >= IMPROVER_TIMEOUT_MS) return 'it timed out'
+
+  return 'it could not start'
+}
+
+/** How many built files the improver changed and the person accepted, of how many the pass ran for (D-141). */
+export type ImproverTally = {
+  readonly changed: number
+  readonly total: number
+}
+
+/** The reply line of an improver pass (D-141), which comes right after the applied lines. */
+export function improverLine(tally: ImproverTally): string {
+  return `Improver: ${tally.changed} of ${tally.total} built files changed and accepted.`
+}
+
+/** What the improver pass did (G-02-1f, D-141), with its tally. */
+export type ImproverOutcome = ImproverTally & {
+  /** The text of each repo file whose change the person accepted, by repo-relative path: the manifest records it. */
+  readonly accepted: ReadonlyMap<string, string>
+  /**
+   * The built files to write back as cadre built them: each kept, not answered, left unreadable, or changed by a run
+   * that failed.
+   */
+  readonly restores: readonly BuiltFile[]
+  /** The reply warning of each per-file question that got no usable answer. */
+  readonly warnings: readonly string[]
+}
+
+/** What the pass did with one built file: left it as it is, kept the person's accepted text, or gives it back. */
+type ImprovedFile =
+  | { readonly kind: 'left' }
+  | { readonly kind: 'accepted'; readonly text: string }
+  | { readonly kind: 'restore'; readonly warning: string | null }
+
+/** A built file the pass leaves as it is. */
+const LEFT: ImprovedFile = Object.freeze({ kind: 'left' })
+
+/** A built file the pass gives back to be written as built, with no warning. */
+const RESTORE: ImprovedFile = Object.freeze({ kind: 'restore', warning: null })
+
+/**
+ * A built file as the improver pass reads it, before and after its run (D-141, T-02-76): only a regular file that is
+ * not a link, and for a repo file one whose real path lies inside the repo, is read, up to MAX_READ_BYTES; any other
+ * path is `unknown`, and a missing one `absent`. So a link the improver left is never read or shown.
+ */
+async function builtRead(io: InitIo, file: BuiltFile, root: string): Promise<PortRead> {
+  const stat = await io.stat(file.path)
+  if (stat === null) return { state: await missingState(io, file.path) }
+  if (stat.isLink || stat.kind !== 'file') return { state: 'unknown' }
+  if (file.repoPath !== null && !isFileInsideRoot(stat, root)) return { state: 'unknown' }
+
+  return io.read(file.path, MAX_READ_BYTES)
+}
+
+/** Whether two reads of one path found the same: the same state and, for text, the same text or size. */
+function isSameRead(before: PortRead, after: PortRead): boolean {
+  if (before.state === 'text' && after.state === 'text') return before.text === after.text
+  if (before.state === 'too-large' && after.state === 'too-large') return before.bytes === after.bytes
+
+  return before.state === after.state
+}
+
+/** Where the improver pass shows a path from: the home folder and the repo of the run, and CLAUDE_CONFIG_DIR. */
+type ShownFrom = Pick<InitLocations, 'home' | 'root' | 'configDir'>
+
+/** A built file as the pass names it: a repo file by its repo path, a private one as displayPath shows it (`~/...`). */
+function shownBuiltPath(file: BuiltFile, from: ShownFrom): string {
+  if (file.repoPath !== null) return reportText(file.repoPath)
+
+  return displayPath(file.path, from.home, from.root, from.configDir)
+}
+
+/**
+ * One file of the improver pass (G-02-1f, D-141). It reads the file (builtRead), runs improverArgv in the folder that
+ * holds it with IMPROVER_TIMEOUT_MS, the clock read around the run, and reads it again; the file changed when the two
+ * reads differ and it no longer holds the built text. A failed run (improverFailure) notes why and gives a changed file
+ * back as built, asking nothing. An unchanged file is noted. A changed file cadre cannot read is noted and given back.
+ * Else the improver block shows its diff from the built text and the per-file question is asked: Accept keeps the new
+ * text, Keep original gives the file back, and a question with no usable answer gives it back with a warning.
+ */
+async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: ShownFrom): Promise<ImprovedFile> {
+  const shownPath = shownBuiltPath(file, from)
+  const before = await builtRead(io, file, from.root)
+  const started = await io.now()
+  const run = await host.run(improverArgv(file.path), { cwd: parentOf(file.path), timeoutMs: IMPROVER_TIMEOUT_MS })
+  const ended = await io.now()
+  const after = await builtRead(io, file, from.root)
+  const isAsBuilt = after.state === 'text' && after.text === file.text
+  const isChanged = !isAsBuilt && !isSameRead(before, after)
+  const failure = improverFailure(run, started === null || ended === null ? null : ended - started)
+  if (failure !== null) {
+    await noteLine(io, improverFailedNote(shownPath, failure))
+
+    return isChanged ? RESTORE : LEFT
+  }
+  if (!isChanged) {
+    await noteLine(io, improverNoChangeNote(shownPath))
+
+    return LEFT
+  }
+  if (after.state !== 'text') {
+    await noteLine(io, improverUnreadableNote(shownPath))
+
+    return RESTORE
+  }
+  const diff = lineDiff(file.text, after.text)
+  await showBlock(io, 'improver', improverBlockLines(shownPath, diff))
+  const answer = await askChoice(io, {
+    question: withContext(improverQuestion(shownPath), improverContextLine(diff)),
+    spec: { options: IMPROVER_OPTIONS, header: ASK_HEADERS.improver },
+    parse: parseImproverAnswer,
+    accepts: quotedLabels(IMPROVER_OPTIONS),
+  })
+  if (answer.kind !== 'answered') return { kind: 'restore', warning: improverDismissedWarning(shownPath) }
+
+  return answer.value === 'accept' ? { kind: 'accepted', text: after.text } : RESTORE
+}
+
+/**
+ * The improver pass (G-02-1f, D-141 imp-b): after Confirm, once the built files are written and before the manifest,
+ * each file in `files` gets one improver run in turn, in place (improveOne), and the person reviews each change. It
+ * gives the accepted text of each repo file for the manifest, the files to write back as built (restoreSteps), the
+ * reply warnings, and how many files were changed and accepted of how many it ran for. It writes nothing itself; a
+ * dry run never reaches it, since it holds no HostIo (T-03-16).
+ */
+export async function improveBuiltFiles(
+  io: InitIo,
+  host: HostIo,
+  files: readonly BuiltFile[],
+  from: ShownFrom,
+): Promise<ImproverOutcome> {
+  const accepted = new Map<string, string>()
+  const restores: BuiltFile[] = []
+  const warnings: string[] = []
+  let changed = 0
+  for (const file of files) {
+    const result = await improveOne(io, host, file, from)
+    if (result.kind === 'accepted') {
+      changed += 1
+      if (file.repoPath !== null) accepted.set(file.repoPath, result.text)
+      continue
+    }
+    if (result.kind === 'left') continue
+    restores.push(file)
+    if (result.warning !== null) warnings.push(result.warning)
+  }
+
+  return { accepted, restores, warnings, changed, total: files.length }
 }
 
 /** One framework command apply runs for an accepted hunk: the hunk's key and file, the argv, and its display form. */
