@@ -155,8 +155,8 @@ export type PrivateRole = {
   /**
    * How regen rebuilds its private files (G-02-1f Regen): `text` writes the text file alone (claude -p writes no
    * record, AUTO-PICK #19 Q3), `record` the record alone and `both` both, each whatever it holds, a text file of the
-   * header alone and a record with empty lists included (Q11). Absent for init, which writes the text file with a
-   * global part and the record with a global part or a memory.
+   * header alone and a record with empty lists included (Q11). Absent for init, which writes both, whatever they hold
+   * (02-GAPS-B3 C1).
    */
   readonly rebuild?: 'text' | 'record' | 'both'
 }
@@ -244,20 +244,19 @@ export function instructionsRecordText(
 }
 
 /**
- * The private files of a role (G-02-1f Storage split, D-140 q2-a): for init, its private text file when it was given a
- * global part, then its hand-out record when it was given a global part or a memory, none when it was given neither;
- * for regen, the files `rebuild` names, whatever they hold (G-02-1f Regen).
+ * The private files of a role (G-02-1f Storage split, D-140 q2-a): for init, its private text file, then its hand-out
+ * record, whatever they hold, a text file of the header alone and a record with empty lists included, so a role never
+ * keeps loading parts or linking memories it lost (02-GAPS-B3 C1); for regen, the files `rebuild` names, whatever they
+ * hold (G-02-1f Regen).
  */
 function privateFilesOf(role: PrivateRole): PrivateFile[] {
   const recordText = instructionsRecordText(role.parts, role.memories, role.partsNotGiven ?? [])
   const record = { path: instructionsRecordPath(role.folder), text: recordText }
   const text = { path: privateClaudeMdPath(role.folder), text: privateClaudeMdText(role.id, role.repo, role.parts) }
-  if (role.rebuild === 'both') return [text, record]
   if (role.rebuild === 'text') return [text]
   if (role.rebuild === 'record') return [record]
-  if (role.parts.length > 0) return [text, record]
 
-  return role.memories.length > 0 ? [record] : []
+  return [text, record]
 }
 
 /** A memory a role's hand-out record names (D-140 q2-a): its file, the memory folder of its original, summary, hash. */

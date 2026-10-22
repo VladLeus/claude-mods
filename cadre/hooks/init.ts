@@ -57,6 +57,7 @@ import {
   installedLine,
   installFailureText,
   instructionsRecordPath,
+  instructionsRecordText,
   listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
@@ -252,7 +253,7 @@ import {
   undecidedFacts,
 } from './scan'
 import type { CommandWord } from './scan'
-import { compileScope, pluginName, scopeCardLines } from './scope'
+import { compileScope, MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
 import { MARKDOWN_EXTENSION, memoryFolderOf, scanSetup, userDirOf } from './setup'
 import { gitCommonDirOf, isStepDone } from './start'
 
@@ -1425,17 +1426,20 @@ export function securityInstallQuestion(keys: readonly string[]): string {
   return `${SECURITY_INSTALL_PREFIX} ${names.map(reportText).join(' and ')}? ${notes.join(' ')}`
 }
 
-/** Each answer to the security plugins question with whether it installs them: only Install does (decision #39). */
-const SECURITY_INSTALLS: readonly Labelled<boolean>[] = Object.freeze([
+/**
+ * Each answer to an install question with whether it installs: only Install does. It serves both install offers, the
+ * security plugins (decision #39) and claude-md-management (D-141; 02-GAPS-B3 N6).
+ */
+const INSTALL_CHOICES: readonly Labelled<boolean>[] = Object.freeze([
   { label: 'Install', value: true },
   { label: 'Not now', value: false },
 ])
 
 /**
- * The answers to the security plugins question, Install first: the dialog focuses the first option; the order is fixed
- * (decision #39).
+ * The answers to an install question, Install first: the dialog focuses the first option; the order is fixed
+ * (decision #39). It serves both install offers, the security plugins and claude-md-management (D-141; 02-GAPS-B3 N6).
  */
-export const SECURITY_INSTALL_OPTIONS: readonly string[] = Object.freeze(SECURITY_INSTALLS.map(entry => entry.label))
+export const INSTALL_OPTIONS: readonly string[] = Object.freeze(INSTALL_CHOICES.map(entry => entry.label))
 
 /** Why init cancels when the security plugins question is dismissed or not answered (decision #39, A1, D-45). */
 export const SECURITY_INSTALL_DISMISSED_REASON = 'The security plugins question was dismissed or not answered.'
@@ -1443,8 +1447,8 @@ export const SECURITY_INSTALL_DISMISSED_REASON = 'The security plugins question 
 /**
  * The security plugins step (decision #39, LNCH-01). With no key it asks nothing and is accepted with none. Else it
  * asks securityInstallQuestion, with SECURITY_INSTALL_CONTEXT on its second line (D-136), and the buttons
- * SECURITY_INSTALL_OPTIONS: Install, trimmed and in any case, is accepted with every key, and Not now with none; any
- * other answer is asked again with why on top. A dismissal is cancelled with SECURITY_INSTALL_DISMISSED_REASON and
+ * INSTALL_OPTIONS: Install, trimmed and in any case, is accepted with every key, and Not now with none; any other
+ * answer is asked again with why on top. A dismissal is cancelled with SECURITY_INSTALL_DISMISSED_REASON and
  * MAX_ASKS answers that are neither with NO_USABLE_ANSWER_REASON (A1, D-45). It installs nothing itself: the keys are
  * installed only after Confirm, never in --dry-run (applyConfirmed).
  */
@@ -1455,9 +1459,9 @@ export async function securityInstallStep(
   if (keys.length === 0) return accepted([])
   const ask = {
     question: withContext(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT),
-    spec: { options: SECURITY_INSTALL_OPTIONS, header: ASK_HEADERS.security },
-    parse: (answer: string): boolean | null => labelled(SECURITY_INSTALLS, answer),
-    accepts: quotedLabels(SECURITY_INSTALL_OPTIONS),
+    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security },
+    parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
+    accepts: quotedLabels(INSTALL_OPTIONS),
   }
   const isWanted = choiceResult(await askChoice(io, ask), SECURITY_INSTALL_DISMISSED_REASON)
   if (isWanted.kind === 'cancelled') return isWanted
@@ -1498,9 +1502,9 @@ function hasBuiltPart(handout: InstructionHandout): boolean {
  * The improver install step (G-02-1f, D-141). When the hand-out gives no role a built file with a part (hasBuiltPart),
  * or claude-md-management is installed (CLAUDE_MD_PLUGIN among the setup's installed plugins), it asks nothing and is
  * accepted with no key. Else it asks IMPROVER_INSTALL_QUESTION, with IMPROVER_INSTALL_CONTEXT on its second line
- * (D-136), the buttons of the security plugins question (SECURITY_INSTALL_OPTIONS) and the Improver chip: Install is
- * accepted with CLAUDE_MD_PLUGIN, and Not now with none, so no improver runs; any other answer is asked again with why
- * on top. A dismissal is cancelled with IMPROVER_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with
+ * (D-136), the buttons of both install questions (INSTALL_OPTIONS) and the Improver chip: Install is accepted with
+ * CLAUDE_MD_PLUGIN, and Not now with none, so no improver runs; any other answer is asked again with why on top. A
+ * dismissal is cancelled with IMPROVER_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with
  * NO_USABLE_ANSWER_REASON (A1, D-45). It installs nothing itself: the key is installed only after Confirm, with the
  * other keys answered Install, never in --dry-run (applyConfirmed).
  */
@@ -1512,9 +1516,9 @@ export async function improverInstallStep(
   if (!hasBuiltPart(handout) || setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)) return accepted([])
   const ask = {
     question: withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT),
-    spec: { options: SECURITY_INSTALL_OPTIONS, header: ASK_HEADERS.improver },
-    parse: (answer: string): boolean | null => labelled(SECURITY_INSTALLS, answer),
-    accepts: quotedLabels(SECURITY_INSTALL_OPTIONS),
+    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.improver },
+    parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
+    accepts: quotedLabels(INSTALL_OPTIONS),
   }
   const isWanted = choiceResult(await askChoice(io, ask), IMPROVER_INSTALL_DISMISSED_REASON)
   if (isWanted.kind === 'cancelled') return isWanted
@@ -2712,30 +2716,64 @@ function withRepoRecords(
 type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'partsNotGiven'>
 
 /**
- * What each role of the team was given that is private (G-02-1f Storage split, D-140 q2-a): for a parts hand-out,
+ * What each role of the team was given that is private (G-02-1f Storage split, D-140 q2-a; 02-GAPS-B3 C1): one entry
+ * per role of the team, in role id order, the order of the role memory folders, for every hand-out kind, so every
+ * Confirm writes both private files of every role and no role keeps a part or a memory it lost. For a parts hand-out,
  * every global part of the topics it was given, in read order, every memory it was given, in file-name order, and the
- * other global parts of the files its parts come from, which its record names as not given (AUTO-PICK #19 Q1); a role
- * given neither a global part nor a memory is left out, and the whole-file questions and none give no role. In role id
- * order, the order of the role memory folders. A part read from the repo is never among them: those go to its built
- * file (repoPartsOf).
+ * other global parts of the files its parts come from, which its record names as not given (AUTO-PICK #19 Q1), each
+ * list empty for a role given nothing; the whole-file questions and none give every role empty lists. A part read from
+ * the repo is never among them: those go to its built file (repoPartsOf).
  */
 function privatesOf(handout: InstructionHandout, roles: readonly RoleSpec[]): OwedPrivate[] {
-  if (handout.kind !== 'parts') return []
+  const ids = roles.map(role => role.id).sort(compareText)
+  if (handout.kind !== 'parts') return ids.map(id => ({ id, parts: [], memories: [], partsNotGiven: [] }))
   const { scan, topics, given } = handout
   const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
-  const ids = roles.map(role => role.id).sort(compareText)
   const globalParts = scan.parts.filter(part => part.source === 'global')
 
-  return ids.flatMap(id => {
+  return ids.map(id => {
     const partIds = new Set(topics.filter(topic => isGiven(topic.id, id)).flatMap(topic => topic.partIds))
     const parts = globalParts.filter(part => partIds.has(part.id))
     const files = new Set(parts.map(part => part.file))
     const notGiven = globalParts.filter(part => files.has(part.file) && !partIds.has(part.id))
     const memories = scan.memories.filter(memory => isGiven(memory.id, id))
-    if (parts.length === 0 && memories.length === 0) return []
 
-    return [{ id, parts, memories, partsNotGiven: notGiven.map(partRecord) }]
+    return { id, parts, memories, partsNotGiven: notGiven.map(partRecord) }
   })
+}
+
+/**
+ * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
+ * `.cadre/<id>/CLAUDE.md` is desired, when its role.json as the disk holds it is text parseRoleJson takes, with the
+ * same repo part records as the role, given and not given (compared by file, heading and hash), and the built file as
+ * the disk holds it hashes to its entry in the last manifest, that entry; so an accepted improver text is neither
+ * written over nor offered again while the role's parts are unchanged.
+ */
+async function keptBuiltEntries(
+  roles: readonly RoleSpec[],
+  desired: readonly DesiredFile[],
+  disk: ReadonlyMap<string, PortRead>,
+  manifest: Manifest | null,
+): Promise<ManifestEntry[]> {
+  const desiredPaths = new Set(desired.map(file => file.path))
+  const recordsText = (records: readonly InstructionPartRecord[] | undefined): string =>
+    JSON.stringify((records ?? []).map(({ file, heading, hash }) => ({ file, heading, hash })))
+  const kept: ManifestEntry[] = []
+  for (const role of roles) {
+    const path = builtClaudeMdPath(role.id)
+    const entry = manifest?.files.find(file => file.path === path)
+    if (!desiredPaths.has(path) || entry === undefined) continue
+    const roleRead = disk.get(roleJsonPath(role.id))
+    const onDisk = roleRead?.state === 'text' ? parseRoleJson(roleRead.text) : null
+    if (onDisk === null) continue
+    if (recordsText(onDisk.instructionParts) !== recordsText(role.instructionParts)) continue
+    if (recordsText(onDisk.instructionPartsNotGiven) !== recordsText(role.instructionPartsNotGiven)) continue
+    const built = disk.get(path)
+    if (built?.state !== 'text' || (await sha256Hex(built.text)) !== entry.sha256) continue
+    kept.push(entry)
+  }
+
+  return kept
 }
 
 /**
@@ -2743,16 +2781,19 @@ function privatesOf(handout: InstructionHandout, roles: readonly RoleSpec[]): Ow
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
  * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role from the repo parts
  * `repoParts` gives it (G-02-1f): whenever init passes repoParts every role gets its built file, the header alone with
- * no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). The repo state also records the
- * consent answer, so regen knows whether it may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each
- * file, the copy beside it and the manifest) and the root `.gitignore` are read, through readRepoFile, so a link out
- * of the repo is unknown and never read.
+ * no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). A role whose repo records and built
+ * file are as the last apply left them keeps its built file and manifest entry, as regenPlan does, so an accepted
+ * improver text is not overwritten or asked again (keptBuiltEntries, 02-GAPS-B3 S1): its path is dropped from the
+ * desired files and its entry carried. The repo state also records the consent answer, so regen knows whether it may
+ * read ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and
+ * the root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never read.
  * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
  * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
  * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.
- * The result also holds what apply writes the plan from: the desired files, the manifest the plan records and the
- * merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be merged, since
- * the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm (applyConfirmed).
+ * The result also holds what apply writes the plan from: the desired files less the kept ones, the manifest the plan
+ * records and the merged `.gitignore` text, which is null when the `.gitignore` cannot be read or its block cannot be
+ * merged, since the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm
+ * (applyConfirmed).
  */
 export async function planStep(
   io: InitIo,
@@ -2782,8 +2823,11 @@ export async function planStep(
     readUserMcp,
   }
   const parts = repoParts === undefined ? {} : { repoParts }
-  const desired = desiredFiles({ roles, scopes, state, only: null, ...parts })
-  const disk = await readPaths(io, locations.root, planReadPaths(desired))
+  const generated = desiredFiles({ roles, scopes, state, only: null, ...parts })
+  const disk = await readPaths(io, locations.root, planReadPaths(generated))
+  const carried = await keptBuiltEntries(roles, generated, disk, repo.cadre.manifest)
+  const keptPaths = new Set(carried.map(entry => entry.path))
+  const desired = generated.filter(file => !keptPaths.has(file.path))
   const ignoreRead = await readRepoFile(io, locations.root, GITIGNORE_FILE, MAX_READ_BYTES)
   const existing = ignoreRead.state === 'text' ? ignoreRead.text : null
   const lines = gitignoreLines(policy, existing, roles.some(role => standsFor(role, 'security')))
@@ -2792,7 +2836,7 @@ export async function planStep(
     disk,
     manifest: repo.cadre.manifest,
     manifestState: repo.cadre.manifestState,
-    carried: [],
+    carried,
     gitignore: { disk: ignoreRead, lines },
     hunks,
     cadreVersion,
@@ -3115,16 +3159,25 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
 /**
  * The reply of a finished init (PLAN-01, PLAN-02, D-105): what was asked for, the file plan as renderPlan prints it
  * (with its warnings, so none is printed twice), the git policy, where the launchers start (A2), the worktree line of
- * the ignore policy, and last the dry-run note when `applied` is null (--dry-run, nothing was written), else the lines
- * of what the apply did (appliedLines). Plain init and --dry-run differ only in the first line and that ending.
+ * the ignore policy, `confirmLines` (what Confirm writes outside the repo and the improver line, which a --dry-run
+ * reply names, 02-GAPS-B3 S4; none by default), and last the dry-run note when `applied` is null (--dry-run, nothing
+ * was written), else the lines of what the apply did (appliedLines). Plain init and --dry-run differ only in the first
+ * line, the confirm lines and that ending.
  */
-export function initReplyText(plan: Plan, policy: GitPolicy, start: LaunchStart, applied: ApplyOutcome | null): string {
+export function initReplyText(
+  plan: Plan,
+  policy: GitPolicy,
+  start: LaunchStart,
+  applied: ApplyOutcome | null,
+  confirmLines: readonly string[] = [],
+): string {
   return [
     applied === null ? 'cadre init --dry-run' : 'cadre init',
     ...renderPlan(plan),
     policyLine(policy),
     launchLine(start),
     ...(policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
+    ...confirmLines,
     ...(applied === null ? [DRY_RUN_NOTE] : appliedLines(applied)),
   ].join('\n')
 }
@@ -3423,10 +3476,52 @@ export const LINKED_MEMORIES_ROW =
   '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)'
 
 /**
+ * The review row of a role's private files (02-GAPS-B3 S4), in the scope card's memory folder form, so a dry run needs
+ * no git.
+ */
+export function privateFilesRow(id: string): string {
+  return (
+    `    private files: ${MEMORY_PATTERN}${id}/instructions/CLAUDE.md and instructions.json ` +
+    '(outside the repo, never committed)'
+  )
+}
+
+/** The heading of the private-files rows outside the parts flow and in the --dry-run reply (02-GAPS-B3 S4). */
+export const PRIVATE_FILES_HEADING = 'Private files per role (written after Confirm):'
+
+/**
+ * The line that announces the improver pass (02-GAPS-B3 S4): at most this many built files, since the git check and
+ * the record compare run after Confirm.
+ */
+export function improverRunLine(count: number): string {
+  const files = countedNoun(count, 'built file', 'built files')
+
+  return (
+    `After Confirm, claude-md-improver runs on up to ${files} (claude -p, acceptEdits, up to 5 minutes each); ` +
+    'you accept or keep each change.'
+  )
+}
+
+/**
+ * How many built files the improver may run on after Confirm (02-GAPS-B3 S4): each `.cadre/<id>/CLAUDE.md` the plan
+ * creates or changes for a role given a repo part (repoPartsOf), and each role given a global part (privatesOf), whose
+ * private text file holds it.
+ */
+function improverRunCount(draft: Draft, plan: Plan): number {
+  const withParts = Array.from(repoPartsOf(draft.instructions)).filter(([, parts]) => parts.length > 0)
+  const built = new Set(withParts.map(([id]) => builtClaudeMdPath(id)))
+  const repoFiles = plan.ops.filter(op => (op.kind === 'create' || op.kind === 'change') && built.has(op.path))
+  const privateFiles = privatesOf(draft.instructions, draft.roles).filter(role => role.parts.length > 0)
+
+  return repoFiles.length + privateFiles.length
+}
+
+/**
  * The review rows of the instruction parts (G-02-1f): per role the topics and memories it was given, and the topics
  * and memories kept with the root session only (instructionReviewLines, which gives its heading, then one row per
  * role in role order, then the kept row), with LINKED_MEMORIES_ROW right under the row of each role given at least
- * one memory; for the parts flow only, none for the whole-file questions or none.
+ * one memory and the role's privateFilesRow under that (its rowsAfter, 02-GAPS-B3 N3, S4); for the parts flow only,
+ * none for the whole-file questions or none.
  */
 function handoutLines(draft: Draft): string[] {
   const handout = draft.instructions
@@ -3434,39 +3529,45 @@ function handoutLines(draft: Draft): string[] {
   const { given } = handout
   const { memories } = handout.scan
   const hasMemory = (id: string): boolean => memories.some(memory => given.get(memory.id)?.includes(id) === true)
-  const lines = instructionReviewLines(draft.roles, handout.topics, memories, given)
+  const rowsAfter = (id: string): string[] => [...(hasMemory(id) ? [LINKED_MEMORIES_ROW] : []), privateFilesRow(id)]
 
-  return lines.flatMap((line, at) => {
-    const role = at === 0 ? undefined : draft.roles[at - 1]
-
-    return role !== undefined && hasMemory(role.id) ? [line, LINKED_MEMORIES_ROW] : [line]
-  })
+  return instructionReviewLines(draft.roles, handout.topics, memories, given, rowsAfter)
 }
 
 /**
  * The summary the review shows before its question (D-43 as amended by D-134), in this order: the role titles and
- * ids, every scope card, for the instruction parts flow the topics per role (handoutLines, G-02-1f), the file plan with
- * its hunks, its warnings and the `.gitignore` block rows as renderPlan prints them (so none is printed twice), the git
- * policy line, the launcher-start line, IGNORE_ALL_NOTE when the policy is `ignore`, so both items with a review button
- * of their own can be checked before Confirm, then the scan warnings of the run, kept for this review, and last the
- * plugins Confirm installs when the person answered Install for any (the security plugins, decision #39, and
- * claude-md-management, D-141), each key cleaned and capped as a report cell is (decision #69 B7).
+ * ids, every scope card, for the instruction parts flow the topics per role with each role's private files
+ * (handoutLines, G-02-1f), for the other flows PRIVATE_FILES_HEADING and the private-files row of each role
+ * (privateFilesRow, 02-GAPS-B3 S4), the file plan with its hunks, its warnings and the `.gitignore` block rows as
+ * renderPlan prints them (so none is printed twice), the git policy line, the launcher-start line, IGNORE_ALL_NOTE when
+ * the policy is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan
+ * warnings of the run, kept for this review, the plugins Confirm installs when the person answered Install for any (the
+ * security plugins, decision #39, and claude-md-management, D-141), each key cleaned and capped as a report cell is
+ * (decision #69 B7), and last, when claude-md-management is installed or answered Install and the improver has a
+ * built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
   const installLine = `Plugins to install after Confirm (a --dry-run installs nothing): ${keys}`
+  const rows = draft.roles.map(role => privateFilesRow(role.id))
+  const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
+  const count = improverRunCount(draft, plan)
+  const installed = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls).installedPlugins
+  const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
 
   return [
     'Roles:',
     ...draft.roles.map(role => `  ${role.title} (${role.id})`),
     ...cardLines(draft.roles, scopes),
     ...handoutLines(draft),
+    ...privateRows,
     ...renderPlan(plan),
     policyLine(draft.policy),
     launchLine(draft.launchStart),
     ...(draft.policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
+    ...improver,
   ]
 }
 
@@ -3680,13 +3781,15 @@ function privatePaths(folders: readonly string[]): ReadonlySet<string> {
 }
 
 /**
- * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). With a role owed one (privatesOf), the role
- * memory folder of each role is named from the user folder and the git common dir, as /cadre start names it
- * (roleFoldersOf), `folders` maps every role of the team to it (02-GAPS-B3 M1), and `allowed` holds the private text
- * file and the hand-out record of every role of the team: the only paths outside the repo apply may write
- * (privatePaths). The repo's folder name heads each private text file (repoNameOf). With no role owed one, git is not
- * asked and nothing is allowed. With no user folder, or no absolute common dir from git, nothing private is written and
- * privateFoldersUnknownWarning names the roles owed one.
+ * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). On every plain init the role memory folder
+ * of each role is named from the user folder and the git common dir, as /cadre start names it (roleFoldersOf: git runs
+ * once, 02-GAPS-B3 C1), `folders` maps every role of the team to it (02-GAPS-B3 M1), and `allowed` holds the private
+ * text file and the hand-out record of every role of the team: the only paths outside the repo apply may write
+ * (privatePaths). Each role owed private files (privatesOf) gets them, unless the instructions.json on disk is exactly
+ * the record it would get: an unchanged record leaves both private files as they are, an accepted improver text
+ * included, and their paths stay allowed (02-GAPS-B3 S1). The repo's folder name heads each private text file
+ * (repoNameOf). With no user folder, or no absolute common dir from git, nothing private is written and
+ * privateFoldersUnknownWarning names the roles owed private files.
  */
 async function privatePlanOf(
   io: InitIo,
@@ -3695,13 +3798,20 @@ async function privatePlanOf(
   input: { readonly roles: readonly RoleSpec[]; readonly owed: readonly OwedPrivate[] },
 ): Promise<PrivatePlan> {
   const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [], folders: new Map() }
-  if (input.owed.length === 0) return none
   const folderOf = await roleFoldersOf(io, host, locations)
   if (folderOf === null) return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
   const repo = repoNameOf(locations)
+  const privates: PrivateRole[] = []
+  for (const role of input.owed) {
+    const folder = folderOf(role.id)
+    const read = await io.read(instructionsRecordPath(folder), MAX_READ_BYTES)
+    const record = instructionsRecordText(role.parts, role.memories, role.partsNotGiven)
+    if (read.state === 'text' && read.text === record) continue
+    privates.push({ ...role, folder, repo })
+  }
 
   return {
-    privates: input.owed.map(role => ({ ...role, folder: folderOf(role.id), repo })),
+    privates,
     allowed: privatePaths(input.roles.map(role => folderOf(role.id))),
     problems: [],
     folders: new Map(input.roles.map((role): [string, string] => [role.id, folderOf(role.id)])),
@@ -3737,10 +3847,11 @@ async function privatePlanOf(
  *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
  *    (untrackedParts). The dry run holds no host, so its plan may still list a built file whose untracked parts apply
  *    then leaves out.
- * 5b. Then, when a role was given a global part or a memory (privatesOf), its role memory folder is named from the
- *    git common dir as /cadre start names it (privatePlanOf: `git rev-parse` runs once at the repo root), with the
- *    private files of every role of the team as the only paths outside the repo apply may write (T-02-72); with no
- *    folder known, nothing private is written and the reply names the roles (privateProblems).
+ * 5b. Then the role memory folder of every role is named from the git common dir as /cadre start names it
+ *    (privatePlanOf: `git rev-parse` runs once at the repo root, on every plain init), with the private files of every
+ *    role of the team as the only paths outside the repo apply may write (T-02-72); each role gets both private files
+ *    (privatesOf, 02-GAPS-B3 C1) unless its instructions.json already holds the record it would get (02-GAPS-B3 S1);
+ *    with no folder known, nothing private is written and the reply names the roles (privateProblems).
  * 6. The steps of that fresh plan with the answers and the private files (applySteps), run through the host port by
  *    writeSteps: each write checked for links first, a launcher made executable only after its own write landed, then
  *    each role's private text file and hand-out record in its role memory folder, once the folder is made and made
@@ -3907,7 +4018,15 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
   const reviewed = await reviewStep(io, draft)
   if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
   const { plan, state } = reviewed.value.planned
-  if (options.dryRun) return initReplyText(plan, state.gitPolicy, state.launchStart, null)
+  if (options.dryRun) {
+    const confirmed = reviewed.value.draft
+    const count = improverRunCount(confirmed, plan)
+    const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
+    const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
+    const rows = confirmed.roles.map(role => privateFilesRow(role.id))
+
+    return initReplyText(plan, state.gitPolicy, state.launchStart, null, [PRIVATE_FILES_HEADING, ...rows, ...improver])
+  }
 
   const applied = await applyConfirmed(io, options.host, reviewed.value)
   if (applied.kind === 'cancelled') return cancelReply(io, applied.reason)

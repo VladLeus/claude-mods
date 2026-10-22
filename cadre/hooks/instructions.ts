@@ -1359,14 +1359,16 @@ function roleItemsLine(id: string, topics: readonly InstructionTopic[], memories
 
 /**
  * The review rows of the parts flow (G-02-1f), shown after the scope cards: per role, in role order, the topics it was
- * given (three titles, then how many more) and how many memories, or none, then how many topics and memories no role
- * was given, which stay with the root session only.
+ * given (three titles, then how many more) and how many memories, or none, each followed by the rows `rowsAfter` gives
+ * for that role (02-GAPS-B3 N3; none by default), then how many topics and memories no role was given, which stay with
+ * the root session only.
  */
 export function instructionReviewLines(
   roles: readonly Pick<RoleSpec, 'id'>[],
   topics: readonly InstructionTopic[],
   memories: readonly Pick<MemoryItem, 'id'>[],
   given: ReadonlyMap<string, readonly string[]>,
+  rowsAfter: (roleId: string) => readonly string[] = () => [],
 ): string[] {
   const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
   const isKept = (itemId: string): boolean => (given.get(itemId) ?? []).length === 0
@@ -1380,7 +1382,7 @@ export function instructionReviewLines(
 
   return [
     'Instructions per role:',
-    ...roles.map(role => roleLine(role.id)),
+    ...roles.flatMap(role => [roleLine(role.id), ...rowsAfter(role.id)]),
     `Kept with the root session only: ${keptTopics}, ${keptMemories}`,
   ]
 }
