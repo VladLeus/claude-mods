@@ -62,6 +62,7 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
     userSkills: [],
     userAgents: [],
     codeDirs: [],
+    linkedMemories: [],
     ...over,
   }
 }

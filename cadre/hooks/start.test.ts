@@ -8,18 +8,19 @@ import type {
   InstructionPart,
   LaunchStart,
   ManifestEntry,
+  MemoryItem,
   PortEntry,
   PortStat,
   RoleSpec,
   ScopeContext,
   TerminalChoice,
 } from '../types'
-import { privateClaudeMdPath, privateClaudeMdText } from './apply'
+import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath, privateClaudeMdText } from './apply'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { compileTeam, readTeam, repoGuard } from './init'
-import { launchPlan } from './launch'
+import { launchPlan, unsafeMemoryNameWarning } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { ignoreLines, stableJson } from './plan'
 import { compileScope } from './scope'
@@ -37,8 +38,15 @@ import {
   launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
+  MEMORY_BLOCK_BEGIN,
+  MEMORY_BLOCK_END,
+  memoryBlockText,
+  memoryChangedWarning,
+  memoryGoneWarning,
   MIN_CLAUDE_VERSION,
+  NO_MEMORY_LINKS,
   NOT_COPIED_LINE,
+  openMemoryBlockWarning,
   parseClaudeVersion,
   privateLinkRefusal,
   readClaudeJson,
@@ -57,6 +65,8 @@ import {
   START_NO_MANIFEST,
   TERMINAL_MAC_ONLY,
   terminalPlan,
+  unreadableMemoryIndexWarning,
+  unreadableRecordWarning,
 } from './start'
 import type { LaunchUserRead, RenderInput, RenderStep, TerminalPlan } from './start'
 import {
@@ -135,6 +145,7 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
     userSkills: [],
     userAgents: [],
     codeDirs: [],
+    linkedMemories: [],
     ...over,
   }
 }
@@ -184,6 +195,7 @@ function input(over: Partial<RenderInput> = {}): RenderInput {
     stampText: stampText('0.2.0'),
     stats: disk(),
     listings: new Map<string, readonly PortEntry[]>(),
+    memories: NO_MEMORY_LINKS,
     ...over,
   }
 }
@@ -761,6 +773,261 @@ describe('private role files (G-02-1f)', () => {
   })
 })
 
+/** The auto-memory folder of the fixture repo for the fixture user, which holds the original memories (D-100). */
+const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
+
+/** The text of the memory notes.md, as its original holds it. */
+const NOTES_TEXT = 'Notes the root session keeps.\n'
+
+/** The text of the memory squad.md, as its original holds it. */
+const SQUAD_TEXT = 'Unsigned commits on per-phase branches.\n'
+
+/** A memory of the fixture repo as the hand-out record names it: its file, folder, summary and the hash of `text`. */
+async function recordedMemory(file: string, summary: string, text: string): Promise<MemoryItem> {
+  return { id: 'M1', file, folder: MEMORY_DIR, summary, hash: await sha256Hex(text) }
+}
+
+/** The memory notes.md of the fixture repo. */
+async function notesMemory(): Promise<MemoryItem> {
+  return recordedMemory('notes.md', 'Notes summary.', NOTES_TEXT)
+}
+
+/** The memory squad.md of the fixture repo. */
+async function squadMemory(): Promise<MemoryItem> {
+  return recordedMemory('squad.md', 'Unsigned commits on per-phase branches.', SQUAD_TEXT)
+}
+
+/**
+ * appliedWorld with BE's hand-out record naming notes.md and squad.md (D-140 q2-a), and both originals in the memory
+ * folder of the repo; `files` adds or replaces files.
+ */
+async function linkedWorld(files: Readonly<Record<string, string>> = {}): Promise<MemWorld> {
+  const record = instructionsRecordText([], [await notesMemory(), await squadMemory()])
+  const base = await appliedWorld()
+
+  return {
+    ...base,
+    files: {
+      ...base.files,
+      [instructionsRecordPath(await startRoleFolder())]: record,
+      [`${MEMORY_DIR}/notes.md`]: NOTES_TEXT,
+      [`${MEMORY_DIR}/squad.md`]: SQUAD_TEXT,
+      ...files,
+    },
+  }
+}
+
+/** The cadre block of a MEMORY.md with these lines between its markers, each line ending in `\n` (D-140 q3-a). */
+function blockOf(lines: readonly string[]): string {
+  return [MEMORY_BLOCK_BEGIN, ...lines, MEMORY_BLOCK_END].map(line => `${line}\n`).join('')
+}
+
+/** The block line of notes.md. */
+const NOTES_LINE = '- [notes.md](notes.md) \u2014 Notes summary.'
+
+/** The block line of squad.md. */
+const SQUAD_LINE = '- [squad.md](squad.md) \u2014 Unsigned commits on per-phase branches.'
+
+/** The argvs of the links a start made, in order. */
+function linkRuns(start: StartRun): (readonly string[])[] {
+  return start.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv)
+}
+
+/** The writes of a start into BE's role memory folder. */
+function memoryFolderWrites(start: StartRun, folder: string): HostWrite[] {
+  return start.writes.filter(write => write.path.startsWith(`${folder}/`))
+}
+
+describe('linked memories (G-02-1f)', () => {
+  test('each memory of the record is linked into the role memory folder and listed in a MEMORY.md block', async () => {
+    const folder = await startRoleFolder()
+    const start = await startBe(await linkedWorld())
+
+    expect(linkRuns(start)).toEqual([
+      ['/bin/ln', '-sfn', `${folder}/instructions`, `${RUNTIME}/private-instructions`],
+      ['/bin/ln', '-sfn', `${MEMORY_DIR}/notes.md`, `${folder}/notes.md`],
+      ['/bin/ln', '-sfn', `${MEMORY_DIR}/squad.md`, `${folder}/squad.md`],
+    ])
+    expect(memoryFolderWrites(start, folder)).toEqual([
+      { path: `${folder}/MEMORY.md`, text: blockOf([NOTES_LINE, SQUAD_LINE]), isWritten: true },
+    ])
+    expect(start.writes.filter(write => write.text.includes(NOTES_TEXT) || write.text.includes(SQUAD_TEXT))).toEqual([])
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (3 links).')
+    expect(writtenPaths(start).at(-1)).toBe(`${RUNTIME}/stamp`)
+  })
+
+  test('memoryBlockText sets the block as the .gitignore block is set: other lines kept, appended if missing', () => {
+    const entries = [{ file: 'squad.md', summary: 'Unsigned commits on per-phase branches.' }]
+    const own = '# Memory\r\n- [Mine](mine.md) \u2014 my own note\r\n'
+    const withBlock = `${own}${MEMORY_BLOCK_BEGIN}\r\n- [old.md](old.md) \u2014 old\n${MEMORY_BLOCK_END}\nafter\n`
+    const hostile = [{ file: `a${BIDI_OVERRIDE}.md`, summary: `x\ny${BIDI_OVERRIDE}` }]
+
+    expect(memoryBlockText(null, entries)).toBe(blockOf([SQUAD_LINE]))
+    expect(memoryBlockText('', entries)).toBe(blockOf([SQUAD_LINE]))
+    expect(memoryBlockText('# Memory', entries)).toBe(`# Memory\n${blockOf([SQUAD_LINE])}`)
+    expect(memoryBlockText(own, entries)).toBe(`${own}${blockOf([SQUAD_LINE])}`)
+    expect(memoryBlockText(withBlock, entries)).toBe(`${own}${blockOf([SQUAD_LINE])}after\n`)
+    expect(memoryBlockText(withBlock, [])).toBe(`${own}${blockOf([])}after\n`)
+    expect(memoryBlockText(own, hostile)).toBe(`${own}${blockOf(['- [a.md](a.md) \u2014 xy'])}`)
+    expect(memoryBlockText(`${own}${MEMORY_BLOCK_BEGIN}\n- [a.md](a.md) \u2014 a\n`, entries)).toBeNull()
+    expect([MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END]).toEqual([
+      '<!-- >>> cadre linked memories (read-only; rebuilt by /cadre start) -->',
+      '<!-- <<< cadre linked memories -->',
+    ])
+  })
+
+  test('a MEMORY.md block with no end marker is never guessed: no write, a warning, the links made', async () => {
+    const folder = await startRoleFolder()
+    const open = `# Memory\n${MEMORY_BLOCK_BEGIN}\n- [old.md](old.md) \u2014 old\n`
+    const start = await startBe(await linkedWorld({ [`${folder}/MEMORY.md`]: open }))
+
+    expect(memoryFolderWrites(start, folder)).toEqual([])
+    expect(start.reply.split('\n')).toContain(`warning: ${openMemoryBlockWarning('be')}`)
+    expect(linkRuns(start)).toHaveLength(3)
+    expect(start.calls.filter(call => call.argv[0] === '/bin/rm')).toEqual([])
+    expect(openMemoryBlockWarning('be')).toBe(
+      'the MEMORY.md block of be has no end marker: fix it by hand; linked memories are not indexed',
+    )
+  })
+
+  test('a link the block listed that the record no longer names is removed; no other file is touched', async () => {
+    const folder = await startRoleFolder()
+    const own = '# Memory\n- [Mine](own.md) \u2014 mine\n'
+    const old = ['- [old.md](old.md) \u2014 old', '- [kept.md](kept.md) \u2014 kept', SQUAD_LINE]
+    const base = await linkedWorld({
+      [`${folder}/MEMORY.md`]: `${own}${blockOf(old)}`,
+      [`${folder}/own.md`]: 'mine',
+      [`${folder}/kept.md`]: 'a real file of the role',
+    })
+    const listing = [link('old.md'), link('squad.md'), entry('kept.md'), entry('own.md'), entry('MEMORY.md')]
+    const start = await startBe({ ...base, dirs: { ...base.dirs, [folder]: listing } })
+
+    expect(start.calls.filter(call => call.argv[0] === '/bin/rm').map(call => call.argv)).toEqual([
+      ['/bin/rm', '-f', '--', `${folder}/old.md`],
+    ])
+    expect(memoryFolderWrites(start, folder)).toEqual([
+      { path: `${folder}/MEMORY.md`, text: `${own}${blockOf([NOTES_LINE, SQUAD_LINE])}`, isWritten: true },
+    ])
+  })
+
+  test('a real file with the name of a memory is never replaced: a warning, no link, not a linked memory', async () => {
+    const folder = await startRoleFolder()
+    const world = await linkedWorld({ [`${folder}/squad.md`]: "the role's own squad note" })
+    const start = await startBe(world)
+    const slug = folder.split('/').at(-2) ?? ''
+
+    expect(linkRuns(start).filter(argv => argv[3] === `${folder}/squad.md`)).toEqual([])
+    expect(start.reply.split('\n')).toContain(
+      `warning: ~/.claude/cadre/${slug}/be/squad.md is a real file or folder, not a link: not replaced`,
+    )
+    expect(memoryFolderWrites(start, folder)).toEqual([
+      { path: `${folder}/MEMORY.md`, text: blockOf([NOTES_LINE]), isWritten: true },
+    ])
+    expect(userOf((await gather(world, [GIT_OK])).read).linkedMemories).toEqual([`${folder}/notes.md`])
+  })
+
+  test('a memory whose original is gone is not linked and warns; one changed is linked and warns', async () => {
+    const folder = await startRoleFolder()
+    const changed = await linkedWorld({ [`${MEMORY_DIR}/squad.md`]: 'squad changed\n' })
+    const world = withoutFile(changed, `${MEMORY_DIR}/notes.md`)
+    const start = await startBe(world)
+    const lines = start.reply.split('\n')
+
+    expect(lines).toContain(`warning: ${memoryGoneWarning('notes.md')}`)
+    expect(lines).toContain(`warning: ${memoryChangedWarning('squad.md', 'be')}`)
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`, `${folder}/squad.md`])
+    expect(memoryFolderWrites(start, folder)).toEqual([
+      { path: `${folder}/MEMORY.md`, text: blockOf([SQUAD_LINE]), isWritten: true },
+    ])
+    expect(memoryGoneWarning('notes.md')).toBe('memory notes.md is gone: not linked')
+    expect(memoryChangedWarning('squad.md', 'be')).toBe(
+      'memory squad.md changed since init: linked as it is now; run /cadre regen be to hand it out again',
+    )
+  })
+
+  test('gatherLaunchUser fills linkedMemories with the links of a parts-flow role, none for whole files', async () => {
+    const folder = await startRoleFolder()
+    const world = await linkedWorld()
+    const whole = templateRole('be', { instructions: ['auto-memory'] })
+    const parts = await gather(world, [GIT_OK])
+    const wholeFiles = await gather(world, [GIT_OK], DEFAULT_LOCATIONS, GIT_ROOT, [], whole)
+
+    expect(userOf(parts.read).linkedMemories).toEqual([`${folder}/notes.md`, `${folder}/squad.md`])
+    expect(userOf(wholeFiles.read).linkedMemories).toEqual([])
+    const wholeUser = userOf(wholeFiles.read)
+    expect(wholeFiles.read).toEqual({ kind: 'ok', user: wholeUser, warnings: [], memories: NO_MEMORY_LINKS })
+  })
+
+  test('a whole-files role keeps its links under .runtime/instructions/ and reads no hand-out record', async () => {
+    const folder = await startRoleFolder()
+    const whole = templateRole('be', { instructions: ['auto-memory'] })
+    const base = await appliedWorld(whole)
+    const world = {
+      ...base,
+      dirs: { ...base.dirs, [MEMORY_DIR]: [entry('squad.md')] },
+      files: {
+        ...base.files,
+        [instructionsRecordPath(folder)]: instructionsRecordText([], [await squadMemory()]),
+        [`${MEMORY_DIR}/squad.md`]: SQUAD_TEXT,
+      },
+    }
+    const run = memIo(world, {})
+    const host = memHost(hostWorld({ runs: [CLAUDE_OK, GIT_OK] }))
+    await runStart(run.io, host.io, { id: 'be', terminal: 'none' })
+
+    expect(run.reads.filter(path => path.startsWith(`${folder}/`))).toEqual([])
+    expect(host.calls.filter(call => call.argv[0] === '/bin/ln').map(call => call.argv[3])).toEqual([
+      `${RUNTIME}/instructions/memory/squad.md`,
+      `${RUNTIME}/private-instructions`,
+    ])
+  })
+
+  test('a hand-out record that is not valid links nothing and warns; so does an unsafe or foreign memory', async () => {
+    const folder = await startRoleFolder()
+    const invalid = ['not json', '{"schema":2,"parts":[],"memories":[]}', '{"schema":1,"parts":[],"memories":[{}]}']
+    for (const text of invalid) {
+      const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: text }))
+
+      const warned = start.reply.split('\n').includes(`warning: ${unreadableRecordWarning('be')}`)
+      expect([text, warned]).toEqual([text, true])
+      expect(linkRuns(start)).toHaveLength(1)
+    }
+    const squad = await squadMemory()
+    const odd = [
+      { ...squad, file: '../escape.md' },
+      { ...squad, file: 'MEMORY.md' },
+      { ...squad, file: 'notes.txt' },
+      { ...squad, folder: '/home/u/.ssh' },
+    ]
+    const oddRecord = instructionsRecordText([], odd)
+    const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: oddRecord }))
+    const lines = start.reply.split('\n')
+
+    for (const name of ['../escape.md', 'MEMORY.md', 'notes.txt']) {
+      expect(lines).toContain(`warning: ${unsafeMemoryNameWarning(name)}`)
+    }
+    expect(lines).toContain(`warning: ${memoryGoneWarning('squad.md')}`)
+    expect(linkRuns(start)).toHaveLength(1)
+    expect(unreadableRecordWarning('be')).toBe(
+      'could not read the hand-out record of be (instructions.json): no memory is linked; ' +
+        'run /cadre init to hand the memories out again',
+    )
+  })
+
+  test('a MEMORY.md that cannot be read is not written: a warning, the links still made', async () => {
+    const folder = await startRoleFolder()
+    const base = await linkedWorld()
+    const start = await startBe({ ...base, dirs: { ...base.dirs, [`${folder}/MEMORY.md`]: [] } })
+
+    expect(memoryFolderWrites(start, folder)).toEqual([])
+    expect(start.reply.split('\n')).toContain(`warning: ${unreadableMemoryIndexWarning('be')}`)
+    expect(linkRuns(start)).toHaveLength(3)
+    expect(unreadableMemoryIndexWarning('be')).toBe(
+      'could not read the MEMORY.md of be: linked memories are not indexed',
+    )
+  })
+})
+
 /** The argv that asks git for the absolute common dir of the repo (D-98). */
 const GIT_ARGV = ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']
 
@@ -786,16 +1053,20 @@ type GatherRun = {
   readonly calls: readonly HostCall[]
 }
 
-/** gatherLaunchUser over `world` with these run rules, for these locations, this launcher start and these code dirs. */
+/**
+ * gatherLaunchUser over `world` with these run rules, for these locations, this launcher start, these code dirs and
+ * this role (BE, a parts-flow role, unless told otherwise).
+ */
 async function gather(
   world: MemWorld,
   runs: readonly HostRunRule[],
   locations: InitLocations = DEFAULT_LOCATIONS,
   launchStart: LaunchStart = GIT_ROOT,
   codeDirs: readonly string[] = [],
+  role: RoleSpec = BE,
 ): Promise<GatherRun> {
   const host = memHost(hostWorld({ runs }))
-  const read = await gatherLaunchUser(memIo(world, {}).io, host.io, { locations, launchStart, codeDirs })
+  const read = await gatherLaunchUser(memIo(world, {}).io, host.io, { locations, launchStart, codeDirs, role })
 
   return { read, calls: host.calls }
 }
@@ -822,7 +1093,12 @@ describe('gatherLaunchUser (D-98)', () => {
     const { read, calls } = await gather(repoWorld(), [GIT_OK], DEFAULT_LOCATIONS, GIT_ROOT, ['src'])
     const commonDirHash = await sha256Hex('/repo/.git')
 
-    expect(read).toEqual({ kind: 'ok', user: user({ commonDirHash, codeDirs: ['src'] }), warnings: [] })
+    expect(read).toEqual({
+      kind: 'ok',
+      user: user({ commonDirHash, codeDirs: ['src'] }),
+      warnings: [],
+      memories: NO_MEMORY_LINKS,
+    })
     expect(calls).toEqual([{ argv: GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
   })
 
@@ -840,6 +1116,7 @@ describe('gatherLaunchUser (D-98)', () => {
         commonDirHash: await sha256Hex('/data/repo/.git'),
       }),
       warnings: [],
+      memories: NO_MEMORY_LINKS,
     })
     const unresolved = userOf((await gather(memWorld({}), [GIT_OK])).read)
     expect([unresolved.gitCommonDir, unresolved.commonDirHash]).toEqual(['/repo/.git', await sha256Hex('/repo/.git')])
