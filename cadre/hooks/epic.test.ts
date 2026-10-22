@@ -34,6 +34,7 @@ import {
   mirrorLinkedParentWarning,
   mirrorPaths,
   mirrorPlan,
+  mirrorUnhideableWarning,
   parseEpicRecord,
   parseWorktreeList,
   runEpic,
@@ -491,6 +492,12 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     expect(excludesText('', ['thoughts', 'node_modules'])).toContain('\n/node_modules\n/thoughts\n')
   })
 
+  test('excludesText escapes the special characters and trailing spaces of each link line (03.1-W2 S2)', () => {
+    expect(excludesText('', ['app/[id]', 'a*b?', 'back\\slash', 'notes  '])).toBe(
+      '# cadre links (cadre epic)\n/a\\*b\\?\n/app/\\[id]\n/back\\\\slash\n/notes\\ \\ \n/.cadre/*/.runtime/\n',
+    )
+  })
+
   test('each mirror step runs as one absolute argv with no shell, and a link never replaces what is there', () => {
     const linkStep: EpicStep = { kind: 'link', path: '/w/a', target: '/repo/a' }
     const copyStep: EpicStep = { kind: 'copy', path: '/w/.env', source: '/repo/.env' }
@@ -674,6 +681,16 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
     ])
   })
 
+  test('a name with a line break or another control character gets no step, nor anything below it (03.1-W2 S2)', () => {
+    const main = new Map([['', [entry('a\n*'), entry('b\rc'), entry('node_modules', 'dir')]]])
+    const plan = planOf(['a\n*', 'a\n*/x', 'b\rc', 'node_modules'], main, new Map())
+
+    expect(plan.steps.map(stepLine)).toEqual(['link node_modules'])
+    expect(plan.links).toEqual(['node_modules'])
+    expect(plan.copies).toEqual([])
+    expect(plan.warnings).toEqual([mirrorUnhideableWarning('a\n*'), mirrorUnhideableWarning('b\rc')])
+  })
+
   test('mirrorPaths names every folder the rules read, in the main checkout and in the worktree, sorted', () => {
     expect(mirrorPaths(['.cadre', 'a/b/c', 'web/.env'], ['pm'])).toEqual({
       main: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a/b', 'web'],
@@ -770,6 +787,12 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
     expect(globalExcludesPath(unset, unset, '/home/u')).toBe('/home/u/.config/git/ignore')
     expect(globalExcludesPath(unset, unset, null)).toBeNull()
     expect(globalExcludesPath(run(0, 'relative/ignore\n'), null, '/home/u')).toBe('/home/u/.config/git/ignore')
+  })
+
+  test('the global excludes lookup follows include and includeIf in the global config (03.1-W2 S1)', () => {
+    const argv = ['git', '-C', '/repo', 'config', '--includes', '--global', '--path', 'core.excludesFile']
+
+    expect(GLOBAL_EXCLUDES_ARGV('/repo')).toEqual(argv)
   })
 
   test('the text of the global excludes file heads the excludes file; an absent one gives an empty head', async () => {
