@@ -51,7 +51,7 @@ import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
 import { stableJson } from './plan'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
-import { claudeTooOldReply, launcherChangedReply } from './start'
+import { claudeTooOldReply, COPIED_LINE, GIT_COMMON_DIR_ARGV, launcherChangedReply } from './start'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemWorld } from './testkit'
 
@@ -401,9 +401,11 @@ describe('finding an epic by its key (D-163)', () => {
       rule(GIT_DIR_ARGV(path), 0, `${gitDir}\n`),
     ])
     const reply = { key: 'PROJ-1', title: 'Old title', path, branch: 'epic/proj-1-x', linked: 0, copied: 0 }
+    const created = epicCreatedText({ ...reply, outcome: 'reused', warnings: [] })
 
     expect(addRuns(run)).toEqual([])
-    expect(run.reply).toBe(epicCreatedText({ ...reply, outcome: 'reused', warnings: [] }))
+    // The role lines of the render stage follow it (D-157).
+    expect(run.reply.slice(0, created.length)).toBe(created)
   })
 
   test('a folder at the worktree path that git does not list refuses before anything is added (D-147)', async () => {
@@ -899,5 +901,68 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
       links: ['dist'],
       copies: [],
     })
+  })
+})
+
+/** git naming the repo's common dir, the same from the main checkout and from a worktree (WT-02, Pattern 1). */
+const COMMON_DIR = rule(GIT_COMMON_DIR_ARGV, 0, '/repo/.git\n')
+
+/** A new PROJ-1 worktree whose git dir git names, with the common dir named too, so each role renders there. */
+const RENDER_RULES: readonly HostRunRule[] = [rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`), COMMON_DIR]
+
+/**
+ * The team world of `roles` (PM and BE by default) with each role folder a real folder in the main checkout and in
+ * BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
+ */
+async function renderWorld(roles: readonly RoleSpec[] = TEAM): Promise<MemWorld> {
+  const world = await teamWorld(roles)
+  const folders = roles.flatMap(role => [`/repo/.cadre/${role.id}`, `${BARE_WORKTREE}/.cadre/${role.id}`])
+
+  return { ...world, dirs: { ...world.dirs, ...Object.fromEntries(folders.map(folder => [folder, []])) } }
+}
+
+/** The command the epic reply gives role `id` of BARE_WORKTREE (D-167): `cd -- <worktree> && <launcher>`. */
+function epicCommand(id: string): string {
+  return `cd -- ${BARE_WORKTREE} && ${BARE_WORKTREE}/.cadre/bin/${id}`
+}
+
+/** What an epic run copied to the clipboard: the stdin of each pbcopy run, in order. */
+function copiedTexts(run: EpicRun): (string | undefined)[] {
+  return run.calls.filter(call => call.argv[0] === '/usr/bin/pbcopy').map(call => call.options.stdin)
+}
+
+/** The refusal of a render of the role be whose `.runtime` is a link, as /cadre start words it. */
+const BE_RUNTIME_REFUSAL =
+  '.cadre/be/.runtime/ or a folder in it is a link or not a folder: remove it and run /cadre start be again'
+
+describe('rendering each role into the epic worktree (D-157, D-102)', () => {
+  test('a new epic renders each role into its worktree, never main, and prints and copies each command', async () => {
+    const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
+    const paths = run.writes.map(write => write.path)
+
+    expect(paths).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/settings.json`)
+    expect(paths).toContain(`${BARE_WORKTREE}/.cadre/be/.runtime/stamp`)
+    expect(paths.filter(path => path.startsWith('/repo/.cadre/'))).toEqual([])
+    expect(run.reply.split('\n').slice(-3)).toEqual([
+      `  pm: ${epicCommand('pm')}`,
+      `  be: ${epicCommand('be')}`,
+      COPIED_LINE,
+    ])
+    expect(copiedTexts(run)).toEqual([`${epicCommand('pm')}\n${epicCommand('be')}`])
+  })
+
+  test('a role whose .runtime in the worktree is a link is refused on its line, and the others render', async () => {
+    const world = await renderWorld()
+    const runtime = `${BARE_WORKTREE}/.cadre/be/.runtime`
+    const realPaths = { [runtime]: '/repo/.cadre/be/.runtime' }
+    const run = await epic({ ...world, dirs: { ...world.dirs, [runtime]: [] }, realPaths }, RENDER_RULES, 'PROJ-1', '')
+
+    expect(run.reply.split('\n').slice(-3)).toEqual([
+      `  pm: ${epicCommand('pm')}`,
+      `  be: ${BE_RUNTIME_REFUSAL}`,
+      COPIED_LINE,
+    ])
+    expect(run.writes.filter(write => write.path.startsWith(`${runtime}/`))).toEqual([])
+    expect(copiedTexts(run)).toEqual([epicCommand('pm')])
   })
 })
