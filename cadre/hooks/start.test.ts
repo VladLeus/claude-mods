@@ -779,8 +779,8 @@ const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
 /** The text of the memory notes.md, as its original holds it. */
 const NOTES_TEXT = 'Notes the root session keeps.\n'
 
-/** The text of the memory squad.md, as its original holds it. */
-const SQUAD_TEXT = 'Unsigned commits on per-phase branches.\n'
+/** The text of the memory squad.md, as its original holds it: not its summary, so a copy of it would show. */
+const SQUAD_TEXT = 'Commits stay local and unsigned; the user re-signs them before a push.\n'
 
 /** A memory of the fixture repo as the hand-out record names it: its file, folder, summary and the hash of `text`. */
 async function recordedMemory(file: string, summary: string, text: string): Promise<MemoryItem> {

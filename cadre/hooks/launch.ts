@@ -81,6 +81,11 @@ export type LaunchUser = {
   readonly userAgents: readonly string[]
   /** The top-level code dirs to deny with exact patterns; Phase 3 passes the repo scan's at launch. */
   readonly codeDirs: readonly string[]
+  /**
+   * The absolute link paths in the role memory folder of the memories /cadre start links for the role (G-02-1f, D-140
+   * q3-a), from its hand-out record; empty for a whole-files role and for a role given no memory.
+   */
+  readonly linkedMemories: readonly string[]
 }
 
 /** One symlink the launch plans: `path` is where Phase 3 creates it, `target` is what it points at. Both absolute. */
@@ -443,10 +448,16 @@ function isCleanName(name: string): boolean {
 
 /**
  * Whether a file name may become a link name as it is: it is clean, has no `/`, and does not start with `.`, so it
- * cannot hold a `..` segment or leave its folder. The name of a memory file becomes the name of its link (T-02-46).
+ * cannot hold a `..` segment or leave its folder. The name of a memory file becomes the name of its link (T-02-46), in
+ * `.runtime/instructions/memory/` for a whole-files role and in the role memory folder for a parts-flow role.
  */
-function isSafeFileName(name: string): boolean {
+export function isSafeFileName(name: string): boolean {
   return isCleanName(name) && !name.includes('/') && !name.startsWith('.')
+}
+
+/** The warning for a memory file whose name may not become a link name: it is not linked (T-02-46). */
+export function unsafeMemoryNameWarning(name: string): string {
+  return `memory file ${shown(name)} has an unsafe name: not linked`
 }
 
 /**
@@ -498,7 +509,7 @@ function memoryLinks(id: string, user: LaunchUser): LinkSet {
   const warnings: string[] = []
   for (const [name, target] of [...targets].sort(([a], [b]) => compareText(a, b))) {
     if (!isSafeFileName(name)) {
-      warnings.push(`memory file ${shown(name)} has an unsafe name: not linked`)
+      warnings.push(unsafeMemoryNameWarning(name))
       continue
     }
     links.push({ path: `${runtimeDir(user, id)}/instructions/memory/${name}`, target })
@@ -508,15 +519,24 @@ function memoryLinks(id: string, user: LaunchUser): LinkSet {
 }
 
 /**
- * The CLAUDE.md files a role must not load, sorted and once each (P11, G-02-1f). A role with no instruction group is a
- * parts-flow role, since the parts hand-out gives every role none: it loads only its built files, so every CLAUDE.md
- * of the loaded chain, every rule file and every other role's built `.cadre/<other>/CLAUDE.md` is excluded, never its
- * own `<root>/.cadre/<id>/CLAUDE.md` (T-02-70). A role with groups keeps the whole-files rule: without
- * 'project-claude-md' every CLAUDE.md of the loaded chain is excluded, and with it none is.
+ * Whether a role is a parts-flow role (G-02-1f): it has no instruction group, as the parts hand-out gives every role,
+ * so it loads only its built files, and /cadre start links the memories its hand-out record names into its memory
+ * folder. A role with a group is a whole-files role (D-63).
+ */
+export function isPartsFlowRole(role: Pick<RoleSpec, 'instructions'>): boolean {
+  return role.instructions.length === 0
+}
+
+/**
+ * The CLAUDE.md files a role must not load, sorted and once each (P11, G-02-1f). A parts-flow role (isPartsFlowRole)
+ * loads only its built files, so every CLAUDE.md of the loaded chain, every rule file and every other role's built
+ * `.cadre/<other>/CLAUDE.md` is excluded, never its own `<root>/.cadre/<id>/CLAUDE.md` (T-02-70). A role with groups
+ * keeps the whole-files rule: without 'project-claude-md' every CLAUDE.md of the loaded chain is excluded, and with it
+ * none is.
  */
 function claudeMdExcludesOf(role: RoleSpec, user: LaunchUser): string[] {
   if (role.instructions.includes('project-claude-md')) return []
-  if (role.instructions.length > 0) return sortedUnique(user.claudeMd)
+  if (!isPartsFlowRole(role)) return sortedUnique(user.claudeMd)
   const own = `${user.root}/.cadre/${role.id}/CLAUDE.md`
   const others = user.roleClaudeMds.filter(path => path !== own)
 

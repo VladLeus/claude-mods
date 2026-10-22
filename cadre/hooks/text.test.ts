@@ -250,7 +250,7 @@ import {
   unreadableWarning,
 } from './instructions'
 import { UNNAMED_ROLE } from './kickoff'
-import { RUNTIME_SETTINGS_KEYS } from './launch'
+import { RUNTIME_SETTINGS_KEYS, unsafeMemoryNameWarning } from './launch'
 import {
   gitignoreLines,
   HUNK_FILES,
@@ -300,7 +300,13 @@ import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from '
 import {
   COPIED_LINE,
   GIT_COMMON_DIR_ARGV,
+  MEMORY_BLOCK_BEGIN,
+  MEMORY_BLOCK_END,
+  memoryBlockText,
+  memoryChangedWarning,
+  memoryGoneWarning,
   NOT_COPIED_LINE,
+  openMemoryBlockWarning,
   privateLinkRefusal,
   runtimeMcpText,
   STALE_LINK_FOLDERS,
@@ -310,6 +316,8 @@ import {
   START_NO_HOME,
   START_NO_MANIFEST,
   TERMINAL_MAC_ONLY,
+  unreadableMemoryIndexWarning,
+  unreadableRecordWarning,
 } from './start'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
@@ -853,6 +861,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ],
   ['kickoff', 'UNNAMED_ROLE', UNNAMED_ROLE],
   ['launch', 'RUNTIME_SETTINGS_KEYS', RUNTIME_SETTINGS_KEYS],
+  ['launch', 'unsafeMemoryNameWarning', unsafeMemoryNameWarning('../notes.md')],
   ['plan', 'MANIFEST_PATH', MANIFEST_PATH],
   ['plan', 'IGNORE_BEGIN', IGNORE_BEGIN],
   ['plan', 'IGNORE_END', IGNORE_END],
@@ -918,6 +927,14 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['start', 'privateLinkRefusal', privateLinkRefusal('be')],
   ['start', 'stampText', stampText('0.2.0')],
   ['start', 'runtimeMcpText', [false, true].map(isRead => runtimeMcpText(BE, {}, ['/repo'], isRead))],
+  ['start', 'MEMORY_BLOCK_BEGIN', MEMORY_BLOCK_BEGIN],
+  ['start', 'MEMORY_BLOCK_END', MEMORY_BLOCK_END],
+  ['start', 'memoryBlockText', [memoryBlockText(null, [PART_MEMORY]), memoryBlockText('# Index\n', [PART_MEMORY])]],
+  ['start', 'memoryChangedWarning', memoryChangedWarning(PART_MEMORY.file, 'be')],
+  ['start', 'memoryGoneWarning', memoryGoneWarning(PART_MEMORY.file)],
+  ['start', 'openMemoryBlockWarning', openMemoryBlockWarning('be')],
+  ['start', 'unreadableRecordWarning', unreadableRecordWarning('be')],
+  ['start', 'unreadableMemoryIndexWarning', unreadableMemoryIndexWarning('be')],
   ['status', 'statusReportText', REPORTS.map(statusReportText)],
   ['superpowers', 'SUPERPOWERS_GATES', SUPERPOWERS_GATES],
   ['superpowers', 'SUPERPOWERS_ADAPTER', SUPERPOWERS_ADAPTER],

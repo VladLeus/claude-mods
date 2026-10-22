@@ -20,6 +20,7 @@ import type {
   InitIo,
   InitLocations,
   LaunchStart,
+  MemoryItem,
   PortEntry,
   PortStat,
   RoleSpec,
@@ -27,10 +28,11 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
-import { PRIVATE_INSTRUCTIONS_FOLDER } from './apply'
+import { INSTRUCTIONS_RECORD_FILE, instructionsRecordPath, PRIVATE_INSTRUCTIONS_FOLDER } from './apply'
 import {
   clean,
   compareText,
+  displayPath,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
@@ -43,7 +45,14 @@ import { desiredFiles, shQuote } from './generate'
 import { sha256Hex } from './hash'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
-import { claudeMdImports, launchPlan, roleMemoryDir } from './launch'
+import {
+  claudeMdImports,
+  isPartsFlowRole,
+  isSafeFileName,
+  launchPlan,
+  roleMemoryDir,
+  unsafeMemoryNameWarning,
+} from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import {
   INBOX_FILE,
@@ -54,7 +63,7 @@ import {
   stableJson,
 } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
-import { reportText } from './render'
+import { reportText, shown } from './render'
 import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import {
   CLAUDE_JSON_MAX_BYTES,
@@ -121,10 +130,30 @@ export type RenderStep =
   | { readonly kind: 'write'; readonly path: string; readonly text: string }
 
 /**
+ * What /cadre start does in the memory folder of a parts-flow role (G-02-1f, D-140 q3-a), as gatherLaunchUser decides
+ * it: `links`, each memory the role was given linked, `<role memory folder>/<file>` to its original, in the order of
+ * its hand-out record; `removals`, each link an earlier start made there that this one does not make, removed first;
+ * and `index`, the role's MEMORY.md with cadre's block set to the linked memories, or null when it stays as it is.
+ */
+export type MemoryLinks = {
+  readonly links: readonly OverlayLink[]
+  readonly removals: readonly string[]
+  readonly index: { readonly path: string; readonly text: string } | null
+}
+
+/** Nothing to do in a role memory folder: a whole-files role, or a role given no memory with no block to clear. */
+export const NO_MEMORY_LINKS: MemoryLinks = Object.freeze({
+  links: Object.freeze([]),
+  removals: Object.freeze([]),
+  index: null,
+})
+
+/**
  * What renderSteps plans from: the repo root as a realpath and the role id; the role's LaunchPlan, whose links all lie
  * under the role's `.runtime`, as launchPlan makes them; the texts of `mcp.json`, `probe-expectations.json` and the
- * stamp; and the disk. `stats` holds the stat of each path renderPaths names, asked with resolve, and `listings` the
- * listing of each folder it names. A path with no stat counts as not there, and a folder with no listing as empty.
+ * stamp; the disk; and the memory links of the role (MemoryLinks). `stats` holds the stat of each path renderPaths
+ * names, asked with resolve, and `listings` the listing of each folder it names. A path with no stat counts as not
+ * there, and a folder with no listing as empty.
  */
 export type RenderInput = {
   readonly root: string
@@ -135,6 +164,7 @@ export type RenderInput = {
   readonly stampText: string
   readonly stats: ReadonlyMap<string, PortStat | null>
   readonly listings: ReadonlyMap<string, readonly PortEntry[]>
+  readonly memories: MemoryLinks
 }
 
 /** The steps of a render in order, the warnings to show, and why it was refused: a refused render has no step. */
@@ -412,6 +442,19 @@ function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
 }
 
 /**
+ * The steps in a parts-flow role's memory folder (G-02-1f, D-140 q3-a): first the removal of each link an earlier start
+ * made there that this one does not make, then each memory link, then the write of MEMORY.md when its block changes.
+ * Only links are made or removed, and no other file of the folder is touched.
+ */
+function memorySteps(memories: MemoryLinks): RenderStep[] {
+  return [
+    ...memories.removals.map(removeStep),
+    ...memories.links.map(linkStep),
+    ...(memories.index === null ? [] : [writeStep(memories.index.path, memories.index.text)]),
+  ]
+}
+
+/**
  * The removal of the DONE.md marker an earlier run left in `.runtime` (D-17, #63 A6), so each start begins a run with
  * no marker and /cadre status never shows an old one: one step when it is a file or a link, a dangling one included,
  * since `rm -f` removes a link and not what it points at; none when it is not there, and none for a folder or any
@@ -433,10 +476,10 @@ function doneMarkerRemovals(input: RenderInput, runtime: string): RenderStep[] {
  * then `.runtime`, its overlay and each link's folder are made, sorted and once each, and the folder the private
  * instructions link points at (privateFolderSteps, D-140 q1-b); then each link is made, except at a path that holds a
  * real file or folder, which is kept and named in a warning (Pitfall 2: `ln -sfn` would link inside a folder or
- * replace a file); then the files of fileWrites are written, and the stamp last. A render that stops at any step before
- * the last leaves no stamp, so the launcher refuses to start (LNCH-03). A render that refusalOf refuses has no step at
- * all; a real file or folder at the private instructions link is such a refusal, never a kept path with a warning
- * (02-GAPS-B2 N7).
+ * replace a file); then the steps in the role memory folder (memorySteps, G-02-1f); then the files of fileWrites are
+ * written, and the stamp last. A render that stops at any step before the last leaves no stamp, so the launcher
+ * refuses to start (LNCH-03). A render that refusalOf refuses has no step at all; a real file or folder at the private
+ * instructions link is such a refusal, never a kept path with a warning (02-GAPS-B2 N7).
  */
 export function renderSteps(input: RenderInput): RenderResult {
   const runtime = runtimeFolder(input.root, input.id)
@@ -452,6 +495,7 @@ export function renderSteps(input: RenderInput): RenderResult {
     ...mkdirFolders(runtime, input.plan.links).map(mkdirStep),
     ...privateFolderSteps(input, runtime),
     ...links.map(linkStep),
+    ...memorySteps(input.memories),
     ...fileWrites(input, runtime),
     writeStep(stamp, input.stampText),
   ]
@@ -498,9 +542,17 @@ export const START_NO_GIT_DIR =
   'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; ' +
   'git 2.31 or newer is needed), so it stopped.'
 
-/** What gatherLaunchUser gives: the launching user's facts with the warnings to show, or the exact refusal. */
+/**
+ * What gatherLaunchUser gives: the launching user's facts with the warnings to show and what to do in the role memory
+ * folder (MemoryLinks, G-02-1f), or the exact refusal.
+ */
 export type LaunchUserRead =
-  | { readonly kind: 'ok'; readonly user: LaunchUser; readonly warnings: readonly string[] }
+  | {
+      readonly kind: 'ok'
+      readonly user: LaunchUser
+      readonly warnings: readonly string[]
+      readonly memories: MemoryLinks
+    }
   | { readonly kind: 'refuse'; readonly text: string }
 
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
@@ -712,6 +764,281 @@ export async function gitCommonDirOf(
   return { gitCommonDir, commonDirHash: await sha256Hex(gitCommonDir) }
 }
 
+/** The begin marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract, as IGNORE_BEGIN is. */
+export const MEMORY_BLOCK_BEGIN = '<!-- >>> cadre linked memories (read-only; rebuilt by /cadre start) -->'
+
+/** The end marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract like MEMORY_BLOCK_BEGIN. */
+export const MEMORY_BLOCK_END = '<!-- <<< cadre linked memories -->'
+
+/** The index file of a memory folder, which the engine reads into the session (D-140 q3-a). */
+const MEMORY_INDEX_FILE = 'MEMORY.md'
+
+/** The lines of a text, each with its own line ending, so joining them gives the text back byte for byte. */
+function linesWithEnds(text: string): string[] {
+  return text.split(/(?<=\n)/)
+}
+
+/** A line without its line ending, `\n` or `\r\n`, so a MEMORY.md with Windows line endings reads the same. */
+function withoutLineEnd(line: string): string {
+  return line.replace(/\r?\n$/, '')
+}
+
+/**
+ * Where cadre's block sits in the lines of a MEMORY.md: the index of the first begin marker line and of the first end
+ * marker line after it, -1 for a marker that is not there, so a begin marker with no end marker is { begin >= 0, end:
+ * -1 }. A marker is a whole line.
+ */
+function memoryBlockMarkers(lines: readonly string[]): { readonly begin: number; readonly end: number } {
+  const begin = lines.findIndex(line => withoutLineEnd(line) === MEMORY_BLOCK_BEGIN)
+  if (begin === -1) return { begin, end: -1 }
+  const end = lines.findIndex((line, index) => index > begin && withoutLineEnd(line) === MEMORY_BLOCK_END)
+
+  return { begin, end }
+}
+
+/**
+ * The line of one linked memory in cadre's block (D-140 q3-a): `- [<file>](<file>) \u2014 <summary>`, its file name
+ * and summary cleaned and capped as report cells are, so a summary read from disk cannot add a line.
+ */
+function memoryBlockLine(entry: Pick<MemoryItem, 'file' | 'summary'>): string {
+  const file = reportText(entry.file)
+
+  return `- [${file}](${file}) \u2014 ${reportText(entry.summary)}`
+}
+
+/**
+ * A role's MEMORY.md text with cadre's block set to these linked memories (D-140 q3-a), as mergeIgnoreBlock sets the
+ * cadre block of the root `.gitignore`: MEMORY_BLOCK_BEGIN, one memoryBlockLine per memory in the order given, and
+ * MEMORY_BLOCK_END, each line ending in `\n`. The block from the first begin marker to the first end marker after it is
+ * replaced, or appended when there is none, and a missing file gives the block alone; no line outside the block
+ * changes, byte for byte, and a marker that ends in a carriage return is still found. A begin marker with no end
+ * marker after it is a block cadre cannot tell the extent of, so the result is null and nothing is written.
+ */
+export function memoryBlockText(
+  existing: string | null,
+  entries: readonly Pick<MemoryItem, 'file' | 'summary'>[],
+): string | null {
+  const block = [MEMORY_BLOCK_BEGIN, ...entries.map(memoryBlockLine), MEMORY_BLOCK_END].map(line => `${line}\n`)
+  if (existing === null) return block.join('')
+  const lines = linesWithEnds(existing)
+  const { begin, end } = memoryBlockMarkers(lines)
+  if (begin === -1) return `${existing}${existing === '' || existing.endsWith('\n') ? '' : '\n'}${block.join('')}`
+  if (end === -1) return null
+
+  return `${lines.slice(0, begin).join('')}${block.join('')}${lines.slice(end + 1).join('')}`
+}
+
+/** A line of cadre's block, with the file its link names in its first group. */
+const MEMORY_BLOCK_ENTRY = /^- \[[^\]\n]*\]\(([^)\n]+)\)/
+
+/**
+ * The file names cadre's block of a MEMORY.md text lists, in its order: the link target of each of its lines; none when
+ * the text has no block, or one with no end marker.
+ */
+function memoryBlockFiles(text: string): string[] {
+  const lines = linesWithEnds(text)
+  const { begin, end } = memoryBlockMarkers(lines)
+  if (begin === -1 || end === -1) return []
+
+  return lines.slice(begin + 1, end).flatMap(line => {
+    const file = MEMORY_BLOCK_ENTRY.exec(withoutLineEnd(line))?.[1]
+
+    return file === undefined ? [] : [file]
+  })
+}
+
+/** The warning for a memory that changed since init (G-02-1f): it is linked as it is now. Names are shown cleaned. */
+export function memoryChangedWarning(file: string, id: string): string {
+  const role = reportText(id)
+
+  return `memory ${shown(file)} changed since init: linked as it is now; run /cadre regen ${role} to hand it out again`
+}
+
+/** The warning for a memory whose original is no longer in the memory folder of the repo (G-02-1f): not linked. */
+export function memoryGoneWarning(file: string): string {
+  return `memory ${shown(file)} is gone: not linked`
+}
+
+/** The warning for a MEMORY.md whose cadre block has no end marker (D-140 q3-a): nothing is written to it. */
+export function openMemoryBlockWarning(id: string): string {
+  return `the MEMORY.md block of ${reportText(id)} has no end marker: fix it by hand; linked memories are not indexed`
+}
+
+/**
+ * The warning for a hand-out record that is there but cannot be read, or is not a valid record (G-02-1f): no memory
+ * of the role is linked, and every link the MEMORY.md block listed is removed.
+ */
+export function unreadableRecordWarning(id: string): string {
+  return (
+    `could not read the hand-out record of ${reportText(id)} (${INSTRUCTIONS_RECORD_FILE}): no memory is linked; ` +
+    'run /cadre init to hand the memories out again'
+  )
+}
+
+/** The warning for a role's MEMORY.md that is there but cannot be read (D-140 q3-a): nothing is written to it. */
+export function unreadableMemoryIndexWarning(id: string): string {
+  return `could not read the ${MEMORY_INDEX_FILE} of ${reportText(id)}: linked memories are not indexed`
+}
+
+/** A memory the hand-out record names (D-140 q2-a): its file, the memory folder of its original, summary and hash. */
+type RecordedMemory = Pick<MemoryItem, 'file' | 'folder' | 'summary' | 'hash'>
+
+/** Whether a value is a part of a hand-out record: a plain object with a string file, heading and hash. */
+function isRecordedPart(value: unknown): boolean {
+  if (!isObject(value)) return false
+
+  return typeof value.file === 'string' && typeof value.heading === 'string' && typeof value.hash === 'string'
+}
+
+/**
+ * A memory of a hand-out record; null for a value that is not a plain object with a string file, folder, summary and
+ * hash.
+ */
+function recordedMemoryOf(value: unknown): RecordedMemory | null {
+  if (!isObject(value)) return null
+  const { file, folder, summary, hash } = value
+  if (typeof file !== 'string' || typeof folder !== 'string') return null
+  if (typeof summary !== 'string' || typeof hash !== 'string') return null
+
+  return { file, folder, summary, hash }
+}
+
+/**
+ * The memories a role's hand-out record names, in its order (D-140 q2-a, instructionsRecordText); null when the text is
+ * not such a record: not JSON, not schema 1, or a part or a memory that is not of its shape.
+ */
+function recordedMemories(text: string): readonly RecordedMemory[] | null {
+  const record = parseJsonValue(text)?.value
+  if (!isObject(record) || record.schema !== 1) return null
+  const { parts, memories } = record
+  if (!Array.isArray(parts) || !Array.isArray(memories) || !parts.every(isRecordedPart)) return null
+  const found = memories.map(recordedMemoryOf)
+  const valid = found.filter((memory): memory is RecordedMemory => memory !== null)
+
+  return valid.length === found.length ? valid : null
+}
+
+/**
+ * Whether a recorded memory may be linked by its name: a plain file name (isSafeFileName) that ends in `.md` and is not
+ * MEMORY.md in any letter case, which is the role's own index.
+ */
+function isLinkableMemory(file: string): boolean {
+  if (!isSafeFileName(file) || !file.endsWith(MARKDOWN_EXTENSION)) return false
+
+  return file.toLowerCase() !== MEMORY_INDEX_FILE.toLowerCase()
+}
+
+/** What /cadre start does with one recorded memory: its link, or none, and the warning to show, or none. */
+type MemoryLinkOutcome = {
+  readonly link: OverlayLink | null
+  readonly warning: string | null
+}
+
+/**
+ * What /cadre start does with one memory of a role's hand-out record (G-02-1f, D-140 q3-a). It is not linked when its
+ * name may not be a link name (isLinkableMemory, unsafeMemoryNameWarning); when its folder is not a memory folder of
+ * this repo, of the root as resolved or as given, or its original cannot be read as a file (memoryGoneWarning); or
+ * when a real file or folder holds its link path in the role memory folder, which is never replaced
+ * (notReplacedWarning). Else it is linked, `<role memory folder>/<file>` to `<its folder>/<file>`, never copied, with
+ * memoryChangedWarning when its original's text is over MAX_READ_BYTES or no longer has the hash of the record. The
+ * original is read for its hash alone.
+ */
+async function memoryLinkOf(
+  io: InitIo,
+  user: LaunchUser,
+  input: { readonly folder: string; readonly id: string; readonly memory: RecordedMemory },
+): Promise<MemoryLinkOutcome> {
+  const { folder, id, memory } = input
+  if (!isLinkableMemory(memory.file)) return { link: null, warning: unsafeMemoryNameWarning(memory.file) }
+  const repoFolders = [user.root, user.givenRoot].map(root => memoryFolderOf(user.userDir, root))
+  if (!repoFolders.includes(memory.folder)) return { link: null, warning: memoryGoneWarning(memory.file) }
+  const path = `${folder}/${memory.file}`
+  if (isRealEntry(await io.stat(path))) {
+    return { link: null, warning: notReplacedWarning(user.root, displayPath(path, user.home, user.root)) }
+  }
+  const target = `${memory.folder}/${memory.file}`
+  const original = await io.read(target, MAX_READ_BYTES)
+  if (original.state === 'absent' || original.state === 'unknown') {
+    return { link: null, warning: memoryGoneWarning(memory.file) }
+  }
+  const isSame = original.state === 'text' && (await sha256Hex(original.text)) === memory.hash
+
+  return { link: { path, target }, warning: isSame ? null : memoryChangedWarning(memory.file, id) }
+}
+
+/**
+ * The links an earlier start made in the role memory folder that this one does not make (D-140 q3-a): each name the
+ * old MEMORY.md block listed, a plain name that is not linked now, that the folder lists as a link. A real file or
+ * folder is never among them, and with no listing there are none.
+ */
+async function staleMemoryLinks(
+  io: InitIo,
+  folder: string,
+  listed: readonly string[],
+  linked: ReadonlySet<string>,
+): Promise<string[]> {
+  const names = listed.filter(name => isPlainName(name) && !linked.has(name))
+  if (names.length === 0) return []
+  const entries = (await io.list(folder)) ?? []
+  const links = new Set(entries.filter(entry => entry.isLink).map(entry => entry.name))
+
+  return sortedUnique(names.filter(name => links.has(name)).map(name => `${folder}/${name}`))
+}
+
+/** The read of the role's hand-out record: the memories it names, none when it is not there, null when unreadable. */
+async function recordOf(io: InitIo, folder: string): Promise<readonly RecordedMemory[] | null> {
+  const read = await io.read(instructionsRecordPath(folder), MAX_READ_BYTES)
+  if (read.state === 'absent') return []
+
+  return read.state === 'text' ? recordedMemories(read.text) : null
+}
+
+/**
+ * The memory links of a parts-flow role (G-02-1f, D-140 q3-a) and the warnings to show. Its hand-out record
+ * `<role memory folder>/instructions.json` is read (recordOf): not there names no memory, while one that cannot be read
+ * or is not valid names none and warns (unreadableRecordWarning). Each memory it names is linked or not (memoryLinkOf).
+ * The role's MEMORY.md is then read: when it is not there, or there with a block both markers end, cadre's block is set
+ * to the linked memories in record order (memoryBlockText) and written when its text changes, but never added to a
+ * MEMORY.md with no block, or made, for no linked memory; each link the old block listed that is not linked now is
+ * removed (staleMemoryLinks). A MEMORY.md that cannot be read, or whose block has no end marker, is left as it is and
+ * nothing is removed, with a warning (unreadableMemoryIndexWarning, openMemoryBlockWarning). No other file of the
+ * folder is touched, and nothing is ever copied.
+ */
+async function linkedMemoriesOf(
+  io: InitIo,
+  user: LaunchUser,
+  id: string,
+): Promise<{ readonly memories: MemoryLinks; readonly warnings: readonly string[] }> {
+  const folder = roleMemoryDir(user, id)
+  const recorded = await recordOf(io, folder)
+  const outcomes: { readonly memory: RecordedMemory; readonly outcome: MemoryLinkOutcome }[] = []
+  for (const memory of recorded ?? []) {
+    outcomes.push({ memory, outcome: await memoryLinkOf(io, user, { folder, id, memory }) })
+  }
+  const linked = outcomes.filter(item => item.outcome.link !== null)
+  const links = linked.flatMap(item => item.outcome.link ?? [])
+  const warnings = [
+    ...(recorded === null ? [unreadableRecordWarning(id)] : []),
+    ...outcomes.flatMap(item => item.outcome.warning ?? []),
+  ]
+  const indexPath = `${folder}/${MEMORY_INDEX_FILE}`
+  const indexRead = await io.read(indexPath, MAX_READ_BYTES)
+  if (indexRead.state !== 'absent' && indexRead.state !== 'text') {
+    return { memories: { links, removals: [], index: null }, warnings: [...warnings, unreadableMemoryIndexWarning(id)] }
+  }
+  const existing = indexRead.state === 'text' ? indexRead.text : null
+  const text = memoryBlockText(existing, linked.map(item => item.memory))
+  if (text === null) {
+    return { memories: { links, removals: [], index: null }, warnings: [...warnings, openMemoryBlockWarning(id)] }
+  }
+  const listed = existing === null ? [] : memoryBlockFiles(existing)
+  const hasBlock = existing !== null && memoryBlockMarkers(linesWithEnds(existing)).begin !== -1
+  const isUnchanged = text === existing || (!hasBlock && links.length === 0)
+  const removals = await staleMemoryLinks(io, folder, listed, new Set(linked.map(item => item.memory.file)))
+
+  return { memories: { links, removals, index: isUnchanged ? null : { path: indexPath, text } }, warnings }
+}
+
 /**
  * The launching user's facts (D-98), gathered in the root session through the ports:
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
@@ -724,7 +1051,11 @@ export async function gitCommonDirOf(
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
  *   and the built role files of `.cadre` (roleClaudeMdsOf), which a parts-flow role excludes (G-02-1f), the global
  *   CLAUDE.md with its imports, the `.md` files of the memory folders of the root as resolved and as given, the user's
- *   skills and agents, and the code dirs given.
+ *   skills and agents, and the code dirs given;
+ * - for a parts-flow role (isPartsFlowRole), the memories its hand-out record names, linked into its role memory
+ *   folder with cadre's MEMORY.md block (linkedMemoriesOf, G-02-1f, D-140 q3-a): their link paths are the user's
+ *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
+ *   whole-files role gets none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
  * any run, and with START_NO_GIT_DIR when git gives no absolute path. No setting value, hook command or file text is
  * ever part of a refusal or a warning.
@@ -736,6 +1067,8 @@ export async function gatherLaunchUser(
     readonly locations: InitLocations
     readonly launchStart: LaunchStart
     readonly codeDirs: readonly string[]
+    /** The role to launch; a parts-flow role gets the memories its hand-out record names linked (G-02-1f). */
+    readonly role: Pick<RoleSpec, 'id' | 'instructions'>
   },
 ): Promise<LaunchUserRead> {
   const { locations } = input
@@ -746,29 +1079,30 @@ export async function gatherLaunchUser(
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
-
-  return {
-    kind: 'ok',
-    user: {
-      root: locations.root,
-      givenRoot: locations.givenRoot,
-      home,
-      userDir,
-      ...commonDir,
-      ...launchSettingsOf(await io.settings('user')),
-      hooks,
-      claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),
-      rules: await rulesOf(io, locations.root),
-      roleClaudeMds: await roleClaudeMdsOf(io, locations.root),
-      globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
-      memoryFiles: await memoryFilesOf(io, userDir, locations.root),
-      givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
-      userSkills: await userSkillsOf(io, userDir),
-      userAgents: await userAgentsOf(io, userDir),
-      codeDirs: input.codeDirs,
-    },
-    warnings: [],
+  const user: LaunchUser = {
+    root: locations.root,
+    givenRoot: locations.givenRoot,
+    home,
+    userDir,
+    ...commonDir,
+    ...launchSettingsOf(await io.settings('user')),
+    hooks,
+    claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),
+    rules: await rulesOf(io, locations.root),
+    roleClaudeMds: await roleClaudeMdsOf(io, locations.root),
+    globalClaudeMd: await globalClaudeMdOf(io, userDir, home),
+    memoryFiles: await memoryFilesOf(io, userDir, locations.root),
+    givenMemoryFiles: await memoryFilesOf(io, userDir, locations.givenRoot),
+    userSkills: await userSkillsOf(io, userDir),
+    userAgents: await userAgentsOf(io, userDir),
+    codeDirs: input.codeDirs,
+    linkedMemories: [],
   }
+  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
+  const { memories, warnings } = await linkedMemoriesOf(io, user, input.role.id)
+  const linkedMemories = memories.links.map(link => link.path)
+
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings, memories }
 }
 
 /** The warning for a role given MCP servers when cadre.json records no consent to read ~/.claude.json (D-58). */
@@ -1337,6 +1671,7 @@ export async function runStart(
     locations,
     launchStart: state.launchStart,
     codeDirs: gathered.repo.codeDirs,
+    role,
   })
   if (launch.kind === 'refuse') return launch.text
   const { user } = launch
@@ -1347,7 +1682,7 @@ export async function runStart(
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
-  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk })
+  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories })
   if (render.refusal !== null) return render.refusal
 
   for (const step of render.steps) {
