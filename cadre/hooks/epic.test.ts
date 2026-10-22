@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { EpicRecord, HostIo, HostRun, ManifestEntry, PortEntry, RoleSpec } from '../types'
+import type { EpicRecord, HostIo, HostRun, ManifestEntry, MemoryItem, PortEntry, RoleSpec } from '../types'
+import { instructionsRecordPath, instructionsRecordText } from './apply'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
@@ -56,6 +57,9 @@ import {
   COPIED_LINE,
   GIT_COMMON_DIR_ARGV,
   launcherChangedReply,
+  mainCheckoutOf,
+  MEMORY_BLOCK_BEGIN,
+  MEMORY_BLOCK_END,
   runStart,
   worktreeClaudeMd,
 } from './start'
@@ -985,6 +989,46 @@ function settingsAt(writes: readonly HostWrite[], root: string, id: string): Rea
 /** The fixture user's `~/.claude.json`, recording the server jira for the main checkout's project only. */
 const PROJECT_JIRA = JSON.stringify({ projects: { '/repo': { mcpServers: { jira: { command: 'jira-mcp' } } } } })
 
+/** The main checkout's project memory folder for the fixture user, which holds the memory originals (03.1-W3 M1). */
+const MAIN_MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
+
+/** The text of the memory notes.md, as its original in MAIN_MEMORY_DIR holds it (03.1-W3 M1). */
+const NOTES_TEXT = 'Notes the main checkout keeps.\n'
+
+/** pm's role memory folder, keyed on the git common dir, so main and every worktree share it (WT-02, 03.1-W3 M1). */
+async function pmMemoryFolder(): Promise<string> {
+  return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/pm`
+}
+
+/**
+ * renderWorld of `roles` and `readUserMcp` as a /cadre start of pm in main leaves it (03.1-W3 M1): pm's hand-out
+ * record names notes.md in MAIN_MEMORY_DIR, which holds its original, and pm's role memory folder holds the MEMORY.md
+ * block start renders for it and lists notes.md as a link.
+ */
+async function linkedEpicWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+  const world = await renderWorld(roles, readUserMcp)
+  const folder = await pmMemoryFolder()
+  const notes: MemoryItem = {
+    id: 'M1',
+    file: 'notes.md',
+    folder: MAIN_MEMORY_DIR,
+    summary: 'Notes summary.',
+    hash: await sha256Hex(NOTES_TEXT),
+  }
+  const block = `${MEMORY_BLOCK_BEGIN}\n- [notes.md](notes.md) — Notes summary.\n${MEMORY_BLOCK_END}\n`
+
+  return {
+    ...world,
+    files: {
+      ...world.files,
+      [instructionsRecordPath(folder)]: instructionsRecordText([], [notes]),
+      [`${MAIN_MEMORY_DIR}/notes.md`]: NOTES_TEXT,
+      [`${folder}/MEMORY.md`]: block,
+    },
+    dirs: { ...world.dirs, [folder]: [link('notes.md'), entry('MEMORY.md')] },
+  }
+}
+
 describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
   test('worktreeClaudeMd adds the CLAUDE.md files of the worktree, sorted and once each (Pitfall 1)', () => {
     expect(worktreeClaudeMd(['/repo/CLAUDE.md'], '/repo/.claude/worktrees/x')).toEqual([
@@ -1044,5 +1088,34 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(deny).toContain('Edit(//repo/src/**)')
     expect(deny).toContain('Read(//repo/.claude/worktrees/proj-1/src/**)')
     expect(deny).toContain('Edit(//repo/.claude/worktrees/proj-1/src/**)')
+  })
+
+  test('mainCheckoutOf names the main checkout of a worktree nested in it, else null (03.1-W3 M1)', () => {
+    expect(mainCheckoutOf('/repo/.git', '/repo')).toBeNull()
+    expect(mainCheckoutOf('/repo/.git', '/repo/.claude/worktrees/proj-1')).toBe('/repo')
+    expect(mainCheckoutOf('/data/repo/.git', '/repo')).toBeNull()
+    expect(mainCheckoutOf('/repo/.git/modules/sub', '/repo/sub')).toBeNull()
+    expect(mainCheckoutOf('/repo/.git', '/repo2/x')).toBeNull()
+  })
+
+  test('/cadre start then /cadre epic removes no memory link and denies main memory folder (03.1-W3 M1)', async () => {
+    const world = await linkedEpicWorld()
+    const folder = await pmMemoryFolder()
+    const host = epicHost([COMMON_DIR])
+    const start = await runStart(memIo(world, {}).io, host.io, { id: 'pm', terminal: 'none' })
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const notes = `${folder}/notes.md`
+    const ln = ['/bin/ln', '-sfn', `${MAIN_MEMORY_DIR}/notes.md`, notes].join(' ')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'pm').permissions
+    const deny = isObject(permissions) ? permissions.deny : undefined
+
+    expect(host.calls.map(call => call.argv.join(' '))).toContain(ln)
+    expect(run.calls.map(call => call.argv.join(' '))).toContain(ln)
+    expect(run.calls.filter(call => call.argv[0] === '/bin/rm' && call.argv.includes(notes))).toEqual([])
+    expect([...host.writes, ...run.writes].filter(write => write.path === `${folder}/MEMORY.md`)).toEqual([])
+    expect(start).not.toContain('is gone')
+    expect(run.reply).not.toContain('is gone')
+    expect(deny).toContain('Edit(//home/u/.claude/projects/-repo/memory/**)')
+    expect(deny).toContain('Write(//home/u/.claude/projects/-repo/memory/**)')
   })
 })
