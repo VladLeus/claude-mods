@@ -66,6 +66,28 @@ export type CadreCommand =
       readonly terminal: Exclude<TerminalChoice, 'none'>
     }
 
+/**
+ * The record of one epic worktree (D-164), at `<worktree git dir>/cadre-epic.json`: per worktree, outside the tree and
+ * not shared. Reuse, `/cadre status` and the epic's removal read it, and its parser fails closed on a bad shape.
+ */
+export type EpicRecord = {
+  readonly schema: 1
+  /** The epic key, one leading `#` dropped (D-162). */
+  readonly key: string
+  /** The worktree's folder name below `.claude/worktrees/`; the branch is `epic/<slug>`. */
+  readonly slug: string
+  readonly title: string
+  readonly branch: string
+  /** The branch the worktree was made from (the symbolic HEAD), else its commit; null when git could not name it. */
+  readonly base: string | null
+  /** When cadre made the worktree, in epoch ms. */
+  readonly createdAt: number
+  /** The repo-relative paths cadre linked into the worktree (D-148). */
+  readonly links: readonly string[]
+  /** The repo-relative paths cadre copied into the worktree (D-172). */
+  readonly copies: readonly string[]
+}
+
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */
 export type FrameworkId = 'gsd' | 'superpowers' | 'none'
 
