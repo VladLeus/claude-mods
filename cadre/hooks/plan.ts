@@ -90,6 +90,12 @@ export const RUNTIME_STAMP_FILE = 'stamp'
 /** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
 export const INBOX_FILE = 'inbox.md'
 
+/**
+ * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
+ * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.
+ */
+export const RUNTIME_KICKOFF_FILE = 'kickoff.txt'
+
 /** What `<launcher> --probe` checks the startup inventory of a role against, rendered by `/cadre start` (D-130). */
 export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
 

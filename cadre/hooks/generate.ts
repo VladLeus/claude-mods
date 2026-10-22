@@ -387,6 +387,21 @@ function probeVerdictLines(id: string): readonly string[] {
 }
 
 /**
+ * The start of the launcher line, right after `rt=`, that picks the kickoff the session starts with (D-158), up to the
+ * role's own kickoff path: the epic kickoff /cadre epic writes into `.runtime` when that file is there, else the
+ * committed one. It is an `if`, not `&&`, so under `set -eu` a missing epic kickoff stops nothing.
+ */
+export const RUNTIME_KICKOFF_TEST = 'if [ -f "$rt"/kickoff.txt ]; then kick="$rt"/kickoff.txt; else kick='
+
+/**
+ * Whether a launcher text picks the epic kickoff in `.runtime` (D-158): it holds RUNTIME_KICKOFF_TEST. A launcher an
+ * older cadre wrote does not, so it would start an epic role with its committed kickoff.
+ */
+export function hasRuntimeKickoff(text: string): boolean {
+  return text.includes(RUNTIME_KICKOFF_TEST)
+}
+
+/**
  * The text of the launcher `.cadre/bin/<id>`. It finds the repo from its own folder (`dirname -- "$0"`), never from
  * the folder it is run from, and under `set -eu` a failed git stops it. It takes no argument, or `--probe` alone; any
  * other argument prints the usage line on stderr and exits 2. Before it starts anything it refuses, with one line on
@@ -419,7 +434,9 @@ function probeVerdictLines(id: string): readonly string[] {
  * flags add load, with the flags of the compiled scope, for a `here` or `dir` start the git root it found as an added
  * directory (ROOT_DIR_FLAG, D-127, which the probe run adds too; a git-root start adds nothing), then `--` and the
  * kickoff: each flag shell-quoted, and the value after a path flag (PATH_FLAGS) and the kickoff read anchored at the
- * repo root, since in `here` and `dir` the session starts outside the git top level. The flags come only from
+ * repo root, since in `here` and `dir` the session starts outside the git top level. The kickoff is the epic kickoff
+ * `.cadre/<id>/.runtime/kickoff.txt` when that file is there, else `.cadre/<id>/kickoff.txt` (RUNTIME_KICKOFF_TEST,
+ * D-158), passed as one quoted argument and never run. The flags come only from
  * compileScope and the title never reaches the script; the role id, a slug, is quoted in the paths and cleaned in the
  * comments and the messages, each message one quoted word, so a hostile id cannot add a command either.
  */
@@ -461,6 +478,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `[ -f ${rootWord(rolePath(role.id, 'role.json'))} ] || ${refusal(foreign)}`,
     `[ -f ${rootWord(rolePath(role.id, 'ROLE.md'))} ] && [ -f ${kickoff} ] || ${refusal(missing)}`,
     `rt=${rootWord(rolePath(role.id, '.runtime'))}`,
+    `${RUNTIME_KICKOFF_TEST}${kickoff}; fi`,
     'probe=0',
     `case $# in 0) ;; 1) [ "$1" = --probe ] || { ${usage}; exit 2; }; probe=1 ;; *) ${usage}; exit 2 ;; esac`,
     ...VERSION_CHECK_LINES,
@@ -484,7 +502,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} is missing`))}`,
     probeRun,
     ...probeVerdictLines(id),
-    `${EXEC_CLAUDE} ${flags}${rootDir} -- "$(cat ${kickoff})"`,
+    `${EXEC_CLAUDE} ${flags}${rootDir} -- "$(cat "$kick")"`,
   ]
 
   return `${lines.join('\n')}\n`

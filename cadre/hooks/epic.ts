@@ -21,7 +21,7 @@ import type {
   TerminalChoice,
 } from '../types'
 import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
-import { shQuote } from './generate'
+import { asciiLine, kickoffText, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { stableJson } from './plan'
 import { reportText } from './render'
@@ -932,25 +932,77 @@ type EpicWorktree = {
 }
 
 /**
+ * Whom PM feeds the epic's tickets (D-144): the TL's session `cadre-<tl id>` when the team has a TL, else its roles.
+ */
+function feedTarget(tlId: string | null): string {
+  return tlId === null ? 'your roles' : `cadre-${tlId}`
+}
+
+/**
+ * The role line of PM's epic kickoff (D-158): the epic key, and its title when there is one, then what PM does first:
+ * read its ROLE.md and inbox, fetch the epic with its tracker MCP, resolve its gaps (decide, or ask the user), then
+ * feed `target` ticket by ticket (D-144).
+ */
+function pmEpicSentence(id: string, key: string, title: string, target: string): string {
+  const epic = title === '' ? key : `${key}: ${title}`
+  const next =
+    `Read .cadre/${id}/ROLE.md and your inbox, fetch the epic with your tracker MCP, resolve its gaps ` +
+    `(decide or ask the user), then feed ${target} ticket by ticket.`
+
+  return `You are the PM of epic ${epic}. ${next}`
+}
+
+/**
+ * The epic kickoff of the PM role, the text /cadre epic writes to its `.runtime/kickoff.txt` (D-158, D-160): D-79's
+ * positional autopilot command `/autopilot <duration> <threshold> "<line>"` with the role's own duration and
+ * threshold, the line naming the epic key and title (pmEpicSentence) as one line of printable ASCII capped at
+ * ROLE_LINE_MAX (asciiLine), so it holds no quote or backtick and sits inside the command's quotes, then
+ * ` --ask-user`, as PM is the one role that asks the user (D-144), and a newline.
+ */
+export function epicKickoffText(input: {
+  readonly role: RoleSpec
+  readonly key: string
+  readonly title: string
+  readonly isPm: boolean
+  readonly parent: string | null
+  readonly tlId: string | null
+}): string {
+  const { duration, threshold } = input.role.autopilot
+  const title = asciiLine(input.title, ROLE_LINE_MAX)
+  const line = asciiLine(pmEpicSentence(input.role.id, input.key, title, feedTarget(input.tlId)), ROLE_LINE_MAX)
+
+  return `/autopilot ${duration} ${threshold} "${line}" --ask-user\n`
+}
+
+/**
  * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
  * main checkout, is compiled there once (compileTeam), and each role, in cadre.json order, is rendered for the worktree
  * by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
  * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
  * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
- * user's project servers are recorded. Its lines: one `warning: <id>: <text>` line per render warning, then one line
- * per role, two spaces in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at
- * the worktree, D-167), or the render's refusal for that role, which does not stop the others. When any role
- * rendered, the commands are copied through the host with clipboardRun, one per line, and COPIED_LINE or
- * NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session (D-108, D-167).
+ * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/` (D-158):
+ * PM's from epicKickoffText with the epic key and the worktree's title, every other role's its committed kickoff.txt
+ * text. Its lines: one `warning: <id>: <text>` line per render warning, then one line per role, two spaces in:
+ * `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at the worktree, D-167), or
+ * the render's refusal for that role, which does not stop the others. When any role rendered, the commands are copied
+ * through the host with clipboardRun, one per line, and COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a
+ * launcher and never starts a background session (D-108, D-167).
  */
 async function renderedLines(
   io: InitIo,
   host: HostIo,
-  team: { readonly locations: InitLocations; readonly state: CadreState; readonly roles: readonly RoleSpec[] },
-  worktree: string,
+  team: {
+    readonly locations: InitLocations
+    readonly state: CadreState
+    readonly roles: readonly RoleSpec[]
+    readonly key: string
+    readonly pmId: string
+  },
+  epicWorktree: { readonly path: string; readonly title: string },
 ): Promise<string[]> {
-  const { locations, state, roles } = team
+  const { locations, state, roles, key } = team
+  const worktree = epicWorktree.path
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
@@ -964,6 +1016,10 @@ async function renderedLines(
       roleLines.push(`  ${id}: ${regenBadRole(id)}`)
       continue
     }
+    const kickoff =
+      id === team.pmId
+        ? epicKickoffText({ role, key, title: epicWorktree.title, isPm: true, parent: null, tlId: null })
+        : kickoffText(role, scope.card.framework)
     const render = await renderRole(io, host, {
       locations: worktreeLocations,
       state,
@@ -971,7 +1027,7 @@ async function renderedLines(
       scope,
       codeDirs: gathered.repo.codeDirs,
       mcpRoots: [worktree, locations.root, locations.givenRoot],
-      epic: { mainRoot: locations.root },
+      epic: { mainRoot: locations.root, kickoff },
     })
     if (render.kind === 'refuse') {
       roleLines.push(`  ${id}: ${render.text}`)
@@ -1011,6 +1067,8 @@ async function mirroredReply(
     readonly locations: InitLocations
     readonly state: CadreState
     readonly roles: readonly RoleSpec[]
+    /** The id of the team's PM (epicPmOf), whose epic kickoff names the epic (D-158). */
+    readonly pmId: string
   },
   worktree: EpicWorktree,
 ): Promise<string> {
@@ -1027,7 +1085,7 @@ async function mirroredReply(
   const counts = { linked: mirrored.links.length, copied: mirrored.copies.length }
   const created = epicCreatedText({ key, title, path, branch, outcome, ...counts, warnings })
 
-  return [created, ...(await renderedLines(io, host, epic, path))].join('\n')
+  return [created, ...(await renderedLines(io, host, epic, worktree))].join('\n')
 }
 
 /**
@@ -1094,7 +1152,7 @@ export async function runEpic(
   const lookup = epicLookup({ worktrees: parseWorktreeList(listed.stdout), branches, keySlug })
   if (lookup.kind === 'refuse') return lookup.text
   const { state, roles } = team.value
-  const epic = { root, home, key, roleIds: state.roles, locations: guard.locations, state, roles }
+  const epic = { root, home, key, roleIds: state.roles, locations: guard.locations, state, roles, pmId: pm.id }
 
   if (lookup.kind === 'reuse') {
     const asked = await host.run(GIT_DIR_ARGV(lookup.path), { timeoutMs: GIT_TIMEOUT_MS })

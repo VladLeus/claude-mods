@@ -73,6 +73,7 @@ import {
   MANIFEST_PATH,
   PRIVATE_INSTRUCTIONS_LINK,
   PROBE_EXPECTATIONS_FILE,
+  RUNTIME_KICKOFF_FILE,
   RUNTIME_STAMP_FILE,
   stableJson,
 } from './plan'
@@ -116,6 +117,17 @@ const WRITTEN_FILES: readonly string[] = Object.freeze([
   INBOX_FILE,
   RUNTIME_STAMP_FILE,
 ])
+
+/**
+ * The files this render writes into `.runtime`, in order: WRITTEN_FILES, and for an epic render (`kickoff` set) the
+ * epic kickoff RUNTIME_KICKOFF_FILE before the stamp (D-158), so it is refused, removed as a link and written as the
+ * other written files are.
+ */
+function writtenFiles(input: RenderInput): readonly string[] {
+  if (input.kickoff === undefined) return WRITTEN_FILES
+
+  return [...WRITTEN_FILES.filter(name => name !== RUNTIME_STAMP_FILE), RUNTIME_KICKOFF_FILE, RUNTIME_STAMP_FILE]
+}
 
 /**
  * The folders under `.runtime` a render links into: the overlay skills and agents, and the global and memory
@@ -169,7 +181,8 @@ export const NO_MEMORY_LINKS: MemoryLinks = Object.freeze({
  * under the role's `.runtime`, as launchPlan makes them; the texts of `mcp.json`, `probe-expectations.json` and the
  * stamp; the disk; and the memory links of the role (MemoryLinks). `stats` holds the stat of each path renderPaths
  * names, asked with resolve, and `listings` the listing of each folder it names. A path with no stat counts as not
- * there, and a folder with no listing as empty.
+ * there, and a folder with no listing as empty. `kickoff`, the text of `.runtime/kickoff.txt`, is set for an epic
+ * render only (D-158); /cadre start leaves it out, so its render never writes or removes that file (D-168).
  */
 export type RenderInput = {
   readonly root: string
@@ -181,6 +194,7 @@ export type RenderInput = {
   readonly stats: ReadonlyMap<string, PortStat | null>
   readonly listings: ReadonlyMap<string, readonly PortEntry[]>
   readonly memories: MemoryLinks
+  readonly kickoff?: string
 }
 
 /** The steps of a render in order, the warnings to show, and why it was refused: a refused render has no step. */
@@ -240,14 +254,16 @@ function renderFolders(runtime: string, links: readonly OverlayLink[]): string[]
 /**
  * The paths /cadre start stats and lists before a render, so renderSteps can judge each one. `stats` holds, sorted
  * and once each, the role folder, `.runtime`, its overlay, every folder from `.runtime` down to a STALE_LINK_FOLDERS
- * folder or to a link, every link path, the five files a render writes and the DONE.md marker (#63 A6); `listings`
- * holds `.runtime`, whose listing shows a file a render writes that is a link whatever its stat says (#72 A2), then
- * the STALE_LINK_FOLDERS under it.
+ * folder or to a link, every link path, the five files a render writes and the DONE.md marker (#63 A6), and for an
+ * epic render (`options.kickoff`) the epic kickoff `.runtime/kickoff.txt` too (D-158); `listings` holds `.runtime`,
+ * whose listing shows a file a render writes that is a link whatever its stat says (#72 A2), then the
+ * STALE_LINK_FOLDERS under it.
  */
 export function renderPaths(
   root: string,
   id: string,
   plan: LaunchPlan,
+  options: { readonly kickoff: boolean } = { kickoff: false },
 ): { readonly stats: readonly string[]; readonly listings: readonly string[] } {
   const runtime = runtimeFolder(root, id)
   const stats = sortedUnique([
@@ -255,6 +271,7 @@ export function renderPaths(
     ...renderFolders(runtime, plan.links),
     ...plan.links.map(link => link.path),
     ...WRITTEN_FILES.map(name => `${runtime}/${name}`),
+    ...(options.kickoff ? [`${runtime}/${RUNTIME_KICKOFF_FILE}`] : []),
     `${runtime}/${DONE_MARKER_FILE}`,
   ])
 
@@ -345,9 +362,9 @@ function refusalOf(input: RenderInput, runtime: string): string | null {
   const role = statAt(input, roleFolder(input.root, input.id))
   if (role === null || role.isLink || !isDirInsideRoot(role, input.root)) return roleFolderRefusal(input.id)
   const folders = renderFolders(runtime, input.plan.links).map(path => statAt(input, path))
-  const files = WRITTEN_FILES.map(name => statAt(input, `${runtime}/${name}`))
+  const files = writtenFiles(input).map(name => statAt(input, `${runtime}/${name}`))
   if (folders.some(isUnsafeFolder) || files.some(isUnsafeFile)) return runtimeRefusal(input.id)
-  const unstated = WRITTEN_FILES.find(name => isUnstatedLink(input, runtime, name))
+  const unstated = writtenFiles(input).find(name => isUnstatedLink(input, runtime, name))
   if (unstated !== undefined) return unstatedLinkRefusal(input.id, unstated)
   if (isRealEntry(statAt(input, `${runtime}/${PRIVATE_INSTRUCTIONS_LINK}`))) return privateLinkRefusal(input.id)
 
@@ -385,7 +402,7 @@ function staleLinks(input: RenderInput, runtime: string): string[] {
  */
 function linkRemovals(input: RenderInput, runtime: string): string[] {
   const linkPaths = input.plan.links.map(link => link.path)
-  const files = WRITTEN_FILES.filter(name => name !== RUNTIME_STAMP_FILE).map(name => `${runtime}/${name}`)
+  const files = writtenFiles(input).filter(name => name !== RUNTIME_STAMP_FILE).map(name => `${runtime}/${name}`)
   const links = [...linkPaths, ...files].filter(path => isLinkStat(statAt(input, path)))
 
   return [...staleLinks(input, runtime), ...links]
@@ -443,9 +460,10 @@ function privateFolderSteps(input: RenderInput, runtime: string): RenderStep[] {
 }
 
 /**
- * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, and an
- * empty inbox only when there is none, so a note another role left there is never lost (D-114, Pitfall 3). An inbox
- * that is a link is removed first (linkRemovals), so it counts as none.
+ * The writes before the stamp, in order: the settings as stable JSON, the MCP config, the probe expectations, an
+ * empty inbox only when there is none, so a note another role left there is never lost (D-114, Pitfall 3), and for an
+ * epic render the epic kickoff (D-158), the step right before the stamp. An inbox that is a link is removed first
+ * (linkRemovals), so it counts as none.
  */
 function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
   const inbox = `${runtime}/${INBOX_FILE}`
@@ -453,10 +471,11 @@ function fileWrites(input: RenderInput, runtime: string): RenderStep[] {
     writeStep(`${runtime}/${SETTINGS_FILE}`, stableJson(input.plan.settings)),
     writeStep(`${runtime}/${MCP_FILE}`, input.mcpText),
     writeStep(`${runtime}/${PROBE_EXPECTATIONS_FILE}`, input.expectationsText),
+    ...(isRealEntry(statAt(input, inbox)) ? [] : [writeStep(inbox, '')]),
   ]
-  if (isRealEntry(statAt(input, inbox))) return writes
+  if (input.kickoff === undefined) return writes
 
-  return [...writes, writeStep(inbox, '')]
+  return [...writes, writeStep(`${runtime}/${RUNTIME_KICKOFF_FILE}`, input.kickoff)]
 }
 
 /**
@@ -1672,6 +1691,8 @@ function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string)
 export type EpicRender = {
   /** The main checkout's root, where the team, the manifest and the launchers were read. */
   readonly mainRoot: string
+  /** The text of the role's epic kickoff, written to `.runtime/kickoff.txt` right before the stamp (D-158). */
+  readonly kickoff: string
 }
 
 /**
@@ -1697,9 +1718,10 @@ export function worktreeClaudeMd(paths: readonly string[], worktree: string): st
  * It refuses with the refusals of gatherLaunchUser, a role memory folder level it would write through included
  * (privateFolderRefusal, 02-GAPS-B3 C5), a render refusal, or that failure. Else it gives the number of links the
  * render made and every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
- * `epic` is null for /cadre start, which changes nothing. For /cadre epic it names the main checkout, and the user the
- * LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd, RESEARCH Pitfall 1) and
- * carries the main checkout as `mainRoot`, whose code dirs get the exact denies the worktree's get (Pitfall 2).
+ * `epic` is null for /cadre start, which changes nothing. For /cadre epic it names the main checkout and the role's
+ * epic kickoff, which the render writes to `.runtime/kickoff.txt` as the step before the stamp (D-158), and the user
+ * the LaunchPlan is built for also excludes the worktree's own CLAUDE.md files (worktreeClaudeMd, RESEARCH Pitfall 1)
+ * and carries the main checkout as `mainRoot`, whose code dirs get the exact denies the worktree's get (Pitfall 2).
  */
 export async function renderRole(
   io: InitIo,
@@ -1741,9 +1763,11 @@ export async function renderRole(
   const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
-  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
+  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan, { kickoff: input.epic !== null }))
   const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
-  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories })
+  // Only an epic render names a kickoff, so a /cadre start render never writes or removes one (D-168).
+  const kickoff = input.epic === null ? {} : { kickoff: input.epic.kickoff }
+  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories, ...kickoff })
   if (render.refusal !== null) return { kind: 'refuse', text: render.refusal }
 
   for (const step of render.steps) {
