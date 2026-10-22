@@ -611,6 +611,22 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     expect(run.reply).toContain('Linked 1, copied 0.')
   })
 
+  test('the excludes file hides a copied .gitignore and no copied .env (03.1 S1, D-172)', async () => {
+    const world = await teamWorld()
+    const dirs = { ...world.dirs, '/repo': [entry('.env'), entry('.gitignore')] }
+    const rules = [
+      rule(LS_OTHERS_ARGV('/repo'), 0, '.gitignore\0'),
+      rule(LS_IGNORED_ARGV('/repo'), 0, '.env\0'),
+      rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`),
+    ]
+    const run = await epic({ ...world, dirs }, rules, 'PROJ-1', '')
+    const excludes = lastWrite(run, BARE_EXCLUDES)
+
+    expect(stepRuns(run)).toEqual(['copy .env', 'copy .gitignore'])
+    expect(excludes).toBe(excludesText('', ['.gitignore']))
+    expect(excludes?.split('\n')).not.toContain('/.env')
+  })
+
   test('a failed excludes setup, or no git dir to hold it, stops before any link and says none was made', async () => {
     const failed = rule(EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES), 1)
     const config = await epic(await teamWorld(), [failed, ...NODE_MODULES_RULES], 'PROJ-1', '')
@@ -762,6 +778,15 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
       path: `${BARE_WORKTREE}/.env`,
       source: '/repo/.env',
     })
+  })
+
+  test('a .gitignore main does not track is copied, as git reads no linked one (03.1 S1)', () => {
+    const main = new Map([['', [entry('.gitignore'), entry('node_modules', 'dir')]]])
+    const plan = planOf(['.gitignore', 'node_modules'], main, new Map())
+
+    expect(plan.steps.map(stepLine)).toEqual(['copy .gitignore', 'link node_modules'])
+    expect(plan.copies).toEqual(['.gitignore'])
+    expect(plan.links).toEqual(['node_modules'])
   })
 
   test('a target the worktree lists already, as a link or as a file, gets no step', () => {
