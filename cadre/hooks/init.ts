@@ -104,6 +104,7 @@ import {
   assignToRoles,
   classifyMcp,
   classifySkills,
+  CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
   envQuestion,
@@ -1446,6 +1447,63 @@ export async function securityInstallStep(
 }
 
 /**
+ * The improver install question (G-02-1f, D-141), worded like the security plugins question: init asks it after that
+ * question, when a role got a built file and claude-md-management is missing (improverInstallStep).
+ */
+export const IMPROVER_INSTALL_QUESTION =
+  'Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver ' +
+  "tidies each role's built CLAUDE.md, and you accept or keep each change."
+
+/**
+ * The context line of the improver install question (D-136, D-141): what Not now leaves, and that a dry run installs
+ * nothing.
+ */
+export const IMPROVER_INSTALL_CONTEXT =
+  'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.'
+
+/** Why init cancels when the improver install question is dismissed or not answered (D-141, A1, D-45). */
+export const IMPROVER_INSTALL_DISMISSED_REASON = 'The claude-md-management question was dismissed or not answered.'
+
+/**
+ * Whether a hand-out gives some role a built file with a part (G-02-1f, D-141): a parts hand-out with a topic that
+ * holds a part and is given to a role. Memories alone build no file, and the whole-file questions or none build none.
+ */
+function hasBuiltPart(handout: InstructionHandout): boolean {
+  if (handout.kind !== 'parts') return false
+  const { topics, given } = handout
+
+  return topics.some(topic => topic.partIds.length > 0 && (given.get(topic.id) ?? []).length > 0)
+}
+
+/**
+ * The improver install step (G-02-1f, D-141). When the hand-out gives no role a built file with a part (hasBuiltPart),
+ * or claude-md-management is installed (CLAUDE_MD_PLUGIN among the setup's installed plugins), it asks nothing and is
+ * accepted with no key. Else it asks IMPROVER_INSTALL_QUESTION, with IMPROVER_INSTALL_CONTEXT on its second line
+ * (D-136), the buttons of the security plugins question (SECURITY_INSTALL_OPTIONS) and the Improver chip: Install is
+ * accepted with CLAUDE_MD_PLUGIN, and Not now with none, so no improver runs; any other answer is asked again with why
+ * on top. A dismissal is cancelled with IMPROVER_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with
+ * NO_USABLE_ANSWER_REASON (A1, D-45). It installs nothing itself: the key is installed only after Confirm, with the
+ * other keys answered Install, never in --dry-run (applyConfirmed).
+ */
+export async function improverInstallStep(
+  io: InitIo,
+  handout: InstructionHandout,
+  setup: SetupScan,
+): Promise<StepResult<readonly string[]>> {
+  if (!hasBuiltPart(handout) || setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)) return accepted([])
+  const ask = {
+    question: withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT),
+    spec: { options: SECURITY_INSTALL_OPTIONS, header: ASK_HEADERS.improver },
+    parse: (answer: string): boolean | null => labelled(SECURITY_INSTALLS, answer),
+    accepts: quotedLabels(SECURITY_INSTALL_OPTIONS),
+  }
+  const isWanted = choiceResult(await askChoice(io, ask), IMPROVER_INSTALL_DISMISSED_REASON)
+  if (isWanted.kind === 'cancelled') return isWanted
+
+  return accepted(isWanted.value ? [CLAUDE_MD_PLUGIN] : [])
+}
+
+/**
  * The roles with the claude-security review skill given or taken away (decision #39): each role that stands for
  * Security, by its id or its `basedOn`, has CLAUDE_SECURITY_SKILL once, last in its skills, when `isWanted`, and not at
  * all when not; every other role is kept as it is. The roles given are not changed.
@@ -2684,9 +2742,10 @@ export async function planStep(
  * - `chmodRefusals`: the chmodProblem text of each chmod that was not run, because the write of its path did not land;
  * - `hunkFailures`: each framework command that failed (D-106);
  * - `attended`: the required keys whose failed command made roles attended (D-106);
- * - `installed`: each security plugin key whose install ran after Confirm and exited 0 (decision #39);
- * - `installProblems`: the text of each security plugin that was not installed, with the command to run by hand
- *   (decision #39); never fatal to the apply;
+ * - `installed`: each plugin key, a security plugin or claude-md-management, whose install ran after Confirm and exited
+ *   0 (decision #39, D-141);
+ * - `installProblems`: the text of each such plugin that was not installed, with the command to run by hand (decision
+ *   #39); never fatal to the apply;
  * - `untrackedParts`: the warning of each source file whose repo parts were left out of the built files because git
  *   does not track it, or GIT_TRACKING_UNKNOWN_WARNING when git could not be asked (02-GAPS-B2 M3);
  * - `privateProblems`: the warning of each private file that was not written (G-02-1f): the privateWriteProblem text
@@ -2934,13 +2993,13 @@ async function writeImproved(
  * write failed or was refused. Then one `warning: ` line for each write writeProblem refused (its text), each write
  * the host failed, each chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run
  * by hand), each framework command that failed (hunkFailureLine), the attended note when a failure made roles
- * attended, each security plugin that was not installed (its installProblems text, decision #39), each source file
+ * attended, each plugin that was not installed (its installProblems text, decision #39), each source file
  * whose repo parts were left out because git does not track it, or that git could not be asked (untrackedParts,
  * 02-GAPS-B2 M3), each private file that was not written, or the roles whose role memory folders could not be named
  * (privateProblems, G-02-1f), each improver question that got no usable answer (improverWarnings, D-141), and
  * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. Then, when
- * security plugins were installed, the line that names them and says to run /reload-plugins (installedLine), and when
- * an improver pass ran, how many built files it changed and the person accepted (improverLine). NEXT_STEP_NOTE comes
+ * plugins were installed, the line that names them and says to run /reload-plugins (installedLine), and when an
+ * improver pass ran, how many built files it changed and the person accepted (improverLine). NEXT_STEP_NOTE comes
  * last.
  */
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
@@ -3099,8 +3158,8 @@ export const REVIEW_ROUNDS_REASON =
  * scans gave, the ~/.claude.json consent answer the scans were gathered with (cadre.json records it, A1), what the
  * roles and framework steps are asked with (the installed frameworks, the framework choice and the template proposal
  * with its scan changes), the history hints the skill questions are asked with (D-59), and every answer so far, the
- * accepted team's scan changes included, so Change roles shows those again (A6), and so are the security plugins the
- * person answered Install for (decision #39). It is never written or kept after the run; a go-back gives a new Draft.
+ * accepted team's scan changes included, so Change roles shows those again (A6), and so are the plugins the person
+ * answered Install for (decision #39, D-141). It is never written or kept after the run; a go-back gives a new Draft.
  */
 export type Draft = {
   readonly locations: InitLocations
@@ -3118,8 +3177,8 @@ export type Draft = {
   readonly repoDefault: FrameworkId | null
   readonly hunks: readonly HunkOp[]
   /**
-   * The plugin keys the person answered Install for (decision #39); installed only after Confirm, never in --dry-run
-   * (applyConfirmed).
+   * The plugin keys the person answered Install for: the security plugins (decision #39), then claude-md-management
+   * (D-141); installed only after Confirm, never in --dry-run (applyConfirmed).
    */
   readonly pluginInstalls: readonly string[]
   /**
@@ -3145,7 +3204,7 @@ type DraftBase = Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'install
 
 /**
  * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
- * with (A6), the repo default, the hunks, the security plugins to install after Confirm (decision #39) and how the
+ * with (A6), the repo default, the hunks, the plugins to install after Confirm (decision #39, D-141) and how the
  * instruction files were handed out (G-02-1f).
  */
 type Team = Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks' | 'pluginInstalls' | 'instructions'>
@@ -3188,11 +3247,13 @@ async function perRoleSteps(
  * shown with its scan changes), their frameworks (frameworkStep), the recommendations for that team (ROLE-03), the
  * security plugins question for the plugins a team with a Security role misses (missingSecurityPlugins,
  * securityInstallStep, decision #39), the duration, asked when `duration` is null and else kept for every role (D-51),
- * then perRoleSteps. When claude-security was asked about, every role that stands for Security gets its review skill
- * on Install and loses it on Not now (withSecuritySkill) before the duration. Init runs it once from the proposal;
- * Change roles runs it again from the current team with the scan changes it was accepted with (A6) and the duration it
- * has. The team keeps the scan changes of the roles accepted and the plugins to install after Confirm. The first
- * cancelled step ends it with its reason (A1).
+ * then perRoleSteps, and last the improver install question when the hand-out gave a role a built file and
+ * claude-md-management is missing (improverInstallStep, D-141). When claude-security was asked about, every role that
+ * stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill) before the
+ * duration. Init runs it once from the proposal; Change roles runs it again from the current team with the scan
+ * changes it was accepted with (A6) and the duration it has. The team keeps the scan changes of the roles accepted and
+ * the plugins to install after Confirm, the security plugins first. The first cancelled step ends it with its reason
+ * (A1).
  */
 async function teamStep(
   io: InitIo,
@@ -3219,8 +3280,16 @@ async function teamStep(
   if (asked.kind === 'cancelled') return asked
   const kept = asked.value
   const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
+  if (steps.kind === 'cancelled') return steps
+  const improver = await improverInstallStep(io, steps.value.instructions, gathered.setup)
+  if (improver.kind === 'cancelled') return improver
 
-  return mapped(steps, decided => ({ duration: kept, changes: chosen.value.changes, pluginInstalls, ...decided }))
+  return accepted({
+    duration: kept,
+    changes: chosen.value.changes,
+    pluginInstalls: [...pluginInstalls, ...improver.value],
+    ...steps.value,
+  })
 }
 
 /**
@@ -3304,8 +3373,8 @@ function handoutLines(draft: Draft): string[] {
  * its hunks, its warnings and the `.gitignore` block rows as renderPlan prints them (so none is printed twice), the git
  * policy line, the launcher-start line, IGNORE_ALL_NOTE when the policy is `ignore`, so both items with a review button
  * of their own can be checked before Confirm, then the scan warnings of the run, kept for this review, and last the
- * security plugins Confirm installs when the person answered Install for any (decision #39), each key cleaned and
- * capped as a report cell is (decision #69 B7).
+ * plugins Confirm installs when the person answered Install for any (the security plugins, decision #39, and
+ * claude-md-management, D-141), each key cleaned and capped as a report cell is (decision #69 B7).
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
@@ -3399,7 +3468,7 @@ function cancelReply(io: InitIo, reason: string): string {
 export const HUNK_TIMEOUT_MS = 30_000
 
 /**
- * How long one security plugin install, or the marketplace add, may run at apply before it is given up (decision #39,
+ * How long one plugin install, or the marketplace add, may run at apply before it is given up (decision #39, D-141,
  * T-03-42).
  */
 export const PLUGIN_RUN_TIMEOUT_MS = 180_000
@@ -3417,7 +3486,7 @@ export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was d
 export const CONFLICT_CONTEXT = 'Keep mine leaves your edited file as it is; Take new writes the new version over it.'
 
 /**
- * Installs the security plugins the person answered Install for, after Confirm (decision #39): each key in order, every
+ * Installs the plugins the person answered Install for, after Confirm (decision #39, D-141): each key in order, every
  * run with the home folder as cwd, so no repo-level settings or marketplace definitions take part (T-03-46). For
  * claude-security alone, PYTHON_VERSION_ARGV runs first (PYTHON_TIMEOUT_MS), and a pythonProblem is recorded and skips
  * that key only. An install runs pluginInstallArgv (PLUGIN_RUN_TIMEOUT_MS) and counts when it exits 0. The first
@@ -3546,9 +3615,10 @@ async function privatePlanOf(
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
  *    exits non-zero is a failure, and apply goes on (D-106).
  * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
- * 4. The security plugins the person answered Install for (draft.pluginInstalls, decision #39), installed in order
- *    from the home folder, never the repo (installPlugins, T-03-46): claude-security only after its Python check, and
- *    a failed install tried once more after the marketplace add. An install that fails or is skipped is a problem the
+ * 4. The plugins the person answered Install for (draft.pluginInstalls: the security plugins, decision #39, and
+ *    claude-md-management, D-141), installed in order from the home folder, never the repo (installPlugins,
+ *    T-03-46): claude-security only after its Python check, and a failed install tried once more after the
+ *    marketplace add. An install that fails or is skipped is a problem the
  *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
  *    a problem (noHomeInstallText).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
@@ -3570,11 +3640,12 @@ async function privatePlanOf(
  *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
  *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
  *    became a conflict after the questions.
- * 6a. When a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a role with a repo part 5a
- *    kept, and each private text file), the improver pass runs between the file writes and the manifest
- *    (writeImproved, G-02-1f, D-141): one `claude -p` run per written built file, in its own folder, then its diff and
- *    the Accept or Keep original question; a kept file is written back as built, and the manifest records each built
- *    file as it ends up.
+ * 6a. When claude-md-management is installed, before init or by step 4 with no install problem (the setup made
+ *    again from the installs), and a built role file holds a part (builtRoleFiles: the `.cadre/<id>/CLAUDE.md` of a
+ *    role with a repo part 5a kept, and each private text file), the improver pass runs between the file writes and
+ *    the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written built file, in its own folder,
+ *    then its diff and the Accept or Keep original question; a kept file is written back as built, and the manifest
+ *    records each built file as it ends up. Otherwise no improver runs.
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
  *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
  *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
@@ -3639,7 +3710,8 @@ export async function applyConfirmed(
   const input: ApplyInput = { ...planned, choices, privates: privatePlan.privates }
   const steps = await applySteps(input)
   const withParts = new Set(Array.from(tracked.repoParts).flatMap(([id, parts]) => (parts.length > 0 ? [id] : [])))
-  const offered = builtRoleFiles(steps, locations.root, withParts)
+  const isImproverReady = setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
+  const offered = isImproverReady ? builtRoleFiles(steps, locations.root, withParts) : []
   const allowed = privatePlan.allowed
   const written =
     offered.length === 0
@@ -3672,19 +3744,20 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
  * MCP servers and skills, the instructions and memories (instructionsStep: the content consent, then the instruction
- * parts or the whole-file questions; G-02-1f), the carried env names, and the autonomy hunks of the frameworks in use.
- * It then asks the git policy (gitPolicyStep) and, once for the repo, where the launchers start (launchStartStep),
- * shows the one final review with every role's scope card for that start (the one place the cards are shown;
- * reviewLines, ROLE-06, A5) and the exact file plan, each role's built CLAUDE.md included, where the person confirms or
- * goes back to change one item (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that
- * nothing was written, and installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine
- * or Take new for each conflicted file (D-67), running the accepted hunks first, then installing the security plugins
- * answered Install from the home folder, and writing the plan made again from the disk (D-120), with the improver
- * pass on each built role file before the manifest (D-141), and replies with the plan as written and what the apply
- * did (initReplyText). Every step gives a StepResult (A1): runInit checks its kind before it uses the value, and for a
- * cancelled step prints the reason as its own line and answers cancelledReply with the step's reason (D-45), so only
- * values the person accepted reach the steps after it, and nothing is written or installed before Confirm. Every
- * answer lives in memory for this one run, and nothing is kept for the next (D-45, D-82).
+ * parts or the whole-file questions; G-02-1f), the carried env names, the autonomy hunks of the frameworks in use, and
+ * the claude-md-management install when a role got a built file and it is missing (D-141). It then asks the git policy
+ * (gitPolicyStep) and, once for the repo, where the launchers start (launchStartStep), shows the one final review with
+ * every role's scope card for that start (the one place the cards are shown; reviewLines, ROLE-06, A5) and the exact
+ * file plan, each role's built CLAUDE.md included, where the person confirms or goes back to change one item
+ * (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
+ * installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new for each
+ * conflicted file (D-67), running the accepted hunks first, then installing the plugins answered Install from the home
+ * folder, and writing the plan made again from the disk (D-120), with the improver pass on each built role file before
+ * the manifest (D-141), and replies with the plan as written and what the apply did (initReplyText). Every step gives a
+ * StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its
+ * own line and answers cancelledReply with the step's reason (D-45), so only values the person accepted reach the steps
+ * after it, and nothing is written or installed before Confirm. Every answer lives in memory for this one run, and
+ * nothing is kept for the next (D-45, D-82).
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   const guard = await initGuard(io, 'init')

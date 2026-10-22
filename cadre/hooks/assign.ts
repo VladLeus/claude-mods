@@ -152,6 +152,13 @@ export const SECURITY_GUIDANCE_PLUGIN = 'security-guidance@claude-plugins-offici
 export const SECURITY_PLUGINS: readonly string[] = Object.freeze([CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN])
 
 /**
+ * Anthropic's claude-md-management plugin, by its exact key in the claude-plugins-official marketplace: its
+ * claude-md-improver skill tidies each built role CLAUDE.md after Confirm, and init offers to install it when a role
+ * gets a built file and it is missing (G-02-1f, D-141). No role is given it.
+ */
+export const CLAUDE_MD_PLUGIN = 'claude-md-management@claude-plugins-official'
+
+/**
  * The review skill of claude-security, as `plugin:skill`, which every Security role gets when the person answers
  * Install (decision #39). The name is an assumption (the plugin's skill folder is `claude-security`), checked live in
  * 03-UAT (plan 03-16).

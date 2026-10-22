@@ -23,15 +23,29 @@ import {
   CONFLICT_OPTIONS,
   conflictQuestion,
   hunkFailureLine,
+  IMPROVER_OPTIONS,
+  improverArgv,
+  improverBlockLines,
+  improverContextLine,
+  improverDismissedWarning,
+  improverFailedNote,
+  improverFailure,
+  improverLine,
+  improverNoChangeNote,
+  improverQuestion,
+  improverUnreadableNote,
   installedLine,
   installFailureText,
   INSTRUCTIONS_RECORD_FILE,
   instructionsRecordText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
+  otherChangesWarning,
+  otherFilesLines,
   privateClaudeMdText,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
+  uncheckedFilesWarning,
 } from './apply'
 import type { HunkRun } from './apply'
 import {
@@ -46,6 +60,7 @@ import {
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
+  CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
   envQuestion,
@@ -147,6 +162,9 @@ import {
   GIT_POLICY_QUESTION,
   HUNK_DISMISSED_REASON,
   IGNORE_ALL_NOTE,
+  IMPROVER_INSTALL_CONTEXT,
+  IMPROVER_INSTALL_DISMISSED_REASON,
+  IMPROVER_INSTALL_QUESTION,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
@@ -281,7 +299,15 @@ import {
   TOOL_SCRIPTS,
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
-import { adaptersReportLines, choiceLine, detectReportLines, detectText, STATUS_LABEL } from './render'
+import {
+  adaptersReportLines,
+  choiceLine,
+  detectReportLines,
+  detectText,
+  diffLines,
+  lineDiff,
+  STATUS_LABEL,
+} from './render'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './reply'
 import {
   chainLines,
@@ -446,7 +472,31 @@ const HUNK_RUN: HunkRun = {
   display: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
 }
 
-/** An apply that wrote, failed, refused, missed a chmod, failed a hunk, installed a plugin and skipped the manifest. */
+/** The built CLAUDE.md of BE as the improver texts name it (G-02-1f, D-141). */
+const BUILT_PATH = '.cadre/be/CLAUDE.md'
+
+/** A diff of a built role file: one line reworded and one line added (D-141). */
+const DIFF = lineDiff('# Rules\nRun the tests.\n', '# Rules\nRun the tests first.\nKeep commits small.\n')
+
+/** Why an improver run failed, each kind once: it timed out, it exited non-zero, it could not start (D-141). */
+const FAILURES: readonly string[] = [
+  improverFailure(null, 300_000),
+  improverFailure({ exitCode: 2, stdout: '', stderr: '' }, 0),
+  improverFailure(null, 0),
+].flatMap(reason => (reason === null ? [] : [reason]))
+
+/** Other files an improver run changed beside BE's built CLAUDE.md, as the pass shows them (D-141). */
+const OTHERS: readonly string[] = [
+  '.cadre/be/ROLE.md',
+  '.cadre/be/notes.md',
+  '.cadre/be/role.json',
+  '.cadre/be/x.md',
+]
+
+/**
+ * An apply that wrote, failed, refused, missed a chmod, failed a hunk, installed a plugin, skipped the manifest, and
+ * ran the improver with one question dismissed and one other file changed.
+ */
 const OUTCOME: ApplyOutcome = {
   written: ['.cadre/bin/be', '.gitignore'],
   executable: ['.cadre/bin/be'],
@@ -461,8 +511,8 @@ const OUTCOME: ApplyOutcome = {
   untrackedParts: [],
   privateProblems: [privateFoldersUnknownWarning(['be'])],
   manifestSkipped: true,
-  improverWarnings: [],
-  improved: null,
+  improverWarnings: [improverDismissedWarning(BUILT_PATH), otherChangesWarning('.cadre/be', OTHERS.slice(0, 1))],
+  improved: { changed: 1, total: 2 },
 }
 
 const PLAN: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }
@@ -589,6 +639,24 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['apply', 'installFailureText', [false, true].map(isFailed => installFailureText(CLAUDE_SECURITY_PLUGIN, isFailed))],
   ['apply', 'installedLine', installedLine(SECURITY_PLUGINS)],
   ['apply', 'noHomeInstallText', noHomeInstallText(CLAUDE_SECURITY_PLUGIN)],
+  ['apply', 'IMPROVER_OPTIONS', IMPROVER_OPTIONS],
+  ['apply', 'improverArgv', improverArgv(`/repo/${BUILT_PATH}`)],
+  ['apply', 'improverQuestion', improverQuestion(BUILT_PATH)],
+  ['apply', 'improverContextLine', [improverContextLine(DIFF), improverContextLine(lineDiff('a\n', 'b\n'))]],
+  ['apply', 'improverBlockLines', improverBlockLines(BUILT_PATH, DIFF)],
+  ['apply', 'improverNoChangeNote', improverNoChangeNote(BUILT_PATH)],
+  ['apply', 'improverFailure', FAILURES],
+  ['apply', 'improverFailedNote', FAILURES.map(reason => improverFailedNote(BUILT_PATH, reason))],
+  ['apply', 'improverUnreadableNote', improverUnreadableNote(BUILT_PATH)],
+  ['apply', 'improverDismissedWarning', improverDismissedWarning(BUILT_PATH)],
+  ['apply', 'improverLine', improverLine({ changed: 1, total: 2 })],
+  [
+    'apply',
+    'otherChangesWarning',
+    [otherChangesWarning('.cadre/be', OTHERS.slice(0, 1)), otherChangesWarning('.cadre/be', OTHERS)],
+  ],
+  ['apply', 'otherFilesLines', otherFilesLines('.cadre/be', OTHERS)],
+  ['apply', 'uncheckedFilesWarning', [uncheckedFilesWarning(1, '.cadre/be'), uncheckedFilesWarning(7, '.cadre/be')]],
   ['apply', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
   ['apply', 'privateClaudeMdText', privateClaudeMdText(BE.id, 'repo', PART_SCAN.parts)],
   ['apply', 'instructionsRecordText', instructionsRecordText(PART_SCAN.parts, PART_SCAN.memories)],
@@ -619,6 +687,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['assign', 'CLAUDE_SECURITY_PLUGIN', CLAUDE_SECURITY_PLUGIN],
   ['assign', 'SECURITY_GUIDANCE_PLUGIN', SECURITY_GUIDANCE_PLUGIN],
   ['assign', 'SECURITY_PLUGINS', SECURITY_PLUGINS],
+  ['assign', 'CLAUDE_MD_PLUGIN', CLAUDE_MD_PLUGIN],
   ['assign', 'CLAUDE_SECURITY_SKILL', CLAUDE_SECURITY_SKILL],
   ['assign', 'NONE_OPTION', NONE_OPTION],
   ['assign', 'ALL_OPTION', ALL_OPTION],
@@ -755,6 +824,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'SECURITY_INSTALL_PREFIX', SECURITY_INSTALL_PREFIX],
   ['init', 'SECURITY_INSTALL_OPTIONS', SECURITY_INSTALL_OPTIONS],
   ['init', 'SECURITY_INSTALL_DISMISSED_REASON', SECURITY_INSTALL_DISMISSED_REASON],
+  ['init', 'IMPROVER_INSTALL_QUESTION', IMPROVER_INSTALL_QUESTION],
+  ['init', 'IMPROVER_INSTALL_CONTEXT', IMPROVER_INSTALL_CONTEXT],
+  ['init', 'IMPROVER_INSTALL_DISMISSED_REASON', IMPROVER_INSTALL_DISMISSED_REASON],
   ['init', 'DURATION_QUESTION', DURATION_QUESTION],
   ['init', 'DURATION_OPTIONS', DURATION_OPTIONS],
   ['init', 'DURATION_DISMISSED_REASON', DURATION_DISMISSED_REASON],
@@ -903,6 +975,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['render', 'detectReportLines', detectReportLines(EMPTY_FACTS)],
   ['render', 'adaptersReportLines', adaptersReportLines(ADAPTERS)],
   ['render', 'detectText', [detectText(EMPTY_FACTS, true), detectText(EMPTY_FACTS, false)]],
+  ['render', 'diffLines', diffLines(DIFF)],
   ['reply', 'REPLY_ERRORS_INTRO', REPLY_ERRORS_INTRO],
   ['reply', 'cappedErrors', cappedErrors(Array.from({ length: 21 }, (_, at) => `error ${at + 1}`))],
   ['roles', 'ROLE_TEMPLATE', ROLE_TEMPLATE],
