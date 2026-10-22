@@ -1499,9 +1499,13 @@ export async function runEpic(
   return mirroredReply(io, host, epic, { path, branch, outcome, title: options.title, gitDir, record })
 }
 
-/** The argv that asks git what changed in the worktree at `path` (D-169): it is clean when the run exits 0 silent. */
+/**
+ * The argv that asks git what changed in the worktree at `path` (D-169): it is clean when the run exits 0 silent.
+ * `--untracked-files=normal` overrides a `status.showUntrackedFiles=no` config, so untracked work always shows
+ * (03.1-W5 S1).
+ */
 export function STATUS_ARGV(path: string): readonly string[] {
-  return ['git', '-C', path, 'status', '--porcelain']
+  return ['git', '-C', path, 'status', '--porcelain', '--untracked-files=normal']
 }
 
 /**
@@ -1599,7 +1603,8 @@ export type MergedState = 'merged' | 'not-merged' | 'unknown' | 'no-record'
 /**
  * The clean check from a STATUS_ARGV run (D-169): clean when it exits 0 with no output, dirty when it exits 0 with
  * output, unknown when it exits otherwise or could not run, so a status git could not give never reads as clean. The
- * links are hidden by the worktree's excludes file, and ignored copies do not show.
+ * links are hidden by the worktree's excludes file, and ignored copies do not show. Untracked files show even when the
+ * config hides them (STATUS_ARGV, 03.1-W5 S1).
  */
 export function cleanStateOf(run: HostRun | null): CleanState {
   if (run === null || run.exitCode !== 0) return 'unknown'
