@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../types'
 import { cadreJsonText, roleJsonText } from './generate'
 import { noStateReply, regenNoRole } from './init'
-import { autopilotLogPath, autopilotStatusPath } from './scan'
+import { autopilotLogPath, autopilotStatusPath, CHECKOUT_ARGV } from './scan'
 import type { RunState } from './scan'
 import {
   BEAT_MAX_BYTES,
@@ -120,7 +120,7 @@ async function statusBe(world: MemWorld, runs: readonly HostRunRule[] = []): Pro
 
   return {
     lines: reply.split('\n'),
-    greps: host.calls.map(call => call.argv.at(-1) ?? ''),
+    greps: host.calls.filter(call => call.argv[0] === '/usr/bin/grep').map(call => call.argv.at(-1) ?? ''),
     listed: run.listed,
     reads: run.reads,
     writes: host.writes,
@@ -617,16 +617,18 @@ describe('status review fixes (#63)', () => {
 
   test('runStatus refuses with the shared status replies before any grep, listing or HOME read (B3)', async () => {
     const below = { ...DEFAULT_LOCATIONS, root: '/repo/app', givenRoot: '/repo/app' }
-    const cases: readonly (readonly [MemWorld, string, string])[] = [
-      [memWorld({ dirs: { '/repo/.git': [] } }), 'be', noStateReply('status')],
-      [statusWorld(), 'zz', regenNoRole('zz', ['be'])],
-      [statusWorld({ locations: below }), 'be', 'run /cadre status from the repo root: /repo'],
+    // The checkout probe comes right after the repo checks (D-151), so a team refusal follows it.
+    const probe = [CHECKOUT_ARGV('/repo')]
+    const cases: readonly (readonly [MemWorld, string, string, readonly (readonly string[])[]])[] = [
+      [memWorld({ dirs: { '/repo/.git': [] } }), 'be', noStateReply('status'), probe],
+      [statusWorld(), 'zz', regenNoRole('zz', ['be']), probe],
+      [statusWorld({ locations: below }), 'be', 'run /cadre status from the repo root: /repo', []],
     ]
-    for (const [world, id, text] of cases) {
+    for (const [world, id, text, calls] of cases) {
       const host = memHost(hostWorld({}))
       const run = memIo(world, {})
       expect([id, await runStatus(run.io, host.io, { id })]).toEqual([id, text])
-      expect(host.calls).toEqual([])
+      expect(host.calls.map(call => call.argv)).toEqual(calls)
       expect([...run.listed, ...run.reads].filter(path => path.startsWith('/home/u'))).toEqual([])
     }
   })
@@ -645,5 +647,45 @@ describe('status review fixes (#63)', () => {
       expect(homeFiles).toEqual([])
       expect(status.greps).toEqual([`${TRANSCRIPTS}/s9.jsonl`])
     }
+  })
+})
+
+describe('status in an epic worktree (D-151)', () => {
+  test('a linked worktree reads its team from main, its run from its own session, never its team copy', async () => {
+    const worktree = '/repo/.claude/worktrees/x'
+    const transcripts = '/home/u/.claude/projects/-repo--claude-worktrees-x'
+    const stdout = '/repo/.git/worktrees/x\n/repo/.git\n'
+    const linked: HostRunRule = { argv: CHECKOUT_ARGV(worktree), result: { exitCode: 0, stdout, stderr: '' } }
+    // The main checkout's own cadre-be runs; the worktree's is done.
+    const main = statusWorld({
+      locations: { ...DEFAULT_LOCATIONS, root: worktree, givenRoot: worktree },
+      dirs: {
+        [transcripts]: [entryAt('s9.jsonl', 'file', 5)],
+        [TRANSCRIPTS]: [entryAt('s-main.jsonl', 'file', 9)],
+      },
+      files: {
+        [`${worktree}/.git`]: 'gitdir: /repo/.git/worktrees/x\n',
+        ...doneFiles('s9'),
+        [`${AUTOPILOT}/s-main.json`]: onStatus(0),
+      },
+    })
+    const team = ['/repo/.cadre/cadre.json', '/repo/.cadre/be/role.json']
+    const copied = Object.entries(main.files).map(([path, text]) =>
+      team.includes(path) ? [`${worktree}${path.slice('/repo'.length)}`, text] : [path, text],
+    )
+    const rules = [
+      linked,
+      titled(`${transcripts}/s9.jsonl`, 'cadre-be'),
+      titled(`${TRANSCRIPTS}/s-main.jsonl`, 'cadre-be'),
+    ]
+    const status = await statusBe(main, rules)
+    const onlyCopy = await statusBe({ ...main, files: Object.fromEntries(copied) }, rules)
+
+    expect(status.lines.slice(1, 3)).toEqual(['state: done', 'session: s9 (found by its name cadre-be)'])
+    expect(team.filter(path => !status.reads.includes(path))).toEqual([])
+    expect(status.reads.filter(path => path.startsWith(`${worktree}/.cadre/`))).toEqual([])
+    expect(status.listed).toContain(transcripts)
+    expect(status.listed).not.toContain(TRANSCRIPTS)
+    expect(onlyCopy.lines.join('\n')).toBe(noStateReply('status'))
   })
 })
