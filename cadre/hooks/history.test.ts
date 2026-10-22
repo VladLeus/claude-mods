@@ -40,12 +40,20 @@ function historyAsked(total: number): string {
   return withContext(historyQuestion(total), SCAN_CONTEXT)
 }
 
+/**
+ * A transcript line that is the person's own slash command, as Claude Code writes it (IN-04): a user message whose
+ * string content is `content`.
+ */
+function commandLine(content: string): string {
+  return `{"type":"user","message":{"role":"user","content":"${content}"}}`
+}
+
 /** The transcript of the plan's example: two kept commands, one Skill call and a command name that is dropped. */
 const EXAMPLE = [
-  '<command-name>/gsd-plan-phase</command-name>',
+  commandLine('<command-name>/gsd-plan-phase</command-name>'),
   '{"type":"tool_use","name":"Skill","input":{"skill":"superpowers:brainstorming"}}',
-  '<command-name>cadre</command-name>',
-  '<command-name>/Bad Name!</command-name>',
+  commandLine('<command-name>cadre</command-name>'),
+  commandLine('<command-name>/Bad Name!</command-name>'),
 ].join('\n')
 
 /** A session transcript as the host lists it: a regular `.jsonl` file with this mtime and listed size. */
@@ -101,14 +109,19 @@ describe('history scan', () => {
     expect(HISTORY_MAX_SESSIONS).toBe(50)
     expect(HISTORY_MAX_FILE_BYTES).toBe(4 * 1024 * 1024)
     expect(HISTORY_MAX_TOTAL_BYTES).toBe(64 * 1024 * 1024)
-    expect(HISTORY_NAME_PATTERN.source).toBe('^[a-z0-9][a-z0-9:_-]{0,63}$')
+    expect(HISTORY_NAME_PATTERN.source).toBe('^[a-z0-9][a-z0-9:_.@-]{0,99}$')
   })
 
-  test('the question names the session count and the 50 read; its answers are fixed, No first, and frozen', () => {
+  test('the question names the session count, and the 50 read only above 50; answers fixed, No first (IN-03)', () => {
     expect(historyQuestion(12)).toBe(
-      "Scan this repo's session history (12 sessions; the newest 50 are read) for frequently used commands and " +
+      "Scan this repo's session history (12 sessions) for frequently used commands and skills? " +
+        'Only names and counts are kept.',
+    )
+    expect(historyQuestion(51)).toBe(
+      "Scan this repo's session history (51 sessions; the newest 50 are read) for frequently used commands and " +
         'skills? Only names and counts are kept.',
     )
+    expect(historyQuestion(50)).not.toContain('newest')
     expect(HISTORY_OPTIONS).toEqual(['No, skip it', 'Yes, scan names and counts'])
     expect(Object.isFrozen(HISTORY_OPTIONS)).toBe(true)
     expect(HISTORY_DISMISSED_REASON).toBe('The session history question was dismissed or not answered.')
@@ -169,10 +182,12 @@ describe('history scan', () => {
       '<command-name>//twice</command-name>',
       '<command-name>/-dash-first</command-name>',
       '<command-name></command-name>',
-      `<command-name>/${'a'.repeat(64)}</command-name>`,
-      `<command-name>/${'b'.repeat(65)}</command-name>`,
-    ].join('\n')
-    expect(countsOf(text)).toEqual({ 'gsd-plan-phase': 2, 'gsd-plan': 1, ['a'.repeat(64)]: 1 })
+      `<command-name>/${'a'.repeat(100)}</command-name>`,
+      `<command-name>/${'b'.repeat(101)}</command-name>`,
+    ]
+      .map(commandLine)
+      .join('\n')
+    expect(countsOf(text)).toEqual({ 'gsd-plan-phase': 2, 'gsd-plan': 1, ['a'.repeat(100)]: 1 })
   })
 
   test('a skill counts only on a line with a Skill tool call; quoted text in a message never counts', () => {
@@ -185,6 +200,23 @@ describe('history scan', () => {
     expect(countsOf(text)).toEqual({ 'codex:rescue': 2, 'codex:setup': 1 })
   })
 
+  test('a skill name with a dot and an at sign counts (IN-01)', () => {
+    expect(countsOf(skillCallLine('plugin@market:skill.v2', 'toolu_01'))).toEqual({ 'plugin@market:skill.v2': 1 })
+  })
+
+  test("a command counts only from the person's own command line, never from a tool result or another line", () => {
+    const marker = '<command-name>/gsd-quick</command-name>'
+    const text = [
+      commandLine(marker),
+      commandLine(`<command-message>gsd-quick is running</command-message>\\n${marker}`),
+      `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"${marker}"}]}}`,
+      `{"type":"assistant","message":{"role":"assistant","content":"${marker}"}}`,
+      '{"type":"system","subtype":"local_command","content":"<command-name>/autopilot</command-name>"}',
+      commandLine(`see ${marker}`),
+    ].join('\n')
+    expect(countsOf(text)).toEqual({ 'gsd-quick': 2 })
+  })
+
   test('a Skill call counts once when its line holds the name in input and in wireToolInputs (WR-01)', () => {
     expect(countsOf(skillCallLine('gsd-quick', 'toolu_01'))).toEqual({ 'gsd-quick': 1 })
   })
@@ -195,7 +227,7 @@ describe('history scan', () => {
   })
 
   test('scanHistory counts the readable sessions and skips one over 4 MiB, with its note (Pitfall 9)', async () => {
-    const cadre = '<command-name>/cadre</command-name>'
+    const cadre = commandLine('<command-name>/cadre</command-name>')
     const world = historyWorld({ 'a.jsonl': cadre, 'big.jsonl': 'x'.repeat(5 * 1024 * 1024), 'c.jsonl': cadre })
     const run = memIo(world, {})
     const listed = await listSessions(run.io, DIR)
@@ -214,7 +246,8 @@ describe('history scan', () => {
   test('past 64 MiB in all the scan stops and is partial; the oldest sessions are not read (Pitfall 5)', async () => {
     const names = Array.from({ length: 17 }, (_, at) => `s${String(at).padStart(2, '0')}.jsonl`)
     const sessions = names.map((name, at) => transcript(name, 100 - at, HISTORY_MAX_FILE_BYTES))
-    const files = Object.fromEntries(names.map(name => [`${DIR}/${name}`, '<command-name>/cadre</command-name>']))
+    const cadre = commandLine('<command-name>/cadre</command-name>')
+    const files = Object.fromEntries(names.map(name => [`${DIR}/${name}`, cadre]))
     const run = memIo(memWorld({ files }), {})
     const scan = await scanHistory(run.io, DIR, sessions)
     expect([scan.scanned, scan.total, scan.isPartial]).toEqual([16, 17, true])
@@ -287,8 +320,8 @@ describe('history scan', () => {
 
   test('a count of 1 is singular in the question and in the notes', () => {
     expect(historyQuestion(1)).toBe(
-      "Scan this repo's session history (1 session; the newest 50 are read) for frequently used commands and " +
-        'skills? Only names and counts are kept.',
+      "Scan this repo's session history (1 session) for frequently used commands and skills? " +
+        'Only names and counts are kept.',
     )
     expect(historyLines(scanOf({ total: 1, skippedLarge: 1 }))).toEqual([
       HEADING,
@@ -342,7 +375,7 @@ describe('history scan', () => {
   })
 
   test('historyStep: Yes, scan names and counts reads the sessions newest first and shows the lines once', async () => {
-    const world = historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': '<command-name>/cadre</command-name>' })
+    const world = historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': commandLine('<command-name>/cadre</command-name>') })
     const run = memIo(world, ['Yes, scan names and counts'])
     const scan = scanOf({
       counts: [
@@ -423,7 +456,9 @@ describe('history scan', () => {
 
   test('no transcript text, path, argument or file name reaches the scan, log or pane (SCAN-03, T-02-41)', async () => {
     const transcriptText = [
-      '<command-name>/gsd-plan-phase</command-name><command-args>SENTINEL_SECRET_VALUE /home/u/x</command-args>',
+      commandLine(
+        '<command-name>/gsd-plan-phase</command-name><command-args>SENTINEL_SECRET_VALUE /home/u/x</command-args>',
+      ),
       '{"type":"user","message":{"content":"my key is SENTINEL_SECRET_VALUE in /home/u/.env"}}',
       '{"type":"tool_use","name":"Skill","input":{"skill":"codex:rescue","args":"SENTINEL_SECRET_VALUE /home/u"}}',
     ].join('\n')

@@ -1030,6 +1030,16 @@ describe('readInstructionFiles', () => {
     )
   })
 
+  test('a repo import into .git in any letter case is not read (C9)', async () => {
+    const run = memIo(
+      filesWorld({ '/repo/CLAUDE.md': '# R\n@./.GIT/notes.md\n', '/repo/.GIT/notes.md': '# Notes\n' }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/repo/CLAUDE.md'])
+    expect(scan.warnings).toEqual([unfollowedImportWarning('.GIT/notes.md')])
+  })
+
   test('a doc link of a repo file into .git or to a dotfile is not read (M3)', async () => {
     const run = memIo(
       filesWorld({

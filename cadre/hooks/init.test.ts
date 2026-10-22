@@ -1015,7 +1015,10 @@ const HISTORY_PREFIX = "Scan this repo's session history"
 function historyGitWorld(over: Partial<MemWorld> = {}): MemWorld {
   return gitWorld({
     dirs: { '/repo/.git': [], [HISTORY_DIR]: [{ ...entry('a.jsonl'), mtimeMs: 1 }] },
-    files: { [`${HISTORY_DIR}/a.jsonl`]: '<command-name>/gsd-plan-phase</command-name>' },
+    files: {
+      [`${HISTORY_DIR}/a.jsonl`]:
+        '{"type":"user","message":{"role":"user","content":"<command-name>/gsd-plan-phase</command-name>"}}',
+    },
     ...over,
   })
 }

@@ -795,7 +795,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['history', 'UNLISTED_HISTORY_NOTE', UNLISTED_HISTORY_NOTE],
   ['history', 'HISTORY_DISMISSED_REASON', HISTORY_DISMISSED_REASON],
   ['history', 'HISTORY_OPTIONS', HISTORY_OPTIONS],
-  ['history', 'historyQuestion', historyQuestion(12)],
+  ['history', 'historyQuestion', [12, 51].map(historyQuestion)],
   ['history', 'historyLines', historyLines(HISTORY)],
   ['init', 'NOT_INTERACTIVE_REPLY', NOT_INTERACTIVE_REPLY],
   ['init', 'INIT_ROOT_UNKNOWN_REPLY', INIT_ROOT_UNKNOWN_REPLY],

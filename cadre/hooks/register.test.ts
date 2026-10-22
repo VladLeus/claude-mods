@@ -1836,12 +1836,12 @@ const HISTORY_DIR = '/home/u/.claude/projects/-repo'
 
 /** The history question for the two transcripts of historyHostWorld (SCAN-03, D-59). */
 const HISTORY_QUESTION =
-  "Scan this repo's session history (2 sessions; the newest 50 are read) for frequently used commands and skills? " +
+  "Scan this repo's session history (2 sessions) for frequently used commands and skills? " +
   'Only names and counts are kept.'
 
 /** A session transcript that runs /gsd-plan-phase and holds SENTINEL_SECRET_VALUE outside every marker. */
 const SENTINEL_TRANSCRIPT = [
-  '<command-name>/gsd-plan-phase</command-name>',
+  '{"type":"user","message":{"role":"user","content":"<command-name>/gsd-plan-phase</command-name>"}}',
   '{"type":"user","message":{"content":"the token is SENTINEL_SECRET_VALUE"}}',
 ].join('\n')
 
@@ -2126,7 +2126,8 @@ describe('Phase 2 faked-host matrix', () => {
     ]
     const transcripts = {
       [`${HISTORY_DIR}/${token}.jsonl`]: [
-        `<command-name>/gsd-plan-phase</command-name><command-args>${apiKey} /home/u/notes</command-args>`,
+        '{"type":"user","message":{"role":"user","content":"<command-name>/gsd-plan-phase</command-name>' +
+          `<command-args>${apiKey} /home/u/notes</command-args>"}}`,
         `{"type":"user","message":{"content":"use ${bearer} from /home/u/.env"}}`,
       ].join('\n'),
       [`${HISTORY_DIR}/b.jsonl`]:
