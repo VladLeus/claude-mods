@@ -371,8 +371,11 @@ function withoutCode(text: string): string {
   return kept.join('')
 }
 
-/** The absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it. */
-function resolveSegments(path: string): string {
+/**
+ * The absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it (02-GAPS-B2
+ * S7: one home; the instruction reader resolves doc links with it too).
+ */
+export function resolveSegments(path: string): string {
   const kept: string[] = []
   for (const part of path.split('/')) {
     if (part === '' || part === '.') continue

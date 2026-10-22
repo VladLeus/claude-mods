@@ -71,10 +71,10 @@ export const CLAUDE_JSON_MAX_BYTES = 4 * 1024 * 1024
 const MAX_REF_NAME_CHARS = 100
 /** Code points a skill's purpose keeps: its one-line description, cleaned and cut to this (D-139). */
 const MAX_SKILL_PURPOSE_CHARS = 120
-/** Code points a memory file name keeps; the longest name a file system allows. */
-const MAX_FILE_NAME_CHARS = 255
-/** The extension of an agent file and of a memory file. */
-const MARKDOWN_EXTENSION = '.md'
+/** Code points a memory file name keeps; the longest name a file system allows (02-GAPS-B2 S7: one home). */
+export const MAX_FILE_NAME_CHARS = 255
+/** The extension of an agent file, a rule file and a memory file (02-GAPS-B2 S7: one home). */
+export const MARKDOWN_EXTENSION = '.md'
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
 const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
@@ -518,11 +518,22 @@ async function isInsideRepo(
   return false
 }
 
-/** The names of the regular files in a listing that end with `extension`; a folder, a link or another kind does not. */
-function fileNames(entries: readonly PortEntry[], extension: string): string[] {
+/**
+ * The names of the regular files in a listing that end in `.md` (02-GAPS-B2 S7: one home); a folder, a link or another
+ * kind is not one.
+ */
+export function markdownFileNames(entries: readonly PortEntry[]): string[] {
   return entries
-    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(extension))
+    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN_EXTENSION))
     .map(entry => entry.name)
+}
+
+/**
+ * The auto-memory folder the engine keeps for a project root in the user folder: `<userDir>/projects/<root mangled by
+ * mangledProjectDir>/memory` (D-100; 02-GAPS-B2 S7: one home).
+ */
+export function memoryFolderOf(userDir: string, root: string): string {
+  return `${userDir}/projects/${mangledProjectDir(root)}/memory`
 }
 
 /** Each settings source the port can read as a plain object, in override order; any other source adds a warning. */
@@ -625,7 +636,7 @@ async function agentNames(
 ): Promise<string[]> {
   const userEntries = userDir === null ? [] : await listFolder(io, ctx, `${userDir}/agents`, warnings)
   const entries = [...userEntries, ...(await repoAgentEntries(io, ctx, warnings))]
-  const names = fileNames(entries, MARKDOWN_EXTENSION).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
+  const names = markdownFileNames(entries).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
@@ -707,12 +718,9 @@ async function memoryFileNames(
   warnings: string[],
 ): Promise<string[]> {
   if (userDir === null) return []
-  const projects = new Set([ctx.root, ctx.givenRoot].map(mangledProjectDir))
+  const folders = new Set([ctx.root, ctx.givenRoot].map(root => memoryFolderOf(userDir, root)))
   const names: string[] = []
-  for (const project of projects) {
-    const folder = `${userDir}/projects/${project}/memory`
-    names.push(...fileNames(await listFolder(io, ctx, folder, warnings), MARKDOWN_EXTENSION))
-  }
+  for (const folder of folders) names.push(...markdownFileNames(await listFolder(io, ctx, folder, warnings)))
   warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_FILE_NAME_CHARS))

@@ -30,7 +30,15 @@ import {
   PYTHON_VERSION_ARGV,
 } from './apply'
 import type { HunkRun } from './apply'
-import { ASK_HEADERS, NO_USABLE_ANSWER_REASON, PANE_TITLES, quotedLabels, refusalLine, withContext } from './ask'
+import {
+  ASK_HEADERS,
+  countedChip,
+  NO_USABLE_ANSWER_REASON,
+  PANE_TITLES,
+  quotedLabels,
+  refusalLine,
+  withContext,
+} from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -61,7 +69,14 @@ import {
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, HOME_UNUSABLE_WARNING, SOURCE_ORDER } from './facts'
+import {
+  countedNoun,
+  FILE_SYSTEM_ROOT_REPLY,
+  HOME_ROOT_REPLY,
+  HOME_UNUSABLE_WARNING,
+  idsOrNone,
+  SOURCE_ORDER,
+} from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS, REQUIRED_FIELDS, SUPPORTED_IDS, UNSUPPORTED_MARKERS } from './framework'
 import {
   cadreJsonText,
@@ -79,6 +94,7 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { GSD_ADAPTER, GSD_AUTONOMY, GSD_CONFIG_FILE, GSD_GATES, GSD_HOOK_NOTES, gsdKickoffText } from './gsd'
+import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {
   HISTORY_DISMISSED_REASON,
   HISTORY_OPTIONS,
@@ -217,6 +233,7 @@ import {
   RECOMMEND_SYSTEM,
   repoImportWarning,
   RULES_UNLISTED_WARNING,
+  TOP_OF_FILE,
   topicContextLine,
   topicHeader,
   topicItems,
@@ -253,6 +270,7 @@ import {
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText, STATUS_LABEL } from './render'
+import { cappedErrors, REPLY_ERRORS_INTRO, withReplyErrors } from './reply'
 import {
   chainLines,
   CUSTOM_PURPOSE,
@@ -553,6 +571,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['ask', 'ASK_HEADERS', ASK_HEADERS],
   ['ask', 'withContext', withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)],
   ['ask', 'PANE_TITLES', PANE_TITLES],
+  ['ask', 'countedChip', [countedChip('Topic', 1, 3), countedChip('Memory', 100, 200)]],
   ['assign', 'INFRA_PLUGINS', INFRA_PLUGINS],
   ['assign', 'INFRA_SKILLS', INFRA_SKILLS],
   ['assign', 'INFRA_TOOLS', INFRA_TOOLS],
@@ -611,6 +630,8 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['facts', 'HOME_ROOT_REPLY', HOME_ROOT_REPLY],
   ['facts', 'FILE_SYSTEM_ROOT_REPLY', FILE_SYSTEM_ROOT_REPLY],
   ['facts', 'HOME_UNUSABLE_WARNING', HOME_UNUSABLE_WARNING],
+  ['facts', 'idsOrNone', [idsOrNone([]), idsOrNone(['be', 'qa'])]],
+  ['facts', 'countedNoun', [countedNoun(1, 'file', 'files'), countedNoun(2, 'file', 'files')]],
   ['framework', 'DECISION_TYPES', DECISION_TYPES],
   ['framework', 'UNSUPPORTED_MARKERS', UNSUPPORTED_MARKERS],
   ['framework', 'SUPPORTED_IDS', SUPPORTED_IDS],
@@ -635,6 +656,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['gsd', 'GSD_AUTONOMY', GSD_AUTONOMY],
   ['gsd', 'GSD_ADAPTER', GSD_ADAPTER],
   ['gsd', 'gsdKickoffText', KICKOFFS.map(gsdKickoffText)],
+  ['handout', 'ACCEPT_RECOMMENDATIONS', ACCEPT_RECOMMENDATIONS],
   ['history', 'NO_HISTORY_NOTE', NO_HISTORY_NOTE],
   ['history', 'UNLISTED_HISTORY_NOTE', UNLISTED_HISTORY_NOTE],
   ['history', 'HISTORY_DISMISSED_REASON', HISTORY_DISMISSED_REASON],
@@ -790,6 +812,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['instructions', 'RULES_UNLISTED_WARNING', RULES_UNLISTED_WARNING],
   ['instructions', 'moreDocsWarning', moreDocsWarning(3)],
   ['instructions', 'MEMORY_UNLISTED_WARNING', MEMORY_UNLISTED_WARNING],
+  ['instructions', 'TOP_OF_FILE', TOP_OF_FILE],
   ['instructions', 'TOPICS_SYSTEM', TOPICS_SYSTEM],
   ['instructions', 'RECOMMEND_SYSTEM', RECOMMEND_SYSTEM],
   ['instructions', 'fallbackTopics', fallbackTopics(PART_SCAN)],
@@ -837,6 +860,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['render', 'detectReportLines', detectReportLines(EMPTY_FACTS)],
   ['render', 'adaptersReportLines', adaptersReportLines(ADAPTERS)],
   ['render', 'detectText', [detectText(EMPTY_FACTS, true), detectText(EMPTY_FACTS, false)]],
+  ['reply', 'REPLY_ERRORS_INTRO', REPLY_ERRORS_INTRO],
+  ['reply', 'withReplyErrors', withReplyErrors(['a'], ['e'])],
+  ['reply', 'cappedErrors', cappedErrors(Array.from({ length: 21 }, (_, at) => `error ${at + 1}`))],
   ['roles', 'ROLE_TEMPLATE', ROLE_TEMPLATE],
   ['roles', 'DEFAULT_MODEL', DEFAULT_MODEL],
   ['roles', 'DEFAULT_EFFORT', DEFAULT_EFFORT],

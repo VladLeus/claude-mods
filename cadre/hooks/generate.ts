@@ -10,6 +10,7 @@ import type {
 import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { clean, compareText, sortedUnique } from './facts'
+import { TOP_OF_FILE } from './instructions'
 import { MAX_ROLE_CHARS } from './kickoff'
 import { PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
 import { cardList, reportText } from './render'
@@ -150,9 +151,6 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
 
   return `${lines.join('\n')}\n`
 }
-
-/** How the marker of a part with no heading names it: the text before the first heading of its file (G-02-1f). */
-const TOP_OF_FILE = '(top of file)'
 
 /**
  * A marker cell (02-GAPS-B2 N2): cleaned as a report cell, then each '-' followed by '-' gets a space after it, so no

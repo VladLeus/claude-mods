@@ -1,6 +1,7 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
-import { clean, compareText, idLabel, isObject, parseJsonValue, sortedUnique } from './facts'
+import { clean, compareText, countedNoun, idLabel, idsOrNone, isObject, parseJsonValue, sortedUnique } from './facts'
 import { freezeRows } from './freeze'
+import { cappedErrors, unfenced, withReplyErrors } from './reply'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**
@@ -337,11 +338,8 @@ export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
   return `Which roles get ${label} skills (${group.names.length})?${usesText(uses)} ${ROLE_ANSWER_HINT}`
 }
 
-/**
- * The sessions the history scan reads (HISTORY_MAX_SESSIONS of history.ts, D-59), repeated here because history.ts
- * imports this module; a test pins that the two agree.
- */
-const HISTORY_SESSIONS = 50
+/** The most sessions the history scan reads: the newest by modification time (D-59). */
+export const HISTORY_MAX_SESSIONS = 50
 
 /** What a skill's purpose reads when the engine gave the skill no description (D-139, G-02-1b). */
 export const NO_SKILL_PURPOSE = 'No description.'
@@ -351,7 +349,7 @@ export const NO_SKILL_PURPOSE = 'No description.'
  * the last 50 sessions`, the skill's own count, never a group total.
  */
 export function skillUsesText(count: number): string {
-  return `${count} ${count === 1 ? 'time' : 'times'} in the last ${HISTORY_SESSIONS} sessions`
+  return `${countedNoun(count, 'time', 'times')} in the last ${HISTORY_MAX_SESSIONS} sessions`
 }
 
 /** The first row of the own-skills block (G-02-1b): which skills it lists, and what giving one to a role means. */
@@ -362,13 +360,8 @@ const OWN_SKILLS_HEADING =
 const NO_SKILL_RECOMMENDATION_ROW = 'The model gave no usable recommendation: no role gets a skill unless you pick one.'
 
 /** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
-function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
+export function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
   return counts.get(asciiLower(name)) ?? 0
-}
-
-/** Role ids as an own-skills row names them: joined with `, `, or `none` for none. */
-function roleIdsText(ids: readonly string[]): string {
-  return ids.length === 0 ? 'none' : ids.join(', ')
 }
 
 /** The id the recommendation gives an own skill (G-02-1b): S1, S2, ... by its place in the list. */
@@ -388,7 +381,7 @@ export function ownSkillIds(skills: readonly SkillRef[]): string[] {
 function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): string[] {
   const used = count === 0 ? '' : `used ${skillUsesText(count)}; `
 
-  return [`  ${skill.name}: ${skill.purpose ?? NO_SKILL_PURPOSE}`, `    ${used}recommended: ${roleIdsText(ids)}`]
+  return [`  ${skill.name}: ${skill.purpose ?? NO_SKILL_PURPOSE}`, `    ${used}recommended: ${idsOrNone(ids)}`]
 }
 
 /**
@@ -434,9 +427,6 @@ const SKILLS_INTRO =
 /** What the skills prompt says for a skill the engine gave no description (G-02-1b). */
 const NO_PURPOSE_FOR_MODEL = '(no description)'
 
-/** The line that introduces the errors of the previous reply, when there are any. */
-const REPLY_ERRORS_INTRO = 'Your previous reply had these errors; fix all of them:'
-
 /**
  * The skills prompt (G-02-1b): each role as `<id> | <title> | <purpose>`, each skill as `S<n> | <name> | <purpose or
  * (no description)> | used <n> times` (`used 1 time` for one, AUTO-PICK #10), its own count in the history scan (0
@@ -452,9 +442,9 @@ export function skillsPrompt(
   const skillLine = (skill: SkillRef, index: number): string => {
     const purpose = skill.purpose ?? NO_PURPOSE_FOR_MODEL
 
-    const count = skillCount(skill.name, uses)
+    const used = countedNoun(skillCount(skill.name, uses), 'time', 'times')
 
-    return `${ownSkillId(index)} | ${skill.name} | ${purpose} | used ${count} ${count === 1 ? 'time' : 'times'}`
+    return `${ownSkillId(index)} | ${skill.name} | ${purpose} | used ${used}`
   }
   const lines = [
     SKILL_ROLES_INTRO,
@@ -462,9 +452,8 @@ export function skillsPrompt(
     SKILLS_INTRO,
     ...skills.map(skillLine),
   ]
-  if (errors.length === 0) return lines.join('\n')
 
-  return [...lines, REPLY_ERRORS_INTRO, ...errors.map(error => `- ${error}`)].join('\n')
+  return withReplyErrors(lines, errors)
 }
 
 /** What parseSkillRecommendation gives: the roles recommended for each own skill, or every error found (G-02-1b). */
@@ -472,30 +461,9 @@ export type SkillRecommendReply =
   | { readonly kind: 'ok'; readonly recommended: ReadonlyMap<string, readonly string[]> }
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
 
-/** The most errors a reply check lists before it says there are more. */
-const MAX_SKILL_REPLY_ERRORS = 20
-
-/** A failed reply check with its errors: at most MAX_SKILL_REPLY_ERRORS, then one line that says there are more. */
+/** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
 function invalidSkillReply(errors: readonly string[]): SkillRecommendReply {
-  if (errors.length <= MAX_SKILL_REPLY_ERRORS) return { kind: 'invalid', errors }
-
-  return { kind: 'invalid', errors: [...errors.slice(0, MAX_SKILL_REPLY_ERRORS), 'more errors not shown'] }
-}
-
-/** The code fence a reply may be wrapped in. */
-const REPLY_FENCE = '```'
-
-/**
- * The reply without the one code fence that may surround it, with or without a `json` tag, trimmed (as roles.ts and
- * instructions.ts read a reply).
- */
-function unfencedReply(text: string): string {
-  const trimmed = text.trim()
-  const isFenced =
-    trimmed.length >= 2 * REPLY_FENCE.length && trimmed.startsWith(REPLY_FENCE) && trimmed.endsWith(REPLY_FENCE)
-  if (!isFenced) return trimmed
-
-  return trimmed.slice(REPLY_FENCE.length, -REPLY_FENCE.length).replace(/^json/i, '').trim()
+  return { kind: 'invalid', errors: cappedErrors(errors) }
 }
 
 /** The errors of one entry of the reply's skills object: an unknown skill, a value that is no list, unknown roles. */
@@ -532,7 +500,7 @@ export function parseSkillRecommendation(
   skillIds: readonly string[],
   roleIds: readonly string[],
 ): SkillRecommendReply {
-  const json = parseJsonValue(unfencedReply(reply))
+  const json = parseJsonValue(unfenced(reply))
   if (json === null) return invalidSkillReply(['the reply is not JSON'])
   const named = isObject(json.value) ? json.value.skills : undefined
   if (!isObject(named)) return invalidSkillReply(['the reply has no "skills" object'])

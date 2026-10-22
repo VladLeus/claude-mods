@@ -9,6 +9,12 @@ import type { StepResult } from './ask'
 import { parseRoleList } from './assign'
 
 /**
+ * The entry answer that gives every item its recommended roles (G-02-1f Entry choices, G-02-1b), the same for the
+ * instruction parts and the own skills (02-GAPS-B2 S7).
+ */
+export const ACCEPT_RECOMMENDATIONS = 'Accept recommendations'
+
+/**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
  * asked with, and the role ids recommended for it, which Accept gives it.
  */

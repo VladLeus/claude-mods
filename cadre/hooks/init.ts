@@ -71,6 +71,7 @@ import {
   cancelled,
   choiceResult,
   contextText,
+  countedChip,
   MAX_ASKS,
   noteLine,
   quotedLabels,
@@ -81,7 +82,6 @@ import type { AskResult, ChoiceAsk, StepResult } from './ask'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
-  asciiLower,
   assignToRoles,
   classifyMcp,
   classifySkills,
@@ -106,6 +106,7 @@ import {
   SAME_FOR_ALL,
   skillGroupQuestion,
   SKILLS_SYSTEM,
+  skillCount,
   skillsPrompt,
   skillUsesText,
 } from './assign'
@@ -114,9 +115,11 @@ import {
   asSentence,
   clean,
   compareText,
+  countedNoun,
   detectRefusal,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
+  idsOrNone,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
@@ -134,7 +137,7 @@ import {
   trackedRepoParts,
   untrackedPartsWarning,
 } from './generate'
-import { handoutStep } from './handout'
+import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { sha256Hex } from './hash'
 import { historyStep } from './history'
@@ -209,7 +212,7 @@ import {
 } from './scan'
 import type { CommandWord } from './scan'
 import { compileScope, pluginName, scopeCardLines } from './scope'
-import { mangledProjectDir, scanSetup, userDirOf } from './setup'
+import { memoryFolderOf, scanSetup, userDirOf } from './setup'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =
@@ -635,14 +638,9 @@ function partialLines(repo: RepoScan): string[] {
   return folders === null ? [first] : [first, folders]
 }
 
-/** Names joined with a comma, or `none` when there are none. */
-function namesOrNone(names: readonly string[]): string {
-  return names.length === 0 ? 'none' : names.join(', ')
-}
-
 /** The labels of the repo findings of one kind, in scan order, or `none`. */
 function findingLabels(repo: RepoScan, kind: ScanKind): string {
-  return namesOrNone(repo.findings.filter(finding => finding.kind === kind).map(finding => finding.label))
+  return idsOrNone(repo.findings.filter(finding => finding.kind === kind).map(finding => finding.label))
 }
 
 /** What an earlier run left in `.cadre/`: `none`, or the folder's state with the state of its manifest. */
@@ -668,7 +666,7 @@ function pluginSummary(plugins: readonly string[]): string {
  * or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
-  const stack = `stack: ${namesOrNone(repo.languages)}`
+  const stack = `stack: ${idsOrNone(repo.languages)}`
   const sides = `frontend: ${findingLabels(repo, 'fe')}; backend: ${findingLabels(repo, 'be')}`
   const mcp = cardList(setup.mcp.map(server => shown(server.name)))
   const globalMd = setup.hasGlobalClaudeMd ? 'yes' : 'no'
@@ -695,7 +693,7 @@ export function scanContextLine(repo: RepoScan): string {
   const sides = `frontend ${findingLabels(repo, 'fe')}; backend ${findingLabels(repo, 'be')}`
   const checks = `tests ${findingLabels(repo, 'test')}; E2E ${findingLabels(repo, 'e2e')}`
 
-  return `Scan: stack ${namesOrNone(repo.languages)}; ${sides}; ${checks}.`
+  return `Scan: stack ${idsOrNone(repo.languages)}; ${sides}; ${checks}.`
 }
 
 /**
@@ -891,25 +889,51 @@ function fallbackMessage(errors: readonly string[]): string {
   return `Could not use the described structure: ${reason}. ${FALLBACK_NOTE}`
 }
 
+/** A model reply as a reply check of checkedCompletion takes it: the value it gives, or every error found. */
+type Checked<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'invalid'; readonly errors: readonly string[] }
+
+/**
+ * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each reply goes through
+ * `parse`, and a reply it cannot take, or no text at all (NO_TEXT_ERROR), is sent back through `prompt` with its exact
+ * errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
+ */
+async function checkedCompletion<T>(
+  io: InitIo,
+  system: string,
+  prompt: (errors: readonly string[]) => string,
+  parse: (reply: string) => Checked<T>,
+  fallback: (errors: readonly string[]) => T,
+): Promise<T> {
+  let errors: readonly string[] = []
+  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    const reply = await io.complete(prompt(errors), system)
+    const checked = reply === null ? null : parse(reply)
+    if (checked?.kind === 'ok') return checked.value
+    errors = checked === null ? [NO_TEXT_ERROR] : checked.errors
+  }
+
+  return fallback(errors)
+}
+
 /**
  * Turns the person's description into roles through the model (D-83). The prompt carries the description as a JSON
  * string and nothing from a scan (proposePrompt); every reply is validated by parseProposal, and an invalid one is
- * sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it falls back with the last errors.
+ * sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it falls back with the
+ * last errors.
  */
 async function proposeFromText(io: InitIo, text: string): Promise<Described> {
-  let errors: readonly string[] = []
-  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(proposePrompt(text, errors), PROPOSE_SYSTEM)
-    if (reply === null) {
-      errors = [NO_TEXT_ERROR]
-      continue
-    }
+  const parse = (reply: string): Checked<Described> => {
     const parsed = parseProposal(reply)
-    if (parsed.kind === 'ok') return { kind: 'roles', roles: rolesFromProposal(parsed.roles) }
-    errors = parsed.errors
-  }
+    if (parsed.kind === 'invalid') return parsed
 
-  return { kind: 'fallback', message: fallbackMessage(errors) }
+    return { kind: 'ok', value: { kind: 'roles', roles: rolesFromProposal(parsed.roles) } }
+  }
+  const prompt = (errors: readonly string[]): string => proposePrompt(text, errors)
+  const fallback = (errors: readonly string[]): Described => ({ kind: 'fallback', message: fallbackMessage(errors) })
+
+  return checkedCompletion(io, PROPOSE_SYSTEM, prompt, parse, fallback)
 }
 
 /**
@@ -1599,9 +1623,6 @@ function skillGroupItem(
   }
 }
 
-/** The entry answer that gives each of the user's own skills its recommended roles (G-02-1b). */
-const OWN_ACCEPT_LABEL = 'Accept recommendations'
-
 /** The entry answer that asks each of the user's own skills once (G-02-1b). */
 const ONE_BY_ONE_LABEL = 'Go one by one'
 
@@ -1610,7 +1631,7 @@ const WHOLE_GROUP_LABEL = 'Whole group'
 
 /** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
 export const OWN_SKILLS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
-  OWN_ACCEPT_LABEL,
+  ACCEPT_RECOMMENDATIONS,
   ONE_BY_ONE_LABEL,
   WHOLE_GROUP_LABEL,
 ])
@@ -1625,7 +1646,7 @@ export function ownSkillsQuestion(count: number): string {
  * side pane shows what each does and the roles it is recommended for.
  */
 export function ownSkillsContextLine(count: number): string {
-  const skills = `${count} ${count === 1 ? 'skill' : 'skills'}`
+  const skills = countedNoun(count, 'skill', 'skills')
 
   return `${skills} with no plugin; the pane shows what each does and the roles it is recommended for.`
 }
@@ -1646,20 +1667,15 @@ export function ownSkillQuestion(name: string): string {
 export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: readonly string[]): string {
   const used = uses === 0 ? '' : ` Used ${skillUsesText(uses)}.`
 
-  return `${asSentence(skill.purpose ?? NO_SKILL_PURPOSE)}${used} Recommended: ${namesOrNone(recommended)}.`
+  return `${asSentence(skill.purpose ?? NO_SKILL_PURPOSE)}${used} Recommended: ${idsOrNone(recommended)}.`
 }
-
-/** The most code points the engine shows in a question's chip. */
-const MAX_CHIP_CHARS = 12
 
 /**
  * The chip of an own skill's question (G-02-3c): `Skill <i>/<n>`, or just `Skill` when that would be over the 12 code
- * points a chip shows.
+ * points a chip shows (countedChip).
  */
 export function ownSkillHeader(position: number, count: number): string {
-  const chip = `Skill ${position}/${count}`
-
-  return Array.from(chip).length > MAX_CHIP_CHARS ? 'Skill' : chip
+  return countedChip('Skill', position, count)
 }
 
 /**
@@ -1674,23 +1690,19 @@ function ownSkillsOf(skills: readonly SkillRef[], group: SkillGroup): SkillRef[]
   })
 }
 
-/** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
-function skillUseCount(name: string, counts: ReadonlyMap<string, number>): number {
-  return counts.get(asciiLower(name)) ?? 0
-}
-
 /** The skills busiest first by their own use counts, then by name (G-02-1b; user answer 2026-10-21). */
 function busiestFirst(skills: readonly SkillRef[], counts: ReadonlyMap<string, number>): SkillRef[] {
   return [...skills].sort(
-    (a, b) => skillUseCount(b.name, counts) - skillUseCount(a.name, counts) || compareText(a.name, b.name),
+    (a, b) => skillCount(b.name, counts) - skillCount(a.name, counts) || compareText(a.name, b.name),
   )
 }
 
 /**
  * The roles recommended for each of the user's own skills (G-02-1b): one model call reads each role's work and each
  * skill's name, purpose and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take
- * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no skill is recommended to any role:
- * the map is empty. The model has no tools (D-83), and only its checked skill and role ids are kept.
+ * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no skill is
+ * recommended to any role: the map is empty. The model has no tools (D-83), and only its checked skill and role ids
+ * are kept.
  */
 async function recommendedSkillRoles(
   io: InitIo,
@@ -1700,15 +1712,15 @@ async function recommendedSkillRoles(
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const skillIds = ownSkillIds(skills)
   const roleIds = roles.map(role => role.id)
-  let errors: readonly string[] = []
-  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(skillsPrompt(roles, skills, counts, errors), SKILLS_SYSTEM)
-    const parsed = reply === null ? null : parseSkillRecommendation(reply, skillIds, roleIds)
-    if (parsed?.kind === 'ok') return parsed.recommended
-    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
-  }
+  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
+    const parsed = parseSkillRecommendation(reply, skillIds, roleIds)
+    if (parsed.kind === 'invalid') return parsed
 
-  return new Map()
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => skillsPrompt(roles, skills, counts, errors)
+
+  return checkedCompletion(io, SKILLS_SYSTEM, prompt, parse, () => new Map())
 }
 
 /** The entry question of the own-skills hand-out as handoutStep asks it (G-02-1b): context line, chip and answers. */
@@ -1717,7 +1729,7 @@ function ownSkillsEntry(count: number): HandoutEntry {
     question: ownSkillsQuestion(count),
     context: ownSkillsContextLine(count),
     header: ASK_HEADERS.skills,
-    accept: OWN_ACCEPT_LABEL,
+    accept: ACCEPT_RECOMMENDATIONS,
     oneByOne: ONE_BY_ONE_LABEL,
     whole: WHOLE_GROUP_LABEL,
   }
@@ -1738,7 +1750,7 @@ function ownSkillItems(
     const id = ids[index]
     if (id === undefined) return []
     const roleIds = recommended.get(id) ?? []
-    const context = ownSkillContextLine(skill, skillUseCount(skill.name, counts), roleIds)
+    const context = ownSkillContextLine(skill, skillCount(skill.name, counts), roleIds)
     const header = ownSkillHeader(index + 1, skills.length)
 
     return [{ id: skill.name, question: ownSkillQuestion(skill.name), context, header, recommended: roleIds }]
@@ -1956,27 +1968,28 @@ function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> {
 
 /**
  * The topics of a read (G-02-1f Part unit): one model call groups the parts across files (topicsPrompt, TOPICS_SYSTEM).
- * A reply parseTopics cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then each
- * file is one topic (fallbackTopics). The model has no tools (D-83), and only its checked topics are kept.
+ * A reply parseTopics cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
+ * (checkedCompletion), and then each file is one topic (fallbackTopics). The model has no tools (D-83), and only its
+ * checked topics are kept.
  */
 async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonly InstructionTopic[]> {
   const partIds = scan.parts.map(part => part.id)
-  let errors: readonly string[] = []
-  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(topicsPrompt(scan.parts, errors), TOPICS_SYSTEM)
-    const parsed = reply === null ? null : parseTopics(reply, partIds)
-    if (parsed?.kind === 'ok') return parsed.topics
-    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
-  }
+  const parse = (reply: string): Checked<readonly InstructionTopic[]> => {
+    const parsed = parseTopics(reply, partIds)
+    if (parsed.kind === 'invalid') return parsed
 
-  return fallbackTopics(scan)
+    return { kind: 'ok', value: parsed.topics }
+  }
+  const prompt = (errors: readonly string[]): string => topicsPrompt(scan.parts, errors)
+
+  return checkedCompletion(io, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
 }
 
 /**
  * The roles recommended for each topic and each memory (G-02-1f Recommendation, Memories): a second model call reads
  * each role's work, the topics and the memories by file and summary (recommendPrompt, RECOMMEND_SYSTEM). A reply
- * parseRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all, and then no
- * topic or memory is recommended to any role: the map is empty.
+ * parseRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
+ * (checkedCompletion), and then no topic or memory is recommended to any role: the map is empty.
  */
 async function recommendedRoles(
   io: InitIo,
@@ -1987,15 +2000,15 @@ async function recommendedRoles(
   const topicIds = topics.map(topic => topic.id)
   const memoryIds = memories.map(memory => memory.id)
   const roleIds = roles.map(role => role.id)
-  let errors: readonly string[] = []
-  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(recommendPrompt(roles, topics, memories, errors), RECOMMEND_SYSTEM)
-    const parsed = reply === null ? null : parseRecommendation(reply, topicIds, memoryIds, roleIds)
-    if (parsed?.kind === 'ok') return parsed.recommended
-    errors = parsed === null ? [NO_TEXT_ERROR] : parsed.errors
-  }
+  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
+    const parsed = parseRecommendation(reply, topicIds, memoryIds, roleIds)
+    if (parsed.kind === 'invalid') return parsed
 
-  return new Map()
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => recommendPrompt(roles, topics, memories, errors)
+
+  return checkedCompletion(io, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**
@@ -2039,15 +2052,14 @@ async function noPartRead(
 
 /**
  * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
- * project folder (mangledProjectDir) under `<user folder>/projects`, for the root as resolved, then as given, once
- * each; none with no user folder.
+ * project folder under `<user folder>/projects` (memoryFolderOf), for the root as resolved, then as given, once each;
+ * none with no user folder.
  */
 function memoryFoldersOf(locations: InitLocations): string[] {
   const userDir = userDirOf(locations)
   if (userDir === null) return []
-  const projects = new Set([locations.root, locations.givenRoot].map(mangledProjectDir))
 
-  return Array.from(projects, project => `${userDir}/projects/${project}/memory`)
+  return Array.from(new Set([locations.root, locations.givenRoot].map(root => memoryFolderOf(userDir, root))))
 }
 
 /**
@@ -3464,7 +3476,7 @@ export const REGEN_BAD_MANIFEST =
 
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
-  return `no role ${id} in .cadre/cadre.json (roles: ${namesOrNone(roles)})`
+  return `no role ${id} in .cadre/cadre.json (roles: ${idsOrNone(roles)})`
 }
 
 /**

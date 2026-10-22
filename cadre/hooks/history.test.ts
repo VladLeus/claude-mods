@@ -2,11 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../types'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from './ask'
+import { HISTORY_MAX_SESSIONS } from './assign'
 import {
   countNames,
   HISTORY_DISMISSED_REASON,
   HISTORY_MAX_FILE_BYTES,
-  HISTORY_MAX_SESSIONS,
   HISTORY_MAX_TOTAL_BYTES,
   HISTORY_NAME_PATTERN,
   HISTORY_OPTIONS,

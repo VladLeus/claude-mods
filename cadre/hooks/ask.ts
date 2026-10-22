@@ -43,6 +43,16 @@ export const ASK_HEADERS = Object.freeze({
   conflict: 'Conflict',
 })
 
+/** The most code points the engine shows in a question's chip. */
+export const MAX_CHIP_CHARS = 12
+
+/** A counted chip (G-02-3c): `<word> <i>/<n>`, or just the word when that would be over MAX_CHIP_CHARS code points. */
+export function countedChip(word: string, position: number, count: number): string {
+  const chip = `${word} ${position}/${count}`
+
+  return Array.from(chip).length > MAX_CHIP_CHARS ? word : chip
+}
+
 /**
  * What every init step gives (A1, D-45): only an explicit confirming answer is accepted, with the value it chose; a
  * dismissal or a cap is cancelled with the reason runInit prints, and holds no value.

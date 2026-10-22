@@ -60,7 +60,9 @@ import {
   claudeJsonPathOf,
   claudeMdPathsOf,
   hookScriptOf,
-  mangledProjectDir,
+  MARKDOWN_EXTENSION,
+  markdownFileNames,
+  memoryFolderOf,
   userDirOf,
 } from './setup'
 
@@ -509,9 +511,6 @@ const MAX_IMPORT_DEPTH = 5
 /** The most files the global CLAUDE.md and its imports give a role. */
 const MAX_GLOBAL_FILES = 20
 
-/** The extension of a memory file and of an agent file. */
-const MARKDOWN_EXTENSION = '.md'
-
 /** The settings sources whose hooks a git-root start renders: it loads the project settings by itself (D-103). */
 const ROOT_HOOK_SOURCES: readonly SettingsSource[] = Object.freeze(['user', 'local'])
 
@@ -628,14 +627,13 @@ async function globalClaudeMdOf(io: InitIo, userDir: string, home: string): Prom
 /** The names of the regular `.md` files in a folder, sorted; a link, a folder or a listing that fails gives none. */
 async function markdownFiles(io: InitIo, folder: string): Promise<string[]> {
   const entries = (await io.list(folder)) ?? []
-  const files = entries.filter(entry => entry.kind === 'file' && !entry.isLink)
 
-  return sortedUnique(files.map(entry => entry.name).filter(name => name.endsWith(MARKDOWN_EXTENSION)))
+  return sortedUnique(markdownFileNames(entries))
 }
 
 /** The `.md` file names of the auto-memory folder the engine keeps for a project root in the user folder (D-100). */
 async function memoryFilesOf(io: InitIo, userDir: string, root: string): Promise<string[]> {
-  return markdownFiles(io, `${userDir}/projects/${mangledProjectDir(root)}/memory`)
+  return markdownFiles(io, memoryFolderOf(userDir, root))
 }
 
 /** The user's skills: the folders and links in `<userDir>/skills`, sorted; a listing that fails gives none. */

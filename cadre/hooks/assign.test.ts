@@ -12,6 +12,7 @@ import {
   envQuestion,
   FRAMEWORK_START_SKILLS,
   groupUses,
+  HISTORY_MAX_SESSIONS,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
@@ -42,7 +43,6 @@ import {
   skillUsesText,
 } from './assign'
 import type { SkillGroup } from './assign'
-import { HISTORY_MAX_SESSIONS } from './history'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,

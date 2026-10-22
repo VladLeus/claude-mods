@@ -1,13 +1,10 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ask'
 import type { StepResult } from './ask'
-import { asciiLower } from './assign'
+import { asciiLower, HISTORY_MAX_SESSIONS } from './assign'
 import { compareText } from './facts'
 import { listingState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
-
-/** The most sessions the history scan reads: the newest by modification time (D-59). */
-export const HISTORY_MAX_SESSIONS = 50
 
 /**
  * The most bytes of one session transcript the scan reads, the host's own read cap. A bigger session is skipped and

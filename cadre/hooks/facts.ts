@@ -102,6 +102,16 @@ export function clean(value: unknown, maxChars = 120): string {
   return `${points.slice(0, Math.max(0, maxChars - 1)).join('')}${ELLIPSIS}`
 }
 
+/** Ids or names as a row or a context line names them: joined with `, `, or `none` for none (02-GAPS-B2 S7). */
+export function idsOrNone(ids: readonly string[]): string {
+  return ids.length === 0 ? 'none' : ids.join(', ')
+}
+
+/** A count with its noun, singular for exactly one: `1 file`, `0 files`, `2 files` (02-GAPS-B2 S7). */
+export function countedNoun(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
+}
+
 /** The marks a sentence may end with: a period, a question mark or an exclamation mark. */
 const SENTENCE_END = /[.!?]$/
 
