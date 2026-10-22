@@ -429,6 +429,26 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
 }
 
 /**
+ * The deny of the files a later launch runs or trusts (03.1-SEC-S1): `Edit` and `Write` of
+ * `<root>/.claude/settings.json` and `<root>/.claude/settings.local.json` (their hooks run at the next session start),
+ * `<root>/.cadre/bin/**` and `<root>/.cadre/manifest.json`, for the root as resolved and as given and for the main
+ * checkout when `mainRoot` is set, once each, so an Edit-only role cannot plant a hook or rewrite a launcher. A path an
+ * exact rule cannot hold gets none and no warning: a role without Bash already gets runtimeDeny's root warning, and a
+ * Bash role is not held by an Edit deny. Each role's `.runtime/` stays writable.
+ */
+function launchFilesDeny(user: LaunchUser): DenyResult {
+  const roots = sortedUnique([user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])])
+  const rules = roots.flatMap(root => [
+    editWriteRules(`${root}/.claude/settings.json`, ''),
+    editWriteRules(`${root}/.claude/settings.local.json`, ''),
+    editWriteRules(`${root}/.cadre/bin`, '/**'),
+    editWriteRules(`${root}/.cadre/manifest.json`, ''),
+  ])
+
+  return { deny: rules.flatMap(rule => rule ?? []), warnings: [] }
+}
+
+/**
  * The deny of a role's hand-out record (02-GAPS-B3 C3): `Edit(//<role memory folder>/instructions.json)` and
  * `Write(...)`, so the role cannot rewrite which memories its next start links. A path an exact rule cannot hold gets
  * none, with UNDENIED_RECORD_WARNING.
@@ -445,9 +465,10 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
  * main checkout's root too, so its code dirs get the same exact denies as the worktree's (RESEARCH Pitfall 2), without
  * its warnings, which would repeat the worktree's; the deny of the role's private instructions folder, for every role,
  * as every launcher adds that folder (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's
- * memory folders (memoryFolderDeny, 02-GAPS-B3 C2) and of its hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3);
- * and for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder
- * (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own memories.
+ * memory folders (memoryFolderDeny, 02-GAPS-B3 C2), of the launch files (launchFilesDeny, 03.1-SEC-S1) and of its
+ * hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3); and for a parts-flow role the read-only deny of the memories
+ * /cadre start linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own
+ * memories.
  */
 function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
@@ -457,6 +478,7 @@ function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): D
       : [{ deny: runtimeDeny(role, scope, { ...user, root: user.mainRoot }).deny, warnings: [] }]),
     privateInstructionsDeny(user, role.id),
     memoryFolderDeny(user),
+    launchFilesDeny(user),
     instructionsRecordDeny(user, role.id),
     isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
   ]
