@@ -3,8 +3,10 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   DesiredFile,
   FileMode,
+  HostIo,
   HostRun,
   HunkOp,
+  InitIo,
   InstructionPart,
   Manifest,
   ManifestEntry,
@@ -19,6 +21,7 @@ import {
   applyListPaths,
   applyStatPaths,
   applySteps,
+  builtRoleFiles,
   chmodArgv,
   chmodProblem,
   CONFLICT_OPTIONS,
@@ -28,6 +31,19 @@ import {
   hunkProposal,
   hunkRuns,
   hunksAfterRuns,
+  improveBuiltFiles,
+  IMPROVER_OPTIONS,
+  IMPROVER_TIMEOUT_MS,
+  improverArgv,
+  improverBlockLines,
+  improverContextLine,
+  improverDismissedWarning,
+  improverFailedNote,
+  improverFailure,
+  improverLine,
+  improverNoChangeNote,
+  improverQuestion,
+  improverUnreadableNote,
   installedLine,
   installFailureText,
   INSTRUCTIONS_RECORD_FILE,
@@ -46,10 +62,20 @@ import {
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
+  restoreSteps,
   setupAfterInstalls,
   writeProblem,
 } from './apply'
-import type { ApplyStep, ConflictChoice, HunkRun, PrivateFile, PrivateRole, PrivateWriteCheck } from './apply'
+import type {
+  ApplyStep,
+  BuiltFile,
+  ConflictChoice,
+  HunkRun,
+  PrivateFile,
+  PrivateRole,
+  PrivateWriteCheck,
+} from './apply'
+import { withContext } from './ask'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
 import { sha256Hex } from './hash'
@@ -66,9 +92,21 @@ import {
 import type { PlanInput, PlannedFiles } from './plan'
 import { isUnmetHunk } from './recommend'
 import type { GsdToolContext } from './recommend'
+import { lineDiff } from './render'
 import { parseManifest, readRepoFile } from './scan'
-import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, withWrites } from './testkit'
-import type { HostWrite, MemWorld } from './testkit'
+import {
+  BIDI_OVERRIDE,
+  DEFAULT_LOCATIONS,
+  emptySetupScan,
+  entry,
+  hostWorld,
+  link,
+  memHost,
+  memIo,
+  memWorld,
+  withWrites,
+} from './testkit'
+import type { HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
 
 const VERSION = '0.2.0'
 
@@ -1257,5 +1295,365 @@ describe('private role files (G-02-1f)', () => {
 
     expect(applyStatPaths(steps)).toEqual(['.cadre', '.cadre/be', ROLE_MD])
     expect(applyListPaths(steps)).toEqual(['', '.cadre', '.cadre/be'])
+  })
+})
+
+/** BE's built CLAUDE.md in the fixture repo: the file of the improver's repo run (D-141). */
+const BE_BUILT_PATH = '/repo/.cadre/be/CLAUDE.md'
+
+/** BE's built CLAUDE.md, repo-relative, as the manifest and the reply name it. */
+const BE_BUILT_REPO_PATH = '.cadre/be/CLAUDE.md'
+
+/** The text apply wrote to BE's built CLAUDE.md: its header line, then one repo part. */
+const BE_BUILT = [
+  "<!-- cadre: instructions for role be, built from this repo's CLAUDE.md files, rules and docs. -->",
+  '',
+  '<!-- from CLAUDE.md > Rules -->',
+  '# Rules',
+  'Run the tests before a commit.',
+  '',
+].join('\n')
+
+/** BE's built CLAUDE.md as the improver leaves it: one line reworded and one line added. */
+const BE_IMPROVED = BE_BUILT.replace(
+  'Run the tests before a commit.',
+  'Run the tests before every commit.\nKeep commits small.',
+)
+
+/** BE's built CLAUDE.md as the improver pass gets it. */
+const BE_BUILT_FILE: BuiltFile = { path: BE_BUILT_PATH, repoPath: BE_BUILT_REPO_PATH, text: BE_BUILT }
+
+/** Security's private text file as the improver pass gets it: outside the repo, so not repo-relative. */
+const SECURITY_BUILT_FILE: BuiltFile = {
+  path: SECURITY_TEXT_FILE,
+  repoPath: null,
+  text: privateClaudeMdText('security', 'repo', [SECURITY_PART]),
+}
+
+/** Security's private text file as the pass shows it, from the home folder. */
+const SECURITY_SHOWN = '~/.claude/cadre/repo-1a2b3c4d/security/instructions/CLAUDE.md'
+
+/** The per-file question of BE's built file, as asked: the question, then its context line (D-136). */
+const BE_IMPROVER_ASKED =
+  "Accept the improver's changes to .cadre/be/CLAUDE.md?\n2 lines added, 1 removed; the pane shows the diff."
+
+/** What one improver run leaves on the disk: the new text of each path it wrote, null for each one it removed. */
+type Edits = Readonly<Record<string, string | null>>
+
+/** A disk the improver tests change as a run would: each file's text and each folder's listing, by absolute path. */
+type Disk = {
+  readonly files: Record<string, string>
+  readonly dirs: Record<string, readonly PortEntry[]>
+}
+
+/** The disk of the improver tests: BE's built file and Security's private text file as apply wrote them. */
+function builtDisk(): Disk {
+  return {
+    files: { [BE_BUILT_PATH]: BE_BUILT, [SECURITY_TEXT_FILE]: SECURITY_BUILT_FILE.text },
+    dirs: {
+      '/repo/.cadre/be': [entry('CLAUDE.md'), entry('role.json')],
+      [`${SECURITY_DIR}/instructions`]: [entry('CLAUDE.md')],
+    },
+  }
+}
+
+/** The disk after one edit: the path holds the text, or is gone with null, and its folder lists it or not. */
+function applyEdit(disk: Disk, path: string, text: string | null): void {
+  const at = path.lastIndexOf('/')
+  const folder = path.slice(0, at)
+  const name = path.slice(at + 1)
+  const others = (disk.dirs[folder] ?? []).filter(listed => listed.name !== name)
+  if (text === null) {
+    delete disk.files[path]
+    disk.dirs[folder] = others
+    return
+  }
+  disk.files[path] = text
+  disk.dirs[folder] = [...others, entry(name)]
+}
+
+/**
+ * The host of an improver test: it answers each run as memHost does with these rules, and once it ran the improver for
+ * a file it applies the edits given for that file to the disk, as that run would leave it (G-02-1f, D-141).
+ */
+function editingHost(
+  disk: Disk,
+  edits: ReadonlyMap<string, Edits>,
+  runs: readonly HostRunRule[] = [],
+): { readonly io: HostIo; readonly host: MemHost } {
+  const host = memHost(hostWorld({ runs }))
+  const io: HostIo = {
+    ...host.io,
+    run: async (argv, options) => {
+      const result = await host.io.run(argv, options)
+      const prompt = argv.at(-1) ?? ''
+      for (const [file, changes] of edits) {
+        if (argv[0] !== 'claude' || !prompt.includes(` ${file} `)) continue
+        for (const [path, text] of Object.entries(changes)) applyEdit(disk, path, text)
+      }
+
+      return result
+    },
+  }
+
+  return { io, host }
+}
+
+/** The port of an improver test over the disk, answering its questions with these answers. */
+function diskIo(disk: Disk, answers: readonly string[] | Readonly<Record<string, string>> = {}): MemRun {
+  return memIo(memWorld({ files: disk.files, dirs: disk.dirs }), answers)
+}
+
+/** A port whose clock moves on by `stepMs` at each read, as across a run that took that long. */
+function tickingClock(io: InitIo, stepMs: number): InitIo {
+  let now = 0
+
+  return {
+    ...io,
+    now: async () => {
+      now += stepMs
+
+      return now
+    },
+  }
+}
+
+/** The run of the improver for BE's built file, with this result. */
+function beRun(result: HostRun | null): HostRunRule {
+  return { argv: improverArgv(BE_BUILT_PATH), result }
+}
+
+describe('improver pass (G-02-1f)', () => {
+  test('improverArgv is claude -p in acceptEdits with the skill and the absolute path, and nothing else', () => {
+    expect(improverArgv(BE_BUILT_PATH)).toEqual([
+      'claude',
+      '-p',
+      '--permission-mode',
+      'acceptEdits',
+      '--',
+      'Use the claude-md-management:claude-md-improver skill to improve the file /repo/.cadre/be/CLAUDE.md only.',
+    ])
+    expect(IMPROVER_TIMEOUT_MS).toBe(300_000)
+    expect(IMPROVER_OPTIONS).toEqual(['Accept', 'Keep original'])
+  })
+
+  test('each built file gets one run, in the folder that holds it, with 300 s, in the order given', async () => {
+    const disk = builtDisk()
+    const { io, host } = editingHost(disk, new Map())
+    const run = diskIo(disk)
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE, SECURITY_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(host.calls).toEqual([
+      { argv: improverArgv(BE_BUILT_PATH), options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
+      { argv: improverArgv(SECURITY_TEXT_FILE), options: { cwd: `${SECURITY_DIR}/instructions`, timeoutMs: 300_000 } },
+    ])
+    expect(outcome).toEqual({ accepted: new Map(), restores: [], warnings: [], changed: 0, total: 2 })
+    expect(run.logged).toEqual([improverNoChangeNote(BE_BUILT_REPO_PATH), improverNoChangeNote(SECURITY_SHOWN)])
+    expect(run.asked).toEqual([])
+    expect(improverNoChangeNote(BE_BUILT_REPO_PATH)).toBe('the improver made no change to .cadre/be/CLAUDE.md')
+  })
+
+  test('a change is shown as a diff in the improver block, asked about, and Accept keeps it', async () => {
+    const disk = builtDisk()
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const lines = [
+      '.cadre/be/CLAUDE.md: 2 lines added, 1 removed',
+      '- Run the tests before a commit.',
+      '+ Run the tests before every commit.',
+      '+ Keep commits small.',
+    ]
+    expect(run.shown).toEqual([{ key: 'improver', title: 'Improver changes', lines }])
+    expect(improverBlockLines(BE_BUILT_REPO_PATH, lineDiff(BE_BUILT, BE_IMPROVED))).toEqual(lines)
+    expect(run.asked).toEqual([BE_IMPROVER_ASKED])
+    expect(run.specs).toEqual([{ options: ['Accept', 'Keep original'], header: 'Improver' }])
+    expect(outcome).toEqual({
+      accepted: new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]),
+      restores: [],
+      warnings: [],
+      changed: 1,
+      total: 1,
+    })
+    expect(disk.files[BE_BUILT_PATH]).toBe(BE_IMPROVED)
+  })
+
+  test('Keep original, typed in any case, gives the file back to be written as built; none is accepted', async () => {
+    const disk = builtDisk()
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
+    const run = diskIo(disk, { "Accept the improver's changes": ' keep ORIGINAL ' })
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(outcome).toEqual({ accepted: new Map(), restores: [BE_BUILT_FILE], warnings: [], changed: 0, total: 1 })
+    expect(run.asked).toEqual([BE_IMPROVER_ASKED])
+  })
+
+  test('a dismissed question, or three answers it cannot read, keeps the original with a reply warning', async () => {
+    const answerSets: readonly (readonly string[])[] = [[], ['maybe', 'perhaps', 'later']]
+    for (const answers of answerSets) {
+      const disk = builtDisk()
+      const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
+      const outcome = await improveBuiltFiles(diskIo(disk, answers).io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+      expect(outcome).toEqual({
+        accepted: new Map(),
+        restores: [BE_BUILT_FILE],
+        warnings: [improverDismissedWarning(BE_BUILT_REPO_PATH)],
+        changed: 0,
+        total: 1,
+      })
+    }
+    expect(improverDismissedWarning(BE_BUILT_REPO_PATH)).toBe(
+      'the improver question for .cadre/be/CLAUDE.md was dismissed: the file stays as built',
+    )
+  })
+
+  test('a run that could not start, exited non-zero or timed out leaves the file as built, with a note', async () => {
+    const cases: readonly (readonly [HostRun | null, number, string])[] = [
+      [null, 0, 'it could not start'],
+      [{ exitCode: 2, stdout: '', stderr: 'boom' }, 0, 'it exited with 2'],
+      [null, IMPROVER_TIMEOUT_MS, 'it timed out'],
+    ]
+    for (const [result, stepMs, reason] of cases) {
+      const disk = builtDisk()
+      const { io } = editingHost(disk, new Map(), [beRun(result)])
+      const run = diskIo(disk)
+      const outcome = await improveBuiltFiles(tickingClock(run.io, stepMs), io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+      expect(outcome).toEqual({ accepted: new Map(), restores: [], warnings: [], changed: 0, total: 1 })
+      expect([reason, run.logged]).toEqual([reason, [improverFailedNote(BE_BUILT_REPO_PATH, reason)]])
+      expect(run.asked).toEqual([])
+    }
+    expect(improverFailedNote(BE_BUILT_REPO_PATH, 'it timed out')).toBe(
+      'the improver did not run for .cadre/be/CLAUDE.md (it timed out): the file stays as built',
+    )
+    expect([improverFailure(null, null), improverFailure({ exitCode: 0, stdout: '', stderr: '' }, 0)]).toEqual([
+      'it could not start',
+      null,
+    ])
+    expect(improverFailure(null, IMPROVER_TIMEOUT_MS - 1)).toBe('it could not start')
+  })
+
+  test('a failed run that changed its file anyway has it written back as built, asking nothing', async () => {
+    const disk = builtDisk()
+    const failed = beRun({ exitCode: 1, stdout: '', stderr: '' })
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]), [failed])
+    const run = diskIo(disk)
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(outcome).toEqual({ accepted: new Map(), restores: [BE_BUILT_FILE], warnings: [], changed: 0, total: 1 })
+    expect(run.logged).toEqual([improverFailedNote(BE_BUILT_REPO_PATH, 'it exited with 1')])
+    expect(run.asked).toEqual([])
+  })
+
+  test('a file the improver removed or left as a link cannot be reviewed: it is written back as built', async () => {
+    const removed = builtDisk()
+    const gone = editingHost(removed, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: null }]]))
+    const run = diskIo(removed)
+    expect(await improveBuiltFiles(run.io, gone.io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)).toEqual({
+      accepted: new Map(),
+      restores: [BE_BUILT_FILE],
+      warnings: [],
+      changed: 0,
+      total: 1,
+    })
+    expect(run.logged).toEqual([improverUnreadableNote(BE_BUILT_REPO_PATH)])
+    expect(improverUnreadableNote(BE_BUILT_REPO_PATH)).toBe(
+      'the improver left .cadre/be/CLAUDE.md unreadable: it is written back as built',
+    )
+    // The improver leaves a link to a file outside the repo where the built file was: it is never read or diffed.
+    const linked = builtDisk()
+    const realPaths: Record<string, string> = {}
+    const host = memHost(hostWorld({}))
+    const linking: HostIo = {
+      ...host.io,
+      run: async (argv, options) => {
+        realPaths[BE_BUILT_PATH] = '/home/u/.zshrc'
+
+        return host.io.run(argv, options)
+      },
+    }
+    const linkRun = memIo(memWorld({ files: linked.files, dirs: linked.dirs, realPaths }), {})
+    const outcome = await improveBuiltFiles(linkRun.io, linking, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect([outcome.restores, linkRun.asked, linkRun.reads]).toEqual([[BE_BUILT_FILE], [], [BE_BUILT_PATH]])
+    expect(linkRun.shown).toEqual([
+      { key: 'notes', title: 'Notes', lines: [improverUnreadableNote(BE_BUILT_REPO_PATH)] },
+    ])
+  })
+
+  test('a private file is named from the home folder; its accepted change counts, never the manifest', async () => {
+    const disk = builtDisk()
+    const improved = `${SECURITY_BUILT_FILE.text}Rotate keys every month.\n`
+    const { io } = editingHost(disk, new Map([[SECURITY_TEXT_FILE, { [SECURITY_TEXT_FILE]: improved }]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const outcome = await improveBuiltFiles(run.io, io, [SECURITY_BUILT_FILE], DEFAULT_LOCATIONS)
+    expect(outcome).toEqual({ accepted: new Map(), restores: [], warnings: [], changed: 1, total: 1 })
+    const context = improverContextLine(lineDiff(SECURITY_BUILT_FILE.text, improved))
+    expect(run.asked).toEqual([withContext(improverQuestion(SECURITY_SHOWN), context)])
+    expect(improverQuestion(SECURITY_SHOWN)).toBe(`Accept the improver's changes to ${SECURITY_SHOWN}?`)
+    expect(improverContextLine(lineDiff('a\n', 'b\n'))).toBe('1 line added, 1 removed; the pane shows the diff.')
+  })
+
+  test('the manifest records the hash of each accepted text instead of the built one (T-02-76)', async () => {
+    const desired = [file(BE_BUILT_REPO_PATH, BE_BUILT), file(A, 'a\n')]
+    const planned = await planWithManifest(input({ desired }))
+    const improved = new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]])
+    const before = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES })
+    const after = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
+    expect(after.filter(step => step.kind !== 'manifest')).toEqual(before.filter(step => step.kind !== 'manifest'))
+    expect(writtenManifest(before)?.files.find(entry => entry.path === BE_BUILT_REPO_PATH)?.sha256).toBe(
+      await sha256Hex(BE_BUILT),
+    )
+    expect(writtenManifest(after)?.files).toEqual([
+      { path: A, sha256: await sha256Hex('a\n'), mode: 'file' },
+      { path: BE_BUILT_REPO_PATH, sha256: await sha256Hex(BE_IMPROVED), mode: 'file' },
+    ])
+  })
+
+  test('an accepted change is recorded even when the plan left the manifest as it was', async () => {
+    const desired = [file(BE_BUILT_REPO_PATH, BE_BUILT)]
+    const first = await planWithManifest(input({ desired }))
+    const disk = new Map([[MANIFEST_PATH, text(stableJson(first.manifest))]])
+    const left = await planWithManifest(input({ desired, disk }))
+    const improved = new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]])
+    const kept = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES })
+    const changed = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, improved })
+    expect(kept.map(stepLine)).toEqual([`write ${BE_BUILT_REPO_PATH}`])
+    expect(changed.map(stepLine)).toEqual([`write ${BE_BUILT_REPO_PATH}`, `manifest ${MANIFEST_PATH}`])
+    expect(writtenManifest(changed)?.files.map(entry => entry.sha256)).toEqual([await sha256Hex(BE_IMPROVED)])
+  })
+
+  test('restoreSteps writes a repo file at its repo path and a private file in its role memory folder', () => {
+    expect(restoreSteps([BE_BUILT_FILE, SECURITY_BUILT_FILE])).toEqual([
+      { kind: 'write', path: BE_BUILT_REPO_PATH, text: BE_BUILT },
+      { kind: 'private', path: SECURITY_DIR, files: [{ path: SECURITY_TEXT_FILE, text: SECURITY_BUILT_FILE.text }] },
+    ])
+    expect(restoreSteps([])).toEqual([])
+  })
+
+  test('the built files are each written CLAUDE.md of a role with a repo part, then each private text file', () => {
+    const header = '<!-- header -->\n'
+    const steps: ApplyStep[] = [
+      { kind: 'write', path: '.cadre/be/CLAUDE.md', text: BE_BUILT },
+      { kind: 'write', path: '.cadre/be/ROLE.md', text: 'role\n' },
+      { kind: 'write', path: '.cadre/fe/CLAUDE.md', text: header },
+      { kind: 'write', path: '.cadre/be/CLAUDE.md.cadre-new', text: BE_BUILT },
+      {
+        kind: 'private',
+        path: SECURITY_DIR,
+        files: [
+          { path: SECURITY_TEXT_FILE, text: SECURITY_BUILT_FILE.text },
+          { path: SECURITY_RECORD, text: '{}\n' },
+        ],
+      },
+      { kind: 'private', path: TL_DIR, files: [{ path: `${TL_DIR}/instructions.json`, text: '{}\n' }] },
+      { kind: 'manifest', path: MANIFEST_PATH, text: '{}\n' },
+    ]
+    expect(builtRoleFiles(steps, '/repo/', new Set(['be']))).toEqual([BE_BUILT_FILE, SECURITY_BUILT_FILE])
+    expect(builtRoleFiles(steps, '/repo', new Set(['be', 'fe'])).map(built => built.path)).toEqual([
+      BE_BUILT_PATH,
+      '/repo/.cadre/fe/CLAUDE.md',
+      SECURITY_TEXT_FILE,
+    ])
+  })
+
+  test('the reply line counts the built files changed and accepted, of all the pass ran for', () => {
+    expect(improverLine({ changed: 1, total: 2 })).toBe('Improver: 1 of 2 built files changed and accepted.')
+    expect(improverLine({ changed: 0, total: 1 })).toBe('Improver: 0 of 1 built files changed and accepted.')
   })
 })

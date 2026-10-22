@@ -45,6 +45,9 @@ import {
   CONFLICT_OPTIONS,
   conflictQuestion,
   hunkFailureLine,
+  improverArgv,
+  improverLine,
+  improverNoChangeNote,
   instructionsRecordPath,
   instructionsRecordText,
   privateClaudeMdPath,
@@ -1079,6 +1082,7 @@ describe('init pane (G-02-1)', () => {
       notes: 'Notes',
       instructions: 'Instruction parts',
       skills: 'Your own skills',
+      improver: 'Improver changes',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
@@ -4064,6 +4068,119 @@ describe('private role files (G-02-1f)', () => {
   })
 })
 
+/** BE's built CLAUDE.md in builtWorld as the improver leaves it: its rule reworded and one line added (D-141). */
+const BUILT_BE_IMPROVED = BUILT_BE.replace(BUILT_RULE, `${BUILT_RULE} Keep them green.\nKeep commits small.`)
+
+/** The absolute path of BE's built CLAUDE.md in the fixture repo. */
+const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
+
+/** The start of the per-file improver question (G-02-1f, D-141). */
+const IMPROVER_PREFIX = "Accept the improver's changes"
+
+/** builtWorld's own files, in a new record a test changes as an improver run would. */
+function builtFilesRecord(): Record<string, string> {
+  return {
+    ...FULL_FILES,
+    [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+    '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+  }
+}
+
+/**
+ * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: git
+ * tracks the root CLAUDE.md and names the common dir, and once the improver ran for BE's built CLAUDE.md, `files`
+ * holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f, D-141).
+ */
+function improvingHost(files: Record<string, string>): {
+  readonly io: HostIo
+  readonly host: MemHost
+  readonly events: string[]
+} {
+  const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
+  const logged = withHostEvents(host)
+  const io: HostIo = {
+    ...logged.io,
+    run: async (argv, options) => {
+      const result = await logged.io.run(argv, options)
+      if (argv.join(' ') === improverArgv(BE_CLAUDE_MD).join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
+
+      return result
+    },
+  }
+
+  return { io, host, events: logged.events }
+}
+
+/** The improver runs a host was asked for, `claude -p`, in order. */
+function improverCalls(host: MemHost): HostCall[] {
+  return host.calls.filter(call => call.argv[0] === 'claude' && call.argv[1] === '-p')
+}
+
+/** The text of the manifest a host wrote; '' when it wrote none. */
+function writtenManifestText(host: MemHost): string {
+  return host.writes.find(write => write.path === '/repo/.cadre/manifest.json')?.text ?? ''
+}
+
+describe('improver in init (G-02-1f)', () => {
+  test('after Confirm each built file with a part gets one run, after the writes and before the manifest', async () => {
+    const files = builtFilesRecord()
+    const { io, host, events } = improvingHost(files)
+    const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+    const reply = await runInit(run.io, { dryRun: false, host: io })
+    const security = await memoryFolder('security')
+    const text = privateClaudeMdPath(security)
+    expect(improverCalls(host)).toEqual([
+      { argv: improverArgv(BE_CLAUDE_MD), options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
+      { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } },
+    ])
+    const firstRun = events.findIndex(event => event.startsWith('run claude -p'))
+    const lastRun = events.findLastIndex(event => event.startsWith('run claude -p'))
+    expect(events[firstRun - 1]).toBe(`write ${instructionsRecordPath(security)}`)
+    expect(events.slice(lastRun + 1)).toEqual(['write /repo/.cadre/manifest.json'])
+    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE))
+    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 2 }), NEXT_STEP_NOTE])
+    expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
+    const shownText = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions/CLAUDE.md`
+    expect(run.logged).toContain(improverNoChangeNote(shownText))
+    expect(run.shown.filter(block => block.key === 'improver').map(block => block.lines[0])).toEqual([
+      '.cadre/be/CLAUDE.md: 2 lines added, 1 removed',
+    ])
+  })
+
+  test('Keep original writes the built text back after the runs; the manifest records the built text', async () => {
+    const files = builtFilesRecord()
+    const { io, host } = improvingHost(files)
+    const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Keep original' })
+    const reply = await runInit(run.io, { dryRun: false, host: io })
+    const beWrites = host.writes.filter(write => write.path === BE_CLAUDE_MD)
+    expect(beWrites.map(write => [write.text, write.isWritten])).toEqual([
+      [BUILT_BE, true],
+      [BUILT_BE, true],
+    ])
+    expect(writtenManifestText(host)).toContain(await sha256Hex(BUILT_BE))
+    expect(writtenManifestText(host)).not.toContain(await sha256Hex(BUILT_BE_IMPROVED))
+    expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
+    expect(reply.split('\n').at(-2)).toBe('Improver: 0 of 2 built files changed and accepted.')
+  })
+
+  test('a header-only built file gets no run, and a plain init with no built part runs none at all', async () => {
+    const host = memHost(hostWorld({}))
+    const reply = await runInit(memIo(builtWorld(), PARTS_DECLINED).io, { dryRun: false, host: host.io })
+    expect(improverCalls(host)).toEqual([])
+    expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
+  })
+
+  test('a dry run holds no host: it runs no improver and asks, shows and replies nothing of it', async () => {
+    const run = memIo(builtWorld(), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+    const reply = await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked).filter(question => question.startsWith(IMPROVER_PREFIX))).toEqual([])
+    expect(run.shown.filter(block => block.key === 'improver')).toEqual([])
+    expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+  })
+})
+
 describe('carryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
   /** The carry facts of user settings with two env variables and nothing else. */
@@ -4986,6 +5103,8 @@ type QuestionRuns = {
   readonly parts: MemRun
   /** Two of the user's own skills handed out one by one, each answered No; the model gives no text (G-02-1b). */
   readonly ownSkills: MemRun
+  /** A plain init whose improver changed BE's built CLAUDE.md, answered Accept (G-02-1f, D-141). */
+  readonly improver: MemRun
 }
 
 /** Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change. */
@@ -5022,8 +5141,11 @@ async function questionRuns(): Promise<QuestionRuns> {
     'Which roles get the skill': 'No',
   })
   await runInit(ownSkills.io, { dryRun: true })
+  const improverFiles = builtFilesRecord()
+  const improver = memIo(builtWorld({ files: improverFiles }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+  await runInit(improver.io, { dryRun: false, host: improvingHost(improverFiles).io })
 
-  return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills }
+  return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver }
 }
 
 /** The dialog spec of the first question a run asked that starts with `start`; a missing one stops the test. */
@@ -5057,6 +5179,7 @@ describe('question chips (G-02-3c)', () => {
       gitPolicy: 'Git policy',
       review: 'Review',
       conflict: 'Conflict',
+      improver: 'Improver',
     })
     expect(Object.isFrozen(ASK_HEADERS)).toBe(true)
     expect(Object.values(ASK_HEADERS).filter(chip => Array.from(chip).length > 12)).toEqual([])
@@ -5110,6 +5233,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.plain, 'Git policy', 'Git policy'],
       [runs.plain, 'Review the plan', 'Review'],
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
+      [runs.improver, IMPROVER_PREFIX, 'Improver'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
   })
