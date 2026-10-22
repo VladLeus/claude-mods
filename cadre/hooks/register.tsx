@@ -13,6 +13,7 @@ import type {
   ShownBlock,
 } from '../types'
 import { helpText, parseCommand } from './command'
+import { runEpic } from './epic'
 import {
   detectRefusal,
   displayPath,
@@ -461,10 +462,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'cadre',
-      description: 'Split this repo into scope-limited role sessions: detect, init, regen, start, status',
+      description: 'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
       argumentHint:
         'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run] | ' +
-        'start <id> [--terminal[=terminal|iterm|tmux]] | status <id>',
+        'start <id> [--terminal[=terminal|iterm|tmux]] | status <id> | ' +
+        'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]]',
     })
 
     return next(e)
@@ -492,6 +494,11 @@ export const register: Register = on => {
         return { text: await runStart(initIoOf($), hostIoOf($), { id: command.id, terminal: command.terminal }) }
       case 'status':
         return { text: await runStatus(initIoOf($), hostIoOf($), { id: command.id }) }
+      case 'epic': {
+        const { key, title, terminal } = command
+
+        return { text: await runEpic(initIoOf($), hostIoOf($), { key, title, terminal }) }
+      }
       default: {
         const unreachable: never = command
         return unreachable

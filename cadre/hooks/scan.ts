@@ -1198,7 +1198,7 @@ export async function findGitTop(
 }
 
 /** The cadre commands a refusal is worded for. */
-export type CommandWord = 'init' | 'regen' | 'start' | 'status'
+export type CommandWord = 'init' | 'regen' | 'start' | 'status' | 'epic'
 
 /**
  * The refusal when the session root is not the git top level, naming the top level, else null (D-56). Trailing

@@ -44,6 +44,7 @@ export const USAGE_LINES: readonly string[] = [
     'iTerm tab or tmux window (macOS)',
   `  ${'/cadre status <id>'.padEnd(COMMAND_COLUMN)}show from disk whether a role's autopilot run ` +
     'is done, running, stopped, not started or unknown',
+  `  ${'/cadre epic <KEY> [title]'.padEnd(COMMAND_COLUMN)}create or reuse the epic's worktree and open its roles there`,
 ]
 
 /**
@@ -152,12 +153,32 @@ function statusCommand(rest: string): CadreCommand | null {
 }
 
 /**
+ * The epic's worktree (D-145, D-167), when the arguments after `epic` hold at least one word besides the `--terminal`
+ * switches terminalOf takes: the first word is the key as typed (epicKeyOf checks it later), the other words, joined by
+ * one space, are the title, and the roles open where `--terminal` says, `auto` without it; null when no word is left.
+ */
+function epicCommand(rest: string): CadreCommand | null {
+  const terminal = terminalOf(rest)
+  const [key, ...title] = terminal.rest.split(/\s+/).filter(word => word !== '')
+  if (key === undefined) return null
+
+  return {
+    kind: 'epic',
+    key,
+    title: title.join(' '),
+    terminal: terminal.terminal === 'none' ? 'auto' : terminal.terminal,
+  }
+}
+
+/**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
  * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
  * `--dry-run`, re-renders that role; `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`,
  * renders that role's runtime files and prints its launcher command; `status` with exactly one role id reports that
- * role's autopilot run from disk; anything else, `regen`, `start` or `status` with no id or with an id that is not a
- * slug included, is help with the input echoed back as unknown.
+ * role's autopilot run from disk; `epic` with a key and optional title words, optionally with
+ * `--terminal[=terminal|iterm|tmux]`, creates or reuses the epic's worktree. Anything else is help with the input
+ * echoed back as unknown, `regen`, `start` or `status` with no id or with an id that is not a slug, and `epic` with no
+ * key, included.
  */
 export function parseCommand(args: string): CadreCommand {
   const text = visibleText(args)
@@ -177,6 +198,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const status = /^status(?=\s|$)/i.exec(text)
   if (status) return statusCommand(text.slice(status[0].length)) ?? unknownCommand(text)
+
+  const epic = /^epic(?=\s|$)/i.exec(text)
+  if (epic) return epicCommand(text.slice(epic[0].length)) ?? unknownCommand(text)
 
   return unknownCommand(text)
 }

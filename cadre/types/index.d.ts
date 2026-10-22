@@ -15,8 +15,9 @@ export type TerminalChoice = 'none' | 'auto' | 'terminal' | 'iterm' | 'tmux' | '
  * `init [--dry-run]` is the guided setup; `regen <id> [--dry-run]` re-renders one role from its role.json;
  * `start <id> [--terminal[=terminal|iterm|tmux]]` renders a role's per-launch files and prints its launcher command;
  * `status <id>` reads from disk whether a role's autopilot run is done, running, stopped, not started or unknown, and
- * writes nothing. Any other input is help with the input echoed back as unknown. Plain init writes the plan after
- * Confirm and plain regen writes the role's plan; --dry-run prints the plan and writes nothing.
+ * writes nothing; `epic <KEY> [title] [--terminal[=terminal|iterm|tmux]]` creates or reuses the epic's worktree in the
+ * main checkout (D-145). Any other input is help with the input echoed back as unknown. Plain init writes the plan
+ * after Confirm and plain regen writes the role's plan; --dry-run prints the plan and writes nothing.
  */
 export type CadreCommand =
   | {
@@ -54,6 +55,15 @@ export type CadreCommand =
       readonly kind: 'status'
       /** The role id, already matched against the role-id slug (D-48). */
       readonly id: string
+    }
+  | {
+      readonly kind: 'epic'
+      /** The first word as typed, a leading `#` included; epicKeyOf checks it before anything runs (D-162). */
+      readonly key: string
+      /** The other words joined by one space; '' when there are none. */
+      readonly title: string
+      /** Where the epic's roles open (D-167): `auto` without `--terminal`, else what terminalOf read from it. */
+      readonly terminal: Exclude<TerminalChoice, 'none'>
     }
 
 /** A framework cadre has an adapter for. `none` is the built-in fallback, not a framework found in the repo. */
