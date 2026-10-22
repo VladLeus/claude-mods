@@ -85,7 +85,7 @@ export function kickoffText(role: RoleSpec, framework: FrameworkId): string {
 
 /**
  * The text of `.cadre/<id>/role.json`: the role with schema 1, its repo part records included when it has them
- * (instructionParts, G-02-1f Regen), as stable JSON that parseRoleJson reads back.
+ * (instructionParts and instructionPartsNotGiven, G-02-1f Regen), as stable JSON that parseRoleJson reads back.
  */
 export function roleJsonText(role: RoleSpec): string {
   return stableJson({ schema: 1, ...role })

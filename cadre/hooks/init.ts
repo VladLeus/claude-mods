@@ -14,6 +14,7 @@ import type {
   InstructionGroup,
   InstructionHandout,
   InstructionPart,
+  InstructionPartRecord,
   InstructionScan,
   InstructionTopic,
   LaunchStart,
@@ -25,6 +26,7 @@ import type {
   PortEntry,
   PortRead,
   PortStat,
+  ReadState,
   RepoScan,
   RoleCarry,
   RoleChange,
@@ -59,6 +61,7 @@ import {
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   parseConflictAnswer,
+  parseInstructionsRecord,
   pluginInstallArgv,
   privateCheckPaths,
   privateClaudeMdPath,
@@ -78,8 +81,10 @@ import type {
   ConflictChoice,
   HunkRun,
   ImproverTally,
+  InstructionsRecord,
   PrivateFile,
   PrivateRole,
+  RecordedMemory,
 } from './apply'
 import {
   accepted,
@@ -144,6 +149,7 @@ import {
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
+  relativeTo,
   sortedUnique,
   trimSlash,
   utf8Bytes,
@@ -173,20 +179,32 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  MEMORY_INDEX_FILE,
   memoryItems,
+  memoryOverSizeWarning,
+  NO_MEMORY_SUMMARY,
+  overSizeWarning,
   parseContentConsent,
   parseRecommendation,
+  parseRegenRecommendation,
   parseTopics,
+  partChanges,
+  partsOfText,
+  pathFromDisplay,
   readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
+  REGEN_RECOMMEND_SYSTEM,
+  regenRecommendPrompt,
   repoInstructionNames,
+  TOP_OF_FILE,
   topicItems,
   TOPICS_SYSTEM,
   topicsPrompt,
+  unreadableWarning,
 } from './instructions'
-import type { InstructionSources } from './instructions'
-import { roleMemoryDir } from './launch'
+import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
+import { isPartsFlowRole, isSafeFileName, roleMemoryDir } from './launch'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
@@ -207,6 +225,7 @@ import {
   applyAdjust,
   EFFORTS,
   isAutopilotDuration,
+  isRecordedPartFile,
   MODEL_ALIASES,
   parseAdjust,
   parseProposal,
@@ -234,7 +253,7 @@ import {
 } from './scan'
 import type { CommandWord } from './scan'
 import { compileScope, pluginName, scopeCardLines } from './scope'
-import { memoryFolderOf, scanSetup, userDirOf } from './setup'
+import { MARKDOWN_EXTENSION, memoryFolderOf, scanSetup, userDirOf } from './setup'
 import { gitCommonDirOf, isStepDone } from './start'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
@@ -2639,27 +2658,83 @@ function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly 
   )
 }
 
+/** A part as a role's records name it (G-02-1f Regen): its file, heading and hash, nothing of its text. */
+function partRecord(part: Pick<InstructionPart, 'file' | 'heading' | 'hash'>): InstructionPartRecord {
+  return { file: part.file, heading: part.heading, hash: part.hash }
+}
+
+/**
+ * A role with these repo part records in place of any it had (G-02-1f Regen, AUTO-PICK #19 Q1): the parts it was
+ * given, and the not-given list only when it holds one. A record whose file role.json may not name
+ * (isRecordedPartFile) is left out, so init never writes a role.json that parseRoleJson refuses.
+ */
+function withPartRecords(
+  role: RoleSpec,
+  given: readonly InstructionPartRecord[],
+  notGiven: readonly InstructionPartRecord[],
+): RoleSpec {
+  // Both old lists are taken off, so the role holds exactly the lists given here.
+  const { instructionParts: _given, instructionPartsNotGiven: _notGiven, ...rest } = role
+  const recordable = (records: readonly InstructionPartRecord[]): InstructionPartRecord[] =>
+    records.filter(record => isRecordedPartFile(record.file)).map(partRecord)
+  const instructionParts = recordable(given)
+  const instructionPartsNotGiven = recordable(notGiven)
+
+  return instructionPartsNotGiven.length === 0
+    ? { ...rest, instructionParts }
+    : { ...rest, instructionParts, instructionPartsNotGiven }
+}
+
+/**
+ * The roles with the records regen compares against (G-02-1f Regen, AUTO-PICK #19 Q1): each parts-flow role
+ * (isPartsFlowRole) records the repo parts `repoParts` gives it, and as not given every other repo part the read found
+ * in the same files, both in read order, so its role.json names no global part and no memory (T-02-79); a role given
+ * no repo part records none, and a whole-files role is left as it is.
+ */
+function withRepoRecords(
+  roles: readonly RoleSpec[],
+  handout: InstructionHandout,
+  repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
+): RoleSpec[] {
+  const read = handout.kind === 'parts' ? handout.scan.parts.filter(part => part.source === 'repo') : []
+
+  return roles.map(role => {
+    if (!isPartsFlowRole(role)) return role
+    const given = repoParts.get(role.id) ?? []
+    const files = new Set(given.map(part => part.file))
+    const notGiven = read.filter(part => files.has(part.file) && !given.includes(part))
+
+    return withPartRecords(role, given.map(partRecord), notGiven.map(partRecord))
+  })
+}
+
 /** What a role was given that is private, before its role memory folder is known (privatesOf). */
-type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories'>
+type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'partsNotGiven'>
 
 /**
  * What each role of the team was given that is private (G-02-1f Storage split, D-140 q2-a): for a parts hand-out,
- * every global part of the topics it was given, in read order, and every memory it was given, in file-name order; a
- * role given neither is left out, and the whole-file questions and none give no role. In role id order, the order of
- * the role memory folders. A part read from the repo is never among them: those go to its built file (repoPartsOf).
+ * every global part of the topics it was given, in read order, every memory it was given, in file-name order, and the
+ * other global parts of the files its parts come from, which its record names as not given (AUTO-PICK #19 Q1); a role
+ * given neither a global part nor a memory is left out, and the whole-file questions and none give no role. In role id
+ * order, the order of the role memory folders. A part read from the repo is never among them: those go to its built
+ * file (repoPartsOf).
  */
 function privatesOf(handout: InstructionHandout, roles: readonly RoleSpec[]): OwedPrivate[] {
   if (handout.kind !== 'parts') return []
   const { scan, topics, given } = handout
   const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
   const ids = roles.map(role => role.id).sort(compareText)
+  const globalParts = scan.parts.filter(part => part.source === 'global')
 
   return ids.flatMap(id => {
     const partIds = new Set(topics.filter(topic => isGiven(topic.id, id)).flatMap(topic => topic.partIds))
-    const parts = scan.parts.filter(part => part.source === 'global' && partIds.has(part.id))
+    const parts = globalParts.filter(part => partIds.has(part.id))
+    const files = new Set(parts.map(part => part.file))
+    const notGiven = globalParts.filter(part => files.has(part.file) && !partIds.has(part.id))
     const memories = scan.memories.filter(memory => isGiven(memory.id, id))
+    if (parts.length === 0 && memories.length === 0) return []
 
-    return parts.length === 0 && memories.length === 0 ? [] : [{ id, parts, memories }]
+    return [{ id, parts, memories, partsNotGiven: notGiven.map(partRecord) }]
   })
 }
 
@@ -2755,7 +2830,8 @@ export async function planStep(
  * - `manifestSkipped`: whether the manifest was not written because a write of a repo file before it failed or was
  *   refused;
  * - `improverWarnings`: the reply warning of each per-file improver question that got no usable answer (G-02-1f,
- *   D-141);
+ *   D-141), and for a plain regen where no one can be asked whose rebuilt files the improver could improve,
+ *   improverNotOfferedWarning (D-142);
  * - `improved`: how many built files the improver changed and the person accepted, of how many the pass ran for; null
  *   when no improver pass ran.
  */
@@ -3398,16 +3474,16 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
  * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
  * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
  * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
- * files (planStep) with each role's repo parts (repoPartsOf, G-02-1f), shows the summary in the side pane (reviewLines,
- * D-133) and asks reviewQuestion with the context line of that plan, cleaned as a report cell (reviewContextLine,
- * D-136), and REVIEW_OPTIONS; an item word may be typed under "Other" (parseReviewItem), and any other answer is asked
- * again with why on top. Confirm accepts the plan just shown, with the state it was planned with and the draft it was
- * built from (Reviewed). A go-back re-asks that one item (goBack), and the next round shows the summary again. A
- * dismissal (REVIEW_DISMISSED_REASON), MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled
- * go-back step is cancelled with its reason, and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm
- * (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is used (A1, D-45). A go-back picked at the last round
- * cancels at once and asks none of that item's questions (A3). The review itself writes nothing: Confirm is the consent
- * apply writes the plan on (D-105).
+ * files (planStep) with each role's repo parts (repoPartsOf, G-02-1f), which each parts-flow role's role.json records
+ * (withRepoRecords, G-02-1f Regen), shows the summary in the side pane (reviewLines, D-133) and asks reviewQuestion
+ * with the context line of that plan, cleaned as a report cell (reviewContextLine, D-136), and REVIEW_OPTIONS; an item
+ * word may be typed under "Other" (parseReviewItem), and any other answer is asked again with why on top. Confirm
+ * accepts the plan just shown, with the state it was planned with and the draft it was built from (Reviewed). A go-back
+ * re-asks that one item (goBack), and the next round shows the summary again. A dismissal (REVIEW_DISMISSED_REASON),
+ * MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled go-back step is cancelled with its reason,
+ * and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person
+ * did not confirm is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that item's
+ * questions (A3). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
  */
 export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
   let current = draft
@@ -3415,8 +3491,9 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
     const setup = setupAfterInstalls(current.gathered.setup, current.pluginInstalls)
     const gathered = { ...current.gathered, setup }
     const scopes = scopesFor(current.roles, current.repoDefault, gathered, current.hunks, current.launchStart)
+    const repoParts = repoPartsOf(current.instructions)
     const planned = await planStep(io, {
-      roles: current.roles,
+      roles: withRepoRecords(current.roles, current.instructions, repoParts),
       repoDefault: current.repoDefault,
       policy: current.policy,
       launchStart: current.launchStart,
@@ -3425,7 +3502,7 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
       repo: current.gathered.repo,
       locations: current.locations,
       readUserMcp: current.readUserMcp,
-      repoParts: repoPartsOf(current.instructions),
+      repoParts,
     })
     await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
     const ask = {
@@ -3571,12 +3648,42 @@ type PrivatePlan = {
 }
 
 /**
+ * How the role memory folder of a role is named, as /cadre start names it (G-02-1f, D-140 q2-a): from the user folder
+ * and the git common dir (gitCommonDirOf runs `git rev-parse` once at the repo root, roleMemoryDir); null with no user
+ * folder, when git is not asked, or with no absolute common dir from git.
+ */
+async function roleFoldersOf(
+  io: InitIo,
+  host: HostIo,
+  locations: InitLocations,
+): Promise<((id: string) => string) | null> {
+  const userDir = userDirOf(locations)
+  if (userDir === null) return null
+  const common = await gitCommonDirOf(io, host, locations.root)
+  if (common === null) return null
+
+  return id => roleMemoryDir({ userDir, ...common }, id)
+}
+
+/** The folder name of the repo root, which heads each private text file (D-140 q2-a). */
+function repoNameOf(locations: InitLocations): string {
+  const root = trimSlash(locations.root)
+
+  return root.slice(root.lastIndexOf('/') + 1)
+}
+
+/** The private files of these role memory folders: the only paths outside the repo an apply may write (T-02-72). */
+function privatePaths(folders: readonly string[]): ReadonlySet<string> {
+  return new Set(folders.flatMap(folder => [privateClaudeMdPath(folder), instructionsRecordPath(folder)]))
+}
+
+/**
  * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). With a role owed one (privatesOf), the role
  * memory folder of each role is named from the user folder and the git common dir, as /cadre start names it
- * (gitCommonDirOf, roleMemoryDir), and `allowed` holds the private text file and the hand-out record of every role of
- * the team: the only paths outside the repo apply may write. The repo's folder name heads each private text file. With
- * no role owed one, git is not asked and nothing is allowed. With no user folder, or no absolute common dir from git,
- * nothing private is written and privateFoldersUnknownWarning names the roles owed one.
+ * (roleFoldersOf), and `allowed` holds the private text file and the hand-out record of every role of the team: the
+ * only paths outside the repo apply may write (privatePaths). The repo's folder name heads each private text file
+ * (repoNameOf). With no role owed one, git is not asked and nothing is allowed. With no user folder, or no absolute
+ * common dir from git, nothing private is written and privateFoldersUnknownWarning names the roles owed one.
  */
 async function privatePlanOf(
   io: InitIo,
@@ -3586,19 +3693,13 @@ async function privatePlanOf(
 ): Promise<PrivatePlan> {
   const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [] }
   if (input.owed.length === 0) return none
-  const userDir = userDirOf(locations)
-  const common = userDir === null ? null : await gitCommonDirOf(io, host, locations.root)
-  if (userDir === null || common === null) {
-    return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
-  }
-  const folderOf = (id: string): string => roleMemoryDir({ userDir, ...common }, id)
-  const root = trimSlash(locations.root)
-  const repo = root.slice(root.lastIndexOf('/') + 1)
-  const folders = input.roles.map(role => folderOf(role.id))
+  const folderOf = await roleFoldersOf(io, host, locations)
+  if (folderOf === null) return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
+  const repo = repoNameOf(locations)
 
   return {
     privates: input.owed.map(role => ({ ...role, folder: folderOf(role.id), repo })),
-    allowed: new Set(folders.flatMap(folder => [privateClaudeMdPath(folder), instructionsRecordPath(folder)])),
+    allowed: privatePaths(input.roles.map(role => folderOf(role.id))),
     problems: [],
   }
 }
@@ -3622,9 +3723,11 @@ async function privatePlanOf(
  *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
  *    a problem (noHomeInstallText).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
- *    again from the disk (planStep, with the repo parts 5a keeps), all from the setup with the plugins just installed
- *    (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a Security role's
- *    settings enable claude-security once it is installed. The hunk runs above keep the setup of the scan.
+ *    again from the disk (planStep, with the repo parts 5a keeps, which each parts-flow role's role.json records with
+ *    the other parts of their files as not given: withRepoRecords, G-02-1f Regen), all from the setup with the
+ *    plugins just installed (setupAfterInstalls), so ROLE.md is rendered and hashed after the hunks ran (D-120) and a
+ *    Security role's settings enable claude-security once it is installed. The hunk runs above keep the setup of the
+ *    scan.
  * 5a. Right before planStep, the repo parts of the draft (repoPartsOf) are checked against git (trackedParts,
  *    02-GAPS-B2 M3): `git ls-files` runs once at the repo root through the host, under every git policy, and only the
  *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
@@ -3696,7 +3799,7 @@ export async function applyConfirmed(
   const owed = privatesOf(draft.instructions, roles)
   const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
   const planned = await planStep(io, {
-    roles,
+    roles: withRepoRecords(roles, draft.instructions, tracked.repoParts),
     repoDefault,
     policy: draft.policy,
     launchStart,
@@ -3859,6 +3962,145 @@ export function regenNeedsFramework(id: string): string {
   return (
     `role ${id} has no framework and this repo has no default: set "framework" in .cadre/${id}/role.json to gsd, ` +
     `superpowers or none, then run /cadre regen ${id} again.`
+  )
+}
+
+/** Whether an item a regen asks about is new since init or changed since (G-02-1f Regen, D-142). */
+export type RegenChange = 'new' | 'changed'
+
+/** Each answer to a regen question with what it does: Yes gives the item to the role, No leaves it out (D-142). */
+const REGEN_CHOICES: readonly Labelled<boolean>[] = Object.freeze([
+  { label: 'Yes', value: true },
+  { label: 'No', value: false },
+])
+
+/** The answers to a regen question, Yes first (D-142). */
+export const REGEN_ITEM_OPTIONS: readonly string[] = Object.freeze(REGEN_CHOICES.map(entry => entry.label))
+
+/**
+ * Why regen cancels when a regen question is dismissed or not answered (D-142, A1); MAX_ASKS answers it cannot read
+ * give NO_USABLE_ANSWER_REASON.
+ */
+export const REGEN_DISMISSED_REASON = 'A regen question on instruction parts was dismissed or not answered.'
+
+/**
+ * The start of the reply of a regen cancelled at one of its questions: nothing was written (AUTO-PICK #19 Q7);
+ * regenCancelledReply adds the reason.
+ */
+export const REGEN_CANCELLED = 'regen cancelled, nothing written'
+
+/** The reply of a cancelled regen (AUTO-PICK #19 Q7): REGEN_CANCELLED, a colon and the reason as a report cell. */
+export function regenCancelledReply(reason: string): string {
+  return `${REGEN_CANCELLED}: ${reportText(reason)}`
+}
+
+/** The chip of a regen question (D-142, G-02-3c): `Regen <i>/<n>`, or just `Regen` when that is over 12 code points. */
+export function regenHeader(position: number, count: number): string {
+  return countedChip('Regen', position, count)
+}
+
+/** A part's heading as regen names it: the heading, or TOP_OF_FILE for the text before the first heading. */
+function headingText(heading: string): string {
+  return heading === '' ? TOP_OF_FILE : heading
+}
+
+/**
+ * The regen question of a part (D-142): whether the role gets it, by its heading and its file, cleaned; regen makes no
+ * grouping call, so a part is named by where it is, not by a topic.
+ */
+export function regenPartQuestion(id: string, part: Pick<InstructionPart, 'file' | 'heading'>): string {
+  return `Should ${id} get "${headingText(part.heading)}" from ${clean(part.file)}?`
+}
+
+/** How the context line of a regen question names each kind of item (D-142). */
+const REGEN_CHANGE_TEXTS: Readonly<Record<RegenChange, string>> = Object.freeze({
+  new: 'New since init.',
+  changed: 'Changed since init.',
+})
+
+/** The context line of a part's regen question (D-142): whether it is new or changed, then the recommendation. */
+export function regenPartContextLine(change: RegenChange, isRecommended: boolean): string {
+  return `${REGEN_CHANGE_TEXTS[change]} Recommended: ${isRecommended ? 'yes' : 'no'}.`
+}
+
+/** The regen question of a memory (D-142): whether the role gets it, by its file name, cleaned. */
+export function regenMemoryQuestion(id: string, memory: Pick<MemoryItem, 'file'>): string {
+  return `Should ${id} get the memory "${clean(memory.file)}"?`
+}
+
+/**
+ * The context line of a memory's regen question (D-142): the summary its record holds, or NO_MEMORY_SUMMARY, as a
+ * sentence (asSentence), then what a part's context line says (regenPartContextLine). MEMORY.md is not read for it
+ * (AUTO-PICK #19 Q10).
+ */
+export function regenMemoryContextLine(
+  memory: Pick<MemoryItem, 'summary'>,
+  change: RegenChange,
+  isRecommended: boolean,
+): string {
+  const summary = memory.summary === '' ? NO_MEMORY_SUMMARY : memory.summary
+
+  return `${asSentence(summary)} ${regenPartContextLine(change, isRecommended)}`
+}
+
+/** The reply line of a part regen dropped from a role because it is gone from its file (G-02-1f Regen). */
+export function partDroppedLine(id: string, record: Pick<InstructionPartRecord, 'file' | 'heading'>): string {
+  return `dropped from ${id}: ${clean(record.file)} > ${headingText(record.heading)} (gone from its file)`
+}
+
+/** The reply line of a memory regen dropped from a role because its file is gone (G-02-1f Regen). */
+export function memoryDroppedLine(id: string, memory: Pick<MemoryItem, 'file'>): string {
+  return `dropped from ${id}: memory ${clean(memory.file)} (gone)`
+}
+
+/**
+ * The warning of a regen where no one can be asked, such as `claude -p` (D-142 rg1-a): how many new or changed parts
+ * and memories were left out of the role, and the command that asks about them.
+ */
+export function notHandedOutWarning(id: string, count: number): string {
+  if (count === 1) {
+    return (
+      `1 new or changed instruction part or memory for ${id} was not handed out: ` +
+      `run /cadre regen ${id} in a session to answer it`
+    )
+  }
+
+  return (
+    `${count} new or changed instruction parts or memories for ${id} were not handed out: ` +
+    `run /cadre regen ${id} in a session to answer them`
+  )
+}
+
+/**
+ * The warning of a plain regen where no one can be asked whose rebuilt files the improver could improve (D-141,
+ * D-142): it is not run, since no one can answer Accept or Keep original.
+ */
+export function improverNotOfferedWarning(id: string): string {
+  return (
+    `the improver was not offered for ${id}: claude -p cannot ask Accept or Keep original; ` +
+    `run /cadre regen ${id} in a session to review the changes`
+  )
+}
+
+/**
+ * The warning of a --dry-run regen of a role with part records (AUTO-PICK #19 Q5): its private hand-out record is not
+ * read, since naming its folder runs git and a dry run holds no host.
+ */
+export function dryRunPrivateWarning(id: string): string {
+  return (
+    `--dry-run did not compare the global parts and memories of ${id}: finding their folder runs git; ` +
+    'a plain regen compares them'
+  )
+}
+
+/**
+ * The warning when a role's private hand-out record cannot be used (AUTO-PICK #19 Q9): it cannot be read, is not a
+ * valid record, or names a file regen may not read, so its global parts and memories are not compared or rebuilt.
+ */
+export function unusableRecordWarning(id: string): string {
+  return (
+    `could not use the hand-out record of ${id} (instructions.json): its global parts and memories were not ` +
+    'compared; run /cadre init to hand them out again'
   )
 }
 
@@ -4026,29 +4268,600 @@ function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id:
   return manifest.files.filter(entry => !generated.has(entry.path) && !isRolePath(entry.path, id))
 }
 
+/** What a regen plans from (D-68, A2): the scans and compiled scopes of the team, and the last manifest in full. */
+type RegenScans = {
+  readonly gathered: Gathered
+  readonly scopes: ReadonlyMap<string, CompiledScope>
+  readonly manifest: Manifest
+  readonly manifestState: ReadState
+}
+
 /**
- * What regen planned for one role: the file plan, the scan warnings of the run its reply prints (A4), and what apply
+ * The scans of a regen (D-68, D-70, D-72): every listed role compiled as init compiles it, on its own framework or the
+ * repo default and attended by the current config (compileTeam), so the index lists the whole team; ~/.claude.json is
+ * read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init compiled from it stay.
+ * Without a manifest read in full regen cannot keep the other roles' entries, so it refuses (A2), as the scan read it:
+ * REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid.
+ */
+async function regenScans(
+  io: InitIo,
+  locations: InitLocations,
+  state: CadreState,
+  roles: readonly RoleSpec[],
+): Promise<RegenRead<RegenScans>> {
+  const { gathered, scopes } = await compileTeam(io, locations, state, roles)
+  const { manifest, manifestState } = gathered.repo.cadre
+  if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
+
+  return { kind: 'ok', value: { gathered, scopes, manifest, manifestState } }
+}
+
+/** Whether a part's file and heading are the ones a record names (G-02-1f Regen). */
+function isNamedBy(
+  record: Pick<InstructionPartRecord, 'file' | 'heading'>,
+  part: Pick<InstructionPart, 'file' | 'heading'>,
+): boolean {
+  return record.file === part.file && record.heading === part.heading
+}
+
+/** The files these records name, once each, in record order: the only files regen reads again (D-142 rg2-a). */
+function recordedFiles(records: readonly InstructionPartRecord[]): string[] {
+  return Array.from(new Set(records.map(record => record.file)))
+}
+
+/**
+ * One side of a role's records as regen reads it again (G-02-1f Regen): its repo parts (role.json) or its global parts
+ * and memories (its private hand-out record), the parts it was given and not given and the memories it was given, as
+ * recorded, and the parts and memories of what they name as they are now.
+ */
+type RegenSide = {
+  readonly given: readonly InstructionPartRecord[]
+  readonly notGiven: readonly InstructionPartRecord[]
+  readonly memories: readonly MemoryRecord[]
+  readonly current: RegenItems
+}
+
+/**
+ * A side regen read again, or why it is left as it is (AUTO-PICK #19 Q8, Q9), with the warnings of the files it could
+ * not read or of the record it cannot use.
+ */
+type SideRead =
+  | { readonly kind: 'read'; readonly side: RegenSide }
+  | { readonly kind: 'kept'; readonly warnings: readonly string[] }
+
+/**
+ * A role's repo side read again (G-02-1f Regen, D-142 rg2-a): each file its role.json records name, once, in record
+ * order, through readRepoFile (a link out of the repo is never read), split into hashed parts (partsOfText). A missing
+ * file has no part, so its records are removed; a file that cannot be read (unreadableWarning) or is over the read cap
+ * (overSizeWarning) leaves the whole side as it is (AUTO-PICK #19 Q8), since its parts could not be rebuilt.
+ */
+async function repoSideRead(io: InitIo, root: string, role: RoleSpec): Promise<SideRead> {
+  const given = role.instructionParts ?? []
+  const notGiven = role.instructionPartsNotGiven ?? []
+  const parts: InstructionPart[] = []
+  const warnings: string[] = []
+  for (const file of recordedFiles([...given, ...notGiven])) {
+    const read = await readRepoFile(io, root, file, MAX_READ_BYTES)
+    if (read.state === 'unknown') warnings.push(unreadableWarning(clean(file)))
+    if (read.state === 'too-large') warnings.push(overSizeWarning(clean(file)))
+    if (read.state === 'text') parts.push(...(await partsOfText(file, 'repo', read.text, parts.length)))
+  }
+  if (warnings.length > 0) return { kind: 'kept', warnings }
+
+  return { kind: 'read', side: { given, notGiven, memories: [], current: { parts, memories: [] } } }
+}
+
+/**
+ * Where a role's private record may name a file regen reads again (AUTO-PICK #19 Q9): the locations its display forms
+ * are read back with, the config folder when it is outside the repo, the CLAUDE.md files of the chain above the repo,
+ * and the memory folders of this repo.
+ */
+type RecordPlaces = {
+  readonly sources: Pick<InstructionSources, 'root' | 'home' | 'configDir'>
+  readonly userDir: string | null
+  readonly chain: readonly string[]
+  readonly memoryFolders: readonly string[]
+}
+
+/**
+ * The places a private record may name (AUTO-PICK #19 Q9), as init's read takes them: the config folder only when it
+ * is not inside the repo (02-GAPS-B2 N10), the chain CLAUDE.md files of the setup scan read back from their display
+ * form, those above the repo only (02-GAPS-B2 S2), and the memory folders of this repo (memoryFoldersOf).
+ */
+function recordPlacesOf(locations: InitLocations, setup: SetupScan): RecordPlaces {
+  const { root, home, configDir } = locations
+  const sources = { root, home, configDir }
+  const userDir = userDirOf(locations)
+  const folder = userDir === null || relativeTo(userDir, root) !== null ? '' : trimSlash(userDir)
+  const chain = setup.claudeMd.map(shown => pathFromDisplay(shown, sources))
+
+  return {
+    sources,
+    userDir: folder === '' ? null : folder,
+    chain: chain.filter(path => relativeTo(path, root) === null),
+    memoryFolders: memoryFoldersOf(locations),
+  }
+}
+
+/** Whether a path is absolute with no empty, `.` or `..` segment (AUTO-PICK #19 Q9). */
+function isPlainPath(path: string): boolean {
+  if (!path.startsWith('/')) return false
+
+  return path
+    .slice(1)
+    .split('/')
+    .every(segment => segment !== '' && segment !== '.' && segment !== '..')
+}
+
+/**
+ * The path of a recorded global part's file (AUTO-PICK #19 Q9): its display form read back (pathFromDisplay), when
+ * that is a plain absolute path (isPlainPath) in the config folder or a CLAUDE.md of the chain above the repo; else
+ * null, so a record cannot point regen at any other file.
+ */
+function globalPathOf(file: string, places: RecordPlaces): string | null {
+  const path = pathFromDisplay(file, places.sources)
+  if (!isPlainPath(path)) return null
+  if (places.userDir !== null && path.startsWith(`${places.userDir}/`)) return path
+
+  return places.chain.includes(path) ? path : null
+}
+
+/**
+ * The path of a recorded memory (AUTO-PICK #19 Q9): in a memory folder of this repo, under a plain `.md` file name
+ * (isSafeFileName) that is not MEMORY.md in any letter case; else null.
+ */
+function memoryPathOf(memory: Pick<RecordedMemory, 'file' | 'folder'>, places: RecordPlaces): string | null {
+  const { file, folder } = memory
+  if (!places.memoryFolders.includes(folder) || !isSafeFileName(file)) return null
+  if (!file.endsWith(MARKDOWN_EXTENSION) || file.toLowerCase() === MEMORY_INDEX_FILE.toLowerCase()) return null
+
+  return `${folder}/${file}`
+}
+
+/** A role's private hand-out record found, or why there is none to compare (AUTO-PICK #19 Q5, Q9). */
+type PrivateFound =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'kept'; readonly warnings: readonly string[] }
+  | { readonly kind: 'found'; readonly folder: string; readonly record: InstructionsRecord }
+
+/**
+ * A role's private hand-out record (G-02-1f Regen, D-140 q2-a). A dry run holds no host, so it names no folder and
+ * reads no record (dryRunPrivateWarning, AUTO-PICK #19 Q5). Else the role memory folder is named as /cadre start names
+ * it (roleFoldersOf), with privateFoldersUnknownWarning when it cannot be, and its instructions.json is read: a record
+ * that is not there means the role holds nothing private; one that cannot be read or is not valid
+ * (parseInstructionsRecord) is not used (unusableRecordWarning).
+ */
+async function privateRecordOf(
+  io: InitIo,
+  host: HostIo | null,
+  locations: InitLocations,
+  id: string,
+): Promise<PrivateFound> {
+  if (host === null) return { kind: 'kept', warnings: [dryRunPrivateWarning(id)] }
+  const folderOf = await roleFoldersOf(io, host, locations)
+  if (folderOf === null) return { kind: 'kept', warnings: [privateFoldersUnknownWarning([id])] }
+  const folder = folderOf(id)
+  const read = await io.read(instructionsRecordPath(folder), MAX_READ_BYTES)
+  if (read.state === 'absent') return { kind: 'none' }
+  const record = read.state === 'text' ? parseInstructionsRecord(read.text) : null
+  if (record === null) return { kind: 'kept', warnings: [unusableRecordWarning(id)] }
+
+  return { kind: 'found', folder, record }
+}
+
+/**
+ * A role's private side read again (G-02-1f Regen, D-142 rg2-a). Every file and memory its record names is checked
+ * first (globalPathOf, memoryPathOf): one regen may not read makes the whole record unusable (unusableRecordWarning,
+ * AUTO-PICK #19 Q9), and nothing is read. Then each named file is read once, in record order, through the port and
+ * split into hashed global parts (partsOfText), and each memory is read for its hash only, with the folder and summary
+ * its record holds (Q10). A missing file or memory is gone; one that cannot be read (unreadableWarning) or is over the
+ * read cap (overSizeWarning, memoryOverSizeWarning) leaves the whole side as it is (Q8).
+ */
+async function privateSideRead(
+  io: InitIo,
+  record: InstructionsRecord,
+  places: RecordPlaces,
+  id: string,
+): Promise<SideRead> {
+  const files = recordedFiles([...record.parts, ...record.partsNotGiven])
+  const named = files.flatMap(file => {
+    const path = globalPathOf(file, places)
+
+    return path === null ? [] : [{ file, path }]
+  })
+  const linked = record.memories.flatMap(memory => {
+    const path = memoryPathOf(memory, places)
+
+    return path === null ? [] : [{ memory, path }]
+  })
+  if (named.length < files.length || linked.length < record.memories.length) {
+    return { kind: 'kept', warnings: [unusableRecordWarning(id)] }
+  }
+  const parts: InstructionPart[] = []
+  const warnings: string[] = []
+  for (const { file, path } of named) {
+    const read = await io.read(path, MAX_READ_BYTES)
+    if (read.state === 'unknown') warnings.push(unreadableWarning(clean(file)))
+    if (read.state === 'too-large') warnings.push(overSizeWarning(clean(file)))
+    if (read.state === 'text') parts.push(...(await partsOfText(file, 'global', read.text, parts.length)))
+  }
+  const memories: MemoryItem[] = []
+  for (const { memory, path } of linked) {
+    const read = await io.read(path, MAX_READ_BYTES)
+    if (read.state === 'unknown') warnings.push(unreadableWarning(clean(memory.file)))
+    if (read.state === 'too-large') warnings.push(memoryOverSizeWarning(clean(memory.file)))
+    if (read.state !== 'text') continue
+    const { file, folder, summary } = memory
+    memories.push({ id: `M${memories.length + 1}`, file, folder, summary, hash: await sha256Hex(read.text) })
+  }
+  if (warnings.length > 0) return { kind: 'kept', warnings }
+  const { parts: given, partsNotGiven: notGiven } = record
+
+  return { kind: 'read', side: { given, notGiven, memories: record.memories, current: { parts, memories } } }
+}
+
+/** One new or changed item a regen asks about (G-02-1f Regen, D-142), as its side found it. */
+type RegenAsk =
+  | { readonly kind: 'part'; readonly part: InstructionPart; readonly change: RegenChange }
+  | { readonly kind: 'memory'; readonly memory: MemoryItem; readonly change: RegenChange }
+
+/** What changed on one side since its records were made, and what regen asks about it (sideChanges). */
+type SideChanges = {
+  readonly side: RegenSide
+  readonly changes: PartChanges
+  readonly asked: readonly RegenAsk[]
+}
+
+/** The parts now, less one part for each not-given record it matches by file, heading and hash, each record once. */
+function openParts(parts: readonly InstructionPart[], notGiven: readonly InstructionPartRecord[]): InstructionPart[] {
+  const unused = [...notGiven]
+  const open: InstructionPart[] = []
+  for (const part of parts) {
+    const at = unused.findIndex(record => isNamedBy(record, part) && record.hash === part.hash)
+    if (at < 0) {
+      open.push(part)
+      continue
+    }
+    unused.splice(at, 1)
+  }
+
+  return open
+}
+
+/**
+ * What changed on one side since its records were made (G-02-1f Regen, AUTO-PICK #19 Q1): a part that matches a
+ * not-given record exactly stays not given (openParts), and partChanges compares the given records and the memories
+ * with the rest. Regen asks, in file order, each changed part and each part neither list names by file and heading
+ * (new), then each changed memory; a changed part the role was not given is not asked, and a memory is never new,
+ * since only /cadre init finds a new file (D-142 rg2-a).
+ */
+function sideChanges(side: RegenSide): SideChanges {
+  const open = openParts(side.current.parts, side.notGiven)
+  const records = { parts: side.given, memories: side.memories }
+  const changes = partChanges(records, { parts: open, memories: side.current.memories })
+  const kept = new Set(changes.kept.parts)
+  const changed = new Set(changes.changed.parts)
+  const isNew = (part: InstructionPart): boolean =>
+    !kept.has(part) && !changed.has(part) && !side.notGiven.some(record => isNamedBy(record, part))
+  const parts = open.flatMap((part): RegenAsk[] => {
+    if (changed.has(part)) return [{ kind: 'part', part, change: 'changed' }]
+
+    return isNew(part) ? [{ kind: 'part', part, change: 'new' }] : []
+  })
+  const memories = changes.changed.memories.map((memory): RegenAsk => ({ kind: 'memory', memory, change: 'changed' }))
+
+  return { side, changes, asked: [...parts, ...memories] }
+}
+
+/**
+ * What one side gives after the questions (G-02-1f Regen, D-142): the parts the role holds now and every other part of
+ * the files read, both in file order, the memories it holds now, whether its built text and its records change, the
+ * reply lines of what was dropped, and how many items were left out because no one could be asked.
+ */
+type SideResult = {
+  readonly given: readonly InstructionPart[]
+  readonly notGiven: readonly InstructionPart[]
+  readonly memories: readonly MemoryItem[]
+  readonly isTextChanged: boolean
+  readonly isRecordsChanged: boolean
+  readonly dropped: readonly string[]
+  readonly leftOut: number
+}
+
+/**
+ * One side after the questions (G-02-1f Regen, D-142 rg1-a; AUTO-PICK #19 Q1, Q3): the role holds each kept part and
+ * memory and, in a session, each asked one answered Yes (`yes`); every other part of the files read is not given, and
+ * a memory answered No leaves its record. Its built text changes when a given part changed or is gone, or a new part
+ * was taken; its records change only in a session, when an item was asked or one is gone, so where no one can be asked
+ * no record is written and a removed item is reported again until a session regen drops it. Each removed part and
+ * memory gives its reply line.
+ */
+function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, isSession: boolean): SideResult {
+  const { side, changes, asked } = found
+  const taken = asked.filter(item => yes.has(item))
+  const takenParts = taken.flatMap(item => (item.kind === 'part' ? [item.part] : []))
+  const takenMemories = taken.flatMap(item => (item.kind === 'memory' ? [item.memory] : []))
+  const heldParts = new Set([...changes.kept.parts, ...takenParts])
+  const heldMemories = new Set([...changes.kept.memories, ...takenMemories])
+  const { removed } = changes
+  const isGone = removed.parts.length > 0 || removed.memories.length > 0
+
+  return {
+    given: side.current.parts.filter(part => heldParts.has(part)),
+    notGiven: side.current.parts.filter(part => !heldParts.has(part)),
+    memories: side.current.memories.filter(memory => heldMemories.has(memory)),
+    isTextChanged:
+      removed.parts.length > 0 || changes.changed.parts.length > 0 || taken.some(item => item.change === 'new'),
+    isRecordsChanged: isSession && (isGone || asked.length > 0),
+    dropped: [
+      ...removed.parts.map(record => partDroppedLine(id, record)),
+      ...removed.memories.map(memory => memoryDroppedLine(id, memory)),
+    ],
+    leftOut: isSession ? 0 : asked.length,
+  }
+}
+
+/**
+ * The recommendation for each item a regen asks about, by `I<n>` (G-02-1f Regen, D-142): one model call with the role
+ * and the items (regenRecommendPrompt, REGEN_RECOMMEND_SYSTEM). A reply parseRegenRecommendation cannot take is sent
+ * back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no item is recommended.
+ */
+async function regenRecommended(
+  io: InitIo,
+  role: RoleSpec,
+  asked: readonly RegenAsk[],
+): Promise<ReadonlyMap<string, boolean>> {
+  const itemIds = asked.map((_, index) => `I${index + 1}`)
+  const items = asked.map(
+    (item): RegenPromptItem =>
+      item.kind === 'part' ? { kind: 'part', part: item.part } : { kind: 'memory', memory: item.memory },
+  )
+  const parse = (reply: string): Checked<ReadonlyMap<string, boolean>> => {
+    const parsed = parseRegenRecommendation(reply, itemIds)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => regenRecommendPrompt(role, items, errors)
+
+  return checkedCompletion(io, REGEN_RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+}
+
+/**
+ * The question of one regen item (D-142): the part question (regenPartQuestion) or the memory question
+ * (regenMemoryQuestion) with its context line, Yes and No, and the chip of its place (regenHeader); an answer that is
+ * neither is asked again with why on top (D-136).
+ */
+function regenAsk(
+  id: string,
+  item: RegenAsk,
+  isRecommended: boolean,
+  place: { readonly position: number; readonly count: number },
+): ChoiceAsk<boolean> {
+  const question =
+    item.kind === 'part'
+      ? withContext(regenPartQuestion(id, item.part), regenPartContextLine(item.change, isRecommended))
+      : withContext(
+          regenMemoryQuestion(id, item.memory),
+          regenMemoryContextLine(item.memory, item.change, isRecommended),
+        )
+
+  return {
+    question,
+    spec: { options: REGEN_ITEM_OPTIONS, header: regenHeader(place.position, place.count) },
+    parse: answer => labelled(REGEN_CHOICES, answer),
+    accepts: quotedLabels(REGEN_ITEM_OPTIONS),
+  }
+}
+
+/**
+ * The answers to the questions of a regen in a session (G-02-1f Regen, D-142 rg1-a): one recommendation call for every
+ * item (regenRecommended), then each item's question in order (regenAsk); it gives the items answered Yes. A dismissal
+ * is cancelled with REGEN_DISMISSED_REASON and MAX_ASKS answers that are neither with NO_USABLE_ANSWER_REASON, so
+ * nothing is written (A1, AUTO-PICK #19 Q7).
+ */
+async function regenAnswers(
+  io: InitIo,
+  role: RoleSpec,
+  asked: readonly RegenAsk[],
+): Promise<StepResult<ReadonlySet<RegenAsk>>> {
+  const recommended = await regenRecommended(io, role, asked)
+  const yes = new Set<RegenAsk>()
+  for (const [index, item] of asked.entries()) {
+    const place = { position: index + 1, count: asked.length }
+    const ask = regenAsk(role.id, item, recommended.get(`I${place.position}`) === true, place)
+    const answer = choiceResult(await askChoice(io, ask), REGEN_DISMISSED_REASON)
+    if (answer.kind === 'cancelled') return answer
+    if (answer.value) yes.add(item)
+  }
+
+  return accepted(yes)
+}
+
+/**
+ * The repo side as a plain regen may write it (02-GAPS-B2 M3): when it rebuilds the built file or writes the records,
+ * `git ls-files` runs once (trackedParts) for the files of the parts it would write, and only the parts of files git
+ * tracks are kept, the built text then changing when a given part is left out; each other file is a warning. When git
+ * cannot be asked the side is left as it is (null) with GIT_TRACKING_UNKNOWN_WARNING. A dry run holds no host and asks
+ * no git, so its plan may show a part that apply then leaves out.
+ */
+async function trackedSide(
+  host: HostIo | null,
+  root: string,
+  id: string,
+  result: SideResult,
+): Promise<{ readonly result: SideResult | null; readonly warnings: readonly string[] }> {
+  if (host === null || !(result.isTextChanged || result.isRecordsChanged)) return { result, warnings: [] }
+  const parts = [...result.given, ...(result.isRecordsChanged ? result.notGiven : [])]
+  const tracked = await trackedParts(host, root, new Map([[id, parts]]))
+  if (tracked.warnings.includes(GIT_TRACKING_UNKNOWN_WARNING)) return { result: null, warnings: tracked.warnings }
+  const kept = new Set(tracked.repoParts.get(id) ?? [])
+  const given = result.given.filter(part => kept.has(part))
+  const notGiven = result.notGiven.filter(part => kept.has(part))
+  const isTextChanged = result.isTextChanged || given.length < result.given.length
+
+  return { result: { ...result, given, notGiven, isTextChanged }, warnings: tracked.warnings }
+}
+
+/**
+ * Which private files regen rebuilds (G-02-1f Regen; AUTO-PICK #19 Q3, Q4, Q11): when the records change, the record,
+ * and the text file too when its text changes or the role is left with nothing, so both files say so; with no record
+ * change, as where no one can be asked, the text file alone when its text changes; else none.
+ */
+function privateRebuildOf(result: SideResult): NonNullable<PrivateRole['rebuild']> | null {
+  if (!result.isRecordsChanged) return result.isTextChanged ? 'text' : null
+  const isEmpty = result.given.length === 0 && result.memories.length === 0
+
+  return result.isTextChanged || isEmpty ? 'both' : 'record'
+}
+
+/**
+ * The private files regen rebuilds for a role, or null when it rebuilds none (privateRebuildOf): its role memory
+ * folder, the repo's folder name for the text file's header, the global parts and memories it holds now, and the
+ * other global parts of the files read, which its record names as not given (AUTO-PICK #19 Q1).
+ */
+function privateRoleOf(id: string, folder: string, repo: string, result: SideResult): PrivateRole | null {
+  const rebuild = privateRebuildOf(result)
+  if (rebuild === null) return null
+  const { given: parts, memories, notGiven } = result
+
+  return { id, folder, repo, parts, memories, partsNotGiven: notGiven.map(partRecord), rebuild }
+}
+
+/** The role with the repo records of this side (withPartRecords): the parts it holds now, and the other parts read. */
+function recordedRole(role: RoleSpec, side: SideResult): RoleSpec {
+  return withPartRecords(role, side.given.map(partRecord), side.notGiven.map(partRecord))
+}
+
+/**
+ * What regen hands out for its role (G-02-1f Regen, D-142): the role role.json is planned from, with new records when
+ * they change (AUTO-PICK #19 Q2), and whether they do; the repo parts its built CLAUDE.md is rebuilt from, null to
+ * keep that file as it is (Q4); its private files to rebuild, null for none; the reply lines of what was dropped; the
+ * warnings printed with the scan warnings; the warnings of the git check, printed with what the apply did; and whether
+ * a dialog could be shown, so the improver may run after a plain regen.
+ */
+type RegenHanded = {
+  readonly role: RoleSpec
+  readonly isRoleWritten: boolean
+  readonly repoParts: readonly InstructionPart[] | null
+  readonly privateRole: PrivateRole | null
+  readonly dropped: readonly string[]
+  readonly warnings: readonly string[]
+  readonly untracked: readonly string[]
+  readonly isSession: boolean
+}
+
+/**
+ * The hand-out of a regen (G-02-1f Regen, D-142). A role.json with no part records, written before them, hands out
+ * nothing, so regen runs as before. Else regen reads again only the files and memories the records name (rg2-a): the
+ * repo side from role.json (repoSideRead) and, in a plain regen, the private side from the role's hand-out record
+ * (privateRecordOf, privateSideRead); a --dry-run compares the repo side only (AUTO-PICK #19 Q5). Each side gives what
+ * changed and what to ask (sideChanges): the repo side's parts, then the global parts, then the memories. In a session
+ * that can show a dialog, with an item to ask, one recommendation call and one question per item follow (regenAnswers,
+ * rg1-a), in a --dry-run too (Q6), and a cancel gives its reason (Q7); where no one can be asked nothing is, and the
+ * items left out give notHandedOutWarning. Then each side's result (sideResult): the repo side is checked against git
+ * in a plain regen (trackedSide), sets its records on the role when they change (withPartRecords) and rebuilds the
+ * built file from its parts when its text changes; the private side gives the files of the role memory folder to
+ * rebuild (privateRoleOf), with the repo's folder name (repoNameOf).
+ */
+async function regenHandout(
+  io: InitIo,
+  host: HostIo | null,
+  input: {
+    readonly id: string
+    readonly role: RoleSpec
+    readonly locations: InitLocations
+    readonly setup: SetupScan
+  },
+): Promise<StepResult<RegenHanded>> {
+  const { id, role, locations } = input
+  const handed: RegenHanded = {
+    role,
+    isRoleWritten: false,
+    repoParts: null,
+    privateRole: null,
+    dropped: [],
+    warnings: [],
+    untracked: [],
+    isSession: false,
+  }
+  if (role.instructionParts === undefined && role.instructionPartsNotGiven === undefined) return accepted(handed)
+  const repoRead = await repoSideRead(io, locations.root, role)
+  const found = await privateRecordOf(io, host, locations, id)
+  const places = recordPlacesOf(locations, input.setup)
+  const privateRead = found.kind === 'found' ? await privateSideRead(io, found.record, places, id) : null
+  const repoChanges = repoRead.kind === 'read' ? sideChanges(repoRead.side) : null
+  const privateChanges = privateRead?.kind === 'read' ? sideChanges(privateRead.side) : null
+  const asked = [...(repoChanges?.asked ?? []), ...(privateChanges?.asked ?? [])]
+  const isSession = (await io.isInteractive()) === true
+  const none: ReadonlySet<RegenAsk> = new Set()
+  const answers = isSession && asked.length > 0 ? await regenAnswers(io, role, asked) : accepted(none)
+  if (answers.kind === 'cancelled') return answers
+  const repoResult = repoChanges === null ? null : sideResult(id, repoChanges, answers.value, isSession)
+  const privateResult = privateChanges === null ? null : sideResult(id, privateChanges, answers.value, isSession)
+  const tracked = repoResult === null ? null : await trackedSide(host, locations.root, id, repoResult)
+  const repoSide = tracked?.result ?? null
+  const leftOut = (repoResult?.leftOut ?? 0) + (privateResult?.leftOut ?? 0)
+  const warnings = [
+    ...(repoRead.kind === 'kept' ? repoRead.warnings : []),
+    ...(found.kind === 'kept' ? found.warnings : []),
+    ...(privateRead?.kind === 'kept' ? privateRead.warnings : []),
+    ...(leftOut > 0 ? [notHandedOutWarning(id, leftOut)] : []),
+  ]
+  const isRoleWritten = repoSide !== null && repoSide.isRecordsChanged
+  const privateRole =
+    found.kind === 'found' && privateResult !== null
+      ? privateRoleOf(id, found.folder, repoNameOf(locations), privateResult)
+      : null
+
+  return accepted({
+    role: isRoleWritten ? recordedRole(role, repoSide) : role,
+    isRoleWritten,
+    repoParts: repoSide !== null && repoSide.isTextChanged ? repoSide.given : null,
+    privateRole,
+    dropped: [...(repoSide?.dropped ?? []), ...(privateResult?.dropped ?? [])],
+    warnings,
+    untracked: tracked?.warnings ?? [],
+    isSession,
+  })
+}
+
+/**
+ * What regen planned for one role: the file plan, the warnings its reply prints between the plan and the ending (the
+ * scan warnings of the run, A4, then the hand-out's), the reply lines of what the hand-out dropped, and what apply
  * writes the plan from: the desired files and the manifest the plan records.
  */
 type RegenPlanned = {
   readonly plan: Plan
   readonly warnings: readonly string[]
+  readonly dropped: readonly string[]
   readonly desired: readonly DesiredFile[]
   readonly manifest: Manifest
 }
 
+/** The manifest with this path recorded at this hash in place of any entry it had for it (A5, AUTO-PICK #19 Q2). */
+function withRecordedHash(manifest: Manifest, path: string, sha256: string): Manifest {
+  const others = manifest.files.filter(entry => entry.path !== path)
+
+  return { ...manifest, files: [...others, { path, sha256, mode: 'file' }] }
+}
+
+/** The repo-relative path of a role's built CLAUDE.md, as desiredFiles names it (G-02-1f Storage split). */
+function builtClaudeMdPath(id: string): string {
+  return `.cadre/${id}/CLAUDE.md`
+}
+
 /**
- * The file plan of regen for one role (D-68, PLAN-04), with the scan warnings of the run (scanWarnings, A4). Every
- * listed role is compiled as init compiles it, on its own framework or the repo default and attended by the current
- * config (compileTeam), so the index lists the whole team; desiredFiles gives only that role's files, its
- * launcher and the index. Exactly the paths planReadPaths names are read, and planWithManifest classifies them against
- * the disk and the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is
- * planned. ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1), so the MCP denies init
- * compiled from it stay. Without a manifest read in full regen cannot keep the other roles' entries, so it refuses
- * (A2), as the scan read it: REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is
- * too large or is not valid. The role's role.json is the input, so it gets no op and the new manifest records the hash
- * of `roleJson`, the text on disk (A5); the next init normalises it. It gives the desired files without role.json and
- * the manifest the plan records, which a plain regen writes.
+ * The file plan of regen for one role (D-68, PLAN-04), from its scans (regenScans) and its hand-out (regenHandout).
+ * desiredFiles gives only that role's files, its launcher and the index, with the role as the hand-out gives it, and
+ * its built `.cadre/<id>/CLAUDE.md` only when the hand-out rebuilds it from its repo parts; else the last manifest's
+ * entry of that file is carried, so the file gets no op and is never listed as no longer generated (AUTO-PICK #15,
+ * #19 Q4). Exactly the paths planReadPaths names are read, and planWithManifest classifies them against the disk and
+ * the last manifest, carrying every other entry (carriedEntries). No `.gitignore` block and no hunk is planned. The
+ * role's role.json is the input (A5): when the hand-out leaves its records as they are it gets no op and the new
+ * manifest records the hash of `roleJson`, the text on disk, which the next init normalises; when its records change
+ * it is planned with them against that same disk hash as the last one, so it is a change, never a conflict (AUTO-PICK
+ * #19 Q2). The warnings are the scan warnings of the run (scanWarnings, A4), then the hand-out's.
  */
 async function regenPlan(
   io: InitIo,
@@ -4058,45 +4871,92 @@ async function regenPlan(
     readonly roles: readonly RoleSpec[]
     readonly roleJson: string
     readonly locations: InitLocations
+    readonly scans: RegenScans
+    readonly handed: RegenHanded
   },
-): Promise<RegenRead<RegenPlanned>> {
-  const { id, state, roles, roleJson, locations } = input
-  const { gathered, scopes } = await compileTeam(io, locations, state, roles)
-  const { manifest, manifestState } = gathered.repo.cadre
-  if (manifest === null) return regenRefusal(manifestState === 'absent' ? REGEN_NO_MANIFEST : REGEN_BAD_MANIFEST)
-  const generated = desiredFiles({ roles, scopes, state, only: id })
+): Promise<RegenPlanned> {
+  const { id, state, roleJson, locations, scans, handed } = input
+  const { manifest } = scans
+  const roles = input.roles.map(role => (role.id === id ? handed.role : role))
+  const parts = handed.repoParts === null ? {} : { repoParts: new Map([[id, handed.repoParts]]) }
+  const generated = desiredFiles({ roles, scopes: scans.scopes, state, only: id, ...parts })
   const ownPath = roleJsonPath(id)
-  const desired = generated.filter(file => file.path !== ownPath)
   const sha256 = await sha256Hex(roleJson)
+  const desired = handed.isRoleWritten ? generated : generated.filter(file => file.path !== ownPath)
   const own = generated
-    .filter(file => file.path === ownPath)
+    .filter(file => !handed.isRoleWritten && file.path === ownPath)
     .map((file): ManifestEntry => ({ path: file.path, sha256, mode: file.mode }))
+  const builtPath = builtClaudeMdPath(id)
+  const built = handed.repoParts === null ? manifest.files.filter(entry => entry.path === builtPath) : []
   const planned = await planWithManifest({
     desired,
     disk: await readPaths(io, locations.root, planReadPaths(desired)),
-    manifest,
-    manifestState,
-    carried: [...own, ...carriedEntries(manifest, generated, id)],
+    manifest: handed.isRoleWritten ? withRecordedHash(manifest, ownPath, sha256) : manifest,
+    manifestState: scans.manifestState,
+    carried: [...own, ...built, ...carriedEntries(manifest, generated, id)],
     gitignore: null,
     hunks: [],
     cadreVersion: (await io.cadreVersion()) ?? 'unknown',
   })
-  const warnings = scanWarnings(locations, gathered)
+  const warnings = [...scanWarnings(locations, scans.gathered), ...handed.warnings]
 
-  return { kind: 'ok', value: { plan: planned.plan, warnings, desired, manifest: planned.manifest } }
+  return { plan: planned.plan, warnings, dropped: handed.dropped, desired, manifest: planned.manifest }
 }
 
 /**
- * The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, one `warning:` line for each scan
- * warning, between the plan and the ending as init prints them (scanWarningLines, A4), then the dry-run note when
- * `applied` is null (--dry-run, nothing was written), else the lines of what the apply did (appliedLines), with the
- * regen manifest note (A4).
+ * The regen reply (D-68): what was asked for, the file plan as renderPlan prints it, the reply line of each item the
+ * hand-out dropped (G-02-1f Regen), one `warning:` line for each warning of the plan, between the plan and the ending
+ * as init prints them (scanWarningLines, A4), then the dry-run note when `applied` is null (--dry-run, nothing was
+ * written), else the lines of what the apply did (appliedLines), with the regen manifest note (A4).
  */
 function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
   const command = applied === null ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
   const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied, regenManifestSkippedNote(id))
+  const warnings = scanWarningLines(planned.warnings)
 
-  return [command, ...renderPlan(planned.plan), ...scanWarningLines(planned.warnings), ...ending].join('\n')
+  return [command, ...renderPlan(planned.plan), ...planned.dropped, ...warnings, ...ending].join('\n')
+}
+
+/**
+ * Writes the plan of a plain regen (D-68, D-105) with no question: applySteps with the role's private files when the
+ * hand-out rebuilds them, whose paths are the only ones outside the repo it may write (privatePaths, T-02-72), run by
+ * writeSteps, so a conflicted file is kept and its `.cadre-new` copy written. When claude-md-management is installed
+ * and the apply rebuilds a built file with a part in it (builtRoleFiles: the role's built CLAUDE.md with a repo part,
+ * its private text file with a global part), the improver pass runs on them in a session (writeImproved, D-141,
+ * D-142); where no one can be asked it does not start, and the outcome carries improverNotOfferedWarning. The warnings
+ * of the hand-out's git check are its untrackedParts.
+ */
+async function regenApply(
+  io: InitIo,
+  host: HostIo,
+  input: {
+    readonly locations: InitLocations
+    readonly planned: RegenPlanned
+    readonly handed: RegenHanded
+    readonly setup: SetupScan
+  },
+): Promise<ApplyOutcome> {
+  const { locations, planned, handed } = input
+  const { plan, desired, manifest } = planned
+  const { privateRole, role } = handed
+  const privates = privateRole === null ? [] : [privateRole]
+  const applyInput: ApplyInput = { plan, desired, manifest, gitignore: null, choices: new Map(), privates }
+  const steps = await applySteps(applyInput)
+  const allowed = privatePaths(privates.map(owed => owed.folder))
+  const withParts = new Set(handed.repoParts !== null && handed.repoParts.length > 0 ? [role.id] : [])
+  const isImproverReady = input.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
+  const built = isImproverReady ? builtRoleFiles(steps, locations.root, withParts) : []
+  // A private text file of the header alone has nothing to improve.
+  const offered = built.filter(file => file.repoPath !== null || (privateRole?.parts.length ?? 0) > 0)
+  const isOffered = offered.length > 0 && handed.isSession
+  const written = isOffered
+    ? await writeImproved(io, host, { locations, input: applyInput, steps, offered, allowed })
+    : await writeSteps(io, host, locations, steps, allowed)
+  const notOffered = offered.length > 0 && !handed.isSession ? [improverNotOfferedWarning(role.id)] : []
+
+  const improverWarnings = [...written.improverWarnings, ...notOffered]
+
+  return { ...written, untrackedParts: handed.untracked, improverWarnings }
 }
 
 /**
@@ -4108,40 +4968,61 @@ export type RegenOptions =
   | { readonly id: string; readonly dryRun: false; readonly host: HostIo }
 
 /**
- * `/cadre regen <id> [--dry-run]` (D-68, D-99). It asks nothing and logs nothing, so it also runs in `claude -p`: its
- * guard (initGuard in the regen wording) never asks whether anyone is there. It then reads the team (readTeam) and
- * refuses with an exact reply, in this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be
- * read or is not valid, its stored launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole);
- * the first listed role.json, in cadre.json order, that is missing, not valid or holds another id (regenBadRole); when
- * the repo has no default framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last,
- * read by the scan regenPlan runs, a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or
- * is not valid (REGEN_BAD_MANIFEST, A2). Otherwise it plans that one role (regenPlan). --dry-run replies with the
- * plan, a `warning:` line for each scan warning and the note that nothing was written; plain regen writes the plan
- * with no question (D-68): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is
- * (D-67), cadre.json is never among its files, and a manifest the plan keeps as a conflict is not written. It then
- * replies with the plan, the warnings and what the apply did (regenReplyText). The warnings are in the reply, so it
- * still asks and logs nothing (A4). ~/.claude.json is read only when cadre.json records the consent (readUserMcp, A1),
- * so the MCP denies init compiled from it stay. Plain regen and --dry-run differ only in the first line and the ending.
+ * The reply of a regen cancelled at one of its questions: its reason logged as its own line, the one place it is
+ * printed (A1), and regenCancelledReply of it, so the reply names it too (AUTO-PICK #19 Q7).
+ */
+function regenCancelReply(io: InitIo, reason: string): string {
+  io.log(reportText(reason))
+
+  return regenCancelledReply(reason)
+}
+
+/**
+ * `/cadre regen <id> [--dry-run]` (D-68, D-99, D-142). Its guard (initGuard in the regen wording) never asks whether
+ * anyone is there, so it also runs in `claude -p`. It then reads the team (readTeam) and refuses with an exact reply,
+ * in this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be read or is not valid, its stored
+ * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
+ * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
+ * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by its scans
+ * (regenScans), a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
+ * (REGEN_BAD_MANIFEST, A2). Then it hands out what changed in the files and memories the role's records name
+ * (regenHandout, G-02-1f Regen): in a session it asks about each new or changed item, and a dismissed or unanswered
+ * question cancels with regenCancelledReply, its reason logged as its own line, before anything is written (AUTO-PICK
+ * #19 Q7); where no one can be asked it asks and logs nothing and says what it left out. A role.json with no records
+ * asks and logs nothing, as before. It plans that one role (regenPlan). --dry-run replies with the plan, the dropped
+ * lines, a `warning:` line for each warning and the note that nothing was written; plain regen writes the plan
+ * (regenApply): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is (D-67),
+ * cadre.json is never among its files, a manifest the plan keeps as a conflict is not written, and in a session the
+ * improver pass runs on the rebuilt files (D-141). It then replies with the plan, the dropped lines, the warnings and
+ * what the apply did (regenReplyText). ~/.claude.json is read only when cadre.json records the consent (readUserMcp,
+ * A1), so the MCP denies init compiled from it stay. Plain regen and --dry-run differ in the first line and the ending,
+ * and a dry run compares no private record (AUTO-PICK #19 Q5) and asks git nothing.
  */
 export async function runRegen(io: InitIo, options: RegenOptions): Promise<string> {
   const guard = await initGuard(io, 'regen')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
+  const { id } = options
 
-  const team = await readTeam(io, locations.root, 'regen', options.id)
+  const team = await readTeam(io, locations.root, 'regen', id)
   if (team.kind === 'refuse') return team.text
   const { state, roles, texts } = team.value
-  const roleJson = texts.get(options.id)
-  // Fail closed: every listed role was read, so after the id check its text is always there.
-  if (roleJson === undefined) return regenBadRole(options.id)
+  const role = roles.find(listed => listed.id === id)
+  const roleJson = texts.get(id)
+  // Fail closed: every listed role was read, so after the id check the role and its text are always there.
+  if (role === undefined || roleJson === undefined) return regenBadRole(id)
 
-  const planned = await regenPlan(io, { id: options.id, state, roles, roleJson, locations })
-  if (planned.kind === 'refuse') return planned.text
-  if (options.dryRun) return regenReplyText(planned.value, options.id, null)
+  const scans = await regenScans(io, locations, state, roles)
+  if (scans.kind === 'refuse') return scans.text
+  const { setup } = scans.value.gathered
+  const host = options.dryRun ? null : options.host
+  const handed = await regenHandout(io, host, { id, role, locations, setup })
+  if (handed.kind === 'cancelled') return regenCancelReply(io, handed.reason)
 
-  const { plan, desired, manifest } = planned.value
-  const steps = await applySteps({ plan, desired, manifest, gitignore: null, choices: new Map() })
-  const outcome = await writeSteps(io, options.host, locations, steps)
+  const input = { id, state, roles, roleJson, locations, scans: scans.value, handed: handed.value }
+  const planned = await regenPlan(io, input)
+  if (options.dryRun) return regenReplyText(planned, id, null)
+  const outcome = await regenApply(io, options.host, { locations, planned, handed: handed.value, setup })
 
-  return regenReplyText(planned.value, options.id, outcome)
+  return regenReplyText(planned, id, outcome)
 }

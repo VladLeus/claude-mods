@@ -3,6 +3,7 @@ import type {
   Effort,
   FrameworkId,
   InstructionGroup,
+  InstructionPartRecord,
   PermissionMode,
   ProposedRole,
   RepoScan,
@@ -750,19 +751,22 @@ export const MAX_HEADING_CHARS = 80
 /** A SHA-256 as a part record holds it: 64 lowercase hex characters, as sha256Hex gives it. */
 const SHA256_HEX = /^[0-9a-f]{64}$/
 
+/** Whether a text is a SHA-256 as cadre records it (G-02-1f Regen): 64 lowercase hex characters. */
+export function isSha256Hex(text: string): boolean {
+  return SHA256_HEX.test(text)
+}
+
 /** The extension of every file a repo part comes from: the read of the instruction files takes only `.md` files. */
 const PART_FILE_EXTENSION = '.md'
-
-/** The repo part records of a role, as RoleSpec holds them (G-02-1f Regen). */
-type PartRecords = NonNullable<RoleSpec['instructionParts']>
 
 /**
  * Whether a recorded repo part names a file regen may read again (G-02-1f Regen, T-02-78): a path below the repo root,
  * with no leading `/` and no empty, `.` or `..` segment, that clean leaves as it is, of a `.md` file that is not under
  * a `.git` folder in any letter case, as the read follows only such files (02-GAPS-B2 M3). Such a record never names a
- * file outside the repo, and regen reads it through readRepoFile, which follows no link out of the repo.
+ * file outside the repo, and regen reads it through readRepoFile, which follows no link out of the repo. Init records
+ * only a part whose file it takes, so it never writes a role.json that parseRoleJson refuses.
  */
-function isRecordedPartFile(file: string): boolean {
+export function isRecordedPartFile(file: string): boolean {
   if (file.startsWith('/') || isChangedByClean(file, Number.POSITIVE_INFINITY)) return false
   if (!file.endsWith(PART_FILE_EXTENSION)) return false
   const segments = file.split('/')
@@ -772,13 +776,14 @@ function isRecordedPartFile(file: string): boolean {
 }
 
 /**
- * One repo part record of a role.json object (G-02-1f Regen): a file isRecordedPartFile takes, a heading clean leaves
- * as it is at MAX_HEADING_CHARS code points, and a SHA-256 in lowercase hex; null for anything else.
+ * One part record (G-02-1f Regen): a file `isFile` takes, a heading clean leaves as it is at MAX_HEADING_CHARS code
+ * points, and a SHA-256 in lowercase hex; null for anything else. role.json takes repo files (isRecordedPartFile), and
+ * a role's private instructions.json the global ones regen checks on its own.
  */
-function partRecordOf(value: unknown): PartRecords[number] | null {
+export function partRecordOf(value: unknown, isFile: (file: string) => boolean): InstructionPartRecord | null {
   if (!isObject(value)) return null
   const { file, heading, hash } = value
-  if (typeof file !== 'string' || !isRecordedPartFile(file)) return null
+  if (typeof file !== 'string' || !isFile(file)) return null
   if (typeof heading !== 'string' || isChangedByClean(heading, MAX_HEADING_CHARS)) return null
   if (typeof hash !== 'string' || !SHA256_HEX.test(hash)) return null
 
@@ -786,14 +791,14 @@ function partRecordOf(value: unknown): PartRecords[number] | null {
 }
 
 /**
- * The repo part records of a role.json object (G-02-1f Regen), in their order: undefined when it has none, as a
- * role.json written before them; null when they are not a list of records partRecordOf takes.
+ * The repo part records of one key of a role.json object (G-02-1f Regen), in their order: undefined when it is not
+ * there, as in a role.json written before them; null when it is not a list of records partRecordOf takes.
  */
-function partRecordsOf(value: unknown): PartRecords | null | undefined {
+function partRecordsOf(value: unknown): InstructionPartRecord[] | null | undefined {
   if (value === undefined) return undefined
   if (!Array.isArray(value)) return null
-  const records = value.map(partRecordOf)
-  const valid = records.filter((record): record is PartRecords[number] => record !== null)
+  const records = value.map(item => partRecordOf(item, isRecordedPartFile))
+  const valid = records.filter((record): record is InstructionPartRecord => record !== null)
 
   return valid.length === records.length ? valid : null
 }
@@ -866,10 +871,10 @@ function carryOf(value: unknown): RoleCarry | null {
  * A role.json read back into a role (D-68). The file is committed and anyone can edit it, so every field is checked by
  * type and pattern, and any bad or missing field gives null for the whole file. The schema must be 1 and is dropped;
  * keys that are not part of a role are ignored. A role based on pm with Bash is refused, because PM never has Bash
- * (ROLE-05). The title and purpose are cleaned and capped, not refused. The repo part records (instructionParts,
- * G-02-1f Regen) may be absent, as in a role.json written before them; when present, each must name a `.md` file below
- * the repo root, a heading clean leaves as it is within 80 code points and a lowercase hex SHA-256, or the whole file
- * gives null (partRecordOf, T-02-78).
+ * (ROLE-05). The title and purpose are cleaned and capped, not refused. The repo part records (instructionParts and
+ * instructionPartsNotGiven, G-02-1f Regen, AUTO-PICK #19 Q1) may each be absent, as in a role.json written before
+ * them; when present, each must name a `.md` file below the repo root, a heading clean leaves as it is within 80 code
+ * points and a lowercase hex SHA-256, or the whole file gives null (partRecordOf, T-02-78).
  */
 export function parseRoleJson(text: string): RoleSpec | null {
   const json = parseJsonValue(text)
@@ -880,11 +885,13 @@ export function parseRoleJson(text: string): RoleSpec | null {
   const autopilot = autopilotOf(json.value.autopilot)
   const scope = scopeOf(json.value)
   const carry = carryOf(json.value.carry)
-  const records = partRecordsOf(json.value.instructionParts)
+  const given = partRecordsOf(json.value.instructionParts)
+  const notGiven = partRecordsOf(json.value.instructionPartsNotGiven)
   if (identity === null || settings === null || autopilot === null || scope === null || carry === null) return null
-  if (records === null) return null
+  if (given === null || notGiven === null) return null
   if (identity.basedOn === 'pm' && scope.hasBash) return null
   const role: RoleSpec = { ...identity, ...settings, autopilot, ...scope, carry }
+  const withGiven = given === undefined ? role : { ...role, instructionParts: given }
 
-  return records === undefined ? role : { ...role, instructionParts: records }
+  return notGiven === undefined ? withGiven : { ...withGiven, instructionPartsNotGiven: notGiven }
 }

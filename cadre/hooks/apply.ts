@@ -22,6 +22,7 @@ import type {
   InitIo,
   InitLocations,
   InstructionPart,
+  InstructionPartRecord,
   Manifest,
   ManifestEntry,
   MemoryItem,
@@ -40,9 +41,12 @@ import {
   compareText,
   countedNoun,
   displayPath,
+  isChangedByClean,
   isDirInsideRoot,
   isFileInsideRoot,
+  isObject,
   MAX_READ_BYTES,
+  parseJsonValue,
   sortedUnique,
   trimSlash,
 } from './facts'
@@ -54,6 +58,7 @@ import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
 import { diffLines, lineDiff, reportText } from './render'
 import type { LineDiff } from './render'
+import { isSha256Hex, partRecordOf } from './roles'
 import { missingState } from './scan'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
@@ -142,6 +147,18 @@ export type PrivateRole = {
   readonly repo: string
   readonly parts: readonly InstructionPart[]
   readonly memories: readonly MemoryItem[]
+  /**
+   * The other global parts of the files its given parts come from, which it was not given (G-02-1f Regen, AUTO-PICK
+   * #19 Q1): its record names them, so regen never asks them as new; none when absent.
+   */
+  readonly partsNotGiven?: readonly InstructionPartRecord[]
+  /**
+   * How regen rebuilds its private files (G-02-1f Regen): `text` writes the text file alone (claude -p writes no
+   * record, AUTO-PICK #19 Q3), `record` the record alone and `both` both, each whatever it holds, a text file of the
+   * header alone and a record with empty lists included (Q11). Absent for init, which writes the text file with a
+   * global part and the record with a global part or a memory.
+   */
+  readonly rebuild?: 'text' | 'record' | 'both'
 }
 
 /** What applySteps plans from: the confirmed plan and what it was built from, and the answers to its conflicts. */
@@ -201,31 +218,101 @@ export function privateClaudeMdText(id: string, repo: string, parts: readonly In
   return `${header}${headerEnd < 0 ? '\n' : built.slice(headerEnd)}`
 }
 
+/** Part records as a hand-out record holds them: file, heading and hash, in the order given. */
+function partRecordsOf(parts: readonly InstructionPartRecord[]): InstructionPartRecord[] {
+  return parts.map(({ file, heading, hash }) => ({ file, heading, hash }))
+}
+
 /**
  * The text of a role's hand-out record (G-02-1f Storage split, D-140 q2-a), as stableJson writes it: schema 1, each
- * global part the role was given by file, heading and hash, in read order, and each memory it was given by file,
- * folder, summary and hash. It holds no part or memory text: /cadre start links the memories it names, and regen
- * tells new, changed and removed items apart by it.
+ * global part the role was given by file, heading and hash, in read order, each memory it was given by file, folder,
+ * summary and hash, and, when there are any, the other parts of the same files it was not given (`partsNotGiven`,
+ * AUTO-PICK #19 Q1). It holds no part or memory text: /cadre start links the memories it names, and regen tells new,
+ * changed and removed items apart by it.
  */
-export function instructionsRecordText(parts: readonly InstructionPart[], memories: readonly MemoryItem[]): string {
+export function instructionsRecordText(
+  parts: readonly InstructionPartRecord[],
+  memories: readonly Pick<MemoryItem, 'file' | 'folder' | 'summary' | 'hash'>[],
+  partsNotGiven: readonly InstructionPartRecord[] = [],
+): string {
   return stableJson({
     schema: 1,
-    parts: parts.map(({ file, heading, hash }) => ({ file, heading, hash })),
+    parts: partRecordsOf(parts),
+    ...(partsNotGiven.length === 0 ? {} : { partsNotGiven: partRecordsOf(partsNotGiven) }),
     memories: memories.map(({ file, folder, summary, hash }) => ({ file, folder, summary, hash })),
   })
 }
 
 /**
- * The private files of a role (G-02-1f Storage split, D-140 q2-a): its private text file when it was given a global
- * part, then its hand-out record when it was given a global part or a memory; none when it was given neither.
+ * The private files of a role (G-02-1f Storage split, D-140 q2-a): for init, its private text file when it was given a
+ * global part, then its hand-out record when it was given a global part or a memory, none when it was given neither;
+ * for regen, the files `rebuild` names, whatever they hold (G-02-1f Regen).
  */
 function privateFilesOf(role: PrivateRole): PrivateFile[] {
-  if (role.parts.length === 0 && role.memories.length === 0) return []
-  const record = { path: instructionsRecordPath(role.folder), text: instructionsRecordText(role.parts, role.memories) }
-  if (role.parts.length === 0) return [record]
-  const text = privateClaudeMdText(role.id, role.repo, role.parts)
+  const recordText = instructionsRecordText(role.parts, role.memories, role.partsNotGiven ?? [])
+  const record = { path: instructionsRecordPath(role.folder), text: recordText }
+  const text = { path: privateClaudeMdPath(role.folder), text: privateClaudeMdText(role.id, role.repo, role.parts) }
+  if (role.rebuild === 'both') return [text, record]
+  if (role.rebuild === 'text') return [text]
+  if (role.rebuild === 'record') return [record]
+  if (role.parts.length > 0) return [text, record]
 
-  return [{ path: privateClaudeMdPath(role.folder), text }, record]
+  return role.memories.length > 0 ? [record] : []
+}
+
+/** A memory a role's hand-out record names (D-140 q2-a): its file, the memory folder of its original, summary, hash. */
+export type RecordedMemory = Pick<MemoryItem, 'file' | 'folder' | 'summary' | 'hash'>
+
+/**
+ * A role's hand-out record as regen reads it (G-02-1f Regen): its global parts, the parts of the same files it was not
+ * given (AUTO-PICK #19 Q1) and its memories.
+ */
+export type InstructionsRecord = {
+  readonly parts: readonly InstructionPartRecord[]
+  readonly partsNotGiven: readonly InstructionPartRecord[]
+  readonly memories: readonly RecordedMemory[]
+}
+
+/** Whether a recorded global part names its file as text regen can map back to a path: not empty, and clean. */
+function isRecordedGlobalFile(file: string): boolean {
+  return file !== '' && !isChangedByClean(file, Number.POSITIVE_INFINITY)
+}
+
+/** A list of global part records partRecordOf takes; null when the value is not such a list. */
+function recordedParts(value: unknown): InstructionPartRecord[] | null {
+  if (!Array.isArray(value)) return null
+  const parts = value.map(item => partRecordOf(item, isRecordedGlobalFile))
+  const valid = parts.filter((part): part is InstructionPartRecord => part !== null)
+
+  return valid.length === parts.length ? valid : null
+}
+
+/** A recorded memory: a text file, folder and summary and a lowercase hex SHA-256; null for anything else. */
+function recordedMemoryOf(value: unknown): RecordedMemory | null {
+  if (!isObject(value)) return null
+  const { file, folder, summary, hash } = value
+  if (typeof file !== 'string' || typeof folder !== 'string' || typeof summary !== 'string') return null
+  if (typeof hash !== 'string' || !isSha256Hex(hash)) return null
+
+  return { file, folder, summary, hash }
+}
+
+/**
+ * A role's hand-out record read back for regen (G-02-1f Regen, D-140 q2-a), as instructionsRecordText writes it:
+ * schema 1, its global parts and memories, and its parts not given, none when absent. The file lies in the user's
+ * folder, where a role session could still write it, so every field is checked (partRecordOf, a lowercase hex hash for
+ * each memory) and anything else gives null; whether its paths may be read is regen's own check (AUTO-PICK #19 Q9).
+ */
+export function parseInstructionsRecord(text: string): InstructionsRecord | null {
+  const record = parseJsonValue(text)?.value
+  if (!isObject(record) || record.schema !== 1 || !Array.isArray(record.memories)) return null
+  const parts = recordedParts(record.parts)
+  const partsNotGiven = record.partsNotGiven === undefined ? [] : recordedParts(record.partsNotGiven)
+  if (parts === null || partsNotGiven === null) return null
+  const memories = record.memories.map(recordedMemoryOf)
+  const valid = memories.filter((memory): memory is RecordedMemory => memory !== null)
+
+  return valid.length === memories.length ? { parts, partsNotGiven, memories: valid } : null
 }
 
 /** One private step per role that has a private file, in the order given (privateFilesOf). */

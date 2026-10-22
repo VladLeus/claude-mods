@@ -264,6 +264,7 @@ import {
   unreadableWarning,
 } from './instructions'
 import type { PartRecord } from './instructions'
+import { isPartsFlowRole } from './launch'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import {
   attendedNote,
@@ -5877,9 +5878,11 @@ function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): Ca
 }
 
 /**
- * The files init plans for these roles in `world`: every scope compiled on the state's default and for its launch
- * start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent (A1).
- * Init always passes repo parts, none here, so every role gets its header-only built CLAUDE.md (02-GAPS-B2 S1).
+ * The files planned for these roles, as given, in `world`: every scope compiled on the state's default and for its
+ * launch start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent
+ * (A1). Init always passes repo parts, none here, so every role gets its header-only built CLAUDE.md (02-GAPS-B2 S1);
+ * init also records them in role.json (initFiles), which a regen world of a role.json written before the records leaves
+ * out.
  */
 async function plannedFiles(
   world: MemWorld,
@@ -5891,6 +5894,23 @@ async function plannedFiles(
   const scopes = scopesFor(roles, state.framework, gathered, [], state.launchStart)
 
   return desiredFiles({ roles, scopes, state, only: null, repoParts: new Map() })
+}
+
+/**
+ * The roles as init plans them (G-02-1f Regen, AUTO-PICK #19 Q1): each parts-flow role records the repo parts it was
+ * given, none in these worlds, so its role.json holds an empty list; a whole-files role records none.
+ */
+function initRecorded(roles: readonly RoleSpec[]): RoleSpec[] {
+  return roles.map(role => (isPartsFlowRole(role) ? { ...role, instructionParts: [] } : role))
+}
+
+/** The files init plans for these roles in `world`: plannedFiles of the roles as init records them (initRecorded). */
+async function initFiles(
+  world: MemWorld,
+  roles: readonly RoleSpec[],
+  over: Partial<CadreState> = {},
+): Promise<DesiredFile[]> {
+  return plannedFiles(world, initRecorded(roles), over)
 }
 
 /**
@@ -6251,7 +6271,7 @@ describe('init plan', () => {
   )
 
   test('a re-run over the planned files, manifest and .gitignore plans only leave ops (PLAN-04)', async () => {
-    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -6284,7 +6304,7 @@ describe('init plan', () => {
   })
 
   test('a file edited since the last run is a conflict, with the new version planned beside it (D-67)', async () => {
-    const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const files = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
     const disk = {
       ...onDisk(files),
       '/repo/.cadre/manifest.json': await manifestOf(files),
@@ -6548,7 +6568,7 @@ describe('reviewStep', () => {
 
   test('model re-asks only the model questions, and the plan takes the new answer', async () => {
     const team = await defaultRoles(gitWorld())
-    const files = await plannedFiles(
+    const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, model: 'sonnet', effort: 'high' })),
     )
@@ -6564,7 +6584,7 @@ describe('reviewStep', () => {
 
   test('duration re-asks only the duration, and every role takes it', async () => {
     const team = await defaultRoles(gitWorld())
-    const files = await plannedFiles(
+    const files = await initFiles(
       gitWorld(),
       team.map((role): RoleSpec => ({ ...role, autopilot: { ...role.autopilot, duration: '90m' } })),
     )
@@ -7526,7 +7546,7 @@ describe('init apply (D-105)', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const host = memHost(hostWorld({}))
     await runInit(run.io, { dryRun: false, host: host.io })
-    const desired = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
+    const desired = await initFiles(gitWorld(), await defaultRoles(gitWorld()))
     const ignore = mergeIgnoreBlock(null, gitignoreLines('definitions', null, true))
     expect(host.writes).toEqual([
       ...desired.map(file => ({ path: `/repo/${file.path}`, text: file.content, isWritten: true })),
@@ -7762,7 +7782,7 @@ type EditedRole = {
  * manifest records the hash of an older cadre text for it, so init plans it as the one conflict (D-67).
  */
 async function editedRoleWorld(): Promise<EditedRole> {
-  const files = await plannedFiles(fullWorld(), await defaultRoles(fullWorld()))
+  const files = await initFiles(fullWorld(), await defaultRoles(fullWorld()))
   const role = files.find(file => file.path === '.cadre/be/ROLE.md')?.content ?? ''
   const older = files.map(file =>
     file.path === '.cadre/be/ROLE.md' ? { ...file, content: 'older cadre text\n' } : file,
@@ -8473,6 +8493,40 @@ describe('regen by part hashes (G-02-1f)', () => {
       expect(warningLines(reply)).toEqual([`warning: ${warning}`])
       expect([run.asked, host.writes]).toEqual([[], []])
     }
+  })
+
+  test('an unusable recommendation is sent back with its errors; after three, no item is recommended', async () => {
+    const replies = ['not json', '{"items":{"I9":true}}', '{"items":{"I1":"yes"}}']
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies } }
+    const { run } = await regenPlainBe(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    expect(run.prompts).toHaveLength(3)
+    expect(run.prompts.map(prompt => prompt.split('\n').at(-1)).slice(1)).toEqual([
+      '- the reply is not JSON',
+      '- unknown item "I9"',
+    ])
+    expect(run.asked).toEqual([
+      withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: no.'),
+    ])
+  })
+
+  test('a changed memory is asked with the summary its record holds, and MEMORY.md is not read (Q10)', async () => {
+    const squad = await squadMemory()
+    const files = {
+      [await beRecordPath()]: instructionsRecordText([], [squad]),
+      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad, edited)`,
+      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
+    }
+    const world = await regenPartsWorld({ over: { files, replies: ['{"items":{"I1":false}}'] } })
+    const { run, host } = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
+    const context = 'Unsigned commits on per-phase branches. Changed since init. Recommended: no.'
+    expect(run.asked).toEqual([withContext('Should be get the memory "squad.md"?', context)])
+    expect(run.reads).not.toContain(`${MEMORY_DIR}/MEMORY.md`)
+    const folder = await memoryFolder('be')
+    // No takes the memory out of the record (Q1); the role is left with nothing, so both files say so (Q11).
+    expect(homeWrites(host).map(write => [write.path, write.text])).toEqual([
+      [privateClaudeMdPath(folder), privateClaudeMdText('be', 'repo', [])],
+      [instructionsRecordPath(folder), instructionsRecordText([], [])],
+    ])
   })
 
   test('a role.json written before the records regens as before and keeps the built CLAUDE.md with no op', async () => {

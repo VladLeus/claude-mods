@@ -647,8 +647,22 @@ export type RoleSpec = {
    * (partChanges). It is committed with role.json, so it never holds a global part or a memory: those are recorded only
    * in the role's private instructions.json (D-140 q2-a). Absent in a role.json written before it, which still parses.
    */
-  readonly instructionParts?: readonly { readonly file: string; readonly heading: string; readonly hash: string }[]
+  readonly instructionParts?: readonly InstructionPartRecord[]
+  /**
+   * The other repo parts of the files the records name, which the role was not given (G-02-1f Regen, AUTO-PICK #19
+   * Q1), recorded the same way: regen asks a part only when neither list names its file and heading, so a part given
+   * to another role or kept with the root session is never asked as new. Committed with role.json; absent when there
+   * is none.
+   */
+  readonly instructionPartsNotGiven?: readonly InstructionPartRecord[]
   readonly carry: RoleCarry
+}
+
+/** A part as a role's records name it (G-02-1f Regen): its file, its heading and the SHA-256 of its text. */
+export type InstructionPartRecord = {
+  readonly file: string
+  readonly heading: string
+  readonly hash: string
 }
 
 /** One scan-driven change to the template proposal, with its reason and evidence (ROLE-01, D-49, D-85). */
