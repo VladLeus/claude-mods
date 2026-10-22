@@ -30,12 +30,14 @@ import {
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
+  epicNotFoundReply,
   epicNotMainReply,
   epicOldLauncherReply,
   epicParentOf,
   epicPathExistsReply,
   epicPmOf,
   epicRecordText,
+  epicRemovedText,
   epicRolesQuestion,
   epicSlug,
   epicStepArgv,
@@ -51,6 +53,7 @@ import {
   globalExcludesWarning,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
+  MERGED_ARGV,
   mirrorLinkedParentWarning,
   mirrorPaths,
   mirrorPlan,
@@ -58,6 +61,8 @@ import {
   parseEpicRecord,
   parseWorktreeList,
   runEpic,
+  runEpicDone,
+  STATUS_ARGV,
   untrackedEntries,
   WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
@@ -1467,4 +1472,87 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
       expect(reply).not.toContain('is not in ~/.claude.json')
     },
   )
+})
+
+/** The epic record of WORKTREE with the links /cadre epic made there, as /cadre epic done reads it (D-164, D-170). */
+const DONE_RECORD = epicRecordText({ ...RECORD, links: ['node_modules', '.cadre/bin/pm'] })
+
+/** git listing the main checkout, then WORKTREE on BRANCH with `lines` (a `locked` line) at the end of its block. */
+function listRule(lines = ''): HostRunRule {
+  const main = 'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n'
+  const block = `worktree ${WORKTREE}\nHEAD b\nbranch refs/heads/${BRANCH}\n${lines}`
+
+  return rule(WORKTREE_LIST_ARGV('/repo'), 0, `${main}${block}`)
+}
+
+/** The runs of an epic ready to remove: git lists WORKTREE, names its git dir, finds it clean and BRANCH in main. */
+const DONE_RULES: readonly HostRunRule[] = [
+  listRule(),
+  rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`),
+  rule(STATUS_ARGV(WORKTREE), 0),
+  rule(MERGED_ARGV('/repo', BRANCH, 'main'), 0),
+]
+
+/** A team world whose WORKTREE has DONE_RECORD as its epic record, based on main. */
+async function doneWorld(): Promise<MemWorld> {
+  const world = await teamWorld()
+
+  return { ...world, files: { ...world.files, [`${GIT_DIR}/${EPIC_RECORD_FILE}`]: DONE_RECORD } }
+}
+
+/** What else an epic done run is given: its key (PROJ-1 by default), `--force`, and the answers to its question. */
+type DoneExtra = {
+  readonly key?: string
+  readonly force?: boolean
+  readonly answers?: readonly string[]
+}
+
+/** runEpicDone over `world`, with these run rules first and then BASE_RULES; any other argv exits 0 with no output. */
+async function epicDone(world: MemWorld, runs: readonly HostRunRule[], extra: DoneExtra = {}): Promise<EpicRun> {
+  const host = epicHost(runs)
+  const io = memIo(world, extra.answers ?? [])
+  const reply = await runEpicDone(io.io, host.io, { key: extra.key ?? 'PROJ-1', force: extra.force ?? false })
+
+  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host), asked: io.asked, specs: io.specs }
+}
+
+/** The removals an epic done run asked for, in call order: each `/bin/rm` and each `git -C <root> worktree remove`. */
+function removals(run: EpicRun): (readonly string[])[] {
+  return run.calls.map(call => call.argv).filter(argv => argv[0] === '/bin/rm' || argv[4] === 'remove')
+}
+
+/** Whether an argv deletes a branch or removes a folder with all it holds: what /cadre epic done never runs. */
+function isDeleting(argv: readonly string[]): boolean {
+  const isBranchDelete = argv.includes('branch') && (argv.includes('-d') || argv.includes('-D'))
+
+  return isBranchDelete || (argv[0] === '/bin/rm' && argv.includes('-r'))
+}
+
+describe('removing a finished epic worktree (D-152, D-169 to D-171)', () => {
+  test('a clean, merged, idle epic loses its recorded links, then its worktree; its branch is kept', async () => {
+    const run = await epicDone(await doneWorld(), DONE_RULES)
+    const argvs = run.calls.map(call => call.argv)
+    const remove = ['git', '-C', '/repo', 'worktree', 'remove', WORKTREE]
+    const removeAt = argvs.findIndex(argv => argv.join(' ') === remove.join(' '))
+    const rmAt = argvs.flatMap((argv, index) => (argv[0] === '/bin/rm' ? [index] : []))
+
+    expect(removals(run)).toEqual([
+      ['/bin/rm', '-f', '--', `${WORKTREE}/.cadre/bin/pm`],
+      ['/bin/rm', '-f', '--', `${WORKTREE}/node_modules`],
+      remove,
+    ])
+    expect([rmAt.length, rmAt.every(index => index < removeAt)]).toEqual([2, true])
+    expect(argvs.filter(isDeleting)).toEqual([])
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+    expect(run.reply).toContain(BRANCH)
+  })
+
+  test('a key with no worktree on an epic branch of its own is refused, and nothing is removed', async () => {
+    const ten = 'worktree /repo/.claude/worktrees/proj-10\nHEAD c\nbranch refs/heads/epic/proj-10\n'
+    const listed = rule(WORKTREE_LIST_ARGV('/repo'), 0, `worktree /repo\nHEAD a\nbranch refs/heads/main\n\n${ten}`)
+    const run = await epicDone(await doneWorld(), [listed, ...DONE_RULES])
+
+    expect(run.reply).toBe(epicNotFoundReply('PROJ-1'))
+    expect(removals(run)).toEqual([])
+  })
 })

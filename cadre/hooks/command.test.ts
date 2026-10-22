@@ -255,6 +255,16 @@ describe('epic grammar', () => {
     })
     expect(parseCommand('epic')).toEqual({ kind: 'help', unknown: 'epic' })
   })
+
+  test('done as the first word after epic is the removal of that key, --force on either side (D-152)', () => {
+    expect(parseCommand('epic done PROJ-1')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: false })
+    expect(parseCommand('epic done PROJ-1 --force')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: true })
+    expect(parseCommand('EPIC Done --force PROJ-1')).toEqual({ kind: 'epic-done', key: 'PROJ-1', force: true })
+    for (const input of ['epic done', 'epic done A B']) {
+      expect(parseCommand(input)).toEqual({ kind: 'help', unknown: input })
+    }
+    expect(parseCommand('epic PROJ-1 done')).toEqual({ kind: 'epic', key: 'PROJ-1', title: 'done', terminal: 'auto' })
+  })
 })
 
 describe('takeSwitch', () => {
@@ -294,7 +304,7 @@ describe('helpText', () => {
 
   test('each command has its own row, and every row starts its description in the same column', () => {
     const rows = USAGE_LINES.slice(1)
-    expect(rows).toHaveLength(10)
+    expect(rows).toHaveLength(11)
     const commands = rows.map(row => row.slice(ROW_INDENT, ROW_INDENT + COMMAND_COLUMN).trimEnd())
     expect(commands).toEqual([
       '/cadre detect',
@@ -307,6 +317,7 @@ describe('helpText', () => {
       '/cadre start <id> --terminal',
       '/cadre status <id>',
       '/cadre epic <KEY> [title]',
+      '/cadre epic done <KEY>',
     ])
     const descriptionColumn = ROW_INDENT + COMMAND_COLUMN
     for (const row of rows) {
