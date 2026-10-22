@@ -38,7 +38,6 @@ import {
   noHomeInstallText,
   parseConflictAnswer,
   pluginInstallArgv,
-  PRIVATE_INSTRUCTIONS_FOLDER,
   privateCheckPaths,
   privateClaudeMdPath,
   privateClaudeMdText,
@@ -54,6 +53,7 @@ import type { ApplyStep, ConflictChoice, HunkRun, PrivateFile, PrivateRole, Priv
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
 import { sha256Hex } from './hash'
+import { PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import {
   gitignoreLines,
   isSafeOpPath,

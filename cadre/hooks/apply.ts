@@ -33,6 +33,7 @@ import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { compareText, displayPath, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
 import { roleClaudeMdText } from './generate'
 import { sha256Hex } from './hash'
+import { PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
@@ -140,9 +141,6 @@ export type ApplyInput = {
   /** What each role was given that is private, in the order its files are written; absent writes none (regen). */
   readonly privates?: readonly PrivateRole[]
 }
-
-/** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
-export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
 
 /** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
 export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'

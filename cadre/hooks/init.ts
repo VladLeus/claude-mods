@@ -3189,15 +3189,31 @@ async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confi
 }
 
 /**
+ * The review row under a role given at least one memory (G-02-1f, T-02-73): its memories are linked read-only, as far
+ * as the deny of its settings reaches (linkedMemoryDeny).
+ */
+export const LINKED_MEMORIES_ROW =
+  '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)'
+
+/**
  * The review rows of the instruction parts (G-02-1f): per role the topics and memories it was given, and the topics
- * and memories kept with the root session only (instructionReviewLines), for the parts flow only; none for the
- * whole-file questions or none.
+ * and memories kept with the root session only (instructionReviewLines, which gives its heading, then one row per
+ * role in role order, then the kept row), with LINKED_MEMORIES_ROW right under the row of each role given at least
+ * one memory; for the parts flow only, none for the whole-file questions or none.
  */
 function handoutLines(draft: Draft): string[] {
   const handout = draft.instructions
   if (handout.kind !== 'parts') return []
+  const { given } = handout
+  const { memories } = handout.scan
+  const hasMemory = (id: string): boolean => memories.some(memory => given.get(memory.id)?.includes(id) === true)
+  const lines = instructionReviewLines(draft.roles, handout.topics, memories, given)
 
-  return instructionReviewLines(draft.roles, handout.topics, handout.scan.memories, handout.given)
+  return lines.flatMap((line, at) => {
+    const role = at === 0 ? undefined : draft.roles[at - 1]
+
+    return role !== undefined && hasMemory(role.id) ? [line, LINKED_MEMORIES_ROW] : [line]
+  })
 }
 
 /**

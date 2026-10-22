@@ -83,7 +83,8 @@ export type LaunchUser = {
   readonly codeDirs: readonly string[]
   /**
    * The absolute link paths in the role memory folder of the memories /cadre start links for the role (G-02-1f, D-140
-   * q3-a), from its hand-out record; empty for a whole-files role and for a role given no memory.
+   * q3-a), from its hand-out record; empty for a whole-files role and for a role given no memory. The role's settings
+   * deny Edit and Write on each of them (linkedMemoryDeny).
    */
   readonly linkedMemories: readonly string[]
 }
@@ -225,6 +226,21 @@ export function roleMemoryDir(
   return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
 }
 
+/** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
+export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
+
+/**
+ * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
+ * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
+ * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
+ */
+export function privateInstructionsDir(
+  user: Pick<LaunchUser, 'userDir' | 'gitCommonDir' | 'commonDirHash'>,
+  id: string,
+): string {
+  return `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`
+}
+
 /**
  * The reason a deny pattern must not be emitted into the runtime settings, or null when it is fine. An exact absolute
  * `//` path rule is fine unless it holds a `..` segment; every other pattern is judged by the committed lint
@@ -318,6 +334,77 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
     ],
     unusual,
   )
+}
+
+/** The warning for a linked memory whose path no exact rule can hold (G-02-1f, T-02-73): it gets no deny. */
+export function undeniedMemoryWarning(file: string): string {
+  return `memory ${shown(file)} has a path a permission rule cannot hold: it stays editable`
+}
+
+/** The warning for a private instructions folder whose path no exact rule can hold (02-GAPS-B2 S3): it gets no deny. */
+export const UNDENIED_PRIVATE_WARNING =
+  'the private instructions folder has a path a permission rule cannot hold: it stays editable'
+
+/**
+ * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an
+ * exact `//` rule cannot hold the path as it is (isSafeRoot) or the runtime lint refuses either rule.
+ */
+function editWriteRules(path: string, suffix: string): string[] | null {
+  if (!isSafeRoot(path)) return null
+  const rules = [`Edit(/${path}${suffix})`, `Write(/${path}${suffix})`]
+
+  return rules.every(rule => lintRuntimeDenyPattern(rule) === null) ? rules : null
+}
+
+/**
+ * The best-effort read-only deny of a role's linked memories (G-02-1f, D-140 q3-a, T-02-73): `Edit(//<path>)` and
+ * `Write(//<path>)` for each link path in the role memory folder, its leading slash part of the `//`, each passing
+ * lintRuntimeDenyPattern. A path an exact rule cannot hold as it is (isSafeRoot: not absolute, a `.` or `..` segment,
+ * or a character other than a letter, digit, `.`, `_` or `-`) gets no rule but undeniedMemoryWarning, naming its file:
+ * that memory stays editable. A Bash write is never covered. The rules are sorted and once each, the warnings in the
+ * order of the paths, once per path.
+ */
+export function linkedMemoryDeny(paths: readonly string[]): DenyResult {
+  const deny: string[] = []
+  const warnings: string[] = []
+  for (const path of new Set(paths)) {
+    const rules = editWriteRules(path, '')
+    if (rules === null) warnings.push(undeniedMemoryWarning(path.slice(path.lastIndexOf('/') + 1)))
+    else deny.push(...rules)
+  }
+
+  return { deny: sortedUnique(deny), warnings }
+}
+
+/**
+ * The deny of a role's private instructions folder (02-GAPS-B2 S3): `Edit(//<folder>/**)` and `Write(//<folder>/**)`
+ * for privateInstructionsDir, so the role cannot rewrite what its next session loads through the folder its launcher
+ * adds (`.runtime/private-instructions`), a working folder git does not see; a deny rule holds for a path that
+ * resolves into the folder too. A folder an exact rule cannot hold gets none, with UNDENIED_PRIVATE_WARNING.
+ */
+function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
+  const rules = editWriteRules(privateInstructionsDir(user, id), '/**')
+
+  return rules === null ? { deny: [], warnings: [UNDENIED_PRIVATE_WARNING] } : { deny: rules, warnings: [] }
+}
+
+/**
+ * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
+ * the deny of the role's private instructions folder, for every role, as every launcher adds that folder
+ * (privateInstructionsDeny, 02-GAPS-B2 S3); and for a parts-flow role the read-only deny of the memories /cadre start
+ * linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own memories.
+ */
+function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
+  const results = [
+    runtimeDeny(role, scope, user),
+    privateInstructionsDeny(user, role.id),
+    isPartsFlowRole(role) ? linkedMemoryDeny(user.linkedMemories) : { deny: [], warnings: [] },
+  ]
+
+  return {
+    deny: sortedUnique(results.flatMap(result => result.deny)),
+    warnings: results.flatMap(result => result.warnings),
+  }
 }
 
 /** A run of backticks in a text: where it starts, and where it ends (exclusive). */
@@ -720,7 +807,8 @@ function settingsFor(
 /**
  * The runtime settings of a role: the launch half of D-66. Phase 3 writes the result to
  * `.cadre/<id>/.runtime/settings.json`; Phase 2 never writes it. It holds the template's plugins and sandbox, the
- * permissions with the deny list of `runtimeDeny`, the absolute memory folder of the role (D-91), the given CLAUDE.md
+ * permissions with the deny list of `settingsDeny` (runtimeDeny's, the private instructions folder's and, for a
+ * parts-flow role, the linked memories', G-02-1f), the absolute memory folder of the role (D-91), the given CLAUDE.md
  * excludes, the scanned servers its tool denies cover as deniedMcpServers (D-124), and the values the role carries from
  * the user's settings: the compact window, the status line, the env values for its env names, and its hooks (D-60,
  * D-62, D-84). Every key is one of RUNTIME_SETTINGS_KEYS, in that order, so a value of any other name or key never
@@ -732,7 +820,7 @@ export function renderRuntimeSettings(
   user: LaunchUser,
   claudeMdExcludes: readonly string[],
 ): Readonly<Record<string, unknown>> {
-  return settingsFor(role, scope, user, claudeMdExcludes, runtimeDeny(role, scope, user).deny)
+  return settingsFor(role, scope, user, claudeMdExcludes, settingsDeny(role, scope, user).deny)
 }
 
 /**
@@ -743,7 +831,7 @@ export function renderRuntimeSettings(
  * gathers the facts and writes the result under `.cadre/<id>/.runtime/`.
  */
 export function launchPlan(role: RoleSpec, scope: CompiledScope, user: LaunchUser): LaunchPlan {
-  const deny = runtimeDeny(role, scope, user)
+  const deny = settingsDeny(role, scope, user)
   const instructions = instructionPlan(role, user)
   const overlay = overlayLinks(role.id, scope.overlay, user)
 

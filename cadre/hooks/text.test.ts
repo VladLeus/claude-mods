@@ -29,7 +29,6 @@ import {
   instructionsRecordText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
-  PRIVATE_INSTRUCTIONS_FOLDER,
   privateClaudeMdText,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
@@ -163,6 +162,7 @@ import {
   LAUNCH_START_QUESTION,
   launchContextLine,
   launchLine,
+  LINKED_MEMORIES_ROW,
   MANIFEST_SKIPPED_NOTE,
   MCP_ROUTE,
   mcpContextLine,
@@ -250,7 +250,13 @@ import {
   unreadableWarning,
 } from './instructions'
 import { UNNAMED_ROLE } from './kickoff'
-import { RUNTIME_SETTINGS_KEYS, unsafeMemoryNameWarning } from './launch'
+import {
+  PRIVATE_INSTRUCTIONS_FOLDER,
+  RUNTIME_SETTINGS_KEYS,
+  UNDENIED_PRIVATE_WARNING,
+  undeniedMemoryWarning,
+  unsafeMemoryNameWarning,
+} from './launch'
 import {
   gitignoreLines,
   HUNK_FILES,
@@ -580,7 +586,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['apply', 'installFailureText', [false, true].map(isFailed => installFailureText(CLAUDE_SECURITY_PLUGIN, isFailed))],
   ['apply', 'installedLine', installedLine(SECURITY_PLUGINS)],
   ['apply', 'noHomeInstallText', noHomeInstallText(CLAUDE_SECURITY_PLUGIN)],
-  ['apply', 'PRIVATE_INSTRUCTIONS_FOLDER', PRIVATE_INSTRUCTIONS_FOLDER],
   ['apply', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
   ['apply', 'privateClaudeMdText', privateClaudeMdText(BE.id, 'repo', PART_SCAN.parts)],
   ['apply', 'instructionsRecordText', instructionsRecordText(PART_SCAN.parts, PART_SCAN.memories)],
@@ -721,6 +726,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'NEXT_STEP_NOTE', NEXT_STEP_NOTE],
   ['init', 'MANIFEST_SKIPPED_NOTE', MANIFEST_SKIPPED_NOTE],
   ['init', 'privateFoldersUnknownWarning', privateFoldersUnknownWarning(['be', 'security'])],
+  ['init', 'LINKED_MEMORIES_ROW', LINKED_MEMORIES_ROW],
   ['init', 'IGNORE_ALL_NOTE', IGNORE_ALL_NOTE],
   ['init', 'GIT_POLICY_QUESTION', GIT_POLICY_QUESTION],
   ['init', 'GIT_POLICY_OPTIONS', GIT_POLICY_OPTIONS],
@@ -862,6 +868,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['kickoff', 'UNNAMED_ROLE', UNNAMED_ROLE],
   ['launch', 'RUNTIME_SETTINGS_KEYS', RUNTIME_SETTINGS_KEYS],
   ['launch', 'unsafeMemoryNameWarning', unsafeMemoryNameWarning('../notes.md')],
+  ['launch', 'PRIVATE_INSTRUCTIONS_FOLDER', PRIVATE_INSTRUCTIONS_FOLDER],
+  ['launch', 'undeniedMemoryWarning', undeniedMemoryWarning('my notes.md')],
+  ['launch', 'UNDENIED_PRIVATE_WARNING', UNDENIED_PRIVATE_WARNING],
   ['plan', 'MANIFEST_PATH', MANIFEST_PATH],
   ['plan', 'IGNORE_BEGIN', IGNORE_BEGIN],
   ['plan', 'IGNORE_END', IGNORE_END],

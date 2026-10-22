@@ -28,7 +28,7 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
-import { INSTRUCTIONS_RECORD_FILE, instructionsRecordPath, PRIVATE_INSTRUCTIONS_FOLDER } from './apply'
+import { INSTRUCTIONS_RECORD_FILE, instructionsRecordPath } from './apply'
 import {
   clean,
   compareText,
@@ -50,6 +50,7 @@ import {
   isPartsFlowRole,
   isSafeFileName,
   launchPlan,
+  privateInstructionsDir,
   roleMemoryDir,
   unsafeMemoryNameWarning,
 } from './launch'
@@ -1618,7 +1619,7 @@ function startReplyText(
 function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string): LaunchPlan {
   const link: OverlayLink = {
     path: `${runtimeFolder(user.root, id)}/${PRIVATE_INSTRUCTIONS_LINK}`,
-    target: `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`,
+    target: privateInstructionsDir(user, id),
   }
 
   return { ...plan, links: [...plan.links, link].sort((a, b) => compareText(a.path, b.path)) }

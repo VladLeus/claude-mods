@@ -373,12 +373,14 @@ describe('launch render', () => {
       permissions: {
         defaultMode: 'auto',
         deny: [
+          'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
           'Read(//repo/.env)',
           'Read(//repo/.env.*)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
+          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
         ],
       },
       sandbox: { enabled: true },
@@ -787,13 +789,13 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
     expect(result).toEqual({ deny: BASH_DENY, warnings: [] })
   })
 
-  test('launchPlan for BE renders that deny list into the runtime settings', () => {
+  test('launchPlan for BE renders that deny list, with its private folder deny (S3), into the runtime settings', () => {
     const role = templateRole('be')
     const scope = compileScope(role, context())
 
     expect(launchPlan(role, scope, user()).settings.permissions).toEqual({
       defaultMode: scope.settings.permissions.defaultMode,
-      deny: BASH_DENY,
+      deny: sortedUnique([...BASH_DENY, ...privateDeny(roleMemoryDir(user(), 'be'))]),
     })
   })
 
