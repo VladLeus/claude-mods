@@ -45,6 +45,8 @@ export const USAGE_LINES: readonly string[] = [
   `  ${'/cadre status <id>'.padEnd(COMMAND_COLUMN)}show from disk whether a role's autopilot run ` +
     'is done, running, stopped, not started or unknown',
   `  ${'/cadre epic <KEY> [title]'.padEnd(COMMAND_COLUMN)}create or reuse the epic's worktree and open its roles there`,
+  `  ${'/cadre epic done <KEY>'.padEnd(COMMAND_COLUMN)}remove a finished epic's worktree ` +
+    '(clean, merged, no role running)',
 ]
 
 /**
@@ -171,14 +173,29 @@ function epicCommand(rest: string): CadreCommand | null {
 }
 
 /**
+ * The removal of a finished epic's worktree (D-152), when the arguments after `epic done` are exactly one word besides
+ * the `--force` switches takeSwitch takes, on either side of it: that word is the key as typed (epicKeyOf checks it
+ * later); null when no word or more than one is left.
+ */
+function epicDoneCommand(rest: string): CadreCommand | null {
+  const force = takeSwitch(rest, 'force')
+  const words = force.rest.split(/\s+/).filter(word => word !== '')
+  const [key] = words
+  if (key === undefined || words.length !== 1) return null
+
+  return { kind: 'epic-done', key, force: force.isOn }
+}
+
+/**
  * `/cadre` arguments. Empty or `help` is the help text; `detect`, optionally with `--adapters`, is the
  * detection; `init`, optionally with `--dry-run`, is the guided setup; `regen` with one role id, optionally with
  * `--dry-run`, re-renders that role; `start` with one role id, optionally with `--terminal[=terminal|iterm|tmux]`,
  * renders that role's runtime files and prints its launcher command; `status` with exactly one role id reports that
  * role's autopilot run from disk; `epic` with a key and optional title words, optionally with
- * `--terminal[=terminal|iterm|tmux]`, creates or reuses the epic's worktree. Anything else is help with the input
- * echoed back as unknown, `regen`, `start` or `status` with no id or with an id that is not a slug, and `epic` with no
- * key, included.
+ * `--terminal[=terminal|iterm|tmux]`, creates or reuses the epic's worktree; `epic done`, `done` in any letter case as
+ * the first word after `epic`, with one key and optionally `--force`, removes a finished epic's worktree (D-152).
+ * Anything else is help with the input echoed back as unknown, `regen`, `start` or `status` with no id or with an id
+ * that is not a slug, `epic` with no key, and `epic done` with no key or more than one word, included.
  */
 export function parseCommand(args: string): CadreCommand {
   const text = visibleText(args)
@@ -198,6 +215,9 @@ export function parseCommand(args: string): CadreCommand {
 
   const status = /^status(?=\s|$)/i.exec(text)
   if (status) return statusCommand(text.slice(status[0].length)) ?? unknownCommand(text)
+
+  const epicDone = /^epic\s+done(?=\s|$)/i.exec(text)
+  if (epicDone) return epicDoneCommand(text.slice(epicDone[0].length)) ?? unknownCommand(text)
 
   const epic = /^epic(?=\s|$)/i.exec(text)
   if (epic) return epicCommand(text.slice(epic[0].length)) ?? unknownCommand(text)

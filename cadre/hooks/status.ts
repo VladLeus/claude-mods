@@ -496,6 +496,25 @@ export function statusReportText(report: StatusReport): string {
 const NO_SESSION_RUN: RunRead = Object.freeze({ state: 'not started', lastLog: null })
 
 /**
+ * The state /cadre status would report for the role `id` in the checkout `locations` names (D-111, D-171): its session
+ * is looked for (sessionOf) from the start folder of `launchStart` below that checkout's root (startFolderOf), and its
+ * run is read from autopilot's files under HOME as given (runOf); not started when no session is found. /cadre epic
+ * done asks it for each role of the team in the epic's worktree.
+ */
+export async function roleRunState(
+  io: InitIo,
+  host: Pick<HostIo, 'run'>,
+  input: { readonly locations: InitLocations; readonly id: string; readonly launchStart: LaunchStart },
+): Promise<StatusState> {
+  const { locations, id } = input
+  const startFolder = startFolderOf(locations.root, input.launchStart)
+  const found = await sessionOf(io, host, { locations, id, startFolder })
+  if (found === null) return NO_SESSION_RUN.state
+
+  return (await runOf(io, locations.givenHome, found.sessionId)).state
+}
+
+/**
  * `/cadre status <id>` (D-111, D-131), in the root session or in `claude -p`. It refuses with the shared replies only:
  * repoGuard's, worded for status, then readTeam's (no `.cadre/cadre.json`, an id cadre.json does not list, a role.json
  * that is not valid). Then it looks for the role's session by its name (sessionOf): the newest of the start folder's

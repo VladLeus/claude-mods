@@ -42,6 +42,7 @@ import {
   UNAME_TIMEOUT_MS,
 } from './start'
 import type { TerminalPlan } from './start'
+import { roleRunState } from './status'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'
@@ -1496,4 +1497,171 @@ export async function runEpic(
   const outcome = isNew ? 'created' : 're-added'
 
   return mirroredReply(io, host, epic, { path, branch, outcome, title: options.title, gitDir, record })
+}
+
+/** The argv that asks git what changed in the worktree at `path` (D-169): it is clean when the run exits 0 silent. */
+export function STATUS_ARGV(path: string): readonly string[] {
+  return ['git', '-C', path, 'status', '--porcelain']
+}
+
+/**
+ * The argv that asks git, at `root`, whether `branch` is merged into `base` (D-169): it exits 0 when it is, 1 when it
+ * is not, and 128 for a name git does not know (RESEARCH Pattern 3).
+ */
+export function MERGED_ARGV(root: string, branch: string, base: string): readonly string[] {
+  return ['git', '-C', root, 'merge-base', '--is-ancestor', branch, base]
+}
+
+/**
+ * The argv that removes the worktree at `path` from the repo at `root` (D-170), its folder and the copies in it, with
+ * `--force` only on the forced path; git leaves the targets of the links in it alone (RESEARCH Pattern 3).
+ */
+export function REMOVE_ARGV(root: string, path: string, force: boolean): readonly string[] {
+  return ['git', '-C', root, 'worktree', 'remove', ...(force ? ['--force'] : []), path]
+}
+
+/** How long `git worktree remove` may run before it is given up: a big worktree takes long to delete (Pitfall 8). */
+export const REMOVE_TIMEOUT_MS = 120_000
+
+/**
+ * The argv that removes one link cadre recorded in the worktree (D-170): `/bin/rm -f --` and never `-r`, so it removes
+ * the link itself and never what the link points at in the main checkout.
+ */
+export function linkRemoveArgv(path: string): readonly string[] {
+  return ['/bin/rm', '-f', '--', path]
+}
+
+/** The refusal when git cannot list the worktrees for /cadre epic done (D-152): it fails closed and removes nothing. */
+export const EPIC_DONE_NO_LIST = 'cadre epic done could not list the worktrees from git, so it removed nothing.'
+
+/** The refusal when git lists no worktree on an epic branch of the key (D-152, D-163); the key is shown cleaned. */
+export function epicNotFoundReply(key: string): string {
+  return `git lists no worktree of the epic ${reportText(key)}, so cadre epic done removed nothing.`
+}
+
+/**
+ * The reply once the epic's worktree is removed (D-152): the worktree and the copies in it are gone, and its branch is
+ * kept, as cadre never deletes a branch. The key, the path and the branch are shown cleaned.
+ */
+export function epicRemovedText(key: string, path: string, branch: string): string {
+  const kept = `its branch ${reportText(branch)} is kept, as cadre never deletes a branch.`
+
+  return `cadre epic done ${reportText(key)}: removed the worktree ${reportText(path)}; ${kept}`
+}
+
+/**
+ * The reply when `git worktree remove` fails or cannot run (D-170): the links cadre recorded were removed before it, so
+ * the worktree stays without them, and /cadre epic with the key, shown cleaned, links them again.
+ */
+export function epicRemoveFailedReply(key: string): string {
+  return (
+    'git could not remove the epic worktree, so cadre epic done stopped. The links it records were removed first: ' +
+    `run /cadre epic ${reportText(key)} to link them again.`
+  )
+}
+
+/** The reply while a check of /cadre epic done fails: the worktree is kept and nothing is removed. */
+const EPIC_NOT_DONE =
+  'cadre epic done kept the worktree: it is not clean, not merged into its base, or a role still runs there.'
+
+/** An epic worktree as /cadre epic done finds it: its path, the epic branch checked out there and its lock reason. */
+type DoneWorktree = {
+  readonly path: string
+  readonly branch: string
+  readonly locked: string | null
+}
+
+/**
+ * The epic record of the worktree at `path` (D-164), read from the git dir GIT_DIR_ARGV names for it; null when git
+ * names no absolute git dir, or the record there is absent, unreadable or not valid (parseEpicRecord).
+ */
+async function doneRecordOf(io: InitIo, host: HostIo, path: string): Promise<EpicRecord | null> {
+  const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
+  const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''
+  if (!gitDir.startsWith('/')) return null
+  const read = await io.read(epicRecordPath(gitDir), MAX_READ_BYTES)
+
+  return read.state === 'text' ? parseEpicRecord(read.text) : null
+}
+
+/**
+ * The ids of the team's roles that read `running` in the epic worktree (D-171), in cadre.json order: the team is read
+ * from the main checkout (readTeam), and each role's state is the one /cadre status would report for it with the
+ * worktree as the root (roleRunState). Null when the team cannot be read.
+ */
+async function runningRoles(
+  io: InitIo,
+  host: HostIo,
+  main: InitLocations,
+  worktree: string,
+): Promise<readonly string[] | null> {
+  const team = await readTeam(io, main.root, 'epic', null)
+  if (team.kind === 'refuse') return null
+  const { state, roles } = team.value
+  const locations: InitLocations = { ...main, root: worktree, givenRoot: worktree }
+  const running: string[] = []
+  for (const { id } of roles) {
+    const roleState = await roleRunState(io, host, { locations, id, launchStart: state.launchStart })
+    if (roleState === 'running') running.push(id)
+  }
+
+  return running
+}
+
+/**
+ * `/cadre epic done <KEY>` in the main checkout's root session (D-152, D-165, D-169 to D-171). Before anything is
+ * removed it refuses, in this order: a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the repo
+ * refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
+ * checkout (epicNotMainReply or EPIC_UNKNOWN_CHECKOUT); a worktree list git cannot give (EPIC_DONE_NO_LIST); no
+ * registered worktree on an epic branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The
+ * epic record is read from the git dir git names for the worktree. The worktree goes only when git shows it clean
+ * (STATUS_ARGV exits 0 with no output), its branch is merged into the recorded base (MERGED_ARGV exits 0) and no role
+ * of the team, read from the main checkout, reads `running` there (roleRunState); else it is kept. Each link the
+ * record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`, and then the worktree with
+ * REMOVE_ARGV, without `--force`; a remove that fails or cannot run gives epicRemoveFailedReply. The branch is never
+ * deleted, and the reply is epicRemovedText.
+ */
+export async function runEpicDone(
+  io: InitIo,
+  host: HostIo,
+  options: { readonly key: string; readonly force: boolean },
+): Promise<string> {
+  const key = epicKeyOf(options.key)
+  const keySlug = key === null ? null : epicSlug(key, '')
+  if (key === null || keySlug === null) return epicBadKeyReply(options.key)
+  const guard = await repoGuard(io, 'epic')
+  if (guard.kind === 'refuse') return guard.text
+  const main = guard.locations
+  const checkout = checkoutOf(await host.run(CHECKOUT_ARGV(main.root), { timeoutMs: GIT_TIMEOUT_MS }))
+  if (checkout.kind === 'linked') return epicNotMainReply(checkout.main)
+  if (checkout.kind === 'unknown') return EPIC_UNKNOWN_CHECKOUT
+  const listed = await host.run(WORKTREE_LIST_ARGV(main.root), { timeoutMs: GIT_TIMEOUT_MS })
+  if (listed === null || listed.exitCode !== 0) return EPIC_DONE_NO_LIST
+  const found = parseWorktreeList(listed.stdout).flatMap((entry): DoneWorktree[] =>
+    !entry.isMain && entry.branch !== null && isEpicBranchOf(entry.branch, keySlug)
+      ? [{ path: entry.path, branch: entry.branch, locked: entry.locked }]
+      : [],
+  )
+  if (found.length > 1) return epicManyWorktreesReply(found.map(entry => entry.path))
+  const [worktree] = found
+  if (worktree === undefined) return epicNotFoundReply(key)
+  const { path, branch } = worktree
+  const record = await doneRecordOf(io, host, path)
+
+  const status = await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
+  const isClean = status !== null && status.exitCode === 0 && status.stdout === ''
+  const base = record?.base ?? null
+  const mergedArgv = base === null ? null : MERGED_ARGV(main.root, branch, base)
+  const merged = mergedArgv === null ? null : await host.run(mergedArgv, { timeoutMs: GIT_TIMEOUT_MS })
+  const isMerged = merged !== null && merged.exitCode === 0
+  const running = await runningRoles(io, host, main, path)
+  if (!isClean || !isMerged || running === null || running.length > 0) return EPIC_NOT_DONE
+
+  for (const link of sortedUnique(record?.links ?? [])) {
+    await host.run(linkRemoveArgv(`${path}/${link}`), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
+  }
+  const removed = await host.run(REMOVE_ARGV(main.root, path, false), { timeoutMs: REMOVE_TIMEOUT_MS })
+  if (removed === null || removed.exitCode !== 0) return epicRemoveFailedReply(key)
+
+  return epicRemovedText(key, path, branch)
 }

@@ -13,7 +13,7 @@ import type {
   ShownBlock,
 } from '../types'
 import { helpText, parseCommand } from './command'
-import { runEpic } from './epic'
+import { runEpic, runEpicDone } from './epic'
 import {
   detectRefusal,
   displayPath,
@@ -466,7 +466,7 @@ export const register: Register = on => {
       argumentHint:
         'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run] | ' +
         'start <id> [--terminal[=terminal|iterm|tmux]] | status <id> | ' +
-        'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]]',
+        'epic <KEY> [title] [--terminal[=terminal|iterm|tmux]] | epic done <KEY> [--force]',
     })
 
     return next(e)
@@ -499,6 +499,8 @@ export const register: Register = on => {
 
         return { text: await runEpic(initIoOf($), hostIoOf($), { key, title, terminal }) }
       }
+      case 'epic-done':
+        return { text: await runEpicDone(initIoOf($), hostIoOf($), { key: command.key, force: command.force }) }
       default: {
         const unreachable: never = command
         return unreachable
