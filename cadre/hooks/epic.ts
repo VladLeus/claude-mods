@@ -370,14 +370,25 @@ export const RUNTIME_EXCLUDE_LINE = '/.cadre/*/.runtime/'
 const EXCLUDES_HEADING = '# cadre links (cadre epic)'
 
 /**
+ * The excludes line of a link (03.1-W2 S2): `/` then the path with gitignore's special characters `\`, `*`, `?` and
+ * `[` escaped by a backslash, and each trailing space written `\ `, so the line matches the link's own name and
+ * nothing else.
+ */
+function excludesLine(path: string): string {
+  const escaped = path.replace(/[\\*?[]/g, char => `\\${char}`).replace(/ +$/, spaces => spaces.replace(/ /g, '\\ '))
+
+  return `/${escaped}`
+}
+
+/**
  * The text of the worktree's excludes file (D-147): the user's global excludes text, ended with a newline when it is
- * not empty and has none, then EXCLUDES_HEADING, one `/<path>` line per link, sorted and once each, and
+ * not empty and has none, then EXCLUDES_HEADING, one excludesLine per link, sorted and once each, and
  * RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link at the worktree root only; a copy gets no line, as main
  * ignores it already (D-172).
  */
 export function excludesText(globalText: string, links: readonly string[]): string {
   const head = globalText === '' || globalText.endsWith('\n') ? globalText : `${globalText}\n`
-  const lines = [EXCLUDES_HEADING, ...sortedUnique(links).map(link => `/${link}`), RUNTIME_EXCLUDE_LINE]
+  const lines = [EXCLUDES_HEADING, ...sortedUnique(links).map(excludesLine), RUNTIME_EXCLUDE_LINE]
 
   return `${head}${lines.join('\n')}\n`
 }
@@ -385,10 +396,11 @@ export function excludesText(globalText: string, links: readonly string[]): stri
 /**
  * The argv that names the user's global excludes file (D-147): git's `core.excludesFile` as a path, with `~` expanded;
  * it exits 1 with no output when the key is not set. The global config is the same everywhere, so `-C <root>` only
- * keeps the argv apart from the others.
+ * keeps the argv apart from the others. `--includes` follows the global file's include and includeIf, which a given
+ * scope otherwise skips, so a key set in an included file is found (03.1-W2 S1).
  */
 export function GLOBAL_EXCLUDES_ARGV(root: string): readonly string[] {
-  return ['git', '-C', root, 'config', '--global', '--path', 'core.excludesFile']
+  return ['git', '-C', root, 'config', '--includes', '--global', '--path', 'core.excludesFile']
 }
 
 /**
@@ -470,6 +482,9 @@ const CLAUDE_WORKTREES_CHILD = 'worktrees'
 /** The start of the last segment of a file the mirror copies instead of linking (D-148, D-172). */
 const ENV_PREFIX = '.env'
 
+/** A C0 control character or DEL: no gitignore line can hold a name with one (03.1-W2 S2). */
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
+
 /**
  * The folders the mirror makes real in the worktree and never links whole (D-156): `.cadre`, `.cadre/bin` and
  * `.cadre/<id>` for each role id. A launcher in a real `.cadre/bin/` finds the worktree as its root, and a render
@@ -537,9 +552,11 @@ export function mirrorPaths(
  * - (e) a protected folder (`.cadre`, `.cadre/bin`, `.cadre/<id>`) or a folder above one: a mkdir step, then each
  *   child of its main listing, by these same rules;
  * - (f) `.claude`: each child of its main listing but `worktrees`, by these same rules;
- * - (g) a file whose last segment starts with `.env`, as the main listing of its folder shows (a regular file, not a
+ * - (g) a path whose name holds a control character, a line break included: nothing, nothing below it, and the
+ *   mirrorUnhideableWarning line, as no excludes line can hide it (03.1-W2 S2);
+ * - (h) a file whose last segment starts with `.env`, as the main listing of its folder shows (a regular file, not a
  *   link): a copy step, unless the worktree lists its target;
- * - (h) anything else: a link step to the main checkout's path, unless the worktree lists its target.
+ * - (i) anything else: a link step to the main checkout's path, unless the worktree lists its target.
  * A link or copy below a folder the worktree does not list gets a mkdir step for each such folder from the top first,
  * once each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
  * warnings.
@@ -592,6 +609,11 @@ export function mirrorPlan(input: {
       return
     }
     if (listedEntry(tree, path) !== undefined) return
+    if (CONTROL_CHARACTER.test(path)) {
+      placed.add(path)
+      warnings.push(mirrorUnhideableWarning(path))
+      return
+    }
     for (const folder of missing) mkdir(folder)
     placed.add(path)
     const shown = listedEntry(main, path)
@@ -670,6 +692,18 @@ export function mirrorLinkedParentWarning(path: string): string {
   return (
     `cadre epic left ${reportText(path)} out of the worktree: a folder above it there is a link, and cadre never ` +
     'links or copies through a link.'
+  )
+}
+
+/**
+ * The warning line for an entry the mirror leaves out because its name holds a control character, a line break
+ * included (03.1-W2 S2): no excludes line can hide a link to it from git, so it gets no step. The repo-relative path
+ * is shown cleaned.
+ */
+export function mirrorUnhideableWarning(path: string): string {
+  return (
+    `cadre epic left ${reportText(path)} out of the worktree: its name holds a line break or another control ` +
+    'character, so no excludes line could hide it from git.'
   )
 }
 
