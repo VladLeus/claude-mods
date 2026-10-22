@@ -8,12 +8,14 @@ import type {
   ScopeContext,
   SettingsTemplate,
   SetupScan,
+  TemplateRoleId,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { isObject, sortedUnique } from './facts'
 import {
   claudeMdImports,
   instructionPlan,
+  INSTRUCTIONS_RECORD_FILE,
   isPartsFlowRole,
   launchPlan,
   linkedMemoryDeny,
@@ -24,7 +26,9 @@ import {
   roleMemoryDir,
   RUNTIME_SETTINGS_KEYS,
   runtimeDeny,
+  UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
+  UNDENIED_RECORD_WARNING,
   undeniedMemoryWarning,
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
@@ -151,6 +155,20 @@ function privateDeny(folder: string): string[] {
   return [`Edit(/${folder}/instructions/**)`, `Write(/${folder}/instructions/**)`]
 }
 
+/**
+ * The deny every role gets beside its private folder deny, for the fixture repo /repo (02-GAPS-B3 C2, C3): Edit and
+ * Write on the repo's memory folder under `userDir`, `<userDir>/projects/-repo/memory/**`, and on the hand-out record
+ * in the role memory folder `folder`, `<folder>/instructions.json`.
+ */
+function memoryAndRecordDeny(userDir: string, folder: string): string[] {
+  return [
+    `Edit(/${userDir}/projects/-repo/memory/**)`,
+    `Write(/${userDir}/projects/-repo/memory/**)`,
+    `Edit(/${folder}/instructions.json)`,
+    `Write(/${folder}/instructions.json)`,
+  ]
+}
+
 /** The runtime deny list of the template BE at /repo: the ~/ denies, and the .env denies made absolute (D-123). */
 const BASH_DENY: readonly string[] = [
   'Read(//repo/**/.env)',
@@ -255,7 +273,9 @@ describe('launch render', () => {
         defaultMode: 'auto',
         deny: [
           'Bash',
+          'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
+          'Edit(//home/u/.claude/projects/-repo/memory/**)',
           'Edit(//repo/cadre/**)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
@@ -264,7 +284,9 @@ describe('launch render', () => {
           'Read(//repo/cadre/**)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
+          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
+          'Write(//home/u/.claude/projects/-repo/memory/**)',
         ],
       },
       sandbox: { enabled: false },
@@ -275,14 +297,16 @@ describe('launch render', () => {
     expect(plan.warnings).toEqual([])
   })
 
-  test('the permissions of the render hold the deny list of runtimeDeny and the private folder deny (S3)', () => {
+  test('the render holds the deny of runtimeDeny, the private folder, memory folder and record (S3, C2, C3)', () => {
     const role = templateRole('pm', { carry: CARRY_ALL })
     const scope = compileScope(role, context({ codeDirs: ['cadre'] }))
     const plan = launchPlan(role, scope, carrier())
+    const folder = roleMemoryDir(carrier(), 'pm')
+    const own = [...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
-      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...privateDeny(roleMemoryDir(carrier(), 'pm'))]),
+      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own]),
     })
   })
 
@@ -373,14 +397,18 @@ describe('launch render', () => {
       permissions: {
         defaultMode: 'auto',
         deny: [
+          'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
+          'Edit(//home/u/.claude/projects/-repo/memory/**)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
           'Read(//repo/.env)',
           'Read(//repo/.env.*)',
           'Read(~/.aws/**)',
           'Read(~/.ssh/**)',
+          'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
+          'Write(//home/u/.claude/projects/-repo/memory/**)',
         ],
       },
       sandbox: { enabled: true },
@@ -789,13 +817,14 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
     expect(result).toEqual({ deny: BASH_DENY, warnings: [] })
   })
 
-  test('launchPlan for BE renders that deny list, with its private folder deny (S3), into the runtime settings', () => {
+  test('launchPlan for BE renders that deny list, with its private folder, memory and record deny (S3, C2, C3)', () => {
     const role = templateRole('be')
     const scope = compileScope(role, context())
+    const folder = roleMemoryDir(user(), 'be')
 
     expect(launchPlan(role, scope, user()).settings.permissions).toEqual({
       defaultMode: scope.settings.permissions.defaultMode,
-      deny: sortedUnique([...BASH_DENY, ...privateDeny(roleMemoryDir(user(), 'be'))]),
+      deny: sortedUnique([...BASH_DENY, ...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]),
     })
   })
 
@@ -1734,7 +1763,8 @@ describe('launch properties', () => {
       const deny = runtimeDeny(item.role, item.scope, item.launcher)
       const leading = item.plan.warnings.slice(0, deny.warnings.length)
       const memories = isPartsFlowRole(item.role) ? linkedMemoryDeny(item.launcher.linkedMemories).deny : []
-      const own = privateDeny(roleMemoryDir(item.launcher, item.role.id))
+      const folder = roleMemoryDir(item.launcher, item.role.id)
+      const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
       const expected = sortedUnique([...deny.deny, ...own, ...memories])
 
       return {
@@ -1971,25 +2001,31 @@ describe('linked memory deny (G-02-1f)', () => {
     const deny = denyOf(renderRuntimeSettings(role, scope, launcher, []))
     const base = runtimeDeny(role, scope, launcher).deny
 
+    const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
     expect(isPartsFlowRole(role)).toBe(true)
-    expect(deny).toEqual(sortedUnique([...base, ...privateDeny(BE_MEMORY), ...linkedMemoryDeny(LINKED).deny]))
+    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
+      `Edit(/${BE_MEMORY}/instructions.json)`,
       `Edit(/${BE_MEMORY}/instructions/**)`,
       `Edit(/${BE_MEMORY}/notes.md)`,
       `Edit(/${BE_MEMORY}/squad.md)`,
+      `Write(/${BE_MEMORY}/instructions.json)`,
       `Write(/${BE_MEMORY}/instructions/**)`,
       `Write(/${BE_MEMORY}/notes.md)`,
       `Write(/${BE_MEMORY}/squad.md)`,
     ])
   })
 
-  test('a whole-files role gets no linked memory deny, even with linked paths: only its private folder deny', () => {
+  test('a whole-files role gets no linked memory deny, even with linked paths: its private folder and record', () => {
     const role = templateRole('be', { instructions: ['auto-memory'] })
     const scope = compileScope(role, context())
     const deny = denyOf(renderRuntimeSettings(role, scope, user({ linkedMemories: LINKED }), []))
+    const record = [`Edit(/${BE_MEMORY}/instructions.json)`, `Write(/${BE_MEMORY}/instructions.json)`]
 
     expect(isPartsFlowRole(role)).toBe(false)
-    expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual(privateDeny(BE_MEMORY))
+    expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual(
+      sortedUnique([...privateDeny(BE_MEMORY), ...record]),
+    )
   })
 
   test('every role, of either flow, denies Edit and Write on its private instructions folder (S3)', () => {
@@ -2022,9 +2058,11 @@ describe('linked memory deny (G-02-1f)', () => {
     const lead = runtimeDeny(role, scope, launcher).warnings
 
     expect(denyOf(plan.settings)).toEqual(runtimeDeny(role, scope, launcher).deny)
-    expect(plan.warnings.slice(0, lead.length + 2)).toEqual([
+    expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
       ...lead,
       UNDENIED_PRIVATE_WARNING,
+      UNDENIED_MEMORY_FOLDER_WARNING,
+      UNDENIED_RECORD_WARNING,
       undeniedMemoryWarning('a.md'),
     ])
     expect(UNDENIED_PRIVATE_WARNING).toBe(
@@ -2042,7 +2080,8 @@ describe('linked memory deny (G-02-1f)', () => {
           const plan = launchPlan(role, scope, { ...MATRIX_USER, linkedMemories: [`${folder}/squad.md`] })
           const memory = isPartsFlowRole(role) ? [`Edit(/${folder}/squad.md)`, `Write(/${folder}/squad.md)`] : []
           const home = denyOf(plan.settings).filter(entry => entry.includes('//home/'))
-          const expected = sortedUnique([...privateDeny(folder), ...memory])
+          const own = [...privateDeny(folder), ...memoryAndRecordDeny(MATRIX_USER.userDir, folder)]
+          const expected = sortedUnique([...own, ...memory])
           const problems = [
             ...launchProblems(plan, role, scope, framework),
             ...(JSON.stringify(home) === JSON.stringify(expected) ? [] : [`home denies ${home.join(', ')}`]),
@@ -2055,6 +2094,87 @@ describe('linked memory deny (G-02-1f)', () => {
 
     expect(results.flatMap(result => result.problems)).toEqual([])
     expect(results.filter(result => result.memory.length > 0)).toHaveLength(21)
+    expect(results).toHaveLength(42)
+  })
+})
+
+describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
+  test('every role denies Edit and Write on the memory folder of the root as resolved and as given, once each', () => {
+    const roles = [templateRole('pm'), templateRole('pm', { instructions: ['auto-memory'] }), templateRole('be')]
+    const launcher = user({ givenRoot: '/link/repo', userSkills: GSD_SKILLS })
+    const folders = roles.map(role => {
+      const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+
+      return deny.filter(entry => entry.includes('/projects/'))
+    })
+
+    expect(folders).toEqual(
+      roles.map(() => [
+        'Edit(//home/u/.claude/projects/-link-repo/memory/**)',
+        'Edit(//home/u/.claude/projects/-repo/memory/**)',
+        'Write(//home/u/.claude/projects/-link-repo/memory/**)',
+        'Write(//home/u/.claude/projects/-repo/memory/**)',
+      ]),
+    )
+    const be = templateRole('be')
+    const once = denyOf(launchPlan(be, compileScope(be, context()), user()).settings)
+    expect(once.filter(entry => entry.includes('/projects/'))).toEqual([
+      'Edit(//home/u/.claude/projects/-repo/memory/**)',
+      'Write(//home/u/.claude/projects/-repo/memory/**)',
+    ])
+  })
+
+  test('every role denies Edit and Write on its own hand-out record instructions.json, never on a memory', () => {
+    const launcher = user({ userDir: '/cfg', userSkills: GSD_SKILLS })
+    const ids: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'security']
+    const records = ids.map(id => {
+      const role = templateRole(id)
+      const deny = denyOf(launchPlan(role, compileScope(role, context()), launcher).settings)
+
+      return deny.filter(entry => entry.endsWith(`/${INSTRUCTIONS_RECORD_FILE})`))
+    })
+
+    expect(records).toEqual(
+      ids.map(id => [
+        `Edit(//cfg/cadre/repo-1a2b3c4d/${id}/instructions.json)`,
+        `Write(//cfg/cadre/repo-1a2b3c4d/${id}/instructions.json)`,
+      ]),
+    )
+    expect(INSTRUCTIONS_RECORD_FILE).toBe('instructions.json')
+  })
+
+  test('a memory folder or record no rule can hold is not denied: each warns once, after the private folder', () => {
+    const role = templateRole('pm', { instructions: ['auto-memory'] })
+    const scope = compileScope(role, context())
+    const launcher = user({ userDir: '/home/u s/.claude', givenRoot: '/link/repo', userSkills: GSD_SKILLS })
+    const plan = launchPlan(role, scope, launcher)
+    const lead = runtimeDeny(role, scope, launcher).warnings
+
+    expect(denyOf(plan.settings)).toEqual(runtimeDeny(role, scope, launcher).deny)
+    expect(plan.warnings.slice(lead.length)).toEqual([
+      UNDENIED_PRIVATE_WARNING,
+      UNDENIED_MEMORY_FOLDER_WARNING,
+      UNDENIED_RECORD_WARNING,
+    ])
+    expect(UNDENIED_MEMORY_FOLDER_WARNING).toBe(
+      'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable',
+    )
+    expect(UNDENIED_RECORD_WARNING).toBe(
+      'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable',
+    )
+  })
+
+  test('the matrix with both denies keeps no deny over .cadre/<id>/, the handoff folder or .planning/ (B4)', () => {
+    const results = matrixCases(MATRIX_USER).map(item => {
+      const deny = denyOf(item.plan.settings)
+      const repo = deny.filter(entry => entry.includes('//repo/.cadre/') || entry.includes('//repo/.planning/'))
+      const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
+      const record = deny.filter(entry => entry.endsWith(`/${item.role.id}/instructions.json)`))
+
+      return { label: item.label, repo, isDenied: memory.length === 2 && record.length === 2 }
+    })
+
+    expect(results.filter(result => result.repo.length > 0 || !result.isDenied).map(result => result.label)).toEqual([])
     expect(results).toHaveLength(42)
   })
 })

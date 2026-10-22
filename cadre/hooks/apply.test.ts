@@ -48,7 +48,6 @@ import {
   improverUnreadableNote,
   installedLine,
   installFailureText,
-  INSTRUCTIONS_RECORD_FILE,
   instructionsRecordPath,
   instructionsRecordText,
   listedLinkProblem,
@@ -63,11 +62,13 @@ import {
   privateClaudeMdPath,
   privateClaudeMdText,
   privateLevels,
+  privateLevelsProblem,
   privateModeArgv,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   restoreSteps,
+  roleFolderLevels,
   setupAfterInstalls,
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
@@ -87,7 +88,7 @@ import { withContext } from './ask'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
 import { sha256Hex } from './hash'
-import { PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
+import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import {
   gitignoreLines,
   isSafeOpPath,
@@ -1001,6 +1002,12 @@ describe('install runs (decision #39)', () => {
   })
 })
 
+/** The fixture user's config folder `<userDir>`: never a level of a role memory folder, only listed (02-GAPS-B3 S3). */
+const USER_DIR = '/home/u/.claude'
+
+/** The folder of every role memory folder of the fixture user: `<userDir>/cadre`. */
+const CADRE_DIR = `${USER_DIR}/cadre`
+
 /** The folder of the fixture user's role memory folders in the fixture repo: `<userDir>/cadre/<repo>-<hash8>`. */
 const SLUG_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d'
 
@@ -1067,18 +1074,23 @@ const SECURITY_RECORD_FILE: PrivateFile = { path: SECURITY_RECORD, text: '{}\n' 
 
 /**
  * The check of a write outside the repo for the fixture user and repo, allowing Security's two private files only;
- * `stats` and `listings` default to a disk where none of the role memory folders is there yet.
+ * `stats` and `listings` default to a disk where the config folder lists nothing and no folder of cadre's is there
+ * yet (02-GAPS-B3 S3).
  */
 function privateCheck(over: Partial<PrivateWriteCheck> = {}): PrivateWriteCheck {
   return {
     allowed: new Set([SECURITY_TEXT_FILE, SECURITY_RECORD]),
     stats: new Map<string, WriteStat>([
+      [CADRE_DIR, 'absent'],
+      [SLUG_DIR, 'absent'],
       [SECURITY_DIR, 'absent'],
       [`${SECURITY_DIR}/instructions`, 'absent'],
       [SECURITY_TEXT_FILE, 'absent'],
       [SECURITY_RECORD, 'absent'],
     ]),
     listings: new Map<string, readonly PortEntry[] | null>([
+      [USER_DIR, []],
+      [CADRE_DIR, null],
       [SLUG_DIR, null],
       [SECURITY_DIR, null],
       [`${SECURITY_DIR}/instructions`, null],
@@ -1088,9 +1100,14 @@ function privateCheck(over: Partial<PrivateWriteCheck> = {}): PrivateWriteCheck 
   }
 }
 
-/** The stats of Security's role memory folder, its instructions/ subfolder and both files as real folders and files. */
+/**
+ * The stats of `<userDir>/cadre`, the repo's folder, Security's role memory folder, its instructions/ subfolder and
+ * both files as real folders and files.
+ */
 function privateStats(over: Readonly<Record<string, WriteStat>> = {}): ReadonlyMap<string, WriteStat> {
   const stats: Record<string, WriteStat> = {
+    [CADRE_DIR]: statAt('dir', CADRE_DIR),
+    [SLUG_DIR]: statAt('dir', SLUG_DIR),
     [SECURITY_DIR]: statAt('dir', SECURITY_DIR),
     [`${SECURITY_DIR}/instructions`]: statAt('dir', `${SECURITY_DIR}/instructions`),
     [SECURITY_TEXT_FILE]: statAt('file', SECURITY_TEXT_FILE),
@@ -1100,11 +1117,16 @@ function privateStats(over: Readonly<Record<string, WriteStat>> = {}): ReadonlyM
   return new Map(Object.entries({ ...stats, ...over }))
 }
 
-/** The listings of the repo folder, Security's role memory folder and its instructions/ subfolder, all real entries. */
+/**
+ * The listings of the config folder, `<userDir>/cadre`, the repo folder, Security's role memory folder and its
+ * instructions/ subfolder, all real entries.
+ */
 function privateListings(
   over: Readonly<Record<string, readonly PortEntry[] | null>> = {},
 ): ReadonlyMap<string, readonly PortEntry[] | null> {
   const listings: Record<string, readonly PortEntry[] | null> = {
+    [USER_DIR]: [entry('cadre', 'dir'), entry('settings.json')],
+    [CADRE_DIR]: [entry('repo-1a2b3c4d', 'dir')],
     [SLUG_DIR]: [entry('security', 'dir')],
     [SECURITY_DIR]: [entry('instructions', 'dir'), entry('instructions.json'), entry('notes.md')],
     [`${SECURITY_DIR}/instructions`]: [entry('CLAUDE.md')],
@@ -1253,15 +1275,48 @@ describe('private role files (G-02-1f)', () => {
     expect(privateModeArgv(SECURITY_DIR)).toEqual(['/bin/chmod', '700', SECURITY_DIR])
   })
 
-  test('a private write is checked by the stat of each path from its role memory folder down and the listings', () => {
+  test('a private write stats each path from <userDir>/cadre down and lists each folder from <userDir> (S3)', () => {
     expect(privateCheckPaths(SECURITY_DIR, [SECURITY_TEXT, SECURITY_RECORD_FILE])).toEqual({
-      stats: [SECURITY_DIR, `${SECURITY_DIR}/instructions`, SECURITY_TEXT_FILE, SECURITY_RECORD],
-      listings: [SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`],
+      stats: [CADRE_DIR, SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`, SECURITY_TEXT_FILE, SECURITY_RECORD],
+      listings: [USER_DIR, CADRE_DIR, SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`],
     })
     expect(privateCheckPaths(SECURITY_DIR, [SECURITY_RECORD_FILE])).toEqual({
-      stats: [SECURITY_DIR, SECURITY_RECORD],
-      listings: [SLUG_DIR, SECURITY_DIR],
+      stats: [CADRE_DIR, SLUG_DIR, SECURITY_DIR, SECURITY_RECORD],
+      listings: [USER_DIR, CADRE_DIR, SLUG_DIR, SECURITY_DIR],
     })
+  })
+
+  test('the levels of a role memory folder, from the top: <userDir>/cadre down to instructions/ (S3, S7, C5)', () => {
+    expect(roleFolderLevels(SECURITY_DIR)).toEqual([CADRE_DIR, SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`])
+    expect(roleFolderLevels(SECURITY_DIR)).not.toContain(USER_DIR)
+  })
+
+  test('a link at <userDir>/cadre or the repo folder refuses every private write; <userDir> must list (S3)', () => {
+    const listedAs = (over: Readonly<Record<string, readonly PortEntry[] | null>>): PrivateWriteCheck =>
+      privateCheck({ stats: privateStats(), listings: privateListings(over) })
+    const linked = 'it or a folder above it is listed as a link'
+    const listing = 'it or a folder above it could not be checked (a folder listing failed)'
+    const both = [SECURITY_TEXT_FILE, SECURITY_RECORD]
+    const cadreLink = listedAs({ [USER_DIR]: [link('cadre')] })
+    const repoLink = listedAs({ [CADRE_DIR]: [link('repo-1a2b3c4d')] })
+    const unlisted = privateCheck({ listings: new Map([[USER_DIR, null]]) })
+
+    expect(both.map(path => privateWriteProblem(path, cadreLink))).toEqual([
+      `${TEXT_REFUSED}${linked}`,
+      `${RECORD_REFUSED}${linked}`,
+    ])
+    expect(both.map(path => privateWriteProblem(path, repoLink))).toEqual([
+      `${TEXT_REFUSED}${linked}`,
+      `${RECORD_REFUSED}${linked}`,
+    ])
+    expect(both.map(path => privateWriteProblem(path, unlisted))).toEqual([
+      `${TEXT_REFUSED}${listing}`,
+      `${RECORD_REFUSED}${listing}`,
+    ])
+    expect(both.map(path => privateWriteProblem(path, listedAs({ [USER_DIR]: [link('settings.json')] })))).toEqual([
+      null,
+      null,
+    ])
   })
 
   test('a write outside the repo that is not a private file of a confirmed role is refused (T-02-72)', () => {
@@ -1336,6 +1391,72 @@ describe('private role files (G-02-1f)', () => {
 
     expect(applyStatPaths(steps)).toEqual(['.cadre', '.cadre/be', ROLE_MD])
     expect(applyListPaths(steps)).toEqual(['', '.cadre', '.cadre/be'])
+  })
+})
+
+/** The levels of Security's role memory folder, from the top (roleFolderLevels). */
+const SECURITY_LEVELS: readonly string[] = [CADRE_DIR, SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`]
+
+/** The stats /cadre start takes of SECURITY_LEVELS, each a real folder; `over` replaces some, null for absent. */
+function levelStats(over: Readonly<Record<string, PortStat | null>> = {}): ReadonlyMap<string, PortStat | null> {
+  const stats = Object.fromEntries(SECURITY_LEVELS.map(level => [level, statAt('dir', level)]))
+
+  return new Map(Object.entries({ ...stats, ...over }))
+}
+
+/** The listings /cadre start takes: `<userDir>` and each level but the last, all real entries; `over` replaces some. */
+function levelListings(
+  over: Readonly<Record<string, readonly PortEntry[] | null>> = {},
+): ReadonlyMap<string, readonly PortEntry[] | null> {
+  const listings: Record<string, readonly PortEntry[] | null> = {
+    [USER_DIR]: [entry('cadre', 'dir')],
+    [CADRE_DIR]: [entry('repo-1a2b3c4d', 'dir')],
+    [SLUG_DIR]: [entry('security', 'dir')],
+    [SECURITY_DIR]: [entry('instructions', 'dir'), entry('instructions.json')],
+  }
+
+  return new Map(Object.entries({ ...listings, ...over }))
+}
+
+describe('private folder levels (02-GAPS-B3 C5)', () => {
+  test('real folders on every level, or levels not there yet, give no problem', () => {
+    const none = Object.fromEntries(SECURITY_LEVELS.map(level => [level, null]))
+    const below = { [SECURITY_DIR]: null, [`${SECURITY_DIR}/instructions`]: null }
+
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(), levelListings())).toBeNull()
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(none), new Map([[USER_DIR, null]]))).toBeNull()
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(below), levelListings({ [SLUG_DIR]: null }))).toBeNull()
+  })
+
+  test('a level that is a link by its stat or by its parent listing is the problem, from the top', () => {
+    const byStat = levelStats({ [SECURITY_DIR]: statAt('dir', '/elsewhere', true) })
+    const byListing = levelListings({ [USER_DIR]: [link('cadre')] })
+    const both = levelListings({ [USER_DIR]: [link('cadre')], [SLUG_DIR]: [link('security')] })
+
+    expect(privateLevelsProblem(SECURITY_LEVELS, byStat, levelListings())).toEqual({
+      path: SECURITY_DIR,
+      reason: 'link',
+    })
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(), byListing)).toEqual({ path: CADRE_DIR, reason: 'link' })
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(), both)).toEqual({ path: CADRE_DIR, reason: 'link' })
+  })
+
+  test('a level that is not a folder, or whose parent could not be listed, is the problem', () => {
+    const instructions = `${SECURITY_DIR}/instructions`
+    const file = levelStats({ [instructions]: statAt('file', instructions) })
+
+    expect(privateLevelsProblem(SECURITY_LEVELS, file, levelListings())).toEqual({
+      path: instructions,
+      reason: 'not-folder',
+    })
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(), levelListings({ [SLUG_DIR]: null }))).toEqual({
+      path: SECURITY_DIR,
+      reason: 'unchecked',
+    })
+    expect(privateLevelsProblem(SECURITY_LEVELS, levelStats(), new Map())).toEqual({
+      path: CADRE_DIR,
+      reason: 'unchecked',
+    })
   })
 })
 

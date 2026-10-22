@@ -17,6 +17,7 @@ import { BUILTIN_ADAPTER } from './builtin'
 import { compareText, isObject } from './facts'
 import {
   asciiLine,
+  builtClaudeMdPath,
   cadreJsonText,
   desiredFiles,
   GIT_TRACKING_UNKNOWN_WARNING,
@@ -622,6 +623,11 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
   test('with no part the text is the header line alone, with its newline', () => {
     expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
+  })
+
+  test('builtClaudeMdPath is the one home of a role built CLAUDE.md path, the one desiredFiles writes (S6)', () => {
+    expect(builtClaudeMdPath('be')).toBe('.cadre/be/CLAUDE.md')
+    expect(builtClaudeMdPath('security')).toBe('.cadre/security/CLAUDE.md')
   })
 
   test('partsBody is the text after the header: a blank line before each part, one final newline (N5)', () => {

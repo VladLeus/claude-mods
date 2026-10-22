@@ -17,6 +17,7 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
+  isMemoryIndexName,
   MEMORY_UNLISTED_WARNING,
   memoryIndex,
   memoryItemContextLine,
@@ -614,6 +615,14 @@ describe('instruction questions (G-02-1f)', () => {
     const found = emptySetupScan({ memoryFiles: ['MEMORY.md', 'a.md', 'b.md'] })
     expect(contentContextLine(found, { rules: [], hasAgentsMd: false })).toBe(
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. ' +
+        'No keeps the whole-file questions.',
+    )
+  })
+
+  test('the consent context line counts no MEMORY.md in any letter case as a memory (N2)', () => {
+    const found = emptySetupScan({ memoryFiles: ['MEMORY.md', 'Memory.md', 'a.md'] })
+    expect(contentContextLine(found, { rules: [], hasAgentsMd: false })).toBe(
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 1 memory. ' +
         'No keeps the whole-file questions.',
     )
   })
@@ -1338,6 +1347,25 @@ describe('readMemories', () => {
       { id: 'M3', file: 'c.md', folder: GIVEN_MEMORY, summary: 'the c memory', hash: await sha256Hex('text of c') },
     ])
     expect(read.warnings).toEqual([])
+  })
+
+  test('MEMORY.md in another letter case is never offered; the index is read from MEMORY.md alone (N2)', async () => {
+    const run = memIo(
+      memWorld({
+        dirs: { [MEMORY]: [entry('MEMORY.md'), entry('Memory.md'), entry('a.md')] },
+        files: {
+          [`${MEMORY}/MEMORY.md`]: MEMORY_INDEX_TEXT,
+          [`${MEMORY}/Memory.md`]: '- [A](a.md) \u2014 the wrong index',
+          [`${MEMORY}/a.md`]: 'text of a',
+        },
+      }),
+      [],
+    )
+    const read = await readMemories(run.io, [MEMORY])
+    expect(run.reads).toEqual([`${MEMORY}/MEMORY.md`, `${MEMORY}/a.md`])
+    expect(read.memories.map(found => [found.file, found.summary])).toEqual([['a.md', 'the a memory']])
+    expect(['memory.MD', 'MEMORY.md', 'Memory.md'].map(isMemoryIndexName)).toEqual([true, true, true])
+    expect(['a.md', 'MEMORY.md.bak', 'MEMORY'].map(isMemoryIndexName)).toEqual([false, false, false])
   })
 
   test('with no MEMORY.md every memory gets No summary in MEMORY.md.', async () => {

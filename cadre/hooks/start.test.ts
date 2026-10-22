@@ -49,6 +49,7 @@ import {
   NOT_COPIED_LINE,
   openMemoryBlockWarning,
   parseClaudeVersion,
+  privateFolderRefusal,
   privateLinkRefusal,
   readClaudeJson,
   renderArgv,
@@ -327,6 +328,7 @@ describe('runtime render (D-102)', () => {
 
     expect(renderArgv({ kind: 'mkdir', path: RUNTIME })).toEqual(['/bin/mkdir', '-p', '--', '/repo/.cadre/be/.runtime'])
     expect(renderArgv({ kind: 'remove', path: stamp })).toEqual(['/bin/rm', '-f', '--', stamp])
+    expect(renderArgv({ kind: 'chmod', path: PRIVATE_FOLDER })).toEqual(['/bin/chmod', '700', PRIVATE_FOLDER])
     expect(renderArgv({ kind: 'link', path: SKILL_LINK.path, target: SKILL_LINK.target })).toEqual([
       '/bin/ln',
       '-sfn',
@@ -642,6 +644,14 @@ describe('runtime render links', () => {
 /** BE's private instructions folder for the fixture user: `<role memory folder>/instructions` (D-140 q1-b). */
 const PRIVATE_FOLDER = '/home/u/.claude/cadre/repo-1a2b3c4d/be/instructions'
 
+/** The levels of BE's role memory folder a render makes mode 700, from the top (02-GAPS-B3 S7). */
+const PRIVATE_LEVELS: readonly string[] = [
+  '/home/u/.claude/cadre',
+  '/home/u/.claude/cadre/repo-1a2b3c4d',
+  '/home/u/.claude/cadre/repo-1a2b3c4d/be',
+  PRIVATE_FOLDER,
+]
+
 /** The link in BE's .runtime to its private instructions folder, which its launcher adds (D-140 q1-b). */
 const PRIVATE_LINK: OverlayLink = { path: `${RUNTIME}/private-instructions`, target: PRIVATE_FOLDER }
 
@@ -678,12 +688,20 @@ async function startPrivateFolder(): Promise<string> {
   return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/be/instructions`
 }
 
+/** The levels of BE's role memory folder in the start worlds, from the top (02-GAPS-B3 S7, C5). */
+async function startLevels(): Promise<string[]> {
+  const slug = `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
+
+  return ['/home/u/.claude/cadre', slug, `${slug}/be`, `${slug}/be/instructions`]
+}
+
 describe('built files reach the session (G-02-1f)', () => {
-  test('a render makes the folder the private link points at after the .runtime folders, then the link', () => {
+  test('a render makes the private link folder after the .runtime folders, chmods its levels, then links (S7)', () => {
     expect(renderSteps(input({ plan: PRIVATE_PLAN })).steps).toEqual([
       { kind: 'mkdir', path: RUNTIME },
       { kind: 'mkdir', path: `${RUNTIME}/overlay` },
       { kind: 'mkdir', path: PRIVATE_FOLDER },
+      ...PRIVATE_LEVELS.map((path): RenderStep => ({ kind: 'chmod', path })),
       { kind: 'link', path: PRIVATE_LINK.path, target: PRIVATE_FOLDER },
       ...fileWritesOf(PRIVATE_PLAN),
       INBOX_WRITE,
@@ -726,6 +744,7 @@ describe('built files reach the session (G-02-1f)', () => {
       ['/bin/mkdir', '-p', '--', RUNTIME],
       ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`],
       ['/bin/mkdir', '-p', '--', privateFolder],
+      ...(await startLevels()).map(level => ['/bin/chmod', '700', level]),
       ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
     ])
     expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
@@ -1676,9 +1695,12 @@ async function startBe(
   return { reply, writes: host.writes, calls: host.calls, stats }
 }
 
-/** The runs of a start that remove, make a folder or link: a refused start makes none of them. */
+/** The options of every render step the host runs: no cwd, the render step timeout. */
+const STEP_OPTIONS = { timeoutMs: 10_000 }
+
+/** The runs of a start that remove, make a folder, chmod it or link: a refused start makes none of them. */
 function renderRuns(start: StartRun): HostCall[] {
-  return start.calls.filter(call => ['/bin/rm', '/bin/mkdir', '/bin/ln'].includes(call.argv[0] ?? ''))
+  return start.calls.filter(call => ['/bin/rm', '/bin/mkdir', '/bin/chmod', '/bin/ln'].includes(call.argv[0] ?? ''))
 }
 
 /** The paths of the files a start wrote, in order. */
@@ -1747,11 +1769,13 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
     expect(start.calls[0]).toEqual({ argv: CLAUDE_ARGV, options: { cwd: '/home/u', timeoutMs: 10_000 } })
     expect(start.calls[1]?.argv).toEqual(GIT_ARGV)
     const privateFolder = await startPrivateFolder()
+    const chmods = (await startLevels()).map(level => ({ argv: ['/bin/chmod', '700', level], options: STEP_OPTIONS }))
     expect(renderRuns(start)).toEqual([
-      { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: { timeoutMs: 10_000 } },
-      { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: { timeoutMs: 10_000 } },
-      { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: { timeoutMs: 10_000 } },
-      { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: { timeoutMs: 10_000 } },
+      { argv: ['/bin/mkdir', '-p', '--', RUNTIME], options: STEP_OPTIONS },
+      { argv: ['/bin/mkdir', '-p', '--', `${RUNTIME}/overlay`], options: STEP_OPTIONS },
+      { argv: ['/bin/mkdir', '-p', '--', privateFolder], options: STEP_OPTIONS },
+      ...chmods,
+      { argv: ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`], options: STEP_OPTIONS },
     ])
     expect(lines.slice(0, 2)).toEqual(['cadre start be', 'Rendered .cadre/be/.runtime/ (1 link).'])
     expect(runAt).toBeGreaterThan(1)
@@ -2383,19 +2407,156 @@ describe('start review fixes (#63)', () => {
 })
 
 describe('linked memory deny (G-02-1f)', () => {
-  test("runStart renders the deny of each linked memory and the private folder into the role's settings", async () => {
+  test('runStart renders the deny of linked memories, private folder, record and memory folder (C2, C3)', async () => {
     const folder = await startRoleFolder()
     const start = await startBe(await linkedWorld())
     const settings = start.writes.find(write => write.path === `${RUNTIME}/settings.json`)?.text ?? '{}'
     const deny: readonly string[] = JSON.parse(settings).permissions?.deny ?? []
 
     expect(deny.filter(entry => entry.includes(folder.slice(1)))).toEqual([
+      `Edit(/${folder}/instructions.json)`,
       `Edit(/${folder}/instructions/**)`,
       `Edit(/${folder}/notes.md)`,
       `Edit(/${folder}/squad.md)`,
+      `Write(/${folder}/instructions.json)`,
       `Write(/${folder}/instructions/**)`,
       `Write(/${folder}/notes.md)`,
       `Write(/${folder}/squad.md)`,
     ])
+    expect(deny.filter(entry => entry.includes('/projects/'))).toEqual([
+      `Edit(/${MEMORY_DIR}/**)`,
+      `Write(/${MEMORY_DIR}/**)`,
+    ])
+  })
+})
+
+/** The folder that holds every role memory folder of the fixture user: `<userDir>/cadre`. */
+const CADRE_DIR = '/home/u/.claude/cadre'
+
+/**
+ * appliedWorld with each level of BE's role memory folder there as a real folder, listed in the folder above it, and
+ * `<userDir>` listed when `isUserDirListed` (02-GAPS-B3 C5).
+ */
+async function levelsWorld(isUserDirListed = true): Promise<MemWorld> {
+  const folder = await startRoleFolder()
+  const slug = folder.slice(0, folder.lastIndexOf('/'))
+  const base = await appliedWorld()
+  const userDir = isUserDirListed ? { '/home/u/.claude': [entry('cadre', 'dir')] } : {}
+
+  return {
+    ...base,
+    dirs: {
+      ...base.dirs,
+      ...userDir,
+      [CADRE_DIR]: [entry(slug.slice(slug.lastIndexOf('/') + 1), 'dir')],
+      [slug]: [entry('be', 'dir')],
+      [folder]: [entry('instructions', 'dir')],
+      [`${folder}/instructions`]: [],
+    },
+  }
+}
+
+/** A path under the fixture home folder as a refusal shows it: `~/...`. */
+function shownHome(path: string): string {
+  return `~${path.slice('/home/u'.length)}`
+}
+
+describe('private folder levels at start (02-GAPS-B3 C5, S7)', () => {
+  test('real folders on every level render as before, and each level is made mode 700 after the mkdir', async () => {
+    const start = await startBe(await levelsWorld())
+
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(renderRuns(start).filter(call => call.argv[0] === '/bin/chmod')).toEqual(
+      (await startLevels()).map(level => ({ argv: ['/bin/chmod', '700', level], options: STEP_OPTIONS })),
+    )
+  })
+
+  test('a role memory folder or a <userDir>/cadre that is a link refuses before any step or write', async () => {
+    const folder = await startRoleFolder()
+    const world = await levelsWorld()
+    const byStat = await startBe({ ...world, realPaths: { ...world.realPaths, [folder]: '/home/u/elsewhere' } })
+    const byListing = await startBe({ ...world, dirs: { ...world.dirs, '/home/u/.claude': [link('cadre')] } })
+
+    expect([byStat.reply, byStat.writes, renderRuns(byStat)]).toEqual([
+      privateFolderRefusal(shownHome(folder), 'link'),
+      [],
+      [],
+    ])
+    expect([byListing.reply, byListing.writes, renderRuns(byListing)]).toEqual([
+      privateFolderRefusal('~/.claude/cadre', 'link'),
+      [],
+      [],
+    ])
+    expect(privateFolderRefusal('~/.claude/cadre', 'link')).toBe(
+      'cadre start stopped: ~/.claude/cadre is a link; cadre does not write through it',
+    )
+  })
+
+  test('a file at instructions/, or a level whose parent cannot be listed, refuses before any step', async () => {
+    const folder = await startRoleFolder()
+    const instructions = `${folder}/instructions`
+    const world = await levelsWorld()
+    const dirs = Object.fromEntries(Object.entries(world.dirs).filter(([path]) => path !== instructions))
+    const file = await startBe({ ...world, dirs, files: { ...world.files, [instructions]: 'not a folder' } })
+    const unlisted = await startBe(await levelsWorld(false))
+
+    expect([file.reply, file.writes, renderRuns(file)]).toEqual([
+      privateFolderRefusal(shownHome(instructions), 'not-folder'),
+      [],
+      [],
+    ])
+    expect([unlisted.reply, unlisted.writes, renderRuns(unlisted)]).toEqual([
+      privateFolderRefusal('~/.claude/cadre', 'unchecked'),
+      [],
+      [],
+    ])
+    expect(privateFolderRefusal('~/x', 'not-folder')).toBe(
+      'cadre start stopped: ~/x is not a folder; cadre does not write through it',
+    )
+    expect(privateFolderRefusal('~/x', 'unchecked')).toBe(
+      'cadre start stopped: ~/x could not be checked for links; cadre does not write through it',
+    )
+  })
+
+  test('a chmod that exits 1 stops the render there like any failed step, and no stamp is written (S7)', async () => {
+    const argv = ['/bin/chmod', '700', CADRE_DIR]
+    const failed = { argv, result: { exitCode: 1, stdout: '', stderr: 'denied' } }
+    const start = await startBe(await appliedWorld(), [failed, CLAUDE_OK, GIT_OK])
+
+    expect(start.reply).toBe(renderFailedReply('be', CADRE_DIR))
+    expect(writtenPaths(start)).toEqual([])
+    expect(renderRuns(start).map(call => call.argv).at(-1)).toEqual(argv)
+  })
+})
+
+describe('the hand-out record at start (02-GAPS-B3 S6, N2, N8)', () => {
+  test('a record regen would refuse links nothing and warns: a part hash not hex, a part file not clean', async () => {
+    const folder = await startRoleFolder()
+    const { file, summary, hash } = await squadMemory()
+    const memory = { file, folder: MEMORY_DIR, summary, hash }
+    const part = { file: '~/.claude/CLAUDE.md', heading: 'Security', hash: '0'.repeat(64) }
+    for (const bad of [{ ...part, hash: 'not hex' }, { ...part, file: `~/.claude/CLAUDE${BIDI_OVERRIDE}.md` }]) {
+      const text = JSON.stringify({ schema: 1, parts: [bad], memories: [memory] })
+      const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: text }))
+
+      expect(start.reply.split('\n')).toContain(`warning: ${unreadableRecordWarning('be')}`)
+      expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`])
+    }
+    const good = JSON.stringify({ schema: 1, parts: [part], memories: [memory] })
+    const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: good }))
+
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`, `${folder}/squad.md`])
+  })
+
+  test('a memory named with ( or ), or MEMORY.md in another letter case, is not linked and warns', async () => {
+    const folder = await startRoleFolder()
+    const squad = await squadMemory()
+    const names = ['a)b.md', 'a(b.md', 'Memory.md', 'memory.md']
+    const record = instructionsRecordText([], names.map(name => ({ ...squad, file: name })))
+    const start = await startBe(await linkedWorld({ [instructionsRecordPath(folder)]: record }))
+    const lines = start.reply.split('\n')
+
+    expect(names.filter(name => !lines.includes(`warning: ${unsafeMemoryNameWarning(name)}`))).toEqual([])
+    expect(linkRuns(start).map(argv => argv[3])).toEqual([`${RUNTIME}/private-instructions`])
   })
 })

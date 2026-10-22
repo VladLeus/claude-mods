@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Facts, GsdReadTarget, PluginVersion, RawFacts, RawGsdCandidate } from '../types'
 import {
+  allOrNull,
   clean,
   detectRefusal,
   displayPath,
@@ -1225,6 +1226,24 @@ describe('sortedUnique', () => {
     expect(sortedUnique(['b', 'B', 'a', '_'])).toEqual(['B', '_', 'a', 'b'])
     expect(sortedUnique([])).toEqual([])
     expect(names).toEqual(['b', 'a', 'b'])
+  })
+})
+
+describe('allOrNull (02-GAPS-B3 S6)', () => {
+  test('gives each value parsed, in order, or null when any one does not parse', () => {
+    const isNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null)
+    const calls: unknown[] = []
+    const counted = (value: unknown): number | null => {
+      calls.push(value)
+
+      return isNumber(value)
+    }
+
+    expect(allOrNull([1, 2], value => value)).toEqual([1, 2])
+    expect(allOrNull([1, 'x'], isNumber)).toBeNull()
+    expect(allOrNull([], isNumber)).toEqual([])
+    expect(allOrNull(['x', 1, 2], counted)).toBeNull()
+    expect(calls).toEqual(['x'])
   })
 })
 

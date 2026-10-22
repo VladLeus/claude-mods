@@ -327,9 +327,18 @@ function firstLines(asked: readonly string[]): string[] {
   return asked.map(question => question.split('\n')[0] ?? '')
 }
 
-/** A session in the git repo /repo: its `.git` folder is there, and `over` changes the fields it names. */
+/**
+ * The fixture user's config folder, listed with nothing in it: a private write lists it before it writes under
+ * `<userDir>/cadre`, and refuses when it cannot (02-GAPS-B3 S3).
+ */
+const USER_DIR_LISTED: Readonly<Record<string, readonly PortEntry[]>> = { '/home/u/.claude': [] }
+
+/**
+ * A session in the git repo /repo: its `.git` folder is there, the user's config folder lists (USER_DIR_LISTED), and
+ * `over` changes the fields it names.
+ */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return memWorld({ dirs: { '/repo/.git': [] }, ...over })
+  return memWorld({ dirs: { '/repo/.git': [], ...USER_DIR_LISTED }, ...over })
 }
 
 /**
@@ -3455,7 +3464,11 @@ const MEMORY_INDEX =
  */
 function memoriesWorld(over: Partial<MemWorld> = {}): MemWorld {
   return partsWorld({
-    dirs: { '/repo/.git': [], [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')] },
+    dirs: {
+      '/repo/.git': [],
+      ...USER_DIR_LISTED,
+      [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')],
+    },
     files: {
       [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
       [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
@@ -3719,7 +3732,7 @@ function builtWorld(over: Partial<MemWorld> = {}): MemWorld {
   ]
 
   return gitWorld({
-    dirs: { '/repo/.git': [], ...FULL_DIRS },
+    dirs: { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS },
     files: {
       ...FULL_FILES,
       [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
@@ -3877,6 +3890,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
 
   test('T-02-69: on the secret world, Yes and Accept, no global or memory text reaches the repo or reply', async () => {
     const world = secretWorld({
+      dirs: { ...secretWorld().dirs, ...USER_DIR_LISTED },
       files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
       replies: [
         '{"topics":[{"title":"Keys and rules","summary":"How keys are kept.","parts":["P1","P2"]}]}',
@@ -4130,6 +4144,8 @@ describe('private role files (G-02-1f)', () => {
     const security = `${slug}/security`
     const dirs = {
       '/repo/.git': [],
+      '/home/u/.claude': [entry('cadre', 'dir')],
+      '/home/u/.claude/cadre': [entry(slug.slice(slug.lastIndexOf('/') + 1), 'dir')],
       [slug]: [entry('security', 'dir')],
       [security]: [entry('instructions', 'dir')],
       [`${security}/instructions`]: [],
@@ -4143,6 +4159,25 @@ describe('private role files (G-02-1f)', () => {
     expect(written).toContain(instructionsRecordPath(security))
     const shownPath = `~/.claude/cadre/${slug.slice(slug.lastIndexOf('/') + 1)}/security/instructions/CLAUDE.md`
     expect(reply.split('\n')).toContain(`warning: refused to write ${shownPath}: ${LISTED_LINK}`)
+  })
+
+  test('a <userDir>/cadre listed as a link, or an unlisted <userDir>, refuses every private write (S3)', async () => {
+    const pm = privateClaudeMdPath(await memoryFolder('pm'))
+    const shownPm = `~${pm.slice('/home/u'.length)}`
+    const unchecked = 'it or a folder above it could not be checked (a folder listing failed)'
+    const worlds: readonly [MemWorld, string][] = [
+      [partsWorld({ dirs: { '/repo/.git': [], '/home/u/.claude': [link('cadre')] } }), LISTED_LINK],
+      [partsWorld({ dirs: { '/repo/.git': [] } }), unchecked],
+    ]
+    for (const [world, reason] of worlds) {
+      const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+      const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+      const homeRuns = host.calls.filter(call => call.argv.some(arg => arg.startsWith('/home/u/')))
+      expect(homeWrites(host)).toEqual([])
+      expect(homeRuns).toEqual([])
+      expect(reply.split('\n')).toContain(`warning: refused to write ${shownPm}: ${reason}`)
+      expect(host.writes.map(write => write.path).at(-1)).toBe('/repo/.cadre/manifest.json')
+    }
   })
 
   test('the global text reaches the private file only, no write under the repo (T-02-69, T-02-72)', async () => {
@@ -4285,7 +4320,7 @@ describe('improver in init (G-02-1f)', () => {
 
   test('another file the improver changed is named in the reply, neither undone nor recorded (D-141)', async () => {
     const files = builtFilesRecord()
-    const dirs: Record<string, readonly PortEntry[]> = { '/repo/.git': [], ...FULL_DIRS }
+    const dirs: Record<string, readonly PortEntry[]> = { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS }
     const edited = '{"id":"be","edited":true}\n'
     const { io: improving, host } = improvingHost(files)
     const io: HostIo = {
@@ -8456,7 +8491,7 @@ async function regenPartsWorld(fixture: RegenFixture = {}): Promise<MemWorld> {
   const records = { instructionParts: given.map(recorded), instructionPartsNotGiven: notGiven.map(recorded) }
   const be = templateRole('be', records)
   const roles = [be, templateRole('pm', { instructionParts: [] })]
-  const dirs = { '/repo/.git': [], '/repo': [], '/repo/.cadre': [], ...over.dirs }
+  const dirs = { '/repo/.git': [], ...USER_DIR_LISTED, '/repo': [], '/repo/.cadre': [], ...over.dirs }
   const base = gitWorld({ ...over, dirs })
   const state = stateOf(roles)
   const scopes = scopesFor(roles, state.framework, await scansOf(base), [], state.launchStart)

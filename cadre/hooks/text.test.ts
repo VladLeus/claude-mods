@@ -37,7 +37,6 @@ import {
   improverUnreadableNote,
   installedLine,
   installFailureText,
-  INSTRUCTIONS_RECORD_FILE,
   instructionsRecordText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
@@ -291,9 +290,12 @@ import {
 } from './instructions'
 import { UNNAMED_ROLE } from './kickoff'
 import {
+  INSTRUCTIONS_RECORD_FILE,
   PRIVATE_INSTRUCTIONS_FOLDER,
   RUNTIME_SETTINGS_KEYS,
+  UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
+  UNDENIED_RECORD_WARNING,
   undeniedMemoryWarning,
   unsafeMemoryNameWarning,
 } from './launch'
@@ -362,6 +364,7 @@ import {
   memoryIndexLinkWarning,
   NOT_COPIED_LINE,
   openMemoryBlockWarning,
+  privateFolderRefusal,
   privateLinkRefusal,
   runtimeMcpText,
   STALE_LINK_FOLDERS,
@@ -681,7 +684,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['apply', 'uncheckedFilesWarning', [uncheckedFilesWarning(1, '.cadre/be'), uncheckedFilesWarning(7, '.cadre/be')]],
   ['apply', 'changedBeforeRunWarning', changedBeforeRunWarning(BUILT_PATH)],
   ['apply', 'UNGUARDED_RUN_REASON', UNGUARDED_RUN_REASON],
-  ['apply', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
   ['apply', 'privateClaudeMdText', privateClaudeMdText(BE.id, 'repo', PART_SCAN.parts)],
   ['apply', 'instructionsRecordText', instructionsRecordText(PART_SCAN.parts, PART_SCAN.memories)],
   [
@@ -992,8 +994,11 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['launch', 'RUNTIME_SETTINGS_KEYS', RUNTIME_SETTINGS_KEYS],
   ['launch', 'unsafeMemoryNameWarning', unsafeMemoryNameWarning('../notes.md')],
   ['launch', 'PRIVATE_INSTRUCTIONS_FOLDER', PRIVATE_INSTRUCTIONS_FOLDER],
+  ['launch', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
   ['launch', 'undeniedMemoryWarning', undeniedMemoryWarning('my notes.md')],
   ['launch', 'UNDENIED_PRIVATE_WARNING', UNDENIED_PRIVATE_WARNING],
+  ['launch', 'UNDENIED_MEMORY_FOLDER_WARNING', UNDENIED_MEMORY_FOLDER_WARNING],
+  ['launch', 'UNDENIED_RECORD_WARNING', UNDENIED_RECORD_WARNING],
   ['plan', 'MANIFEST_PATH', MANIFEST_PATH],
   ['plan', 'IGNORE_BEGIN', IGNORE_BEGIN],
   ['plan', 'IGNORE_END', IGNORE_END],
@@ -1058,6 +1063,15 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['start', 'NOT_COPIED_LINE', NOT_COPIED_LINE],
   ['start', 'TERMINAL_MAC_ONLY', TERMINAL_MAC_ONLY],
   ['start', 'privateLinkRefusal', privateLinkRefusal('be')],
+  [
+    'start',
+    'privateFolderRefusal',
+    [
+      privateFolderRefusal('~/.claude/cadre', 'link'),
+      privateFolderRefusal('~/.claude/cadre', 'not-folder'),
+      privateFolderRefusal('~/.claude/cadre', 'unchecked'),
+    ],
+  ],
   ['start', 'stampText', stampText('0.2.0')],
   ['start', 'runtimeMcpText', [false, true].map(isRead => runtimeMcpText(BE, {}, ['/repo'], isRead))],
   ['start', 'MEMORY_BLOCK_BEGIN', MEMORY_BLOCK_BEGIN],
