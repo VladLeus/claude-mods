@@ -51,17 +51,23 @@ import {
   hunksAfterRuns,
   installedLine,
   installFailureText,
+  instructionsRecordPath,
   listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   parseConflictAnswer,
   pluginInstallArgv,
+  privateCheckPaths,
+  privateClaudeMdPath,
+  privateLevels,
+  privateModeArgv,
+  privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   setupAfterInstalls,
   writeProblem,
 } from './apply'
-import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
+import type { ApplyStep, ConflictChoice, HunkRun, PrivateFile, PrivateRole } from './apply'
 import {
   accepted,
   ASK_HEADERS,
@@ -117,6 +123,7 @@ import {
   compareText,
   countedNoun,
   detectRefusal,
+  displayPath,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
   idsOrNone,
@@ -165,6 +172,7 @@ import {
   topicsPrompt,
 } from './instructions'
 import type { InstructionSources } from './instructions'
+import { roleMemoryDir } from './launch'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
@@ -213,6 +221,7 @@ import {
 import type { CommandWord } from './scan'
 import { compileScope, pluginName, scopeCardLines } from './scope'
 import { memoryFolderOf, scanSetup, userDirOf } from './setup'
+import { gitCommonDirOf, isStepDone } from './start'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =
@@ -276,6 +285,18 @@ export const MANIFEST_SKIPPED_NOTE = `${MANIFEST_SKIPPED_START}/cadre init again
 /** The manifest-skipped warning of a regen reply: re-running regen of the role is the narrower fix (A4). */
 function regenManifestSkippedNote(id: string): string {
   return `${MANIFEST_SKIPPED_START}/cadre regen ${reportText(id)} again.`
+}
+
+/**
+ * The warning in an init reply when apply cannot name the role memory folders, so the private files of these roles
+ * are not written (G-02-1f, D-140 q2-a): there is no user folder, or git gives no absolute common dir. The ids are
+ * cleaned and capped as report cells are.
+ */
+export function privateFoldersUnknownWarning(ids: readonly string[]): string {
+  return (
+    `the private files of ${ids.map(reportText).join(', ')} were not written: their role memory folders are unknown ` +
+    '(no home folder, or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)'
+  )
 }
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
@@ -2547,6 +2568,30 @@ function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly 
   )
 }
 
+/** What a role was given that is private, before its role memory folder is known (privatesOf). */
+type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories'>
+
+/**
+ * What each role of the team was given that is private (G-02-1f Storage split, D-140 q2-a): for a parts hand-out,
+ * every global part of the topics it was given, in read order, and every memory it was given, in file-name order; a
+ * role given neither is left out, and the whole-file questions and none give no role. In role id order, the order of
+ * the role memory folders. A part read from the repo is never among them: those go to its built file (repoPartsOf).
+ */
+function privatesOf(handout: InstructionHandout, roles: readonly RoleSpec[]): OwedPrivate[] {
+  if (handout.kind !== 'parts') return []
+  const { scan, topics, given } = handout
+  const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
+  const ids = roles.map(role => role.id).sort(compareText)
+
+  return ids.flatMap(id => {
+    const partIds = new Set(topics.filter(topic => isGiven(topic.id, id)).flatMap(topic => topic.partIds))
+    const parts = scan.parts.filter(part => part.source === 'global' && partIds.has(part.id))
+    const memories = scan.memories.filter(memory => isGiven(memory.id, id))
+
+    return parts.length === 0 && memories.length === 0 ? [] : [{ id, parts, memories }]
+  })
+}
+
 /**
  * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
@@ -2613,8 +2658,9 @@ export async function planStep(
 }
 
 /**
- * What one apply did (D-105, LNCH-01). Every path is repo-relative:
- * - `written`: each path whose write landed, in step order, the `.gitignore` and the manifest included;
+ * What one apply did (D-105, LNCH-01). Every path is repo-relative, except that of a private file:
+ * - `written`: each path whose write landed, in step order, the `.gitignore`, the manifest and the private files of
+ *   the role memory folders included, a private file as displayPath shows it (`~/...`, G-02-1f);
  * - `executable`: each launcher whose chmod ran and exited 0;
  * - `failed`: each path whose write the host refused or failed;
  * - `refused`: the writeProblem or listedLinkProblem text of each write that was not tried, because the stat of the
@@ -2630,7 +2676,12 @@ export async function planStep(
  *   (decision #39); never fatal to the apply;
  * - `untrackedParts`: the warning of each source file whose repo parts were left out of the built files because git
  *   does not track it, or GIT_TRACKING_UNKNOWN_WARNING when git could not be asked (02-GAPS-B2 M3);
- * - `manifestSkipped`: whether the manifest was not written because a write before it failed or was refused.
+ * - `privateProblems`: the warning of each private file that was not written (G-02-1f): the privateWriteProblem text
+ *   of one refused, `could not write <path>` for one whose folder could not be made private or whose write failed, and
+ *   privateFoldersUnknownWarning when the role memory folders could not be named; never a reason to skip the manifest,
+ *   which names no private file;
+ * - `manifestSkipped`: whether the manifest was not written because a write of a repo file before it failed or was
+ *   refused.
  */
 export type ApplyOutcome = {
   readonly written: readonly string[]
@@ -2644,11 +2695,73 @@ export type ApplyOutcome = {
   readonly installed: readonly string[]
   readonly installProblems: readonly string[]
   readonly untrackedParts: readonly string[]
+  readonly privateProblems: readonly string[]
   readonly manifestSkipped: boolean
 }
 
 /** How long one launcher chmod may run before it is given up. */
 const CHMOD_TIMEOUT_MS = 10_000
+
+/**
+ * Whether the folders of these private files are made and made private (G-02-1f, 02-GAPS-B2 N13): the mkdir run of
+ * /cadre start (isStepDone) makes the deepest folder of privateLevels with every one above it, then `/bin/chmod 700`
+ * runs on each level from the top (privateModeArgv); false at the first run the host rejects or that does not exit 0.
+ */
+async function isPrivateFolderMade(host: HostIo, folder: string, files: readonly PrivateFile[]): Promise<boolean> {
+  const levels = privateLevels(folder, files)
+  const deepest = levels.at(-1) ?? folder
+  if (!(await isStepDone(host, { kind: 'mkdir', path: deepest }))) return false
+  for (const level of levels) {
+    const run = await host.run(privateModeArgv(level), { timeoutMs: CHMOD_TIMEOUT_MS })
+    if (run === null || run.exitCode !== 0) return false
+  }
+
+  return true
+}
+
+/** What writePrivate did: the private files written, as displayPath shows them, and the warning of each one not. */
+type PrivateOutcome = {
+  readonly written: readonly string[]
+  readonly problems: readonly string[]
+}
+
+/**
+ * Writes the private files of one role into its role memory folder (G-02-1f, D-140 q2-a, T-02-72). Every path
+ * privateCheckPaths names is stat'ed through statForWrite and every folder it names listed, then a file is tried only
+ * when privateWriteProblem finds it is a private file of a confirmed role (`allowed`) with nothing on its way listed as
+ * a link, unchecked or a folder; else its refusal is a problem. The files tried are written once their folders are made
+ * and made private (isPrivateFolderMade), and one whose folders could not be made, or whose write the host refused or
+ * failed, is `could not write <path>`. Paths are shown as displayPath shows them, `~/...` under the home folder.
+ */
+async function writePrivate(
+  io: InitIo,
+  host: HostIo,
+  step: { readonly path: string; readonly files: readonly PrivateFile[] },
+  context: { readonly locations: InitLocations; readonly allowed: ReadonlySet<string> },
+): Promise<PrivateOutcome> {
+  const { locations, allowed } = context
+  const paths = privateCheckPaths(step.path, step.files)
+  const stats = new Map<string, WriteStat>()
+  for (const path of paths.stats) stats.set(path, await io.statForWrite(path))
+  const listings = new Map<string, readonly PortEntry[] | null>()
+  for (const folder of paths.listings) listings.set(folder, await io.list(folder))
+  const shownPath = (path: string): string => displayPath(path, locations.home, locations.root, locations.configDir)
+  const refusals = step.files.map(file => privateWriteProblem(file.path, { allowed, stats, listings, locations }))
+  const problems = refusals.filter((refusal): refusal is string => refusal !== null)
+  const tried = step.files.filter((_, index) => refusals[index] === null)
+  if (tried.length === 0) return { written: [], problems }
+  const notWritten = (file: PrivateFile): string => `could not write ${shownPath(file.path)}`
+  if (!(await isPrivateFolderMade(host, step.path, tried))) {
+    return { written: [], problems: [...problems, ...tried.map(notWritten)] }
+  }
+  const written: string[] = []
+  for (const file of tried) {
+    if (await host.write(file.path, file.text)) written.push(shownPath(file.path))
+    else problems.push(notWritten(file))
+  }
+
+  return { written, problems }
+}
 
 /**
  * Runs the steps of a confirmed apply through the host, in order (D-105, LNCH-01). Every path applyStatPaths names is
@@ -2660,10 +2773,20 @@ const CHMOD_TIMEOUT_MS = 10_000
  * this same apply passed writeProblem and landed (chmodProblem): `/bin/chmod` follows links, so a chmod on a path whose
  * write was refused or failed could change the target of a link planted there, outside the repo (RESEARCH 3.2,
  * T-03-38); such a launcher is not made executable, and no chmod runs for it at all. A chmod that ran makes its
- * launcher executable only on exit 0. The manifest is written like any file, but skipped when a write before it failed
- * or was refused, so it never claims a file that is not on the disk (T-03-18).
+ * launcher executable only on exit 0. A private step writes the private files of one role into its role memory folder
+ * outside the repo (writePrivate, G-02-1f), each only when it is one of `allowed`, the private files of the confirmed
+ * roles (T-02-72); its problems are private problems. The manifest is written like any file, but skipped when a write
+ * of a repo file before it failed or was refused, so it never claims a file that is not on the disk (T-03-18); a
+ * private file is never in it, so a private problem never skips it.
  */
-async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonly ApplyStep[]): Promise<ApplyOutcome> {
+async function writeSteps(
+  io: InitIo,
+  host: HostIo,
+  locations: InitLocations,
+  steps: readonly ApplyStep[],
+  allowed: ReadonlySet<string> = new Set(),
+): Promise<ApplyOutcome> {
+  const { root } = locations
   const base = trimSlash(root)
   const stats = new Map<string, WriteStat>()
   for (const path of applyStatPaths(steps)) stats.set(path, await io.statForWrite(`${base}/${path}`))
@@ -2677,6 +2800,7 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
   const refused: string[] = []
   const notExecutable: string[] = []
   const chmodRefusals: string[] = []
+  const privateProblems: string[] = []
   let manifestSkipped = false
   for (const step of steps) {
     if (step.kind === 'chmod') {
@@ -2688,6 +2812,12 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
       const run = await host.run(chmodArgv(root, step.path), { timeoutMs: CHMOD_TIMEOUT_MS })
       if (run !== null && run.exitCode === 0) executable.push(step.path)
       else notExecutable.push(step.path)
+      continue
+    }
+    if (step.kind === 'private') {
+      const outcome = await writePrivate(io, host, step, { locations, allowed })
+      for (const path of outcome.written) written.add(path)
+      privateProblems.push(...outcome.problems)
       continue
     }
     if (step.kind === 'manifest' && (failed.length > 0 || refused.length > 0)) {
@@ -2715,22 +2845,24 @@ async function writeSteps(io: InitIo, host: HostIo, root: string, steps: readonl
     installed: [],
     installProblems: [],
     untrackedParts: [],
+    privateProblems,
     manifestSkipped,
   }
 }
 
 /**
  * The lines a plain init or regen reply ends with (D-105, LNCH-01). First `Applied: wrote <n> file(s) (<m>
- * executable).`, `file` when n is 1, n counting every write that landed (the `.gitignore` and the manifest included)
- * and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no write failed or was
- * refused. Then one `warning: ` line for each write writeProblem refused (its text), each write the host failed, each
- * chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run by hand), each
- * framework command that failed (hunkFailureLine), the attended note when a failure made roles attended, each security
- * plugin that was not installed (its installProblems text, decision #39), each source file whose repo parts were left
- * out because git does not track it, or that git could not be asked (untrackedParts, 02-GAPS-B2 M3), and
- * `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the manifest was skipped. Then, when
- * security plugins were installed, the line that names them and says to run /reload-plugins (installedLine).
- * NEXT_STEP_NOTE comes last.
+ * executable).`, `file` when n is 1, n counting every write that landed (the `.gitignore`, the manifest and the
+ * private files included) and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no
+ * write failed or was refused. Then one `warning: ` line for each write writeProblem refused (its text), each write
+ * the host failed, each chmod not run (the chmodProblem text), each chmod that did not exit 0 (with the command to run
+ * by hand), each framework command that failed (hunkFailureLine), the attended note when a failure made roles
+ * attended, each security plugin that was not installed (its installProblems text, decision #39), each source file
+ * whose repo parts were left out because git does not track it, or that git could not be asked (untrackedParts,
+ * 02-GAPS-B2 M3), each private file that was not written, or the roles whose role memory folders could not be named
+ * (privateProblems, G-02-1f), and `manifestNote` (MANIFEST_SKIPPED_NOTE unless the caller names another) when the
+ * manifest was skipped. Then, when security plugins were installed, the line that names them and says to run
+ * /reload-plugins (installedLine). NEXT_STEP_NOTE comes last.
  */
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
@@ -2750,6 +2882,7 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
     ...outcome.installProblems,
     ...outcome.untrackedParts,
+    ...outcome.privateProblems,
     ...(outcome.manifestSkipped ? [manifestNote] : []),
   ]
   const installed = outcome.installed.length > 0 ? [installedLine(outcome.installed)] : []
@@ -3263,6 +3396,46 @@ async function trackedParts(
   }
 }
 
+/** Where the private files of an apply go: the roles that have one, the paths apply may write, and why none is. */
+type PrivatePlan = {
+  readonly privates: readonly PrivateRole[]
+  readonly allowed: ReadonlySet<string>
+  readonly problems: readonly string[]
+}
+
+/**
+ * Where the private files go (G-02-1f Storage split, D-140 q2-a, T-02-72). With a role owed one (privatesOf), the role
+ * memory folder of each role is named from the user folder and the git common dir, as /cadre start names it
+ * (gitCommonDirOf, roleMemoryDir), and `allowed` holds the private text file and the hand-out record of every role of
+ * the team: the only paths outside the repo apply may write. The repo's folder name heads each private text file. With
+ * no role owed one, git is not asked and nothing is allowed. With no user folder, or no absolute common dir from git,
+ * nothing private is written and privateFoldersUnknownWarning names the roles owed one.
+ */
+async function privatePlanOf(
+  io: InitIo,
+  host: HostIo,
+  locations: InitLocations,
+  input: { readonly roles: readonly RoleSpec[]; readonly owed: readonly OwedPrivate[] },
+): Promise<PrivatePlan> {
+  const none: PrivatePlan = { privates: [], allowed: new Set(), problems: [] }
+  if (input.owed.length === 0) return none
+  const userDir = userDirOf(locations)
+  const common = userDir === null ? null : await gitCommonDirOf(io, host, locations.root)
+  if (userDir === null || common === null) {
+    return { ...none, problems: [privateFoldersUnknownWarning(input.owed.map(role => role.id))] }
+  }
+  const folderOf = (id: string): string => roleMemoryDir({ userDir, ...common }, id)
+  const root = trimSlash(locations.root)
+  const repo = root.slice(root.lastIndexOf('/') + 1)
+  const folders = input.roles.map(role => folderOf(role.id))
+
+  return {
+    privates: input.owed.map(role => ({ ...role, folder: folderOf(role.id), repo })),
+    allowed: new Set(folders.flatMap(folder => [privateClaudeMdPath(folder), instructionsRecordPath(folder)])),
+    problems: [],
+  }
+}
+
 /**
  * Writes the plan the person confirmed (D-105, LNCH-01), in this order:
  * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
@@ -3289,13 +3462,20 @@ async function trackedParts(
  *    parts of files git tracks are kept; a run that fails keeps none. Each left-out source file is a warning
  *    (untrackedParts). The dry run holds no host, so its plan may still list a built file whose untracked parts apply
  *    then leaves out.
- * 6. The steps of that fresh plan with the answers (applySteps), run through the host port by writeSteps: each write
- *    checked for links first, a launcher made executable only after its own write landed, and the manifest last. Take
- *    new overwrites the person's file and the manifest records its new hash; Keep mine keeps the file and writes its
- *    `.cadre-new` copy, as it does for a file that became a conflict after the questions.
+ * 5b. Then, when a role was given a global part or a memory (privatesOf), its role memory folder is named from the
+ *    git common dir as /cadre start names it (privatePlanOf: `git rev-parse` runs once at the repo root), with the
+ *    private files of every role of the team as the only paths outside the repo apply may write (T-02-72); with no
+ *    folder known, nothing private is written and the reply names the roles (privateProblems).
+ * 6. The steps of that fresh plan with the answers and the private files (applySteps), run through the host port by
+ *    writeSteps: each write checked for links first, a launcher made executable only after its own write landed, then
+ *    each role's private text file and hand-out record in its role memory folder, once the folder is made and made
+ *    private (G-02-1f, D-140 q2-a, N13), and the manifest last. Take new overwrites the person's file and the manifest
+ *    records its new hash; Keep mine keeps the file and writes its `.cadre-new` copy, as it does for a file that
+ *    became a conflict after the questions.
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
- *    plugins installed and the install problems (installed, installProblems), and the untracked-parts warnings of 5a
- *    (untrackedParts), which the reply prints, each failure with the command to run (D-106, decision #39).
+ *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
+ *    (untrackedParts) and the private problems of 5b and 6 (privateProblems), which the reply prints, each failure
+ *    with the command to run (D-106, decision #39).
  * Like every init step it gives a StepResult (A1): accepted with the fresh plan as written and what the apply did.
  */
 export async function applyConfirmed(
@@ -3338,6 +3518,8 @@ export async function applyConfirmed(
   const attended = await attendedByConfig(io, locations.root, frameworks, setup)
   const scopes = compileAll(roles, repoDefault, { ...gathered, setup }, attended, launchStart)
   const tracked = await trackedParts(host, locations.root, repoPartsOf(draft.instructions))
+  const owed = privatesOf(draft.instructions, roles)
+  const privatePlan = await privatePlanOf(io, host, locations, { roles, owed })
   const planned = await planStep(io, {
     roles,
     repoDefault,
@@ -3350,8 +3532,8 @@ export async function applyConfirmed(
     readUserMcp: draft.readUserMcp,
     repoParts: tracked.repoParts,
   })
-  const steps = await applySteps({ ...planned, choices })
-  const written = await writeSteps(io, host, locations.root, steps)
+  const steps = await applySteps({ ...planned, choices, privates: privatePlan.privates })
+  const written = await writeSteps(io, host, locations, steps, privatePlan.allowed)
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {
     ...written,
@@ -3360,6 +3542,7 @@ export async function applyConfirmed(
     installed: installs.installed,
     installProblems: installs.installProblems,
     untrackedParts: tracked.warnings,
+    privateProblems: [...privatePlan.problems, ...written.privateProblems],
   }
 
   return accepted({ planned, outcome })
@@ -3774,7 +3957,7 @@ export async function runRegen(io: InitIo, options: RegenOptions): Promise<strin
 
   const { plan, desired, manifest } = planned.value
   const steps = await applySteps({ plan, desired, manifest, gitignore: null, choices: new Map() })
-  const outcome = await writeSteps(io, options.host, locations.root, steps)
+  const outcome = await writeSteps(io, options.host, locations, steps)
 
   return regenReplyText(planned.value, options.id, outcome)
 }

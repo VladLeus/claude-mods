@@ -27,6 +27,7 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
+import { PRIVATE_INSTRUCTIONS_FOLDER } from './apply'
 import {
   clean,
   compareText,
@@ -691,15 +692,24 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
 }
 
 /**
- * The git common dir as git gives it at the repo root: its output without the final line break, which must start
- * with `/`. Null when the host rejects the run, it exits non-zero or its output is not an absolute path.
+ * The git common dir of the repo with its SHA-256, which name the role memory folders (roleMemoryDir, D-20, D-91):
+ * GIT_COMMON_DIR_ARGV run at the repo root gives it, its output without the final line break, which must start with
+ * `/`; it is then the realpath of its stat when the host resolves it, else as git gave it. Null when the host rejects
+ * the run, it exits non-zero or its output is not an absolute path. /cadre start and apply both look the folders up
+ * through it (G-02-1f, D-140 q2-a), so they always name the same ones.
  */
-async function gitCommonDirOf(host: HostIo, root: string): Promise<string | null> {
+export async function gitCommonDirOf(
+  io: InitIo,
+  host: HostIo,
+  root: string,
+): Promise<Pick<LaunchUser, 'gitCommonDir' | 'commonDirHash'> | null> {
   const run = await host.run(GIT_COMMON_DIR_ARGV, { cwd: root, timeoutMs: GIT_TIMEOUT_MS })
   if (run === null || run.exitCode !== 0) return null
   if (!run.stdout.startsWith('/')) return null
+  const given = run.stdout.endsWith('\n') ? run.stdout.slice(0, -1) : run.stdout
+  const gitCommonDir = (await io.stat(given))?.realPath ?? given
 
-  return run.stdout.endsWith('\n') ? run.stdout.slice(0, -1) : run.stdout
+  return { gitCommonDir, commonDirHash: await sha256Hex(gitCommonDir) }
 }
 
 /**
@@ -707,7 +717,8 @@ async function gitCommonDirOf(host: HostIo, root: string): Promise<string | null
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
  *   `<home>/.claude`);
  * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
- *   it, else as git gave it, with its SHA-256: they name the role memory folders (roleMemoryDir, D-20, D-91);
+ *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir,
+ *   D-20, D-91);
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
  *   the launch start (launchHooksOf, D-103);
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
@@ -731,9 +742,8 @@ export async function gatherLaunchUser(
   const { home } = locations
   const userDir = userDirOf(locations)
   if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
-  const commonDir = await gitCommonDirOf(host, locations.root)
+  const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
-  const gitCommonDir = (await io.stat(commonDir))?.realPath ?? commonDir
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
 
@@ -744,8 +754,7 @@ export async function gatherLaunchUser(
       givenRoot: locations.givenRoot,
       home,
       userDir,
-      gitCommonDir,
-      commonDirHash: await sha256Hex(gitCommonDir),
+      ...commonDir,
       ...launchSettingsOf(await io.settings('user')),
       hooks,
       claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),
@@ -1231,9 +1240,10 @@ async function renderDiskOf(
 
 /**
  * Runs one step of a render through the host: a write through host.write; a removal, a folder or a link through
- * host.run with its renderArgv, absolute and with no shell, done only when it exits 0.
+ * host.run with its renderArgv, absolute and with no shell, done only when it exits 0. Apply makes the role memory
+ * folders of the private files with it too, as a mkdir step (G-02-1f).
  */
-async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
+export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
   if (step.kind === 'write') return host.write(step.path, step.text)
   const argv = renderArgv(step)
   if (argv === null) return false
@@ -1274,7 +1284,7 @@ function startReplyText(
 function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string): LaunchPlan {
   const link: OverlayLink = {
     path: `${runtimeFolder(user.root, id)}/${PRIVATE_INSTRUCTIONS_LINK}`,
-    target: `${roleMemoryDir(user, id)}/instructions`,
+    target: `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`,
   }
 
   return { ...plan, links: [...plan.links, link].sort((a, b) => compareText(a.path, b.path)) }

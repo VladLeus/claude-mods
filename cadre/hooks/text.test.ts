@@ -25,8 +25,13 @@ import {
   hunkFailureLine,
   installedLine,
   installFailureText,
+  INSTRUCTIONS_RECORD_FILE,
+  instructionsRecordText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
+  PRIVATE_INSTRUCTIONS_FOLDER,
+  privateClaudeMdText,
+  privateWriteProblem,
   PYTHON_VERSION_ARGV,
 } from './apply'
 import type { HunkRun } from './apply'
@@ -175,6 +180,7 @@ import {
   ownSkillsContextLine,
   ownSkillsQuestion,
   policyLine,
+  privateFoldersUnknownWarning,
   proposalLines,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
@@ -438,6 +444,7 @@ const OUTCOME: ApplyOutcome = {
   installed: [CLAUDE_SECURITY_PLUGIN],
   installProblems: [installFailureText(SECURITY_GUIDANCE_PLUGIN, true)],
   untrackedParts: [],
+  privateProblems: [privateFoldersUnknownWarning(['be'])],
   manifestSkipped: true,
 }
 
@@ -565,6 +572,20 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['apply', 'installFailureText', [false, true].map(isFailed => installFailureText(CLAUDE_SECURITY_PLUGIN, isFailed))],
   ['apply', 'installedLine', installedLine(SECURITY_PLUGINS)],
   ['apply', 'noHomeInstallText', noHomeInstallText(CLAUDE_SECURITY_PLUGIN)],
+  ['apply', 'PRIVATE_INSTRUCTIONS_FOLDER', PRIVATE_INSTRUCTIONS_FOLDER],
+  ['apply', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
+  ['apply', 'privateClaudeMdText', privateClaudeMdText(BE.id, 'repo', PART_SCAN.parts)],
+  ['apply', 'instructionsRecordText', instructionsRecordText(PART_SCAN.parts, PART_SCAN.memories)],
+  [
+    'apply',
+    'privateWriteProblem',
+    privateWriteProblem('/home/u/.ssh/authorized_keys', {
+      allowed: new Set(),
+      stats: new Map(),
+      listings: new Map(),
+      locations: { home: '/home/u', root: '/repo', configDir: null },
+    }),
+  ],
   ['ask', 'NO_USABLE_ANSWER_REASON', NO_USABLE_ANSWER_REASON],
   ['ask', 'refusalLine', [refusalLine('both', 'GSD, none - a role runs one framework'), refusalLine(' ', 'x')]],
   ['ask', 'quotedLabels', quotedLabels(REVIEW_OPTIONS)],
@@ -691,6 +712,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['init', 'APPLIED_NONE_NOTE', APPLIED_NONE_NOTE],
   ['init', 'NEXT_STEP_NOTE', NEXT_STEP_NOTE],
   ['init', 'MANIFEST_SKIPPED_NOTE', MANIFEST_SKIPPED_NOTE],
+  ['init', 'privateFoldersUnknownWarning', privateFoldersUnknownWarning(['be', 'security'])],
   ['init', 'IGNORE_ALL_NOTE', IGNORE_ALL_NOTE],
   ['init', 'GIT_POLICY_QUESTION', GIT_POLICY_QUESTION],
   ['init', 'GIT_POLICY_OPTIONS', GIT_POLICY_OPTIONS],

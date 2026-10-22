@@ -210,9 +210,13 @@ export function memorySlug(gitCommonDir: string, hashHex: string): string {
  * The absolute memory folder of a role (D-20, D-91): `<userDir>/cadre/<slug>/<id>`, the folder the scope card names.
  * It follows CLAUDE_CONFIG_DIR as userDir does, so it is `~/.claude/cadre/...` only when that is not set. It is
  * absolute because the engine ignores a repo-relative `autoMemoryDirectory` (spike S2). The role id is a validated
- * slug, so it is safe in a path.
+ * slug, so it is safe in a path. It needs only the user folder and the git common dir with its hash, so apply names
+ * the folders of the private files from the same facts as /cadre start (G-02-1f, D-140 q2-a).
  */
-export function roleMemoryDir(user: LaunchUser, id: string): string {
+export function roleMemoryDir(
+  user: Pick<LaunchUser, 'userDir' | 'gitCommonDir' | 'commonDirHash'>,
+  id: string,
+): string {
   return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
 }
 

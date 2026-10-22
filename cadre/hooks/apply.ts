@@ -1,12 +1,14 @@
 /**
  * Apply plans the writes of a plan the person confirmed (D-105): the files the plan creates or changes in plan order,
- * a chmod right after each launcher, the root `.gitignore` block, and the manifest last, so an apply that stops early
- * never leaves a manifest that claims a file it did not write (LNCH-01). A file the person edited is written only when
- * they answer Take new (D-67), and no write or chmod may follow a link out of the repo. The framework commands of the
- * accepted hunks are re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106,
- * D-120). It also gives the argvs and the reply lines of the security plugin installs, with the Python check and the
- * marketplace add, and the setup the plan is made again from after them (decision #39). This module reads, writes and
- * runs nothing: init runs the steps through the host port.
+ * a chmod right after each launcher, the root `.gitignore` block, then the private files of each role in its role
+ * memory folder outside the repo (G-02-1f, D-140 q2-a), and the manifest last, so an apply that stops early never
+ * leaves a manifest that claims a file it did not write (LNCH-01). A file the person edited is written only when they
+ * answer Take new (D-67), no write or chmod may follow a link out of the repo, and no write outside the repo may go
+ * anywhere but a private file of a confirmed role (T-02-72). The framework commands of the accepted hunks are
+ * re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106, D-120). It also gives
+ * the argvs and the reply lines of the security plugin installs, with the Python check and the marketplace add, and
+ * the setup the plan is made again from after them (decision #39). This module reads, writes and runs nothing: init
+ * runs the steps through the host port.
  */
 import type {
   DesiredFile,
@@ -14,8 +16,11 @@ import type {
   FileOp,
   HostRun,
   HunkOp,
+  InitLocations,
+  InstructionPart,
   Manifest,
   ManifestEntry,
+  MemoryItem,
   Plan,
   PortEntry,
   PortStat,
@@ -25,7 +30,8 @@ import type {
 } from '../types'
 import { ADAPTERS } from './adapters'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
-import { compareText, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
+import { compareText, displayPath, isDirInsideRoot, isFileInsideRoot, sortedUnique, trimSlash } from './facts'
+import { roleClaudeMdText } from './generate'
 import { sha256Hex } from './hash'
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'
@@ -85,16 +91,40 @@ export function conflictPaths(plan: Plan): string[] {
   return paths
 }
 
+/** One private file of a role (G-02-1f Storage split): its absolute path in the role memory folder, and its text. */
+export type PrivateFile = {
+  readonly path: string
+  readonly text: string
+}
+
 /**
- * One step of an apply, in the order it runs; every path is repo-relative and no step deletes anything (LNCH-01):
+ * One step of an apply, in the order it runs; no step deletes anything (LNCH-01). The path of every step but a
+ * private one is repo-relative:
  * - `write`: write the text to the path;
  * - `chmod`: make the path executable; it always comes right after the write of the same path;
+ * - `private`: write the private files of one role into its role memory folder, the absolute `path` outside the repo
+ *   (G-02-1f, D-140 q2-a), after the folder is made and made private (privateLevels); it comes after every write of the
+ *   repo files;
  * - `manifest`: write the manifest text; it is the last step of an apply.
  */
 export type ApplyStep =
   | { readonly kind: 'write'; readonly path: string; readonly text: string }
   | { readonly kind: 'chmod'; readonly path: string }
+  | { readonly kind: 'private'; readonly path: string; readonly files: readonly PrivateFile[] }
   | { readonly kind: 'manifest'; readonly path: string; readonly text: string }
+
+/**
+ * What one role of the team was given that is private (G-02-1f Storage split, D-140 q2-a): the role memory folder it
+ * goes to (roleMemoryDir), the folder name of the repo for the header of its text file, its global parts in read order
+ * and its memories in file-name order.
+ */
+export type PrivateRole = {
+  readonly id: string
+  readonly folder: string
+  readonly repo: string
+  readonly parts: readonly InstructionPart[]
+  readonly memories: readonly MemoryItem[]
+}
 
 /** What applySteps plans from: the confirmed plan and what it was built from, and the answers to its conflicts. */
 export type ApplyInput = {
@@ -107,6 +137,83 @@ export type ApplyInput = {
   readonly gitignore: string | null
   /** The answer to each conflict question, by path (D-67); a conflict with no answer keeps the person's file. */
   readonly choices: ReadonlyMap<string, ConflictChoice>
+  /** What each role was given that is private, in the order its files are written; absent writes none (regen). */
+  readonly privates?: readonly PrivateRole[]
+}
+
+/** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
+export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
+
+/** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
+export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
+
+/** The file name of the private text file in PRIVATE_INSTRUCTIONS_FOLDER: a CLAUDE.md, so the engine loads it. */
+const PRIVATE_CLAUDE_MD = 'CLAUDE.md'
+
+/**
+ * The private text file of a role: `<role memory folder>/instructions/CLAUDE.md`, in its own subfolder on every load
+ * path (D-140), so a run in that folder cannot reach the memory links beside it.
+ */
+export function privateClaudeMdPath(folder: string): string {
+  return `${folder}/${PRIVATE_INSTRUCTIONS_FOLDER}/${PRIVATE_CLAUDE_MD}`
+}
+
+/** The hand-out record of a role: `<role memory folder>/instructions.json`, beside its memories (D-140 q2-a). */
+export function instructionsRecordPath(folder: string): string {
+  return `${folder}/${INSTRUCTIONS_RECORD_FILE}`
+}
+
+/**
+ * The text of a role's private file (G-02-1f Storage split, D-140 q2-a): a first line that names the role and the repo
+ * (its folder name, cleaned and capped as a report cell is), says the instructions are private and how they are
+ * rebuilt; then the parts given, in that order, in the format of the built `.cadre/<id>/CLAUDE.md` (roleClaudeMdText):
+ * a blank line, then each part under its marker, a blank line between two parts, one final newline. The first line of
+ * that format is replaced by this one, so the two files always mark their parts the same way.
+ */
+export function privateClaudeMdText(id: string, repo: string, parts: readonly InstructionPart[]): string {
+  const header =
+    `<!-- cadre: your global instructions for role ${id} in ${reportText(repo)}, built from ~/.claude/CLAUDE.md ` +
+    'and its imports. Private to you, never committed; rebuilt by /cadre init and /cadre regen. -->'
+  const built = roleClaudeMdText(id, parts)
+  const headerEnd = built.indexOf('\n')
+
+  return `${header}${headerEnd < 0 ? '\n' : built.slice(headerEnd)}`
+}
+
+/**
+ * The text of a role's hand-out record (G-02-1f Storage split, D-140 q2-a), as stableJson writes it: schema 1, each
+ * global part the role was given by file, heading and hash, in read order, and each memory it was given by file,
+ * folder, summary and hash. It holds no part or memory text: /cadre start links the memories it names, and regen
+ * tells new, changed and removed items apart by it.
+ */
+export function instructionsRecordText(parts: readonly InstructionPart[], memories: readonly MemoryItem[]): string {
+  return stableJson({
+    schema: 1,
+    parts: parts.map(({ file, heading, hash }) => ({ file, heading, hash })),
+    memories: memories.map(({ file, folder, summary, hash }) => ({ file, folder, summary, hash })),
+  })
+}
+
+/**
+ * The private files of a role (G-02-1f Storage split, D-140 q2-a): its private text file when it was given a global
+ * part, then its hand-out record when it was given a global part or a memory; none when it was given neither.
+ */
+function privateFilesOf(role: PrivateRole): PrivateFile[] {
+  if (role.parts.length === 0 && role.memories.length === 0) return []
+  const record = { path: instructionsRecordPath(role.folder), text: instructionsRecordText(role.parts, role.memories) }
+  if (role.parts.length === 0) return [record]
+  const text = privateClaudeMdText(role.id, role.repo, role.parts)
+
+  return [{ path: privateClaudeMdPath(role.folder), text }, record]
+}
+
+/** One private step per role that has a private file, in the order given (privateFilesOf). */
+function privateSteps(roles: readonly PrivateRole[]): ApplyStep[] {
+  return roles.flatMap((role): ApplyStep[] => {
+    const files = privateFilesOf(role)
+
+    return files.length === 0 ? [] : [{ kind: 'private', path: role.folder, files }]
+  })
 }
 
 /** The desired files by path; of two with the same path the first is kept, as buildPlan keeps it. */
@@ -217,11 +324,12 @@ async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]):
  * change of a desired file writes its text, and so does a conflict answered Take new (D-67), while its `.cadre-new`
  * copy is then not written; a conflict answered Keep mine, or not answered, keeps the person's file and writes the
  * copy instead. Every chmod step comes right after the write step of the same path. The root `.gitignore` op writes
- * the merged block text; a leave writes nothing, and so does a hunk. The manifest comes last, once every file is
- * written, so an apply that stops early never leaves a manifest that claims a file it did not write; it records the
- * new hash of each file taken new and keeps the old entry of each file kept. There is none when the plan keeps the
- * manifest as a conflict (it could not be read, A6), and none when the plan leaves it and no file was taken new. No
- * step deletes anything.
+ * the merged block text; a leave writes nothing, and so does a hunk. After the repo files come the private files of
+ * each role in `privates`, one step per role that has one (G-02-1f, D-140 q2-a). The manifest comes last, once every
+ * file is written, so an apply that stops early never leaves a manifest that claims a file it did not write; it
+ * records the new hash of each file taken new and keeps the old entry of each file kept, and never names a private
+ * file. There is none when the plan keeps the manifest as a conflict (it could not be read, A6), and none when the
+ * plan leaves it and no file was taken new. No step deletes anything.
  */
 export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   const files = desiredByPath(input.desired)
@@ -230,6 +338,7 @@ export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
     if (op.kind === 'hunk' || op.path === MANIFEST_PATH) continue
     steps.push(...opSteps(op, input, files))
   }
+  steps.push(...privateSteps(input.privates ?? []))
   const manifestOp = manifestOpOf(input.plan)
   const taken = takenNew(input, files)
   if (manifestOp === null || manifestOp.kind === 'conflict') return steps
@@ -246,12 +355,18 @@ function foldersAbove(path: string): string[] {
   return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
 }
 
+/** The steps that name a repo-relative path: every step but a private one, whose folder lies outside the repo. */
+function repoSteps(steps: readonly ApplyStep[]): ApplyStep[] {
+  return steps.filter(step => step.kind !== 'private')
+}
+
 /**
  * Every repo-relative path the steps name and each folder above one, below the root, sorted by code unit and once
  * each: what init stats, asked with resolve, before an apply writes, so writeProblem can check every write (T-03-13).
+ * A private step names none: its paths are checked by privateWriteProblem (privateCheckPaths).
  */
 export function applyStatPaths(steps: readonly ApplyStep[]): string[] {
-  return sortedUnique(steps.flatMap(step => [...foldersAbove(step.path), step.path]))
+  return sortedUnique(repoSteps(steps).flatMap(step => [...foldersAbove(step.path), step.path]))
 }
 
 /**
@@ -311,9 +426,10 @@ export function writeProblem(
 /**
  * Every folder whose listing init reads before an apply writes, sorted by code unit and once each: the root, as '',
  * and each folder above a path the steps name, so each path applyStatPaths names is listed by its own folder (#72 A2).
+ * A private step names none, as for applyStatPaths.
  */
 export function applyListPaths(steps: readonly ApplyStep[]): string[] {
-  return sortedUnique(['', ...steps.flatMap(step => foldersAbove(step.path))])
+  return sortedUnique(['', ...repoSteps(steps).flatMap(step => foldersAbove(step.path))])
 }
 
 /** Why a write is refused when the folder that holds it, or one that holds a folder above it, lists it as a link. */
@@ -374,6 +490,135 @@ export function chmodProblem(path: string, written: ReadonlySet<string>): string
 /** The argv that makes a written launcher executable: `/bin/chmod 755` on its absolute path under the root. */
 export function chmodArgv(root: string, path: string): readonly string[] {
   return ['/bin/chmod', '755', `${trimSlash(root)}/${path}`]
+}
+
+/** The folder that holds an absolute path: everything before its last slash. */
+function parentOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/'))
+}
+
+/** The private text file's subfolder of a role memory folder: `<folder>/instructions` (D-140). */
+function subfolderOf(folder: string): string {
+  return `${folder}/${PRIVATE_INSTRUCTIONS_FOLDER}`
+}
+
+/**
+ * The folders apply makes private before it writes these files of a role memory folder (02-GAPS-B2 N13), from the
+ * top: `<userDir>/cadre`, the repo's folder `<repo>-<hash8>` in it, the role memory folder and, when one of the files
+ * lies in it, its instructions/ subfolder. The mkdir run makes the last one and every one above it.
+ */
+export function privateLevels(folder: string, files: readonly PrivateFile[]): string[] {
+  const repoFolder = parentOf(folder)
+  const subfolder = subfolderOf(folder)
+  const isInSubfolder = files.some(file => file.path.startsWith(`${subfolder}/`))
+
+  return [parentOf(repoFolder), repoFolder, folder, ...(isInSubfolder ? [subfolder] : [])]
+}
+
+/** The mode of every private folder level (02-GAPS-B2 N13): only the user may list, enter or change it. */
+const PRIVATE_FOLDER_MODE = '700'
+
+/** The argv that makes a folder private: `/bin/chmod 700` on its absolute path (02-GAPS-B2 N13). */
+export function privateModeArgv(path: string): readonly string[] {
+  return ['/bin/chmod', PRIVATE_FOLDER_MODE, path]
+}
+
+/**
+ * The way to a private file from its role memory folder down, from the top: the role memory folder, its instructions/
+ * subfolder when the file lies in it, and the file.
+ */
+function privateWay(folder: string, path: string): string[] {
+  const subfolder = subfolderOf(folder)
+
+  return path.startsWith(`${subfolder}/`) ? [folder, subfolder, path] : [folder, path]
+}
+
+/**
+ * What apply asks before it writes these private files of a role memory folder (G-02-1f, T-02-72), in the order of
+ * their ways (privateWay), once each: `stats`, every path on the way to a file, the file included, which apply stats
+ * with statForWrite; `listings`, the folder that holds each of them, from the repo's folder down.
+ */
+export function privateCheckPaths(
+  folder: string,
+  files: readonly PrivateFile[],
+): { readonly stats: readonly string[]; readonly listings: readonly string[] } {
+  const ways = files.flatMap(file => privateWay(folder, file.path))
+
+  return { stats: [...new Set(ways)], listings: [...new Set(ways.map(parentOf))] }
+}
+
+/** What privateWriteProblem checks a private write against. */
+export type PrivateWriteCheck = {
+  /** The private files of the confirmed roles, absolute: the only paths outside the repo apply may write (T-02-72). */
+  readonly allowed: ReadonlySet<string>
+  /** The statForWrite answer of each path privateCheckPaths names; a path with no answer counts as failed. */
+  readonly stats: ReadonlyMap<string, WriteStat>
+  /** The listing of each folder privateCheckPaths names, null where the host could not list it. */
+  readonly listings: ReadonlyMap<string, readonly PortEntry[] | null>
+  /** Where a refused path is shown from: under the home folder as `~/...` (displayPath). */
+  readonly locations: Pick<InitLocations, 'home' | 'root' | 'configDir'>
+}
+
+/** Why a write is refused when its path is outside the repo and is not a private file of a confirmed role (T-02-72). */
+const OUTSIDE_REASON = 'outside the repo and the role memory folders'
+
+/**
+ * The role memory folder of a private file: the folder that holds a hand-out record, or the one above the
+ * instructions/ subfolder that holds a private text file; null for any other path.
+ */
+function privateFolderOf(path: string): string | null {
+  const textEnd = `/${PRIVATE_INSTRUCTIONS_FOLDER}/${PRIVATE_CLAUDE_MD}`
+  if (path.endsWith(textEnd)) return path.slice(0, -textEnd.length)
+  if (path.endsWith(`/${INSTRUCTIONS_RECORD_FILE}`)) return parentOf(path)
+
+  return null
+}
+
+/**
+ * Why the listings refuse a private write, or null (#72 A2): from the top, each path of the way is looked up in the
+ * listing of the folder that holds it, which shows a link as a link, a dangling one included, and one listed as a link
+ * refuses. A folder on the way that is there but gave no listing refuses as not checked, while one its stat found
+ * absent holds nothing, so the look-up stops there; the repo's folder, which holds the role memory folder, only skips
+ * the look-up of the top path when it gave no listing.
+ */
+function privateListingProblem(way: readonly string[], check: PrivateWriteCheck): string | null {
+  for (const [index, path] of way.entries()) {
+    const folder = parentOf(path)
+    const entries = check.listings.get(folder) ?? null
+    if (entries === null && index === 0) continue
+    if (entries === null && check.stats.get(folder) === 'absent') return null
+    if (entries === null) return LIST_FAILED_REASON
+    const name = path.slice(folder.length + 1)
+    if (entries.some(entry => entry.name === name && entry.isLink)) return LISTED_LINK_REASON
+  }
+
+  return null
+}
+
+/**
+ * Why a write outside the repo must not happen, or null when it may (G-02-1f, T-02-72). Apply writes outside the repo
+ * only a private file of a confirmed role, its private text file or its hand-out record in its role memory folder
+ * (`allowed`); any other path is refused as outside the repo and the role memory folders. A private file is then
+ * refused as not checked when the stat of a path on its way, from the role memory folder down, failed or was not asked
+ * (fail closed); when a folder lists it or a path on its way as a link, or such a folder is there but could not be
+ * listed (privateListingProblem, #72 A2), since a write through a link there would land outside the role memory
+ * folders; and when it is a real folder. An absent path is fine: the mkdir run and the host make it. The path is shown
+ * as displayPath shows it, `~/...` under the home folder, cleaned.
+ */
+export function privateWriteProblem(path: string, check: PrivateWriteCheck): string | null {
+  const { home, root, configDir } = check.locations
+  const refused = `refused to write ${displayPath(path, home, root, configDir)}: `
+  const folder = privateFolderOf(path)
+  if (folder === null || !check.allowed.has(path)) return `${refused}${OUTSIDE_REASON}`
+  const way = privateWay(folder, path)
+  const stats = way.map(onWay => check.stats.get(onWay) ?? 'failed')
+  if (stats.includes('failed')) return `${refused}${STAT_FAILED_REASON}`
+  const listed = privateListingProblem(way, check)
+  if (listed !== null) return `${refused}${listed}`
+  const target = stats.at(-1)
+  if (typeof target === 'object' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
+
+  return null
 }
 
 /** One framework command apply runs for an accepted hunk: the hunk's key and file, the argv, and its display form. */

@@ -3666,9 +3666,14 @@ function builtPaths(ids: readonly string[]): string[] {
   return ids.map(id => `/repo/.cadre/${id}/CLAUDE.md`)
 }
 
-/** The written files of a host whose path ends in `/CLAUDE.md`. */
+/** The written files of a host under the repo's .cadre/ whose path ends in `/CLAUDE.md`: the built role files. */
 function builtWrites(host: MemHost): HostWrite[] {
-  return host.writes.filter(write => write.path.endsWith('/CLAUDE.md'))
+  return host.writes.filter(write => write.path.startsWith('/repo/.cadre/') && write.path.endsWith('/CLAUDE.md'))
+}
+
+/** The written files of a host under the repo. */
+function repoWrites(host: MemHost): HostWrite[] {
+  return host.writes.filter(write => write.path.startsWith('/repo/'))
 }
 
 /** A sentence of a local note the root CLAUDE.md imports, which git does not track in the M3 cases. */
@@ -3762,11 +3767,13 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(run.logged.filter(text => text.includes('--dry-run'))).toEqual([])
   })
 
-  test('the global part given to security is written to no file in the repo (T-02-69)', async () => {
-    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
+  test('the global part given to security reaches no file in the repo, only its private file (T-02-69)', async () => {
+    const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     expect(builtWrites(host).map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
-    expect(host.writes.filter(write => write.text.includes(GLOBAL_SENTENCE))).toEqual([])
+    expect(repoWrites(host).filter(write => write.text.includes(GLOBAL_SENTENCE))).toEqual([])
+    const holding = host.writes.filter(write => write.text.includes(GLOBAL_SENTENCE)).map(write => write.path)
+    expect(holding).toEqual([privateClaudeMdPath(await memoryFolder('security'))])
   })
 
   test('a plain init answered No, skip it asks the whole-file questions and builds no part into a file', async () => {
@@ -3781,7 +3788,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(host.writes.length).toBeGreaterThan(0)
   })
 
-  test('T-02-69: a plain init on the secret world, Yes and Accept, writes no global or memory text', async () => {
+  test('T-02-69: on the secret world, Yes and Accept, no global or memory text reaches the repo or reply', async () => {
     const world = secretWorld({
       files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
       replies: [
@@ -3789,13 +3796,15 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
         '{"topics":{"T1":["tl"]},"memories":{"M1":["tl"]}}',
       ],
     })
-    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
+    const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
     expect(built.map(write => write.path)).toEqual(builtPaths(['pm', 'security', 'tl']))
     expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toContain(BUILT_RULE)
-    const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
+    const shown = [reply, ...repoWrites(host).map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+    const tl = await memoryFolder('tl')
+    expect(homeWrites(host).map(write => write.path)).toEqual([privateClaudeMdPath(tl), instructionsRecordPath(tl)])
   })
 
   test('only the parts of files git tracks are written: untracked notes/local.md stays out (M3)', async () => {
@@ -3864,12 +3873,14 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
       replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
     })
     const run = memIo(world, PARTS_ANSWERS)
-    const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
+    const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
     await runInit(run.io, { dryRun: false, host: host.io })
     expect(run.reads).toContain('/home/u/work/CLAUDE.md')
     expect(run.prompts[0]).toContain('P2 | ~/work/CLAUDE.md | Team | # Team')
-    expect(host.writes.filter(write => write.text.includes(TEAM_SENTENCE))).toEqual([])
+    expect(repoWrites(host).filter(write => write.text.includes(TEAM_SENTENCE))).toEqual([])
     expect(builtWrites(host).find(write => write.path === '/repo/.cadre/be/CLAUDE.md')?.text).toContain(BUILT_RULE)
+    const holding = host.writes.filter(write => write.text.includes(TEAM_SENTENCE)).map(write => write.path)
+    expect(holding).toEqual([privateClaudeMdPath(await memoryFolder('be'))])
   })
 
   test('a secret in a file git does not track reaches no write (M3, N6)', async () => {
@@ -5625,6 +5636,7 @@ function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
     installed: [],
     installProblems: [],
     untrackedParts: [],
+    privateProblems: [],
     manifestSkipped: false,
     ...over,
   }
