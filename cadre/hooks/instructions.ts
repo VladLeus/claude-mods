@@ -678,12 +678,13 @@ function partFileOf(place: Exclude<Place, { readonly kind: 'outside' }>, sources
 
 /**
  * Whether a repo file's import or doc link may be followed to this repo-relative path (02-GAPS-B2 M3): a .md file that
- * is not a dotfile and has no .git segment, so a hostile @./.env or .git/config is never read.
+ * is not a dotfile and has no .git segment, in any letter case (02-GAPS-B3 C9), so a hostile @./.env or .git/config
+ * is never read.
  */
 function isFollowedLink(relPath: string): boolean {
   const segments = relPath.split('/')
   const last = segments.at(-1) ?? ''
-  if (segments.includes('.git')) return false
+  if (segments.some(segment => segment.toLowerCase() === '.git')) return false
   if (last.startsWith('.')) return false
 
   return last.endsWith(MARKDOWN_EXTENSION)

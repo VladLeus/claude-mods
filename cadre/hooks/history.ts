@@ -19,10 +19,11 @@ export const HISTORY_MAX_FILE_BYTES = 4 * 1024 * 1024
 export const HISTORY_MAX_TOTAL_BYTES = 64 * 1024 * 1024
 
 /**
- * A command or skill name the scan keeps, once a leading `/` is gone and A-Z is lowercased: 1 to 64 ASCII lowercase
- * letters, digits, `:`, `_` and `-`, starting with a letter or a digit. Any other name is dropped (SCAN-03).
+ * A command or skill name the scan keeps, once a leading `/` is gone and A-Z is lowercased: 1 to 100 ASCII lowercase
+ * letters, digits, `:`, `_`, `.`, `@` and `-`, starting with a letter or a digit, as NAME_PATTERN takes after ASCII
+ * lowercasing (IN-01). Any other name is dropped (SCAN-03).
  */
-export const HISTORY_NAME_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,63}$/
+export const HISTORY_NAME_PATTERN = /^[a-z0-9][a-z0-9:_.@-]{0,99}$/
 
 /**
  * What a history scan found (SCAN-03): each command and skill name with its count, busiest first and then by name, and
@@ -65,6 +66,13 @@ const MAX_HISTORY_ROWS = 15
 
 /** A slash command in a transcript line: `<command-name>/name</command-name>`, sometimes without the `/`. */
 const COMMAND_MARKER = /<command-name>([^<]*)<\/command-name>/g
+
+/**
+ * A transcript line that is the person's own slash command (IN-04): a user message whose string content starts with a
+ * command marker; the planning-time check of real transcripts found the marker also in tool results, assistant lines
+ * and local-command system lines, which are not counted.
+ */
+const USER_COMMAND_LINE = /"role":"user","content":"<command-(?:message|name)>/
 
 /** The mark of a Skill tool call; the line that holds it names the skill as `"skill":"<name>"`. */
 const SKILL_CALL = '"name":"Skill"'
@@ -114,8 +122,13 @@ function keptName(value: string): string | null {
   return HISTORY_NAME_PATTERN.test(name) ? name : null
 }
 
-/** The slash commands of one transcript line, each without its leading `/`. */
+/**
+ * The slash commands of one transcript line, each without its leading `/`: none unless the line is the person's own
+ * command (USER_COMMAND_LINE) and holds no tool result (IN-04).
+ */
 function commandNames(line: string): string[] {
+  if (!USER_COMMAND_LINE.test(line) || line.includes('"tool_result"')) return []
+
   return Array.from(line.matchAll(COMMAND_MARKER), match => (match[1] ?? '').replace(/^\//, ''))
 }
 
@@ -131,9 +144,11 @@ function skillNames(line: string): string[] {
 
 /**
  * The command and skill names of one transcript, with how often each is used (SCAN-03): a slash command from each
- * `<command-name>` marker, without its leading `/`, and a skill from each `"skill":"<name>"` on a line that holds a
- * Skill tool call (`"name":"Skill"`), each skill name once per line, since one call writes its input twice on its line
- * (WR-01). The text is scanned line by line with these two patterns and never parsed as JSON (Pitfall 5). A name is
+ * `<command-name>` marker of a line that is the person's own command (commandNames, IN-04: a user message whose
+ * content starts with a command marker; not a tool result, an assistant line or a local-command system line), without
+ * its leading `/`, and a skill from each `"skill":"<name>"` on a line that holds a Skill tool call (`"name":"Skill"`),
+ * each skill name once per line, since one call writes its input twice on its line (WR-01). The text is scanned line
+ * by line with these patterns and never parsed as JSON (Pitfall 5). A name is
  * lowercased in ASCII and kept only when it then fits HISTORY_NAME_PATTERN, so a name with any other character is
  * dropped, and each exact name counts apart. Nothing else of the text is kept.
  */
@@ -200,10 +215,15 @@ function sessionsText(count: number): string {
   return `${count} ${count === 1 ? 'session' : 'sessions'}`
 }
 
-/** The history consent question (SCAN-03, D-59): how many sessions this repo has, asked before any is read. */
+/**
+ * The history consent question (SCAN-03, D-59): how many sessions this repo has, asked before any is read, and that
+ * only the newest HISTORY_MAX_SESSIONS are read when there are more (IN-03).
+ */
 export function historyQuestion(total: number): string {
+  const newest = total > HISTORY_MAX_SESSIONS ? `; the newest ${HISTORY_MAX_SESSIONS} are read` : ''
+
   return (
-    `Scan this repo's session history (${sessionsText(total)}; the newest ${HISTORY_MAX_SESSIONS} are read) ` +
+    `Scan this repo's session history (${sessionsText(total)}${newest}) ` +
     'for frequently used commands and skills? Only names and counts are kept.'
   )
 }
