@@ -2178,3 +2178,20 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     expect(results).toHaveLength(42)
   })
 })
+
+describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
+  test('an epic role denies the code dirs of the main checkout as well as of its worktree', () => {
+    const role = templateRole('be', { hasBash: false })
+    const scope = compileScope(role, context())
+    const worktree = '/repo/.claude/worktrees/x'
+    const launcher = user({ root: worktree, givenRoot: worktree, codeDirs: ['src'] })
+    const epicDeny = denyOf(launchPlan(role, scope, { ...launcher, mainRoot: '/repo' }).settings)
+    const ownDeny = denyOf(launchPlan(role, scope, launcher).settings)
+    const main = ['Read(//repo/src/**)', 'Edit(//repo/src/**)']
+    const own = ['Read(//repo/.claude/worktrees/x/src/**)', 'Edit(//repo/.claude/worktrees/x/src/**)']
+
+    expect([...main, ...own].filter(entry => !epicDeny.includes(entry))).toEqual([])
+    // Without mainRoot the list is the worktree's alone, as before.
+    expect([...main, ...own].filter(entry => ownDeny.includes(entry))).toEqual(own)
+  })
+})

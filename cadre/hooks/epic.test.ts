@@ -45,13 +45,20 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic'
 import type { EpicStep, WorktreeEntry } from './epic'
-import { MAX_READ_BYTES } from './facts'
+import { isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
 import { stableJson } from './plan'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
-import { claudeTooOldReply, COPIED_LINE, GIT_COMMON_DIR_ARGV, launcherChangedReply } from './start'
+import {
+  claudeTooOldReply,
+  COPIED_LINE,
+  GIT_COMMON_DIR_ARGV,
+  launcherChangedReply,
+  runStart,
+  worktreeClaudeMd,
+} from './start'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemWorld } from './testkit'
 
@@ -101,10 +108,10 @@ async function launcherEntry(id: string): Promise<ManifestEntry> {
 
 /**
  * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in
- * default, launched at the git root, each role.json is written from its role, and each launcher lies in `.cadre/bin/`
- * with its sha256 in the manifest.
+ * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default), each
+ * role.json is written from its role, and each launcher lies in `.cadre/bin/` with its sha256 in the manifest.
  */
-async function teamWorld(roles: readonly RoleSpec[] = TEAM): Promise<MemWorld> {
+async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
   const ids = roles.map(role => role.id)
   const state = cadreJsonText({
     schema: 1,
@@ -113,7 +120,7 @@ async function teamWorld(roles: readonly RoleSpec[] = TEAM): Promise<MemWorld> {
     gitPolicy: 'definitions',
     roles: ids,
     launchStart: { kind: 'git-root' },
-    readUserMcp: false,
+    readUserMcp,
   })
   const entries = await Promise.all(ids.map(launcherEntry))
   const files: Record<string, string> = {
@@ -911,11 +918,11 @@ const COMMON_DIR = rule(GIT_COMMON_DIR_ARGV, 0, '/repo/.git\n')
 const RENDER_RULES: readonly HostRunRule[] = [rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`), COMMON_DIR]
 
 /**
- * The team world of `roles` (PM and BE by default) with each role folder a real folder in the main checkout and in
- * BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
+ * The team world of `roles` (PM and BE by default) and `readUserMcp` with each role folder a real folder in the main
+ * checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
  */
-async function renderWorld(roles: readonly RoleSpec[] = TEAM): Promise<MemWorld> {
-  const world = await teamWorld(roles)
+async function renderWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+  const world = await teamWorld(roles, readUserMcp)
   const folders = roles.flatMap(role => [`/repo/.cadre/${role.id}`, `${BARE_WORKTREE}/.cadre/${role.id}`])
 
   return { ...world, dirs: { ...world.dirs, ...Object.fromEntries(folders.map(folder => [folder, []])) } }
@@ -964,5 +971,61 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     ])
     expect(run.writes.filter(write => write.path.startsWith(`${runtime}/`))).toEqual([])
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
+  })
+})
+
+/** The settings.json the host was asked to write for role `id` under `root`, parsed; {} when none was written. */
+function settingsAt(writes: readonly HostWrite[], root: string, id: string): Readonly<Record<string, unknown>> {
+  const path = `${root}/.cadre/${id}/.runtime/settings.json`
+  const value = parseJsonValue(writes.filter(write => write.path === path).at(-1)?.text ?? '')?.value
+
+  return isObject(value) ? value : {}
+}
+
+/** The fixture user's `~/.claude.json`, recording the server jira for the main checkout's project only. */
+const PROJECT_JIRA = JSON.stringify({ projects: { '/repo': { mcpServers: { jira: { command: 'jira-mcp' } } } } })
+
+describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
+  test('worktreeClaudeMd adds the CLAUDE.md files of the worktree, sorted and once each (Pitfall 1)', () => {
+    expect(worktreeClaudeMd(['/repo/CLAUDE.md'], '/repo/.claude/worktrees/x')).toEqual([
+      '/repo/.claude/worktrees/x/.claude/CLAUDE.md',
+      '/repo/.claude/worktrees/x/CLAUDE.md',
+      '/repo/CLAUDE.md',
+    ])
+  })
+
+  test('a parts-flow epic role excludes the worktree CLAUDE.md files; one given project-claude-md none', async () => {
+    const team = [templateRole('pm'), templateRole('be', { instructions: ['project-claude-md'] })]
+    const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
+    const excludes = (id: string) => settingsAt(run.writes, BARE_WORKTREE, id).claudeMdExcludes
+
+    expect(excludes('pm')).toContain(`${BARE_WORKTREE}/CLAUDE.md`)
+    expect(excludes('pm')).toContain(`${BARE_WORKTREE}/.claude/CLAUDE.md`)
+    expect(excludes('be')).toEqual([])
+  })
+
+  test('an epic role keeps the memory folder /cadre start renders for it in main (WT-02)', async () => {
+    const world = await renderWorld()
+    const host = epicHost([COMMON_DIR])
+    await runStart(memIo(world, {}).io, host.io, { id: 'pm', terminal: 'none' })
+    const inMain = settingsAt(host.writes, '/repo', 'pm').autoMemoryDirectory
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const inEpic = settingsAt(run.writes, BARE_WORKTREE, 'pm').autoMemoryDirectory
+
+    expect(typeof inMain).toBe('string')
+    expect(inEpic).toBe(inMain)
+    expect(String(inEpic)).not.toContain('.claude/worktrees')
+  })
+
+  test("an epic role gets the MCP servers ~/.claude.json records for the main checkout's project", async () => {
+    const team = [templateRole('pm', { mcp: ['jira'] }), templateRole('be')]
+    const world = await renderWorld(team, true)
+    const withJson = { ...world, files: { ...world.files, '/home/u/.claude.json': PROJECT_JIRA } }
+    const run = await epic(withJson, RENDER_RULES, 'PROJ-1', '')
+
+    expect(lastWrite(run, `${BARE_WORKTREE}/.cadre/pm/.runtime/mcp.json`)).toBe(
+      stableJson({ mcpServers: { jira: { command: 'jira-mcp' } } }),
+    )
+    expect(run.reply).not.toContain('is not in ~/.claude.json')
   })
 })
