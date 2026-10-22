@@ -26,6 +26,9 @@ import {
   EXCLUDES_FILE,
   excludesText,
   GIT_DIR_ARGV,
+  GLOBAL_EXCLUDES_ARGV,
+  globalExcludesPath,
+  globalExcludesWarning,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   mirrorLinkedParentWarning,
@@ -39,6 +42,7 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic'
 import type { EpicStep, WorktreeEntry } from './epic'
+import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
@@ -503,6 +507,7 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
 
     expect(run.writes.find(write => write.path === BARE_EXCLUDES)?.text).toBe(excludesText('', ['node_modules']))
     expect(run.events.filter(isMirrorEvent)).toEqual([
+      GLOBAL_EXCLUDES_ARGV('/repo').join(' '),
       `write ${BARE_EXCLUDES}`,
       WORKTREE_CONFIG_ARGV('/repo').join(' '),
       EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES).join(' '),
@@ -709,5 +714,120 @@ describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
       'mkdir .cadre/pm',
       'link .cadre/pm/role.json',
     ])
+  })
+})
+
+/** The user's global excludes file, as `git config --global --path core.excludesFile` names it in the specs. */
+const GLOBAL_EXCLUDES = '/home/u/.gitignore_global'
+
+/** git naming GLOBAL_EXCLUDES as the user's global excludes file. */
+const GLOBAL_RULE = rule(GLOBAL_EXCLUDES_ARGV('/repo'), 0, `${GLOBAL_EXCLUDES}\n`)
+
+/** The worktree of PROJ-1 that git lists on the branch epic/proj-1-x, so /cadre epic PROJ-1 reuses it (D-163). */
+const KEPT_WORKTREE = '/repo/.claude/worktrees/proj-1-x'
+
+/** The git dir of KEPT_WORKTREE, where its epic record and its excludes file lie. */
+const KEPT_GIT_DIR = '/repo/.git/worktrees/proj-1-x'
+
+/**
+ * git listing the main checkout and KEPT_WORKTREE, naming KEPT_WORKTREE's git dir, and ignoring `.env`, `dist/` and
+ * `node_modules/` in the main checkout.
+ */
+const KEPT_RULES: readonly HostRunRule[] = [
+  rule(
+    WORKTREE_LIST_ARGV('/repo'),
+    0,
+    'worktree /repo\nHEAD a\nbranch refs/heads/main\n\n' +
+      `worktree ${KEPT_WORKTREE}\nHEAD b\nbranch refs/heads/epic/proj-1-x\n`,
+  ),
+  rule(GIT_DIR_ARGV(KEPT_WORKTREE), 0, `${KEPT_GIT_DIR}\n`),
+  rule(LS_IGNORED_ARGV('/repo'), 0, '.env\0dist/\0node_modules/\0'),
+]
+
+/** A team world whose KEPT_WORKTREE lists node_modules (a link) and .env (a copy) and has `record` as its record. */
+async function keptWorld(record: string): Promise<MemWorld> {
+  const world = await teamWorld()
+
+  return {
+    ...world,
+    files: { ...world.files, [`${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`]: record },
+    dirs: { ...world.dirs, [KEPT_WORKTREE]: [link('node_modules'), entry('.env')] },
+  }
+}
+
+/** The text of the last write to `path` in an epic run; undefined when the run wrote none there. */
+function lastWrite(run: EpicRun, path: string): string | undefined {
+  return run.writes.filter(write => write.path === path).at(-1)?.text
+}
+
+describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)", () => {
+  test('the global excludes file is core.excludesFile, else under XDG_CONFIG_HOME, else ~/.config/git/ignore', () => {
+    const run = (exitCode: number, stdout: string): HostRun => ({ exitCode, stdout, stderr: '' })
+    const unset = run(1, '')
+
+    expect(globalExcludesPath(run(0, `${GLOBAL_EXCLUDES}\n`), unset, '/home/u')).toBe(GLOBAL_EXCLUDES)
+    expect(globalExcludesPath(unset, run(0, '/x\n'), '/home/u')).toBe('/x/git/ignore')
+    expect(globalExcludesPath(unset, unset, '/home/u')).toBe('/home/u/.config/git/ignore')
+    expect(globalExcludesPath(unset, unset, null)).toBeNull()
+    expect(globalExcludesPath(run(0, 'relative/ignore\n'), null, '/home/u')).toBe('/home/u/.config/git/ignore')
+  })
+
+  test('the text of the global excludes file heads the excludes file; an absent one gives an empty head', async () => {
+    const world = await teamWorld()
+    const withGlobal = { ...world, files: { ...world.files, [GLOBAL_EXCLUDES]: '*.log\n' } }
+    const read = await epic(withGlobal, [GLOBAL_RULE, ...NODE_MODULES_RULES], 'PROJ-1', '')
+    const absent = await epic(world, [GLOBAL_RULE, ...NODE_MODULES_RULES], 'PROJ-1', '')
+
+    expect(lastWrite(read, BARE_EXCLUDES)).toBe(excludesText('*.log\n', ['node_modules']))
+    expect(lastWrite(absent, BARE_EXCLUDES)).toBe(excludesText('', ['node_modules']))
+    expect([read.reply, absent.reply].filter(reply => reply.includes('warning: '))).toEqual([])
+  })
+
+  test('an unreadable or too-large global excludes file gives an empty head and one warning', async () => {
+    const world = await teamWorld()
+    const big = { ...world, files: { ...world.files, [GLOBAL_EXCLUDES]: '#'.repeat(MAX_READ_BYTES + 1) } }
+    const rules = [GLOBAL_RULE, ...NODE_MODULES_RULES]
+    const unreadable = await epic({ ...world, unknownPaths: [GLOBAL_EXCLUDES] }, rules, 'PROJ-1', '')
+    const runs = [unreadable, await epic(big, rules, 'PROJ-1', '')]
+    const warning = `warning: ${globalExcludesWarning(GLOBAL_EXCLUDES)}`
+
+    for (const run of runs) {
+      expect(lastWrite(run, BARE_EXCLUDES)).toBe(excludesText('', ['node_modules']))
+      expect(run.reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([warning])
+    }
+  })
+
+  test('a reuse links only what is missing, and its excludes file and record keep what was recorded', async () => {
+    const recorded = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x', links: ['node_modules'], copies: ['.env'] }
+    const run = await epic(await keptWorld(epicRecordText(recorded)), KEPT_RULES)
+    const excludes = `${KEPT_GIT_DIR}/${EXCLUDES_FILE}`
+    const isConfig = (argv: readonly string[]) => argv.includes('--worktree') || argv.includes('true')
+    const configs = run.calls.map(call => call.argv).filter(isConfig)
+
+    expect(linkRuns(run)).toEqual([['/bin/ln', '-s', '--', '/repo/dist', `${KEPT_WORKTREE}/dist`]])
+    expect(lastWrite(run, excludes)).toBe(excludesText('', ['dist', 'node_modules']))
+    expect(configs).toEqual([WORKTREE_CONFIG_ARGV('/repo'), EXCLUDES_CONFIG_ARGV(KEPT_WORKTREE, excludes)])
+    expect(parseEpicRecord(lastWrite(run, `${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`) ?? '')).toEqual({
+      ...recorded,
+      links: ['dist', 'node_modules'],
+      copies: ['.env'],
+    })
+  })
+
+  test('a reuse with an unreadable record still mirrors, and records only what this run made', async () => {
+    const run = await epic(await keptWorld('not a record'), KEPT_RULES)
+
+    expect(linkRuns(run)).toEqual([['/bin/ln', '-s', '--', '/repo/dist', `${KEPT_WORKTREE}/dist`]])
+    expect(parseEpicRecord(lastWrite(run, `${KEPT_GIT_DIR}/${EPIC_RECORD_FILE}`) ?? '')).toEqual({
+      schema: 1,
+      key: 'PROJ-1',
+      slug: 'proj-1-x',
+      title: 'Add retry',
+      branch: 'epic/proj-1-x',
+      base: null,
+      createdAt: 1_000_000,
+      links: ['dist'],
+      copies: [],
+    })
   })
 })

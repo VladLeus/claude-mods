@@ -111,8 +111,11 @@ import {
   epicStepFailedReply,
   EXCLUDES_FILE,
   excludesText,
+  globalExcludesWarning,
+  mirrorLinkedParentWarning,
   RUNTIME_EXCLUDE_LINE,
   WORKTREES_DIR,
+  XDG_ARGV,
 } from './epic'
 import {
   countedNoun,
@@ -829,6 +832,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['epic', 'epicListFailedReply', epicListFailedReply(EPIC_WORKTREE.key)],
   ['epic', 'epicExcludesFailedReply', epicExcludesFailedReply(EPIC_WORKTREE.key)],
   ['epic', 'epicStepFailedReply', epicStepFailedReply('node_modules')],
+  ['epic', 'mirrorLinkedParentWarning', mirrorLinkedParentWarning('vendor/cache')],
+  ['epic', 'XDG_ARGV', XDG_ARGV],
+  ['epic', 'globalExcludesWarning', globalExcludesWarning('/home/u/.gitignore_global')],
   [
     'epic',
     'epicRecordText',
