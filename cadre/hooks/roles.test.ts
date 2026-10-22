@@ -1478,6 +1478,72 @@ describe('parseRoleJson', () => {
   })
 })
 
+/** A SHA-256 as a role.json part record holds it: 64 lowercase hex characters (G-02-1f Regen). */
+const PART_HASH = '0123456789abcdef'.repeat(4)
+
+/** A role.json record of a repo part, the Git section of the root CLAUDE.md; `over` changes the fields it names. */
+function partRecord(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { file: 'CLAUDE.md', heading: 'Git', hash: PART_HASH, ...over }
+}
+
+/** Each case is a part record that must refuse the whole file, with a name that shows in a failing diff (T-02-78). */
+const BAD_PART_RECORDS: readonly (readonly [string, unknown])[] = [
+  ['records that are not a list', partRecord()],
+  ['null records', null],
+  ['a record that is not an object', ['CLAUDE.md']],
+  ['an absolute file', [partRecord({ file: '/etc/CLAUDE.md' })]],
+  ['a file above the repo', [partRecord({ file: '../CLAUDE.md' })]],
+  ['a file with a .. segment', [partRecord({ file: 'docs/../../CLAUDE.md' })]],
+  ['a file with a . segment', [partRecord({ file: './CLAUDE.md' })]],
+  ['a file with an empty segment', [partRecord({ file: 'docs//guide.md' })]],
+  ['a file with a trailing slash', [partRecord({ file: 'docs/' })]],
+  ['an empty file', [partRecord({ file: '' })]],
+  ['a file that is not a .md file', [partRecord({ file: '.env' })]],
+  ['a file under .git', [partRecord({ file: '.git/info/notes.md' })]],
+  ['a file under .GIT in capitals', [partRecord({ file: 'sub/.GIT/notes.md' })]],
+  ['a file with a hidden character', [partRecord({ file: `CLAUDE${BIDI_OVERRIDE}.md` })]],
+  ['a file that is not text', [partRecord({ file: 5 })]],
+  ['no file', [{ heading: 'Git', hash: PART_HASH }]],
+  ['a heading with a hidden character', [partRecord({ heading: `Gi${ZERO_WIDTH_SPACE}t` })]],
+  ['a heading with a line break', [partRecord({ heading: 'Git\nand more' })]],
+  ['a heading of 81 code points', [partRecord({ heading: 'h'.repeat(81) })]],
+  ['a heading that is not text', [partRecord({ heading: null })]],
+  ['no heading', [{ file: 'CLAUDE.md', hash: PART_HASH }]],
+  ['a hash of 63 characters', [partRecord({ hash: PART_HASH.slice(1) })]],
+  ['a hash in capitals', [partRecord({ hash: PART_HASH.toUpperCase() })]],
+  ['a hash that is not hex', [partRecord({ hash: 'g'.repeat(64) })]],
+  ['a hash that is not text', [partRecord({ hash: 5 })]],
+  ['no hash', [{ file: 'CLAUDE.md', heading: 'Git' }]],
+  ['one bad record among good ones', [partRecord(), partRecord({ file: '/CLAUDE.md' })]],
+]
+
+describe('role.json part records (G-02-1f)', () => {
+  test('a role with repo part records reads back with them, in their order', () => {
+    const records = [
+      { file: 'CLAUDE.md', heading: 'Git', hash: PART_HASH },
+      { file: '.claude/rules/frontend/react.md', heading: '', hash: 'a'.repeat(64) },
+      { file: 'docs/My Guide.md', heading: 'h'.repeat(80), hash: 'b'.repeat(64) },
+    ]
+    const role: RoleSpec = { ...roleFromTemplate(row('be')), instructionParts: records }
+
+    expect(parseRoleJson(JSON.stringify({ schema: 1, ...role }))).toEqual(role)
+    expect(parseRoleJson(jsonWith({ instructionParts: [] }))?.instructionParts).toEqual([])
+  })
+
+  test('a role.json without part records still parses, with no instructionParts key', () => {
+    const parsed = parseRoleJson(jsonWithout('instructionParts'))
+
+    expect(parsed).toEqual(roleFromTemplate(row('be')))
+    expect(Object.hasOwn(parsed ?? {}, 'instructionParts')).toBe(false)
+  })
+
+  test('a record that is not a safe repo .md file, a clean heading of 80 at most or a 64-hex hash refuses it', () => {
+    for (const [name, records] of BAD_PART_RECORDS) {
+      expect([name, parseRoleJson(jsonWith({ instructionParts: records }))]).toEqual([name, null])
+    }
+  })
+})
+
 describe('isAutopilotDuration', () => {
   test('autopilot durations are accepted: minutes as digits, or hours and minutes', () => {
     const accepted = ['4h', '2h', '8h', '90m', '1h30m', '45', '1H', '30M', '1h0m', '0h1m', '00045', '168h', '10080']

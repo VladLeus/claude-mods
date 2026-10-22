@@ -355,6 +355,35 @@ describe('kickoff', () => {
     expect(parseRoleJson(roleJsonText(role))).toEqual(role)
   })
 
+  test('role.json holds the repo part records of a role that has them, and reads back to it (G-02-1f)', () => {
+    const hash = '0123456789abcdef'.repeat(4)
+    const role = templateRole('be', {
+      instructionParts: [
+        { file: 'CLAUDE.md', heading: 'Git', hash },
+        { file: '.claude/rules/api.md', heading: '', hash: 'a'.repeat(64) },
+      ],
+    })
+    const records = [
+      '  "instructionParts": [',
+      '    {',
+      '      "file": "CLAUDE.md",',
+      `      "hash": "${hash}",`,
+      '      "heading": "Git"',
+      '    },',
+      '    {',
+      '      "file": ".claude/rules/api.md",',
+      `      "hash": "${'a'.repeat(64)}",`,
+      '      "heading": ""',
+      '    }',
+      '  ],',
+    ].join('\n')
+
+    expect(roleJsonText(role)).toContain(records)
+    expect(parseRoleJson(roleJsonText(role))).toEqual(role)
+    expect(parseRoleJson(roleJsonText(templateRole('be', { instructionParts: [] })))?.instructionParts).toEqual([])
+    expect(roleJsonText(templateRole('be'))).not.toContain('instructionParts')
+  })
+
   test('settingsText is the stable JSON of the settings template and mcpText that of the MCP file', () => {
     const role = templateRole('be', { mcp: ['jira', 'github'] })
     const scope = scopeOf(role, 'gsd', [role])
