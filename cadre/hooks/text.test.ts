@@ -92,7 +92,10 @@ import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
 import {
   EPIC_BRANCH_PREFIX,
   EPIC_CANCELLED,
+  EPIC_DONE_HEADER,
+  EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
+  EPIC_DONE_OPTIONS,
   EPIC_NO_PM,
   EPIC_NO_WORKTREE_LIST,
   EPIC_RECORD_FILE,
@@ -103,10 +106,15 @@ import {
   epicBadNameReply,
   epicCreatedText,
   epicDoneProblems,
+  epicDoneQuestion,
   epicDoneRefusal,
   epicExcludesFailedReply,
+  epicKeptReply,
   epicKickoffText,
   epicListFailedReply,
+  epicLockedReply,
+  epicLockLiveReply,
+  epicLockUnknownReply,
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
@@ -120,6 +128,7 @@ import {
   epicRemoveFailedReply,
   epicRolesQuestion,
   epicStepFailedReply,
+  epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
   EXCLUDES_FILE,
@@ -714,6 +723,9 @@ const EPIC_DONE_CHECKS: readonly Parameters<typeof epicDoneProblems>[0][] = [
   { ...EPIC_DONE_NAMES, base: null, clean: 'clean', merged: 'no-record', running: [], teamRead: false },
 ]
 
+/** Every reason of EPIC_DONE_CHECKS, in order, as the refusal and the --force question of epic done list them. */
+const EPIC_DONE_REASONS: readonly string[] = EPIC_DONE_CHECKS.flatMap(epicDoneProblems)
+
 const RECOMMENDATIONS = recommend({
   roles: TEAM,
   frameworks: TEAM.map((): FrameworkId => 'none'),
@@ -887,7 +899,20 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['epic', 'epicRemovedText', epicRemovedText(EPIC_WORKTREE.key, EPIC_WORKTREE.path, EPIC_WORKTREE.branch)],
   ['epic', 'epicRemoveFailedReply', epicRemoveFailedReply(EPIC_WORKTREE.key)],
   ['epic', 'epicDoneProblems', EPIC_DONE_CHECKS.map(epicDoneProblems)],
-  ['epic', 'epicDoneRefusal', epicDoneRefusal(EPIC_WORKTREE.key, EPIC_DONE_CHECKS.flatMap(epicDoneProblems))],
+  ['epic', 'epicDoneRefusal', epicDoneRefusal(EPIC_WORKTREE.key, EPIC_DONE_REASONS)],
+  ['epic', 'EPIC_DONE_HEADER', EPIC_DONE_HEADER],
+  ['epic', 'EPIC_DONE_OPTIONS', EPIC_DONE_OPTIONS],
+  [
+    'epic',
+    'epicDoneQuestion',
+    [epicDoneQuestion(EPIC_WORKTREE.key, []), epicDoneQuestion(EPIC_WORKTREE.key, EPIC_DONE_REASONS)],
+  ],
+  ['epic', 'EPIC_DONE_NO_DIALOG', EPIC_DONE_NO_DIALOG],
+  ['epic', 'epicKeptReply', epicKeptReply(EPIC_WORKTREE.key)],
+  ['epic', 'epicLockedReply', [epicLockedReply('by hand'), epicLockedReply('')]],
+  ['epic', 'epicLockLiveReply', epicLockLiveReply(42)],
+  ['epic', 'epicLockUnknownReply', epicLockUnknownReply(42)],
+  ['epic', 'epicUnlockFailedReply', epicUnlockFailedReply(42)],
   [
     'epic',
     'epicRecordText',

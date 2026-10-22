@@ -18,17 +18,23 @@ import {
   cleanStateOf,
   EPIC_BRANCHES_ARGV,
   EPIC_CANCELLED,
+  EPIC_DONE_NO_DIALOG,
   EPIC_NO_PM,
   EPIC_RECORD_FILE,
   epicAddFailedReply,
   epicBadKeyReply,
   epicCreatedText,
   epicDoneProblems,
+  epicDoneQuestion,
   epicDoneRefusal,
   epicExcludesFailedReply,
+  epicKeptReply,
   epicKeyOf,
   epicKickoffText,
   epicListFailedReply,
+  epicLockedReply,
+  epicLockLiveReply,
+  epicLockUnknownReply,
   epicLookup,
   epicManyBranchesReply,
   epicManyPmReply,
@@ -54,6 +60,7 @@ import {
   GLOBAL_EXCLUDES_ARGV,
   globalExcludesPath,
   globalExcludesWarning,
+  lockPid,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   MERGED_ARGV,
@@ -1663,5 +1670,88 @@ describe('the refusals of epic done (D-169, D-171)', () => {
     expect(run.reply).toBe(epicDoneRefusal('PROJ-1', epicDoneProblems({ ...READY, teamRead: false })))
     expect(run.reply).toContain('role states unknown')
     expect(removals(run)).toEqual([])
+  })
+})
+
+/** The argv that asks whether the process 42 still runs, as the stale-lock rule runs it (D-170). */
+const PS_42 = ['/bin/ps', '-p', '42', '-o', 'pid=']
+
+/** WORKTREE listed with a lock that names the process 42, as `claude --worktree` writes it. */
+const LOCKED_42 = listRule('locked claude agent agent-abc (pid 42)\n')
+
+describe('epic done --force and stale locks (D-152, D-170, D-134)', () => {
+  test('lockPid reads the number after pid in a lock reason, a whole positive number; else null', () => {
+    expect(lockPid('claude agent agent-abc (pid 99999)')).toBe(99999)
+    expect(['', 'by hand', 'pid 12a', 'pid 0'].map(lockPid)).toEqual([null, null, null, null])
+  })
+
+  test('--force asks one question, keep first, under Epic done; only a yes removes, links first, forced', async () => {
+    const world = { ...(await doneWorld()), interactive: true }
+    const dirty = [rule(STATUS_ARGV(WORKTREE), 0, ' M src/a.ts\n'), ...DONE_RULES]
+    const kept = await epicDone(world, dirty, { force: true, answers: ['No, keep it'] })
+    const yes = await epicDone(world, dirty, { force: true, answers: ['Yes, remove it'] })
+    const ready = await epicDone(world, DONE_RULES, { force: true, answers: ['Yes, remove it'] })
+
+    expect(yes.asked).toEqual([epicDoneQuestion('PROJ-1', epicDoneProblems({ ...READY, clean: 'dirty' }))])
+    expect(yes.specs).toEqual([{ options: ['No, keep it', 'Yes, remove it'], header: 'Epic done' }])
+    expect([kept.reply, removals(kept)]).toEqual([epicKeptReply('PROJ-1'), []])
+    expect(removals(yes)).toEqual([
+      ['/bin/rm', '-f', '--', `${WORKTREE}/.cadre/bin/pm`],
+      ['/bin/rm', '-f', '--', `${WORKTREE}/node_modules`],
+      ['git', '-C', '/repo', 'worktree', 'remove', '--force', WORKTREE],
+    ])
+    // --force always asks, also when every check passed (D-152).
+    expect(ready.asked).toEqual([epicDoneQuestion('PROJ-1', [])])
+  })
+
+  test('with --force, a dismissed question or a session with no dialog removes nothing', async () => {
+    const world = await doneWorld()
+    const dismissed = await epicDone({ ...world, interactive: true }, DONE_RULES, { force: true })
+    const quiet = await epicDone(world, DONE_RULES, { force: true })
+
+    expect([dismissed.reply, quiet.reply]).toEqual([epicKeptReply('PROJ-1'), EPIC_DONE_NO_DIALOG])
+    expect(quiet.asked).toEqual([])
+    expect([...removals(dismissed), ...removals(quiet)]).toEqual([])
+  })
+
+  test('with --force and no record, the yes runs the forced remove and no rm', async () => {
+    const world = { ...withoutFile(await doneWorld(), `${GIT_DIR}/${EPIC_RECORD_FILE}`), interactive: true }
+    const run = await epicDone(world, DONE_RULES, { force: true, answers: ['Yes, remove it'] })
+
+    expect(removals(run)).toEqual([['git', '-C', '/repo', 'worktree', 'remove', '--force', WORKTREE]])
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+  })
+
+  test('a lock whose process ps finds gone is unlocked before the links and the worktree are removed', async () => {
+    const run = await epicDone(await doneWorld(), [LOCKED_42, rule(PS_42, 1), ...DONE_RULES])
+    const unlock = ['git', '-C', '/repo', 'worktree', 'unlock', WORKTREE].join(' ')
+    const isRemoval = (event: string) => event.startsWith('/bin/rm ') || event.includes(' worktree remove ')
+
+    expect(run.events.filter(event => event === unlock || isRemoval(event))).toEqual([
+      unlock,
+      `/bin/rm -f -- ${WORKTREE}/.cadre/bin/pm`,
+      `/bin/rm -f -- ${WORKTREE}/node_modules`,
+      `git -C /repo worktree remove ${WORKTREE}`,
+    ])
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+  })
+
+  test('a live lock process, one ps cannot tell of, or a lock naming none refuses, --force or not', async () => {
+    const world = { ...(await doneWorld()), interactive: true }
+    const cases: readonly (readonly [readonly HostRunRule[], boolean, string])[] = [
+      [[LOCKED_42, rule(PS_42, 0)], false, epicLockLiveReply(42)],
+      [[LOCKED_42, rule(PS_42, 0)], true, epicLockLiveReply(42)],
+      [[LOCKED_42, rule(PS_42, null)], false, epicLockUnknownReply(42)],
+      [[listRule('locked by hand\n')], true, epicLockedReply('by hand')],
+      [[listRule('locked\n')], false, epicLockedReply('')],
+    ]
+    for (const [rules, force, reply] of cases) {
+      const run = await epicDone(world, [...rules, ...DONE_RULES], { force, answers: ['Yes, remove it'] })
+
+      expect([force, run.reply]).toEqual([force, reply])
+      expect(run.calls.filter(call => call.argv[4] === 'unlock')).toEqual([])
+      expect(removals(run)).toEqual([])
+    }
+    expect(epicLockLiveReply(42)).toContain('42')
   })
 })
