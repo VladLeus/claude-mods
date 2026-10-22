@@ -102,6 +102,8 @@ import {
   epicBadKeyReply,
   epicBadNameReply,
   epicCreatedText,
+  epicDoneProblems,
+  epicDoneRefusal,
   epicExcludesFailedReply,
   epicKickoffText,
   epicListFailedReply,
@@ -699,6 +701,19 @@ const EPIC_WORKTREE = {
 /** The epic of EPIC_WORKTREE as its kickoffs name it, on a team whose TL is tl (D-158). */
 const EPIC_KICKOFF = { key: EPIC_WORKTREE.key, title: EPIC_WORKTREE.title, tlId: 'tl' }
 
+/** The branch of EPIC_WORKTREE and the base it was made from, as the reasons of /cadre epic done name them. */
+const EPIC_DONE_NAMES = { branch: EPIC_WORKTREE.branch, base: 'main' }
+
+/**
+ * The checks of /cadre epic done on EPIC_WORKTREE, with every check failing in each of its ways across the three
+ * entries, so each reason epicDoneProblems gives is in the table (D-169, D-171).
+ */
+const EPIC_DONE_CHECKS: readonly Parameters<typeof epicDoneProblems>[0][] = [
+  { ...EPIC_DONE_NAMES, clean: 'dirty', merged: 'not-merged', running: ['be'], teamRead: true },
+  { ...EPIC_DONE_NAMES, clean: 'unknown', merged: 'unknown', running: ['pm', 'be'], teamRead: true },
+  { ...EPIC_DONE_NAMES, base: null, clean: 'clean', merged: 'no-record', running: [], teamRead: false },
+]
+
 const RECOMMENDATIONS = recommend({
   roles: TEAM,
   frameworks: TEAM.map((): FrameworkId => 'none'),
@@ -871,6 +886,8 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['epic', 'epicNotFoundReply', epicNotFoundReply(EPIC_WORKTREE.key)],
   ['epic', 'epicRemovedText', epicRemovedText(EPIC_WORKTREE.key, EPIC_WORKTREE.path, EPIC_WORKTREE.branch)],
   ['epic', 'epicRemoveFailedReply', epicRemoveFailedReply(EPIC_WORKTREE.key)],
+  ['epic', 'epicDoneProblems', EPIC_DONE_CHECKS.map(epicDoneProblems)],
+  ['epic', 'epicDoneRefusal', epicDoneRefusal(EPIC_WORKTREE.key, EPIC_DONE_CHECKS.flatMap(epicDoneProblems))],
   [
     'epic',
     'epicRecordText',

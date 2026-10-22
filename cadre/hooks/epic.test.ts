@@ -15,6 +15,7 @@ import { instructionsRecordPath, instructionsRecordText } from './apply'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
+  cleanStateOf,
   EPIC_BRANCHES_ARGV,
   EPIC_CANCELLED,
   EPIC_NO_PM,
@@ -22,6 +23,8 @@ import {
   epicAddFailedReply,
   epicBadKeyReply,
   epicCreatedText,
+  epicDoneProblems,
+  epicDoneRefusal,
   epicExcludesFailedReply,
   epicKeyOf,
   epicKickoffText,
@@ -54,6 +57,7 @@ import {
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
   MERGED_ARGV,
+  mergedStateOf,
   mirrorLinkedParentWarning,
   mirrorPaths,
   mirrorPlan,
@@ -1553,6 +1557,111 @@ describe('removing a finished epic worktree (D-152, D-169 to D-171)', () => {
     const run = await epicDone(await doneWorld(), [listed, ...DONE_RULES])
 
     expect(run.reply).toBe(epicNotFoundReply('PROJ-1'))
+    expect(removals(run)).toEqual([])
+  })
+})
+
+/** What epicDoneProblems is given: the three checks, and the branch and base its reasons name. */
+type DoneChecks = Parameters<typeof epicDoneProblems>[0]
+
+/** The checks of an epic ready to remove: clean, merged into main, no role running, the team read. */
+const READY: DoneChecks = {
+  clean: 'clean',
+  merged: 'merged',
+  running: [],
+  teamRead: true,
+  branch: BRANCH,
+  base: 'main',
+}
+
+/** `world` without the file at `path`. */
+function withoutFile(world: MemWorld, path: string): MemWorld {
+  return { ...world, files: Object.fromEntries(Object.entries(world.files).filter(([name]) => name !== path)) }
+}
+
+/** `world` with `text` as the file at `path`. */
+function withFile(world: MemWorld, path: string, text: string): MemWorld {
+  return { ...world, files: { ...world.files, [path]: text } }
+}
+
+describe('the refusals of epic done (D-169, D-171)', () => {
+  test('epicDoneProblems gives one reason per failed check, the clean one first, then merged, then running', () => {
+    const clean = epicDoneProblems({ ...READY, clean: 'unknown' })
+    const merged = epicDoneProblems({ ...READY, merged: 'unknown' })
+    const running = epicDoneProblems({ ...READY, running: ['pm', 'be'] })
+    const all = epicDoneProblems({ ...READY, clean: 'unknown', merged: 'unknown', running: ['pm', 'be'] })
+
+    expect(epicDoneProblems({ ...READY, clean: 'dirty' })).toHaveLength(1)
+    expect([clean.length, merged.length, running.length]).toEqual([1, 1, 1])
+    expect(all).toEqual([...clean, ...merged, ...running])
+    expect(epicDoneProblems(READY)).toEqual([])
+  })
+
+  test('a status or merge-base run reads as a state; one that cannot tell is unknown, never clean or merged', () => {
+    const ran = (exitCode: number, stdout = ''): HostRun => ({ exitCode, stdout, stderr: '' })
+
+    expect([ran(0), ran(0, ' M src/a.ts\n'), ran(128), null].map(cleanStateOf)).toEqual([
+      'clean',
+      'dirty',
+      'unknown',
+      'unknown',
+    ])
+    expect([ran(0), ran(1), ran(128), null].map(mergedStateOf)).toEqual(['merged', 'not-merged', 'unknown', 'unknown'])
+  })
+
+  test('a record that is missing, does not parse or has no base refuses as no record, with no merge-base', async () => {
+    const world = await doneWorld()
+    const path = `${GIT_DIR}/${EPIC_RECORD_FILE}`
+    const unbased = epicRecordText({ ...RECORD, base: null, links: ['node_modules'] })
+    const worlds = [withoutFile(world, path), ...['not a record', unbased].map(text => withFile(world, path, text))]
+    const refusal = epicDoneRefusal('PROJ-1', epicDoneProblems({ ...READY, merged: 'no-record', base: null }))
+
+    for (const shown of worlds) {
+      const run = await epicDone(shown, DONE_RULES)
+
+      expect(run.reply).toBe(refusal)
+      expect(run.calls.filter(call => call.argv.includes('merge-base'))).toEqual([])
+      expect(removals(run)).toEqual([])
+    }
+    expect(refusal).toContain(EPIC_RECORD_FILE)
+  })
+
+  test('a dirty worktree on an unmerged branch is refused once, naming both reasons; nothing is removed', async () => {
+    const dirty = rule(STATUS_ARGV(WORKTREE), 0, ' M src/a.ts\n')
+    const unmerged = rule(MERGED_ARGV('/repo', BRANCH, 'main'), 1)
+    const run = await epicDone(await doneWorld(), [dirty, unmerged, ...DONE_RULES])
+    const problems = epicDoneProblems({ ...READY, clean: 'dirty', merged: 'not-merged' })
+
+    expect(problems).toHaveLength(2)
+    expect(run.reply).toBe(epicDoneRefusal('PROJ-1', problems))
+    expect(removals(run)).toEqual([])
+  })
+
+  test('a role that reads running in the worktree refuses, the reason naming it; a run in main does not', async () => {
+    const world = await doneWorld()
+    const fleet = '/home/u/.claude/fleet'
+    const running = JSON.stringify({ isOn: true, phase: 'running', beat: 1_000_000 - 10_000 })
+    const beat = (id: string, cwd: string) => JSON.stringify({ id: `s-${id}`, name: `cadre-${id}`, cwd, beatAt: 500 })
+    const files = {
+      ...world.files,
+      [`${fleet}/s-be.json`]: beat('be', WORKTREE),
+      [`${fleet}/s-pm.json`]: beat('pm', '/repo'),
+      '/home/u/.claude/autopilot/s-be.json': running,
+      '/home/u/.claude/autopilot/s-pm.json': running,
+    }
+    const dirs = { ...world.dirs, [fleet]: [entry('s-be.json'), entry('s-pm.json')] }
+    const run = await epicDone({ ...world, files, dirs }, DONE_RULES)
+
+    expect(run.reply).toBe(epicDoneRefusal('PROJ-1', epicDoneProblems({ ...READY, running: ['be'] })))
+    expect(run.reply).toContain('role be')
+    expect(removals(run)).toEqual([])
+  })
+
+  test('a team that cannot be read is a reason, role states unknown, and never reads as no role running', async () => {
+    const run = await epicDone(withoutFile(await doneWorld(), '/repo/.cadre/cadre.json'), DONE_RULES)
+
+    expect(run.reply).toBe(epicDoneRefusal('PROJ-1', epicDoneProblems({ ...READY, teamRead: false })))
+    expect(run.reply).toContain('role states unknown')
     expect(removals(run)).toEqual([])
   })
 })
