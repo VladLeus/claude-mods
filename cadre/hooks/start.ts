@@ -1689,10 +1689,11 @@ export function worktreeClaudeMd(paths: readonly string[], worktree: string): st
  * role, its compiled scope and the repo's code dirs) in the session's own root. It gathers the launching user for the
  * root (gatherLaunchUser), builds the role's LaunchPlan with its private instructions link (withPrivateInstructions,
  * D-140 q1-b), renders the MCP config from `~/.claude.json` under the stored consent with the project entries of
- * `mcpRoots`, in that order (runtimeMcpText), and the probe expectations, and renders `<root>/.cadre/<id>/.runtime/`:
- * renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was built for, and
- * every refusal comes before anything is written. Each step then runs through the host in order, and the first one
- * that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to start (LNCH-03).
+ * `mcpRoots`, then of the user's `mainRoot` when set (03.1-W3 S1), in that order (runtimeMcpText), and the probe
+ * expectations, and renders `<root>/.cadre/<id>/.runtime/`: renderPaths names what to stat and list, renderSteps plans
+ * the steps from the root the LaunchPlan was built for, and every refusal comes before anything is written. Each step
+ * then runs through the host in order, and the first one that fails stops the render with renderFailedReply and no
+ * stamp written, so the launcher refuses to start (LNCH-03).
  * It refuses with the refusals of gatherLaunchUser, a role memory folder level it would write through included
  * (privateFolderRefusal, 02-GAPS-B3 C5), a render refusal, or that failure. Else it gives the number of links the
  * render made and every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
@@ -1736,7 +1737,8 @@ export async function renderRole(
         }
   const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
   const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
-  const mcp = runtimeMcpText(role, claudeJson, input.mcpRoots, state.readUserMcp)
+  const mcpRoots = [...input.mcpRoots, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+  const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
   const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
   const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
