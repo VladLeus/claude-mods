@@ -26,7 +26,7 @@ import {
   ROLES_QUESTION,
 } from './init'
 import { stableJson } from './plan'
-import { autopilotReply } from './scan'
+import { autopilotReply, CHECKOUT_ARGV } from './scan'
 import { GIT_COMMON_DIR_ARGV } from './start'
 import {
   ABSOLUTE_PATH_MARKERS,
@@ -1699,7 +1699,7 @@ describe('cadre status with a faked host', () => {
     fakeHost(on, await statusHostWorld(), log)
     const lines = (await $.command.run({ command: 'cadre', args: 'status be' })).text.split('\n')
     expect(lines.slice(0, STATUS_DONE_LINES.length)).toEqual(STATUS_DONE_LINES)
-    expect(log.runs).toEqual([STATUS_GREP])
+    expect(log.runs).toEqual([CHECKOUT_ARGV('/repo'), STATUS_GREP])
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('fs.write ') || op.startsWith('forbidden '))).toEqual([])
   })

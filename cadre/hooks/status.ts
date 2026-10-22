@@ -7,13 +7,14 @@
  * on the built-in framework, whether its DONE.md marker is there (D-17).
  *
  * It reads autopilot's and agent-fleet's files by their on-disk format and never imports either mod. It runs in the
- * root session or in `claude -p`, asks nothing, writes nothing, and runs only `/usr/bin/grep` over a transcript.
+ * root session or in `claude -p`, asks nothing, writes nothing, and runs only the git checkout probe and
+ * `/usr/bin/grep` over a transcript.
  */
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } from '../types'
 import { clean, compareText, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
 import { reportText } from './render'
-import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
+import { autopilotLogPath, autopilotRunState, autopilotStatusPath, CHECKOUT_ARGV, checkoutOf } from './scan'
 import type { RunState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 
@@ -522,8 +523,11 @@ export async function roleRunState(
  * else its fleet beat. With no session the run is not started; else its state comes from the session's autopilot
  * status file and log (runOf, statusStateOf). The report adds the newest handoff under the folder the session started
  * in, or the start folder when no session was found (handoffOf), and, for a role whose framework (its own, else
- * cadre.json's) is the built-in one, whether its DONE.md marker is there (D-17). It asks nothing and writes nothing:
- * it is given only the host's run, for the title grep, so it cannot write (T-03-01, #63 A3).
+ * cadre.json's) is the built-in one, whether its DONE.md marker is there (D-17). In a linked worktree, where
+ * CHECKOUT_ARGV and checkoutOf name the main checkout, the team is read from the main checkout, so status works there
+ * under every git policy, while the session, its run, its handoff and its DONE.md stay the worktree's own (D-151). It
+ * asks nothing and writes nothing: it is given only the host's run, for the checkout probe and the title grep, so it
+ * cannot write (T-03-01, #63 A3).
  */
 export async function runStatus(
   io: InitIo,
@@ -534,7 +538,9 @@ export async function runStatus(
   const guard = await repoGuard(io, 'status')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
-  const team = await readTeam(io, locations.root, 'status', id)
+  const checkout = checkoutOf(await host.run(CHECKOUT_ARGV(locations.root), { timeoutMs: 30_000 }))
+  const teamRoot = checkout.kind === 'linked' && checkout.main !== null ? checkout.main : locations.root
+  const team = await readTeam(io, teamRoot, 'status', id)
   if (team.kind === 'refuse') return team.text
   const { state, roles } = team.value
   const role = roles.find(candidate => candidate.id === id)
