@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { EpicRecord, HostIo, HostRun, ManifestEntry, RoleSpec } from '../types'
+import type { EpicRecord, HostIo, HostRun, ManifestEntry, PortEntry, RoleSpec } from '../types'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
@@ -27,6 +27,10 @@ import {
   excludesText,
   GIT_DIR_ARGV,
   LS_IGNORED_ARGV,
+  LS_OTHERS_ARGV,
+  mirrorLinkedParentWarning,
+  mirrorPaths,
+  mirrorPlan,
   parseEpicRecord,
   parseWorktreeList,
   runEpic,
@@ -41,7 +45,7 @@ import { readTeam, regenNoRole } from './init'
 import { stableJson } from './plan'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import { claudeTooOldReply, launcherChangedReply } from './start'
-import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, templateRole } from './testkit'
+import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemWorld } from './testkit'
 
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
@@ -484,12 +488,12 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
   })
 
   test('each mirror step runs as one absolute argv with no shell, and a link never replaces what is there', () => {
-    const link: EpicStep = { kind: 'link', path: '/w/a', target: '/repo/a' }
-    const copy: EpicStep = { kind: 'copy', path: '/w/.env', source: '/repo/.env' }
+    const linkStep: EpicStep = { kind: 'link', path: '/w/a', target: '/repo/a' }
+    const copyStep: EpicStep = { kind: 'copy', path: '/w/.env', source: '/repo/.env' }
 
     expect(epicStepArgv({ kind: 'mkdir', path: '/w/a' })).toEqual(['/bin/mkdir', '-p', '--', '/w/a'])
-    expect(epicStepArgv(link)).toEqual(['/bin/ln', '-s', '--', '/repo/a', '/w/a'])
-    expect(epicStepArgv(copy)).toEqual(['/bin/cp', '-p', '--', '/repo/.env', '/w/.env'])
+    expect(epicStepArgv(linkStep)).toEqual(['/bin/ln', '-s', '--', '/repo/a', '/w/a'])
+    expect(epicStepArgv(copyStep)).toEqual(['/bin/cp', '-p', '--', '/repo/.env', '/w/.env'])
   })
 
   test('an ignored node_modules/ becomes a link in the new worktree, hidden from git before it is made', async () => {
@@ -518,5 +522,192 @@ describe('mirroring the main checkout into the epic worktree (D-147, D-148)', ()
     expect([config.reply, noGitDir.reply]).toEqual([failure, failure])
     expect(config.reply).toContain('made no links')
     expect([...linkRuns(config), ...linkRuns(noGitDir)]).toEqual([])
+  })
+})
+
+/** A mirror step as `<kind> <path below BARE_WORKTREE>`, the form the mirror rule specs compare. */
+function stepLine(step: EpicStep): string {
+  return `${step.kind} ${step.path.slice(BARE_WORKTREE.length + 1)}`
+}
+
+/** The kind of mirror step each `/bin/` command of a mirror makes. */
+const STEP_KINDS: ReadonlyMap<string, string> = new Map([
+  ['/bin/mkdir', 'mkdir'],
+  ['/bin/ln', 'link'],
+  ['/bin/cp', 'copy'],
+])
+
+/** The mirror steps an epic run ran, each as stepLine writes it: its kind and its path below BARE_WORKTREE. */
+function stepRuns(run: EpicRun): string[] {
+  return run.calls.flatMap(call => {
+    const kind = STEP_KINDS.get(call.argv[0] ?? '')
+    const path = call.argv.at(-1)
+
+    return kind === undefined || path === undefined ? [] : [`${kind} ${path.slice(BARE_WORKTREE.length + 1)}`]
+  })
+}
+
+/** What the scratch repo of RESEARCH Pattern 4 holds that git does not track, as untrackedEntries gives it. */
+const SCRATCH_ENTRIES: readonly string[] = [
+  '.cadre',
+  '.claude',
+  '.claude/worktrees',
+  '.env',
+  '.env.local',
+  'node_modules',
+  'thoughts',
+  'web/.env',
+]
+
+/** The scratch repo's main checkout: the listing of each folder the mirror reads, '' for the root. */
+const SCRATCH_MAIN: ReadonlyMap<string, readonly PortEntry[]> = new Map([
+  [
+    '',
+    [
+      entry('.cadre', 'dir'),
+      entry('.claude', 'dir'),
+      entry('.env'),
+      entry('.env.local'),
+      entry('node_modules', 'dir'),
+      entry('thoughts', 'dir'),
+      entry('web', 'dir'),
+    ],
+  ],
+  ['.cadre', [entry('bin', 'dir'), entry('pm', 'dir'), entry('cadre.json'), entry('manifest.json')]],
+  ['.cadre/bin', [entry('pm')]],
+  ['.cadre/pm', [entry('.runtime', 'dir'), entry('ROLE.md'), entry('role.json')]],
+  ['.claude', [entry('settings.local.json'), entry('skills', 'dir'), entry('worktrees', 'dir')]],
+  ['web', [entry('.env')]],
+])
+
+/** A worktree of the scratch repo whose root lists only `web`, a tracked folder. */
+const SCRATCH_TREE: ReadonlyMap<string, readonly PortEntry[]> = new Map([['', [entry('web', 'dir')]]])
+
+/** The steps the scratch repo's mirror plans for the role pm into a worktree that lists only `web` (D-156, D-172). */
+const SCRATCH_STEPS: readonly string[] = [
+  'mkdir .cadre',
+  'mkdir .cadre/bin',
+  'link .cadre/bin/pm',
+  'link .cadre/cadre.json',
+  'link .cadre/manifest.json',
+  'mkdir .cadre/pm',
+  'link .cadre/pm/ROLE.md',
+  'link .cadre/pm/role.json',
+  'mkdir .claude',
+  'link .claude/settings.local.json',
+  'link .claude/skills',
+  'copy .env',
+  'copy .env.local',
+  'link node_modules',
+  'link thoughts',
+  'copy web/.env',
+]
+
+/** mirrorPlan of `entries` for the role pm from /repo into BARE_WORKTREE, over these listings. */
+function planOf(
+  entries: readonly string[],
+  main: ReadonlyMap<string, readonly PortEntry[]>,
+  tree: ReadonlyMap<string, readonly PortEntry[]>,
+): ReturnType<typeof mirrorPlan> {
+  return mirrorPlan({ root: '/repo', worktree: BARE_WORKTREE, entries, roleIds: ['pm'], main, tree })
+}
+
+describe('the mirror rules (D-147, D-148, D-149, D-156, D-172)', () => {
+  test('the scratch listing mirrors .cadre as real folders, links the rest, copies env files, skips .runtime', () => {
+    const plan = planOf(SCRATCH_ENTRIES, SCRATCH_MAIN, SCRATCH_TREE)
+
+    expect(plan.steps.map(stepLine)).toEqual(SCRATCH_STEPS)
+    expect(plan.links).toEqual([
+      '.cadre/bin/pm',
+      '.cadre/cadre.json',
+      '.cadre/manifest.json',
+      '.cadre/pm/ROLE.md',
+      '.cadre/pm/role.json',
+      '.claude/settings.local.json',
+      '.claude/skills',
+      'node_modules',
+      'thoughts',
+    ])
+    expect(plan.copies).toEqual(['.env', '.env.local', 'web/.env'])
+    expect(plan.warnings).toEqual([])
+    expect(plan.steps.filter(step => step.kind !== 'mkdir').slice(0, 1)).toEqual([
+      { kind: 'link', path: `${BARE_WORKTREE}/.cadre/bin/pm`, target: '/repo/.cadre/bin/pm' },
+    ])
+    expect(plan.steps.find(step => step.kind === 'copy')).toEqual({
+      kind: 'copy',
+      path: `${BARE_WORKTREE}/.env`,
+      source: '/repo/.env',
+    })
+  })
+
+  test('a target the worktree lists already, as a link or as a file, gets no step', () => {
+    const tree = new Map([
+      ['', [entry('web', 'dir'), link('node_modules')]],
+      ['.cadre/pm', [entry('role.json')]],
+    ])
+    const kept = SCRATCH_STEPS.filter(step => step !== 'link node_modules' && step !== 'link .cadre/pm/role.json')
+
+    expect(planOf(SCRATCH_ENTRIES, SCRATCH_MAIN, tree).steps.map(stepLine)).toEqual(kept)
+  })
+
+  test('an entry below a folder the worktree lists as a link gets no step and one warning naming it', () => {
+    const main = new Map([['vendor', [entry('cache', 'dir')]]])
+    const plan = planOf(['vendor/cache'], main, new Map([['', [link('vendor')]]]))
+
+    expect(plan.steps).toEqual([])
+    expect(plan.warnings).toEqual([mirrorLinkedParentWarning('vendor/cache')])
+    expect(plan.warnings[0]).toContain('vendor/cache')
+  })
+
+  test('nothing is planned below a planned link, while an entry below a real folder is still linked', () => {
+    const tree = new Map([['', [entry('web', 'dir')]]])
+
+    expect(planOf(['thoughts', 'thoughts/shared'], new Map(), new Map()).steps.map(stepLine)).toEqual(['link thoughts'])
+    expect(planOf(['thoughts', 'thoughts/shared', 'web/dist'], new Map(), tree).steps.map(stepLine)).toEqual([
+      'link thoughts',
+      'link web/dist',
+    ])
+  })
+
+  test('mirrorPaths names every folder the rules read, in the main checkout and in the worktree, sorted', () => {
+    expect(mirrorPaths(['.cadre', 'a/b/c', 'web/.env'], ['pm'])).toEqual({
+      main: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a/b', 'web'],
+      tree: ['', '.cadre', '.cadre/bin', '.cadre/pm', '.claude', 'a', 'a/b', 'web'],
+    })
+  })
+
+  test('an untracked whole .cadre is mirrored as an ignored one is: real folders and one link per child', async () => {
+    const world = await teamWorld()
+    const dirs = {
+      ...world.dirs,
+      '/repo/.cadre': [
+        entry('be', 'dir'),
+        entry('bin', 'dir'),
+        entry('cadre.json'),
+        entry('manifest.json'),
+        entry('pm', 'dir'),
+      ],
+      '/repo/.cadre/be': [entry('role.json')],
+      '/repo/.cadre/bin': [entry('be'), entry('pm')],
+      '/repo/.cadre/pm': [entry('role.json')],
+    }
+    const gitDir = rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`)
+    const mirrorOf = async (listing: HostRunRule) =>
+      stepRuns(await epic({ ...world, dirs }, [listing, gitDir], 'PROJ-1', ''))
+    const untracked = await mirrorOf(rule(LS_OTHERS_ARGV('/repo'), 0, '.cadre/\0'))
+
+    expect(untracked).toEqual(await mirrorOf(rule(LS_IGNORED_ARGV('/repo'), 0, '.cadre/\0')))
+    expect(untracked).toEqual([
+      'mkdir .cadre',
+      'mkdir .cadre/be',
+      'link .cadre/be/role.json',
+      'mkdir .cadre/bin',
+      'link .cadre/bin/be',
+      'link .cadre/bin/pm',
+      'link .cadre/cadre.json',
+      'link .cadre/manifest.json',
+      'mkdir .cadre/pm',
+      'link .cadre/pm/role.json',
+    ])
   })
 })
