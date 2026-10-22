@@ -43,6 +43,7 @@ import {
   memoryBlockText,
   memoryChangedWarning,
   memoryGoneWarning,
+  memoryIndexLinkWarning,
   MIN_CLAUDE_VERSION,
   NO_MEMORY_LINKS,
   NOT_COPIED_LINE,
@@ -1025,6 +1026,20 @@ describe('linked memories (G-02-1f)', () => {
     expect(unreadableMemoryIndexWarning('be')).toBe(
       'could not read the MEMORY.md of be: linked memories are not indexed',
     )
+  })
+
+  test('a MEMORY.md that is a link is never read or written through: a warning, the links still made', async () => {
+    const folder = await startRoleFolder()
+    const index = `${folder}/MEMORY.md`
+    const base = await linkedWorld({ [index]: `export A=1\n${blockOf(['- [old.md](old.md) \u2014 old'])}` })
+    const dirs = { ...base.dirs, [folder]: [link('MEMORY.md'), link('old.md')] }
+    const start = await startBe({ ...base, dirs, realPaths: { ...base.realPaths, [index]: '/home/u/.zshrc' } })
+
+    expect(start.writes.filter(write => write.path === index || write.path === '/home/u/.zshrc')).toEqual([])
+    expect(start.reply.split('\n')).toContain(`warning: ${memoryIndexLinkWarning('be')}`)
+    expect(linkRuns(start)).toHaveLength(3)
+    expect(start.calls.filter(call => call.argv[0] === '/bin/rm')).toEqual([])
+    expect(memoryIndexLinkWarning('be')).toBe('the MEMORY.md of be is a link: linked memories are not indexed')
   })
 })
 
