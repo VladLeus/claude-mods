@@ -1455,6 +1455,20 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(deny).toContain('Edit(//repo/.claude/worktrees/proj-1/src/**)')
   })
 
+  test('an epic role denies editing the launch files of the worktree and of main (03.1-SEC-S1)', async () => {
+    const world = await renderWorld([templateRole('pm', { hasBash: false }), templateRole('be')])
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'pm').permissions
+    const deny = isObject(permissions) ? permissions.deny : undefined
+
+    for (const root of ['/repo', BARE_WORKTREE]) {
+      expect(deny).toContain(`Edit(/${root}/.claude/settings.json)`)
+      expect(deny).toContain(`Write(/${root}/.claude/settings.local.json)`)
+      expect(deny).toContain(`Edit(/${root}/.cadre/bin/**)`)
+      expect(deny).toContain(`Write(/${root}/.cadre/manifest.json)`)
+    }
+  })
+
   test('mainCheckoutOf names the main checkout of a worktree nested in it, else null (03.1-W3 M1)', () => {
     expect(mainCheckoutOf('/repo/.git', '/repo')).toBeNull()
     expect(mainCheckoutOf('/repo/.git', '/repo/.claude/worktrees/proj-1')).toBe('/repo')

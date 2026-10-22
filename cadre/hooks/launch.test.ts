@@ -169,6 +169,16 @@ function memoryAndRecordDeny(userDir: string, folder: string): string[] {
   ]
 }
 
+/**
+ * The deny of the launch files under the root `root` (03.1-SEC-S1): Edit and Write on `.claude/settings.json`,
+ * `.claude/settings.local.json`, `.cadre/manifest.json` and `.cadre/bin/**`, as exact `//` rules.
+ */
+function launchFileRules(root: string): string[] {
+  const files = ['.cadre/bin/**', '.cadre/manifest.json', '.claude/settings.json', '.claude/settings.local.json']
+
+  return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
+}
+
 /** The runtime deny list of the template BE at /repo: the ~/ denies, and the .env denies made absolute (D-123). */
 const BASH_DENY: readonly string[] = [
   'Read(//repo/**/.env)',
@@ -276,6 +286,10 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/.cadre/bin/**)',
+          'Edit(//repo/.cadre/manifest.json)',
+          'Edit(//repo/.claude/settings.json)',
+          'Edit(//repo/.claude/settings.local.json)',
           'Edit(//repo/cadre/**)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
@@ -287,6 +301,10 @@ describe('launch render', () => {
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions.json)',
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/pm/instructions/**)',
           'Write(//home/u/.claude/projects/-repo/memory/**)',
+          'Write(//repo/.cadre/bin/**)',
+          'Write(//repo/.cadre/manifest.json)',
+          'Write(//repo/.claude/settings.json)',
+          'Write(//repo/.claude/settings.local.json)',
         ],
       },
       sandbox: { enabled: false },
@@ -306,7 +324,7 @@ describe('launch render', () => {
 
     expect(plan.settings.permissions).toEqual({
       defaultMode: 'auto',
-      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own]),
+      deny: sortedUnique([...runtimeDeny(role, scope, carrier()).deny, ...own, ...launchFileRules('/repo')]),
     })
   })
 
@@ -400,6 +418,10 @@ describe('launch render', () => {
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Edit(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Edit(//home/u/.claude/projects/-repo/memory/**)',
+          'Edit(//repo/.cadre/bin/**)',
+          'Edit(//repo/.cadre/manifest.json)',
+          'Edit(//repo/.claude/settings.json)',
+          'Edit(//repo/.claude/settings.local.json)',
           'Read(//repo/**/.env)',
           'Read(//repo/**/.env.*)',
           'Read(//repo/.env)',
@@ -409,6 +431,10 @@ describe('launch render', () => {
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions.json)',
           'Write(//home/u/.claude/cadre/repo-1a2b3c4d/be/instructions/**)',
           'Write(//home/u/.claude/projects/-repo/memory/**)',
+          'Write(//repo/.cadre/bin/**)',
+          'Write(//repo/.cadre/manifest.json)',
+          'Write(//repo/.claude/settings.json)',
+          'Write(//repo/.claude/settings.local.json)',
         ],
       },
       sandbox: { enabled: true },
@@ -824,7 +850,12 @@ describe('runtimeDeny for Bash roles (D-123)', () => {
 
     expect(launchPlan(role, scope, user()).settings.permissions).toEqual({
       defaultMode: scope.settings.permissions.defaultMode,
-      deny: sortedUnique([...BASH_DENY, ...privateDeny(folder), ...memoryAndRecordDeny('/home/u/.claude', folder)]),
+      deny: sortedUnique([
+        ...BASH_DENY,
+        ...privateDeny(folder),
+        ...memoryAndRecordDeny('/home/u/.claude', folder),
+        ...launchFileRules('/repo'),
+      ]),
     })
   })
 
@@ -1765,7 +1796,8 @@ describe('launch properties', () => {
       const memories = isPartsFlowRole(item.role) ? linkedMemoryDeny(item.launcher.linkedMemories).deny : []
       const folder = roleMemoryDir(item.launcher, item.role.id)
       const own = [...privateDeny(folder), ...memoryAndRecordDeny(item.launcher.userDir, folder)]
-      const expected = sortedUnique([...deny.deny, ...own, ...memories])
+      const launch = [item.launcher.root, item.launcher.givenRoot].flatMap(launchFileRules)
+      const expected = sortedUnique([...deny.deny, ...own, ...launch, ...memories])
 
       return {
         label: item.label,
@@ -2003,7 +2035,7 @@ describe('linked memory deny (G-02-1f)', () => {
 
     const own = [...privateDeny(BE_MEMORY), ...memoryAndRecordDeny('/home/u/.claude', BE_MEMORY)]
     expect(isPartsFlowRole(role)).toBe(true)
-    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny]))
+    expect(deny).toEqual(sortedUnique([...base, ...own, ...linkedMemoryDeny(LINKED).deny, ...launchFileRules('/repo')]))
     expect(deny.filter(entry => entry.includes(BE_MEMORY.slice(1)))).toEqual([
       `Edit(/${BE_MEMORY}/instructions.json)`,
       `Edit(/${BE_MEMORY}/instructions/**)`,
@@ -2057,7 +2089,8 @@ describe('linked memory deny (G-02-1f)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    expect(denyOf(plan.settings)).toEqual(runtimeDeny(role, scope, launcher).deny)
+    const expected = sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launchFileRules('/repo')])
+    expect(denyOf(plan.settings)).toEqual(expected)
     expect(plan.warnings.slice(0, lead.length + 4)).toEqual([
       ...lead,
       UNDENIED_PRIVATE_WARNING,
@@ -2150,7 +2183,8 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
     const plan = launchPlan(role, scope, launcher)
     const lead = runtimeDeny(role, scope, launcher).warnings
 
-    expect(denyOf(plan.settings)).toEqual(runtimeDeny(role, scope, launcher).deny)
+    const launch = [...launchFileRules('/link/repo'), ...launchFileRules('/repo')]
+    expect(denyOf(plan.settings)).toEqual(sortedUnique([...runtimeDeny(role, scope, launcher).deny, ...launch]))
     expect(plan.warnings.slice(lead.length)).toEqual([
       UNDENIED_PRIVATE_WARNING,
       UNDENIED_MEMORY_FOLDER_WARNING,
@@ -2167,7 +2201,8 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
   test('the matrix with both denies keeps no deny over .cadre/<id>/, the handoff folder or .planning/ (B4)', () => {
     const results = matrixCases(MATRIX_USER).map(item => {
       const deny = denyOf(item.plan.settings)
-      const repo = deny.filter(entry => entry.includes('//repo/.cadre/') || entry.includes('//repo/.planning/'))
+      const ownFolder = `//repo/.cadre/${item.role.id}/`
+      const repo = deny.filter(entry => entry.includes(ownFolder) || entry.includes('//repo/.planning/'))
       const memory = deny.filter(entry => entry.includes('/projects/-repo/memory/'))
       const record = deny.filter(entry => entry.endsWith(`/${item.role.id}/instructions.json)`))
 
@@ -2180,6 +2215,21 @@ describe('memory folder and record deny (02-GAPS-B3 C2, C3)', () => {
 })
 
 describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
+  test('every role denies Edit and Write of the launch files under its root, given root and main (03.1-SEC-S1)', () => {
+    const role = templateRole('pm', { hasBash: false })
+    const scope = compileScope(role, context())
+    const worktree = '/repo/.claude/worktrees/x'
+    const epicUser = user({ root: worktree, givenRoot: worktree, mainRoot: '/repo' })
+    const epicDeny = denyOf(launchPlan(role, scope, epicUser).settings)
+    const mainDeny = denyOf(launchPlan(role, scope, user({ givenRoot: '/link/repo' })).settings)
+    const epicRules = [...launchFileRules('/repo'), ...launchFileRules(worktree)]
+    const mainRules = [...launchFileRules('/link/repo'), ...launchFileRules('/repo')]
+
+    expect(epicRules.filter(rule => !epicDeny.includes(rule))).toEqual([])
+    expect(mainRules.filter(rule => !mainDeny.includes(rule))).toEqual([])
+    expect(epicDeny.filter(entry => entry.includes('/.runtime/'))).toEqual([])
+  })
+
   test('an epic role denies the code dirs of the main checkout as well as of its worktree', () => {
     const role = templateRole('be', { hasBash: false })
     const scope = compileScope(role, context())
