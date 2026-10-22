@@ -16,6 +16,7 @@ import type {
   InitIo,
   InitLocations,
   PortEntry,
+  PortRead,
   RoleSpec,
   TemplateRoleId,
   TerminalChoice,
@@ -1136,6 +1137,31 @@ export function epicWorktreeLauncherLine(id: string): string {
   )
 }
 
+/**
+ * The role line of a role whose launcher in the epic worktree is not the text cadre checked in the main checkout
+ * (03.1-W4 S1, LNCH-04): it differs from it, or it could not be read in full, so cadre does not open it or copy its
+ * command. The id is shown cleaned.
+ */
+export function epicWorktreeLauncherChangedLine(id: string): string {
+  const role = reportText(id)
+
+  return `not opened: the worktree's .cadre/bin/${role} is not the launcher cadre checked in the main checkout.`
+}
+
+/**
+ * Whether a picked role may open its launcher in the epic worktree (D-158, 03.1-W4 S1): null when the worktree has
+ * none, as nothing runs then, or when it is the very text runEpic checked in the main checkout with launcherRead
+ * (`verified`); epicWorktreeLauncherLine when it is a text without the epic kickoff line; else
+ * epicWorktreeLauncherChangedLine, so cadre never opens a launcher it did not check (LNCH-04, T-03-28).
+ */
+export function epicWorktreeLauncherCheck(id: string, read: PortRead, verified: string | undefined): string | null {
+  if (read.state === 'absent') return null
+  if (read.state === 'text' && !hasRuntimeKickoff(read.text)) return epicWorktreeLauncherLine(id)
+  if (read.state === 'text' && read.text === verified) return null
+
+  return epicWorktreeLauncherChangedLine(id)
+}
+
 /** A picked role once the render stage ran: why it cannot open, as its reply line says, or null when it can. */
 type RenderedRole = { readonly id: string; readonly line: string | null }
 
@@ -1210,7 +1236,9 @@ async function openedLines(
  * the team's TL, D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then the lines of
  * the open stage (openedLines). A role whose render refuses keeps that refusal as its line, which does not stop the
  * others, and one whose launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff)
- * gets epicWorktreeLauncherLine and does not open; a launcher that cannot be read keeps the role openable.
+ * gets epicWorktreeLauncherLine and does not open, and one that is there but is not the launcher text runEpic checked
+ * in the main checkout, or cannot be read in full, gets epicWorktreeLauncherChangedLine and does not open either
+ * (epicWorktreeLauncherCheck, 03.1-W4 S1); a role whose worktree has no launcher stays openable.
  */
 async function renderedLines(
   io: InitIo,
@@ -1223,6 +1251,8 @@ async function renderedLines(
     readonly key: string
     readonly pmId: string
     readonly terminal: Exclude<TerminalChoice, 'none'>
+    /** The text of each picked role's launcher in the main checkout, as runEpic checked it (03.1-W4 S1). */
+    readonly launchers: ReadonlyMap<string, string>
   },
   epicWorktree: { readonly path: string; readonly title: string },
 ): Promise<string[]> {
@@ -1257,10 +1287,9 @@ async function renderedLines(
       continue
     }
     warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
-    // A launcher that cannot be read keeps the role: its own checks still run when it starts.
+    // Open only the launcher cadre checked in main (03.1-W4 S1).
     const launcher = await io.read(`${worktree}/.cadre/bin/${id}`, MAX_READ_BYTES)
-    const isOlder = launcher.state === 'text' && !hasRuntimeKickoff(launcher.text)
-    rendered.push({ id, line: isOlder ? epicWorktreeLauncherLine(id) : null })
+    rendered.push({ id, line: epicWorktreeLauncherCheck(id, launcher, team.launchers.get(id)) })
   }
 
   return [...warnings, ...(await openedLines(host, rendered, worktree, team.terminal))]
@@ -1293,6 +1322,8 @@ async function mirroredReply(
     readonly pmId: string
     /** Where the roles open (D-167). */
     readonly terminal: Exclude<TerminalChoice, 'none'>
+    /** The text of each picked role's launcher in the main checkout, as runEpic checked it (03.1-W4 S1). */
+    readonly launchers: ReadonlyMap<string, string>
   },
   worktree: EpicWorktree,
 ): Promise<string> {
@@ -1342,8 +1373,9 @@ async function mirroredReply(
  * to these steps (D-165), so it asks only which roles to open. Each rendered role then opens in a terminal inside the
  * worktree, where `options.terminal` says (openedLines, D-167). The reply is epicCreatedText followed by the render
  * stage's lines (one per picked role: that it opened, its `cd -- <worktree> && <launcher>` command, copied with the
- * others, its render refusal, or the line of a worktree launcher older than the epic kickoff), or the reply the mirror
- * stopped with. It never runs a launcher and never starts a background session (D-108).
+ * others, its render refusal, or the line of a worktree launcher older than the epic kickoff or not the one checked in
+ * the main checkout (03.1-W4 S1)), or the reply the mirror stopped with. It never runs a launcher and never starts a
+ * background session (D-108).
  */
 export async function runEpic(
   io: InitIo,
@@ -1364,10 +1396,12 @@ export async function runEpic(
   if (pm.kind === 'refuse') return pm.text
   const picked = await epicPickedRoles(io, team.value.roles, pm.id)
   if (picked === null) return EPIC_CANCELLED
+  const launchers = new Map<string, string>()
   const older: string[] = []
   for (const { id } of picked) {
     const launcher = await launcherRead(io, root, id)
     if (launcher.kind === 'refuse') return launcher.text
+    launchers.set(id, launcher.value)
     if (!hasRuntimeKickoff(launcher.value)) older.push(id)
   }
   if (older.length > 0) return epicOldLauncherReply(older)
@@ -1397,6 +1431,7 @@ export async function runEpic(
     picked,
     pmId: pm.id,
     terminal: options.terminal,
+    launchers,
   }
 
   if (lookup.kind === 'reuse') {
