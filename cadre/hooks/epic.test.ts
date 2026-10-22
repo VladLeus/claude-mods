@@ -31,6 +31,7 @@ import {
   epicKeptReply,
   epicKeyOf,
   epicKickoffText,
+  epicLinkRemovals,
   epicListFailedReply,
   epicLockedReply,
   epicLockLiveReply,
@@ -1504,11 +1505,20 @@ const DONE_RULES: readonly HostRunRule[] = [
   rule(MERGED_ARGV('/repo', BRANCH, 'main'), 0),
 ]
 
-/** A team world whose WORKTREE has DONE_RECORD as its epic record, based on main. */
+/**
+ * A team world whose WORKTREE has DONE_RECORD as its epic record, based on main; the worktree lists node_modules and
+ * .cadre/bin/pm as links below real folders.
+ */
 async function doneWorld(): Promise<MemWorld> {
   const world = await teamWorld()
+  const dirs = {
+    ...world.dirs,
+    [WORKTREE]: [entry('.cadre', 'dir'), link('node_modules')],
+    [`${WORKTREE}/.cadre`]: [entry('bin', 'dir')],
+    [`${WORKTREE}/.cadre/bin`]: [link('pm')],
+  }
 
-  return { ...world, files: { ...world.files, [`${GIT_DIR}/${EPIC_RECORD_FILE}`]: DONE_RECORD } }
+  return { ...world, files: { ...world.files, [`${GIT_DIR}/${EPIC_RECORD_FILE}`]: DONE_RECORD }, dirs }
 }
 
 /** What else an epic done run is given: its key (PROJ-1 by default), `--force`, and the answers to its question. */
@@ -1566,6 +1576,36 @@ describe('removing a finished epic worktree (D-152, D-169 to D-171)', () => {
     expect(run.reply).toBe(epicNotFoundReply('PROJ-1'))
     expect(removals(run)).toEqual([])
   })
+
+  test(
+    'a recorded link below a folder that became a link, or no longer a link, is left to git; ' +
+      'links below real folders are removed (03.1-W5 M1)',
+    async () => {
+      const world = await doneWorld()
+      const linkedBin = { ...world, dirs: { ...world.dirs, [`${WORKTREE}/.cadre`]: [link('bin')] } }
+      const fileAt = { ...world, dirs: { ...world.dirs, [`${WORKTREE}/.cadre/bin`]: [entry('pm')] } }
+      const tree = new Map([
+        ['', [entry('.cadre', 'dir'), link('node_modules')]],
+        ['.cadre', [entry('bin', 'dir')]],
+        ['.cadre/bin', [link('pm')]],
+      ])
+
+      for (const shown of [linkedBin, fileAt]) {
+        const run = await epicDone(shown, DONE_RULES)
+
+        expect(removals(run)).toEqual([
+          ['/bin/rm', '-f', '--', `${WORKTREE}/node_modules`],
+          ['git', '-C', '/repo', 'worktree', 'remove', WORKTREE],
+        ])
+        expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+      }
+      expect(epicLinkRemovals(WORKTREE, ['node_modules', '.cadre/bin/pm', 'node_modules'], tree)).toEqual([
+        `${WORKTREE}/.cadre/bin/pm`,
+        `${WORKTREE}/node_modules`,
+      ])
+      expect(epicLinkRemovals(WORKTREE, ['.cadre/bin/pm'], new Map())).toEqual([])
+    },
+  )
 })
 
 /** What epicDoneProblems is given: the three checks, and the branch and base its reasons name. */
