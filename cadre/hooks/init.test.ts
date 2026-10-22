@@ -3167,9 +3167,8 @@ describe('instruction parts (G-02-1f)', () => {
       '  General: The general rules.',
       '    from: ~/.claude/CLAUDE.md > G',
       '    recommended: tl',
-      'warning: ~/.claude/big.md is over 256 KiB: not split',
-      'warning: ~/work/CLAUDE.md is outside the repo and your config folder: not read',
-      'warning: could not read CLAUDE.md (treated as unknown)',
+      'warning: ~/.claude/big.md is over 256 KiB, not split: no role gets it',
+      'warning: could not read CLAUDE.md: no role gets it',
     ])
   })
 })
@@ -3581,6 +3580,14 @@ const BUILT_BE = [
 /** The file plan row of BE's built CLAUDE.md on a disk that does not have it. */
 const BUILT_BE_ROW = '  create    .cadre/be/CLAUDE.md'
 
+/** The role ids of builtWorld's six-role team, in path order: each gets its built CLAUDE.md (02-GAPS-B2 S1). */
+const BUILT_TEAM: readonly string[] = ['be', 'fe', 'pm', 'qa', 'security', 'tl']
+
+/** The paths of the built CLAUDE.md of these roles under /repo, in the order given. */
+function builtPaths(ids: readonly string[]): string[] {
+  return ids.map(id => `/repo/.cadre/${id}/CLAUDE.md`)
+}
+
 /** The written files of a host whose path ends in `/CLAUDE.md`. */
 function builtWrites(host: MemHost): HostWrite[] {
   return host.writes.filter(write => write.path.endsWith('/CLAUDE.md'))
@@ -3651,10 +3658,12 @@ function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
 }
 
 describe('built role CLAUDE.md (G-02-1f)', () => {
-  test('a dry run of the parts flow plans .cadre/be/CLAUDE.md for the role given a repo topic, no other', async () => {
+  test('a dry run of the parts flow plans the built CLAUDE.md of every role, BE with its topic (S1)', async () => {
     const run = memIo(builtWorld(), PARTS_ANSWERS)
     const lines = (await runInit(run.io, { dryRun: true })).split('\n')
-    expect(lines.filter(line => line.includes('CLAUDE.md'))).toEqual([BUILT_BE_ROW])
+    const rows = BUILT_TEAM.map(id => `  create    .cadre/${id}/CLAUDE.md`)
+    expect(lines.filter(line => line.includes('CLAUDE.md'))).toEqual(rows)
+    expect(rows).toContain(BUILT_BE_ROW)
     expect(lines.at(-1)).toBe(DRY_RUN_NOTE)
   })
 
@@ -3664,7 +3673,10 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
     expect(firstLines(run.asked)).toContain(CONTENT_QUESTION)
     expect(run.prompts).toHaveLength(2)
-    expect(builtWrites(host)).toEqual([{ path: '/repo/.cadre/be/CLAUDE.md', text: BUILT_BE, isWritten: true }])
+    const texts = BUILT_TEAM.map(id => (id === 'be' ? BUILT_BE : roleClaudeMdText(id, [])))
+    expect(builtWrites(host)).toEqual(
+      builtPaths(BUILT_TEAM).map((path, at) => ({ path, text: texts[at], isWritten: true })),
+    )
     expect(reply.split('\n')).toContain(BUILT_BE_ROW)
     expect(run.logged.filter(text => text.includes('--dry-run'))).toEqual([])
   })
@@ -3672,18 +3684,19 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
   test('the global part given to security is written to no file in the repo (T-02-69)', async () => {
     const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
     await runInit(memIo(builtWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
-    expect(builtWrites(host).map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(builtWrites(host).map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(host.writes.filter(write => write.text.includes(GLOBAL_SENTENCE))).toEqual([])
   })
 
-  test('a plain init answered No, skip it asks the whole-file questions and writes no built file', async () => {
+  test('a plain init answered No, skip it asks the whole-file questions and builds no part into a file', async () => {
     const run = memIo(builtWorld(), PARTS_DECLINED)
     const host = memHost(hostWorld({}))
     await runInit(run.io, { dryRun: false, host: host.io })
     const asked = firstLines(run.asked)
     expect(asked).toContain(CONTENT_QUESTION)
     expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBeGreaterThan(asked.indexOf(CONTENT_QUESTION))
-    expect([builtWrites(host), run.prompts]).toEqual([[], []])
+    const withParts = builtWrites(host).filter(write => write.text.includes('<!-- from '))
+    expect([withParts, run.prompts]).toEqual([[], []])
     expect(host.writes.length).toBeGreaterThan(0)
   })
 
@@ -3698,8 +3711,8 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const host = memHost(hostWorld({ runs: BUILT_TRACKED }))
     const reply = await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
-    expect(built.map(write => write.path)).toEqual(['/repo/.cadre/tl/CLAUDE.md'])
-    expect(built[0]?.text).toContain(BUILT_RULE)
+    expect(built.map(write => write.path)).toEqual(builtPaths(['pm', 'security', 'tl']))
+    expect(built.find(write => write.path === '/repo/.cadre/tl/CLAUDE.md')?.text).toContain(BUILT_RULE)
     const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
@@ -3708,7 +3721,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
     const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     const built = builtWrites(host)
-    expect(built.map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(built.map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(built[0]?.text).toContain(BUILT_RULE)
     expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
     const untracked = 'warning: notes/local.md is not tracked by git: its parts are not written to .cadre/'
@@ -3782,7 +3795,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
     const world = localNoteWorld(`# Local\n${SECRET_FIXTURES.join('\n')}\n`)
     await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
-    expect(builtWrites(host).map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(builtWrites(host).map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(leaks(host.writes.map(write => write.text).join('\n'), SECRET_FIXTURES)).toEqual([])
   })
 })
@@ -5262,6 +5275,7 @@ function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): Ca
 /**
  * The files init plans for these roles in `world`: every scope compiled on the state's default and for its launch
  * start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent (A1).
+ * Init always passes repo parts, none here, so every role gets its header-only built CLAUDE.md (02-GAPS-B2 S1).
  */
 async function plannedFiles(
   world: MemWorld,
@@ -5272,7 +5286,7 @@ async function plannedFiles(
   const gathered = await scansOf(world, state.readUserMcp)
   const scopes = scopesFor(roles, state.framework, gathered, [], state.launchStart)
 
-  return desiredFiles({ roles, scopes, state, only: null })
+  return desiredFiles({ roles, scopes, state, only: null, repoParts: new Map() })
 }
 
 /**
@@ -5882,6 +5896,7 @@ describe('reviewStep', () => {
       repo: gathered.repo,
       locations,
       readUserMcp: false,
+      repoParts: new Map(),
     })
     const expected = [
       'Roles:',
@@ -6503,7 +6518,8 @@ describe('runRegen', () => {
     const planned = (await plannedFiles(gitWorld(), team)).map(file => file.path)
     const expected = [...planned.filter(isBeOpPath), '.cadre/manifest.json'].sort(compareText)
     expect([...kinds.keys()]).toEqual(expected)
-    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(4)
+    // BE's four files and the built CLAUDE.md init wrote, which regen keeps (02-GAPS-B2 S1).
+    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(5)
     expect(reply).not.toContain(BE_ROLE_PATH)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
@@ -6544,7 +6560,10 @@ describe('runRegen', () => {
     expect([plain[0], ...plain.slice(-2)]).toEqual(['cadre regen be', APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
     expect(plain.slice(1, -2)).toEqual(dry.slice(1, -1))
-    const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
+    // Regen builds no CLAUDE.md, so the one init built is kept, with its note (02-GAPS-B2 S1).
+    const kept = (path: string): string | null =>
+      path === '.cadre/be/CLAUDE.md' ? 'no longer generated (kept; cadre deletes nothing)' : null
+    const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: kept(path) })
     const files = (await plannedFiles(listedWorld(), team)).filter(file => isBeOpPath(file.path))
     const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
     expect(dry.slice(1, -1)).toEqual(renderPlan({ ops: ops.sort((a, b) => compareText(a.path, b.path)), warnings: [] }))
@@ -7423,7 +7442,8 @@ describe('regen apply', () => {
     const run = memIo(beOnlyWorld(), {})
     const host = memHost(hostWorld({}))
     const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })
-    const files = await plannedFiles(gitWorld(), [be])
+    // Regen passes no repo parts, so it builds no CLAUDE.md (02-GAPS-B2 S1).
+    const files = (await plannedFiles(gitWorld(), [be])).filter(file => file.path !== '.cadre/be/CLAUDE.md')
     const written = files.filter(file => !NOT_WRITTEN.includes(file.path))
     const recorded = files.filter(file => file.path !== '.cadre/cadre.json')
     expect(host.writes).toEqual([

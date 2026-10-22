@@ -795,8 +795,8 @@ describe('readInstructionFiles', () => {
     const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
     expect(scan.parts.map(found => found.heading)).toEqual(['G', 'One'])
     expect(scan.warnings).toEqual([
-      '~/.claude/a-big.md is over 256 KiB: not split',
-      'stopped reading at 512 KiB in total: 3 files not read',
+      '~/.claude/a-big.md is over 256 KiB, not split: no role gets it',
+      'stopped reading at 512 KiB in total, 3 files not read: no role gets them',
     ])
     expect(run.reads).not.toContain(`${CONFIG}/d-three.md`)
     expect(run.reads).not.toContain('/repo/CLAUDE.md')
@@ -812,7 +812,7 @@ describe('readInstructionFiles', () => {
       [],
     )
     const scan = await readInstructionFiles(run.io, sourcesOf())
-    expect(scan.warnings).toEqual(['stopped reading at 512 KiB in total: 1 file not read'])
+    expect(scan.warnings).toEqual(['stopped reading at 512 KiB in total, 1 file not read: no role gets it'])
   })
 
   test('a repo file that links out of the repo is refused and never read (readRepoFile)', async () => {
@@ -821,10 +821,10 @@ describe('readInstructionFiles', () => {
     const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
     expect(scan.parts).toEqual([])
     expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`])
-    expect(scan.warnings).toEqual(['could not read CLAUDE.md (treated as unknown)'])
+    expect(scan.warnings).toEqual(['could not read CLAUDE.md: no role gets it'])
   })
 
-  test('a path outside the repo and the config folder is not read: an ancestor, a global import', async () => {
+  test('a global import outside the repo and the config folder is not read; a chain ancestor is (S2)', async () => {
     const run = memIo(
       filesWorld({
         [`${CONFIG}/CLAUDE.md`]: '# G\n@~/notes/private.md\n',
@@ -834,12 +834,11 @@ describe('readInstructionFiles', () => {
       [],
     )
     const scan = await readInstructionFiles(run.io, sourcesOf(['~/work/CLAUDE.md']))
-    expect(scan.parts.map(found => found.heading)).toEqual(['G'])
+    expect(scan.parts.map(found => found.heading)).toEqual(['G', 'Work'])
     expect(scan.warnings).toEqual([
-      '~/notes/private.md is outside the repo and your config folder: not read',
-      '~/work/CLAUDE.md is outside the repo and your config folder: not read',
+      '~/notes/private.md is outside the repo and your config folder, not read: no role gets it',
     ])
-    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/home/u/work/CLAUDE.md'])
   })
 
   test('a repo file importing ~/.claude/.credentials.json never reads it: the import stays in the repo', async () => {
@@ -858,8 +857,8 @@ describe('readInstructionFiles', () => {
     expect(run.reads).not.toContain(credentials)
     expect(scan.parts.map(found => found.heading)).toEqual(['R', 'In'])
     expect(scan.warnings).toEqual([
-      '~/.claude/.credentials.json is imported by a repo file and is outside the repo: not read',
-      '/outside.md is imported by a repo file and is outside the repo: not read',
+      '~/.claude/.credentials.json is imported by a repo file and is outside the repo, not read: no role gets it',
+      '/outside.md is imported by a repo file and is outside the repo, not read: no role gets it',
     ])
     expect(JSON.stringify(scan)).not.toContain('sk-FAKE-SECRET')
   })
@@ -868,7 +867,7 @@ describe('readInstructionFiles', () => {
     const world = filesWorld({ [`${CONFIG}/CLAUDE.md`]: '# G\n@./gone.md\n@./broken.md\n' })
     const run = memIo({ ...world, unknownPaths: [`${CONFIG}/broken.md`] }, [])
     const scan = await readInstructionFiles(run.io, sourcesOf())
-    expect(scan.warnings).toEqual(['could not read ~/.claude/broken.md (treated as unknown)'])
+    expect(scan.warnings).toEqual(['could not read ~/.claude/broken.md: no role gets it'])
     expect(scan.parts.map(found => found.heading)).toEqual(['G'])
   })
 
@@ -1116,8 +1115,8 @@ describe('rules, AGENTS.md and referenced docs', () => {
     const read = names.slice(0, 20).map(name => `docs/${name}`)
     expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md', ...read])
     expect(run.reads).not.toContain('/repo/docs/d21.md')
-    expect(scan.warnings).toEqual(['3 more referenced docs were not read'])
-    expect(moreDocsWarning(3)).toBe('3 more referenced docs were not read')
+    expect(scan.warnings).toEqual(['3 more referenced docs were not read: no role gets them'])
+    expect(moreDocsWarning(3)).toBe('3 more referenced docs were not read: no role gets them')
   })
 
   test('a doc already read, as a chain import or a rule file, is read once and not counted toward 20', async () => {
@@ -1159,7 +1158,7 @@ describe('rules, AGENTS.md and referenced docs', () => {
     const run = memIo(world, [])
     const scan = await readInstructionFiles(run.io, repoSources([], ['a.md'], false))
     expect([scan.parts, run.reads.includes(`${RULES}/a.md`)]).toEqual([[], false])
-    expect(scan.warnings).toEqual(['could not read .claude/rules/a.md (treated as unknown)'])
+    expect(scan.warnings).toEqual(['could not read .claude/rules/a.md: no role gets it'])
   })
 
   test('a rule file in a sub-folder of .claude/rules is named, counted and read as a part (M4)', async () => {
@@ -1319,7 +1318,10 @@ describe('readMemories', () => {
     })
     const read = await readMemories(memIo(world, []).io, [MEMORY])
     expect(read.memories.map(found => [found.id, found.file])).toEqual([['M1', 'good.md']])
-    expect(read.warnings).toEqual(['could not read bad.md (treated as unknown)', 'big.md is over 256 KiB: not split'])
+    expect(read.warnings).toEqual([
+      'could not read bad.md: no role gets it',
+      'big.md is over 256 KiB, not split: no role gets it',
+    ])
   })
 
   test('readInstructionFiles reads the memories last, after the docs, and its scan holds them', async () => {

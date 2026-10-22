@@ -597,7 +597,7 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     ])
   })
 
-  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file, for a role given repo parts, none for the rest', () => {
+  test('desiredFiles adds .cadre/<id>/CLAUDE.md, a plain file: the repo parts given, else the header alone', () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const repoParts = new Map([['be', [RULES_PART, SECRETS_PART]]])
@@ -606,12 +606,13 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
     expect(files.filter(file => file.path.endsWith('/CLAUDE.md'))).toEqual([
       { path: '.cadre/be/CLAUDE.md', content, mode: 'file' },
+      { path: '.cadre/pm/CLAUDE.md', content: `${builtHeader('pm')}\n`, mode: 'file' },
     ])
     expect(pathsOfRole(files, 'be')).toEqual(['.cadre/be/CLAUDE.md', ...BE_PATHS.filter(path => path.includes('/be'))])
     expect(files.map(file => file.path)).toEqual(files.map(file => file.path).sort(compareText))
   })
 
-  test('a global part never goes into the file, and a role given only global parts gets none (T-02-69)', () => {
+  test('a global part never goes into the file, and a role given only global parts gets the header (T-02-69)', () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
     const repoParts = new Map([
@@ -621,17 +622,18 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     const files = desiredFiles(inputOf([pm, be], 'gsd', { repoParts }))
 
     expect(contentOf(files, '.cadre/be/CLAUDE.md')).toBe(roleClaudeMdText('be', [RULES_PART]))
-    expect(contentOf(files, '.cadre/pm/CLAUDE.md')).toBeUndefined()
+    expect(contentOf(files, '.cadre/pm/CLAUDE.md')).toBe(`${builtHeader('pm')}\n`)
     expect(files.filter(file => file.content.includes(GLOBAL_ONLY_SENTENCE))).toEqual([])
   })
 
-  test('without repoParts, or with no part for a role, the files are those of the whole-files flow', () => {
+  test('without repoParts the files are those of the whole-files flow; with no part, those and the header file', () => {
     const be = templateRole('be')
     const without = desiredFiles(inputOf([be], 'gsd'))
     const empty = desiredFiles(inputOf([be], 'gsd', { repoParts: new Map([['be', []]]) }))
+    const header: DesiredFile = { path: '.cadre/be/CLAUDE.md', content: `${builtHeader('be')}\n`, mode: 'file' }
 
     expect(without.map(file => file.path)).toEqual(BE_PATHS)
-    expect(empty).toEqual(without)
+    expect(empty).toEqual([...without, header].sort((a, b) => compareText(a.path, b.path)))
   })
 })
 

@@ -53,7 +53,7 @@ import {
 } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { reportText } from './render'
-import { parseManifest, readRepoFile } from './scan'
+import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeJsonPathOf,
@@ -657,15 +657,15 @@ function isFileOrLink(entry: PortEntry): boolean {
 }
 
 /**
- * The rule files the engine loads for the root (G-02-1f, T-02-70): `<root>/.claude/rules/<name>` for each entry of
- * that folder named `*.md` that is a file or a link, absolute and sorted. A listing that fails counts as empty.
+ * The rule files the engine loads for the root (G-02-1f, T-02-70): `<root>/.claude/rules/<path>` for each `*.md` file
+ * or link of that folder, its sub-folders walked too (ruleFiles, 02-GAPS-B2 M4: at most 5 levels and 500 entries; links
+ * taken, as files or folders, and any folder with a stat listed), absolute and sorted. A walk that fails counts as
+ * empty, and a sub-folder that cannot be listed as empty, as before.
  */
 async function rulesOf(io: InitIo, root: string): Promise<string[]> {
-  const folder = `${root}/.claude/rules`
-  const entries = (await io.list(folder)) ?? []
-  const rules = entries.filter(entry => isFileOrLink(entry) && entry.name.endsWith(MARKDOWN_EXTENSION))
+  const rules = await ruleFiles(io, root, { isTakenLink: true, isFolderUsable: stat => stat !== null })
 
-  return sortedUnique(rules.map(entry => `${folder}/${entry.name}`))
+  return (rules ?? []).map(name => `${root}/${RULES_FOLDER}/${name}`)
 }
 
 /** The file name of a role's built instructions in its folder (G-02-1f). */

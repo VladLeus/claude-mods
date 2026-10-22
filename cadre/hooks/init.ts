@@ -2537,10 +2537,12 @@ function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly 
 /**
  * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
- * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role `repoParts` gives repo
- * parts to (G-02-1f); the repo state also records the consent answer, so regen knows whether it may read
- * ~/.claude.json (A1). Exactly the paths planReadPaths names (each file, the copy beside it and the manifest) and the
- * root `.gitignore` are read, through readRepoFile, so a link out of the repo is unknown and never read.
+ * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role from the repo parts
+ * `repoParts` gives it (G-02-1f): whenever init passes repoParts every role gets its built file, the header alone with
+ * no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). The repo state also records the
+ * consent answer, so regen knows whether it may read ~/.claude.json (A1). Exactly the paths planReadPaths names (each
+ * file, the copy beside it and the manifest) and the root `.gitignore` are read, through readRepoFile, so a link out
+ * of the repo is unknown and never read.
  * planWithManifest classifies each file against the disk and the last manifest the scan read, then adds the ignore
  * block of the policy (gitignoreLines, which leaves out a `thoughts/` line the file already has and, when a role
  * stands for Security, ends with the line for claude-security's report folders, decision #39) and the hunks.

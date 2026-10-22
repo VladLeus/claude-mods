@@ -582,7 +582,9 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
  * The rules of the card in their fixed order. The label of each rule is fixed here: a rule an engine setting enforces
  * is hard, a pattern a subprocess can sidestep is best effort, and a note or warning is none (ROLE-06). The rules the
  * startup inventory can prove carry their probe checks (D-112): the Bash rule, the MCP deny list, the infra rule and
- * the permission mode, which the init event reports for manual as default (RESEARCH 1.1).
+ * the permission mode, which the init event reports for manual as default (RESEARCH 1.1). Right after the Skills rule
+ * a none rule names what the role loads as its instructions: its built `.cadre/<id>/CLAUDE.md` and its private
+ * instructions folder in the config folder (02-GAPS-B2 N9).
  */
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
@@ -599,6 +601,11 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
     ...mcpRules(deny, ctx.mcpRoute),
     ...partialMcpRules(ctx.setup),
     rule('Skills: only the listed skills are linked', 'best-effort'),
+    rule(
+      `Loads .cadre/${role.id}/CLAUDE.md and its private instructions ` +
+        `(<config dir>/cadre/<repo>-<hash8>/${role.id}/instructions/)`,
+      'none',
+    ),
     checkedRule('Autopilot, agent-fleet and the handoff skills are always available', 'hard', INFRA_CHECKS),
     checkedRule(`Permission mode: ${role.permissionMode}`, 'hard', [{ kind: 'permission-mode', token: mode }]),
     ...attendedRules(role, ctx),

@@ -555,8 +555,9 @@ export type GenerateInput = {
   readonly only: string | null
   /**
    * The instruction parts each role was given, by role id, in read order (G-02-1f Storage split): only those read from
-   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Absent for the whole-file questions and for regen and
-   * /cadre start, which then build no such file.
+   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Whenever init passes repoParts every role gets its built
+   * file, the header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1).
+   * Absent for regen and /cadre start, which then build no such file.
    */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
 }
@@ -569,26 +570,30 @@ const STATE_PATH = '.cadre/cadre.json'
 
 /**
  * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
- * were read from the repo (roleClaudeMdText); none when it was given no such part. A part of the global CLAUDE.md is
- * dropped here, so it never reaches a file in the repo (T-02-69).
+ * were read from the repo (roleClaudeMdText). Whenever init passes repoParts every role gets its built file, the
+ * header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1); null parts, as
+ * regen and /cadre start pass, give none. A part of the global CLAUDE.md is dropped here, so it never reaches a file in
+ * the repo (T-02-69).
  */
-function builtFiles(id: string, parts: readonly InstructionPart[]): DesiredFile[] {
+function builtFiles(id: string, parts: readonly InstructionPart[] | null): DesiredFile[] {
+  if (parts === null) return []
   const repo = parts.filter(part => part.source === 'repo')
-  if (repo.length === 0) return []
 
   return [{ path: rolePath(id, 'CLAUDE.md'), content: roleClaudeMdText(id, repo), mode: 'file' }]
 }
 
 /**
- * The files of one role: the five in its folder, its built CLAUDE.md when it was given repo parts (builtFiles), and its
- * launcher, each with the framework its scope was compiled for, the launcher starting where `start` says. A role with
- * no scope gives none, so nothing is generated from a half-known role.
+ * The files of one role: the five in its folder, its built CLAUDE.md (builtFiles: whenever init passes repoParts every
+ * role gets its built file, the header alone with no repo part, so a later hand-out always replaces stale content,
+ * 02-GAPS-B2 S1; none for null parts), and its launcher, each with the framework its scope was compiled for, the
+ * launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
+ * role.
  */
 function roleFiles(
   role: RoleSpec,
   scope: CompiledScope | undefined,
   start: LaunchStart,
-  parts: readonly InstructionPart[],
+  parts: readonly InstructionPart[] | null,
 ): DesiredFile[] {
   if (scope === undefined) return []
 
@@ -605,18 +610,20 @@ function roleFiles(
 
 /**
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
- * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` when `repoParts`
- * gives it a part read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
- * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. With `only` set (regen,
+ * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` from the parts
+ * `repoParts` gives it that were read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
+ * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. Whenever init passes
+ * repoParts every role gets its built file, the header alone with no repo part, so a later hand-out always replaces
+ * stale content (02-GAPS-B2 S1); with repoParts absent (regen, /cadre start) no role gets one. With `only` set (regen,
  * D-68) just that role's files and the index are given, since the index lists every role. Generation is pure: it holds
  * no state between calls, so two runs cannot interleave, and it never changes its input.
  */
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
   const selected = roles.filter(role => only === null || role.id === only)
-  const files = selected.flatMap(role =>
-    roleFiles(role, scopes.get(role.id), state.launchStart, input.repoParts?.get(role.id) ?? []),
-  )
+  const partsOf = (id: string): readonly InstructionPart[] | null =>
+    input.repoParts === undefined ? null : (input.repoParts.get(id) ?? [])
+  const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id)))
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
   if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
 

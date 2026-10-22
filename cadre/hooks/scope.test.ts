@@ -129,6 +129,14 @@ function skippedRule(dirs: string): string {
   )
 }
 
+/** The card rule that names what a role loads as its instructions: its built and private files (02-GAPS-B2 N9). */
+function loadsRule(id: string): string {
+  return (
+    `Loads .cadre/${id}/CLAUDE.md and its private instructions ` +
+    `(<config dir>/cadre/<repo>-<hash8>/${id}/instructions/)`
+  )
+}
+
 /** The last line of the card of a role: its memory folder pattern and where the config dir in it comes from. */
 function memoryLine(id: string): string {
   return (
@@ -958,6 +966,7 @@ describe('scope rules', () => {
         enforcement: 'none',
       },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
+      { text: loadsRule('pm'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
       {
         text: 'Permission mode: bypassPermissions',
@@ -985,6 +994,7 @@ describe('scope rules', () => {
       },
       { text: MERGED_REACHABLE_RULE, enforcement: 'best-effort' },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },
+      { text: loadsRule('be'), enforcement: 'none' },
       { text: AVAILABLE_RULE, enforcement: 'hard', checks: AVAILABLE_CHECKS },
       { text: 'Permission mode: auto', enforcement: 'hard', checks: [{ kind: 'permission-mode', token: 'auto' }] },
       { text: MERGED_ROUTE_RULE, enforcement: 'none' },
@@ -997,11 +1007,8 @@ describe('the loaded instructions on the card (02-GAPS-B2 N9)', () => {
     for (const role of [templateRole('pm'), templateRole('be')]) {
       const rules = compileScope(role, context()).card.rules
       const skills = rules.findIndex(found => found.text === 'Skills: only the listed skills are linked')
-      const loads =
-        `Loads .cadre/${role.id}/CLAUDE.md and its private instructions ` +
-        `(<config dir>/cadre/<repo>-<hash8>/${role.id}/instructions/)`
 
-      expect([skills > -1, rules[skills + 1]]).toEqual([true, { text: loads, enforcement: 'none' }])
+      expect([skills > -1, rules[skills + 1]]).toEqual([true, { text: loadsRule(role.id), enforcement: 'none' }])
     }
   })
 })
@@ -1181,6 +1188,7 @@ describe('scopeCardLines', () => {
       `    [best-effort] ${mergedDenied('jira')}`,
       `    [best-effort] ${MERGED_REACHABLE_RULE}`,
       '    [best-effort] Skills: only the listed skills are linked',
+      `    [none] ${loadsRule('pm')}`,
       '    [hard] Autopilot, agent-fleet and the handoff skills are always available',
       '    [hard] Permission mode: auto',
       `    [none] ${GSD_NO_BASH_RULE}`,
