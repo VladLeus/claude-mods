@@ -1675,6 +1675,108 @@ export function epicDoneRefusal(key: string, problems: readonly string[]): strin
   return [head, ...problems.map(problem => `- ${problem}`)].join('\n')
 }
 
+/**
+ * The process a worktree's lock reason names (D-152, D-170), as `claude --worktree` writes it (`... (pid 99999)`): the
+ * number after the whole word `pid` when it is a whole word itself and a positive safe integer; null for a reason that
+ * names no such process.
+ */
+export function lockPid(reason: string): number | null {
+  const found = /\bpid (\d+)\b/.exec(reason)
+  const pid = found === null ? Number.NaN : Number(found[1])
+
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null
+}
+
+/**
+ * The argv that asks whether the process `pid` still runs (D-170, RESEARCH Standard Stack): `/bin/ps` exits 0 while it
+ * does and 1 once it has ended, for any user's process, where `kill -0` would read another user's live one as ended.
+ */
+export function PS_ARGV(pid: number): readonly string[] {
+  return ['/bin/ps', '-p', String(pid), '-o', 'pid=']
+}
+
+/** How long the PS_ARGV run of the stale-lock rule may run before it is given up (Pitfall 8). */
+const PS_TIMEOUT_MS = 10_000
+
+/** The argv that clears the lock of the worktree at `path` in the repo at `root` (D-170) once its process has ended. */
+export function UNLOCK_ARGV(root: string, path: string): readonly string[] {
+  return ['git', '-C', root, 'worktree', 'unlock', path]
+}
+
+/** The chip of the consent question of /cadre epic done --force (D-152). */
+export const EPIC_DONE_HEADER = 'Epic done'
+
+/** The answer to the epic done question that removes the worktree; the other answer keeps it (D-134). */
+const REMOVE_OPTION = 'Yes, remove it'
+
+/**
+ * The answers to the epic done question, the one that keeps the worktree first (D-134): the dialog starts with its
+ * first option focused, so a quick Submit keeps it, and only REMOVE_OPTION removes it.
+ */
+export const EPIC_DONE_OPTIONS: readonly string[] = Object.freeze(['No, keep it', REMOVE_OPTION])
+
+/** Whether an answer to the epic done question removes the worktree; null when, trimmed, it is no answer label. */
+function removesWorktree(answer: string): boolean | null {
+  const typed = answer.trim()
+  if (!EPIC_DONE_OPTIONS.includes(typed)) return null
+
+  return typed === REMOVE_OPTION
+}
+
+/**
+ * The consent question of /cadre epic done --force (D-152): whether to remove the epic's worktree, the key shown
+ * cleaned, with its links first and its branch kept; with reasons, it asks to remove it anyway and lists them, one
+ * `- <reason>` line each, as epicDoneProblems gives them.
+ */
+export function epicDoneQuestion(key: string, problems: readonly string[]): string {
+  const name = reportText(key)
+  const steps = 'cadre removes its links first and keeps its branch.'
+  if (problems.length === 0) return `Remove the worktree of the epic ${name}? ${steps}`
+  const head = `Remove the worktree of the epic ${name} anyway? ${steps} Without --force it stays, as:`
+
+  return [head, ...problems.map(problem => `- ${problem}`)].join('\n')
+}
+
+/** The reply when --force finds no dialog to ask in (D-152, D-134): with no yes, nothing is removed. */
+export const EPIC_DONE_NO_DIALOG =
+  'cadre epic done --force asks before it removes anything, and this session has no dialog, so it removed nothing.'
+
+/** The reply when the --force question gets no yes (D-152, D-134): the worktree is kept; the key is shown cleaned. */
+export function epicKeptReply(key: string): string {
+  return `cadre epic done kept the worktree of the epic ${reportText(key)}: nothing was removed.`
+}
+
+/**
+ * The refusal of a worktree whose lock reason names no process (D-152, D-170): cadre cannot tell whether the lock is
+ * stale, so it removes nothing, with or without --force. The reason is shown cleaned.
+ */
+export function epicLockedReply(reason: string): string {
+  const lock = reason === '' ? 'locked with no reason' : `locked (${reportText(reason)})`
+
+  return (
+    `the epic worktree is ${lock}, and the lock names no process, so cadre epic done cannot tell whether it is ` +
+    'stale and removed nothing: run git worktree unlock on it once nothing uses it.'
+  )
+}
+
+/** The refusal of a worktree locked by a process that still runs (D-152, D-170), with or without --force. */
+export function epicLockLiveReply(pid: number): string {
+  return `the epic worktree is locked by process ${pid}, which still runs, so cadre epic done removed nothing.`
+}
+
+/** The refusal when ps cannot tell whether the lock's process still runs (D-152, D-170): it fails closed. */
+export function epicLockUnknownReply(pid: number): string {
+  return (
+    `the epic worktree is locked by process ${pid}, and cadre could not tell whether it still runs, so cadre epic ` +
+    'done removed nothing.'
+  )
+}
+
+/** The refusal when git cannot clear the lock of a process that has ended (D-170): nothing is removed. */
+export function epicUnlockFailedReply(pid: number): string {
+  return `git could not unlock the epic worktree, whose lock names the ended process ${pid}, so nothing was removed.`
+}
+
 /** An epic worktree as /cadre epic done finds it: its path, the epic branch checked out there and its lock reason. */
 type DoneWorktree = {
   readonly path: string
@@ -1727,6 +1829,46 @@ async function runningRoles(
 }
 
 /**
+ * The consent of --force (D-152, D-134): null once the person answers REMOVE_OPTION to the one epicDoneQuestion, asked
+ * with askChoice under EPIC_DONE_HEADER, the keeping answer first; else the reply that keeps the worktree:
+ * EPIC_DONE_NO_DIALOG when the session has no dialog, epicKeptReply for the keeping answer, a dismissal or no usable
+ * answer.
+ */
+async function forcedRefusal(io: InitIo, key: string, problems: readonly string[]): Promise<string | null> {
+  if ((await io.isInteractive()) !== true) return EPIC_DONE_NO_DIALOG
+  const answer = await askChoice(io, {
+    question: epicDoneQuestion(key, problems),
+    spec: { options: EPIC_DONE_OPTIONS, header: EPIC_DONE_HEADER },
+    parse: removesWorktree,
+    accepts: quotedLabels(EPIC_DONE_OPTIONS),
+  })
+  if (answer.kind !== 'answered' || !answer.value) return epicKeptReply(key)
+
+  return null
+}
+
+/**
+ * The stale-lock rule of /cadre epic done (D-152, D-170), with or without --force: null for a worktree that is not
+ * locked, or whose lock names a process PS_ARGV finds ended (exit 1) and UNLOCK_ARGV then clears; else the refusal:
+ * epicLockedReply for a lock that names no process (lockPid), epicLockLiveReply for one that still runs (exit 0),
+ * epicLockUnknownReply when ps cannot tell (any other exit, or no run), epicUnlockFailedReply when the unlock fails.
+ * A lock is never cleared for a process that may still run.
+ */
+async function lockRefusal(host: HostIo, root: string, worktree: DoneWorktree): Promise<string | null> {
+  const { locked } = worktree
+  if (locked === null) return null
+  const pid = lockPid(locked)
+  if (pid === null) return epicLockedReply(locked)
+  const ps = await host.run(PS_ARGV(pid), { timeoutMs: PS_TIMEOUT_MS })
+  if (ps === null || (ps.exitCode !== 0 && ps.exitCode !== 1)) return epicLockUnknownReply(pid)
+  if (ps.exitCode === 0) return epicLockLiveReply(pid)
+  const unlocked = await host.run(UNLOCK_ARGV(root, worktree.path), { timeoutMs: GIT_TIMEOUT_MS })
+  if (unlocked === null || unlocked.exitCode !== 0) return epicUnlockFailedReply(pid)
+
+  return null
+}
+
+/**
  * `/cadre epic done <KEY>` in the main checkout's root session (D-152, D-165, D-169 to D-171). Before anything is
  * removed it refuses, in this order: a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the repo
  * refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
@@ -1734,11 +1876,14 @@ async function runningRoles(
  * registered worktree on an epic branch of the key (epicNotFoundReply), or more than one (epicManyWorktreesReply). The
  * epic record is read from the git dir git names for the worktree. Then all three checks run before any change: clean
  * (cleanStateOf of STATUS_ARGV), merged into the recorded base (MERGED_ARGV, `no-record` with no record or no base)
- * and no role of the team, read from the main checkout, reading `running` there (roleRunState, D-171). Any reason of
- * epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a check that cannot tell included.
- * Each link the record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`, and then the
- * worktree with REMOVE_ARGV, without `--force`; a remove that fails or cannot run gives epicRemoveFailedReply. The
- * branch is never deleted, and the reply is epicRemovedText.
+ * and no role of the team, read from the main checkout, reading `running` there (roleRunState, D-171). Without
+ * `--force`, any reason of epicDoneProblems keeps the worktree with epicDoneRefusal, which lists them all, a check that
+ * cannot tell included. With `--force` one consent question always comes, reasons or not, listing them (forcedRefusal,
+ * D-134): only its yes goes on, and no dialog, a dismissal or the keeping answer removes nothing. Then the stale-lock
+ * rule (lockRefusal): a lock is cleared only when the process it names has ended, and any other lock refuses, with or
+ * without `--force`. Each link the record holds is then removed with linkRemoveArgv, in sorted order, never with `-r`,
+ * and then the worktree with REMOVE_ARGV, with `--force` only on the forced path; a remove that fails or cannot run
+ * gives epicRemoveFailedReply. The branch is never deleted, and the reply is epicRemovedText.
  */
 export async function runEpicDone(
   io: InitIo,
@@ -1772,12 +1917,16 @@ export async function runEpicDone(
   const merged = await mergedOf(host, main.root, branch, base)
   const running = await runningRoles(io, host, main, path)
   const problems = epicDoneProblems({ clean, merged, running: running ?? [], teamRead: running !== null, branch, base })
-  if (problems.length > 0) return epicDoneRefusal(key, problems)
+  if (problems.length > 0 && !options.force) return epicDoneRefusal(key, problems)
+  const kept = options.force ? await forcedRefusal(io, key, problems) : null
+  if (kept !== null) return kept
+  const locked = await lockRefusal(host, main.root, worktree)
+  if (locked !== null) return locked
 
   for (const link of sortedUnique(record?.links ?? [])) {
     await host.run(linkRemoveArgv(`${path}/${link}`), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
   }
-  const removed = await host.run(REMOVE_ARGV(main.root, path, false), { timeoutMs: REMOVE_TIMEOUT_MS })
+  const removed = await host.run(REMOVE_ARGV(main.root, path, options.force), { timeoutMs: REMOVE_TIMEOUT_MS })
   if (removed === null || removed.exitCode !== 0) return epicRemoveFailedReply(key)
 
   return epicRemovedText(key, path, branch)
