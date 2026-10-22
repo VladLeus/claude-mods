@@ -34,6 +34,7 @@ import type {
   ScopeCard,
   ScopeContext,
   SetupScan,
+  SkillRef,
   TemplateRoleId,
   UnsupportedId,
 } from '../types'
@@ -158,6 +159,7 @@ import {
   NEXT_STEP_NOTE,
   noStateReply,
   NOT_INTERACTIVE_REPLY,
+  ownSkillContextLine,
   parseGitPolicy,
   parseReviewItem,
   planStep,
@@ -2414,6 +2416,13 @@ describe('own skills hand-out (G-02-1b)', () => {
     'Which roles get the skill zeta?\nNo description. Used 4 times in the last 50 sessions. Recommended: fe.'
   const ALPHA_ASKED = 'Which roles get the skill alpha?\nSort the inbox. Recommended: none.'
 
+  test("an own skill's purpose with no final mark gets a period in its context line (N1)", () => {
+    const deploy: SkillRef = { name: 'deploy', plugin: null, purpose: 'Deploy the app' }
+    expect(ownSkillContextLine(deploy, 3, [])).toBe(
+      'Deploy the app. Used 3 times in the last 50 sessions. Recommended: none.',
+    )
+  })
+
   /** The user's own skills a role was given, in the order its list keeps them. */
   function ownOf(assigned: readonly RoleSpec[], id: string): readonly string[] {
     return roleIn(assigned, id).skills.filter(name => ['alpha', 'mid', 'zeta'].includes(name))
@@ -2805,9 +2814,13 @@ function chainWorld(over: Partial<MemWorld> = {}): MemWorld {
   })
 }
 
+/** The first row of the instructions block (G-02-1f, AUTO-PICK #12): what a plain init writes after Confirm. */
+const READ_HEADING_ROW =
+  'Read for this run; a plain init writes the repo parts you hand out to .cadre/<role>/CLAUDE.md after Confirm:'
+
 /** The instructions block of the plan's dry run (G-02-1f). */
 const PARTS_BLOCK = [
-  'Read for this run only (nothing is written):',
+  READ_HEADING_ROW,
   '  Security rules: How secrets stay out of the repo.',
   '    from: ~/.claude/CLAUDE.md > Security',
   '    recommended: security',
@@ -3057,15 +3070,15 @@ describe('instruction parts (G-02-1f)', () => {
     expect(topics).toEqual([
       withContext(
         'Which roles get "Security rules"?',
-        'How secrets stay out of the repo. From: ~/.claude/CLAUDE.md > Security. Recommended: security.',
+        'How secrets stay out of the repo. Recommended: security. From: ~/.claude/CLAUDE.md > Security.',
       ),
       withContext(
         'Which roles get "Git and commits"?',
-        'How commits are made. From: ~/.claude/CLAUDE.md > Git. Recommended: tl, be.',
+        'How commits are made. Recommended: tl, be. From: ~/.claude/CLAUDE.md > Git.',
       ),
       withContext(
         'Which roles get "Release notes"?',
-        'How releases are written up. From: ~/.claude/CLAUDE.md > Releases. Recommended: pm.',
+        'How releases are written up. Recommended: pm. From: ~/.claude/CLAUDE.md > Releases.',
       ),
     ])
     const at = run.asked.indexOf(topics[0] ?? 'missing')
@@ -3163,7 +3176,7 @@ describe('instruction parts (G-02-1f)', () => {
     const run = memIo(world, PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(shownBlock(run, 'instructions')).toEqual([
-      'Read for this run only (nothing is written):',
+      READ_HEADING_ROW,
       '  General: The general rules.',
       '    from: ~/.claude/CLAUDE.md > G',
       '    recommended: tl',
@@ -3217,7 +3230,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | Secrets | # Secrets')
     expect(shownBlock(run, 'instructions')).toEqual([
-      'Read for this run only (nothing is written):',
+      READ_HEADING_ROW,
       '  Secrets: How secrets are kept.',
       '    from: .claude/rules/security.md > Secrets',
       '    recommended: security',

@@ -821,6 +821,15 @@ describe('skill recommendation (G-02-1b)', () => {
     ])
   })
 
+  test('a skill used once is used 1 time in the prompt, else times (N11)', () => {
+    const lines = (count: number): string | undefined =>
+      skillsPrompt(ROLES, OWN_SKILLS, new Map([['deploy-notes', count]])).split('\n').at(-2)
+    expect([lines(1), lines(2)]).toEqual([
+      'S1 | deploy-notes | Write the release notes for a deploy. | used 1 time',
+      'S1 | deploy-notes | Write the release notes for a deploy. | used 2 times',
+    ])
+  })
+
   test("a skill's count in the prompt is found under its name in ASCII lower case", () => {
     expect(skillsPrompt(ROLES, OWN_SKILLS, new Map([['my-skill', 2]])).split('\n').at(-1)).toBe(
       'S2 | My-Skill | (no description) | used 2 times',

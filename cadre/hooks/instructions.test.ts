@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
+import { contextText } from './ask'
+import { asSentence } from './facts'
 import { sha256Hex } from './hash'
 import {
   CONTENT_DISMISSED_REASON,
@@ -21,6 +23,7 @@ import {
   memoryItemHeader,
   memoryItemQuestion,
   memoryItems,
+  memoryOverSizeWarning,
   moreDocsWarning,
   morePartsWarning,
   NO_MEMORY_SUMMARY,
@@ -143,6 +146,18 @@ type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly err
 function errorsOf(result: Parsed): readonly string[] {
   return result.kind === 'invalid' ? result.errors : []
 }
+
+describe('asSentence (02-GAPS-B2 N1)', () => {
+  test('a text gets a final period unless it ends in a sentence mark; an empty text stays empty', () => {
+    expect(['', 'Deploy the app', 'Done.', 'Why?', 'Go!'].map(asSentence)).toEqual([
+      '',
+      'Deploy the app.',
+      'Done.',
+      'Why?',
+      'Go!',
+    ])
+  })
+})
 
 describe('splitSections', () => {
   test("a line that starts with '# ' or '## ' starts a section, its heading the text after the hashes", () => {
@@ -318,17 +333,31 @@ describe('parseRecommendation', () => {
     expect(result.kind === 'ok' ? [...result.recommended.entries()] : result.errors).toEqual([['T1', []]])
   })
 
-  test('a reply that is not JSON, or has no topics or no memories object, gives that error', () => {
+  test('a reply that is not JSON, or has no topics or no memories object it must have, gives that error', () => {
     expect(errorsOf(parseRecommendation('no', ['T1'], [], ROLE_IDS))).toEqual(['the reply is not JSON'])
     expect(errorsOf(parseRecommendation('{"topics":[],"memories":{}}', ['T1'], [], ROLE_IDS))).toEqual([
       'the reply has no "topics" object',
     ])
-    expect(errorsOf(parseRecommendation('{"topics":{"T1":[]}}', ['T1'], [], ROLE_IDS))).toEqual([
+    expect(errorsOf(parseRecommendation('{"topics":{"T1":[]}}', ['T1'], ['M1'], ROLE_IDS))).toEqual([
       'the reply has no "memories" object',
     ])
     expect(errorsOf(parseRecommendation('{}', ['T1'], ['M1'], ROLE_IDS))).toEqual([
       'the reply has no "topics" object',
       'the reply has no "memories" object',
+    ])
+  })
+
+  test('a map left out whose id list is empty counts as empty (N14)', () => {
+    const topicsOnly = parseRecommendation('{"topics":{"T1":["be"]}}', ['T1'], [], ['be'])
+    expect(topicsOnly.kind === 'ok' ? [...topicsOnly.recommended.entries()] : topicsOnly.errors).toEqual([
+      ['T1', ['be']],
+    ])
+    const memoriesOnly = parseRecommendation('{"memories":{"M1":[]}}', [], ['M1'], ['be'])
+    expect(memoriesOnly.kind === 'ok' ? [...memoriesOnly.recommended.entries()] : memoriesOnly.errors).toEqual([
+      ['M1', []],
+    ])
+    expect(errorsOf(parseRecommendation('{"memories":{}}', ['T1'], [], ['be']))).toEqual([
+      'the reply has no "topics" object',
     ])
   })
 
@@ -420,7 +449,7 @@ describe('fallbackTopics', () => {
 describe('instructionLines', () => {
   test('the heading, then each topic with its summary, its sources and the roles it is recommended for', () => {
     expect(instructionLines(SCAN, TOPICS, RECOMMENDED)).toEqual([
-      'Read for this run only (nothing is written):',
+      'Read for this run; a plain init writes the repo parts you hand out to .cadre/<role>/CLAUDE.md after Confirm:',
       '  Security rules: How secrets stay out of the repo.',
       '    from: ~/.claude/CLAUDE.md > Security',
       '    recommended: security',
@@ -562,6 +591,14 @@ describe('instruction questions (G-02-1f)', () => {
     )
   })
 
+  test('the consent context line counts the memories without MEMORY.md, as the hand-out offers them (S9)', () => {
+    const found = emptySetupScan({ memoryFiles: ['MEMORY.md', 'a.md', 'b.md'] })
+    expect(contentContextLine(found, { rules: [], hasAgentsMd: false })).toBe(
+      'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. ' +
+        'No keeps the whole-file questions.',
+    )
+  })
+
   test('a rules folder that could not be listed counts 0 rule files in the context line', () => {
     expect(contentContextLine(emptySetupScan(), { rules: null, hasAgentsMd: true })).toBe(
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md yes, 0 memories. ' +
@@ -595,13 +632,13 @@ describe('instruction questions (G-02-1f)', () => {
     )
   })
 
-  test('a topic question names the topic; its context line has the summary, sources and recommended roles', () => {
+  test('a topic question names the topic; its context line has the summary, recommended roles, then sources', () => {
     expect(topicQuestion(SECURITY_TOPIC)).toBe('Which roles get "Security rules"?')
     expect(topicContextLine(SECURITY_TOPIC, PARTS, ['security'])).toBe(
-      'How secrets stay out of the repo. From: ~/.claude/CLAUDE.md > Security. Recommended: security.',
+      'How secrets stay out of the repo. Recommended: security. From: ~/.claude/CLAUDE.md > Security.',
     )
     expect(topicContextLine(GIT_TOPIC, PARTS, [])).toBe(
-      'How commits are made. From: ~/.claude/CLAUDE.md > Git. Recommended: none.',
+      'How commits are made. Recommended: none. From: ~/.claude/CLAUDE.md > Git.',
     )
   })
 
@@ -609,8 +646,20 @@ describe('instruction questions (G-02-1f)', () => {
     const many = ['A', 'B', 'C', 'D', 'E'].map((heading, at) => part(`P${at + 1}`, heading, `# ${heading}\n`))
     const topic = { id: 'T1', title: 'All', summary: 'Everything.', partIds: many.map(found => found.id) }
     expect(topicContextLine(topic, many, ['tl', 'security'])).toBe(
-      'Everything. From: ~/.claude/CLAUDE.md > A, ~/.claude/CLAUDE.md > B, ~/.claude/CLAUDE.md > C, +2 more. ' +
-        'Recommended: tl, security.',
+      'Everything. Recommended: tl, security. ' +
+        'From: ~/.claude/CLAUDE.md > A, ~/.claude/CLAUDE.md > B, ~/.claude/CLAUDE.md > C, +2 more.',
+    )
+  })
+
+  test('a summary gets a final period; a long line keeps its whole Recommended sentence (S5, N1)', () => {
+    const long = ['a', 'b', 'c'].map(letter => part(`P${letter}`, letter.repeat(80), 'x\n', `${letter.repeat(116)}.md`))
+    const topic = { id: 'T1', title: 'Long', summary: 's'.repeat(160), partIds: long.map(found => found.id) }
+    const line = topicContextLine(topic, long, ['be', 'qa'])
+    expect(Array.from(line).length).toBeGreaterThan(400)
+    expect(contextText(line)).toContain(`${'s'.repeat(160)}. Recommended: be, qa. From: `)
+    const deploy = { ...SECURITY_TOPIC, summary: 'Deploy notes' }
+    expect(topicContextLine(deploy, PARTS, [])).toBe(
+      'Deploy notes. Recommended: none. From: ~/.claude/CLAUDE.md > Security.',
     )
   })
 
@@ -640,6 +689,8 @@ describe('instruction questions (G-02-1f)', () => {
     )
     expect(memoryItemContextLine(workflow, [])).toBe('No summary in MEMORY.md. Recommended: none.')
     expect(NO_MEMORY_SUMMARY).toBe('No summary in MEMORY.md.')
+    const deploy = memory('M3', 'deploy.md', 'Deploy the app')
+    expect(memoryItemContextLine(deploy, [])).toBe('Deploy the app. Recommended: none.')
   })
 
   test('the memory chip is Memory i/n, and just Memory when that is over 12 characters', () => {
@@ -1318,10 +1369,20 @@ describe('readMemories', () => {
     })
     const read = await readMemories(memIo(world, []).io, [MEMORY])
     expect(read.memories.map(found => [found.id, found.file])).toEqual([['M1', 'good.md']])
-    expect(read.warnings).toEqual([
-      'could not read bad.md: no role gets it',
-      'big.md is over 256 KiB, not split: no role gets it',
+    expect(read.warnings).toEqual(['could not read bad.md: no role gets it', memoryOverSizeWarning('big.md')])
+    expect(memoryOverSizeWarning('big.md')).toBe('big.md is over 256 KiB: not offered')
+  })
+
+  test('a MEMORY.md over 256 KiB gives no index and its own warning; the memories are offered (N12)', async () => {
+    const world = memWorld({
+      dirs: { [MEMORY]: [entry('MEMORY.md'), entry('good.md')] },
+      files: { [`${MEMORY}/MEMORY.md`]: 'x'.repeat(300 * 1024), [`${MEMORY}/good.md`]: 'good' },
+    })
+    const read = await readMemories(memIo(world, []).io, [MEMORY])
+    expect(read.memories.map(found => [found.id, found.file, found.summary])).toEqual([
+      ['M1', 'good.md', NO_MEMORY_SUMMARY],
     ])
+    expect(read.warnings).toEqual([memoryOverSizeWarning('MEMORY.md')])
   })
 
   test('readInstructionFiles reads the memories last, after the docs, and its scan holds them', async () => {

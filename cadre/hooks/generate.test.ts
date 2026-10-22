@@ -582,6 +582,14 @@ describe('roleClaudeMdText (G-02-1f)', () => {
     expect(text.endsWith('<!-- from CLAUDE.md > Rules -->\n# Rules\nRun the tests.\n')).toBe(true)
   })
 
+  test("a '--' in a marker's file or heading is written '- -', so only the marker's end closes it (N2)", () => {
+    const dashed = part('P2', 'x--y.md', 'a --> b', 'Text.\n')
+    const marker = roleClaudeMdText('be', [dashed]).split('\n')[2] ?? ''
+
+    expect(marker).toBe('<!-- from x- -y.md > a - -> b -->')
+    expect(marker.split('-->')).toEqual(['<!-- from x- -y.md > a - -> b ', ''])
+  })
+
   test('with no part the text is the header line alone, with its newline', () => {
     expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
   })
