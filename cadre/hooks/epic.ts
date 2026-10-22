@@ -419,22 +419,91 @@ export function epicStepArgv(step: EpicStep): readonly string[] {
   return ['/bin/cp', '-p', '--', step.source, step.path]
 }
 
+/** The folder of cadre's own files, which the worktree gets as a real folder and never as one link (D-156). */
+const CADRE_DIR = '.cadre'
+
+/** The folder whose children the mirror links one by one, all but `worktrees` (D-147). */
+const CLAUDE_DIR = '.claude'
+
+/** The child of CLAUDE_DIR that holds the epic worktrees, never linked (D-147). */
+const CLAUDE_WORKTREES_CHILD = 'worktrees'
+
+/** The start of the last segment of a file the mirror copies instead of linking (D-148, D-172). */
+const ENV_PREFIX = '.env'
+
 /**
- * The folders runEpic lists for mirrorPlan (D-147), repo-relative, '' for the root: `main` in the main checkout and
- * `tree` in the worktree, sorted.
+ * The folders the mirror makes real in the worktree and never links whole (D-156): `.cadre`, `.cadre/bin` and
+ * `.cadre/<id>` for each role id. A launcher in a real `.cadre/bin/` finds the worktree as its root, and a render
+ * writes the worktree's own `.cadre/<id>/.runtime/`, never main's.
+ */
+function protectedFolders(roleIds: readonly string[]): string[] {
+  return [CADRE_DIR, `${CADRE_DIR}/bin`, ...roleIds.map(id => `${CADRE_DIR}/${id}`)]
+}
+
+/** The folders above a repo-relative path, from the top: `a/b/c` gives `a` and `a/b`. */
+function foldersAbove(path: string): string[] {
+  const segments = path.split('/')
+
+  return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
+}
+
+/** The repo-relative folder a path lies in, '' for the root. */
+function parentOf(path: string): string {
+  const at = path.lastIndexOf('/')
+
+  return at === -1 ? '' : path.slice(0, at)
+}
+
+/** Whether a repo-relative path is `folder` itself or lies below it. */
+function isAtOrUnder(path: string, folder: string): boolean {
+  return path === folder || path.startsWith(`${folder}/`)
+}
+
+/** What the listing of its folder in `listings` shows for a repo-relative path; undefined when it shows nothing. */
+function listedEntry(listings: ReadonlyMap<string, readonly PortEntry[]>, path: string): PortEntry | undefined {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+
+  return listings.get(parentOf(path))?.find(entry => entry.name === name)
+}
+
+/**
+ * The folders runEpic lists for mirrorPlan (D-147), repo-relative and '' for the root, each list sorted and once each:
+ * every folder the rules read. In the main checkout (`main`): the protected folders (`.cadre`, `.cadre/bin` and
+ * `.cadre/<id>` for each role id) and `.claude`, whose children the mirror walks, and the folder of each entry, which
+ * shows whether it is a file. In the worktree (`tree`): the root, `.claude`, each protected folder and the folders
+ * above it, and the folders above each entry, which show what the worktree holds already and which of its folders
+ * are links.
  */
 export function mirrorPaths(
   entries: readonly string[],
   roleIds: readonly string[],
 ): { readonly main: readonly string[]; readonly tree: readonly string[] } {
-  return { main: [], tree: [''] }
+  const kept = protectedFolders(roleIds)
+  const main = sortedUnique([...kept, CLAUDE_DIR, ...entries.map(parentOf)])
+  const above = [...kept.flatMap(folder => [...foldersAbove(folder), folder]), ...entries.flatMap(foldersAbove)]
+
+  return { main, tree: sortedUnique(['', CLAUDE_DIR, ...above]) }
 }
 
 /**
- * The mirror of the main checkout into the epic worktree (D-147): each top-level entry the worktree root does not list
- * becomes a link to the main checkout's entry. `main` and `tree` hold the listing of each repo-relative folder ('' for
- * the root) in the main checkout and in the worktree; a folder with no listing counts as empty. The result holds the
- * steps in order, the repo-relative paths linked and copied, and the warnings of the plan.
+ * The mirror of the main checkout into the epic worktree (D-147, D-148, D-149, D-156, D-172). `main` and `tree` hold
+ * the listing of each repo-relative folder ('' for the root) in the main checkout and in the worktree, as mirrorPaths
+ * names them; a folder with no listing counts as empty, and a target the worktree lists, a dangling link included, is
+ * there. The entries are taken sorted, and each, then each child it hands on, gets the first rule that fits:
+ * - (a) `.claude/worktrees` and anything below it: nothing;
+ * - (b) anything at or below `.cadre/<id>/.runtime` for a role id: nothing, as each worktree renders its own;
+ * - (c) a path already planned, or below a planned link or copy: nothing, so no step lands in the main checkout;
+ * - (d) a path below a folder the worktree lists as a link (a tracked link in HEAD): nothing, and the
+ *   mirrorLinkedParentWarning line;
+ * - (e) a protected folder (`.cadre`, `.cadre/bin`, `.cadre/<id>`) or a folder above one: a mkdir step, then each
+ *   child of its main listing, by these same rules;
+ * - (f) `.claude`: each child of its main listing but `worktrees`, by these same rules;
+ * - (g) a file whose last segment starts with `.env`, as the main listing of its folder shows (a regular file, not a
+ *   link): a copy step, unless the worktree lists its target;
+ * - (h) anything else: a link step to the main checkout's path, unless the worktree lists its target.
+ * A link or copy below a folder the worktree does not list gets a mkdir step for each such folder from the top first,
+ * once each. The result holds the steps in order (absolute paths), the repo-relative paths linked and copied, and the
+ * warnings.
  */
 export function mirrorPlan(input: {
   readonly root: string
@@ -449,13 +518,56 @@ export function mirrorPlan(input: {
   readonly copies: readonly string[]
   readonly warnings: readonly string[]
 } {
-  const listed = new Set((input.tree.get('') ?? []).map(entry => entry.name))
-  const links = input.entries.filter(entry => !entry.includes('/') && !listed.has(entry))
-  const steps = links.map(
-    (link): EpicStep => ({ kind: 'link', path: `${input.worktree}/${link}`, target: `${input.root}/${link}` }),
-  )
+  const { root, worktree, main, tree } = input
+  const kept = protectedFolders(input.roleIds)
+  const runtimes = input.roleIds.map(id => `${CADRE_DIR}/${id}/.runtime`)
+  const steps: EpicStep[] = []
+  const links: string[] = []
+  const copies: string[] = []
+  const warnings: string[] = []
+  const made = new Set<string>()
+  const placed = new Set<string>()
+  const mkdir = (folder: string) => {
+    steps.push({ kind: 'mkdir', path: `${worktree}/${folder}` })
+    made.add(folder)
+  }
+  const childrenOf = (folder: string) => sortedUnique((main.get(folder) ?? []).map(entry => entry.name))
 
-  return { steps, links, copies: [], warnings: [] }
+  const visit = (path: string): void => {
+    if (isAtOrUnder(path, WORKTREES_DIR)) return
+    if (runtimes.some(runtime => isAtOrUnder(path, runtime))) return
+    const above = foldersAbove(path)
+    if (made.has(path) || placed.has(path) || above.some(folder => placed.has(folder))) return
+    if (above.some(folder => listedEntry(tree, folder)?.isLink === true)) {
+      warnings.push(mirrorLinkedParentWarning(path))
+      return
+    }
+    const missing = above.filter(folder => !made.has(folder) && listedEntry(tree, folder) === undefined)
+    if (kept.some(folder => isAtOrUnder(folder, path))) {
+      for (const folder of [...missing, path]) mkdir(folder)
+      for (const child of childrenOf(path)) visit(`${path}/${child}`)
+      return
+    }
+    if (path === CLAUDE_DIR) {
+      for (const child of childrenOf(path).filter(name => name !== CLAUDE_WORKTREES_CHILD)) visit(`${path}/${child}`)
+      return
+    }
+    if (listedEntry(tree, path) !== undefined) return
+    for (const folder of missing) mkdir(folder)
+    placed.add(path)
+    const shown = listedEntry(main, path)
+    const isEnvFile = path.slice(path.lastIndexOf('/') + 1).startsWith(ENV_PREFIX)
+    if (isEnvFile && shown !== undefined && shown.kind === 'file' && !shown.isLink) {
+      steps.push({ kind: 'copy', path: `${worktree}/${path}`, source: `${root}/${path}` })
+      copies.push(path)
+      return
+    }
+    steps.push({ kind: 'link', path: `${worktree}/${path}`, target: `${root}/${path}` })
+    links.push(path)
+  }
+  for (const entry of sortedUnique(input.entries)) visit(entry)
+
+  return { steps, links, copies, warnings }
 }
 
 /** The refusal of a typed key that is not an epic key (D-162): the key as typed, cleaned, and what a key may hold. */
@@ -508,6 +620,17 @@ export function epicNoRecordWarning(key: string): string {
   return (
     `cadre could not write ${EPIC_RECORD_FILE} for the epic ${reportText(key)}: git gave no git dir for its ` +
     'worktree, or the write failed.'
+  )
+}
+
+/**
+ * The warning line for an entry the mirror leaves out because a folder above it in the worktree is a link (D-147,
+ * T-03.1-05): a step there would land in the link's target. The repo-relative path is shown cleaned.
+ */
+export function mirrorLinkedParentWarning(path: string): string {
+  return (
+    `cadre epic left ${reportText(path)} out of the worktree: a folder above it there is a link, and cadre never ` +
+    'links or copies through a link.'
   )
 }
 
