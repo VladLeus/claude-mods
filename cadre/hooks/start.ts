@@ -1581,10 +1581,10 @@ export function terminalPlan(input: {
 }
 
 /** How long `uname -s` may run before it is given up. */
-const UNAME_TIMEOUT_MS = 5_000
+export const UNAME_TIMEOUT_MS = 5_000
 
 /** How long opening a terminal may run before it is given up: osascript may wait on the Automation consent prompt. */
-const TERMINAL_OPEN_TIMEOUT_MS = 15_000
+export const TERMINAL_OPEN_TIMEOUT_MS = 15_000
 
 /**
  * The `--terminal` line below the copy line (D-109, D-126, D-132). The host is macOS when `/usr/bin/uname -s` exits 0

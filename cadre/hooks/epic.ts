@@ -20,6 +20,7 @@ import type {
   TemplateRoleId,
   TerminalChoice,
 } from '../types'
+import { askChoice, quotedLabels } from './ask'
 import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
@@ -35,7 +36,11 @@ import {
   launcherRead,
   NOT_COPIED_LINE,
   renderRole,
+  TERMINAL_OPEN_TIMEOUT_MS,
+  terminalPlan,
+  UNAME_TIMEOUT_MS,
 } from './start'
+import type { TerminalPlan } from './start'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'
@@ -142,6 +147,71 @@ export function epicOldLauncherReply(ids: readonly string[]): string {
     `cadre epic stopped before creating anything: the launcher of ${reportText(ids.join(', '))} predates the epic ` +
     `kickoff and would start without it. Run ${regens}, then /cadre epic again.`
   )
+}
+
+/** The chip of the question on which roles of the epic to open (D-166). */
+export const EPIC_ROLES_HEADER = 'Epic roles'
+
+/** The option of the role question that opens only the PM, who always opens (D-166). */
+const PM_ONLY_OPTION = 'PM only'
+
+/** The recommended option of the role question, which opens each of the team's `count` roles (D-166). */
+function allRolesOption(count: number): string {
+  return `All ${count} roles (Recommended)`
+}
+
+/**
+ * The question on which roles of the epic to open (D-166), for a team of `count` roles: all of them, the PM only, or
+ * the role ids typed under Other. The PM always opens, as it fetches the epic.
+ */
+export function epicRolesQuestion(count: number): string {
+  return (
+    `Which roles should cadre epic open in the worktree? All ${count}, PM only, or type role ids under Other; ` +
+    'the PM always opens, as it fetches the epic.'
+  )
+}
+
+/** The reply when the role question is dismissed or gets no usable answer (D-166): nothing was created. */
+export const EPIC_CANCELLED = 'cadre epic was cancelled: no roles were picked to open, so it created nothing.'
+
+/**
+ * The role ids an answer to the role question picks (D-166), in cadre.json order: every id for the all option, the PM
+ * for PM only, else the ids typed, split on commas and whitespace, each a team role id as it is, with the PM added;
+ * null for an empty answer or one that names an id the team does not have, so it is asked again.
+ */
+function pickedIds(answer: string, ids: readonly string[], pmId: string): readonly string[] | null {
+  const typed = answer.trim()
+  if (typed === allRolesOption(ids.length)) return ids
+  if (typed === PM_ONLY_OPTION) return [pmId]
+  const words = typed.split(/[\s,]+/).filter(word => word !== '')
+  if (words.length === 0 || words.some(word => !ids.includes(word))) return null
+
+  return ids.filter(id => id === pmId || words.includes(id))
+}
+
+/**
+ * The roles /cadre epic opens (D-166), in cadre.json order: the whole team when it has one role or the session has no
+ * dialog (`claude -p`), else what one epicRolesQuestion under EPIC_ROLES_HEADER picks (pickedIds), asked with
+ * askChoice, so an answer it cannot read is asked again with why on top. Null when the question is dismissed or gets
+ * no usable answer, which cancels the run before anything is created.
+ */
+async function epicPickedRoles(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  pmId: string,
+): Promise<readonly RoleSpec[] | null> {
+  if (roles.length < 2 || (await io.isInteractive()) !== true) return roles
+  const ids = roles.map(role => role.id)
+  const options = [allRolesOption(ids.length), PM_ONLY_OPTION]
+  const answer = await askChoice(io, {
+    question: epicRolesQuestion(ids.length),
+    spec: { options, header: EPIC_ROLES_HEADER },
+    parse: text => pickedIds(text, ids, pmId),
+    accepts: `${quotedLabels(options)}, or role ids from: ${ids.join(', ')}`,
+  })
+  if (answer.kind !== 'answered') return null
+
+  return roles.filter(role => answer.value.includes(role.id))
 }
 
 /**
@@ -1066,22 +1136,81 @@ export function epicWorktreeLauncherLine(id: string): string {
   )
 }
 
+/** A picked role once the render stage ran: why it cannot open, as its reply line says, or null when it can. */
+type RenderedRole = { readonly id: string; readonly line: string | null }
+
+/** How one role fared in the open stage (D-167): its reply line, its command to copy when it did not open, and why. */
+type OpenedRole = { readonly line: string; readonly command: string | null; readonly refusal: string | null }
+
+/**
+ * Opens one role in a terminal as `plan` says (D-167): `opened in a new <name>` when the open run exits 0. A plan that
+ * refuses, or an open that fails or cannot run, gives the role's `command` instead, to print and copy, with the refusal
+ * when that is why.
+ */
+async function openedRole(host: HostIo, plan: TerminalPlan, command: string): Promise<OpenedRole> {
+  if (plan.kind === 'refuse') return { line: command, command, refusal: plan.text }
+  const opened = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })
+  if (opened === null || opened.exitCode !== 0) return { line: command, command, refusal: null }
+
+  return { line: `opened in a new ${plan.name}`, command: null, refusal: null }
+}
+
+/**
+ * The open stage of runEpic (D-145, D-167): `/usr/bin/uname -s`, TMUX and TERM_PROGRAM are asked once for the run, and
+ * each rendered role that can open opens in a terminal inside the worktree as /cadre start opens one: terminalPlan with
+ * the `--terminal` choice (auto-detected when bare, forced by terminal, iterm or tmux), the worktree as its root and
+ * launcherCommand rooted there (openedRole). One line per role, two spaces in: `<id>: opened in a new <name>`; for a
+ * role it could not open, its command `cd -- <worktree> && <launcher>`; for a role that cannot open, the line the
+ * render stage gave it. The first refusal of terminalPlan is printed once above the role lines. When any command was
+ * printed, the commands are copied through the host with clipboardRun, one per line, and COPIED_LINE or
+ * NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session (D-108, D-167).
+ */
+async function openedLines(
+  host: HostIo,
+  rendered: readonly RenderedRole[],
+  worktree: string,
+  terminal: Exclude<TerminalChoice, 'none'>,
+): Promise<string[]> {
+  const uname = await host.run(['/usr/bin/uname', '-s'], { timeoutMs: UNAME_TIMEOUT_MS })
+  const isMacOs = uname !== null && uname.exitCode === 0 && uname.stdout === 'Darwin\n'
+  const tmux = await host.env('TMUX')
+  const termProgram = await host.env('TERM_PROGRAM')
+  const lines: string[] = []
+  const commands: string[] = []
+  const refusals: string[] = []
+  for (const { id, line } of rendered) {
+    if (line !== null) {
+      lines.push(`  ${id}: ${line}`)
+      continue
+    }
+    const launcher = launcherCommand(worktree, id)
+    const plan = terminalPlan({ choice: terminal, tmux, termProgram, isMacOs, id, root: worktree, command: launcher })
+    const opened = await openedRole(host, plan, `cd -- ${shQuote(worktree)} && ${launcher}`)
+    lines.push(`  ${id}: ${opened.line}`)
+    if (opened.command !== null) commands.push(opened.command)
+    if (opened.refusal !== null) refusals.push(opened.refusal)
+  }
+  const head = refusals.slice(0, 1)
+  if (commands.length === 0) return [...head, ...lines]
+  const copy = clipboardRun(commands.join('\n'))
+  const copied = await host.run(copy.argv, copy.options)
+
+  return [...head, ...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE]
+}
+
 /**
  * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
- * main checkout, is compiled there once (compileTeam), and each role, in cadre.json order, is rendered for the worktree
- * by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
+ * main checkout, is compiled there once (compileTeam), and each picked role, in cadre.json order, is rendered for the
+ * worktree by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
  * `.runtime/` it writes is the worktree's own, never main's. The render names the main checkout as the epic's, so the
  * role keeps the worktree's CLAUDE.md files out and gets main's code-dir denies too (Pitfalls 1 and 2), and it looks a
  * server up in the `~/.claude.json` project of the worktree, then of the main root as resolved and as given, where the
  * user's project servers are recorded. Each role's render also writes its epic kickoff into its `.runtime/`
- * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf and the team's TL,
- * D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then one line per role, two spaces
- * in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>` (launcherCommand rooted at the worktree, D-167),
- * the render's refusal for that role, which does not stop the others, or epicWorktreeLauncherLine when the role's
- * launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff); a launcher that cannot be
- * read keeps its command. When any role has a command, the commands are copied through the host with clipboardRun, one
- * per line, and COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background
- * session (D-108, D-167).
+ * (epicKickoffText with the epic key, the worktree's title, the role's parent from epicParentOf over the whole team and
+ * the team's TL, D-158 to D-160). Its lines: one `warning: <id>: <text>` line per render warning, then the lines of
+ * the open stage (openedLines). A role whose render refuses keeps that refusal as its line, which does not stop the
+ * others, and one whose launcher in the worktree reads as a text without the epic kickoff line (hasRuntimeKickoff)
+ * gets epicWorktreeLauncherLine and does not open; a launcher that cannot be read keeps the role openable.
  */
 async function renderedLines(
   io: InitIo,
@@ -1090,8 +1219,10 @@ async function renderedLines(
     readonly locations: InitLocations
     readonly state: CadreState
     readonly roles: readonly RoleSpec[]
+    readonly picked: readonly RoleSpec[]
     readonly key: string
     readonly pmId: string
+    readonly terminal: Exclude<TerminalChoice, 'none'>
   },
   epicWorktree: { readonly path: string; readonly title: string },
 ): Promise<string[]> {
@@ -1101,14 +1232,13 @@ async function renderedLines(
   const { gathered, scopes } = await compileTeam(io, locations, state, roles)
   const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
   const warnings: string[] = []
-  const roleLines: string[] = []
-  const commands: string[] = []
-  for (const role of roles) {
+  const rendered: RenderedRole[] = []
+  for (const role of team.picked) {
     const { id } = role
     const scope = scopes.get(id)
     // Fail closed: readTeam read every listed role and compileTeam compiled each one, so it is always there.
     if (scope === undefined) {
-      roleLines.push(`  ${id}: ${regenBadRole(id)}`)
+      rendered.push({ id, line: regenBadRole(id) })
       continue
     }
     const parent = epicParentOf(role, roles, team.pmId)
@@ -1123,26 +1253,17 @@ async function renderedLines(
       epic: { mainRoot: locations.root, kickoff },
     })
     if (render.kind === 'refuse') {
-      roleLines.push(`  ${id}: ${render.text}`)
+      rendered.push({ id, line: render.text })
       continue
     }
     warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
     // A launcher that cannot be read keeps the role: its own checks still run when it starts.
     const launcher = await io.read(`${worktree}/.cadre/bin/${id}`, MAX_READ_BYTES)
-    if (launcher.state === 'text' && !hasRuntimeKickoff(launcher.text)) {
-      roleLines.push(`  ${id}: ${epicWorktreeLauncherLine(id)}`)
-      continue
-    }
-    const command = `cd -- ${shQuote(worktree)} && ${launcherCommand(worktree, id)}`
-    roleLines.push(`  ${id}: ${command}`)
-    commands.push(command)
+    const isOlder = launcher.state === 'text' && !hasRuntimeKickoff(launcher.text)
+    rendered.push({ id, line: isOlder ? epicWorktreeLauncherLine(id) : null })
   }
-  if (commands.length === 0) return [...warnings, ...roleLines]
-  const copy = clipboardRun(commands.join('\n'))
-  const copied = await host.run(copy.argv, copy.options)
-  const copyLine = copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE
 
-  return [...warnings, ...roleLines, copyLine]
+  return [...warnings, ...(await openedLines(host, rendered, worktree, team.terminal))]
 }
 
 /**
@@ -1152,7 +1273,7 @@ async function renderedLines(
  * those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A stopped
  * mirror replies with its failure and renders nothing; else the reply is epicCreatedText with what this run linked and
  * copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of the
- * render stage (renderedLines), which renders each role of the team into the worktree.
+ * render stage (renderedLines), which renders each picked role into the worktree and opens it there.
  */
 async function mirroredReply(
   io: InitIo,
@@ -1162,12 +1283,16 @@ async function mirroredReply(
     readonly home: string | null
     readonly key: string
     readonly roleIds: readonly string[]
-    /** The main checkout's locations, and the team readTeam read there, which the render stage renders. */
+    /** The main checkout's locations, and the team readTeam read there. */
     readonly locations: InitLocations
     readonly state: CadreState
     readonly roles: readonly RoleSpec[]
+    /** The roles the render and open stages render and open (epicPickedRoles, D-166). */
+    readonly picked: readonly RoleSpec[]
     /** The id of the team's PM (epicPmOf), whose epic kickoff names the epic (D-158). */
     readonly pmId: string
+    /** Where the roles open (D-167). */
+    readonly terminal: Exclude<TerminalChoice, 'none'>
   },
   worktree: EpicWorktree,
 ): Promise<string> {
@@ -1192,13 +1317,15 @@ async function mirroredReply(
  * is created it refuses, in this order (D-165): a key epicKeyOf refuses (epicBadKeyReply), before anything runs; the
  * repo refusals of repoGuard, in the epic wording; a root that CHECKOUT_ARGV and checkoutOf do not show as the main
  * checkout (epicNotMainReply naming the main checkout, or EPIC_UNKNOWN_CHECKOUT); the team refusals of readTeam, which
- * reads the whole team from the main root; a team with no one PM (epicPmOf, D-161); the first launcher refusal of
- * launcherRead, role by role in cadre.json order; a launcher written before the epic kickoff (hasRuntimeKickoff), which
- * epicOldLauncherReply names with every such role (D-158); the claude refusals of claudeRefusal (D-107); and a slug
- * isEpicSlug refuses. It then finds the epic by its key (D-163): git lists the worktrees and the epic branches (a run
- * that fails or cannot start refuses with EPIC_NO_WORKTREE_LIST) and epicLookup decides, its refusals included. A
- * reused worktree gets no add, and the reply shows the title of its epic record, else the title typed. Otherwise the
- * worktree `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
+ * reads the whole team from the main root; a team with no one PM (epicPmOf, D-161); a dismissed role question, or one
+ * with no usable answer (EPIC_CANCELLED, D-166), as epicPickedRoles asks which roles to open when the session has a
+ * dialog and the team has more than one role; the first launcher refusal of launcherRead, for each picked role in
+ * cadre.json order; a launcher written before the epic kickoff (hasRuntimeKickoff), which epicOldLauncherReply names
+ * with every such role (D-158); the claude refusals of claudeRefusal (D-107); and a slug isEpicSlug refuses. It then
+ * finds the epic by its key (D-163): git lists the worktrees and the epic branches (a run that fails or cannot start
+ * refuses with EPIC_NO_WORKTREE_LIST) and epicLookup decides, its refusals included. A reused worktree gets no add, and
+ * the reply shows the title of its epic record, else the title typed. Otherwise the worktree
+ * `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
  * `epic/<slug>` from the current HEAD: a name isEpicSlug refuses, or a path that already exists (epicPathExistsReply),
  * stops it before the one `git worktree add` through the host; an add that fails or cannot start gives
  * epicAddFailedReply, and the branch is never deleted. Its epic record (D-164) holds the key, its name as the slug, the
@@ -1209,13 +1336,14 @@ async function mirroredReply(
  * not name as an absolute path stops with epicExcludesFailedReply. The record is then written to that git dir with its
  * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new one
  * from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line. Once the
- * mirror ran every step, each role of the team is rendered into the worktree (renderedLines, D-157): the team read from
- * the main root is compiled there, and renderRole renders each role with the worktree as its root, so the team, the
+ * mirror ran every step, each picked role is rendered into the worktree (renderedLines, D-157): the team read from the
+ * main root is compiled there, and renderRole renders each role with the worktree as its root, so the team, the
  * manifest and the launchers are never read from the worktree (RESEARCH Pattern 1). Running /cadre epic is the consent
- * to these steps (D-165), so it asks nothing. The reply is epicCreatedText followed by the render stage's lines (one
- * per role: its `cd -- <worktree> && <launcher>` command, copied with the others, its render refusal, or the line of a
- * worktree launcher older than the epic kickoff), or the reply the mirror stopped with. `options.terminal` is where the
- * roles will open (D-167).
+ * to these steps (D-165), so it asks only which roles to open. Each rendered role then opens in a terminal inside the
+ * worktree, where `options.terminal` says (openedLines, D-167). The reply is epicCreatedText followed by the render
+ * stage's lines (one per picked role: that it opened, its `cd -- <worktree> && <launcher>` command, copied with the
+ * others, its render refusal, or the line of a worktree launcher older than the epic kickoff), or the reply the mirror
+ * stopped with. It never runs a launcher and never starts a background session (D-108).
  */
 export async function runEpic(
   io: InitIo,
@@ -1234,8 +1362,10 @@ export async function runEpic(
   if (team.kind === 'refuse') return team.text
   const pm = epicPmOf(team.value.roles)
   if (pm.kind === 'refuse') return pm.text
+  const picked = await epicPickedRoles(io, team.value.roles, pm.id)
+  if (picked === null) return EPIC_CANCELLED
   const older: string[] = []
-  for (const id of team.value.state.roles) {
+  for (const { id } of picked) {
     const launcher = await launcherRead(io, root, id)
     if (launcher.kind === 'refuse') return launcher.text
     if (!hasRuntimeKickoff(launcher.value)) older.push(id)
@@ -1256,7 +1386,18 @@ export async function runEpic(
   const lookup = epicLookup({ worktrees: parseWorktreeList(listed.stdout), branches, keySlug })
   if (lookup.kind === 'refuse') return lookup.text
   const { state, roles } = team.value
-  const epic = { root, home, key, roleIds: state.roles, locations: guard.locations, state, roles, pmId: pm.id }
+  const epic = {
+    root,
+    home,
+    key,
+    roleIds: state.roles,
+    locations: guard.locations,
+    state,
+    roles,
+    picked,
+    pmId: pm.id,
+    terminal: options.terminal,
+  }
 
   if (lookup.kind === 'reuse') {
     const asked = await host.run(GIT_DIR_ARGV(lookup.path), { timeoutMs: GIT_TIMEOUT_MS })
