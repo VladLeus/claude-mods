@@ -91,10 +91,14 @@ import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
 import {
   EPIC_BRANCH_PREFIX,
+  EPIC_NO_PM,
+  EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicBadKeyReply,
   epicBadNameReply,
   epicCreatedText,
+  epicManyPmReply,
+  epicNotMainReply,
   WORKTREES_DIR,
 } from './epic'
 import {
@@ -791,6 +795,10 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
       epicCreatedText({ ...EPIC_WORKTREE, outcome: 're-added', warnings: ['a warning'] }),
     ],
   ],
+  ['epic', 'EPIC_UNKNOWN_CHECKOUT', EPIC_UNKNOWN_CHECKOUT],
+  ['epic', 'epicNotMainReply', [epicNotMainReply('/repo'), epicNotMainReply(null)]],
+  ['epic', 'EPIC_NO_PM', EPIC_NO_PM],
+  ['epic', 'epicManyPmReply', epicManyPmReply(['pm-a', 'pm-b'])],
   ['facts', 'SOURCE_ORDER', SOURCE_ORDER],
   ['facts', 'HOME_ROOT_REPLY', HOME_ROOT_REPLY],
   ['facts', 'FILE_SYSTEM_ROOT_REPLY', FILE_SYSTEM_ROOT_REPLY],
