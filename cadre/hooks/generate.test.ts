@@ -19,17 +19,23 @@ import {
   asciiLine,
   cadreJsonText,
   desiredFiles,
+  GIT_TRACKING_UNKNOWN_WARNING,
+  gitTrackedArgv,
   indexMdText,
   kickoffRoleLine,
   kickoffText,
   launcherText,
   mcpText,
+  repoPartFiles,
   ROLE_LINE_MAX,
   roleClaudeMdText,
   roleJsonText,
   roleMdText,
   settingsText,
   shQuote,
+  trackedFilesOf,
+  trackedRepoParts,
+  untrackedPartsWarning,
 } from './generate'
 import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
@@ -626,6 +632,76 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
     expect(without.map(file => file.path)).toEqual(BE_PATHS)
     expect(empty).toEqual(without)
+  })
+})
+
+/** The NUL character `git ls-files -z` ends each name with, built at run time. */
+const NUL = String.fromCharCode(0)
+
+/** A part of a rule file git does not track in the M3 cases. */
+const LOCAL_PART = part('P4', 'notes/local.md', 'Local', '# Local\nMy own notes.\n')
+
+/** The repo parts of two roles: be has the root CLAUDE.md, a rule file and the local note; qa has the rule file. */
+const GIVEN_PARTS: ReadonlyMap<string, readonly InstructionPart[]> = new Map([
+  ['be', [RULES_PART, SECRETS_PART, LOCAL_PART]],
+  ['qa', [SECRETS_PART]],
+  ['pm', []],
+])
+
+describe('repo parts git tracks (02-GAPS-B2 M3)', () => {
+  test('gitTrackedArgv asks git ls-files for exactly these files, as literal paths, NUL-separated', () => {
+    expect(gitTrackedArgv(['CLAUDE.md', 'notes/local.md'])).toEqual([
+      'git',
+      '--literal-pathspecs',
+      'ls-files',
+      '-z',
+      '--',
+      'CLAUDE.md',
+      'notes/local.md',
+    ])
+  })
+
+  test('repoPartFiles gives the file of every repo part once each, sorted; a global part is not asked about', () => {
+    const withGlobal = new Map([...GIVEN_PARTS, ['security', [GLOBAL_PART]]])
+
+    expect(repoPartFiles(withGlobal)).toEqual(['.claude/rules/security.md', 'CLAUDE.md', 'notes/local.md'])
+    expect(repoPartFiles(new Map())).toEqual([])
+  })
+
+  test('trackedRepoParts keeps the parts of tracked files and drops the rest, with every key kept', () => {
+    const tracked = trackedRepoParts(GIVEN_PARTS, new Set(['CLAUDE.md', '.claude/rules/security.md']))
+
+    expect([...tracked.keys()]).toEqual(['be', 'qa', 'pm'])
+    expect(tracked.get('be')).toEqual([RULES_PART, SECRETS_PART])
+    expect(tracked.get('qa')).toEqual([SECRETS_PART])
+    expect(tracked.get('pm')).toEqual([])
+  })
+
+  test('trackedRepoParts with no answer from git keeps no part at all, every key with an empty list', () => {
+    const none = trackedRepoParts(GIVEN_PARTS, null)
+
+    expect([...none.entries()]).toEqual([
+      ['be', []],
+      ['qa', []],
+      ['pm', []],
+    ])
+  })
+
+  test('trackedFilesOf reads the NUL-separated names git gives, an empty name skipped', () => {
+    expect([...trackedFilesOf(`CLAUDE.md${NUL}notes/a b.md${NUL}`)]).toEqual(['CLAUDE.md', 'notes/a b.md'])
+    expect([...trackedFilesOf('')]).toEqual([])
+  })
+
+  test('the untracked warning names the file, cleaned; the unknown warning says no repo part is written', () => {
+    expect(untrackedPartsWarning('notes/local.md')).toBe(
+      'notes/local.md is not tracked by git: its parts are not written to .cadre/',
+    )
+    expect(untrackedPartsWarning(`notes/a\nb${BIDI_OVERRIDE}.md`)).toBe(
+      'notes/ab.md is not tracked by git: its parts are not written to .cadre/',
+    )
+    expect(GIT_TRACKING_UNKNOWN_WARNING).toBe(
+      'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+    )
   })
 })
 

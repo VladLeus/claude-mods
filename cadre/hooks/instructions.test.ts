@@ -40,6 +40,7 @@ import {
   topicQuestion,
   TOPICS_SYSTEM,
   topicsPrompt,
+  unfollowedImportWarning,
 } from './instructions'
 import type { InstructionSources } from './instructions'
 import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, templateRole } from './testkit'
@@ -882,6 +883,99 @@ describe('readInstructionFiles', () => {
     expect(placesOf(scan)).toEqual([['CLAUDE.md', 'R', 'repo']])
     expect(run.reads).toEqual(['/repo/CLAUDE.md'])
   })
+
+  test('a repo file is followed only to a plain .md file outside .git; no other file is read (M3)', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n@./.env\n@./.git/config\n@./.git/x.md\n@./notes/.hidden.md\n@./data.json\n@./ok.md\n',
+        '/repo/.env': 'API_KEY=sk-FAKE-SECRET-0123456789\n',
+        '/repo/.git/config': '[remote "origin"]\n',
+        '/repo/.git/x.md': '# X\n',
+        '/repo/notes/.hidden.md': '# Hidden\n',
+        '/repo/data.json': '{}\n',
+        '/repo/ok.md': '# Ok\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/repo/CLAUDE.md', '/repo/ok.md'])
+    expect(placesOf(scan)).toEqual([
+      ['CLAUDE.md', 'R', 'repo'],
+      ['ok.md', 'Ok', 'repo'],
+    ])
+    const unfollowed = ['.env', '.git/config', '.git/x.md', 'data.json', 'notes/.hidden.md']
+    expect(scan.warnings).toEqual(unfollowed.map(unfollowedImportWarning))
+    expect(unfollowedImportWarning('.env')).toBe(
+      '.env is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it',
+    )
+  })
+
+  test('a doc link of a repo file into .git or to a dotfile is not read (M3)', async () => {
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': '# R\n[x](.git/a.md) [y](docs/.secret.md) [z](docs/z.md)\n',
+        '/repo/.git/a.md': '# A\n',
+        '/repo/docs/.secret.md': '# Secret\n',
+        '/repo/docs/z.md': '# Z\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`, '/repo/CLAUDE.md', '/repo/docs/z.md'])
+    expect(scan.warnings).toEqual([unfollowedImportWarning('.git/a.md'), unfollowedImportWarning('docs/.secret.md')])
+  })
+
+  test("the global file's own imports are not held to the repo-link rule: a dotfile there is read (M3)", async () => {
+    const run = memIo(
+      filesWorld({
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@./.notes.md\n@./data.json\n',
+        [`${CONFIG}/.notes.md`]: '# Notes\n',
+        [`${CONFIG}/data.json`]: '# Data\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf())
+    expect(placesOf(scan)).toEqual([
+      ['~/.claude/CLAUDE.md', 'G', 'global'],
+      ['~/.claude/.notes.md', 'Notes', 'global'],
+      ['~/.claude/data.json', 'Data', 'global'],
+    ])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('two repo paths that share their first 125 code points stay two files, shown cleaned (N3)', async () => {
+    const stem = 'd'.repeat(125)
+    const run = memIo(
+      filesWorld({
+        '/repo/CLAUDE.md': `# R\n@${stem}x.md\n@${stem}y.md\n`,
+        [`/repo/${stem}x.md`]: '# X\n',
+        [`/repo/${stem}y.md`]: '# Y\n',
+      }),
+      [],
+    )
+    const scan = await readInstructionFiles(run.io, sourcesOf(['<repo>/CLAUDE.md']))
+    expect(scan.files).toEqual(['CLAUDE.md', `${stem}x.md`, `${stem}y.md`])
+    expect(scan.parts.map(found => found.file)).toEqual(['CLAUDE.md', `${stem}x.md`, `${stem}y.md`])
+    const topics = fallbackTopics(scan)
+    expect(topics.map(topic => topic.partIds)).toEqual([['P1'], ['P2'], ['P3']])
+    const shownFile = `${'d'.repeat(119)}…`
+    expect(instructionLines(scan, topics, new Map()).filter(line => line.startsWith('    from: '))).toEqual([
+      '    from: CLAUDE.md > R',
+      `    from: ${shownFile} > X`,
+      `    from: ${shownFile} > Y`,
+    ])
+    const contexts = topics.map(topic => topicContextLine(topic, scan.parts, []))
+    expect(contexts.filter(line => line.includes(`From: ${'d'.repeat(100)}`))).toHaveLength(2)
+    expect(contexts.filter(line => line.includes(`${stem}x.md >`) || line.includes(`${stem}y.md >`))).toEqual([])
+    expect(topicsPrompt(scan.parts, [])).toContain(`P2 | ${shownFile} | X | # X`)
+  })
+
+  test('a CLAUDE_CONFIG_DIR inside the repo is not the config folder: nothing under it is read (N10)', async () => {
+    const run = memIo(filesWorld({ '/repo/.cfg/CLAUDE.md': '# Cfg\n' }), [])
+    const scan = await readInstructionFiles(run.io, { ...sourcesOf(), configDir: '/repo/.cfg' })
+    expect(scan.parts.filter(found => found.file.startsWith('.cfg/'))).toEqual([])
+    expect(run.reads.filter(path => path.startsWith('/repo/.cfg'))).toEqual([])
+  })
 })
 
 /** The rules folder of the fixture repo. */
@@ -907,6 +1001,12 @@ describe('rules, AGENTS.md and referenced docs', () => {
       '/repo/pkg/docs/setup.md',
       '/repo/notes.md',
     ])
+  })
+
+  test('a line of many unclosed links is read in linear time: no doc, in under 2 s (M1)', () => {
+    const started = Date.now()
+    expect(referencedDocs('[a](x'.repeat(20_000), '/repo', '/repo')).toEqual([])
+    expect(Date.now() - started).toBeLessThan(2_000)
   })
 
   test('a link with a scheme, an absolute path, another extension, only an anchor or a folder is no doc', () => {

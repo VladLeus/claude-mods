@@ -598,12 +598,13 @@ describe('ignore block', () => {
       expect(IGNORE_END).toBe('# <<< cadre')
     })
 
-    test('the per-user files /cadre start renders into .runtime are the seven named, in a frozen list', () => {
+    test('the per-user files /cadre start renders into .runtime are the eight named, in a frozen list', () => {
       expect(RUNTIME_RENDERED).toEqual([
         'settings.json',
         'mcp.json',
         'overlay/',
         'instructions/',
+        'private-instructions',
         'probe-expectations.json',
         'inbox.md',
         'stamp',
@@ -749,8 +750,9 @@ describe('ignore block', () => {
 
       expect(text).toBe(
         '# >>> cadre\nthoughts/\n.cadre/*/.runtime/settings.json\n.cadre/*/.runtime/mcp.json\n' +
-          '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/*/.runtime/probe-expectations.json\n' +
-          '.cadre/*/.runtime/inbox.md\n.cadre/*/.runtime/stamp\n.cadre/**/*.cadre-new\n# <<< cadre\n',
+          '.cadre/*/.runtime/overlay/\n.cadre/*/.runtime/instructions/\n.cadre/*/.runtime/private-instructions\n' +
+          '.cadre/*/.runtime/probe-expectations.json\n.cadre/*/.runtime/inbox.md\n.cadre/*/.runtime/stamp\n' +
+          '.cadre/**/*.cadre-new\n# <<< cadre\n',
       )
     })
 
@@ -782,12 +784,17 @@ describe('ignore block', () => {
     test('ignoreLines gives the policy lines alone, as a new array each time', () => {
       expect(ignoreLines('definitions')).toEqual(['.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
       expect(ignoreLines('ignore')).toEqual(['.cadre/'])
-      expect(ignoreLines('all')).toHaveLength(8)
+      expect(ignoreLines('all')).toHaveLength(9)
 
       const first = ignoreLines('all')
       first.push('changed')
 
       expect(ignoreLines('all')).not.toContain('changed')
+    })
+
+    test('all ignores the private instructions link with no trailing slash, as git matches a link (M2)', () => {
+      expect(ignoreLines('all')).toContain('.cadre/*/.runtime/private-instructions')
+      expect(ignoreLines('all')).not.toContain('.cadre/*/.runtime/private-instructions/')
     })
 
     test('every line of the all policy comes from the rendered files, and the folder itself is not ignored', () => {

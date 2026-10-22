@@ -16,6 +16,7 @@ import type {
   GsdFact,
   HookScript,
   HostIo,
+  HostRun,
   HunkOp,
   InitFacts,
   InitIo,
@@ -60,7 +61,13 @@ import {
   SECURITY_PLUGINS,
 } from './assign'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
-import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
+import {
+  cadreJsonText,
+  desiredFiles,
+  GIT_TRACKING_UNKNOWN_WARNING,
+  roleJsonText,
+  untrackedPartsWarning,
+} from './generate'
 import { sha256Hex } from './hash'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
@@ -256,7 +263,7 @@ import {
   templateRole,
   withWrites,
 } from './testkit'
-import type { HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
+import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
@@ -3578,6 +3585,54 @@ function builtWrites(host: MemHost): HostWrite[] {
   return host.writes.filter(write => write.path.endsWith('/CLAUDE.md'))
 }
 
+/** A sentence of a local note the root CLAUDE.md imports, which git does not track in the M3 cases. */
+const LOCAL_NOTE = 'LOCAL-NOTE-SENTENCE stays out of the repo'
+
+/** The NUL character `git ls-files -z` ends each name with, built at run time. */
+const NUL = String.fromCharCode(0)
+
+/** The git run of the M3 cases: which of CLAUDE.md and notes/local.md git tracks (02-GAPS-B2 M3). */
+const LOCAL_GIT_ARGV: readonly string[] = [
+  'git',
+  '--literal-pathspecs',
+  'ls-files',
+  '-z',
+  '--',
+  'CLAUDE.md',
+  'notes/local.md',
+]
+
+/** A git ls-files run that exits 0 and names these files, each ended by NUL. */
+function trackedRun(files: readonly string[]): HostRun {
+  return { exitCode: 0, stdout: files.map(file => `${file}${NUL}`).join(''), stderr: '' }
+}
+
+/** The git runs a host was asked for. */
+function gitCalls(host: MemHost): HostCall[] {
+  return host.calls.filter(call => call.argv[0] === 'git')
+}
+
+/**
+ * builtWorld whose root CLAUDE.md also imports notes/local.md, which holds `local`; the model groups the global
+ * Security section into T1, for security, and the two repo parts into T2 'Repo rules', for be (02-GAPS-B2 M3).
+ */
+function localNoteWorld(local = `# Local\n${LOCAL_NOTE}.\n`): MemWorld {
+  const topics = [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2', 'P3'] },
+  ]
+
+  return builtWorld({
+    files: {
+      ...FULL_FILES,
+      [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n@notes/local.md\n`,
+      '/repo/notes/local.md': local,
+    },
+    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
+  })
+}
+
 describe('built role CLAUDE.md (G-02-1f)', () => {
   test('a dry run of the parts flow plans .cadre/be/CLAUDE.md for the role given a repo topic, no other', async () => {
     const run = memIo(builtWorld(), PARTS_ANSWERS)
@@ -3615,7 +3670,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(host.writes.length).toBeGreaterThan(0)
   })
 
-  test('a plain init on the secret world, Yes and Accept, writes no secret or global text (T-02-69)', async () => {
+  test('T-02-69: a plain init on the secret world, Yes and Accept, writes no global or memory text', async () => {
     const world = secretWorld({
       files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
       replies: [
@@ -3630,6 +3685,50 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     expect(built[0]?.text).toContain(BUILT_RULE)
     const shown = [reply, ...host.writes.map(write => write.text)].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
+  })
+
+  test('only the parts of files git tracks are written: untracked notes/local.md stays out (M3)', async () => {
+    const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
+    const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const built = builtWrites(host)
+    expect(built.map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(built[0]?.text).toContain(BUILT_RULE)
+    expect(host.writes.filter(write => write.text.includes(LOCAL_NOTE))).toEqual([])
+    const untracked = 'warning: notes/local.md is not tracked by git: its parts are not written to .cadre/'
+    expect(reply.split('\n').filter(line => line.includes('not tracked by git'))).toEqual([untracked])
+    expect(untracked).toBe(`warning: ${untrackedPartsWarning('notes/local.md')}`)
+    expect(gitCalls(host)).toEqual([{ argv: LOCAL_GIT_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } }])
+  })
+
+  test('a git run the host rejects or that exits non-zero writes no repo part and warns once (M3)', async () => {
+    const results: readonly (HostRun | null)[] = [null, { exitCode: 128, stdout: '', stderr: 'fatal: not a repo' }]
+    for (const result of results) {
+      const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result }] }))
+      const reply = await runInit(memIo(localNoteWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+      const written = host.writes.filter(write => write.text.includes(BUILT_RULE) || write.text.includes(LOCAL_NOTE))
+      expect(written).toEqual([])
+      expect(reply.split('\n').filter(line => line === `warning: ${GIT_TRACKING_UNKNOWN_WARNING}`)).toHaveLength(1)
+    }
+    expect(GIT_TRACKING_UNKNOWN_WARNING).toBe(
+      'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+    )
+  })
+
+  test('a plain init with no repo part to write asks git nothing (M3)', async () => {
+    const globalOnly = memHost(hostWorld({}))
+    await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: globalOnly.io })
+    const declined = memHost(hostWorld({}))
+    await runInit(memIo(localNoteWorld(), PARTS_DECLINED).io, { dryRun: false, host: declined.io })
+    expect([gitCalls(globalOnly), gitCalls(declined)]).toEqual([[], []])
+    expect(globalOnly.writes.length).toBeGreaterThan(0)
+  })
+
+  test('a secret in a file git does not track reaches no write (M3, N6)', async () => {
+    const host = memHost(hostWorld({ runs: [{ argv: LOCAL_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }] }))
+    const world = localNoteWorld(`# Local\n${SECRET_FIXTURES.join('\n')}\n`)
+    await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    expect(builtWrites(host).map(write => write.path)).toEqual(['/repo/.cadre/be/CLAUDE.md'])
+    expect(leaks(host.writes.map(write => write.text).join('\n'), SECRET_FIXTURES)).toEqual([])
   })
 })
 
@@ -6932,6 +7031,19 @@ describe('init apply (D-105)', () => {
     ])
     expect(appliedLines(outcomeOf())).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
+  })
+
+  test('appliedLines: the untracked-parts warnings come right after the install problems (02-GAPS-B2 M3)', () => {
+    const untracked = untrackedPartsWarning('notes/local.md')
+    const problems = { installProblems: ['install it by hand'], untrackedParts: [untracked] }
+    const outcome = outcomeOf({ ...problems, manifestSkipped: true })
+    expect(appliedLines(outcome)).toEqual([
+      APPLIED_NONE_NOTE,
+      'warning: install it by hand',
+      `warning: ${untracked}`,
+      `warning: ${MANIFEST_SKIPPED_NOTE}`,
+      NEXT_STEP_NOTE,
+    ])
   })
 
   test('no secret or absolute path of the secret world reaches the plain init reply or a written file', async () => {

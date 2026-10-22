@@ -907,6 +907,25 @@ describe('claudeMdImports', () => {
 
     expect(imports(`${runs}\n@./a.md`)).toEqual(['/home/u/.claude/a.md'])
   })
+
+  test('a long run of marks after an @ is read in linear time: no import, in under 2 s (M1)', () => {
+    const started = Date.now()
+
+    expect(claudeMdImports(`@${'.'.repeat(300_000)}x`, '/repo', '/home/u')).toEqual([])
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
+  test('a sentence mark after an import is still not part of it (M1)', () => {
+    expect(claudeMdImports('see @./a.md.', '/repo', '/home/u')).toEqual(['/repo/a.md'])
+  })
+
+  test('an import token of 4,096 code points is an import, and one a code point longer is not (M1)', () => {
+    const name = 'a'.repeat(4_091)
+
+    expect(Array.from(`./${name}.md`)).toHaveLength(4_096)
+    expect(claudeMdImports(`@./${name}.md`, '/repo', '/home/u')).toEqual([`/repo/${name}.md`])
+    expect(claudeMdImports(`@./${name}a.md`, '/repo', '/home/u')).toEqual([])
+  })
 })
 
 describe('instructionPlan', () => {

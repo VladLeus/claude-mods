@@ -65,6 +65,7 @@ import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, HOME_UNUSABLE_WARNING, SOURCE_
 import { DECISION_TYPES, FRAMEWORK_IDS, REQUIRED_FIELDS, SUPPORTED_IDS, UNSUPPORTED_MARKERS } from './framework'
 import {
   cadreJsonText,
+  GIT_TRACKING_UNKNOWN_WARNING,
   indexMdText,
   kickoffRoleLine,
   kickoffText,
@@ -75,6 +76,7 @@ import {
   roleJsonText,
   roleMdText,
   settingsText,
+  untrackedPartsWarning,
 } from './generate'
 import { GSD_ADAPTER, GSD_AUTONOMY, GSD_CONFIG_FILE, GSD_GATES, GSD_HOOK_NOTES, gsdKickoffText } from './gsd'
 import {
@@ -220,6 +222,7 @@ import {
   topicQuestion,
   TOPICS_SYSTEM,
   totalCapWarning,
+  unfollowedImportWarning,
   unreadableWarning,
 } from './instructions'
 import { UNNAMED_ROLE } from './kickoff'
@@ -273,6 +276,7 @@ import {
   COPIED_LINE,
   GIT_COMMON_DIR_ARGV,
   NOT_COPIED_LINE,
+  privateLinkRefusal,
   runtimeMcpText,
   STALE_LINK_FOLDERS,
   stampText,
@@ -618,6 +622,8 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['generate', 'mcpText', mcpText(BE_SCOPE)],
   ['generate', 'roleMdText', roleMdText(BE, BE_SCOPE)],
   ['generate', 'roleClaudeMdText', roleClaudeMdText(BE.id, PART_SCAN.parts)],
+  ['generate', 'untrackedPartsWarning', untrackedPartsWarning('notes/local.md')],
+  ['generate', 'GIT_TRACKING_UNKNOWN_WARNING', GIT_TRACKING_UNKNOWN_WARNING],
   ['generate', 'launcherText', STARTS.map(start => launcherText(BE, BE_SCOPE, start))],
   ['generate', 'indexMdText', indexMdText(TEAM, SCOPES)],
   ['generate', 'cadreJsonText', cadreJsonText(STATE)],
@@ -775,6 +781,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['instructions', 'overSizeWarning', overSizeWarning('CLAUDE.md')],
   ['instructions', 'outsideWarning', outsideWarning('~/work/CLAUDE.md')],
   ['instructions', 'repoImportWarning', repoImportWarning('~/.claude/.credentials.json')],
+  ['instructions', 'unfollowedImportWarning', unfollowedImportWarning('.env')],
   ['instructions', 'totalCapWarning', [totalCapWarning(1), totalCapWarning(3)]],
   ['instructions', 'morePartsWarning', morePartsWarning(6)],
   ['instructions', 'RULES_UNLISTED_WARNING', RULES_UNLISTED_WARNING],
@@ -858,6 +865,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['start', 'COPIED_LINE', COPIED_LINE],
   ['start', 'NOT_COPIED_LINE', NOT_COPIED_LINE],
   ['start', 'TERMINAL_MAC_ONLY', TERMINAL_MAC_ONLY],
+  ['start', 'privateLinkRefusal', privateLinkRefusal('be')],
   ['start', 'stampText', stampText('0.2.0')],
   ['start', 'runtimeMcpText', [false, true].map(isRead => runtimeMcpText(BE, {}, ['/repo'], isRead))],
   ['status', 'statusReportText', REPORTS.map(statusReportText)],

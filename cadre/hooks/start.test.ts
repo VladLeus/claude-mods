@@ -19,7 +19,7 @@ import { sha256Hex } from './hash'
 import { compileTeam, readTeam, repoGuard } from './init'
 import { launchPlan } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { stableJson } from './plan'
+import { ignoreLines, stableJson } from './plan'
 import { compileScope } from './scope'
 import { CLAUDE_JSON_MAX_BYTES } from './setup'
 import {
@@ -38,6 +38,7 @@ import {
   MIN_CLAUDE_VERSION,
   NOT_COPIED_LINE,
   parseClaudeVersion,
+  privateLinkRefusal,
   readClaudeJson,
   renderArgv,
   renderFailedReply,
@@ -632,6 +633,31 @@ const PRIVATE_LINK: OverlayLink = { path: `${RUNTIME}/private-instructions`, tar
 /** BE's plan with the private instructions link and no other link, as /cadre start renders it (D-140 q1-b). */
 const PRIVATE_PLAN: LaunchPlan = { ...BE_PLAN, links: [PRIVATE_LINK] }
 
+/**
+ * A render step's path below BE's .runtime, as an ignore line names it: a folder a step makes ends in `/`, as the
+ * folders of RUNTIME_RENDERED do, so a folder line can cover it.
+ */
+function runtimeRelative(step: RenderStep): string {
+  const path = step.path.slice(RUNTIME.length + 1)
+
+  return step.kind === 'mkdir' ? `${path}/` : path
+}
+
+/**
+ * Whether a line of ignoreLines('all') covers a path below .runtime (02-GAPS-B2 M2): the line of `<name>` covers the
+ * path equal to `<name>`, and, when `<name>` ends in `/`, every path that starts with it.
+ */
+function isIgnoredUnderAll(path: string): boolean {
+  const prefix = '.cadre/*/.runtime/'
+
+  return ignoreLines('all').some(line => {
+    if (!line.startsWith(prefix)) return false
+    const name = line.slice(prefix.length)
+
+    return name.endsWith('/') ? path.startsWith(name) : path === name
+  })
+}
+
 /** The private instructions folder of BE in the start worlds, whose git common dir is /repo/.git (D-91, D-140). */
 async function startPrivateFolder(): Promise<string> {
   return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/be/instructions`
@@ -650,17 +676,31 @@ describe('built files reach the session (G-02-1f)', () => {
     ])
   })
 
-  test('an earlier link at .runtime/private-instructions is removed first; a real folder there is kept', () => {
+  test('an earlier link at .runtime/private-instructions is removed first; a real file or folder there refuses', () => {
     const stale = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: LINK_OUT }) }))
-    const kept = rendered({ [PRIVATE_LINK.path]: folder(PRIVATE_LINK.path) })
-    const real = renderSteps(input({ plan: PRIVATE_PLAN, stats: kept }))
     const atLink = stale.steps.filter(step => step.path === PRIVATE_LINK.path)
 
     expect(atLink.map(step => step.kind)).toEqual(['remove', 'link'])
-    expect(real.steps.filter(step => step.kind === 'link')).toEqual([])
-    expect(real.warnings).toEqual([
-      '.cadre/be/.runtime/private-instructions is a real file or folder, not a link: not replaced',
-    ])
+    for (const stat of [folder(PRIVATE_LINK.path), regular(PRIVATE_LINK.path)]) {
+      const real = renderSteps(input({ plan: PRIVATE_PLAN, stats: rendered({ [PRIVATE_LINK.path]: stat }) }))
+
+      expect(real).toEqual({ steps: [], warnings: [], refusal: privateLinkRefusal('be') })
+    }
+    expect(privateLinkRefusal('be')).toBe(
+      '.cadre/be/.runtime/private-instructions is a real file or folder, not a link: ' +
+        'remove it and run /cadre start be again',
+    )
+  })
+
+  test('under commit all, every path a render makes below .runtime is git-ignored, the private link too (M2)', () => {
+    const plan: LaunchPlan = { ...BE_PLAN, links: [MEMORY_LINK, PRIVATE_LINK, SKILL_LINK] }
+    const below = renderSteps(input({ plan }))
+      .steps.filter(step => step.kind !== 'remove' && step.path.startsWith(`${RUNTIME}/`))
+      .map(step => runtimeRelative(step))
+
+    expect(below).toContain('private-instructions')
+    expect(below).toContain('overlay/')
+    expect(below.filter(path => !isIgnoredUnderAll(path))).toEqual([])
   })
 
   test('runStart links .runtime/private-instructions to the role memory instructions folder and makes it', async () => {
