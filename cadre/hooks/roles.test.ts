@@ -1542,6 +1542,27 @@ describe('role.json part records (G-02-1f)', () => {
       expect([name, parseRoleJson(jsonWith({ instructionParts: records }))]).toEqual([name, null])
     }
   })
+
+  test('the parts not given read back beside the given ones, and are absent when the file has none (Q1)', () => {
+    const given = [{ file: 'CLAUDE.md', heading: 'Git', hash: PART_HASH }]
+    const notGiven = [{ file: 'CLAUDE.md', heading: 'Rules', hash: 'c'.repeat(64) }]
+    const role: RoleSpec = {
+      ...roleFromTemplate(row('be')),
+      instructionParts: given,
+      instructionPartsNotGiven: notGiven,
+    }
+    const parsed = parseRoleJson(jsonWith({ instructionParts: given }))
+
+    expect(parseRoleJson(JSON.stringify({ schema: 1, ...role }))).toEqual(role)
+    expect(Object.hasOwn(parsed ?? {}, 'instructionPartsNotGiven')).toBe(false)
+  })
+
+  test('a not-given record that is not a safe repo .md file, a clean heading or a 64-hex hash refuses it (Q1)', () => {
+    for (const [name, records] of BAD_PART_RECORDS) {
+      const text = jsonWith({ instructionParts: [], instructionPartsNotGiven: records })
+      expect([name, parseRoleJson(text)]).toEqual([name, null])
+    }
+  })
 })
 
 describe('isAutopilotDuration', () => {

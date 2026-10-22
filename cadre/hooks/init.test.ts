@@ -124,6 +124,7 @@ import {
   DURATION_QUESTION,
   durationContextLine,
   durationStep,
+  dryRunPrivateWarning,
   ENV_DISMISSED_REASON,
   envContextLine,
   FRAMEWORK_ALL_QUESTION,
@@ -145,6 +146,7 @@ import {
   IMPROVER_INSTALL_CONTEXT,
   IMPROVER_INSTALL_DISMISSED_REASON,
   IMPROVER_INSTALL_QUESTION,
+  improverNotOfferedWarning,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
@@ -174,6 +176,7 @@ import {
   mcpContextLine,
   MEMORY_DISMISSED_REASON,
   memoryContextLine,
+  memoryDroppedLine,
   memoryStep,
   MODEL_DISMISSED_REASON,
   MODEL_EFFORT_CONTEXT,
@@ -182,9 +185,11 @@ import {
   NEXT_STEP_NOTE,
   noStateReply,
   NOT_INTERACTIVE_REPLY,
+  notHandedOutWarning,
   ownSkillContextLine,
   parseGitPolicy,
   parseReviewItem,
+  partDroppedLine,
   planStep,
   PLUGIN_RUN_TIMEOUT_MS,
   pluginVersionOf,
@@ -198,11 +203,19 @@ import {
   readTeam,
   REGEN_BAD_MANIFEST,
   REGEN_BAD_STATE,
+  REGEN_DISMISSED_REASON,
+  REGEN_ITEM_OPTIONS,
   REGEN_NO_MANIFEST,
   REGEN_NO_STATE,
   regenBadRole,
+  regenCancelledReply,
+  regenHeader,
+  regenMemoryContextLine,
+  regenMemoryQuestion,
   regenNeedsFramework,
   regenNoRole,
+  regenPartContextLine,
+  regenPartQuestion,
   repoGuard,
   resolvedFramework,
   REVIEW_DISMISSED_REASON,
@@ -234,6 +247,7 @@ import {
   skillsContextLine,
   teamContextLine,
   truncatedLine,
+  unusableRecordWarning,
   withSecuritySkill,
 } from './init'
 import type { AdjustOutcome, ApplyOutcome, Gathered, InitOptions, RegenOptions, ReviewItem } from './init'
@@ -242,10 +256,14 @@ import {
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
+  overSizeWarning,
   parseContentConsent,
   RECOMMEND_SYSTEM,
+  REGEN_RECOMMEND_SYSTEM,
   TOPICS_SYSTEM,
+  unreadableWarning,
 } from './instructions'
+import type { PartRecord } from './instructions'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
 import {
   attendedNote,
@@ -3967,11 +3985,12 @@ describe('private role files (G-02-1f)', () => {
     const security = await memoryFolder('security')
     const tl = await memoryFolder('tl')
     const [p1, p2] = [await securityPart(), await gitPart()]
+    // Each record also names the other part of the same file, which the role was not given (AUTO-PICK #19 Q1).
     expect(homeWrites(host)).toEqual([
       { path: privateClaudeMdPath(security), text: privateClaudeMdText('security', 'repo', [p1]), isWritten: true },
-      { path: instructionsRecordPath(security), text: instructionsRecordText([p1], []), isWritten: true },
+      { path: instructionsRecordPath(security), text: instructionsRecordText([p1], [], [p2]), isWritten: true },
       { path: privateClaudeMdPath(tl), text: privateClaudeMdText('tl', 'repo', [p2]), isWritten: true },
-      { path: instructionsRecordPath(tl), text: instructionsRecordText([p2], []), isWritten: true },
+      { path: instructionsRecordPath(tl), text: instructionsRecordText([p2], [], [p1]), isWritten: true },
     ])
     expect(privateClaudeMdPath(security)).toBe(`${security}/instructions/CLAUDE.md`)
   })
@@ -4089,6 +4108,9 @@ const BUILT_BE_IMPROVED = BUILT_BE.replace(BUILT_RULE, `${BUILT_RULE} Keep them 
 
 /** The absolute path of BE's built CLAUDE.md in the fixture repo. */
 const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
+
+/** BE's built CLAUDE.md, repo-relative, as a file plan names it. */
+const BE_CLAUDE_MD_PATH = '.cadre/be/CLAUDE.md'
 
 /** The start of the per-file improver question (G-02-1f, D-141). */
 const IMPROVER_PREFIX = "Accept the improver's changes"
@@ -5289,9 +5311,14 @@ type QuestionRuns = {
    * built CLAUDE.md, answered Accept (G-02-1f, D-141).
    */
   readonly improver: MemRun
+  /** A regen --dry-run in a session whose one changed part is answered Yes (G-02-1f Regen, D-142). */
+  readonly regen: MemRun
 }
 
-/** Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change. */
+/**
+ * Makes the runs of QuestionRuns, each a full init with the INIT_ANSWERS defaults for what it does not change, and one
+ * regen.
+ */
 async function questionRuns(): Promise<QuestionRuns> {
   const plain = memIo(gitWorld(), INIT_ANSWERS)
   await runInit(plain.io, { dryRun: true })
@@ -5328,8 +5355,11 @@ async function questionRuns(): Promise<QuestionRuns> {
   const improverFiles = builtFilesRecord(false)
   const improver = memIo(builtWorld({ files: improverFiles }), improverOffer('Install'))
   await runInit(improver.io, { dryRun: false, host: improvingHost(improverFiles).io })
+  const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
+  const regen = memIo(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+  await runRegen(regen.io, { id: 'be', dryRun: true })
 
-  return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver }
+  return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver, regen }
 }
 
 /** The dialog spec of the first question a run asked that starts with `start`; a missing one stops the test. */
@@ -5419,6 +5449,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
       [runs.improver, IMPROVER_INSTALL_PREFIX, 'Improver'],
       [runs.improver, IMPROVER_PREFIX, 'Improver'],
+      [runs.regen, 'Should be get "Git" from CLAUDE.md?', 'Regen 1/1'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])
   })
@@ -6910,9 +6941,12 @@ describe('runRegen', () => {
   /** BE's role.json, repo-relative: the input of regen of BE, which plans no op for it (A5). */
   const BE_ROLE_PATH = '.cadre/be/role.json'
 
-  /** Whether regen of BE plans an op for this path: a path it may plan other than BE's own role.json (A5). */
+  /**
+   * Whether regen of BE plans an op for this path: a path it may plan other than BE's own role.json (A5) and its built
+   * CLAUDE.md, which regen keeps with no op while BE's role.json holds no part records (AUTO-PICK #15).
+   */
   function isBeOpPath(path: string): boolean {
-    return isBePlanPath(path) && path !== BE_ROLE_PATH
+    return isBePlanPath(path) && path !== BE_ROLE_PATH && path !== BE_CLAUDE_MD_PATH
   }
 
   /** The reply of `/cadre regen be` in `world`, a dry run unless told otherwise; a plain run writes to a fresh host. */
@@ -7094,9 +7128,10 @@ describe('runRegen', () => {
     const planned = (await plannedFiles(gitWorld(), team)).map(file => file.path)
     const expected = [...planned.filter(isBeOpPath), '.cadre/manifest.json'].sort(compareText)
     expect([...kinds.keys()]).toEqual(expected)
-    // BE's four files and the built CLAUDE.md init wrote, which regen keeps (02-GAPS-B2 S1).
-    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(5)
+    // BE's four files; the built CLAUDE.md init wrote is kept with no op (02-GAPS-B2 S1, AUTO-PICK #15).
+    expect(expected.filter(path => path.startsWith('.cadre/be/'))).toHaveLength(4)
     expect(reply).not.toContain(BE_ROLE_PATH)
+    expect(reply).not.toContain(BE_CLAUDE_MD_PATH)
     expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
   })
 
@@ -7136,10 +7171,8 @@ describe('runRegen', () => {
     expect([plain[0], ...plain.slice(-2)]).toEqual(['cadre regen be', APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect([dry[0], dry.at(-1)]).toEqual(['cadre regen be --dry-run', DRY_RUN_NOTE])
     expect(plain.slice(1, -2)).toEqual(dry.slice(1, -1))
-    // Regen builds no CLAUDE.md, so the one init built is kept, with its note (02-GAPS-B2 S1).
-    const kept = (path: string): string | null =>
-      path === '.cadre/be/CLAUDE.md' ? 'no longer generated (kept; cadre deletes nothing)' : null
-    const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: kept(path) })
+    // BE's role.json holds no part records, so the CLAUDE.md init built is kept with no op and no note (AUTO-PICK #15).
+    const leave = (path: string, mode: FileOp['mode']): FileOp => ({ kind: 'leave', path, mode, note: null })
     const files = (await plannedFiles(listedWorld(), team)).filter(file => isBeOpPath(file.path))
     const ops = [...files.map(file => leave(file.path, file.mode)), leave('.cadre/manifest.json', 'file')]
     expect(dry.slice(1, -1)).toEqual(renderPlan({ ops: ops.sort((a, b) => compareText(a.path, b.path)), warnings: [] }))
@@ -8062,6 +8095,438 @@ describe('regen apply', () => {
     )
     expect(lines).not.toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
     expect(lines.at(-1)).toBe(NEXT_STEP_NOTE)
+  })
+})
+
+/** The Rules section of the root CLAUDE.md in the regen cases (G-02-1f Regen). */
+const RULES_SECTION = '# Rules\nRun the tests.\n'
+
+/** The Git section of the root CLAUDE.md, the one part BE was given (G-02-1f Regen). */
+const GIT_SECTION = '## Git\nUse signed commits.\n'
+
+/** The Git section after an edit. */
+const GIT_EDITED = '## Git\nUse signed commits, always.\n'
+
+/** A section the root CLAUDE.md gained after init. */
+const DEPLOY_SECTION = '## Deploy\nShip on Fridays.\n'
+
+/** The start of a regen question about a part or a memory for BE (G-02-1f Regen, D-142). */
+const REGEN_PART_PREFIX = 'Should be get'
+
+/** A repo part of the root CLAUDE.md with this id, heading and text, hashed as the read hashes it. */
+async function rootPart(id: string, heading: string, text: string): Promise<InstructionPart> {
+  return { id, file: 'CLAUDE.md', heading, source: 'repo', text, hash: await sha256Hex(text) }
+}
+
+/** What a role's records keep of a part: its file, heading and hash (G-02-1f Regen). */
+function recorded(part: Pick<InstructionPart, 'file' | 'heading' | 'hash'>): PartRecord {
+  return { file: part.file, heading: part.heading, hash: part.hash }
+}
+
+/** The regen fixture: the root CLAUDE.md now, the world fields to change, and BE's given and not-given parts. */
+type RegenFixture = {
+  readonly claudeMd?: string | null
+  readonly over?: Partial<MemWorld>
+  readonly given?: readonly InstructionPart[]
+  readonly notGiven?: readonly InstructionPart[]
+}
+
+/**
+ * The repo after an init that gave BE the parts `given` of the root CLAUDE.md, the Git section unless told otherwise,
+ * and recorded `notGiven`, the Rules section, as not given (AUTO-PICK #19 Q1); PM was given no part. Every file init
+ * wrote is on the disk with its manifest, BE's built CLAUDE.md holding its parts, and `claudeMd` is the root CLAUDE.md
+ * now (none for null). The repo root lists, so the scans warn about nothing. `over` changes the fields it names; its
+ * files and folders are kept beside these.
+ */
+async function regenPartsWorld(fixture: RegenFixture = {}): Promise<MemWorld> {
+  const over = fixture.over ?? {}
+  const given = fixture.given ?? [await rootPart('P2', 'Git', GIT_SECTION)]
+  const notGiven = fixture.notGiven ?? [await rootPart('P1', 'Rules', RULES_SECTION)]
+  const records = { instructionParts: given.map(recorded), instructionPartsNotGiven: notGiven.map(recorded) }
+  const be = templateRole('be', records)
+  const roles = [be, templateRole('pm', { instructionParts: [] })]
+  const dirs = { '/repo/.git': [], '/repo': [], '/repo/.cadre': [], ...over.dirs }
+  const base = gitWorld({ ...over, dirs })
+  const state = stateOf(roles)
+  const scopes = scopesFor(roles, state.framework, await scansOf(base), [], state.launchStart)
+  const files = desiredFiles({ roles, scopes, state, only: null, repoParts: new Map([['be', given]]) })
+  const claudeMd = fixture.claudeMd === undefined ? `${RULES_SECTION}${GIT_SECTION}` : fixture.claudeMd
+  const root = claudeMd === null ? {} : { '/repo/CLAUDE.md': claudeMd }
+
+  return {
+    ...base,
+    files: { ...base.files, ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files), ...root },
+  }
+}
+
+/** The host rules of a plain regen of BE: git names the common dir and tracks the root CLAUDE.md. */
+const REGEN_RUNS: readonly HostRunRule[] = [COMMON_DIR_RULE, ...BUILT_TRACKED]
+
+/** A plain `/cadre regen be` in `world` with these answers and host rules: its reply, its port and its host. */
+async function regenPlainBe(
+  world: MemWorld,
+  answers: Readonly<Record<string, string>>,
+  runs: readonly HostRunRule[] = REGEN_RUNS,
+): Promise<{ readonly reply: string; readonly run: MemRun; readonly host: MemHost }> {
+  const run = memIo(world, answers)
+  const host = memHost(hostWorld({ runs }))
+  const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })
+
+  return { reply, run, host }
+}
+
+/** The lines of a reply that are warnings. */
+function warningLines(reply: string): string[] {
+  return reply.split('\n').filter(line => line.startsWith('warning: '))
+}
+
+/** BE's role with these part records, given and not given (AUTO-PICK #19 Q1). */
+function recordedBe(given: readonly InstructionPart[], notGiven: readonly InstructionPart[]): RoleSpec {
+  const records = given.map(recorded)
+  if (notGiven.length === 0) return templateRole('be', { instructionParts: records })
+
+  return templateRole('be', { instructionParts: records, instructionPartsNotGiven: notGiven.map(recorded) })
+}
+
+/** The hand-out record of BE's global parts and memories, in its role memory folder (G-02-1f Regen, D-140 q2-a). */
+async function beRecordPath(): Promise<string> {
+  return instructionsRecordPath(await memoryFolder('be'))
+}
+
+describe('regen by part hashes (G-02-1f)', () => {
+  test('the regen texts are fixed', () => {
+    expect(REGEN_ITEM_OPTIONS).toEqual(['Yes', 'No'])
+    expect(REGEN_DISMISSED_REASON).toBe('A regen question on instruction parts was dismissed or not answered.')
+    expect(regenCancelledReply(REGEN_DISMISSED_REASON)).toBe(
+      'regen cancelled, nothing written: A regen question on instruction parts was dismissed or not answered.',
+    )
+    expect(regenPartQuestion('be', { file: 'CLAUDE.md', heading: '' })).toBe(
+      'Should be get "(top of file)" from CLAUDE.md?',
+    )
+    expect([regenPartContextLine('new', false), regenPartContextLine('changed', true)]).toEqual([
+      'New since init. Recommended: no.',
+      'Changed since init. Recommended: yes.',
+    ])
+    expect(regenMemoryQuestion('be', { file: 'squad.md' })).toBe('Should be get the memory "squad.md"?')
+    expect(regenMemoryContextLine({ summary: 'Unsigned commits' }, 'changed', false)).toBe(
+      'Unsigned commits. Changed since init. Recommended: no.',
+    )
+    expect(regenMemoryContextLine({ summary: '' }, 'changed', true)).toBe(
+      'No summary in MEMORY.md. Changed since init. Recommended: yes.',
+    )
+    expect(regenHeader(1, 1)).toBe('Regen 1/1')
+    expect(partDroppedLine('be', { file: 'CLAUDE.md', heading: 'Git' })).toBe(
+      'dropped from be: CLAUDE.md > Git (gone from its file)',
+    )
+    expect(memoryDroppedLine('be', { file: 'squad.md' })).toBe('dropped from be: memory squad.md (gone)')
+    expect([notHandedOutWarning('be', 1), notHandedOutWarning('be', 2)]).toEqual([
+      '1 new or changed instruction part or memory for be was not handed out: ' +
+        'run /cadre regen be in a session to answer it',
+      '2 new or changed instruction parts or memories for be were not handed out: ' +
+        'run /cadre regen be in a session to answer them',
+    ])
+    expect(improverNotOfferedWarning('be')).toBe(
+      'the improver was not offered for be: claude -p cannot ask Accept or Keep original; ' +
+        'run /cadre regen be in a session to review the changes',
+    )
+    expect(dryRunPrivateWarning('be')).toBe(
+      '--dry-run did not compare the global parts and memories of be: finding their folder runs git; ' +
+        'a plain regen compares them',
+    )
+    expect(unusableRecordWarning('be')).toBe(
+      'could not use the hand-out record of be (instructions.json): its global parts and memories were not ' +
+        'compared; run /cadre init to hand them out again',
+    )
+  })
+
+  test('with nothing new, changed or removed regen asks nothing, calls no model and rebuilds nothing', async () => {
+    const { reply, run, host } = await regenPlainBe(await regenPartsWorld(), {})
+    const kinds = opKinds(reply)
+    expect([run.asked, run.prompts, host.writes, gitCalls(host)]).toEqual([[], [], [], []])
+    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual([undefined, undefined])
+    expect([...kinds.values()].filter(kind => kind !== 'leave')).toEqual([])
+    expect(warningLines(reply)).toEqual([])
+    expect(reply).not.toContain('no longer generated')
+    expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+  })
+
+  test('in a session a changed part is asked after one recommendation call; Yes rebuilds and records it', async () => {
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
+    const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
+    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    expect(run.prompts).toHaveLength(1)
+    expect(run.prompts[0]?.startsWith(`${REGEN_RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
+    expect(run.prompts[0]).toContain('\nbe | BE | Implements the backend and core code.\n')
+    expect(run.prompts[0]).toContain('\nI1 | CLAUDE.md | Git | ## Git Use signed commits, always.')
+    expect(run.asked).toEqual([
+      withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
+    ])
+    expect(run.specs).toEqual([{ options: ['Yes', 'No'], header: 'Regen 1/1' }])
+    expect(host.writes.slice(0, 2)).toEqual([
+      { path: BE_CLAUDE_MD, text: roleClaudeMdText('be', [edited]), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([edited], [rules])), isWritten: true },
+    ])
+    expect(host.writes.slice(2).map(write => write.path)).toEqual(['/repo/.cadre/manifest.json'])
+    const kinds = opKinds(reply)
+    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['change', 'change'])
+    expect(gitCalls(host).map(call => call.argv)).toEqual([BUILT_GIT_ARGV])
+  })
+
+  test('a section new in a named file is asked, one not given is not; after No neither is asked again', async () => {
+    const claudeMd = `# Rules\nRun the tests first.\n${GIT_SECTION}${DEPLOY_SECTION}`
+    const world = await regenPartsWorld({ claudeMd, over: { replies: ['{"items":{"I1":false}}'] } })
+    const first = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
+    expect(first.run.asked).toEqual([
+      withContext('Should be get "Deploy" from CLAUDE.md?', 'New since init. Recommended: no.'),
+    ])
+    const kinds = opKinds(first.reply)
+    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual([undefined, 'change'])
+    const again = await regenPlainBe(withWrites(world, first.host.writes), {})
+    expect([again.run.asked, again.run.prompts, again.host.writes]).toEqual([[], [], []])
+  })
+
+  test('No to a changed part takes it out of the built file and records it not given, never asked again', async () => {
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":false}}'] } }
+    const world = await regenPartsWorld(changed)
+    const first = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'No' })
+    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
+    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    expect(first.host.writes.slice(0, 2)).toEqual([
+      { path: BE_CLAUDE_MD, text: roleClaudeMdText('be', []), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [rules, edited])), isWritten: true },
+    ])
+    const again = await regenPlainBe(withWrites(world, first.host.writes), {})
+    expect([again.run.asked, again.host.writes]).toEqual([[], []])
+  })
+
+  test('a removed section is dropped with its reply line right after the plan; the built file is rebuilt', async () => {
+    const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ claudeMd: RULES_SECTION }), {})
+    const lines = reply.split('\n')
+    const at = lines.findIndex(line => line.startsWith('Summary: '))
+    expect(lines[at + 1]).toBe('dropped from be: CLAUDE.md > Git (gone from its file)')
+    expect([run.asked, run.prompts]).toEqual([[], []])
+    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
+    expect(host.writes.slice(0, 2)).toEqual([
+      { path: BE_CLAUDE_MD, text: roleClaudeMdText('be', []), isWritten: true },
+      { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([], [rules])), isWritten: true },
+    ])
+  })
+
+  test('in claude -p nothing is asked: new and changed parts are left out with a warning, records kept', async () => {
+    for (const interactive of [false, null]) {
+      const claudeMd = `${RULES_SECTION}${GIT_EDITED}${DEPLOY_SECTION}`
+      const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ claudeMd, over: { interactive } }), {})
+      expect([interactive, run.asked, run.prompts]).toEqual([interactive, [], []])
+      expect([interactive, warningLines(reply)]).toEqual([interactive, [`warning: ${notHandedOutWarning('be', 2)}`]])
+      expect(host.writes.map(write => write.path)).toEqual([BE_CLAUDE_MD, '/repo/.cadre/manifest.json'])
+      expect(host.writes[0]?.text).toBe(roleClaudeMdText('be', []))
+      expect(opKinds(reply).get('.cadre/be/role.json')).toBe(undefined)
+    }
+  })
+
+  test('a --dry-run in a session asks, plans the rebuild, writes and runs nothing, names what it skipped', async () => {
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
+    const run = memIo(await regenPartsWorld(changed), { [REGEN_PART_PREFIX]: 'Yes' })
+    const reply = await runRegen(run.io, { id: 'be', dryRun: true })
+    const kinds = opKinds(reply)
+    expect([kinds.get(BE_CLAUDE_MD_PATH), kinds.get('.cadre/be/role.json')]).toEqual(['change', 'change'])
+    expect(firstLines(run.asked)).toEqual(['Should be get "Git" from CLAUDE.md?'])
+    expect(warningLines(reply)).toEqual([`warning: ${dryRunPrivateWarning('be')}`])
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect(run.reads.filter(path => path.startsWith('/home/u/.claude/cadre'))).toEqual([])
+  })
+
+  test('after a plain session regen the improver runs on the rebuilt file if claude-md-management is in', async () => {
+    const installed = { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }
+    const over = { files: installed, replies: ['{"items":{"I1":true}}'] }
+    const world = await regenPartsWorld({ claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over })
+    const files: Record<string, string> = { ...world.files }
+    const edited = await rootPart('P2', 'Git', GIT_EDITED)
+    const improved = `${roleClaudeMdText('be', [edited])}Keep commits small.\n`
+    const host = memHost(hostWorld({ runs: REGEN_RUNS }))
+    const io: HostIo = {
+      ...host.io,
+      run: async (argv, options) => {
+        const result = await host.io.run(argv, options)
+        if (argv.join(' ') === improverArgv(BE_CLAUDE_MD).join(' ')) files[BE_CLAUDE_MD] = improved
+
+        return result
+      },
+    }
+    const run = memIo({ ...world, files }, { [REGEN_PART_PREFIX]: 'Yes', [IMPROVER_PREFIX]: 'Accept' })
+    const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: io })
+    expect(improverCalls(host)).toEqual([
+      { argv: improverArgv(BE_CLAUDE_MD), options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
+    ])
+    expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 1 }), NEXT_STEP_NOTE])
+    expect(writtenManifestText(host)).toContain(await sha256Hex(improved))
+  })
+
+  test('in claude -p a rebuilt file the improver could improve gets the improver warning and no run', async () => {
+    const rules = await rootPart('P1', 'Rules', RULES_SECTION)
+    const git = await rootPart('P2', 'Git', GIT_SECTION)
+    const over = { files: { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() }, interactive: false }
+    const world = await regenPartsWorld({ claudeMd: RULES_SECTION, over, given: [rules, git], notGiven: [] })
+    const { reply, host } = await regenPlainBe(world, {})
+    expect(improverCalls(host)).toEqual([])
+    expect(warningLines(reply)).toEqual([`warning: ${improverNotOfferedWarning('be')}`])
+    expect(host.writes[0]).toEqual({ path: BE_CLAUDE_MD, text: roleClaudeMdText('be', [rules]), isWritten: true })
+  })
+
+  test('regen reads again only the files the records name (D-142 rg2-a)', async () => {
+    const squad = `${MEMORY_DIR}/squad.md`
+    const over = {
+      dirs: { [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md')], '/repo/.claude/rules': [entry('style.md')] },
+      files: {
+        '/repo/AGENTS.md': '# Agents\n',
+        '/repo/.claude/rules/style.md': '# Style\n',
+        [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
+        [squad]: `${MEMORY_SENTENCE} (squad)`,
+        [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+      },
+    }
+    const run = memIo(await regenPartsWorld({ over }), {})
+    await runRegen(run.io, { id: 'be', dryRun: true })
+    const rules = '/repo/.claude/rules/style.md'
+    const unnamed = ['/repo/AGENTS.md', rules, `${MEMORY_DIR}/MEMORY.md`, squad, GLOBAL_CLAUDE_MD]
+    expect(run.reads).toContain('/repo/CLAUDE.md')
+    expect(run.reads.filter(path => unnamed.includes(path))).toEqual([])
+  })
+
+  test('a plain regen compares the global parts and memories its record names and rebuilds their files', async () => {
+    const security = await partsGlobalPart('P1', 'Security', '# Security\nNever commit secrets.\n')
+    const git = await partsGlobalPart('P2', 'Git', '## Git\nUse signed commits.\n')
+    const securityEdited = await partsGlobalPart('P1', 'Security', '# Security\nNever commit secrets, ever.\n')
+    const squad = await squadMemory()
+    const files = {
+      [await beRecordPath()]: instructionsRecordText([security], [squad], [git]),
+      [GLOBAL_CLAUDE_MD]: '# Security\nNever commit secrets, ever.\n## Git\nUse signed commits.\n',
+      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
+    }
+    const world = await regenPartsWorld({ over: { files, replies: ['{"items":{"I1":true}}'] } })
+    const { reply, run, host } = await regenPlainBe(world, { [REGEN_PART_PREFIX]: 'Yes' })
+    expect(run.asked).toEqual([
+      withContext('Should be get "Security" from ~/.claude/CLAUDE.md?', 'Changed since init. Recommended: yes.'),
+    ])
+    const folder = await memoryFolder('be')
+    expect(homeWrites(host).map(write => [write.path, write.text])).toEqual([
+      [privateClaudeMdPath(folder), privateClaudeMdText('be', 'repo', [securityEdited])],
+      [instructionsRecordPath(folder), instructionsRecordText([securityEdited], [squad], [git])],
+    ])
+    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+  })
+
+  test('a removed memory is dropped with its reply line; a role left with nothing gets both files empty', async () => {
+    const squad = await squadMemory()
+    const files = { [await beRecordPath()]: instructionsRecordText([], [squad]) }
+    const { reply, host } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+    const folder = await memoryFolder('be')
+    expect(reply.split('\n')).toContain('dropped from be: memory squad.md (gone)')
+    // A role that had a private record and lost everything gets a header-only text file and an empty record (Q11).
+    expect(homeWrites(host).map(write => [write.path, write.text])).toEqual([
+      [privateClaudeMdPath(folder), privateClaudeMdText('be', 'repo', [])],
+      [instructionsRecordPath(folder), instructionsRecordText([], [])],
+    ])
+  })
+
+  test('a record naming a file outside the config folder or the memory folders is not used (Q9)', async () => {
+    const hash = 'a'.repeat(64)
+    const records = [
+      JSON.stringify({ schema: 1, parts: [{ file: '/etc/notes.md', heading: '', hash }], memories: [] }),
+      JSON.stringify({ schema: 1, parts: [{ file: '~/.claude/../.ssh/notes.md', heading: '', hash }], memories: [] }),
+      JSON.stringify({ schema: 1, parts: [], memories: [{ file: 'x.md', folder: '/tmp', summary: 's', hash }] }),
+      JSON.stringify({ schema: 1, parts: [], memories: [{ file: '../x.md', folder: MEMORY_DIR, summary: 's', hash }] }),
+      '{"schema":1}',
+    ]
+    for (const [index, record] of records.entries()) {
+      const files = { [await beRecordPath()]: record, '/etc/notes.md': 'secret', '/tmp/x.md': 'secret' }
+      const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+      expect([index, warningLines(reply)]).toEqual([index, [`warning: ${unusableRecordWarning('be')}`]])
+      const outside = run.reads.filter(path => path.startsWith('/etc/') || path.startsWith('/tmp/'))
+      expect([index, outside]).toEqual([index, []])
+      expect([index, homeWrites(host)]).toEqual([index, []])
+    }
+  })
+
+  test('a dismissed regen question, or three answers it cannot read, cancels with nothing written (Q7)', async () => {
+    const changed = { claudeMd: `${RULES_SECTION}${GIT_EDITED}`, over: { replies: ['{"items":{"I1":true}}'] } }
+    const cases: readonly (readonly [Readonly<Record<string, string>>, string])[] = [
+      [{}, REGEN_DISMISSED_REASON],
+      [{ [REGEN_PART_PREFIX]: 'maybe', "'maybe' isn't one of": 'maybe' }, NO_USABLE_ANSWER_REASON],
+    ]
+    for (const [answers, reason] of cases) {
+      const { reply, run, host } = await regenPlainBe(await regenPartsWorld(changed), answers)
+      expect([reply, host.writes]).toEqual([regenCancelledReply(reason), []])
+      expect(run.logged).toEqual([reason])
+    }
+  })
+
+  test('a named file that cannot be read or is over the read cap leaves the role as it is (Q8)', async () => {
+    const big = 'x'.repeat(MAX_READ_BYTES + 1)
+    const worlds: readonly (readonly [MemWorld, string])[] = [
+      [await regenPartsWorld({ over: { unknownPaths: ['/repo/CLAUDE.md'] } }), unreadableWarning('CLAUDE.md')],
+      [await regenPartsWorld({ claudeMd: big }), overSizeWarning('CLAUDE.md')],
+    ]
+    for (const [world, warning] of worlds) {
+      const { reply, run, host } = await regenPlainBe(world, {})
+      expect(warningLines(reply)).toEqual([`warning: ${warning}`])
+      expect([run.asked, host.writes]).toEqual([[], []])
+    }
+  })
+
+  test('a role.json written before the records regens as before and keeps the built CLAUDE.md with no op', async () => {
+    const world = await regenPartsWorld({ claudeMd: RULES_SECTION })
+    const unrecorded = roleJsonText(templateRole('be'))
+    const before = { ...world, files: { ...world.files, '/repo/.cadre/be/role.json': unrecorded } }
+    const run = memIo(before, {})
+    const reply = await runRegen(run.io, { id: 'be', dryRun: true })
+    expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
+    expect(reply).not.toContain('no longer generated')
+    expect(reply).not.toContain('dropped from be')
+    expect(run.reads).not.toContain('/repo/CLAUDE.md')
+    expect([run.asked, warningLines(reply)]).toEqual([[], []])
+  })
+
+  test('init records the repo parts of each parts-flow role and the other parts of their files only', async () => {
+    const topics = [
+      { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+      { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2'] },
+      { title: 'Git', summary: 'How commits are made.', parts: ['P3'] },
+    ]
+    const world = builtWorld({
+      dirs: { '/repo/.git': [], ...FULL_DIRS, [MEMORY_DIR]: [entry('squad.md')] },
+      files: {
+        ...FULL_FILES,
+        [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
+        '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n${GIT_SECTION}`,
+        [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
+      },
+      replies: [
+        JSON.stringify({ topics }),
+        '{"topics":{"T1":["security"],"T2":["be"],"T3":["tl"]},"memories":{"M1":["security"]}}',
+      ],
+    })
+    const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
+    await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const written = (id: string): string =>
+      host.writes.find(write => write.path === `/repo/.cadre/${id}/role.json`)?.text ?? ''
+    const rules = await rootPart('P2', 'Rules', `# Rules\n${BUILT_RULE}\n`)
+    const git = await rootPart('P3', 'Git', GIT_SECTION)
+    expect(written('be')).toBe(roleJsonText(recordedBe([rules], [git])))
+    expect(parseRoleJson(written('tl'))?.instructionParts).toEqual([recorded(git)])
+    expect(parseRoleJson(written('tl'))?.instructionPartsNotGiven).toEqual([recorded(rules)])
+    const security = parseRoleJson(written('security'))
+    expect([security?.instructionParts, security?.instructionPartsNotGiven]).toEqual([[], undefined])
+    const secrets = [
+      '~/.claude',
+      GLOBAL_SENTENCE,
+      await sha256Hex(`# Security\n${GLOBAL_SENTENCE}.\n`),
+      'squad.md',
+      await sha256Hex(`${MEMORY_SENTENCE} (squad)`),
+    ]
+    const roleJsons = host.writes.filter(write => write.path.endsWith('/role.json')).map(write => write.text)
+    expect(leaks(roleJsons.join('\n'), secrets)).toEqual([])
   })
 })
 

@@ -55,6 +55,7 @@ import {
   otherChangesWarning,
   otherFilesLines,
   parseConflictAnswer,
+  parseInstructionsRecord,
   pluginInstallArgv,
   privateCheckPaths,
   privateClaudeMdPath,
@@ -1298,6 +1299,105 @@ describe('private role files (G-02-1f)', () => {
 
     expect(applyStatPaths(steps)).toEqual(['.cadre', '.cadre/be', ROLE_MD])
     expect(applyListPaths(steps)).toEqual(['', '.cadre', '.cadre/be'])
+  })
+})
+
+/** A SHA-256 as a hand-out record holds it: 64 lowercase hex characters. */
+const RECORD_HASH = 'd'.repeat(64)
+
+/**
+ * The text of a hand-out record that gives the Security section and squad.md and names the Git section of the same
+ * file as not given; `over` changes the fields it names, and a field set to undefined is left out.
+ */
+function recordWith(over: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    schema: 1,
+    parts: [{ file: '~/.claude/CLAUDE.md', heading: 'Security', hash: RECORD_HASH }],
+    partsNotGiven: [{ file: '~/.claude/CLAUDE.md', heading: 'Git', hash: RECORD_HASH }],
+    memories: [{ file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: RECORD_HASH }],
+    ...over,
+  })
+}
+
+describe('regen private files (G-02-1f)', () => {
+  test('the record names the global parts not given beside the given ones, only when there are any (Q1)', () => {
+    const record = instructionsRecordText([SECURITY_PART], [SQUAD], [GIT_PART])
+
+    expect(record).toBe(
+      stableJson({
+        schema: 1,
+        parts: [{ file: '~/.claude/CLAUDE.md', heading: 'Security', hash: SECURITY_PART.hash }],
+        partsNotGiven: [{ file: '~/.claude/CLAUDE.md', heading: 'Git', hash: GIT_PART.hash }],
+        memories: [{ file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: SQUAD.hash }],
+      }),
+    )
+    expect(instructionsRecordText([SECURITY_PART], [], [])).toBe(instructionsRecordText([SECURITY_PART], []))
+    expect(instructionsRecordText([SECURITY_PART], [])).not.toContain('partsNotGiven')
+  })
+
+  test('parseInstructionsRecord reads a record back, with no parts not given when it names none', () => {
+    expect(parseInstructionsRecord(recordWith())).toEqual({
+      parts: [{ file: '~/.claude/CLAUDE.md', heading: 'Security', hash: RECORD_HASH }],
+      partsNotGiven: [{ file: '~/.claude/CLAUDE.md', heading: 'Git', hash: RECORD_HASH }],
+      memories: [{ file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: RECORD_HASH }],
+    })
+    expect(parseInstructionsRecord(recordWith({ partsNotGiven: undefined }))?.partsNotGiven).toEqual([])
+    const written = instructionsRecordText([], [{ ...SQUAD, hash: RECORD_HASH }])
+    expect(parseInstructionsRecord(written)).toEqual({
+      parts: [],
+      partsNotGiven: [],
+      memories: [{ file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: RECORD_HASH }],
+    })
+  })
+
+  test('a record that is not schema 1 with checked parts and memories is null, so regen cannot use it', () => {
+    const security = { file: '~/.claude/CLAUDE.md', heading: 'Security', hash: RECORD_HASH }
+    const squad = { file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: RECORD_HASH }
+    const bad: readonly string[] = [
+      'not json',
+      '[]',
+      recordWith({ schema: 2 }),
+      recordWith({ parts: null }),
+      recordWith({ memories: {} }),
+      recordWith({ partsNotGiven: 'none' }),
+      recordWith({ parts: [{ ...security, hash: 'not a hash' }] }),
+      recordWith({ parts: [{ ...security, hash: RECORD_HASH.toUpperCase() }] }),
+      recordWith({ parts: [{ ...security, file: '' }] }),
+      recordWith({ parts: [{ ...security, file: `~/.claude/CLA${BIDI_OVERRIDE}UDE.md` }] }),
+      recordWith({ parts: [{ ...security, heading: 'h'.repeat(81) }] }),
+      recordWith({ partsNotGiven: [{ ...security, heading: 5 }] }),
+      recordWith({ memories: [{ ...squad, hash: undefined }] }),
+      recordWith({ memories: [{ ...squad, folder: 5 }] }),
+      recordWith({ memories: [{ ...squad, summary: null }] }),
+    ]
+    for (const [index, text] of bad.entries()) expect([index, parseInstructionsRecord(text)]).toEqual([index, null])
+  })
+
+  test('a regen rebuild writes the text file, the record or both, whatever they hold (Q3, Q11)', async () => {
+    const desired = [file(A, 'a\n')]
+    const first = await planWithManifest(input({ desired }))
+    const disk = new Map([
+      [A, text('a\n')],
+      [MANIFEST_PATH, text(stableJson(first.manifest))],
+    ])
+    const left = await planWithManifest(input({ desired, disk }))
+    const stepsOf = async (role: PrivateRole): Promise<ApplyStep[]> =>
+      applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, privates: [role] })
+    const emptied: PrivateRole = { ...PM_PRIVATE, id: 'security', folder: SECURITY_DIR }
+    const headerOnly = { path: SECURITY_TEXT_FILE, text: privateClaudeMdText('security', 'repo', []) }
+    const emptyRecord = { path: SECURITY_RECORD, text: instructionsRecordText([], []) }
+    const record = { path: SECURITY_RECORD, text: instructionsRecordText([SECURITY_PART], [], [GIT_PART]) }
+
+    expect(await stepsOf({ ...emptied, rebuild: 'both' })).toEqual([
+      { kind: 'private', path: SECURITY_DIR, files: [headerOnly, emptyRecord] },
+    ])
+    expect(await stepsOf({ ...emptied, rebuild: 'text' })).toEqual([
+      { kind: 'private', path: SECURITY_DIR, files: [headerOnly] },
+    ])
+    expect(await stepsOf({ ...SECURITY_PRIVATE, partsNotGiven: [GIT_PART], rebuild: 'record' })).toEqual([
+      { kind: 'private', path: SECURITY_DIR, files: [record] },
+    ])
+    expect(await stepsOf(emptied)).toEqual([])
   })
 })
 
