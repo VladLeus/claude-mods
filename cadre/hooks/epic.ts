@@ -1,13 +1,14 @@
 /**
- * `/cadre epic <KEY> [title]` (D-143 to D-147, D-162 to D-164): the key and slug rules, the worktree path, the
- * `git worktree add` argv, the lookup of an epic by its key and the epic record as pure functions, and runEpic, the
- * command itself, which checks the repo and runs git through the HostIo port only, as runStart does. An epic is a
+ * `/cadre epic <KEY> [title]` (D-143 to D-148, D-162 to D-164): the key and slug rules, the worktree path, the
+ * `git worktree add` argv, the lookup of an epic by its key, the epic record, and the mirror of the main checkout's
+ * untracked and ignored files with its excludes file as pure functions, and runEpic, the command itself, which checks
+ * the repo and runs git and the mirror steps through the HostIo port only, as runStart does. An epic is a
  * tracker epic that the PM role fetches (D-143): cadre takes the key as typed and slugs it for names. The epic's
  * worktree is `<root>/.claude/worktrees/<slug>` in the main checkout, on the branch `epic/<slug>` made from the current
  * HEAD (D-146). Tracked state such as `.planning/` comes with the branch and is never linked (D-150).
  */
-import type { EpicRecord, HostIo, InitIo, RoleSpec, TemplateRoleId, TerminalChoice } from '../types'
-import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
+import type { EpicRecord, HostIo, InitIo, PortEntry, RoleSpec, TemplateRoleId, TerminalChoice } from '../types'
+import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
 import { readTeam, repoGuard } from './init'
 import { stableJson } from './plan'
 import { reportText } from './render'
@@ -331,6 +332,132 @@ export function parseEpicRecord(text: string): EpicRecord | null {
   return { schema: 1, key, slug, title, branch, base, createdAt, links: linked, copies: copied }
 }
 
+/**
+ * The argv that lists what git does not track and does not ignore in the main checkout at `root` (D-147, RESEARCH
+ * Pattern 3): with `-z`, so each name comes raw and NUL-ended, never octal-quoted, and with `--directory`, so a folder
+ * git does not track at all is one entry.
+ */
+export function LS_OTHERS_ARGV(root: string): readonly string[] {
+  return ['git', '-C', root, 'ls-files', '-z', '--others', '--directory', '--exclude-standard']
+}
+
+/** The argv that lists what git ignores in the main checkout at `root` (D-147), NUL-ended as LS_OTHERS_ARGV lists. */
+export function LS_IGNORED_ARGV(root: string): readonly string[] {
+  return ['git', '-C', root, 'ls-files', '-z', '--others', '--ignored', '--directory', '--exclude-standard']
+}
+
+/**
+ * The entries of the main checkout that the epic worktree mirrors (D-147): the NUL-ended names of the LS_OTHERS_ARGV
+ * and LS_IGNORED_ARGV runs, each without the trailing `/` git gives a folder, once each and sorted (sortedUnique). An
+ * empty name is dropped.
+ */
+export function untrackedEntries(others: string, ignored: string): string[] {
+  const names = [...others.split('\0'), ...ignored.split('\0')]
+
+  return sortedUnique(names.map(name => (name.endsWith('/') ? name.slice(0, -1) : name)).filter(name => name !== ''))
+}
+
+/** The file in the worktree's git dir that hides cadre's links from git (D-147), beside the epic record. */
+export const EXCLUDES_FILE = 'cadre-links.exclude'
+
+/**
+ * The excludes line that hides each role's own `.runtime/` in the worktree (AUTO-PICK #25, RESEARCH Pitfall 5): the
+ * mirror makes `.cadre/<id>/` a real folder there, so the files a render writes into it would show as untracked.
+ */
+export const RUNTIME_EXCLUDE_LINE = '/.cadre/*/.runtime/'
+
+/** The line that starts cadre's own lines in the excludes file. */
+const EXCLUDES_HEADING = '# cadre links (cadre epic)'
+
+/**
+ * The text of the worktree's excludes file (D-147): the user's global excludes text, ended with a newline when it is
+ * not empty and has none, then EXCLUDES_HEADING, one `/<path>` line per link, sorted and once each, and
+ * RUNTIME_EXCLUDE_LINE last. The leading `/` matches the link at the worktree root only; a copy gets no line, as main
+ * ignores it already (D-172).
+ */
+export function excludesText(globalText: string, links: readonly string[]): string {
+  const head = globalText === '' || globalText.endsWith('\n') ? globalText : `${globalText}\n`
+  const lines = [EXCLUDES_HEADING, ...sortedUnique(links).map(link => `/${link}`), RUNTIME_EXCLUDE_LINE]
+
+  return `${head}${lines.join('\n')}\n`
+}
+
+/** The argv that gives each worktree of the repo at `root` a config of its own (D-147); it sets the shared config. */
+export function WORKTREE_CONFIG_ARGV(root: string): readonly string[] {
+  return ['git', '-C', root, 'config', 'extensions.worktreeConfig', 'true']
+}
+
+/** The argv that makes `file` the excludes file of the worktree at `path`, in that worktree's own config (D-147). */
+export function EXCLUDES_CONFIG_ARGV(path: string, file: string): readonly string[] {
+  return ['git', '-C', path, 'config', '--worktree', 'core.excludesFile', file]
+}
+
+/**
+ * One step of the mirror into the epic worktree (D-147, D-148, D-172), in the order runEpic runs it; every path is
+ * absolute:
+ * - `mkdir`: make a real folder in the worktree, and the folders above it;
+ * - `link`: make `path` a symbolic link to `target` in the main checkout, never over something that is there;
+ * - `copy`: copy the regular file `source` of the main checkout to `path`, keeping its mode and times.
+ */
+export type EpicStep =
+  | { readonly kind: 'mkdir'; readonly path: string }
+  | { readonly kind: 'link'; readonly path: string; readonly target: string }
+  | { readonly kind: 'copy'; readonly path: string; readonly source: string }
+
+/** How long one mirror step (a folder, a link or a copy) may run before it is given up (Pitfall 8). */
+export const MIRROR_STEP_TIMEOUT_MS = 10_000
+
+/**
+ * The argv that runs a mirror step, absolute and with no shell, `--` before the paths (D-147, T-03.1-06): `/bin/mkdir
+ * -p --` for a folder; `/bin/ln -s --` for a link, with no `-f`, so it never replaces what is there; `/bin/cp -p --`
+ * for a copy.
+ */
+export function epicStepArgv(step: EpicStep): readonly string[] {
+  if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
+  if (step.kind === 'link') return ['/bin/ln', '-s', '--', step.target, step.path]
+
+  return ['/bin/cp', '-p', '--', step.source, step.path]
+}
+
+/**
+ * The folders runEpic lists for mirrorPlan (D-147), repo-relative, '' for the root: `main` in the main checkout and
+ * `tree` in the worktree, sorted.
+ */
+export function mirrorPaths(
+  entries: readonly string[],
+  roleIds: readonly string[],
+): { readonly main: readonly string[]; readonly tree: readonly string[] } {
+  return { main: [], tree: [''] }
+}
+
+/**
+ * The mirror of the main checkout into the epic worktree (D-147): each top-level entry the worktree root does not list
+ * becomes a link to the main checkout's entry. `main` and `tree` hold the listing of each repo-relative folder ('' for
+ * the root) in the main checkout and in the worktree; a folder with no listing counts as empty. The result holds the
+ * steps in order, the repo-relative paths linked and copied, and the warnings of the plan.
+ */
+export function mirrorPlan(input: {
+  readonly root: string
+  readonly worktree: string
+  readonly entries: readonly string[]
+  readonly roleIds: readonly string[]
+  readonly main: ReadonlyMap<string, readonly PortEntry[]>
+  readonly tree: ReadonlyMap<string, readonly PortEntry[]>
+}): {
+  readonly steps: readonly EpicStep[]
+  readonly links: readonly string[]
+  readonly copies: readonly string[]
+  readonly warnings: readonly string[]
+} {
+  const listed = new Set((input.tree.get('') ?? []).map(entry => entry.name))
+  const links = input.entries.filter(entry => !entry.includes('/') && !listed.has(entry))
+  const steps = links.map(
+    (link): EpicStep => ({ kind: 'link', path: `${input.worktree}/${link}`, target: `${input.root}/${link}` }),
+  )
+
+  return { steps, links, copies: [], warnings: [] }
+}
+
 /** The refusal of a typed key that is not an epic key (D-162): the key as typed, cleaned, and what a key may hold. */
 export function epicBadKeyReply(raw: string): string {
   return (
@@ -384,6 +511,40 @@ export function epicNoRecordWarning(key: string): string {
   )
 }
 
+/**
+ * The reply when git cannot list what the main checkout does not track or ignores (D-147): nothing is linked or copied.
+ * The worktree stays, and the reply says to run /cadre epic with the key, cleaned, again.
+ */
+export function epicListFailedReply(key: string): string {
+  return (
+    'git could not list the untracked and ignored files of the main checkout, so cadre epic linked and copied ' +
+    `nothing into the worktree. The worktree stays: run /cadre epic ${reportText(key)} again.`
+  )
+}
+
+/**
+ * The reply when the excludes file that hides the links from git cannot be set up (D-147): git named no git dir for the
+ * worktree, the file could not be written, or a `git config` of it failed. It comes before any step, so no link was
+ * made; the worktree stays, and the reply says to run /cadre epic with the key, cleaned, again.
+ */
+export function epicExcludesFailedReply(key: string): string {
+  return (
+    'cadre epic could not set up the excludes file that hides its links from git, so it made no links. ' +
+    `The worktree stays: run /cadre epic ${reportText(key)} again.`
+  )
+}
+
+/**
+ * The reply when a mirror step fails (D-147): the mirror stops at that step, named by its path below the worktree
+ * root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the rest.
+ */
+export function epicStepFailedReply(path: string): string {
+  return (
+    `cadre epic could not make ${reportText(path)} in the worktree (a folder, link or copy), so it stopped there. ` +
+    'The worktree stays: fix it and run /cadre epic with the same key again.'
+  )
+}
+
 /** The line that says how the epic came by its worktree: made on a new branch, reused, or added back on a kept one. */
 function outcomeLine(outcome: 'created' | 'reused' | 're-added', path: string, branch: string): string {
   if (outcome === 'created') return `Created the worktree ${path} on the new branch ${branch}.`
@@ -394,8 +555,9 @@ function outcomeLine(outcome: 'created' | 'reused' | 're-added', path: string, b
 
 /**
  * The reply of /cadre epic once the epic has its worktree (D-145): `cadre epic <KEY>`, a `Title: ` line when there is a
- * title, the line of outcomeLine with the worktree path and its branch, then one `warning: ` line per warning. The key,
- * title, path and branch are shown cleaned.
+ * title, the line of outcomeLine with the worktree path and its branch, the line `Linked <n>, copied <m>.` with what
+ * this run linked and copied into it (D-147), then one `warning: ` line per warning. The key, title, path and branch
+ * are shown cleaned.
  */
 export function epicCreatedText(input: {
   readonly key: string
@@ -403,14 +565,137 @@ export function epicCreatedText(input: {
   readonly path: string
   readonly branch: string
   readonly outcome: 'created' | 'reused' | 're-added'
+  readonly linked: number
+  readonly copied: number
   readonly warnings: readonly string[]
 }): string {
   return [
     `cadre epic ${reportText(input.key)}`,
     ...(input.title === '' ? [] : [`Title: ${reportText(input.title)}`]),
     outcomeLine(input.outcome, reportText(input.path), reportText(input.branch)),
+    `Linked ${input.linked}, copied ${input.copied}.`,
     ...input.warnings.map(warning => `warning: ${warning}`),
   ].join('\n')
+}
+
+/** What the mirror stage of runEpic did: the reply it stopped with (else null), what it made, and its warnings. */
+type Mirrored = {
+  readonly failure: string | null
+  /** The repo-relative paths of the links whose step ran. */
+  readonly links: readonly string[]
+  /** The repo-relative paths of the copies whose step ran. */
+  readonly copies: readonly string[]
+  readonly warnings: readonly string[]
+}
+
+/** The listing of each folder `rels` names below `base` ('' for `base` itself); a folder it cannot list is left out. */
+async function listingsOf(
+  io: InitIo,
+  base: string,
+  rels: readonly string[],
+): Promise<Map<string, readonly PortEntry[]>> {
+  const listings = new Map<string, readonly PortEntry[]>()
+  for (const rel of rels) {
+    const listing = await io.list(rel === '' ? base : `${base}/${rel}`)
+    if (listing !== null) listings.set(rel, listing)
+  }
+
+  return listings
+}
+
+/**
+ * The mirror of the main checkout at `root` into the worktree (D-147, D-148), whose git dir `gitDir` is absolute: the
+ * two ls-files runs (a run that fails or cannot start stops it with epicListFailedReply), the folders mirrorPaths
+ * names listed in both checkouts, and mirrorPlan. The excludes file is then written in the git dir with the plan's
+ * links, and the worktree is pointed at it with WORKTREE_CONFIG_ARGV, then EXCLUDES_CONFIG_ARGV: a write or run that
+ * fails stops it with epicExcludesFailedReply, before any step. Each step then runs with its epicStepArgv, and the
+ * first one that fails stops it with epicStepFailedReply. What ran before the stop is in the result.
+ */
+async function mirrorSteps(
+  io: InitIo,
+  host: HostIo,
+  input: {
+    readonly root: string
+    readonly worktree: string
+    readonly gitDir: string
+    readonly key: string
+    readonly roleIds: readonly string[]
+  },
+): Promise<Mirrored> {
+  const { root, worktree, key } = input
+  const listFailed: Mirrored = { failure: epicListFailedReply(key), links: [], copies: [], warnings: [] }
+  const others = await host.run(LS_OTHERS_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
+  if (others === null || others.exitCode !== 0) return listFailed
+  const ignored = await host.run(LS_IGNORED_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })
+  if (ignored === null || ignored.exitCode !== 0) return listFailed
+  const entries = untrackedEntries(others.stdout, ignored.stdout)
+  const paths = mirrorPaths(entries, input.roleIds)
+  const main = await listingsOf(io, root, paths.main)
+  const tree = await listingsOf(io, worktree, paths.tree)
+  const plan = mirrorPlan({ root, worktree, entries, roleIds: input.roleIds, main, tree })
+
+  const file = `${input.gitDir}/${EXCLUDES_FILE}`
+  const excludesFailed: Mirrored = { failure: epicExcludesFailedReply(key), links: [], copies: [], warnings: [] }
+  if (!(await host.write(file, excludesText('', plan.links)))) return excludesFailed
+  for (const argv of [WORKTREE_CONFIG_ARGV(root), EXCLUDES_CONFIG_ARGV(worktree, file)]) {
+    const configured = await host.run(argv, { timeoutMs: GIT_TIMEOUT_MS })
+    if (configured === null || configured.exitCode !== 0) return excludesFailed
+  }
+
+  const ran: EpicStep[] = []
+  const made = (kind: EpicStep['kind']) =>
+    ran.filter(step => step.kind === kind).map(step => step.path.slice(worktree.length + 1))
+  for (const step of plan.steps) {
+    const done = await host.run(epicStepArgv(step), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
+    if (done === null || done.exitCode !== 0) {
+      const failure = epicStepFailedReply(step.path.slice(worktree.length + 1))
+
+      return { failure, links: made('link'), copies: made('copy'), warnings: plan.warnings }
+    }
+    ran.push(step)
+  }
+
+  return { failure: null, links: made('link'), copies: made('copy'), warnings: plan.warnings }
+}
+
+/** The epic worktree as runEpic hands it to its mirror stage once git has made or found it (D-147, D-164). */
+type EpicWorktree = {
+  readonly path: string
+  readonly branch: string
+  readonly outcome: 'created' | 'reused' | 're-added'
+  /** The title the reply shows. */
+  readonly title: string
+  /** The worktree's git dir as git named it; anything but an absolute path means git named none. */
+  readonly gitDir: string
+  /** The record written once the mirror ran, with its links and copies; null when there is none to rewrite. */
+  readonly record: EpicRecord | null
+}
+
+/**
+ * The mirror stage of runEpic and its reply (D-147, D-164): a worktree whose git dir git did not name absolutely gets
+ * epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs, and the record, when there is
+ * one, is written to the git dir with the links and copies that ran, also when the mirror stopped, so the next run and
+ * the epic's removal can find them. A stopped mirror replies with its failure; else the reply is epicCreatedText with
+ * what was linked and copied, the plan's warnings, and the epicNoRecordWarning line when the record write failed.
+ */
+async function mirroredReply(
+  io: InitIo,
+  host: HostIo,
+  epic: { readonly root: string; readonly key: string; readonly roleIds: readonly string[] },
+  worktree: EpicWorktree,
+): Promise<string> {
+  const { key } = epic
+  const { path, gitDir, record } = worktree
+  if (!gitDir.startsWith('/')) return epicExcludesFailedReply(key)
+  const mirrored = await mirrorSteps(io, host, { ...epic, worktree: path, gitDir })
+  const { links, copies } = mirrored
+  const isRecorded =
+    record === null || (await host.write(epicRecordPath(gitDir), epicRecordText({ ...record, links, copies })))
+  if (mirrored.failure !== null) return mirrored.failure
+  const warnings = [...mirrored.warnings, ...(isRecorded ? [] : [epicNoRecordWarning(key)])]
+  const { title, branch, outcome } = worktree
+
+  return epicCreatedText({ key, title, path, branch, outcome, linked: links.length, copied: copies.length, warnings })
 }
 
 /**
@@ -422,15 +707,19 @@ export function epicCreatedText(input: {
  * launcherRead, role by role in cadre.json order; the claude refusals of claudeRefusal (D-107); and a slug isEpicSlug
  * refuses. It then finds the epic by its key (D-163): git lists the worktrees and the epic branches (a run that fails
  * or cannot start refuses with EPIC_NO_WORKTREE_LIST) and epicLookup decides, its refusals included. A reused worktree
- * adds nothing, and the reply shows the title of its epic record, else the title typed. Otherwise the worktree
+ * gets no add, and the reply shows the title of its epic record, else the title typed. Otherwise the worktree
  * `<root>/.claude/worktrees/<name>` is added back on the kept branch, named for it, or made on the new branch
  * `epic/<slug>` from the current HEAD: a name isEpicSlug refuses, or a path that already exists (epicPathExistsReply),
  * stops it before the one `git worktree add` through the host; an add that fails or cannot start gives
- * epicAddFailedReply, and the branch is never deleted. The worktree then gets its epic record in its git dir (D-164):
- * the key, its name as the slug, the title typed, the branch, the base (the branch checked out at the root, else its
- * commit, else null) and the time; a git dir git does not name as an absolute path, or a write that fails, adds the
- * epicNoRecordWarning line and the run goes on. Running /cadre epic is the consent to these steps (D-165), so it asks
- * nothing. The reply is epicCreatedText. `options.terminal` is where the roles will open (D-167).
+ * epicAddFailedReply, and the branch is never deleted. Its epic record (D-164) holds the key, its name as the slug, the
+ * title typed, the branch, the base (the branch checked out at the root, else its commit, else null) and the time.
+ * Either way the main checkout is then mirrored into the worktree (mirroredReply, D-147, D-148): what git does not
+ * track or ignores there is linked in, hidden from git by the worktree's own excludes file, set up before the first
+ * link; a worktree whose git dir git does not name as an absolute path stops with epicExcludesFailedReply. The record
+ * is then written to that git dir with the links and copies that ran (a reuse whose record is unreadable writes none),
+ * and a write that fails adds the epicNoRecordWarning line. Running /cadre epic is the consent to these steps (D-165),
+ * so it asks nothing. The reply is epicCreatedText, or the reply the mirror stopped with. `options.terminal` is where
+ * the roles will open (D-167).
  */
 export async function runEpic(
   io: InitIo,
@@ -467,15 +756,22 @@ export async function runEpic(
   const branches = refs.stdout.split('\n').filter(line => line !== '')
   const lookup = epicLookup({ worktrees: parseWorktreeList(listed.stdout), branches, keySlug })
   if (lookup.kind === 'refuse') return lookup.text
+  const epic = { root, key, roleIds: team.value.state.roles }
 
   if (lookup.kind === 'reuse') {
     const asked = await host.run(GIT_DIR_ARGV(lookup.path), { timeoutMs: GIT_TIMEOUT_MS })
     const recordDir = asked !== null && asked.exitCode === 0 ? asked.stdout.trim() : ''
     const read = recordDir.startsWith('/') ? await io.read(epicRecordPath(recordDir), MAX_READ_BYTES) : null
     const record = read !== null && read.state === 'text' ? parseEpicRecord(read.text) : null
-    const title = record === null ? options.title : record.title
 
-    return epicCreatedText({ key, title, path: lookup.path, branch: lookup.branch, outcome: 'reused', warnings: [] })
+    return mirroredReply(io, host, epic, {
+      path: lookup.path,
+      branch: lookup.branch,
+      outcome: 'reused',
+      title: record === null ? options.title : record.title,
+      gitDir: recordDir,
+      record,
+    })
   }
 
   const isNew = lookup.kind === 'new'
@@ -506,8 +802,7 @@ export async function runEpic(
     links: [],
     copies: [],
   }
-  const isRecorded = gitDir.startsWith('/') && (await host.write(epicRecordPath(gitDir), epicRecordText(record)))
-  const warnings = isRecorded ? [] : [epicNoRecordWarning(key)]
+  const outcome = isNew ? 'created' : 're-added'
 
-  return epicCreatedText({ key, title: options.title, path, branch, outcome: isNew ? 'created' : 're-added', warnings })
+  return mirroredReply(io, host, epic, { path, branch, outcome, title: options.title, gitDir, record })
 }
