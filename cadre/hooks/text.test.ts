@@ -270,7 +270,7 @@ import {
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText, STATUS_LABEL } from './render'
-import { cappedErrors, REPLY_ERRORS_INTRO, withReplyErrors } from './reply'
+import { cappedErrors, REPLY_ERRORS_INTRO } from './reply'
 import {
   chainLines,
   CUSTOM_PURPOSE,
@@ -861,7 +861,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['render', 'adaptersReportLines', adaptersReportLines(ADAPTERS)],
   ['render', 'detectText', [detectText(EMPTY_FACTS, true), detectText(EMPTY_FACTS, false)]],
   ['reply', 'REPLY_ERRORS_INTRO', REPLY_ERRORS_INTRO],
-  ['reply', 'withReplyErrors', withReplyErrors(['a'], ['e'])],
   ['reply', 'cappedErrors', cappedErrors(Array.from({ length: 21 }, (_, at) => `error ${at + 1}`))],
   ['roles', 'ROLE_TEMPLATE', ROLE_TEMPLATE],
   ['roles', 'DEFAULT_MODEL', DEFAULT_MODEL],

@@ -3552,6 +3552,59 @@ describe('memories one by one (G-02-1f)', () => {
   })
 })
 
+/**
+ * A git repo with every instruction source (02-GAPS-B2 N5): the global CLAUDE.md, the repo CLAUDE.md of the chain,
+ * which links docs/guide.md, a top-level and a nested rule file, AGENTS.md, and the memory folder with MEMORY.md and
+ * one memory. The model gives no usable reply, so each file is one topic and nothing is recommended.
+ */
+function everySourceWorld(): MemWorld {
+  return gitWorld({
+    dirs: {
+      '/repo/.git': [],
+      [RULES_DIR]: [entry('a.md'), entry('frontend', 'dir')],
+      [`${RULES_DIR}/frontend`]: [entry('react.md')],
+      [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md')],
+    },
+    files: {
+      [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+      '/repo/CLAUDE.md': `# Rules\n${REPO_SENTENCE}.\nSee [the guide](docs/guide.md).\n`,
+      '/repo/docs/guide.md': `# Guide\n${DOC_SENTENCE}.\n`,
+      [`${RULES_DIR}/a.md`]: '# A\n',
+      [`${RULES_DIR}/frontend/react.md`]: '# React\n',
+      '/repo/AGENTS.md': '# Agents\nWork in small steps.\n',
+      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
+      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
+    },
+    ancestors: [ancestor('/repo')],
+    replies: [],
+  })
+}
+
+/** Each instruction source file of everySourceWorld, as the port reads it. */
+const EVERY_SOURCE: readonly string[] = [
+  GLOBAL_CLAUDE_MD,
+  '/repo/CLAUDE.md',
+  `${RULES_DIR}/a.md`,
+  `${RULES_DIR}/frontend/react.md`,
+  '/repo/AGENTS.md',
+  '/repo/docs/guide.md',
+  `${MEMORY_DIR}/MEMORY.md`,
+  `${MEMORY_DIR}/squad.md`,
+]
+
+describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)', () => {
+  test('no source file is read before the content consent answer, and each is read after it', async () => {
+    const run = memIo(everySourceWorld(), PARTS_ANSWERS)
+    const { io, events } = withReadEvents(run)
+    await runInit(io, { dryRun: true })
+    const consentAt = events.indexOf(`ask ${CONTENT_QUESTION}`)
+    for (const path of EVERY_SOURCE) {
+      const readAt = events.indexOf(`read ${path}`)
+      expect([path, consentAt > 0, readAt > consentAt]).toEqual([path, true, true])
+    }
+  })
+})
+
 /** The sentence of the root CLAUDE.md's Rules section, which init writes into the built file of the role given it. */
 const BUILT_RULE = 'Run the tests before a commit.'
 
