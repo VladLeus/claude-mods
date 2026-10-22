@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import { ADAPTERS } from './adapters'
 import {
+  changedBeforeRunWarning,
   CONFLICT_OPTIONS,
   conflictQuestion,
   hunkFailureLine,
@@ -46,6 +47,7 @@ import {
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   uncheckedFilesWarning,
+  UNGUARDED_RUN_REASON,
 } from './apply'
 import type { HunkRun } from './apply'
 import {
@@ -674,6 +676,8 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ],
   ['apply', 'otherFilesLines', otherFilesLines('.cadre/be', OTHERS)],
   ['apply', 'uncheckedFilesWarning', [uncheckedFilesWarning(1, '.cadre/be'), uncheckedFilesWarning(7, '.cadre/be')]],
+  ['apply', 'changedBeforeRunWarning', changedBeforeRunWarning(BUILT_PATH)],
+  ['apply', 'UNGUARDED_RUN_REASON', UNGUARDED_RUN_REASON],
   ['apply', 'INSTRUCTIONS_RECORD_FILE', INSTRUCTIONS_RECORD_FILE],
   ['apply', 'privateClaudeMdText', privateClaudeMdText(BE.id, 'repo', PART_SCAN.parts)],
   ['apply', 'instructionsRecordText', instructionsRecordText(PART_SCAN.parts, PART_SCAN.memories)],

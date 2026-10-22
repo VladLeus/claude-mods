@@ -26,6 +26,7 @@ import {
   kickoffText,
   launcherText,
   mcpText,
+  partsBody,
   repoPartFiles,
   ROLE_LINE_MAX,
   roleClaudeMdText,
@@ -621,6 +622,25 @@ describe('roleClaudeMdText (G-02-1f)', () => {
 
   test('with no part the text is the header line alone, with its newline', () => {
     expect(roleClaudeMdText('be', [])).toBe(`${builtHeader('be')}\n`)
+  })
+
+  test('partsBody is the text after the header: a blank line before each part, one final newline (N5)', () => {
+    expect(partsBody([])).toBe('\n')
+    expect(partsBody([RULES_PART, SECRETS_PART])).toBe(
+      [
+        '',
+        '',
+        '<!-- from CLAUDE.md > Rules -->',
+        '# Rules',
+        'Run the tests before a commit.',
+        '',
+        '<!-- from .claude/rules/security.md > Secrets -->',
+        '## Secrets',
+        'Keep keys out of the repo.',
+        '',
+      ].join('\n'),
+    )
+    expect(roleClaudeMdText('be', [RULES_PART])).toBe(`${builtHeader('be')}${partsBody([RULES_PART])}`)
   })
 
   test('a file name or heading with a line break or a bidi character adds no line to the file', () => {

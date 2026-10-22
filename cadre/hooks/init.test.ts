@@ -47,6 +47,7 @@ import {
   conflictQuestion,
   hunkFailureLine,
   improverArgv,
+  improverGuardFlags,
   improverLine,
   improverNoChangeNote,
   installedLine,
@@ -4110,6 +4111,9 @@ const BUILT_BE_IMPROVED = BUILT_BE.replace(BUILT_RULE, `${BUILT_RULE} Keep them 
 /** The absolute path of BE's built CLAUDE.md in the fixture repo. */
 const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
 
+/** The improver run of BE's built CLAUDE.md: guarded from its .runtime folder and from Bash (02-GAPS-B3 M1). */
+const BE_IMPROVER_ARGV: readonly string[] = improverArgv(BE_CLAUDE_MD, improverGuardFlags('/repo', 'be') ?? [])
+
 /** BE's built CLAUDE.md, repo-relative, as a file plan names it. */
 const BE_CLAUDE_MD_PATH = '.cadre/be/CLAUDE.md'
 
@@ -4153,7 +4157,7 @@ function improvingHost(
     ...logged.io,
     run: async (argv, options) => {
       const result = await logged.io.run(argv, options)
-      if (argv.join(' ') === improverArgv(BE_CLAUDE_MD).join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
+      if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = BUILT_BE_IMPROVED
 
       return result
     },
@@ -4181,7 +4185,7 @@ describe('improver in init (G-02-1f)', () => {
     const security = await memoryFolder('security')
     const text = privateClaudeMdPath(security)
     expect(improverCalls(host)).toEqual([
-      { argv: improverArgv(BE_CLAUDE_MD), options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
+      { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
       { argv: improverArgv(text), options: { cwd: `${security}/instructions`, timeoutMs: 300_000 } },
     ])
     const firstRun = events.findIndex(event => event.startsWith('run claude -p'))
@@ -4231,7 +4235,7 @@ describe('improver in init (G-02-1f)', () => {
       ...improving,
       run: async (argv, options) => {
         const result = await improving.run(argv, options)
-        if (argv.join(' ') !== improverArgv(BE_CLAUDE_MD).join(' ')) return result
+        if (argv.join(' ') !== BE_IMPROVER_ARGV.join(' ')) return result
         files['/repo/.cadre/be/role.json'] = edited
         dirs['/repo/.cadre/be'] = [entry('CLAUDE.md'), entry('role.json')]
 
@@ -8369,7 +8373,7 @@ describe('regen by part hashes (G-02-1f)', () => {
       ...host.io,
       run: async (argv, options) => {
         const result = await host.io.run(argv, options)
-        if (argv.join(' ') === improverArgv(BE_CLAUDE_MD).join(' ')) files[BE_CLAUDE_MD] = improved
+        if (argv.join(' ') === BE_IMPROVER_ARGV.join(' ')) files[BE_CLAUDE_MD] = improved
 
         return result
       },
@@ -8377,7 +8381,7 @@ describe('regen by part hashes (G-02-1f)', () => {
     const run = memIo({ ...world, files }, { [REGEN_PART_PREFIX]: 'Yes', [IMPROVER_PREFIX]: 'Accept' })
     const reply = await runRegen(run.io, { id: 'be', dryRun: false, host: io })
     expect(improverCalls(host)).toEqual([
-      { argv: improverArgv(BE_CLAUDE_MD), options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
+      { argv: BE_IMPROVER_ARGV, options: { cwd: '/repo/.cadre/be', timeoutMs: 300_000 } },
     ])
     expect(reply.split('\n').slice(-2)).toEqual([improverLine({ changed: 1, total: 1 }), NEXT_STEP_NOTE])
     expect(writtenManifestText(host)).toContain(await sha256Hex(improved))
