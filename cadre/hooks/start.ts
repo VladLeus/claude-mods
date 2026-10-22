@@ -795,6 +795,18 @@ export async function gitCommonDirOf(
   return { gitCommonDir, commonDirHash: await sha256Hex(gitCommonDir) }
 }
 
+/**
+ * The main checkout of a linked worktree nested in it (D-20, D-157, 03.1-W3 M1): the folder of the git common dir when
+ * it is `<main>/.git` and the root lies below `<main>/`, as `.claude/worktrees/<slug>` does; null for the main
+ * checkout, a common dir elsewhere, or a submodule's.
+ */
+export function mainCheckoutOf(gitCommonDir: string, root: string): string | null {
+  if (!gitCommonDir.endsWith('/.git')) return null
+  const main = gitCommonDir.slice(0, -'/.git'.length)
+
+  return root.startsWith(`${main}/`) ? main : null
+}
+
 /** The begin marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract, as IGNORE_BEGIN is. */
 export const MEMORY_BLOCK_BEGIN = '<!-- >>> cadre linked memories (read-only; rebuilt by /cadre start) -->'
 
@@ -937,11 +949,11 @@ type MemoryLinkOutcome = {
 /**
  * What /cadre start does with one memory of a role's hand-out record (G-02-1f, D-140 q3-a). It is not linked when its
  * name may not be a link name (isLinkableMemory, unsafeMemoryNameWarning); when its folder is not a memory folder of
- * this repo, of the root as resolved or as given, or its original cannot be read as a file (memoryGoneWarning); or
- * when a real file or folder holds its link path in the role memory folder, which is never replaced
- * (notReplacedWarning). Else it is linked, `<role memory folder>/<file>` to `<its folder>/<file>`, never copied, with
- * memoryChangedWarning when its original's text is over MAX_READ_BYTES or no longer has the hash of the record. The
- * original is read for its hash alone.
+ * this repo, of the root as resolved or as given, or of the main checkout (`mainRoot`, 03.1-W3 M1), or its original
+ * cannot be read as a file (memoryGoneWarning); or when a real file or folder holds its link path in the role memory
+ * folder, which is never replaced (notReplacedWarning). Else it is linked, `<role memory folder>/<file>` to `<its
+ * folder>/<file>`, never copied, with memoryChangedWarning when its original's text is over MAX_READ_BYTES or no longer
+ * has the hash of the record. The original is read for its hash alone.
  */
 async function memoryLinkOf(
   io: InitIo,
@@ -950,7 +962,8 @@ async function memoryLinkOf(
 ): Promise<MemoryLinkOutcome> {
   const { folder, id, memory } = input
   if (!isLinkableMemory(memory.file)) return { link: null, warning: unsafeMemoryNameWarning(memory.file) }
-  const repoFolders = [user.root, user.givenRoot].map(root => memoryFolderOf(user.userDir, root))
+  const roots = [user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+  const repoFolders = roots.map(root => memoryFolderOf(user.userDir, root))
   if (!repoFolders.includes(memory.folder)) return { link: null, warning: memoryGoneWarning(memory.file) }
   const path = `${folder}/${memory.file}`
   if (isRealEntry(await io.stat(path))) {
@@ -1053,7 +1066,9 @@ async function linkedMemoriesOf(
  *   `<home>/.claude`);
  * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
  *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir,
- *   D-20, D-91);
+ *   D-20, D-91); and, for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that
+ *   checkout as `mainRoot`, set before the memories are linked, so a linked worktree links and denies main's memory
+ *   folder and gets main's code-dir denies (03.1-W3 M1, S1);
  * - the carried values of the user settings (launchSettingsOf) and the hooks of each source hookSourcesFor names for
  *   the launch start (launchHooksOf, D-103);
  * - the CLAUDE.md chain the host's ancestors list gives (claudeMdPathsOf), the rule files of `.claude/rules` (rulesOf)
@@ -1102,12 +1117,14 @@ export async function gatherLaunchUser(
   }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
+  const main = mainCheckoutOf(commonDir.gitCommonDir, locations.root)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
     home,
     userDir,
     ...commonDir,
+    ...(main === null ? {} : { mainRoot: main }),
     ...launchSettingsOf(await io.settings('user')),
     hooks,
     claudeMd: claudeMdPathsOf(await io.ancestors(CLAUDE_MD_FILES)),

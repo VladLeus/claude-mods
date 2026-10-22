@@ -88,8 +88,9 @@ export type LaunchUser = {
    */
   readonly linkedMemories: readonly string[]
   /**
-   * The main checkout of an epic render (D-157), whose worktree is `root`: its exact code-dir denies are added too
-   * (RESEARCH Pitfall 2). Absent for a render in the session's own root.
+   * The main checkout of a linked worktree nested in it (gatherLaunchUser, mainCheckoutOf; D-157), whose worktree is
+   * `root`: its exact code-dir denies and its memory folder's deny are added too, and its memories link (RESEARCH
+   * Pitfall 2, 03.1-W3 M1). Absent for the main checkout.
    */
   readonly mainRoot?: string
 }
@@ -413,12 +414,14 @@ function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
 
 /**
  * The deny of the repo's memory folders (02-GAPS-B3 C2): `Edit(//<folder>/**)` and `Write(//<folder>/**)` for the
- * memory folder of the root as resolved and as given (memoryFolderOf), once each, so no role edits a memory, through
- * the links /cadre start makes or the ones under `.runtime/instructions/memory`. A folder an exact rule cannot hold
- * gets none, and the warning UNDENIED_MEMORY_FOLDER_WARNING comes once.
+ * memory folder of the root as resolved and as given, and of the main checkout when `mainRoot` is set (03.1-W3 M1),
+ * (memoryFolderOf), once each, so no role edits a memory, through the links /cadre start makes or the ones under
+ * `.runtime/instructions/memory`. A folder an exact rule cannot hold gets none, and the warning
+ * UNDENIED_MEMORY_FOLDER_WARNING comes once.
  */
 function memoryFolderDeny(user: LaunchUser): DenyResult {
-  const folders = sortedUnique([memoryFolderOf(user.userDir, user.root), memoryFolderOf(user.userDir, user.givenRoot)])
+  const roots = [user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+  const folders = sortedUnique(roots.map(root => memoryFolderOf(user.userDir, root)))
   const rules = folders.map(folder => editWriteRules(folder, '/**'))
   const deny = rules.flatMap(rule => rule ?? [])
 
@@ -438,13 +441,13 @@ function instructionsRecordDeny(user: LaunchUser, id: string): DenyResult {
 
 /**
  * The deny list of a role's runtime settings, sorted and once each, with the warnings in this order: runtimeDeny's;
- * for an epic render (`mainRoot` set, D-157), runtimeDeny's denies for the main checkout's root too, so its code dirs
- * get the same exact denies as the worktree's (RESEARCH Pitfall 2), without its warnings, which would repeat the
- * worktree's; the deny of the role's private instructions folder, for every role, as every launcher adds that folder
- * (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's memory folders (memoryFolderDeny,
- * 02-GAPS-B3 C2) and of its hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3); and for a parts-flow role the
- * read-only deny of the memories /cadre start linked into its memory folder (linkedMemoryDeny, G-02-1f), never of its
- * MEMORY.md or of its own memories.
+ * for a linked worktree nested in its main checkout (`mainRoot` set, D-157, 03.1-W3 M1), runtimeDeny's denies for the
+ * main checkout's root too, so its code dirs get the same exact denies as the worktree's (RESEARCH Pitfall 2), without
+ * its warnings, which would repeat the worktree's; the deny of the role's private instructions folder, for every role,
+ * as every launcher adds that folder (privateInstructionsDeny, 02-GAPS-B2 S3); for every role, the deny of the repo's
+ * memory folders (memoryFolderDeny, 02-GAPS-B3 C2) and of its hand-out record (instructionsRecordDeny, 02-GAPS-B3 C3);
+ * and for a parts-flow role the read-only deny of the memories /cadre start linked into its memory folder
+ * (linkedMemoryDeny, G-02-1f), never of its MEMORY.md or of its own memories.
  */
 function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): DenyResult {
   const results = [
