@@ -99,6 +99,8 @@ import {
   epicBadKeyReply,
   epicBadNameReply,
   epicCreatedText,
+  epicExcludesFailedReply,
+  epicListFailedReply,
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
@@ -106,6 +108,10 @@ import {
   epicNotMainReply,
   epicPathExistsReply,
   epicRecordText,
+  epicStepFailedReply,
+  EXCLUDES_FILE,
+  excludesText,
+  RUNTIME_EXCLUDE_LINE,
   WORKTREES_DIR,
 } from './epic'
 import {
@@ -659,12 +665,17 @@ const REPORTS: readonly StatusReport[] = [
   { id: 'pm', state: 'unknown', sessionId: null, foundBy: null, lastLog: null, handoff: null, doneMarker: null },
 ]
 
-/** The worktree `/cadre epic PROJ-1 Add retry` makes in /repo, as the epic texts name it, with no warning. */
+/**
+ * The worktree `/cadre epic PROJ-1 Add retry` makes in /repo, as the epic texts name it, with two links, one copy and
+ * no warning.
+ */
 const EPIC_WORKTREE = {
   key: 'PROJ-1',
   title: 'Add retry',
   path: '/repo/.claude/worktrees/proj-1-add-retry',
   branch: 'epic/proj-1-add-retry',
+  linked: 2,
+  copied: 1,
   warnings: [],
 }
 
@@ -812,6 +823,12 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['epic', 'epicPathExistsReply', epicPathExistsReply(EPIC_WORKTREE.path)],
   ['epic', 'EPIC_RECORD_FILE', EPIC_RECORD_FILE],
   ['epic', 'epicNoRecordWarning', epicNoRecordWarning(EPIC_WORKTREE.key)],
+  ['epic', 'EXCLUDES_FILE', EXCLUDES_FILE],
+  ['epic', 'RUNTIME_EXCLUDE_LINE', RUNTIME_EXCLUDE_LINE],
+  ['epic', 'excludesText', [excludesText('*.log\n', ['node_modules']), excludesText('', [])]],
+  ['epic', 'epicListFailedReply', epicListFailedReply(EPIC_WORKTREE.key)],
+  ['epic', 'epicExcludesFailedReply', epicExcludesFailedReply(EPIC_WORKTREE.key)],
+  ['epic', 'epicStepFailedReply', epicStepFailedReply('node_modules')],
   [
     'epic',
     'epicRecordText',

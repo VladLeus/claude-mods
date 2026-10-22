@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { EpicRecord, HostRun, ManifestEntry, RoleSpec } from '../types'
+import type { EpicRecord, HostIo, HostRun, ManifestEntry, RoleSpec } from '../types'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
   EPIC_BRANCHES_ARGV,
   EPIC_NO_PM,
+  EPIC_RECORD_FILE,
   epicAddFailedReply,
   epicBadKeyReply,
   epicCreatedText,
+  epicExcludesFailedReply,
   epicKeyOf,
   epicLookup,
   epicManyBranchesReply,
@@ -19,13 +21,20 @@ import {
   epicPmOf,
   epicRecordText,
   epicSlug,
+  epicStepArgv,
+  EXCLUDES_CONFIG_ARGV,
+  EXCLUDES_FILE,
+  excludesText,
   GIT_DIR_ARGV,
+  LS_IGNORED_ARGV,
   parseEpicRecord,
   parseWorktreeList,
   runEpic,
+  untrackedEntries,
+  WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
 } from './epic'
-import type { WorktreeEntry } from './epic'
+import type { EpicStep, WorktreeEntry } from './epic'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
@@ -33,13 +42,16 @@ import { stableJson } from './plan'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import { claudeTooOldReply, launcherChangedReply } from './start'
 import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, templateRole } from './testkit'
-import type { HostCall, HostRunRule, HostWrite, MemWorld } from './testkit'
+import type { HostCall, HostRunRule, HostWrite, MemHost, MemWorld } from './testkit'
 
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
 const WORKTREE = '/repo/.claude/worktrees/proj-1-add-retry'
 
 /** The branch of that worktree (D-146). */
 const BRANCH = 'epic/proj-1-add-retry'
+
+/** The git dir of that worktree, where its epic record and its excludes file lie (D-147, D-164). */
+const GIT_DIR = '/repo/.git/worktrees/proj-1-add-retry'
 
 /** The add of that worktree on a new branch from the current HEAD (D-147). */
 const ADD_ARGV = ['git', '-C', '/repo', 'worktree', 'add', '-b', BRANCH, WORKTREE, 'HEAD']
@@ -110,6 +122,53 @@ type EpicRun = {
   readonly reply: string
   readonly writes: readonly HostWrite[]
   readonly calls: readonly HostCall[]
+  /** Each write as `write <path>` and each run as its argv joined by spaces, in the order of their shared counter. */
+  readonly events: readonly string[]
+}
+
+/** The fake host of the epic specs and what it was asked: each write and run numbered by one counter they share. */
+type EpicHost = MemHost & {
+  /** The counter value of each write, by its index in `writes`. */
+  readonly writeAt: readonly number[]
+  /** The counter value of each run, by its index in `calls`. */
+  readonly callAt: readonly number[]
+}
+
+/**
+ * The fake host of the epic specs, on top of memHost: these run rules first, then BASE_RULES; any other argv exits 0
+ * with no output. Each write and each run also takes the next value of one counter they share, so a spec can tell
+ * whether a file was written before a command ran.
+ */
+function epicHost(runs: readonly HostRunRule[]): EpicHost {
+  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES] }))
+  const writeAt: number[] = []
+  const callAt: number[] = []
+  let counter = 0
+  const io: HostIo = {
+    write: async (path, text) => {
+      writeAt.push(counter)
+      counter += 1
+
+      return host.io.write(path, text)
+    },
+    run: async (argv, options) => {
+      callAt.push(counter)
+      counter += 1
+
+      return host.io.run(argv, options)
+    },
+    env: host.io.env,
+  }
+
+  return { ...host, io, writeAt, callAt }
+}
+
+/** The writes of `host` as `write <path>` and its runs as their argv joined by spaces, in shared-counter order. */
+function eventsOf(host: EpicHost): string[] {
+  const writes = host.writes.map((write, index) => ({ at: host.writeAt[index] ?? -1, label: `write ${write.path}` }))
+  const calls = host.calls.map((call, index) => ({ at: host.callAt[index] ?? -1, label: call.argv.join(' ') }))
+
+  return [...writes, ...calls].sort((a, b) => a.at - b.at).map(event => event.label)
 }
 
 /**
@@ -122,10 +181,10 @@ async function epic(
   key = 'PROJ-1',
   title = 'Add retry',
 ): Promise<EpicRun> {
-  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES] }))
+  const host = epicHost(runs)
   const reply = await runEpic(memIo(world, {}).io, host.io, { key, title, terminal: 'auto' })
 
-  return { reply, writes: host.writes, calls: host.calls }
+  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host) }
 }
 
 /** The argv of every `git worktree add` the run asked for. */
@@ -140,7 +199,7 @@ function worktreeRuns(run: EpicRun): (readonly string[])[] {
 
 describe('runEpic', () => {
   test('PROJ-1 Add retry adds the worktree on a new epic branch from HEAD and names both (D-145, D-146)', async () => {
-    const run = await epic(await teamWorld(), [rule(ADD_ARGV, 0)])
+    const run = await epic(await teamWorld(), [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`)])
 
     expect(addRuns(run)).toEqual([ADD_ARGV])
     expect(run.reply).toContain(WORKTREE)
@@ -250,9 +309,6 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
   })
 })
 
-/** The git dir of the new worktree of PROJ-1 Add retry, where its epic record lies (D-164). */
-const GIT_DIR = '/repo/.git/worktrees/proj-1-add-retry'
-
 /** The epic record of PROJ-1 Add retry as a new worktree on a branch of `main` writes it. */
 const RECORD: EpicRecord = {
   schema: 1,
@@ -313,7 +369,8 @@ describe('finding an epic by its key (D-163)', () => {
     const kept = '/repo/.claude/worktrees/proj-1-old'
     const readd = ['git', '-C', '/repo', 'worktree', 'add', kept, 'epic/proj-1-old']
     const branches = rule(EPIC_BRANCHES_ARGV('/repo'), 0, 'epic/proj-1-old\n')
-    const run = await epic(await teamWorld(), [branches, rule(readd, 0)])
+    const gitDir = rule(GIT_DIR_ARGV(kept), 0, '/repo/.git/worktrees/proj-1-old\n')
+    const run = await epic(await teamWorld(), [branches, rule(readd, 0), gitDir])
 
     expect(addRuns(run)).toEqual([readd])
     expect(run.reply).toContain(kept)
@@ -332,10 +389,10 @@ describe('finding an epic by its key (D-163)', () => {
       rule(WORKTREE_LIST_ARGV('/repo'), 0, porcelain),
       rule(GIT_DIR_ARGV(path), 0, `${gitDir}\n`),
     ])
-    const reply = { key: 'PROJ-1', title: 'Old title', path, branch: 'epic/proj-1-x', warnings: [] }
+    const reply = { key: 'PROJ-1', title: 'Old title', path, branch: 'epic/proj-1-x', linked: 0, copied: 0 }
 
     expect(addRuns(run)).toEqual([])
-    expect(run.reply).toBe(epicCreatedText({ ...reply, outcome: 'reused' }))
+    expect(run.reply).toBe(epicCreatedText({ ...reply, outcome: 'reused', warnings: [] }))
   })
 
   test('a folder at the worktree path that git does not list refuses before anything is added (D-147)', async () => {
@@ -360,14 +417,15 @@ describe('the epic record (D-164)', () => {
       rule(BASE_COMMIT_ARGV('/repo'), 0, 'abc123\n'),
       rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`),
     ])
+    const records = (run: EpicRun) => run.writes.filter(write => write.path === `${GIT_DIR}/${EPIC_RECORD_FILE}`)
 
     expect(created.calls.map(call => call.argv).filter(argv => argv.includes('--absolute-git-dir'))).toEqual([
       GIT_DIR_ARGV(WORKTREE),
     ])
-    expect(created.writes).toEqual([
+    expect(records(created)).toEqual([
       { path: `${GIT_DIR}/cadre-epic.json`, text: epicRecordText(RECORD), isWritten: true },
     ])
-    expect(detached.writes.map(write => parseEpicRecord(write.text)?.base)).toEqual(['abc123'])
+    expect(records(detached).map(write => parseEpicRecord(write.text)?.base)).toEqual(['abc123'])
   })
 
   test('parseEpicRecord reads back what epicRecordText wrote and refuses a bad shape or an unsafe path', () => {
@@ -379,5 +437,86 @@ describe('the epic record (D-164)', () => {
     for (const path of ['/etc/x', '', 'a/../b', '..', 'a//b', 'a/']) {
       expect([path, bad({ links: [path] }), bad({ copies: [path] })]).toEqual([path, null, null])
     }
+  })
+})
+
+/** The worktree `/cadre epic PROJ-1` makes with no title words (D-146), and its git dir (D-164). */
+const BARE_WORKTREE = '/repo/.claude/worktrees/proj-1'
+
+/** The git dir of BARE_WORKTREE, as git names it. */
+const BARE_GIT_DIR = '/repo/.git/worktrees/proj-1'
+
+/** The excludes file of BARE_WORKTREE, in its git dir (D-147). */
+const BARE_EXCLUDES = `${BARE_GIT_DIR}/${EXCLUDES_FILE}`
+
+/** The epic record of BARE_WORKTREE, in its git dir (D-164). */
+const BARE_RECORD = `${BARE_GIT_DIR}/${EPIC_RECORD_FILE}`
+
+/** A new PROJ-1 worktree whose main checkout ignores node_modules/ and has nothing else git does not track. */
+const NODE_MODULES_RULES: readonly HostRunRule[] = [
+  rule(LS_IGNORED_ARGV('/repo'), 0, 'node_modules/\0'),
+  rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`),
+]
+
+/** The `/bin/ln` runs of an epic run: a run that stops before its links has none. */
+function linkRuns(run: EpicRun): (readonly string[])[] {
+  return run.calls.map(call => call.argv).filter(argv => argv[0] === '/bin/ln')
+}
+
+/** Whether an event of EpicRun.events belongs to the mirror: a write, a git config run, or a `/bin/` step. */
+function isMirrorEvent(event: string): boolean {
+  return event.startsWith('write ') || event.includes(' config ') || event.startsWith('/bin/')
+}
+
+describe('mirroring the main checkout into the epic worktree (D-147, D-148)', () => {
+  test('untrackedEntries reads both NUL-ended listings: each entry once, sorted, without its trailing /', () => {
+    expect(untrackedEntries('node_modules/\0', '.cadre/\0node_modules/\0')).toEqual(['.cadre', 'node_modules'])
+    expect(untrackedEntries('', '')).toEqual([])
+  })
+
+  test('excludesText keeps the global excludes, then one /<path> line per link, sorted, and the runtime line', () => {
+    const tail = '# cadre links (cadre epic)\n/node_modules\n/.cadre/*/.runtime/\n'
+
+    expect(excludesText('*.log\n', ['node_modules'])).toBe(`*.log\n${tail}`)
+    expect(excludesText('*.log', ['node_modules'])).toBe(`*.log\n${tail}`)
+    expect(excludesText('', ['node_modules'])).toBe(tail)
+    expect(excludesText('', ['thoughts', 'node_modules'])).toContain('\n/node_modules\n/thoughts\n')
+  })
+
+  test('each mirror step runs as one absolute argv with no shell, and a link never replaces what is there', () => {
+    const link: EpicStep = { kind: 'link', path: '/w/a', target: '/repo/a' }
+    const copy: EpicStep = { kind: 'copy', path: '/w/.env', source: '/repo/.env' }
+
+    expect(epicStepArgv({ kind: 'mkdir', path: '/w/a' })).toEqual(['/bin/mkdir', '-p', '--', '/w/a'])
+    expect(epicStepArgv(link)).toEqual(['/bin/ln', '-s', '--', '/repo/a', '/w/a'])
+    expect(epicStepArgv(copy)).toEqual(['/bin/cp', '-p', '--', '/repo/.env', '/w/.env'])
+  })
+
+  test('an ignored node_modules/ becomes a link in the new worktree, hidden from git before it is made', async () => {
+    const run = await epic(await teamWorld(), NODE_MODULES_RULES, 'PROJ-1', '')
+    const ln = ['/bin/ln', '-s', '--', '/repo/node_modules', `${BARE_WORKTREE}/node_modules`]
+    const record = run.writes.filter(write => write.path === BARE_RECORD).at(-1)
+
+    expect(run.writes.find(write => write.path === BARE_EXCLUDES)?.text).toBe(excludesText('', ['node_modules']))
+    expect(run.events.filter(isMirrorEvent)).toEqual([
+      `write ${BARE_EXCLUDES}`,
+      WORKTREE_CONFIG_ARGV('/repo').join(' '),
+      EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES).join(' '),
+      ln.join(' '),
+      `write ${BARE_RECORD}`,
+    ])
+    expect(parseEpicRecord(record?.text ?? '')?.links).toEqual(['node_modules'])
+    expect(run.reply).toContain('Linked 1, copied 0.')
+  })
+
+  test('a failed excludes setup, or no git dir to hold it, stops before any link and says none was made', async () => {
+    const failed = rule(EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES), 1)
+    const config = await epic(await teamWorld(), [failed, ...NODE_MODULES_RULES], 'PROJ-1', '')
+    const noGitDir = await epic(await teamWorld(), [rule(LS_IGNORED_ARGV('/repo'), 0, 'node_modules/\0')], 'PROJ-1', '')
+    const failure = epicExcludesFailedReply('PROJ-1')
+
+    expect([config.reply, noGitDir.reply]).toEqual([failure, failure])
+    expect(config.reply).toContain('made no links')
+    expect([...linkRuns(config), ...linkRuns(noGitDir)]).toEqual([])
   })
 })
