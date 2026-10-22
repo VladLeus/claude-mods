@@ -1,7 +1,9 @@
 /**
- * The gather and render halves of /cadre start (D-102), and runStart, the command itself, which checks the repo and
- * the team, gathers, runs the render steps through the HostIo port and hands over the launcher command: printed,
- * copied to the clipboard and, with `--terminal`, opened in a new terminal on macOS (LNCH-04, D-110, D-109).
+ * The gather and render halves of /cadre start (D-102); renderRole, which gathers and renders one role for the root it
+ * is given, the session's for /cadre start and an epic worktree for /cadre epic (D-157); and runStart, the command
+ * itself, which checks the repo and the team, runs renderRole through the HostIo port and hands over the launcher
+ * command: printed, copied to the clipboard and, with `--terminal`, opened in a new terminal on macOS (LNCH-04, D-110,
+ * D-109).
  *
  * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
  * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
@@ -15,6 +17,8 @@
  * rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
 import type {
+  CadreState,
+  CompiledScope,
   DesiredFile,
   HostIo,
   InitIo,
@@ -1645,26 +1649,91 @@ function withPrivateInstructions(plan: LaunchPlan, user: LaunchUser, id: string)
 }
 
 /**
+ * What makes a render an epic render (D-157): /cadre epic renders a role for its epic worktree, from the team of the
+ * main checkout.
+ */
+export type EpicRender = {
+  /** The main checkout's root, where the team, the manifest and the launchers were read. */
+  readonly mainRoot: string
+}
+
+/**
+ * The render half of /cadre start for one role (D-102), which /cadre epic runs too, once per role, for its epic
+ * worktree (D-157): `locations` give the root it renders for, and the caller reads and compiles the team (`state`, the
+ * role, its compiled scope and the repo's code dirs) in the session's own root. It gathers the launching user for the
+ * root (gatherLaunchUser), builds the role's LaunchPlan with its private instructions link (withPrivateInstructions,
+ * D-140 q1-b), renders the MCP config from `~/.claude.json` under the stored consent with the project entries of
+ * `mcpRoots`, in that order (runtimeMcpText), and the probe expectations, and renders `<root>/.cadre/<id>/.runtime/`:
+ * renderPaths names what to stat and list, renderSteps plans the steps from the root the LaunchPlan was built for, and
+ * every refusal comes before anything is written. Each step then runs through the host in order, and the first one
+ * that fails stops the render with renderFailedReply and no stamp written, so the launcher refuses to start (LNCH-03).
+ * It refuses with the refusals of gatherLaunchUser, a role memory folder level it would write through included
+ * (privateFolderRefusal, 02-GAPS-B3 C5), a render refusal, or that failure. Else it gives the number of links the
+ * render made and every warning of the launch user, the LaunchPlan, the MCP config and the render, in that order.
+ * `epic` is null for /cadre start, and names the main checkout for /cadre epic.
+ */
+export async function renderRole(
+  io: InitIo,
+  host: HostIo,
+  input: {
+    readonly locations: InitLocations
+    readonly state: CadreState
+    readonly role: RoleSpec
+    readonly scope: CompiledScope
+    readonly codeDirs: readonly string[]
+    readonly mcpRoots: readonly string[]
+    readonly epic: EpicRender | null
+  },
+): Promise<
+  | { readonly kind: 'refuse'; readonly text: string }
+  | { readonly kind: 'ok'; readonly links: number; readonly warnings: readonly string[] }
+> {
+  const { locations, state, role, scope } = input
+  const { id } = role
+  const launch = await gatherLaunchUser(io, host, {
+    locations,
+    launchStart: state.launchStart,
+    codeDirs: input.codeDirs,
+    role,
+  })
+  if (launch.kind === 'refuse') return { kind: 'refuse', text: launch.text }
+  const { user } = launch
+  const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
+  const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
+  const mcp = runtimeMcpText(role, claudeJson, input.mcpRoots, state.readUserMcp)
+  const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
+  const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
+  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
+  const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
+  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories })
+  if (render.refusal !== null) return { kind: 'refuse', text: render.refusal }
+
+  for (const step of render.steps) {
+    if (!(await isStepDone(host, step))) {
+      return { kind: 'refuse', text: renderFailedReply(id, repoRelative(user.root, step.path)) }
+    }
+  }
+  const links = render.steps.filter(step => step.kind === 'link').length
+
+  return { kind: 'ok', links, warnings: [...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings] }
+}
+
+/**
  * `/cadre start <id>` in the repo's root session (D-102, LNCH-04). It refuses with one exact line, in this order: the
  * repo refusals of repoGuard (in the start wording); the team refusals of readTeam; the launcher refusals of
  * launcherRead (manifest, launcher missing, launcher changed); the claude refusals of claudeRefusal (D-107), run
- * before anything else is run; the refusals of gatherLaunchUser, a role memory folder level it would write through
- * included (privateFolderRefusal, 02-GAPS-B3 C5); and a render refusal. Otherwise it compiles the team
- * (compileTeam), gathers the launching user and builds the role's LaunchPlan with its private instructions link
- * (withPrivateInstructions, D-140 q1-b), and renders the role's `.runtime/`: the settings, the MCP config
- * (runtimeMcpText), the probe expectations, the links and the private instructions folder, the inbox when there is
- * none, and the stamp last. renderPaths names what to stat and list, renderSteps plans the steps from the root the
- * LaunchPlan was built for, and every refusal comes before anything is written. Each step then runs through the host
- * in order, and the first one that fails stops the render with renderFailedReply and no stamp written, so the launcher
- * refuses to start (LNCH-03). The reply names the folder; the scan warnings of the run, as regen prints them
- * (scanWarnings, #54 A1); the launcher warning of launcherDrift (#54 A3); every warning of the launch user, the
- * LaunchPlan, the MCP config and the render; and the launcher command (startReplyText). Once the render has run every
- * step, it copies the command through the host with clipboardRun, and the line below the command is COPIED_LINE when
- * pbcopy exits 0, else NOT_COPIED_LINE, which is not an error (D-110, D-132); a refused or failed render copies
- * nothing. With `--terminal` (`options.terminal` other than `none`), after the copy it asks `/usr/bin/uname -s`, TMUX
- * and TERM_PROGRAM, and opens the command where terminalPlan says, or prints its refusal: the line of terminalLine
- * follows the copy line, and the command is printed and copied in every case (D-109, D-126, D-132). It never runs the
- * launcher, and never starts a background session (D-108).
+ * before anything else is run; and the refusals of renderRole. It reads the team, checks the launcher and compiles
+ * the team (compileTeam) itself, in the session's root; renderRole then renders the role's `.runtime/` for that same
+ * root, with the MCP project entries of the root as resolved, then as given, and no epic (D-157): the settings, the MCP
+ * config, the probe expectations, the links and the private instructions folder, the inbox when there is none, and the
+ * stamp last. The reply names the folder; the scan warnings of the run, as regen prints them (scanWarnings, #54 A1);
+ * the launcher warning of launcherDrift (#54 A3); every warning renderRole gives; and the launcher command
+ * (startReplyText). Once the render has run every step, it copies the command through the host with clipboardRun, and
+ * the line below the command is COPIED_LINE when pbcopy exits 0, else NOT_COPIED_LINE, which is not an error (D-110,
+ * D-132); a refused or failed render copies nothing. With `--terminal` (`options.terminal` other than `none`), after
+ * the copy it asks `/usr/bin/uname -s`, TMUX and TERM_PROGRAM, and opens the command where terminalPlan says, or prints
+ * its refusal: the line of terminalLine follows the copy line, and the command is printed and copied in every case
+ * (D-109, D-126, D-132). It never runs the launcher, and never starts a background session (D-108).
  */
 export async function runStart(
   io: InitIo,
@@ -1688,37 +1757,19 @@ export async function runStart(
   const scope = scopes.get(id)
   // Fail closed: readTeam read every listed role and compileTeam compiled each one, so both are always there.
   if (role === undefined || scope === undefined) return regenBadRole(id)
-  const launch = await gatherLaunchUser(io, host, {
-    locations,
-    launchStart: state.launchStart,
-    codeDirs: gathered.repo.codeDirs,
-    role,
-  })
-  if (launch.kind === 'refuse') return launch.text
-  const { user } = launch
-  const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
-  const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
-  const mcp = runtimeMcpText(role, claudeJson, [locations.root, locations.givenRoot], state.readUserMcp)
-  const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))
-  const stamp = stampText((await io.cadreVersion()) ?? 'unknown')
-  const disk = await renderDiskOf(io, renderPaths(user.root, id, plan))
-  const texts = { mcpText: mcp.text, expectationsText, stampText: stamp }
-  const render = renderSteps({ root: user.root, id, plan, ...texts, ...disk, memories: launch.memories })
-  if (render.refusal !== null) return render.refusal
-
-  for (const step of render.steps) {
-    if (!(await isStepDone(host, step))) return renderFailedReply(id, repoRelative(user.root, step.path))
-  }
-  const links = render.steps.filter(step => step.kind === 'link').length
+  const codeDirs = gathered.repo.codeDirs
+  const mcpRoots = [locations.root, locations.givenRoot]
+  const render = await renderRole(io, host, { locations, state, role, scope, codeDirs, mcpRoots, epic: null })
+  if (render.kind === 'refuse') return render.text
   const drift = launcherDrift(id, launcher.value, desiredFiles({ roles, scopes, state, only: id }))
   const scan = scanWarnings(locations, gathered)
-  const warnings = [...scan, ...drift, ...launch.warnings, ...plan.warnings, ...mcp.warnings, ...render.warnings]
-  const command = launcherCommand(user.root, id)
+  const warnings = [...scan, ...drift, ...render.warnings]
+  const command = launcherCommand(locations.root, id)
   const copy = clipboardRun(command)
   const copied = await host.run(copy.argv, copy.options)
   const copyLine = copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE
-  if (terminal === 'none') return startReplyText(id, links, warnings, command, [copyLine])
-  const opened = await terminalLine(host, { choice: terminal, id, root: user.root, command })
+  if (terminal === 'none') return startReplyText(id, render.links, warnings, command, [copyLine])
+  const opened = await terminalLine(host, { choice: terminal, id, root: locations.root, command })
 
-  return startReplyText(id, links, warnings, command, [copyLine, opened])
+  return startReplyText(id, render.links, warnings, command, [copyLine, opened])
 }

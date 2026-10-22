@@ -2,19 +2,40 @@
  * `/cadre epic <KEY> [title]` (D-143 to D-148, D-162 to D-164): the key and slug rules, the worktree path, the
  * `git worktree add` argv, the lookup of an epic by its key, the epic record, and the mirror of the main checkout's
  * untracked and ignored files with its excludes file as pure functions, and runEpic, the command itself, which checks
- * the repo and runs git and the mirror steps through the HostIo port only, as runStart does. An epic is a
- * tracker epic that the PM role fetches (D-143): cadre takes the key as typed and slugs it for names. The epic's
- * worktree is `<root>/.claude/worktrees/<slug>` in the main checkout, on the branch `epic/<slug>` made from the current
- * HEAD (D-146). Tracked state such as `.planning/` comes with the branch and is never linked (D-150).
+ * the repo, runs git and the mirror steps, and renders each role into the worktree with renderRole (D-157), through
+ * the HostIo port only, as runStart does. An epic is a tracker epic that the PM role fetches (D-143): cadre takes the
+ * key as typed and slugs it for names. The epic's worktree is `<root>/.claude/worktrees/<slug>` in the main checkout,
+ * on the branch `epic/<slug>` made from the current HEAD (D-146). Tracked state such as `.planning/` comes with the
+ * branch and is never linked (D-150).
  */
-import type { EpicRecord, HostIo, HostRun, InitIo, PortEntry, RoleSpec, TemplateRoleId, TerminalChoice } from '../types'
+import type {
+  CadreState,
+  EpicRecord,
+  HostIo,
+  HostRun,
+  InitIo,
+  InitLocations,
+  PortEntry,
+  RoleSpec,
+  TemplateRoleId,
+  TerminalChoice,
+} from '../types'
 import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
-import { readTeam, repoGuard } from './init'
+import { shQuote } from './generate'
+import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { stableJson } from './plan'
 import { reportText } from './render'
 import { standsFor } from './roles'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
-import { claudeRefusal, launcherRead } from './start'
+import {
+  claudeRefusal,
+  clipboardRun,
+  COPIED_LINE,
+  launcherCommand,
+  launcherRead,
+  NOT_COPIED_LINE,
+  renderRole,
+} from './start'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'
@@ -911,12 +932,70 @@ type EpicWorktree = {
 }
 
 /**
- * The mirror stage of runEpic and its reply (D-147, D-163, D-164): a worktree whose git dir git did not name absolutely
- * gets epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs with the record's links,
- * and the record is written to the git dir with its links and copies joined, once each, with those this run made, also
- * when the mirror stopped, so the next run and the epic's removal find them. A stopped mirror replies with its
- * failure; else the reply is epicCreatedText with what this run linked and copied, the mirror's warnings, and the
- * epicNoRecordWarning line when the record write failed.
+ * The render stage of runEpic (D-157, D-102, RESEARCH Pattern 1), once the mirror ran every step: the team, read in the
+ * main checkout, is compiled there once (compileTeam), and each role, in cadre.json order, is rendered for the worktree
+ * by renderRole with the worktree as its root (`{ ...main, root: worktree, givenRoot: worktree }`), so every
+ * `.runtime/` it writes is the worktree's own, never main's. Its lines: one `warning: <id>: <text>` line per render
+ * warning, then one line per role, two spaces in: `<id>: ` and the role's command `cd -- <worktree> && <launcher>`
+ * (launcherCommand rooted at the worktree, D-167), or the render's refusal for that role, which does not stop the
+ * others. When any role rendered, the commands are copied through the host with clipboardRun, one per line, and
+ * COPIED_LINE or NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session
+ * (D-108, D-167).
+ */
+async function renderedLines(
+  io: InitIo,
+  host: HostIo,
+  team: { readonly locations: InitLocations; readonly state: CadreState; readonly roles: readonly RoleSpec[] },
+  worktree: string,
+): Promise<string[]> {
+  const { locations, state, roles } = team
+  const { gathered, scopes } = await compileTeam(io, locations, state, roles)
+  const worktreeLocations: InitLocations = { ...locations, root: worktree, givenRoot: worktree }
+  const warnings: string[] = []
+  const roleLines: string[] = []
+  const commands: string[] = []
+  for (const role of roles) {
+    const { id } = role
+    const scope = scopes.get(id)
+    // Fail closed: readTeam read every listed role and compileTeam compiled each one, so it is always there.
+    if (scope === undefined) {
+      roleLines.push(`  ${id}: ${regenBadRole(id)}`)
+      continue
+    }
+    const render = await renderRole(io, host, {
+      locations: worktreeLocations,
+      state,
+      role,
+      scope,
+      codeDirs: gathered.repo.codeDirs,
+      mcpRoots: [worktree],
+      epic: { mainRoot: locations.root },
+    })
+    if (render.kind === 'refuse') {
+      roleLines.push(`  ${id}: ${render.text}`)
+      continue
+    }
+    const command = `cd -- ${shQuote(worktree)} && ${launcherCommand(worktree, id)}`
+    warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
+    roleLines.push(`  ${id}: ${command}`)
+    commands.push(command)
+  }
+  if (commands.length === 0) return [...warnings, ...roleLines]
+  const copy = clipboardRun(commands.join('\n'))
+  const copied = await host.run(copy.argv, copy.options)
+  const copyLine = copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE
+
+  return [...warnings, ...roleLines, copyLine]
+}
+
+/**
+ * The mirror and render stages of runEpic and their reply (D-147, D-157, D-163, D-164): a worktree whose git dir git
+ * did not name absolutely gets epicExcludesFailedReply, as its links could not be hidden. Otherwise mirrorSteps runs
+ * with the record's links, and the record is written to the git dir with its links and copies joined, once each, with
+ * those this run made, also when the mirror stopped, so the next run and the epic's removal find them. A stopped
+ * mirror replies with its failure and renders nothing; else the reply is epicCreatedText with what this run linked and
+ * copied, the mirror's warnings and the epicNoRecordWarning line when the record write failed, then the lines of the
+ * render stage (renderedLines), which renders each role of the team into the worktree.
  */
 async function mirroredReply(
   io: InitIo,
@@ -926,6 +1005,10 @@ async function mirroredReply(
     readonly home: string | null
     readonly key: string
     readonly roleIds: readonly string[]
+    /** The main checkout's locations, and the team readTeam read there, which the render stage renders. */
+    readonly locations: InitLocations
+    readonly state: CadreState
+    readonly roles: readonly RoleSpec[]
   },
   worktree: EpicWorktree,
 ): Promise<string> {
@@ -940,8 +1023,9 @@ async function mirroredReply(
   const warnings = [...mirrored.warnings, ...(isRecorded ? [] : [epicNoRecordWarning(key)])]
   const { title, branch, outcome } = worktree
   const counts = { linked: mirrored.links.length, copied: mirrored.copies.length }
+  const created = epicCreatedText({ key, title, path, branch, outcome, ...counts, warnings })
 
-  return epicCreatedText({ key, title, path, branch, outcome, ...counts, warnings })
+  return [created, ...(await renderedLines(io, host, epic, path))].join('\n')
 }
 
 /**
@@ -965,8 +1049,12 @@ async function mirroredReply(
  * not name as an absolute path stops with epicExcludesFailedReply. The record is then written to that git dir with its
  * links and copies joined with those this run made (D-163); a reused worktree whose record is unreadable gets a new
  * one from this run's key, title and branch, with no base. A write that fails adds the epicNoRecordWarning line.
- * Running /cadre epic is the consent to these steps (D-165), so it asks nothing. The reply is epicCreatedText, or the
- * reply the mirror stopped with. `options.terminal` is where the roles will open (D-167).
+ * Once the mirror ran every step, each role of the team is rendered into the worktree (renderedLines, D-157): the team
+ * read from the main root is compiled there, and renderRole renders each role with the worktree as its root, so the
+ * team, the manifest and the launchers are never read from the worktree (RESEARCH Pattern 1). Running /cadre epic is
+ * the consent to these steps (D-165), so it asks nothing. The reply is epicCreatedText followed by the render stage's
+ * lines (one per role: its `cd -- <worktree> && <launcher>` command, copied with the others, or its render refusal),
+ * or the reply the mirror stopped with. `options.terminal` is where the roles will open (D-167).
  */
 export async function runEpic(
   io: InitIo,
@@ -1003,7 +1091,8 @@ export async function runEpic(
   const branches = refs.stdout.split('\n').filter(line => line !== '')
   const lookup = epicLookup({ worktrees: parseWorktreeList(listed.stdout), branches, keySlug })
   if (lookup.kind === 'refuse') return lookup.text
-  const epic = { root, home, key, roleIds: team.value.state.roles }
+  const { state, roles } = team.value
+  const epic = { root, home, key, roleIds: state.roles, locations: guard.locations, state, roles }
 
   if (lookup.kind === 'reuse') {
     const asked = await host.run(GIT_DIR_ARGV(lookup.path), { timeoutMs: GIT_TIMEOUT_MS })
