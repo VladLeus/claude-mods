@@ -1029,6 +1029,37 @@ async function linkedEpicWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = 
   }
 }
 
+/**
+ * linkedEpicWorld of pm (no Bash, given jira) and be, with the consent to read ~/.claude.json, as /cadre start sees it
+ * inside BARE_WORKTREE under 'definitions' (03.1-W3 S1, D-168): every file under `/repo/.cadre/` is tracked, so the
+ * worktree holds it too; the worktree has its `.git` file and a code dir `src`; ~/.claude.json records jira for the
+ * main checkout's project only; and the session's root is the worktree.
+ */
+async function worktreeStartWorld(): Promise<MemWorld> {
+  const team = [templateRole('pm', { hasBash: false, mcp: ['jira'] }), templateRole('be')]
+  const world = await linkedEpicWorld(team, true)
+  const tracked: Record<string, string> = {}
+  for (const [path, text] of Object.entries(world.files)) {
+    if (path.startsWith('/repo/.cadre/')) tracked[`${BARE_WORKTREE}${path.slice('/repo'.length)}`] = text
+  }
+
+  return {
+    ...world,
+    files: {
+      ...world.files,
+      ...tracked,
+      [`${BARE_WORKTREE}/.git`]: `gitdir: ${BARE_GIT_DIR}\n`,
+      '/home/u/.claude.json': PROJECT_JIRA,
+    },
+    dirs: {
+      ...world.dirs,
+      [BARE_WORKTREE]: [...(world.dirs[BARE_WORKTREE] ?? []), entry('.cadre', 'dir'), entry('src', 'dir')],
+      [`${BARE_WORKTREE}/src`]: [entry('a.ts')],
+    },
+    locations: { ...DEFAULT_LOCATIONS, root: BARE_WORKTREE, givenRoot: BARE_WORKTREE },
+  }
+}
+
 describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
   test('worktreeClaudeMd adds the CLAUDE.md files of the worktree, sorted and once each (Pitfall 1)', () => {
     expect(worktreeClaudeMd(['/repo/CLAUDE.md'], '/repo/.claude/worktrees/x')).toEqual([
@@ -1118,4 +1149,30 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(deny).toContain('Edit(//home/u/.claude/projects/-repo/memory/**)')
     expect(deny).toContain('Write(//home/u/.claude/projects/-repo/memory/**)')
   })
+
+  test(
+    '/cadre start inside the epic worktree keeps main memory links, denies main code dirs and memory folder, ' +
+      'and finds main MCP servers (03.1-W3 S1, D-168)',
+    async () => {
+      const world = await worktreeStartWorld()
+      const folder = await pmMemoryFolder()
+      const host = epicHost([COMMON_DIR])
+      const reply = await runStart(memIo(world, {}).io, host.io, { id: 'pm', terminal: 'none' })
+      const notes = `${folder}/notes.md`
+      const ln = ['/bin/ln', '-sfn', `${MAIN_MEMORY_DIR}/notes.md`, notes].join(' ')
+      const permissions = settingsAt(host.writes, BARE_WORKTREE, 'pm').permissions
+      const deny = isObject(permissions) ? permissions.deny : undefined
+      const mcpPath = `${BARE_WORKTREE}/.cadre/pm/.runtime/mcp.json`
+
+      expect(host.calls.map(call => call.argv.join(' '))).toContain(ln)
+      expect(host.calls.filter(call => call.argv[0] === '/bin/rm' && call.argv.includes(notes))).toEqual([])
+      expect(deny).toContain('Read(//repo/src/**)')
+      expect(deny).toContain('Edit(//home/u/.claude/projects/-repo/memory/**)')
+      expect(host.writes.filter(write => write.path === mcpPath).at(-1)?.text).toBe(
+        stableJson({ mcpServers: { jira: { command: 'jira-mcp' } } }),
+      )
+      expect(reply).not.toContain('is gone')
+      expect(reply).not.toContain('is not in ~/.claude.json')
+    },
+  )
 })
