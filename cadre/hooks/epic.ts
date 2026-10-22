@@ -140,9 +140,10 @@ export function epicParentOf(
 /**
  * The refusal when a role's launcher in the main checkout was written before the epic kickoff (D-158): it would start
  * the role with its own kickoff and not the epic's, so /cadre epic stops before it creates anything and names each such
- * role, cleaned, with the /cadre regen that writes its launcher anew. As a new epic worktree checks out HEAD
- * (D-146), a repo that commits `.cadre/` (the `definitions` and `all` policies) is told to commit the regenerated
- * launchers first, else the worktree holds the old ones and no role opens (03.1-W4 S2).
+ * role, cleaned, with the /cadre regen that writes its launcher anew. As a new epic worktree checks out HEAD (D-146), a
+ * repo that commits `.cadre/` (the `definitions` and `all` policies) is told to commit the regenerated launchers and
+ * `.cadre/manifest.json` first, else the worktree holds the old ones and no role opens (03.1-W4 S2; the manifest, which
+ * holds each launcher's sha256, since /cadre start in the worktree checks it, 03.1-W6 S2).
  */
 export function epicOldLauncherReply(ids: readonly string[]): string {
   const regens = ids.map(id => `/cadre regen ${reportText(id)}`).join(', ')
@@ -150,7 +151,8 @@ export function epicOldLauncherReply(ids: readonly string[]): string {
   return (
     `cadre epic stopped before creating anything: the launcher of ${reportText(ids.join(', '))} predates the epic ` +
     `kickoff and would start without it. Run ${regens}. A new epic worktree is made from HEAD, so if this repo ` +
-    'commits .cadre/, commit the regenerated .cadre/bin/ launchers too. Then run /cadre epic again.'
+    'commits .cadre/, commit the regenerated .cadre/ files (the .cadre/bin/ launchers and .cadre/manifest.json) ' +
+    'too. Then run /cadre epic again.'
   )
 }
 
@@ -1129,15 +1131,17 @@ export function epicKickoffText(input: {
 
 /**
  * The role line of a role whose launcher in the epic worktree predates the epic kickoff (D-158): the epic branch holds
- * an older `.cadre/bin/<id>`, which would start the role without its epic kickoff, so the role is not opened. The id is
- * shown cleaned.
+ * an older `.cadre/bin/<id>`, which would start the role without its epic kickoff, so the role is not opened. The
+ * advice names `.cadre/manifest.json` too, else /cadre start in the worktree refuses the launcher as changed
+ * (03.1-W6 S2). The id is shown cleaned.
  */
 export function epicWorktreeLauncherLine(id: string): string {
   const role = reportText(id)
 
   return (
     `not opened: the epic branch holds a launcher .cadre/bin/${role} older than the epic kickoff. ` +
-    `Commit the regenerated .cadre/bin/${role} to the branch and run /cadre epic with the same key again.`
+    `Commit the regenerated .cadre/bin/${role} and .cadre/manifest.json to the branch and run /cadre epic with the ` +
+    'same key again.'
   )
 }
 
