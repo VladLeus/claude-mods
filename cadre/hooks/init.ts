@@ -111,6 +111,7 @@ import {
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import {
+  asSentence,
   clean,
   compareText,
   detectRefusal,
@@ -1639,13 +1640,13 @@ export function ownSkillQuestion(name: string): string {
 
 /**
  * The context line of an own skill's question (G-02-1b, D-136): what the skill does (NO_SKILL_PURPOSE when the engine
- * gave no description), how often the history scan saw it (skillUsesText; left out at 0, which a run without the scan
- * gives) and the roles the model recommended for it, or none.
+ * gave no description), as a sentence (asSentence, 02-GAPS-B2 N1), how often the history scan saw it (skillUsesText;
+ * left out at 0, which a run without the scan gives) and the roles the model recommended for it, or none.
  */
 export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: readonly string[]): string {
   const used = uses === 0 ? '' : ` Used ${skillUsesText(uses)}.`
 
-  return `${skill.purpose ?? NO_SKILL_PURPOSE}${used} Recommended: ${namesOrNone(recommended)}.`
+  return `${asSentence(skill.purpose ?? NO_SKILL_PURPOSE)}${used} Recommended: ${namesOrNone(recommended)}.`
 }
 
 /** The most code points the engine shows in a question's chip. */

@@ -7,11 +7,12 @@
  * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
  * (readClaudeJson, D-58), from which runtimeMcpText renders a role's MCP config (D-93).
  *
- * The render half gives the ordered steps that write a role's per-launch files into `.cadre/<id>/.runtime/`, from its
- * LaunchPlan (D-98) and the texts of its MCP config and probe expectations. It reads and writes nothing: /cadre start
- * stats and lists the paths renderPaths names, then runs the steps renderSteps gives, in order, through the host. The
- * stamp is always the last step, and the launcher trusts it: it refuses to start when the stamp is missing or older
- * than the role files or a rendered file, so a render that stops part way never starts a session (LNCH-03).
+ * The render half gives the ordered steps that write a role's per-launch files into `.cadre/<id>/.runtime/`, and the
+ * role's private instructions folder under the config folder (privateFolderSteps), from its LaunchPlan (D-98) and the
+ * texts of its MCP config and probe expectations. It reads and writes nothing: /cadre start stats and lists the paths
+ * renderPaths names, then runs the steps renderSteps gives, in order, through the host. The stamp is always the last
+ * step, and the launcher trusts it: it refuses to start when the stamp is missing or older than the role files or a
+ * rendered file, so a render that stops part way never starts a session (LNCH-03).
  */
 import type {
   DesiredFile,

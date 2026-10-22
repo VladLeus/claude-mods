@@ -3012,9 +3012,9 @@ describe('instruction parts (G-02-1f)', () => {
     expect(run.prompts).toHaveLength(6)
     expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
     expect(run.prompts[3]?.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
-    expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object\n- the reply has no "memories" object')).toBe(
-      true,
-    )
+    // With no memory to name, a reply with no memories object is not an error (02-GAPS-B2 N14).
+    expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object')).toBe(true)
+    expect(run.prompts[4]).not.toContain('"memories" object')
     const block = shownBlock(run, 'instructions')
     expect(block.slice(1, 4)).toEqual([
       '  ~/.claude/CLAUDE.md: All of ~/.claude/CLAUDE.md',

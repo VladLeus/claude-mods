@@ -155,13 +155,22 @@ export function roleMdText(role: RoleSpec, scope: CompiledScope): string {
 const TOP_OF_FILE = '(top of file)'
 
 /**
+ * A marker cell (02-GAPS-B2 N2): cleaned as a report cell, then each '-' followed by '-' gets a space after it, so no
+ * '--' can end the comment early.
+ */
+function markerCell(text: string): string {
+  return reportText(text).replace(/-(?=-)/g, '- ')
+}
+
+/**
  * The marker line above a part in a built role file (G-02-1f): `<!-- from <file> > <heading or (top of file)> -->`.
- * The file and the heading are cleaned as a report cell, so no character of either can add a line or hide text.
+ * The file and the heading are marker cells (markerCell), so no character of either can add a line, hide text or end
+ * the comment early (02-GAPS-B2 N2).
  */
 function partMarker(part: InstructionPart): string {
-  const heading = part.heading === '' ? TOP_OF_FILE : reportText(part.heading)
+  const heading = part.heading === '' ? TOP_OF_FILE : markerCell(part.heading)
 
-  return `<!-- from ${reportText(part.file)} > ${heading} -->`
+  return `<!-- from ${markerCell(part.file)} > ${heading} -->`
 }
 
 /** A part's text as a built role file holds it: as read, each `\r\n` written `\n`, its line ends at the end dropped. */

@@ -102,6 +102,20 @@ export function clean(value: unknown, maxChars = 120): string {
   return `${points.slice(0, Math.max(0, maxChars - 1)).join('')}${ELLIPSIS}`
 }
 
+/** The marks a sentence may end with: a period, a question mark or an exclamation mark. */
+const SENTENCE_END = /[.!?]$/
+
+/**
+ * A text as the first sentence of a context line (02-GAPS-B2 N1): a final '.' added unless it already ends in '.', '!'
+ * or '?'; '' stays ''.
+ */
+export function asSentence(text: string): string {
+  if (text === '') return ''
+  if (SENTENCE_END.test(text)) return text
+
+  return `${text}.`
+}
+
 /**
  * Whether `clean` would change a foreign name at this cap: a stripped character, or a cut to the cap. Such a name is
  * never matched as a marker or a plugin key, because its cleaned form could pass for a real one (WR-03).

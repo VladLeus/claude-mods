@@ -533,11 +533,13 @@ export type PartSource = 'global' | 'repo'
 
 /**
  * One part of an instruction file (G-02-1f Part unit): a section of a CLAUDE.md file, a rule file, AGENTS.md or a doc
- * a repo file links to, cut at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the file in display
- * form, `~/.claude/CLAUDE.md` style for the config folder and repo-relative for a repo file; `heading` is '' for the
- * text before the first heading. `text` is the section as read, its heading line included, held in memory for this run
- * only: it is never written, logged, shown, asked or put in a reply. `hash` is the SHA-256 of `text` as 64 lowercase
- * hex characters, for regen (G-02-1f Regen): the same text gives the same hash, whatever file it is in.
+ * a repo file links to, cut at its `#` and `##` headings. `id` is `P<n>` in read order; `file` is the raw repo-relative
+ * path for a repo part, the display form for a global one (`~/.claude/CLAUDE.md` style); cleaned only where shown
+ * (02-GAPS-B2 N3); `heading` is '' for the text before the first heading. `text` is the section as read, its heading
+ * line included, held in memory for this run; it is never logged, shown, asked or put in a reply; a repo part a role
+ * is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited. `hash`
+ * is the SHA-256 of `text` as 64 lowercase hex characters, for regen (G-02-1f Regen): the same text gives the same
+ * hash, whatever file it is in.
  */
 export type InstructionPart = {
   readonly id: string
@@ -590,8 +592,9 @@ export type InstructionScan = {
  * whole-file questions, and `parts` for the topics and memories: the read, the topics, the roles the model recommended
  * for each topic and memory (keyed by topic id and memory id; a usable recommendation names every one, and the map is
  * empty when the model gave none) and the roles the person gave each (keyed the same way; a topic or memory no role
- * was given stays with the root session only). The text read is held in memory for this run only: nothing is written,
- * and originals are never edited.
+ * was given stays with the root session only). The text is held in memory for this run; it is never logged, shown,
+ * asked or put in a reply; a repo part a role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm
+ * (generate.ts); originals are never edited.
  */
 export type InstructionHandout =
   | { readonly kind: 'none' }

@@ -439,8 +439,9 @@ const REPLY_ERRORS_INTRO = 'Your previous reply had these errors; fix all of the
 
 /**
  * The skills prompt (G-02-1b): each role as `<id> | <title> | <purpose>`, each skill as `S<n> | <name> | <purpose or
- * (no description)> | used <n> times`, its own count in the history scan (0 without the scan), and after a failed
- * reply its exact errors, one per line. Only a skill's name, purpose and count reach it, never its plugin.
+ * (no description)> | used <n> times` (`used 1 time` for one, AUTO-PICK #10), its own count in the history scan (0
+ * without the scan), and after a failed reply its exact errors, one per line. Only a skill's name, purpose and count
+ * reach it, never its plugin.
  */
 export function skillsPrompt(
   roles: readonly Pick<RoleSpec, 'id' | 'title' | 'purpose'>[],
@@ -451,7 +452,9 @@ export function skillsPrompt(
   const skillLine = (skill: SkillRef, index: number): string => {
     const purpose = skill.purpose ?? NO_PURPOSE_FOR_MODEL
 
-    return `${ownSkillId(index)} | ${skill.name} | ${purpose} | used ${skillCount(skill.name, uses)} times`
+    const count = skillCount(skill.name, uses)
+
+    return `${ownSkillId(index)} | ${skill.name} | ${purpose} | used ${count} ${count === 1 ? 'time' : 'times'}`
   }
   const lines = [
     SKILL_ROLES_INTRO,

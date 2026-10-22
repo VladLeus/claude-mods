@@ -2,8 +2,9 @@
  * The instruction parts of G-02-1f: the content consent, reading the instruction files and splitting them into parts,
  * the prompts and reply parsers of the two model calls (grouping the parts into topics across files, and recommending
  * roles per topic), the side-pane block, the questions of the hand-out and the review rows. Pure: it reads only
- * through the InitIo port it is given, and it never imports init.ts, which imports it. The text it reads is held in
- * memory for one run only: it is never written, logged, shown or asked, and no original is ever edited.
+ * through the InitIo port it is given, and it never imports init.ts, which imports it. The text is held in memory for
+ * this run; it is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
+ * `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited.
  */
 import type {
   InitIo,
@@ -18,6 +19,7 @@ import type {
 } from '../types'
 import { ASK_HEADERS } from './ask'
 import {
+  asSentence,
   clean,
   compareText,
   displayPath,
@@ -35,6 +37,7 @@ import {
 import type { HandoutEntry, HandoutItem } from './handout'
 import { sha256Hex } from './hash'
 import { claudeMdImports } from './launch'
+import { shown } from './render'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { userDirOf } from './setup'
 
@@ -91,11 +94,14 @@ function yesNo(isThere: boolean): string {
   return isThere ? 'yes' : 'no'
 }
 
+/** The index of the auto-memories of a folder (G-02-1f Memories): it lists them and is never a memory itself. */
+const MEMORY_INDEX_FILE = 'MEMORY.md'
+
 /**
  * The context line of the content consent (G-02-1f, D-136): what init found before it reads anything, by name only
  * (the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules`, the root AGENTS.md
- * and the memory files), and that No keeps the whole-file questions. A rules folder that could not be listed counts
- * 0 rule files.
+ * and the memory files, MEMORY.md not counted, as the hand-out never offers it; 02-GAPS-B2 S9), and that No keeps the
+ * whole-file questions. A rules folder that could not be listed counts 0 rule files.
  */
 export function contentContextLine(
   setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
@@ -104,7 +110,7 @@ export function contentContextLine(
   const global = yesNo(setup.hasGlobalClaudeMd)
   const chain = counted(setup.claudeMd.length, 'CLAUDE.md file', 'CLAUDE.md files')
   const rules = counted(repo.rules?.length ?? 0, 'rule file', 'rule files')
-  const memories = counted(setup.memoryFiles.length, 'memory', 'memories')
+  const memories = counted(setup.memoryFiles.filter(name => name !== MEMORY_INDEX_FILE).length, 'memory', 'memories')
   const found = `global CLAUDE.md ${global}, ${chain} in the repo chain, ${rules}, AGENTS.md ${yesNo(repo.hasAgentsMd)}`
 
   return `Found: ${found}, ${memories}. ${CONTENT_NO_TEXT}`
@@ -203,17 +209,19 @@ export function topicQuestion(topic: InstructionTopic): string {
 }
 
 /**
- * The context line of a topic's question (G-02-1f Part by part, D-136): its summary, the file and heading of its first
- * three parts and then how many more, and the roles the model recommended for it, or none.
+ * The context line of a topic's question (G-02-1f Part by part, D-136): its summary as a sentence (asSentence,
+ * 02-GAPS-B2 N1), the roles the model recommended for it, or none, then the file and heading of its first three parts,
+ * each cut as shown text, and how many more. The roles come before the sources, so the context cap can only cut the
+ * sources (02-GAPS-B2 S5).
  */
 export function topicContextLine(
   topic: InstructionTopic,
   parts: readonly InstructionPart[],
   recommended: readonly string[],
 ): string {
-  const sources = cappedList(topicParts(topic, parts).map(sourceText), MAX_SHOWN_SOURCES)
+  const sources = cappedList(topicParts(topic, parts).map(part => shown(sourceText(part))), MAX_SHOWN_SOURCES)
 
-  return `${topic.summary} From: ${sources}. Recommended: ${idsText(recommended)}.`
+  return `${asSentence(topic.summary)} Recommended: ${idsText(recommended)}. From: ${sources}.`
 }
 
 /** The most code points the engine shows in a question's chip. */
@@ -265,11 +273,11 @@ export function memoryItemQuestion(memory: MemoryItem): string {
 }
 
 /**
- * The context line of a memory's question (G-02-1f Memories, D-136): its MEMORY.md summary, or NO_MEMORY_SUMMARY, and
- * the roles the model recommended for it, or none.
+ * The context line of a memory's question (G-02-1f Memories, D-136): its MEMORY.md summary, or NO_MEMORY_SUMMARY, as a
+ * sentence (asSentence, 02-GAPS-B2 N1), and the roles the model recommended for it, or none.
  */
 export function memoryItemContextLine(memory: MemoryItem, recommended: readonly string[]): string {
-  return `${memory.summary} Recommended: ${idsText(recommended)}.`
+  return `${asSentence(memory.summary)} Recommended: ${idsText(recommended)}.`
 }
 
 /**
@@ -527,6 +535,11 @@ export function unreadableWarning(file: string): string {
 /** The warning for a file over the read cap (G-02-1f): it is not split, so no role gets it (02-GAPS-B2 S2). */
 export function overSizeWarning(file: string): string {
   return `${file} is over ${MAX_READ_BYTES / 1024} KiB, not split: no role gets it`
+}
+
+/** The warning for a memory or MEMORY.md over the read cap (G-02-1f Memories; AUTO-PICK #6): it is not offered. */
+export function memoryOverSizeWarning(file: string): string {
+  return `${file} is over ${MAX_READ_BYTES / 1024} KiB: not offered`
 }
 
 /**
@@ -893,9 +906,6 @@ export function memoryIndex(text: string): ReadonlyMap<string, string> {
   return index
 }
 
-/** The index of the auto-memories of a folder (G-02-1f Memories): it lists them and is never a memory itself. */
-const MEMORY_INDEX_FILE = 'MEMORY.md'
-
 /** Code points a memory file name keeps, as the setup scan and the launch links take it; a longer one is skipped. */
 const MAX_MEMORY_NAME_CHARS = 255
 
@@ -928,13 +938,13 @@ async function memoryFiles(io: InitIo, folders: readonly string[], warnings: str
 
 /**
  * The text of a memory file, or null: the port could not read it (unreadableWarning) or it is over MAX_READ_BYTES
- * (overSizeWarning), each warning naming the file only; a file that is gone is quiet.
+ * (memoryOverSizeWarning, AUTO-PICK #6), each warning naming the file only; a file that is gone is quiet.
  */
 async function memoryText(io: InitIo, file: MemoryFile, warnings: string[]): Promise<string | null> {
   const read = await io.read(joinedPath(file.folder, file.name), MAX_READ_BYTES)
   if (read.state === 'text') return read.text
   if (read.state === 'unknown') warnings.push(unreadableWarning(file.name))
-  if (read.state === 'too-large') warnings.push(overSizeWarning(file.name))
+  if (read.state === 'too-large') warnings.push(memoryOverSizeWarning(file.name))
 
   return null
 }
@@ -981,7 +991,8 @@ export async function readMemories(
  * 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
  * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
  * folder inside the repo is not used, as userFolderOf never uses one (02-GAPS-B2 N10). The text is held in memory for
- * this run only: nothing is written.
+ * this run; it is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
+ * `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
   const userDir = userDirOf(sources)
@@ -1274,9 +1285,10 @@ function rolesByMap(
  * The model's recommendation reply as the role ids recommended for each topic and each memory (G-02-1f
  * Recommendation, Memories). The reply is untrusted: one code fence around it is stripped, and only known topic,
  * memory and role ids survive. Every problem is listed at once (not JSON, no topics or no memories object, an unknown
- * topic or memory, a value that is not a list, an unknown role), capped at 20 errors. A usable reply names every topic
- * and every memory: one it leaves out is recommended to no role, and the role ids come once each, in role order. The
- * map is keyed by topic id, then memory id.
+ * topic or memory, a value that is not a list, an unknown role), capped at 20 errors. A map left out whose id list is
+ * empty counts as empty (02-GAPS-B2 N14). A usable reply names every topic and every memory: one it leaves out is
+ * recommended to no role, and the role ids come once each, in role order. The map is keyed by topic id, then memory
+ * id.
  */
 export function parseRecommendation(
   reply: string,
@@ -1288,19 +1300,25 @@ export function parseRecommendation(
   if (json === null) return invalid(['the reply is not JSON'])
   const topics = isObject(json.value) ? json.value.topics : undefined
   const memories = isObject(json.value) ? json.value.memories : undefined
-  if (!isObject(topics) || !isObject(memories)) return invalid(missingMaps(topics, memories))
+  const topicsMap = topics === undefined && topicIds.length === 0 ? {} : topics
+  const memoriesMap = memories === undefined && memoryIds.length === 0 ? {} : memories
+  if (!isObject(topicsMap) || !isObject(memoriesMap)) return invalid(missingMaps(topicsMap, memoriesMap))
   const errors = [
-    ...mapErrors('topic', topics, topicIds, roleIds),
-    ...mapErrors('memory', memories, memoryIds, roleIds),
+    ...mapErrors('topic', topicsMap, topicIds, roleIds),
+    ...mapErrors('memory', memoriesMap, memoryIds, roleIds),
   ]
   if (errors.length > 0) return invalid(errors)
-  const recommended = new Map([...rolesByMap(topics, topicIds, roleIds), ...rolesByMap(memories, memoryIds, roleIds)])
+  const recommended = new Map([
+    ...rolesByMap(topicsMap, topicIds, roleIds),
+    ...rolesByMap(memoriesMap, memoryIds, roleIds),
+  ])
 
   return { kind: 'ok', recommended }
 }
 
-/** The first row of the instructions block: what was read is held for this run only (G-02-1f). */
-const READ_HEADING = 'Read for this run only (nothing is written):'
+/** The first row of the instructions block (G-02-1f; AUTO-PICK #12): what a plain init writes after Confirm. */
+const READ_HEADING =
+  'Read for this run; a plain init writes the repo parts you hand out to .cadre/<role>/CLAUDE.md after Confirm:'
 
 /** The row of the instructions block when the model gave no usable recommendation (G-02-1f Recommendation). */
 const NO_RECOMMENDATION_ROW = 'The model gave no usable recommendation: no role gets a part unless you pick one.'
