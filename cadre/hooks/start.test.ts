@@ -5,6 +5,7 @@ import type {
   HostRun,
   InitIo,
   InitLocations,
+  InstructionPart,
   LaunchStart,
   ManifestEntry,
   PortEntry,
@@ -13,6 +14,7 @@ import type {
   ScopeContext,
   TerminalChoice,
 } from '../types'
+import { privateClaudeMdPath, privateClaudeMdText } from './apply'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
@@ -725,6 +727,37 @@ describe('built files reach the session (G-02-1f)', () => {
       ['/bin/ln', '-sfn', privateFolder, `${RUNTIME}/private-instructions`],
     ])
     expect(writtenPaths(start).filter(path => path.startsWith(privateFolder))).toEqual([])
+  })
+})
+
+/** BE's role memory folder in the start worlds, whose git common dir is /repo/.git (D-91, D-140 q2-a). */
+async function startRoleFolder(): Promise<string> {
+  return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}/be`
+}
+
+/** A global part of the fixture user's CLAUDE.md that BE was given. */
+const BE_GLOBAL_PART: InstructionPart = {
+  id: 'P1',
+  file: '~/.claude/CLAUDE.md',
+  heading: 'Security',
+  source: 'global',
+  text: '# Security\nNever commit secrets.\n',
+  hash: '0'.repeat(64),
+}
+
+describe('private role files (G-02-1f)', () => {
+  test('q1-b: the private instructions link points at the folder of the private text file apply writes', async () => {
+    const textFile = privateClaudeMdPath(await startRoleFolder())
+    const world = withFile(await appliedWorld(), textFile, privateClaudeMdText('be', 'repo', [BE_GLOBAL_PART]))
+    const start = await startBe(world)
+    const isPrivateLink = (call: HostCall): boolean =>
+      call.argv[0] === '/bin/ln' && call.argv[3] === `${RUNTIME}/private-instructions`
+    const target = start.calls.find(isPrivateLink)?.argv[2] ?? ''
+
+    expect(target).toBe(textFile.slice(0, textFile.lastIndexOf('/')))
+    expect(world.files[`${target}/CLAUDE.md`]).toContain('Never commit secrets.')
+    expect(start.reply.split('\n')[1]).toBe('Rendered .cadre/be/.runtime/ (1 link).')
+    expect(writtenPaths(start).filter(path => path.startsWith('/home/u/'))).toEqual([])
   })
 })
 

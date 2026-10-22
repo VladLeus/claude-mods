@@ -5,8 +5,10 @@ import type {
   FileMode,
   HostRun,
   HunkOp,
+  InstructionPart,
   Manifest,
   ManifestEntry,
+  MemoryItem,
   Plan,
   PortEntry,
   PortRead,
@@ -28,17 +30,27 @@ import {
   hunksAfterRuns,
   installedLine,
   installFailureText,
+  INSTRUCTIONS_RECORD_FILE,
+  instructionsRecordPath,
+  instructionsRecordText,
   listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   parseConflictAnswer,
   pluginInstallArgv,
+  PRIVATE_INSTRUCTIONS_FOLDER,
+  privateCheckPaths,
+  privateClaudeMdPath,
+  privateClaudeMdText,
+  privateLevels,
+  privateModeArgv,
+  privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   setupAfterInstalls,
   writeProblem,
 } from './apply'
-import type { ApplyStep, ConflictChoice, HunkRun } from './apply'
+import type { ApplyStep, ConflictChoice, HunkRun, PrivateFile, PrivateRole, PrivateWriteCheck } from './apply'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
 import { sha256Hex } from './hash'
@@ -146,7 +158,7 @@ async function planOver(world: MemWorld, desired: readonly DesiredFile[]): Promi
 function landed(steps: readonly ApplyStep[]): HostWrite[] {
   const writes: HostWrite[] = []
   for (const step of steps) {
-    if (step.kind === 'chmod') continue
+    if (step.kind === 'chmod' || step.kind === 'private') continue
     writes.push({ path: `${ROOT}/${step.path}`, text: step.text, isWritten: true })
   }
 
@@ -940,5 +952,310 @@ describe('install runs (decision #39)', () => {
     expect(installedLine([SECURITY_KEY, GUIDANCE_KEY])).toBe(
       `Installed ${SECURITY_KEY} and ${GUIDANCE_KEY}: run /reload-plugins to load them in this session.`,
     )
+  })
+})
+
+/** The folder of the fixture user's role memory folders in the fixture repo: `<userDir>/cadre/<repo>-<hash8>`. */
+const SLUG_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d'
+
+/** Security's role memory folder (D-140 q2-a). */
+const SECURITY_DIR = `${SLUG_DIR}/security`
+
+/** The Team Lead's role memory folder. */
+const TL_DIR = `${SLUG_DIR}/tl`
+
+/** Security's private text file, in its own instructions/ subfolder on every load path (D-140). */
+const SECURITY_TEXT_FILE = `${SECURITY_DIR}/instructions/CLAUDE.md`
+
+/** Security's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
+const SECURITY_RECORD = `${SECURITY_DIR}/instructions.json`
+
+/** A part of the fixture user's global CLAUDE.md as the read gives it; the hash only has to be a hash-like text. */
+function globalPart(id: string, heading: string, text: string): InstructionPart {
+  const hash = `${id.toLowerCase()}${'0'.repeat(62)}`
+
+  return { id, file: '~/.claude/CLAUDE.md', heading, source: 'global', text, hash }
+}
+
+/** The Security section of the global CLAUDE.md. */
+const SECURITY_PART = globalPart('P1', 'Security', '# Security\nNever commit secrets.\n')
+
+/** The Git section, read with Windows line ends and a blank line at its end. */
+const GIT_PART = globalPart('P2', 'Git', '## Git\r\nUse signed commits.\r\n\r\n')
+
+/** The auto-memory squad.md of the fixture repo, as the hand-out offers it (G-02-1f Memories). */
+const SQUAD: MemoryItem = {
+  id: 'M1',
+  file: 'squad.md',
+  folder: '/home/u/.claude/projects/-repo/memory',
+  summary: 'Unsigned commits on per-phase branches.',
+  hash: 'c'.repeat(64),
+}
+
+/** The first line of Security's private text file in the repo `repo` (D-140). */
+const SECURITY_HEADER =
+  '<!-- cadre: your global instructions for role security in repo, built from ~/.claude/CLAUDE.md and its imports. ' +
+  'Private to you, never committed; rebuilt by /cadre init and /cadre regen. -->'
+
+/** Security was given the Security section and no memory. */
+const SECURITY_PRIVATE: PrivateRole = {
+  id: 'security',
+  folder: SECURITY_DIR,
+  repo: 'repo',
+  parts: [SECURITY_PART],
+  memories: [],
+}
+
+/** The Team Lead was given squad.md and no global part. */
+const TL_PRIVATE: PrivateRole = { id: 'tl', folder: TL_DIR, repo: 'repo', parts: [], memories: [SQUAD] }
+
+/** The PM was given nothing private. */
+const PM_PRIVATE: PrivateRole = { id: 'pm', folder: `${SLUG_DIR}/pm`, repo: 'repo', parts: [], memories: [] }
+
+/** Security's private text file with this text. */
+const SECURITY_TEXT: PrivateFile = { path: SECURITY_TEXT_FILE, text: 'text\n' }
+
+/** Security's hand-out record with this text. */
+const SECURITY_RECORD_FILE: PrivateFile = { path: SECURITY_RECORD, text: '{}\n' }
+
+/**
+ * The check of a write outside the repo for the fixture user and repo, allowing Security's two private files only;
+ * `stats` and `listings` default to a disk where none of the role memory folders is there yet.
+ */
+function privateCheck(over: Partial<PrivateWriteCheck> = {}): PrivateWriteCheck {
+  return {
+    allowed: new Set([SECURITY_TEXT_FILE, SECURITY_RECORD]),
+    stats: new Map<string, WriteStat>([
+      [SECURITY_DIR, 'absent'],
+      [`${SECURITY_DIR}/instructions`, 'absent'],
+      [SECURITY_TEXT_FILE, 'absent'],
+      [SECURITY_RECORD, 'absent'],
+    ]),
+    listings: new Map<string, readonly PortEntry[] | null>([
+      [SLUG_DIR, null],
+      [SECURITY_DIR, null],
+      [`${SECURITY_DIR}/instructions`, null],
+    ]),
+    locations: { home: '/home/u', root: '/repo', configDir: null },
+    ...over,
+  }
+}
+
+/** The stats of Security's role memory folder, its instructions/ subfolder and both files as real folders and files. */
+function privateStats(over: Readonly<Record<string, WriteStat>> = {}): ReadonlyMap<string, WriteStat> {
+  const stats: Record<string, WriteStat> = {
+    [SECURITY_DIR]: statAt('dir', SECURITY_DIR),
+    [`${SECURITY_DIR}/instructions`]: statAt('dir', `${SECURITY_DIR}/instructions`),
+    [SECURITY_TEXT_FILE]: statAt('file', SECURITY_TEXT_FILE),
+    [SECURITY_RECORD]: statAt('file', SECURITY_RECORD),
+  }
+
+  return new Map(Object.entries({ ...stats, ...over }))
+}
+
+/** The listings of the repo folder, Security's role memory folder and its instructions/ subfolder, all real entries. */
+function privateListings(
+  over: Readonly<Record<string, readonly PortEntry[] | null>> = {},
+): ReadonlyMap<string, readonly PortEntry[] | null> {
+  const listings: Record<string, readonly PortEntry[] | null> = {
+    [SLUG_DIR]: [entry('security', 'dir')],
+    [SECURITY_DIR]: [entry('instructions', 'dir'), entry('instructions.json'), entry('notes.md')],
+    [`${SECURITY_DIR}/instructions`]: [entry('CLAUDE.md')],
+  }
+
+  return new Map(Object.entries({ ...listings, ...over }))
+}
+
+/** How a refused write to Security's private text file starts: the path shown from the home folder. */
+const TEXT_REFUSED = 'refused to write ~/.claude/cadre/repo-1a2b3c4d/security/instructions/CLAUDE.md: '
+
+/** How a refused write to Security's record starts. */
+const RECORD_REFUSED = 'refused to write ~/.claude/cadre/repo-1a2b3c4d/security/instructions.json: '
+
+describe('private role files (G-02-1f)', () => {
+  test('the private text file is its header line, then each global part under its marker, in the order given', () => {
+    expect(privateClaudeMdText('security', 'repo', [SECURITY_PART, GIT_PART])).toBe(
+      [
+        SECURITY_HEADER,
+        '',
+        '<!-- from ~/.claude/CLAUDE.md > Security -->',
+        '# Security',
+        'Never commit secrets.',
+        '',
+        '<!-- from ~/.claude/CLAUDE.md > Git -->',
+        '## Git',
+        'Use signed commits.',
+        '',
+      ].join('\n'),
+    )
+    expect(privateClaudeMdText('security', `re${BIDI_OVERRIDE}\npo`, [SECURITY_PART]).split('\n')[0]).toBe(
+      SECURITY_HEADER,
+    )
+  })
+
+  test('the hand-out record is stable JSON: schema 1, each global part by file, heading and hash, each memory', () => {
+    const record = instructionsRecordText([SECURITY_PART, GIT_PART], [SQUAD])
+
+    expect(record).toBe(
+      stableJson({
+        schema: 1,
+        parts: [
+          { file: '~/.claude/CLAUDE.md', heading: 'Security', hash: SECURITY_PART.hash },
+          { file: '~/.claude/CLAUDE.md', heading: 'Git', hash: GIT_PART.hash },
+        ],
+        memories: [{ file: 'squad.md', folder: SQUAD.folder, summary: SQUAD.summary, hash: SQUAD.hash }],
+      }),
+    )
+    expect(record).not.toContain('Never commit secrets')
+    expect(record).not.toContain('"id"')
+    expect(instructionsRecordText([], [])).toBe('{\n  "memories": [],\n  "parts": [],\n  "schema": 1\n}\n')
+  })
+
+  test('the text file lies in its own instructions/ subfolder, the record beside the memories (D-140)', () => {
+    expect(privateClaudeMdPath(SECURITY_DIR)).toBe(SECURITY_TEXT_FILE)
+    expect(instructionsRecordPath(SECURITY_DIR)).toBe(SECURITY_RECORD)
+    expect([PRIVATE_INSTRUCTIONS_FOLDER, INSTRUCTIONS_RECORD_FILE]).toEqual(['instructions', 'instructions.json'])
+  })
+
+  test('the private files come after the repo files and before the manifest, text file before record', async () => {
+    const desired = [file(LAUNCHER, '#!/bin/sh\n', 'exec'), file(A, 'a\n')]
+    const { plan, manifest } = await planWithManifest(input({ desired }))
+    const privates = [SECURITY_PRIVATE, TL_PRIVATE, PM_PRIVATE]
+    const steps = await applySteps({ plan, desired, manifest, gitignore: null, choices: NO_CHOICES, privates })
+
+    expect(steps).toEqual([
+      { kind: 'write', path: A, text: 'a\n' },
+      { kind: 'write', path: LAUNCHER, text: '#!/bin/sh\n' },
+      { kind: 'chmod', path: LAUNCHER },
+      {
+        kind: 'private',
+        path: SECURITY_DIR,
+        files: [
+          { path: SECURITY_TEXT_FILE, text: privateClaudeMdText('security', 'repo', [SECURITY_PART]) },
+          { path: SECURITY_RECORD, text: instructionsRecordText([SECURITY_PART], []) },
+        ],
+      },
+      {
+        kind: 'private',
+        path: TL_DIR,
+        files: [{ path: `${TL_DIR}/instructions.json`, text: instructionsRecordText([], [SQUAD]) }],
+      },
+      { kind: 'manifest', path: MANIFEST_PATH, text: stableJson(manifest) },
+    ])
+  })
+
+  test('a role given only memories gets its record alone, also in a plan with no manifest step', async () => {
+    const desired = [file(A, 'a\n')]
+    const first = await planWithManifest(input({ desired }))
+    const disk = new Map([
+      [A, text('a\n')],
+      [MANIFEST_PATH, text(stableJson(first.manifest))],
+    ])
+    const left = await planWithManifest(input({ desired, disk }))
+    const steps = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, privates: [TL_PRIVATE] })
+
+    expect(steps.map(stepLine)).toEqual([`private ${TL_DIR}`])
+    const nothing = await applySteps({ ...left, desired, gitignore: null, choices: NO_CHOICES, privates: [PM_PRIVATE] })
+    expect(nothing).toEqual([])
+  })
+
+  test('every level cadre makes is made private, its instructions/ subfolder only with a file in it (N13)', () => {
+    expect(privateLevels(SECURITY_DIR, [SECURITY_TEXT, SECURITY_RECORD_FILE])).toEqual([
+      '/home/u/.claude/cadre',
+      SLUG_DIR,
+      SECURITY_DIR,
+      `${SECURITY_DIR}/instructions`,
+    ])
+    expect(privateLevels(SECURITY_DIR, [SECURITY_RECORD_FILE])).toEqual([
+      '/home/u/.claude/cadre',
+      SLUG_DIR,
+      SECURITY_DIR,
+    ])
+    expect(privateModeArgv(SECURITY_DIR)).toEqual(['/bin/chmod', '700', SECURITY_DIR])
+  })
+
+  test('a private write is checked by the stat of each path from its role memory folder down and the listings', () => {
+    expect(privateCheckPaths(SECURITY_DIR, [SECURITY_TEXT, SECURITY_RECORD_FILE])).toEqual({
+      stats: [SECURITY_DIR, `${SECURITY_DIR}/instructions`, SECURITY_TEXT_FILE, SECURITY_RECORD],
+      listings: [SLUG_DIR, SECURITY_DIR, `${SECURITY_DIR}/instructions`],
+    })
+    expect(privateCheckPaths(SECURITY_DIR, [SECURITY_RECORD_FILE])).toEqual({
+      stats: [SECURITY_DIR, SECURITY_RECORD],
+      listings: [SLUG_DIR, SECURITY_DIR],
+    })
+  })
+
+  test('a write outside the repo that is not a private file of a confirmed role is refused (T-02-72)', () => {
+    const outside = 'outside the repo and the role memory folders'
+
+    expect(privateWriteProblem('/home/u/.ssh/authorized_keys', privateCheck())).toBe(
+      `refused to write ~/.ssh/authorized_keys: ${outside}`,
+    )
+    expect(privateWriteProblem(`${TL_DIR}/instructions.json`, privateCheck())).toBe(
+      `refused to write ~/.claude/cadre/repo-1a2b3c4d/tl/instructions.json: ${outside}`,
+    )
+    expect(privateWriteProblem(`${SECURITY_DIR}/notes.md`, privateCheck())).toBe(
+      `refused to write ~/.claude/cadre/repo-1a2b3c4d/security/notes.md: ${outside}`,
+    )
+    expect(privateWriteProblem(`/etc/pass${BIDI_OVERRIDE}\nwd`, privateCheck())).toBe(
+      `refused to write /etc/passwd: ${outside}`,
+    )
+  })
+
+  test('a private file is let through when nothing is there yet, or real folders and files are on its way', () => {
+    const real = privateCheck({ stats: privateStats(), listings: privateListings() })
+
+    expect([SECURITY_TEXT_FILE, SECURITY_RECORD].map(path => privateWriteProblem(path, privateCheck()))).toEqual([
+      null,
+      null,
+    ])
+    expect([SECURITY_TEXT_FILE, SECURITY_RECORD].map(path => privateWriteProblem(path, real))).toEqual([null, null])
+  })
+
+  test('a private file is refused when a folder lists it or its way as a link, only below that link (#72 A2)', () => {
+    const listedAs = (over: Readonly<Record<string, readonly PortEntry[] | null>>): PrivateWriteCheck =>
+      privateCheck({ stats: privateStats(), listings: privateListings(over) })
+    const linked = 'it or a folder above it is listed as a link'
+    const folderLink = listedAs({ [SECURITY_DIR]: [link('instructions'), entry('instructions.json')] })
+    const roleLink = listedAs({ [SLUG_DIR]: [link('security')] })
+
+    expect(privateWriteProblem(SECURITY_TEXT_FILE, folderLink)).toBe(`${TEXT_REFUSED}${linked}`)
+    expect(privateWriteProblem(SECURITY_RECORD, folderLink)).toBeNull()
+    const fileLink = listedAs({ [`${SECURITY_DIR}/instructions`]: [link('CLAUDE.md')] })
+    expect(privateWriteProblem(SECURITY_TEXT_FILE, fileLink)).toBe(`${TEXT_REFUSED}${linked}`)
+    expect(privateWriteProblem(SECURITY_RECORD, listedAs({ [SECURITY_DIR]: [link('instructions.json')] }))).toBe(
+      `${RECORD_REFUSED}${linked}`,
+    )
+    expect([SECURITY_TEXT_FILE, SECURITY_RECORD].map(path => privateWriteProblem(path, roleLink))).toEqual([
+      `${TEXT_REFUSED}${linked}`,
+      `${RECORD_REFUSED}${linked}`,
+    ])
+  })
+
+  test('a private file is refused when a stat or a listing on its way failed, or when it is a folder', () => {
+    const stat = 'it or a folder above it could not be checked (a stat failed)'
+    const listing = 'it or a folder above it could not be checked (a folder listing failed)'
+    const failedStat = privateCheck({ stats: privateStats({ [SECURITY_DIR]: 'failed' }), listings: privateListings() })
+    const noStat = privateCheck({ stats: new Map(), listings: privateListings() })
+    const unlisted = privateCheck({ stats: privateStats(), listings: privateListings({ [SECURITY_DIR]: null }) })
+    const folder = privateCheck({
+      stats: privateStats({ [SECURITY_TEXT_FILE]: statAt('dir', SECURITY_TEXT_FILE) }),
+      listings: privateListings(),
+    })
+
+    expect(privateWriteProblem(SECURITY_RECORD, failedStat)).toBe(`${RECORD_REFUSED}${stat}`)
+    expect(privateWriteProblem(SECURITY_TEXT_FILE, noStat)).toBe(`${TEXT_REFUSED}${stat}`)
+    expect(privateWriteProblem(SECURITY_RECORD, unlisted)).toBe(`${RECORD_REFUSED}${listing}`)
+    expect(privateWriteProblem(SECURITY_TEXT_FILE, folder)).toBe(`${TEXT_REFUSED}it is a folder`)
+  })
+
+  test('applyStatPaths and applyListPaths name no path of a private step: apply checks those on its own', () => {
+    const steps: ApplyStep[] = [
+      { kind: 'write', path: ROLE_MD, text: 'x' },
+      { kind: 'private', path: SECURITY_DIR, files: [SECURITY_TEXT, SECURITY_RECORD_FILE] },
+    ]
+
+    expect(applyStatPaths(steps)).toEqual(['.cadre', '.cadre/be', ROLE_MD])
+    expect(applyListPaths(steps)).toEqual(['', '.cadre', '.cadre/be'])
   })
 })

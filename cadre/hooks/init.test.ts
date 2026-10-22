@@ -22,8 +22,10 @@ import type {
   InitIo,
   InstructionGroup,
   InstructionHandout,
+  InstructionPart,
   LaunchStart,
   ManifestEntry,
+  MemoryItem,
   PaneKey,
   Plan,
   PortStat,
@@ -39,7 +41,15 @@ import type {
   UnsupportedId,
 } from '../types'
 import { detectAll } from './adapters'
-import { CONFLICT_OPTIONS, conflictQuestion, hunkFailureLine } from './apply'
+import {
+  CONFLICT_OPTIONS,
+  conflictQuestion,
+  hunkFailureLine,
+  instructionsRecordPath,
+  instructionsRecordText,
+  privateClaudeMdPath,
+  privateClaudeMdText,
+} from './apply'
 import type { HunkRun } from './apply'
 import {
   ASK_HEADERS,
@@ -168,6 +178,7 @@ import {
   policyLine,
   portProbeOf,
   portTextOf,
+  privateFoldersUnknownWarning,
   proposalLines,
   provenUserDir,
   PYTHON_TIMEOUT_MS,
@@ -244,6 +255,7 @@ import {
 import { autopilotReply, parseCadreState, scanRepo } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
+import { GIT_COMMON_DIR_ARGV } from './start'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -3687,9 +3699,12 @@ const BUILT_GIT_ARGV: readonly string[] = ['git', '--literal-pathspecs', 'ls-fil
 /** The host rule of a plain init over builtWorld or the secret world: git tracks the root CLAUDE.md (M3). */
 const BUILT_TRACKED: readonly HostRunRule[] = [{ argv: BUILT_GIT_ARGV, result: trackedRun(['CLAUDE.md']) }]
 
-/** The git runs a host was asked for. */
+/**
+ * The git ls-files runs a host was asked for (M3); the common-dir run of the private files (G-02-1f) is not one of
+ * them.
+ */
 function gitCalls(host: MemHost): HostCall[] {
-  return host.calls.filter(call => call.argv[0] === 'git')
+  return host.calls.filter(call => call.argv[0] === 'git' && call.argv.includes('ls-files'))
 }
 
 /** The ids of the roles a plain init wrote a launcher for, in write order, which is path order. */
@@ -3863,6 +3878,173 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
     await runInit(memIo(world, PARTS_ANSWERS).io, { dryRun: false, host: host.io })
     expect(builtWrites(host).map(write => write.path)).toEqual(builtPaths(BUILT_TEAM))
     expect(leaks(host.writes.map(write => write.text).join('\n'), SECRET_FIXTURES)).toEqual([])
+  })
+})
+
+/** The git run that gives the common dir of the fixture repo, /repo/.git: apply names the role memory folders by it. */
+const COMMON_DIR_RULE: HostRunRule = {
+  argv: GIT_COMMON_DIR_ARGV,
+  result: { exitCode: 0, stdout: '/repo/.git\n', stderr: '' },
+}
+
+/** The folder that holds the role memory folders of the fixture repo: `~/.claude/cadre/repo-<hash8>` (D-91). */
+async function slugFolder(): Promise<string> {
+  return `/home/u/.claude/cadre/repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
+}
+
+/** The role memory folder of a role of the fixture repo for the fixture user (D-20, D-91, D-140 q2-a). */
+async function memoryFolder(id: string): Promise<string> {
+  return `${await slugFolder()}/${id}`
+}
+
+/** A section of PARTS_GLOBAL as the read gives it: a global part of ~/.claude/CLAUDE.md with the hash of its text. */
+async function partsGlobalPart(id: string, heading: string, text: string): Promise<InstructionPart> {
+  return { id, file: '~/.claude/CLAUDE.md', heading, source: 'global', text, hash: await sha256Hex(text) }
+}
+
+/** The Security section of PARTS_GLOBAL, which the plan's recommendation gives security. */
+async function securityPart(): Promise<InstructionPart> {
+  return partsGlobalPart('P1', 'Security', '# Security\nNever commit secrets.\n')
+}
+
+/** The Git section of PARTS_GLOBAL, which the plan's recommendation gives tl. */
+async function gitPart(): Promise<InstructionPart> {
+  return partsGlobalPart('P2', 'Git', '## Git\nUse signed commits.\n')
+}
+
+/** The memory squad.md of memoriesWorld, as the hand-out offers it. */
+async function squadMemory(): Promise<MemoryItem> {
+  const hash = await sha256Hex(`${MEMORY_SENTENCE} (squad)`)
+
+  return { id: 'M1', file: 'squad.md', folder: MEMORY_DIR, summary: 'Unsigned commits on per-phase branches.', hash }
+}
+
+/** The writes of a host that land in the user's folder, outside the repo. */
+function homeWrites(host: MemHost): HostWrite[] {
+  return host.writes.filter(write => write.path.startsWith('/home/u/'))
+}
+
+describe('private role files (G-02-1f)', () => {
+  test('after Confirm each role given a global part gets it in its private text file, with its record', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const security = await memoryFolder('security')
+    const tl = await memoryFolder('tl')
+    const [p1, p2] = [await securityPart(), await gitPart()]
+    expect(homeWrites(host)).toEqual([
+      { path: privateClaudeMdPath(security), text: privateClaudeMdText('security', 'repo', [p1]), isWritten: true },
+      { path: instructionsRecordPath(security), text: instructionsRecordText([p1], []), isWritten: true },
+      { path: privateClaudeMdPath(tl), text: privateClaudeMdText('tl', 'repo', [p2]), isWritten: true },
+      { path: instructionsRecordPath(tl), text: instructionsRecordText([p2], []), isWritten: true },
+    ])
+    expect(privateClaudeMdPath(security)).toBe(`${security}/instructions/CLAUDE.md`)
+  })
+
+  test('the private files come after the repo files and before the manifest, which is still written', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const reply = await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const paths = host.writes.map(write => write.path)
+    const firstPrivate = paths.findIndex(path => path.startsWith('/home/u/'))
+    const lastPrivate = paths.findLastIndex(path => path.startsWith('/home/u/'))
+    expect(paths.slice(0, firstPrivate).every(path => path.startsWith('/repo/'))).toBe(true)
+    expect(paths.slice(firstPrivate, lastPrivate + 1)).toHaveLength(4)
+    expect(paths.slice(lastPrivate + 1)).toEqual(['/repo/.cadre/manifest.json'])
+    expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
+  })
+
+  test('a role given memories has them in its record by file, folder, summary and hash, never copied', async () => {
+    const replies = [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["pm"],"M2":[]}}']
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(memoriesWorld({ replies }), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const pm = await memoryFolder('pm')
+    const squad = await squadMemory()
+    expect(host.writes.filter(write => write.path.startsWith(`${pm}/`))).toEqual([
+      { path: instructionsRecordPath(pm), text: instructionsRecordText([], [squad]), isWritten: true },
+    ])
+    expect(host.writes.filter(write => write.text.includes(MEMORY_SENTENCE))).toEqual([])
+  })
+
+  test('the role memory folder is made by the mkdir run, made private on each level, then written (N13)', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const { io, events } = withHostEvents(host)
+    await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: io })
+    const slug = await slugFolder()
+    const security = `${slug}/security`
+    const at = events.indexOf(`run /bin/mkdir -p -- ${security}/instructions`)
+    expect(at).toBeGreaterThan(0)
+    expect(events.slice(at, at + 7)).toEqual([
+      `run /bin/mkdir -p -- ${security}/instructions`,
+      'run /bin/chmod 700 /home/u/.claude/cadre',
+      `run /bin/chmod 700 ${slug}`,
+      `run /bin/chmod 700 ${security}`,
+      `run /bin/chmod 700 ${security}/instructions`,
+      `write ${privateClaudeMdPath(security)}`,
+      `write ${instructionsRecordPath(security)}`,
+    ])
+    expect(host.calls.filter(call => call.argv[1] === 'rev-parse')).toEqual([
+      { argv: GIT_COMMON_DIR_ARGV, options: { cwd: '/repo', timeoutMs: 10_000 } },
+    ])
+  })
+
+  test('a dry run writes nothing private: it holds no host, reads and lists nothing in the role folders', async () => {
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    const { io, stats } = withStats(run)
+    const reply = await runInit(io, { dryRun: true })
+    const isPrivate = (path: string): boolean => path.startsWith('/home/u/.claude/cadre')
+    expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect([...run.reads, ...run.listed, ...stats].filter(isPrivate)).toEqual([])
+  })
+
+  test('a cancel holds a host and still writes nothing private and runs nothing', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const dismissed = Object.fromEntries(Object.entries(PARTS_ANSWERS).filter(([key]) => key !== 'Review the plan'))
+    const reply = await runInit(memIo(memoriesWorld(), dismissed).io, { dryRun: false, host: host.io })
+    expect(reply).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
+    expect([host.writes, host.calls]).toEqual([[], []])
+  })
+
+  test('with no common dir from git no private file is written, the reply says whose; the manifest is', async () => {
+    const failed: HostRunRule = { argv: GIT_COMMON_DIR_ARGV, result: { exitCode: 128, stdout: '', stderr: 'fatal' } }
+    for (const rule of [failed, { argv: GIT_COMMON_DIR_ARGV, result: null }]) {
+      const host = memHost(hostWorld({ runs: [rule] }))
+      const reply = await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+      expect(homeWrites(host)).toEqual([])
+      expect(reply.split('\n')).toContain(`warning: ${privateFoldersUnknownWarning(['security', 'tl'])}`)
+      expect(reply.split('\n')).not.toContain(`warning: ${MANIFEST_SKIPPED_NOTE}`)
+      expect(host.writes.map(write => write.path).at(-1)).toBe('/repo/.cadre/manifest.json')
+    }
+    expect(privateFoldersUnknownWarning(['security', 'tl'])).toBe(
+      'the private files of security, tl were not written: their role memory folders are unknown ' +
+        '(no home folder, or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)',
+    )
+  })
+
+  test('a private file listed as a link after Confirm is not written through; the record still is', async () => {
+    const slug = await slugFolder()
+    const security = `${slug}/security`
+    const dirs = {
+      '/repo/.git': [],
+      [slug]: [entry('security', 'dir')],
+      [security]: [entry('instructions', 'dir')],
+      [`${security}/instructions`]: [],
+    }
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const run = memIo(partsWorld({ dirs }), PARTS_ANSWERS)
+    const io = listedLinkAfterConfirm(run, `${security}/instructions`, 'CLAUDE.md')
+    const reply = await runInit(io, { dryRun: false, host: host.io })
+    const written = host.writes.map(write => write.path)
+    expect(written).not.toContain(privateClaudeMdPath(security))
+    expect(written).toContain(instructionsRecordPath(security))
+    const shownPath = `~/.claude/cadre/${slug.slice(slug.lastIndexOf('/') + 1)}/security/instructions/CLAUDE.md`
+    expect(reply.split('\n')).toContain(`warning: refused to write ${shownPath}: ${LISTED_LINK}`)
+  })
+
+  test('the global text reaches the private file only, no write under the repo (T-02-69, T-02-72)', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    await runInit(memIo(partsWorld(), PARTS_ANSWERS).io, { dryRun: false, host: host.io })
+    const holding = host.writes.filter(write => write.text.includes('Never commit secrets.'))
+    const security = await memoryFolder('security')
+    expect(holding.map(write => write.path)).toEqual([privateClaudeMdPath(security)])
   })
 })
 
