@@ -1,6 +1,6 @@
 {
   "name": "cadre",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Split a repo into narrow-scope role sessions: detect, a guided init that writes the confirmed plan, regen, start with the per-launch render and --probe, and status",
   "author": { "name": "VladLeus", "url": "https://github.com/VladLeus" },
   "types": "./types/index.d.ts"
