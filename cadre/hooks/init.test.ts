@@ -49,7 +49,10 @@ import {
   improverArgv,
   improverLine,
   improverNoChangeNote,
+  installedLine,
+  installFailureText,
   instructionsRecordPath,
+  MARKETPLACE_ADD_ARGV,
   otherChangesWarning,
   instructionsRecordText,
   privateClaudeMdPath,
@@ -68,6 +71,7 @@ import {
 } from './ask'
 import type { ChoiceAsk, StepResult } from './ask'
 import {
+  CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
   CLAUDE_SECURITY_SKILL,
   envQuestion,
@@ -138,6 +142,9 @@ import {
   HUNK_DISMISSED_REASON,
   hunkStep,
   IGNORE_ALL_NOTE,
+  IMPROVER_INSTALL_CONTEXT,
+  IMPROVER_INSTALL_DISMISSED_REASON,
+  IMPROVER_INSTALL_QUESTION,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
@@ -2750,11 +2757,18 @@ function partsWorld(over: Partial<MemWorld> = {}): MemWorld {
   return gitWorld({ files: { [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL }, replies, ...over })
 }
 
-/** INIT_ANSWERS with the content consent answered Yes and the entry question Accept recommendations. */
+/** The start of the improver install question, which a parts hand-out with a built part asks (G-02-1f, D-141). */
+const IMPROVER_INSTALL_PREFIX = 'Install claude-md-management'
+
+/**
+ * INIT_ANSWERS with the content consent answered Yes, the entry question Accept recommendations, and the improver
+ * install question Not now, so a run whose user lacks claude-md-management runs no improver (D-141).
+ */
 const PARTS_ANSWERS: Readonly<Record<string, string>> = {
   ...INIT_ANSWERS,
   [CONTENT_QUESTION]: 'Yes, read them',
   [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
+  [IMPROVER_INSTALL_PREFIX]: 'Not now',
 }
 
 /** The whole-file question of the global CLAUDE.md (D-63), as memoryStep asks it. */
@@ -4079,26 +4093,38 @@ const BE_CLAUDE_MD = '/repo/.cadre/be/CLAUDE.md'
 /** The start of the per-file improver question (G-02-1f, D-141). */
 const IMPROVER_PREFIX = "Accept the improver's changes"
 
-/** builtWorld's own files, in a new record a test changes as an improver run would. */
-function builtFilesRecord(): Record<string, string> {
+/** The fixture user's installed_plugins.json with claude-md-management installed at user scope (D-141). */
+function claudeMdInstalled(): string {
+  return JSON.stringify({ plugins: { [CLAUDE_MD_PLUGIN]: [{ scope: 'user', version: '1.0.0' }] } })
+}
+
+/**
+ * builtWorld's own files, in a new record a test changes as an improver run would, with claude-md-management installed
+ * unless `isInstalled` is false (D-141).
+ */
+function builtFilesRecord(isInstalled = true): Record<string, string> {
   return {
     ...FULL_FILES,
     [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
     '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
+    ...(isInstalled ? { [INSTALLED_PLUGINS_PATH]: claudeMdInstalled() } : {}),
   }
 }
 
 /**
- * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: git
- * tracks the root CLAUDE.md and names the common dir, and once the improver ran for BE's built CLAUDE.md, `files`
- * holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f, D-141).
+ * The host of a plain init over builtWorld with `files` as its files, recording its writes and runs in one list: the
+ * rules `runs` first, then git tracks the root CLAUDE.md and names the common dir, and once the improver ran for BE's
+ * built CLAUDE.md, `files` holds BUILT_BE_IMPROVED there, as that run would leave it (G-02-1f, D-141).
  */
-function improvingHost(files: Record<string, string>): {
+function improvingHost(
+  files: Record<string, string>,
+  runs: readonly HostRunRule[] = [],
+): {
   readonly io: HostIo
   readonly host: MemHost
   readonly events: string[]
 } {
-  const host = memHost(hostWorld({ runs: [...BUILT_TRACKED, COMMON_DIR_RULE] }))
+  const host = memHost(hostWorld({ runs: [...runs, ...BUILT_TRACKED, COMMON_DIR_RULE] }))
   const logged = withHostEvents(host)
   const io: HostIo = {
     ...logged.io,
@@ -4207,6 +4233,132 @@ describe('improver in init (G-02-1f)', () => {
     expect(run.shown.filter(block => block.key === 'improver')).toEqual([])
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+  })
+})
+
+/**
+ * The answers of a plain init over builtWorld with the improver install question answered `answer` and every improver
+ * change accepted (G-02-1f, D-141).
+ */
+function improverOffer(answer: string): Readonly<Record<string, string>> {
+  return { ...PARTS_ANSWERS, [IMPROVER_INSTALL_PREFIX]: answer, [IMPROVER_PREFIX]: 'Accept' }
+}
+
+/** The last line of the review when claude-md-management is the one plugin answered Install (D-141). */
+const IMPROVER_INSTALL_ROW = `Plugins to install after Confirm (a --dry-run installs nothing): ${CLAUDE_MD_PLUGIN}`
+
+/** The last review block a run showed, or none. */
+function lastReview(run: MemRun): readonly string[] {
+  return run.shown.findLast(block => block.key === 'review')?.lines ?? []
+}
+
+describe('improver install offer (G-02-1f)', () => {
+  test('the question, its context, its cancel reason and the plugin key are fixed', () => {
+    expect(IMPROVER_INSTALL_QUESTION).toBe(
+      'Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver ' +
+        "tidies each role's built CLAUDE.md, and you accept or keep each change.",
+    )
+    expect(IMPROVER_INSTALL_CONTEXT).toBe(
+      'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
+    )
+    expect(IMPROVER_INSTALL_DISMISSED_REASON).toBe('The claude-md-management question was dismissed or not answered.')
+    expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
+  })
+
+  test('asked after the security question when a role got a built part and the plugin is missing', async () => {
+    const run = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
+    await runInit(run.io, { dryRun: true })
+    const asked = firstLines(run.asked)
+    const at = asked.indexOf(IMPROVER_INSTALL_QUESTION)
+    expect(at).toBeGreaterThan(asked.findIndex(question => question.startsWith(SECURITY_INSTALL_PREFIX)))
+    expect(asked.findIndex(question => question.startsWith(SECURITY_INSTALL_PREFIX))).toBeGreaterThan(0)
+    expect(run.asked[at]).toBe(withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT))
+    expect(run.specs[at]).toEqual({ options: ['Install', 'Not now'], header: 'Improver' })
+    expect(asked.filter(question => question === IMPROVER_INSTALL_QUESTION)).toHaveLength(1)
+  })
+
+  test('not asked when no role got a part, nor when claude-md-management is installed', async () => {
+    const declined = memIo(builtWorld({ files: builtFilesRecord(false) }), PARTS_DECLINED)
+    await runInit(declined.io, { dryRun: true })
+    const memoriesOnly = memIo(
+      memoriesWorld({ replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":[],"T2":[]},"memories":{"M1":["tl"]}}'] }),
+      PARTS_ANSWERS,
+    )
+    await runInit(memoriesOnly.io, { dryRun: true })
+    const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
+    await runInit(installed.io, { dryRun: true })
+    for (const run of [declined, memoriesOnly, installed]) {
+      expect(firstLines(run.asked)).not.toContain(IMPROVER_INSTALL_QUESTION)
+    }
+    expect([memoriesOnly, installed].map(run => firstLines(run.asked).includes(CONTENT_QUESTION))).toEqual([
+      true,
+      true,
+    ])
+  })
+
+  test('Install puts the key on the review; Confirm installs it from home, then the improver runs', async () => {
+    const files = builtFilesRecord(false)
+    const { io, host } = improvingHost(files)
+    const run = memIo(builtWorld({ files }), improverOffer('Install'))
+    const reply = await runInit(run.io, { dryRun: false, host: io })
+    expect(lastReview(run).at(-1)).toBe(IMPROVER_INSTALL_ROW)
+    const install = host.calls.findIndex(call => call.argv.join(' ') === `claude plugin install ${CLAUDE_MD_PLUGIN}`)
+    expect(install).toBeGreaterThanOrEqual(0)
+    expect(host.calls[install]?.options).toEqual({ cwd: '/home/u', timeoutMs: 180_000 })
+    expect(host.calls.findIndex(call => call.argv[1] === '-p')).toBeGreaterThan(install)
+    expect(improverCalls(host)).toHaveLength(2)
+    expect(reply.split('\n').slice(-3)).toEqual([
+      installedLine([CLAUDE_MD_PLUGIN]),
+      improverLine({ changed: 1, total: 2 }),
+      NEXT_STEP_NOTE,
+    ])
+  })
+
+  test('Not now, or an install that fails, runs no improver at all', async () => {
+    const files = builtFilesRecord(false)
+    const notNow = improvingHost(files)
+    const reply = await runInit(memIo(builtWorld({ files }), improverOffer('Not now')).io, {
+      dryRun: false,
+      host: notNow.io,
+    })
+    expect([improverCalls(notNow.host), notNow.host.calls.filter(call => call.argv[1] === 'plugin')]).toEqual([[], []])
+    expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
+    const failedFiles = builtFilesRecord(false)
+    const failedRun: HostRun = { exitCode: 1, stdout: '', stderr: 'no such marketplace' }
+    const failing = improvingHost(failedFiles, [
+      { argv: ['claude', 'plugin', 'install', CLAUDE_MD_PLUGIN], result: failedRun },
+      { argv: MARKETPLACE_ADD_ARGV, result: failedRun },
+    ])
+    const failedReply = await runInit(memIo(builtWorld({ files: failedFiles }), improverOffer('Install')).io, {
+      dryRun: false,
+      host: failing.io,
+    })
+    expect(improverCalls(failing.host)).toEqual([])
+    expect(failedReply.split('\n')).toContain(`warning: ${installFailureText(CLAUDE_MD_PLUGIN, true)}`)
+    expect(failedReply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
+  })
+
+  test('with claude-md-management installed nothing is asked or installed, and the improver runs', async () => {
+    const files = builtFilesRecord()
+    const { io, host } = improvingHost(files)
+    const run = memIo(builtWorld({ files }), improverOffer('Install'))
+    await runInit(run.io, { dryRun: false, host: io })
+    expect(firstLines(run.asked)).not.toContain(IMPROVER_INSTALL_QUESTION)
+    expect(host.calls.filter(call => call.argv[1] === 'plugin')).toEqual([])
+    expect(improverCalls(host)).toHaveLength(2)
+    expect(lastReview(run).filter(line => line.startsWith('Plugins to install'))).toEqual([])
+  })
+
+  test('a dismissed offer cancels with nothing written; a dry run lists the install and installs nothing', async () => {
+    const host = memHost(hostWorld({}))
+    const answers = Object.fromEntries(Object.entries(PARTS_ANSWERS).filter(([key]) => key !== IMPROVER_INSTALL_PREFIX))
+    const reply = await runInit(memIo(builtWorld(), answers).io, { dryRun: false, host: host.io })
+    expect(reply).toBe(cancelledReply(IMPROVER_INSTALL_DISMISSED_REASON))
+    expect([host.writes, host.calls]).toEqual([[], []])
+    const dry = memIo(builtWorld(), improverOffer('Install'))
+    const dryReply = await runInit(dry.io, { dryRun: true })
+    expect(lastReview(dry).at(-1)).toBe(IMPROVER_INSTALL_ROW)
+    expect(dryReply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
   })
 })
 
@@ -5132,7 +5284,10 @@ type QuestionRuns = {
   readonly parts: MemRun
   /** Two of the user's own skills handed out one by one, each answered No; the model gives no text (G-02-1b). */
   readonly ownSkills: MemRun
-  /** A plain init whose improver changed BE's built CLAUDE.md, answered Accept (G-02-1f, D-141). */
+  /**
+   * A plain init whose user lacked claude-md-management: the offer answered Install, then the improver changed BE's
+   * built CLAUDE.md, answered Accept (G-02-1f, D-141).
+   */
   readonly improver: MemRun
 }
 
@@ -5170,8 +5325,8 @@ async function questionRuns(): Promise<QuestionRuns> {
     'Which roles get the skill': 'No',
   })
   await runInit(ownSkills.io, { dryRun: true })
-  const improverFiles = builtFilesRecord()
-  const improver = memIo(builtWorld({ files: improverFiles }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+  const improverFiles = builtFilesRecord(false)
+  const improver = memIo(builtWorld({ files: improverFiles }), improverOffer('Install'))
   await runInit(improver.io, { dryRun: false, host: improvingHost(improverFiles).io })
 
   return { plain, adjusted, perRole, security, history, folder, conflict, parts, ownSkills, improver }
@@ -5262,6 +5417,7 @@ describe('question chips (G-02-3c)', () => {
       [runs.plain, 'Git policy', 'Git policy'],
       [runs.plain, 'Review the plan', 'Review'],
       [runs.conflict, ROLE_QUESTION, 'Conflict'],
+      [runs.improver, IMPROVER_INSTALL_PREFIX, 'Improver'],
       [runs.improver, IMPROVER_PREFIX, 'Improver'],
     ]
     for (const [run, start, chip] of cases) expect([start, specOf(run, start).header]).toEqual([start, chip])

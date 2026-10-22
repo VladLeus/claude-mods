@@ -8,6 +8,7 @@ import {
   cappedNames,
   classifyMcp,
   classifySkills,
+  CLAUDE_MD_PLUGIN,
   EFFORTS,
   envQuestion,
   FRAMEWORK_START_SKILLS,
@@ -36,6 +37,7 @@ import {
   parseSkillRecommendation,
   PER_ROLE,
   SAME_FOR_ALL,
+  SECURITY_PLUGINS,
   SKILL_ROLE_ROWS,
   skillGroupQuestion,
   SKILLS_SYSTEM,
@@ -1121,5 +1123,12 @@ describe('env question cap (G-02-5)', () => {
     expect(parseEnvNames('all', names)).toEqual(names)
     expect(parseEnvNames('NAME_40, NAME_06', names)).toEqual(['NAME_06', 'NAME_40'])
     expect(parseEnvNames('NAME_41', names)).toBeNull()
+  })
+})
+
+describe('the improver plugin (G-02-1f, D-141)', () => {
+  test('CLAUDE_MD_PLUGIN is the exact key in claude-plugins-official; no role is given it as infra or security', () => {
+    expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
+    expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(CLAUDE_MD_PLUGIN)
   })
 })
