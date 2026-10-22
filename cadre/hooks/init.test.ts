@@ -221,6 +221,7 @@ import {
   regenNoRole,
   regenPartContextLine,
   regenPartQuestion,
+  regenTotalWarning,
   repoGuard,
   resolvedFramework,
   REVIEW_DISMISSED_REASON,
@@ -262,6 +263,7 @@ import {
   INSTRUCTIONS_ENTRY_QUESTION,
   overSizeWarning,
   parseContentConsent,
+  partsOfText,
   RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
   TOPICS_SYSTEM,
@@ -8785,21 +8787,59 @@ describe('regen by part hashes (G-02-1f)', () => {
 
   test('a record naming a file outside the config folder or the memory folders is not used (Q9)', async () => {
     const hash = 'a'.repeat(64)
+    // A config-folder file that is not a plain .md file outside projects/, cadre/ and plugins/ (02-GAPS-B3 M2).
+    const hostile = [
+      '~/.claude/settings.json',
+      '~/.claude/.credentials.json',
+      '~/.claude/projects/x/memory/a.md',
+      '~/.claude/cadre/r-12345678/pm/instructions/CLAUDE.md',
+    ]
     const records = [
       JSON.stringify({ schema: 1, parts: [{ file: '/etc/notes.md', heading: '', hash }], memories: [] }),
       JSON.stringify({ schema: 1, parts: [{ file: '~/.claude/../.ssh/notes.md', heading: '', hash }], memories: [] }),
       JSON.stringify({ schema: 1, parts: [], memories: [{ file: 'x.md', folder: '/tmp', summary: 's', hash }] }),
       JSON.stringify({ schema: 1, parts: [], memories: [{ file: '../x.md', folder: MEMORY_DIR, summary: 's', hash }] }),
       '{"schema":1}',
+      ...hostile.map(file => JSON.stringify({ schema: 1, parts: [{ file, heading: '', hash }], memories: [] })),
     ]
+    const hostilePaths = hostile.map(file => `/home/u/${file.slice(2)}`)
     for (const [index, record] of records.entries()) {
-      const files = { [await beRecordPath()]: record, '/etc/notes.md': 'secret', '/tmp/x.md': 'secret' }
+      const secrets = Object.fromEntries(hostilePaths.map(path => [path, 'secret']))
+      const files = { [await beRecordPath()]: record, '/etc/notes.md': 'secret', '/tmp/x.md': 'secret', ...secrets }
       const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
       expect([index, warningLines(reply)]).toEqual([index, [`warning: ${unusableRecordWarning('be')}`]])
-      const outside = run.reads.filter(path => path.startsWith('/etc/') || path.startsWith('/tmp/'))
+      const outside = run.reads.filter(path => /^\/(etc|tmp)\//.test(path) || hostilePaths.includes(path))
       expect([index, outside]).toEqual([index, []])
       expect([index, homeWrites(host)]).toEqual([index, []])
     }
+    const style = '# Style\nKeep it short.\n'
+    const [part] = await partsOfText('~/.claude/notes/style.md', 'global', style, 0)
+    const used = JSON.stringify({ schema: 1, parts: [part === undefined ? {} : recorded(part)], memories: [] })
+    const files = { [await beRecordPath()]: used, '/home/u/.claude/notes/style.md': style }
+    const { reply, run } = await regenPlainBe(await regenPartsWorld({ over: { files } }), {})
+    expect([warningLines(reply), run.reads.includes('/home/u/.claude/notes/style.md')]).toEqual([[], true])
+  })
+
+  test('a side whose reads pass 512 KiB is left as it is, with a warning; each side has its own cap (C8)', async () => {
+    const big = async (file: string): Promise<InstructionPart[]> =>
+      partsOfText(file, 'repo', `# ${file}\n${'x'.repeat(200 * 1024)}\n`, 0)
+    const docs = [...(await big('docs/a.md')), ...(await big('docs/b.md')), ...(await big('docs/c.md'))]
+    const onDiskDocs = Object.fromEntries(docs.map(part => [`/repo/${part.file}`, part.text]))
+    const over = { files: onDiskDocs }
+    const { reply, run, host } = await regenPlainBe(await regenPartsWorld({ over, notGiven: docs }), {})
+    expect(warningLines(reply)).toEqual([`warning: ${regenTotalWarning('be')}`])
+    expect([run.asked, host.writes, opKinds(reply).get(BE_CLAUDE_MD_PATH)]).toEqual([[], [], undefined])
+    expect(reply).not.toContain('dropped from be')
+    expect(regenTotalWarning('be')).toBe(
+      'regen stopped reading at 512 KiB for be: its instruction parts were not compared',
+    )
+    const bigText = `# Big\n${'y'.repeat(200 * 1024)}\n`
+    const global = await partsOfText('~/.claude/notes/big.md', 'global', bigText, 0)
+    const record = instructionsRecordText(global, [])
+    const files = { ...onDiskDocs, [await beRecordPath()]: record, '/home/u/.claude/notes/big.md': bigText }
+    const both = await regenPlainBe(await regenPartsWorld({ over: { files }, notGiven: docs.slice(0, 2) }), {})
+    const isPrivateRead = both.run.reads.includes('/home/u/.claude/notes/big.md')
+    expect([warningLines(both.reply), isPrivateRead]).toEqual([[], true])
   })
 
   test('a dismissed regen question, or three answers it cannot read, cancels with nothing written (Q7)', async () => {

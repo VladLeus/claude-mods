@@ -8,6 +8,7 @@ import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
+  configFileWarning,
   contentContextLine,
   entryContextLine,
   fallbackTopics,
@@ -18,6 +19,7 @@ import {
   instructionReviewLines,
   instructionsEntry,
   isMemoryIndexName,
+  isReadableConfigFile,
   MEMORY_UNLISTED_WARNING,
   memoryIndex,
   memoryItemContextLine,
@@ -1043,22 +1045,41 @@ describe('readInstructionFiles', () => {
     expect(scan.warnings).toEqual([unfollowedImportWarning('.git/a.md'), unfollowedImportWarning('docs/.secret.md')])
   })
 
-  test("the global file's own imports are not held to the repo-link rule: a dotfile there is read (M3)", async () => {
+  test('a global import that is not a plain .md file of the config folder is not read and warns (M2)', async () => {
     const run = memIo(
       filesWorld({
-        [`${CONFIG}/CLAUDE.md`]: '# G\n@./.notes.md\n@./data.json\n',
-        [`${CONFIG}/.notes.md`]: '# Notes\n',
-        [`${CONFIG}/data.json`]: '# Data\n',
+        [`${CONFIG}/CLAUDE.md`]: '# G\n@./settings.json\n@./projects/x/memory/a.md\n',
+        [`${CONFIG}/settings.json`]: '{"env":{}}',
+        [`${CONFIG}/projects/x/memory/a.md`]: '# A\n',
       }),
       [],
     )
     const scan = await readInstructionFiles(run.io, sourcesOf())
-    expect(placesOf(scan)).toEqual([
-      ['~/.claude/CLAUDE.md', 'G', 'global'],
-      ['~/.claude/.notes.md', 'Notes', 'global'],
-      ['~/.claude/data.json', 'Data', 'global'],
+    expect(placesOf(scan)).toEqual([['~/.claude/CLAUDE.md', 'G', 'global']])
+    expect(run.reads).toEqual([`${CONFIG}/CLAUDE.md`])
+    expect(scan.warnings).toEqual([
+      configFileWarning('~/.claude/projects/x/memory/a.md'),
+      configFileWarning('~/.claude/settings.json'),
     ])
-    expect(scan.warnings).toEqual([])
+    expect(configFileWarning('~/.claude/settings.json')).toBe(
+      '~/.claude/settings.json is not a plain .md file of your config folder ' +
+        '(no dot name, not under projects/, cadre/ or plugins/), not read: no role gets it',
+    )
+  })
+
+  test('isReadableConfigFile takes a plain .md config file outside projects/, cadre/ and plugins/ (M2)', () => {
+    const refused = [
+      '/h/.claude/settings.json',
+      '/h/.claude/.hidden/a.md',
+      '/h/.claude/notes/.a.md',
+      '/h/.claude/projects/x/a.md',
+      '/h/.claude/Cadre/a.md',
+      '/h/.claude/plugins/a.md',
+      '/h/.claude/a.MD',
+      '/h/other/a.md',
+    ]
+    expect(isReadableConfigFile('/h/.claude/notes/a.md', '/h/.claude')).toBe(true)
+    expect(refused.filter(path => isReadableConfigFile(path, '/h/.claude'))).toEqual([])
   })
 
   test('two repo paths that share their first 125 code points stay two files, shown cleaned (N3)', async () => {
