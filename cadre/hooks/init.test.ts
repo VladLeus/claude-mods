@@ -9488,3 +9488,52 @@ describe('linked memory deny (G-02-1f)', () => {
     expect(shownBlock(declined, 'review')).not.toContain(LINKED_MEMORIES_ROW)
   })
 })
+
+describe('safety net: init apply privates through runInit (A8)', () => {
+  test('writePrivate: each role is listed from the user folder down, then written in its own folder', async () => {
+    const host = memHost(hostWorld({ runs: [COMMON_DIR_RULE] }))
+    const { io: hostIo, events } = withHostEvents(host)
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const io: InitIo = {
+      ...run.io,
+      list: async path => {
+        events.push(`list ${path}`)
+
+        return run.io.list(path)
+      },
+    }
+    await runInit(io, { dryRun: false, host: hostIo })
+    // <userDir>/cadre/<repo>-<hash8>: the first 8 hex digits of the sha256 of the git common dir /repo/.git.
+    const folder = '/home/u/.claude/cadre/repo-6b4ca2db'
+    expect(await slugFolder()).toBe(folder)
+    const ids = ['pm', 'security', 'tl']
+    const privatePaths = ids.flatMap(id => [
+      `${folder}/${id}/instructions/CLAUDE.md`,
+      `${folder}/${id}/instructions.json`,
+    ])
+    for (const id of ids) {
+      const role = `${folder}/${id}`
+      const textAt = events.indexOf(`write ${role}/instructions/CLAUDE.md`)
+      const before = events.slice(0, textAt).findLastIndex(event => event.startsWith('write '))
+      expect(events.slice(before + 1, textAt + 2)).toEqual([
+        'list /home/u/.claude',
+        'list /home/u/.claude/cadre',
+        `list ${folder}`,
+        `list ${role}`,
+        `list ${role}/instructions`,
+        `run /bin/mkdir -p -- ${role}/instructions`,
+        'run /bin/chmod 700 /home/u/.claude/cadre',
+        `run /bin/chmod 700 ${folder}`,
+        `run /bin/chmod 700 ${role}`,
+        `run /bin/chmod 700 ${role}/instructions`,
+        `write ${role}/instructions/CLAUDE.md`,
+        `write ${role}/instructions.json`,
+      ])
+    }
+    const writes = events.filter(event => event.startsWith('write ')).map(event => event.slice('write '.length))
+    const firstPrivate = writes.findIndex(path => path.startsWith('/home/u/'))
+    expect(writes.slice(0, firstPrivate).every(path => path.startsWith('/repo/.'))).toBe(true)
+    expect(writes.slice(firstPrivate - 1)).toEqual(['/repo/.gitignore', ...privatePaths, '/repo/.cadre/manifest.json'])
+    expect(homeWrites(host).every(write => write.isWritten)).toBe(true)
+  })
+})
