@@ -347,24 +347,28 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
   return portTextOf(await $.fs.read(path).catch(() => null), maxBytes)
 }
 
+/** Whether this command run opened the cadre-init pane (D2): set by the run's first show, read once the run settles. */
+type PaneRun = {
+  isOpened: boolean
+}
+
 /**
  * The port one init run goes through (P8): plain closures over `$`, built here because `$` cannot cross into another
  * file, so the pure modules never see it. Every member except `ask` turns a host failure into null or unknown, never
  * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
  * message. `ask` rejects when the person dismisses the dialog (D-45). `show` puts a block into the side pane's state
  * and opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
- * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50).
+ * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first
+ * show records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2).
  */
-function initIoOf($: EngineInterface): InitIo {
-  let isPaneOpened = false
-
+function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
     ask: (question, spec) => $.ui.ask(question, spec),
     log: text => $.ui.log(text),
     show: async block => {
-      await update($, initPane, blocks => (isPaneOpened ? paneView(blocks, block) : [block])).catch(() => undefined)
-      if (isPaneOpened) return
-      isPaneOpened = true
+      await update($, initPane, blocks => (pane.isOpened ? paneView(blocks, block) : [block])).catch(() => undefined)
+      if (pane.isOpened) return
+      pane.isOpened = true
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
     complete: async (prompt, system) => {
@@ -458,6 +462,51 @@ function hostIoOf($: EngineInterface): HostIo {
   }
 }
 
+/**
+ * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo whose first show records the
+ * open of the cadre-init pane in `pane` (D2).
+ */
+async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
+  const command = parseCommand(args)
+  switch (command.kind) {
+    case 'help':
+      return { text: helpText(command.unknown) }
+    case 'detect':
+      return { text: await detectReply($, command.adapters) }
+    case 'init': {
+      const options: InitOptions = command.dryRun ? { dryRun: true } : { dryRun: false, host: hostIoOf($) }
+
+      return { text: await runInit(initIoOf($, pane), options) }
+    }
+    case 'regen': {
+      const { id } = command
+      const options: RegenOptions = command.dryRun ? { id, dryRun: true } : { id, dryRun: false, host: hostIoOf($) }
+
+      return { text: await runRegen(initIoOf($, pane), options) }
+    }
+    case 'start':
+      return { text: await runStart(initIoOf($, pane), hostIoOf($), { id: command.id, terminal: command.terminal }) }
+    case 'status':
+      return { text: await runStatus(initIoOf($, pane), hostIoOf($), { id: command.id }) }
+    case 'epic': {
+      const { key, title, terminal } = command
+
+      return { text: await runEpic(initIoOf($, pane), hostIoOf($), { key, title, terminal }) }
+    }
+    case 'epic-done':
+      return { text: await runEpicDone(initIoOf($, pane), hostIoOf($), { key: command.key, force: command.force }) }
+    default: {
+      const unreachable: never = command
+      return unreachable
+    }
+  }
+}
+
+/** Closes the cadre-init pane once the run that opened it settled (D2); a close the host refuses is swallowed. */
+async function closePane($: EngineInterface): Promise<void> {
+  await $.ui.close({ id: PANE }).catch(() => undefined)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -472,39 +521,13 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A run that opened the cadre-init pane closes it once it settles: finished, cancelled, refused or thrown (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
-    const command = parseCommand(e.args)
-    switch (command.kind) {
-      case 'help':
-        return { text: helpText(command.unknown) }
-      case 'detect':
-        return { text: await detectReply($, command.adapters) }
-      case 'init': {
-        const options: InitOptions = command.dryRun ? { dryRun: true } : { dryRun: false, host: hostIoOf($) }
-
-        return { text: await runInit(initIoOf($), options) }
-      }
-      case 'regen': {
-        const { id } = command
-        const options: RegenOptions = command.dryRun ? { id, dryRun: true } : { id, dryRun: false, host: hostIoOf($) }
-
-        return { text: await runRegen(initIoOf($), options) }
-      }
-      case 'start':
-        return { text: await runStart(initIoOf($), hostIoOf($), { id: command.id, terminal: command.terminal }) }
-      case 'status':
-        return { text: await runStatus(initIoOf($), hostIoOf($), { id: command.id }) }
-      case 'epic': {
-        const { key, title, terminal } = command
-
-        return { text: await runEpic(initIoOf($), hostIoOf($), { key, title, terminal }) }
-      }
-      case 'epic-done':
-        return { text: await runEpicDone(initIoOf($), hostIoOf($), { key: command.key, force: command.force }) }
-      default: {
-        const unreachable: never = command
-        return unreachable
-      }
+    const pane: PaneRun = { isOpened: false }
+    try {
+      return await commandReply($, e.args, pane)
+    } finally {
+      if (pane.isOpened) await closePane($)
     }
   })
 
