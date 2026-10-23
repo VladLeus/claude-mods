@@ -19,6 +19,7 @@ import {
   headerTopic,
   lineDiff,
   MAX_PREVIEW_CHARS,
+  OWN_ANSWER_HINT,
   pad,
   panePlacement,
   paneRows,
@@ -1117,15 +1118,16 @@ describe('withDescribeOwn (A2)', () => {
     preview: 'P',
   }
 
-  test('a question with 2 or 3 options gets one last option to type an own answer, with the preview', () => {
+  test('a question with 2 or 3 options gets one last option to type an own answer, and the hint line (R3)', () => {
+    const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
     expect(withDescribeOwn(PICK_QUESTION, 'P')).toEqual({
-      question: 'Pick one?',
+      question: hinted,
       header: 'Pick',
       multiSelect: false,
       options: [{ label: 'A', description: 'a' }, { label: 'B', description: 'b' }, OWN_OPTION],
     })
     const three = withDescribeOwn(pickWith('C'), 'P')
-    expect(three).toEqual({ ...pickWith('C'), options: [...pickWith('C').options, OWN_OPTION] })
+    expect(three).toEqual({ ...pickWith('C'), question: hinted, options: [...pickWith('C').options, OWN_OPTION] })
   })
 
   test('a question with 4 options keeps them and gets the hint line as the last line of its text', () => {
@@ -1134,17 +1136,32 @@ describe('withDescribeOwn (A2)', () => {
     expect(withDescribeOwn(four, 'P')).toEqual({ ...four, question: hinted })
   })
 
-  test('a question that already has a Describe your own option gets neither the option nor the hint', () => {
+  test('a question that already has a Describe your own option gets no other one, but the hint line (R3)', () => {
     const two = { ...PICK_QUESTION, options: [{ label: 'A' }, { label: 'Describe your own', description: 'mine' }] }
     for (const question of [two, pickWith('C', 'Describe your own')]) {
-      const result = withDescribeOwn(question, 'P')
-      expect(result).toEqual(question)
-      expect(result === question).toBe(false)
+      expect(withDescribeOwn(question, 'P')).toEqual({ ...question, question: `Pick one?\n${OWN_ANSWER_HINT}` })
     }
   })
 
+  test('a question whose text already ends with the hint line does not get it a second time (R3)', () => {
+    const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
+    expect(withDescribeOwn({ ...PICK_QUESTION, question: hinted }, 'P').question).toBe(hinted)
+    const four = { ...pickWith('C', 'D'), question: hinted }
+    expect(withDescribeOwn(four, 'P')).toEqual(four)
+  })
+
+  test("every 'under Other' reads 'as a note (press n)', and the hint line follows (R4)", () => {
+    const question = { ...PICK_QUESTION, question: 'Type ids under Other.' }
+    expect(withDescribeOwn(question, 'P').question).toBe(`Type ids as a note (press n).\n${OWN_ANSWER_HINT}`)
+    const twice = { ...PICK_QUESTION, question: 'Pick under Other, or type ids under Other.' }
+    const both = `Pick as a note (press n), or type ids as a note (press n).\n${OWN_ANSWER_HINT}`
+    expect(withDescribeOwn(twice, 'P').question).toBe(both)
+    expect(withDescribeOwn(PICK_QUESTION, 'P').question).toBe(`Pick one?\n${OWN_ANSWER_HINT}`)
+  })
+
   test('the question it is given is never changed, and the result is a new object', () => {
-    for (const question of [pickWith('C'), pickWith('C', 'D')]) {
+    const other = { ...PICK_QUESTION, question: 'Type ids under Other.' }
+    for (const question of [pickWith('C'), pickWith('C', 'D'), pickWith('C', 'Describe your own'), other]) {
       const before = JSON.stringify(question)
       const result = withDescribeOwn(question, 'P')
       expect(JSON.stringify(question)).toBe(before)
@@ -1178,14 +1195,16 @@ describe('askRewrite (A1, A2, B1)', () => {
     expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], BLOCKS)).toBe(null)
   })
 
-  test('a single-select question gets the preview on every option, Describe your own included, asked as is', () => {
+  test('a single-select question gets the preview on every option, Describe your own and the hint (R3)', () => {
     const questions = [PICK_QUESTION]
     const before = JSON.stringify(questions)
     const preview = previewMarkdown(BLOCKS)
+    const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
     const rewrite = askRewrite(questions, BLOCKS)
     expect(rewrite?.questions).toEqual([
       {
         ...PICK_QUESTION,
+        question: hinted,
         options: [
           { label: 'A', description: 'a', preview },
           { label: 'B', description: 'b', preview },
@@ -1193,8 +1212,15 @@ describe('askRewrite (A1, A2, B1)', () => {
         ],
       },
     ])
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
     expect(JSON.stringify(questions)).toBe(before)
+  })
+
+  test('the asked entry of a 2-option question pairs its text as asked with the text shown (R3, R4)', () => {
+    const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
+    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], BLOCKS)
+    expect(rewrite?.asked).toEqual([{ question: 'Type ids under Other.', asked: shownText }])
+    expect(rewrite?.questions[0]?.question).toBe(shownText)
   })
 
   test('a 4-option question is asked with the hint line, and its asked entry pairs the two texts', () => {
@@ -1205,12 +1231,12 @@ describe('askRewrite (A1, A2, B1)', () => {
     expect(rewrite?.questions[0]?.options).toHaveLength(4)
   })
 
-  test('a multi-select question among single-select ones is copied unchanged and has no asked entry', () => {
-    const multi = { ...PICK_QUESTION, question: 'Which?', multiSelect: true }
+  test("a multi-select question among single-select ones is copied unchanged, 'under Other' kept, unasked", () => {
+    const multi = { ...PICK_QUESTION, question: 'Which? Type more under Other.', multiSelect: true }
     const rewrite = askRewrite([PICK_QUESTION, multi], BLOCKS)
     expect(rewrite?.questions[1]).toEqual(multi)
     expect(rewrite?.questions[1] === multi).toBe(false)
-    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: `Pick one?\n${OWN_ANSWER_HINT}` }])
   })
 
   test('each question gets the preview of the one block its header needs, Describe your own included (B1)', () => {
@@ -1257,6 +1283,12 @@ describe('answersFromNotes (A3)', () => {
     expect(answersFromNotes(asked, { answers: { 'Q?\nhint': 'C' } })).toEqual({ 'Q?': 'C' })
     const noted = { answers: { 'Q?\nhint': 'C' }, annotations: { 'Q?\nhint': { notes: 'mine' } } }
     expect(answersFromNotes(asked, noted)).toEqual({ 'Q?': 'mine' })
+  })
+
+  test("an answer to a question whose 'under Other' was rewritten is stored under the text as asked (R4)", () => {
+    const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
+    const asked = [{ question: 'Type ids under Other.', asked: shownText }]
+    expect(answersFromNotes(asked, { answers: { [shownText]: 'A' } })).toEqual({ 'Type ids under Other.': 'A' })
   })
 
   test('another question keeps its answer, and a question with no answer and no notes adds no key', () => {

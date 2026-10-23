@@ -28,6 +28,7 @@ import {
   ROLES_QUESTION,
 } from './init'
 import { stableJson } from './plan'
+import { OWN_ANSWER_HINT } from './render'
 import { autopilotReply, CHECKOUT_ARGV } from './scan'
 import { GIT_COMMON_DIR_ARGV } from './start'
 import {
@@ -1702,6 +1703,9 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   /** What $.ui.ask is given for `Pick one?` (A3): options A and B under the chip Pick. */
   const PICK_SPEC: AskSpec = { options: ['A', 'B'], header: 'Pick' }
 
+  /** A question that offers a typed answer under Other, as a question of the model's own may (R4). */
+  const NAME_QUESTION = 'Name it, or type one under Other.'
+
   /**
    * A plugin whose `/ask-probe` command asks the question in its args through the real $.ui.ask, as cadre's own init
    * asks do, and replies `{"answer":<text>}`, or `{}` when the ask rejects (A3). The kit's `$` has no $.ui.ask; this
@@ -1885,8 +1889,33 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     fakeHost(on, initWorld(), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe(null)
-    expect(log.asks.at(-1)).toBe('ask Pick one?')
+    expect(log.asks.at(-1)).toBe(`ask Pick one?\n${OWN_ANSWER_HINT}`)
     expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+
+  test('a 2-option question gets the hint line too, and keeps its answer key (R3)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('B'), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('B')
+    expect(log.asks.at(-1)).toBe(`ask Pick one?\n${OWN_ANSWER_HINT}`)
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+
+  test("an inline pane asks 'under Other' as a note, keyed as asked (R4)", WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Name it': 'A' } }), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask(NAME_QUESTION, PICK_SPEC)).toBe('A')
+    expect(log.asks.at(-1)).toBe(`ask Name it, or type one as a note (press n).\n${OWN_ANSWER_HINT}`)
+  })
+
+  test("a docked pane asks the question as it is, 'under Other' included (R4)", WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Name it': 'A' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask(NAME_QUESTION, PICK_SPEC)).toBe('A')
+    expect(log.asks.at(-1)).toBe('ask Name it, or type one under Other.')
   })
 })
 
