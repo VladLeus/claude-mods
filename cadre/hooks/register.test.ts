@@ -5,6 +5,7 @@ import type { AskSpec, PaneKey } from '../types'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ask'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
+import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
 import { sha256Hex } from './hash'
 import {
   cancelledReply,
@@ -1917,6 +1918,26 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(await ask(NAME_QUESTION, PICK_SPEC)).toBe('A')
     expect(log.asks.at(-1)).toBe('ask Name it, or type one under Other.')
   })
+
+  test('golden: option previews of the init dry run on the main screen (D-219)', async ($, on) => {
+    const log = newLog()
+    const headers: unknown[] = []
+    // The kit draws the pane only on a mount, and the first block of a run clears its seat (D3), so the pane is seated
+    // inline again at every ask, as a terminal main screen keeps it drawn; the header open at that ask is kept.
+    const reseat = async (): Promise<void> => {
+      headers.push(log.headerWrites.at(-1) ?? null)
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+      await ui.unmount()
+    }
+    fakeHost(on, initWorld({ onAsk: reseat }), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const asked = log.askOptions.map((options, at) => ({
+      header: headers[at] ?? null,
+      options,
+      previews: (log.askPreviews[at] ?? []).map(preview => (typeof preview === 'string' ? preview : null)),
+    }))
+    expect(asked).toEqual(GOLDEN_PREVIEWS)
+  })
 })
 
 describe('the init pane draws the block of the question being asked (R1)', () => {
@@ -2043,6 +2064,36 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     await $.command.run(DRY_RUN)
     // The last dialog's own clear, then the run's: a write that update tries again only adds another null.
     expect(log.headerWrites.slice(-2)).toEqual([null, null])
+  })
+
+  test('golden: the pane rows drawn inline after the run, each row its span texts (D-219)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const box = await ui.find({ type: 'Box' })
+    await ui.unmount()
+    const rows = (box?.children ?? []).map(row => {
+      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
+
+      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
+    })
+    expect(rows).toEqual(GOLDEN_PANE_ROWS.inline)
+  })
+
+  test('golden: the pane rows drawn docked after the run, each row its span texts (D-219)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: DOCK_PANE })
+    const box = await ui.find({ type: 'Box' })
+    await ui.unmount()
+    const rows = (box?.children ?? []).map(row => {
+      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
+
+      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
+    })
+    expect(rows).toEqual(GOLDEN_PANE_ROWS.dock)
   })
 })
 
