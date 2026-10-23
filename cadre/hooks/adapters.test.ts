@@ -88,3 +88,25 @@ describe('adapter contract (DET-04)', () => {
     }
   })
 })
+
+/**
+ * Which startWork entries each adapter's kickoff names word for word today (A8): GSD two of three, as it never names
+ * /gsd-new-project; superpowers one of two, as it words the writing-plans start its own way; the built-in fallback
+ * none, as it words both entries its own way. The gap is logged in .planning/todos/pending/gsd-kickoff-new-project.md,
+ * so a later fix shows as a diff here.
+ */
+describe('safety net: kickoff names startWork (A8)', () => {
+  test('for a fixed context each kickoff holds these startWork entries word for word, and not the others', () => {
+    const context = { title: 'BE', roleId: 'be', specPath: null }
+    const matched = ADAPTERS.map(adapter => {
+      const kickoff = adapter.kickoffText(context)
+
+      return [adapter.id, adapter.startWork.map(entry => kickoff.includes(entry))]
+    })
+    expect(matched).toEqual([
+      ['gsd', [true, true, false]],
+      ['superpowers', [false, true]],
+      ['none', [false, false]],
+    ])
+  })
+})

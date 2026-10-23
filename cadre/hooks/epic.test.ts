@@ -19,8 +19,11 @@ import {
   EPIC_BRANCHES_ARGV,
   EPIC_CANCELLED,
   EPIC_DONE_NO_DIALOG,
+  EPIC_DONE_NO_LIST,
   EPIC_NO_PM,
+  EPIC_NO_WORKTREE_LIST,
   EPIC_RECORD_FILE,
+  EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicBadKeyReply,
   epicCreatedText,
@@ -40,6 +43,7 @@ import {
   epicManyBranchesReply,
   epicManyPmReply,
   epicManyWorktreesReply,
+  epicNoRecordWarning,
   epicNotFoundReply,
   epicNotMainReply,
   epicOldLauncherReply,
@@ -47,11 +51,13 @@ import {
   epicPathExistsReply,
   epicPmOf,
   epicRecordText,
+  epicRemoveFailedReply,
   epicRemovedText,
   epicRolesQuestion,
   epicSlug,
   epicStepArgv,
   epicStepFailedReply,
+  epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
   EXCLUDES_CONFIG_ARGV,
@@ -61,6 +67,8 @@ import {
   GLOBAL_EXCLUDES_ARGV,
   globalExcludesPath,
   globalExcludesWarning,
+  isSafeRelPath,
+  linkRemoveArgv,
   lockPid,
   LS_IGNORED_ARGV,
   LS_OTHERS_ARGV,
@@ -72,10 +80,12 @@ import {
   mirrorUnhideableWarning,
   parseEpicRecord,
   parseWorktreeList,
+  REMOVE_ARGV,
   runEpic,
   runEpicDone,
   STATUS_ARGV,
   untrackedEntries,
+  UNLOCK_ARGV,
   WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
 } from './epic'
@@ -96,6 +106,7 @@ import {
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   runStart,
+  START_NO_GIT_DIR,
   TERMINAL_MAC_ONLY,
   terminalPlan,
   worktreeClaudeMd,
@@ -1833,5 +1844,125 @@ describe('epic done --force and stale locks (D-152, D-170, D-134)', () => {
       expect(removals(run)).toEqual([])
     }
     expect(epicLockLiveReply(42)).toContain('42')
+  })
+})
+
+/**
+ * The failure paths of /cadre epic and /cadre epic done that no other spec pins (A8), each with its exact reply and the
+ * host calls up to its last one, so a stop shows that nothing ran after it. A failed record write is pinned as it is
+ * today: a warning, after which the roles are still rendered and opened; the user wants it to stop the run later
+ * (.planning/todos/pending/epic-record-write-failure-stops.md). A recorded link whose rm fails is not checked today.
+ */
+describe('safety net: epic failure paths (A8)', () => {
+  test('a record write that fails only warns: the render and open stages still run after it', async () => {
+    const record = `${GIT_DIR}/${EPIC_RECORD_FILE}`
+    const runs = [rule(ADD_ARGV, 0), rule(GIT_DIR_ARGV(WORKTREE), 0, `${GIT_DIR}\n`), ...BASE_RULES]
+    const host = memHost(hostWorld({ runs, writeFails: [record] }))
+    const events: string[] = []
+    const io: HostIo = {
+      write: async (path, text) => {
+        events.push(`write ${path}`)
+
+        return host.io.write(path, text)
+      },
+      run: async (argv, options) => {
+        events.push(argv.join(' '))
+
+        return host.io.run(argv, options)
+      },
+      env: host.io.env,
+    }
+    const run = memIo(await teamWorld(), {})
+    const reply = await runEpic(run.io, io, { key: 'PROJ-1', title: 'Add retry', terminal: 'auto' })
+    const warning = 'warning: cadre could not write cadre-epic.json for the epic PROJ-1: the write failed.'
+    expect(warning).toBe(`warning: ${epicNoRecordWarning('PROJ-1')}`)
+    expect(reply.split('\n')).toEqual([
+      'cadre epic PROJ-1',
+      'Title: Add retry',
+      `Created the worktree ${WORKTREE} on the new branch ${BRANCH}.`,
+      'Linked 0, copied 0.',
+      warning,
+      `  pm: ${START_NO_GIT_DIR}`,
+      `  be: ${START_NO_GIT_DIR}`,
+    ])
+    expect(events.slice(events.indexOf(`write ${record}`))).toEqual([
+      `write ${record}`,
+      GIT_COMMON_DIR_ARGV.join(' '),
+      GIT_COMMON_DIR_ARGV.join(' '),
+      '/usr/bin/uname -s',
+    ])
+  })
+
+  test('a worktree remove that fails stops done with its reply; the remove is the last host call', async () => {
+    const remove = REMOVE_ARGV('/repo', WORKTREE, false)
+    const run = await epicDone(await doneWorld(), [rule(remove, 1), ...DONE_RULES])
+    expect(run.reply).toBe(
+      'git could not remove the epic worktree, so cadre epic done stopped. The links it records were removed first: ' +
+        'run /cadre epic PROJ-1 to link them again.',
+    )
+    expect(run.reply).toBe(epicRemoveFailedReply('PROJ-1'))
+    expect(removals(run)).toEqual([
+      ['/bin/rm', '-f', '--', `${WORKTREE}/.cadre/bin/pm`],
+      ['/bin/rm', '-f', '--', `${WORKTREE}/node_modules`],
+      remove,
+    ])
+    expect([run.events.at(-1), run.writes]).toEqual([remove.join(' '), []])
+  })
+
+  test('a recorded link whose rm fails or is rejected is not checked: the worktree is still removed', async () => {
+    const pmLink = linkRemoveArgv(`${WORKTREE}/.cadre/bin/pm`)
+    const modules = linkRemoveArgv(`${WORKTREE}/node_modules`)
+    const run = await epicDone(await doneWorld(), [rule(pmLink, 1), rule(modules, null), ...DONE_RULES])
+    expect(removals(run)).toEqual([pmLink, modules, REMOVE_ARGV('/repo', WORKTREE, false)])
+    expect(run.reply).toBe(epicRemovedText('PROJ-1', WORKTREE, BRANCH))
+  })
+
+  test('an unlock that fails refuses with its reply; nothing is removed after it', async () => {
+    const unlock = UNLOCK_ARGV('/repo', WORKTREE)
+    const run = await epicDone(await doneWorld(), [LOCKED_42, rule(PS_42, 1), rule(unlock, 1), ...DONE_RULES])
+    expect(run.reply).toBe(
+      'git could not unlock the epic worktree, whose lock names the ended process 42, so nothing was removed.',
+    )
+    expect(run.reply).toBe(epicUnlockFailedReply(42))
+    expect([run.events.at(-1), removals(run), run.writes]).toEqual([unlock.join(' '), [], []])
+  })
+
+  test('a checkout git cannot place stops create and done with one reply, after the checkout probe only', async () => {
+    const reply =
+      'cadre epic could not tell from git whether this is the main checkout, so it stopped before creating anything.'
+    expect(EPIC_UNKNOWN_CHECKOUT).toBe(reply)
+    const create = await epic(await teamWorld(), [rule(CHECKOUT_ARGV('/repo'), 128)])
+    const done = await epicDone(await doneWorld(), [rule(CHECKOUT_ARGV('/repo'), null), ...DONE_RULES])
+    const probe = CHECKOUT_ARGV('/repo').join(' ')
+    expect([create.reply, create.events]).toEqual([reply, [probe]])
+    expect([done.reply, done.events]).toEqual([reply, [probe]])
+  })
+
+  test('create: a worktree or branch list git cannot give stops before any add, the list run last', async () => {
+    const list = WORKTREE_LIST_ARGV('/repo')
+    const branches = EPIC_BRANCHES_ARGV('/repo')
+    const noList = await epic(await teamWorld(), [rule(list, 128)])
+    const noBranches = await epic(await teamWorld(), [rule(branches, null)])
+    const reply =
+      'cadre epic could not list the worktrees and epic branches from git, so it stopped before creating anything.'
+    expect(EPIC_NO_WORKTREE_LIST).toBe(reply)
+    const before = [CHECKOUT_ARGV('/repo').join(' '), 'claude --version', list.join(' ')]
+    expect([noList.reply, noList.events]).toEqual([reply, before])
+    expect([noBranches.reply, noBranches.events]).toEqual([reply, [...before, branches.join(' ')]])
+  })
+
+  test('done: a worktree list git cannot give removes nothing, the list run last', async () => {
+    const list = WORKTREE_LIST_ARGV('/repo')
+    const run = await epicDone(await doneWorld(), [rule(list, null), ...DONE_RULES])
+    expect(EPIC_DONE_NO_LIST).toBe('cadre epic done could not list the worktrees from git, so it removed nothing.')
+    expect([run.reply, run.events]).toEqual([EPIC_DONE_NO_LIST, [CHECKOUT_ARGV('/repo').join(' '), list.join(' ')]])
+  })
+})
+
+describe('safety net: epic helpers (A8)', () => {
+  test('isSafeRelPath: a relative path with no empty, . or .. segment; any other path is refused', () => {
+    expect(['node_modules', '.cadre/bin/pm', 'a/.b/c..d'].map(isSafeRelPath)).toEqual([true, true, true])
+    const refused = ['', '/repo/x', '../x', 'a/../b', 'a/./b', 'a//b', 'a/', '.', '..']
+    expect(refused.map(isSafeRelPath)).toEqual(refused.map(() => false))
   })
 })

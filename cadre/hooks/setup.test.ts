@@ -1486,3 +1486,55 @@ describe('safety net: setup helpers (A8)', () => {
     expect(markdownFileNames(entries)).toEqual(['b.md', 'a.md'])
   })
 })
+
+/**
+ * What the setup scan reads today when CLAUDE_CONFIG_DIR is relative or inside the repo (A8): the value is the user
+ * folder as given, every user-level source is read below it, and only a path that cannot be read is warned about, in
+ * the display form it gets. D-238 makes such a value warn and fall back to ~/.claude in one behaviour commit, which
+ * changes these specs.
+ */
+describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
+  test('a relative value is the user folder as given; the one warning shows its raw path', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '.claude-alt' }
+    const world = memWorld({
+      files: { '.claude-alt/plugins/installed_plugins.json': INSTALLED_PLUGINS },
+      dirs: { '.claude-alt/agents': [entry('alt-agent.md')] },
+      unknownPaths: ['.claude-alt/CLAUDE.md'],
+    })
+    const run = memIo(world, [])
+    const scan = await scanSetup(run.io, ctx, true)
+    expect(run.reads).toEqual([
+      '.claude-alt/plugins/installed_plugins.json',
+      '/repo/.mcp.json',
+      '.claude-alt/.claude.json',
+      '/repo/.claude/agents',
+      '.claude-alt/CLAUDE.md',
+      '.claude-alt/projects/-repo/memory',
+    ])
+    expect(run.listed).toEqual(['.claude-alt/agents', '.claude-alt/projects/-repo/memory'])
+    expect([scan.plugins, scan.agents]).toEqual([['a@m', 'b@m'], ['alt-agent']])
+    expect(scan.warnings).toEqual(['could not read .claude-alt/CLAUDE.md (treated as unknown)'])
+  })
+
+  test('an inside-repo value is the user folder as given; the one warning shows it below <repo>', async () => {
+    const ctx: SetupContext = { ...CTX, configDir: '/repo/.claude-alt' }
+    const world = memWorld({
+      files: { '/repo/.claude-alt/plugins/installed_plugins.json': INSTALLED_PLUGINS },
+      dirs: { '/repo/.claude-alt/agents': [entry('alt-agent.md')] },
+      unknownPaths: ['/repo/.claude-alt/CLAUDE.md'],
+    })
+    const run = memIo(world, [])
+    const scan = await scanSetup(run.io, ctx, true)
+    expect(run.reads).toEqual([
+      '/repo/.claude-alt/plugins/installed_plugins.json',
+      '/repo/.mcp.json',
+      '/repo/.claude-alt/.claude.json',
+      '/repo/.claude/agents',
+      '/repo/.claude-alt/CLAUDE.md',
+      '/repo/.claude-alt/projects/-repo/memory',
+    ])
+    expect(run.listed).toEqual(['/repo/.claude-alt/agents', '/repo/.claude-alt/projects/-repo/memory'])
+    expect([scan.plugins, scan.agents]).toEqual([['a@m', 'b@m'], ['alt-agent']])
+    expect(scan.warnings).toEqual(['could not read <repo>/.claude-alt/CLAUDE.md (treated as unknown)'])
+  })
+})

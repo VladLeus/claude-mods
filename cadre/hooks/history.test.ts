@@ -522,3 +522,42 @@ describe('refusal re-ask (G-02-6b)', () => {
     expect(run.reads).toEqual([])
   })
 })
+
+/**
+ * What the history step reads today when CLAUDE_CONFIG_DIR is relative or inside the repo (A8): the value is the user
+ * folder as given, so the session folder below it is listed and its transcripts are read there, with no warning. D-238
+ * makes such a value warn and fall back to ~/.claude in one behaviour commit, which changes these specs.
+ */
+describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
+  /** The scan of one EXAMPLE transcript: its three kept names, once each. */
+  const scanned: HistoryScan = {
+    counts: [
+      { name: 'cadre', count: 1 },
+      { name: 'gsd-plan-phase', count: 1 },
+      { name: 'superpowers:brainstorming', count: 1 },
+    ],
+    scanned: 1,
+    total: 1,
+    skippedLarge: 0,
+    skippedUnknown: 0,
+    isPartial: false,
+  }
+
+  test('a relative value: the session folder below it is listed and read as given, with no warning', async () => {
+    const dir = '.claude-alt/projects/-repo'
+    const world = memWorld({ dirs: { [dir]: [transcript('a.jsonl', 1)] }, files: { [`${dir}/a.jsonl`]: EXAMPLE } })
+    const run = memIo(world, ['Yes, scan names and counts'])
+    const result = await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '.claude-alt' }, SCAN_CONTEXT)
+    expect([run.listed, run.reads, run.asked, run.logged]).toEqual([[dir], [`${dir}/a.jsonl`], [historyAsked(1)], []])
+    expect(result).toEqual({ kind: 'accepted', value: scanned })
+  })
+
+  test('an inside-repo value: the session folder below it is listed and read as given, with no warning', async () => {
+    const dir = '/repo/.claude-alt/projects/-repo'
+    const world = memWorld({ dirs: { [dir]: [transcript('a.jsonl', 1)] }, files: { [`${dir}/a.jsonl`]: EXAMPLE } })
+    const run = memIo(world, ['Yes, scan names and counts'])
+    const result = await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '/repo/.claude-alt' }, SCAN_CONTEXT)
+    expect([run.listed, run.reads, run.asked, run.logged]).toEqual([[dir], [`${dir}/a.jsonl`], [historyAsked(1)], []])
+    expect(result).toEqual({ kind: 'accepted', value: scanned })
+  })
+})
