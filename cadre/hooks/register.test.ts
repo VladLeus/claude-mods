@@ -101,6 +101,8 @@ type World = {
   readonly denySurfaces: boolean
   /** Makes `ui.open` and the write of the init pane's state refuse, as a host that cannot place or keep the pane. */
   readonly denyPane: boolean
+  /** Makes `ui.close` refuse, as a host that cannot take the pane away. */
+  readonly denyClose: boolean
   /**
    * Question prefix to the answer the dialog gives. The longest prefix a question starts with wins, so a test stays
    * valid when a later plan adds questions; a question no prefix matches is dismissed, as Esc does.
@@ -124,7 +126,8 @@ type World = {
  * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
  * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
  * option labels each dialog showed, each text the plugin logged to the transcript, each side pane it opened as
- * `ui.open <id> <title>`, each value it set the init pane's state to (D-133), and each path it wrote, in order.
+ * `ui.open <id> <title>`, each pane it closed as `ui.close <id>`, each value it set the init pane's state to (D-133),
+ * and each path it wrote, in order.
  */
 type HostLog = {
   readonly ops: string[]
@@ -134,6 +137,7 @@ type HostLog = {
   readonly askOptions: string[][]
   readonly logs: string[]
   readonly panes: string[]
+  readonly closes: string[]
   readonly paneWrites: unknown[]
   readonly writes: string[]
 }
@@ -166,7 +170,18 @@ const FORBIDDEN_OPS: readonly string[] = [
 
 /** An empty log, one per test. */
 function newLog(): HostLog {
-  return { ops: [], runs: [], cwds: [], asks: [], askOptions: [], logs: [], panes: [], paneWrites: [], writes: [] }
+  return {
+    ops: [],
+    runs: [],
+    cwds: [],
+    asks: [],
+    askOptions: [],
+    logs: [],
+    panes: [],
+    closes: [],
+    paneWrites: [],
+    writes: [],
+  }
 }
 
 /** One block of the init side pane as the fake host saw its state written (D-133). */
@@ -237,6 +252,7 @@ function ambiguousWorld(over: Partial<World> = {}): World {
     surfaces: ['terminal'],
     denySurfaces: false,
     denyPane: false,
+    denyClose: false,
     answers: {},
     now: 1_000_000,
     sessionId: 's1',
@@ -417,7 +433,8 @@ function hasPath(world: World, path: string): boolean {
  * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs,
  * process and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript
  * text is kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is
- * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. The model answers `world.replies` in
+ * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. A pane closed is kept in `log.closes`,
+ * and the close is refused when `world.denyClose`. The model answers `world.replies` in
  * order. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path
  * kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state
  * included, is answered with a refusal, so a call to one would show up in the log and fail its call.
@@ -438,6 +455,12 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     if (world.denyPane) return { deny: 'no pane' }
 
     return { value: { isPlaced: true } }
+  })
+  on('ui.close', async (_$, e) => {
+    log.closes.push(`ui.close ${e.id}`)
+    if (world.denyClose) return { deny: 'no close' }
+
+    return { value: undefined }
   })
   // The init pane's blocks are the plugin's own state (D-133, T-02-49); a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
@@ -1506,6 +1529,47 @@ describe('cadre init with a faked host', () => {
     expect(Array.isArray(restart) ? restart.filter(isPaneBlock).map(block => block.key) : []).toEqual(['scan'])
     expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
+  })
+
+  test('init --dry-run closes the cadre-init pane once when it finishes (D2)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.closes).toEqual(['ui.close cadre-init'])
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+  })
+
+  test('a run cancelled by a dismissed dialog still closes the pane it opened (D2)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: answersWithout('Git policy') }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
+    expect(log.closes).toEqual(['ui.close cadre-init'])
+  })
+
+  test('each of two init --dry-run runs closes the pane it opened (D2)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.closes).toEqual(['ui.close cadre-init', 'ui.close cadre-init'])
+  })
+
+  test('a run that shows no block closes no pane: detect and help (D2)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    await $.command.run({ command: 'cadre', args: '' })
+    expect(log.closes).toEqual([])
+  })
+
+  test('a close the host refuses is swallowed, so init --dry-run still replies with its plan (D2)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ denyClose: true }), log)
+    const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(out.text).toContain('File plan:')
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+    expect(log.closes).toEqual(['ui.close cadre-init'])
   })
 
   test('the init port never reads a folder: a folder the scans probe is checked and left unread', async ($, on) => {
