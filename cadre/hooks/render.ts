@@ -379,8 +379,14 @@ export function previewMarkdown(blocks: readonly ShownBlock[]): string {
   return cutPreview(parts)
 }
 
-/** An AskUserQuestion question whose shape withPreviews checked (D3): an object with options it may rewrite. */
-type CheckedQuestion = Record<string, unknown> & { readonly options: readonly Record<string, unknown>[] }
+/**
+ * An AskUserQuestion question whose shape withPreviews checked (D3): an object with a string `question` and options it
+ * may rewrite.
+ */
+export type CheckedQuestion = Record<string, unknown> & {
+  readonly question: string
+  readonly options: readonly Record<string, unknown>[]
+}
 
 /** Whether a value is an AskUserQuestion option a preview may go on (D3): an object with a string `label`. */
 function isPreviewOption(value: unknown): value is Record<string, unknown> {
@@ -399,25 +405,155 @@ function isPreviewQuestion(value: unknown): value is CheckedQuestion {
 }
 
 /**
- * The questions of an AskUserQuestion call with `preview` on each option of each single-select question (D3). A tool
- * call's args are unknown to the plugin, so their shape is checked before any rewrite, and null means the call passes
- * through unchanged: null for anything but a list of one question or more, each an object with a string `question`
- * and one option or more, each an object with a string `label`, and null when every question is multi-select
- * (`multiSelect` true). The list is new: each question and option is a copy made with a spread, a multi-select
- * question is copied unchanged, and an option with a `preview` key of its own keeps it; the input is never changed.
+ * The questions of an AskUserQuestion call with `preview` on each option of each single-select question (D3, B1): the
+ * preview `previewOf` makes for that question's `header` value (undefined when it has none). A tool call's args are
+ * unknown to the plugin, so their shape is checked before any rewrite, and null means the call passes through
+ * unchanged: null for anything but a list of one question or more, each an object with a string `question` and one
+ * option or more, each an object with a string `label`, and null when every question is multi-select (`multiSelect`
+ * true). The list is new: each question and option is a copy made with a spread, a multi-select question is copied
+ * unchanged, and an option with a `preview` key of its own keeps it; the input is never changed.
  */
-export function withPreviews(questions: unknown, preview: string): Record<string, unknown>[] | null {
+export function withPreviews(questions: unknown, previewOf: (header: unknown) => string): CheckedQuestion[] | null {
   if (!Array.isArray(questions) || questions.length === 0 || !questions.every(isPreviewQuestion)) return null
   if (questions.every(question => question.multiSelect === true)) return null
 
   return questions.map(question => {
     if (question.multiSelect === true) return { ...question }
+    const preview = previewOf(question.header)
     const options = question.options.map(option =>
       Object.hasOwn(option, 'preview') ? { ...option } : { ...option, preview },
     )
 
     return { ...question, options }
   })
+}
+
+/**
+ * The label of the option a previewed question gets so the person can give an answer of their own (A2): beside a
+ * preview the engine draws no Other row, so the person picks it, or presses `n`, and types the answer in the dialog's
+ * notes.
+ */
+export const DESCRIBE_OWN_LABEL = 'Describe your own'
+
+/** What the Describe your own option says under its label (A2): how to type an answer of one's own. */
+export const DESCRIBE_OWN_DESCRIPTION = 'Press n, type your answer, then Enter'
+
+/** The last line of a previewed question that has no room left for the Describe your own option (A2). */
+export const OWN_ANSWER_HINT = 'Or press n, type your own answer, then Enter.'
+
+/** The most options an AskUserQuestion question may have: the tool's schema allows 2 to 4 (A2). */
+const MAX_DIALOG_OPTIONS = 4
+
+/**
+ * A previewed single-select question with a way to give an answer of one's own (A2), since the engine draws no Other
+ * row beside a preview: with fewer than MAX_DIALOG_OPTIONS options it gets one last option, DESCRIBE_OWN_LABEL with
+ * DESCRIBE_OWN_DESCRIPTION and the given preview; with MAX_DIALOG_OPTIONS options, and no room for one more, its text
+ * gets OWN_ANSWER_HINT as its last line. A question that already has an option labelled DESCRIBE_OWN_LABEL gets
+ * neither. The result is a new object; the question it is given is never changed.
+ */
+export function withDescribeOwn(question: CheckedQuestion, preview: string): CheckedQuestion {
+  if (question.options.some(option => option.label === DESCRIBE_OWN_LABEL)) return { ...question }
+  if (question.options.length >= MAX_DIALOG_OPTIONS) {
+    return { ...question, question: `${question.question}\n${OWN_ANSWER_HINT}` }
+  }
+  const own = { label: DESCRIBE_OWN_LABEL, description: DESCRIBE_OWN_DESCRIPTION, preview }
+
+  return { ...question, options: [...question.options, own] }
+}
+
+/**
+ * One question askRewrite rewrote (A3): `question`, its text as the caller asked it, and `asked`, the text the dialog
+ * shows, which the dialog's answers and annotations are keyed by.
+ */
+export type AskedQuestion = {
+  readonly question: string
+  readonly asked: string
+}
+
+/** The rewrite of an AskUserQuestion call (A1, A2): the questions the dialog shows, and each question it rewrote. */
+export type AskRewrite = {
+  readonly questions: Record<string, unknown>[]
+  readonly asked: readonly AskedQuestion[]
+}
+
+/**
+ * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
+ * D3); null, so the call passes through unchanged, when the pane has no blocks or withPreviews does not rewrite the
+ * questions. Each option of each single-select question gets the preview of the pane's blocks (withPreviews), and
+ * each such question then gets the Describe your own option or the hint line (withDescribeOwn), with an AskedQuestion
+ * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged and has
+ * none.
+ */
+export function askRewrite(questions: unknown, blocks: readonly ShownBlock[]): AskRewrite | null {
+  if (blocks.length === 0) return null
+  const previewOf = (header: unknown): string => previewMarkdown(blocks)
+  const previewed = withPreviews(questions, previewOf)
+  if (previewed === null) return null
+  const pairs = previewed.map(question => {
+    const shown = question.multiSelect === true ? null : withDescribeOwn(question, previewOf(question.header))
+
+    return { question, shown }
+  })
+  const asked = pairs.flatMap(({ question, shown }): AskedQuestion[] =>
+    shown === null ? [] : [{ question: question.question, asked: shown.question }],
+  )
+
+  return { questions: pairs.map(({ question, shown }) => shown ?? question), asked }
+}
+
+/** Whether a value is the answers of an AskUserQuestion result (A3): an object, not an array, of strings only. */
+function isAnswers(value: unknown): value is Record<string, string> {
+  return isObject(value) && Object.values(value).every(answer => typeof answer === 'string')
+}
+
+/**
+ * The notes typed in a dialog for one question (A3), trimmed: the string `notes` of the annotation under the text the
+ * dialog showed, read as an own key only; '' when there is none.
+ */
+function typedNotes(annotations: Record<string, unknown> | undefined, asked: string): string {
+  if (annotations === undefined || !Object.hasOwn(annotations, asked)) return ''
+  const annotation = annotations[asked]
+  if (!isObject(annotation) || typeof annotation.notes !== 'string') return ''
+
+  return annotation.notes.trim()
+}
+
+/**
+ * What one previewed question answers (A3): the typed notes when there are any, else '' for DESCRIBE_OWN_LABEL picked
+ * with nothing typed, else the answer as chosen; undefined when there is neither an answer nor notes.
+ */
+function ownAnswer(notes: string, answer: string | undefined): string | undefined {
+  if (notes !== '') return notes
+  if (answer === DESCRIBE_OWN_LABEL) return ''
+
+  return answer
+}
+
+/**
+ * The answers of an AskUserQuestion result after a dialog askRewrite rewrote (A3), or null to leave the result as it
+ * is. $.ui.ask resolves to the answer under the question's text as asked and reads no notes, so for each question in
+ * `asked` the notes typed in the dialog, trimmed and not empty, become its answer whatever was chosen; else
+ * DESCRIBE_OWN_LABEL becomes '', which cadre's own parsers refuse and ask again; else the answer is kept. That answer
+ * is stored under the question's text as asked, and the key of the text the dialog showed is dropped, so $.ui.ask
+ * resolves to it as it does to an answer typed under Other. Every other answer is kept as is. The result is untrusted:
+ * null unless it is an object whose `answers` is an object of strings and whose `annotations` is absent or an object.
+ * Keys are read as own keys only, and the result is never changed.
+ */
+export function answersFromNotes(asked: readonly AskedQuestion[], result: unknown): Record<string, string> | null {
+  if (!isObject(result)) return null
+  const { answers, annotations } = result
+  if (!isAnswers(answers)) return null
+  if (annotations !== undefined && !isObject(annotations)) return null
+  const out = new Map(Object.entries(answers))
+  for (const entry of asked) {
+    const answer = Object.hasOwn(answers, entry.asked) ? answers[entry.asked] : undefined
+    const value = ownAnswer(typedNotes(annotations, entry.asked), answer)
+    if (value === undefined) continue
+    if (entry.asked !== entry.question) out.delete(entry.asked)
+    out.set(entry.question, value)
+  }
+
+  return Object.fromEntries(out)
 }
 
 /** One changed line of a line diff (G-02-1f, D-141): a line only the new text has, or one only the old text had. */

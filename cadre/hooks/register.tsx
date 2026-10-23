@@ -32,7 +32,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { detectText, panePlacement, paneRows, paneSpans, paneView, previewMarkdown, withPreviews } from './render'
+import { answersFromNotes, askRewrite, detectText, panePlacement, paneRows, paneSpans, paneView } from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
 
@@ -570,17 +570,27 @@ export const register: Register = on => {
     )
   })
 
-  // The pane's blocks as the preview of each single-select option of a dialog, only while the terminal main screen
-  // seats the pane inline, where the engine hides it behind the dialog (D3); any other call passes through unchanged.
+  // Only while the terminal main screen seats the pane inline, where the engine hides it behind a dialog: each
+  // single-select question gets its preview of the pane on every option (D3, B1) and a Describe your own option or the
+  // hint line (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). Any other
+  // call, a deny, an error and a result of another shape pass through unchanged. The hook has no .catch on purpose: a
+  // hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     if (lastPlacement !== 'inline') return next(e)
     const blocks = await read($, initPane).catch(() => NO_BLOCKS)
     if (blocks.length === 0) return next(e)
     const raw: unknown = e.questions
-    const questions = withPreviews(raw, previewMarkdown(blocks))
-    if (questions === null) return next(e)
+    const rewrite = askRewrite(raw, blocks)
+    if (rewrite === null) return next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no mismatch.
-    return next({ ...e, questions: questions as typeof e.questions })
+    const r = await next({ ...e, questions: rewrite.questions as typeof e.questions })
+    if (r.deny !== undefined) return r
+    if (r.isError === true) return r
+    const resultValue: unknown = r.result
+    const answers = answersFromNotes(rewrite.asked, resultValue)
+    if (answers === null) return r
+
+    return { ...r, result: { ...r.result, answers } }
   })
 }
