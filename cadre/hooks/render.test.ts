@@ -15,11 +15,13 @@ import {
   lineDiff,
   pad,
   paneRows,
+  paneSpans,
   paneView,
   reportText,
   shown,
   STATUS_LABEL,
 } from './render'
+import type { PaneRow, PaneSpan } from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
 import { BIDI_OVERRIDE } from './testkit'
 
@@ -565,6 +567,194 @@ describe('paneRows', () => {
     expect(rows.map(row => row.text)).toEqual(['Scan', 'ab', reportText(long)])
     expect(rows.filter(row => CONTROL_OR_FORMAT.test(row.text) || row.text.includes('\n'))).toEqual([])
     expect(Array.from(rows[2]?.text ?? '')).toHaveLength(240)
+  })
+})
+
+/** A pane row that is not a title, as paneRows gives every line of a block. */
+function lineRow(text: string): PaneRow {
+  return { text, isTitle: false }
+}
+
+/** Whether a span has a look of its own: a colour, bold or dim. */
+function isStyled(span: PaneSpan): boolean {
+  return span.color !== undefined || span.bold === true || span.dim === true
+}
+
+/**
+ * The styled spans of a line row and the text all its spans join to, so a test pins the looks and the join without
+ * depending on how the plain text between the styled spans is split.
+ */
+function looksOf(text: string): { readonly styled: PaneSpan[]; readonly joined: string } {
+  const spans = paneSpans(lineRow(text))
+
+  return { styled: spans.filter(isStyled), joined: spans.map(span => span.text).join('') }
+}
+
+/** Every row the paneSpans tests use, for the invariants that hold over all of them (D1). */
+const SPAN_ROWS: readonly string[] = [
+  '',
+  'Review',
+  '    [hard] edits only src/',
+  '    [best-effort] asks before a push',
+  '    [none] reads anything',
+  '    [none]',
+  '    [hard]x',
+  '  create    .cadre/be/ROLE.md',
+  '  change    .claude/settings.json',
+  '  conflict  .cadre/fe/ROLE.md',
+  '  leave     .cadre/pm/ROLE.md',
+  '  hunk      x',
+  '  create .cadre/x',
+  '  stack: ts; frontend: react; backend: none',
+  '  framework: GSD; model: opus + high; permission mode: default',
+  '  hooks loaded by project settings: none',
+  `${'a'.repeat(40)}: x`,
+  `${'a'.repeat(41)}: x`,
+  'Summary: 3 create, 1 change, 2 leave, 0 conflict, 0 hunks',
+  'Summary: 12 create, 0 change, 0 leave, 0 conflict, 2 hunks (1 accepted)',
+  '    recommended: be, fe',
+  '    recommended: none',
+  '    used 3 times; recommended: be',
+  'Scope card: Backend (be)',
+  'Roles:',
+  'Repo scan (read-only):',
+  '- tool for BE: why',
+  '+ added line',
+  'The model gave no usable recommendation: no role gets a skill unless you pick one.',
+]
+
+describe('paneSpans (D1)', () => {
+  test('a title row is one bold span in the claude colour, whatever its text; an empty row has none', () => {
+    expect(paneSpans({ text: 'Review', isTitle: true })).toEqual([{ text: 'Review', color: 'claude', bold: true }])
+    expect(paneSpans({ text: 'Summary: 3', isTitle: true })).toEqual([
+      { text: 'Summary: 3', color: 'claude', bold: true },
+    ])
+    expect(paneSpans(lineRow(''))).toEqual([])
+  })
+
+  test('a rule marker is success for hard, warning for best-effort and error for none, the rest plain', () => {
+    expect(paneSpans(lineRow('    [hard] edits only src/'))).toEqual([
+      { text: '    ' },
+      { text: '[hard]', color: 'success' },
+      { text: ' edits only src/' },
+    ])
+    expect(looksOf('    [best-effort] asks before a push')).toEqual({
+      styled: [{ text: '[best-effort]', color: 'warning' }],
+      joined: '    [best-effort] asks before a push',
+    })
+    expect(looksOf('    [none] reads anything').styled).toEqual([{ text: '[none]', color: 'error' }])
+    expect(paneSpans(lineRow('    [none]'))).toEqual([{ text: '    ' }, { text: '[none]', color: 'error' }])
+    expect(paneSpans(lineRow('    [hard]x'))).toEqual([{ text: '    [hard]x' }])
+  })
+
+  test('a plan op row colours only its kind: create, change, conflict and leave', () => {
+    expect(paneSpans(lineRow('  create    .cadre/be/ROLE.md'))).toEqual([
+      { text: '  ' },
+      { text: 'create', color: 'success' },
+      { text: '    .cadre/be/ROLE.md' },
+    ])
+    expect(looksOf('  change    .claude/settings.json')).toEqual({
+      styled: [{ text: 'change', color: 'warning' }],
+      joined: '  change    .claude/settings.json',
+    })
+    expect(looksOf('  conflict  .cadre/fe/ROLE.md').styled).toEqual([{ text: 'conflict', color: 'error' }])
+    expect(looksOf('  leave     .cadre/pm/ROLE.md').styled).toEqual([{ text: 'leave', dim: true }])
+  })
+
+  test('a hunk row and a kind not padded to the plan column get no op span', () => {
+    expect(looksOf('  hunk      x').styled).toEqual([])
+    expect(looksOf('  create .cadre/x').styled).toEqual([])
+  })
+
+  test('each field of a row has its label dim and its value plain', () => {
+    expect(looksOf('  stack: ts; frontend: react; backend: none')).toEqual({
+      styled: [
+        { text: 'stack:', dim: true },
+        { text: 'frontend:', dim: true },
+        { text: 'backend:', dim: true },
+      ],
+      joined: '  stack: ts; frontend: react; backend: none',
+    })
+    expect(looksOf('  framework: GSD; model: opus + high; permission mode: default').styled).toEqual([
+      { text: 'framework:', dim: true },
+      { text: 'model:', dim: true },
+      { text: 'permission mode:', dim: true },
+    ])
+    expect(looksOf('  hooks loaded by project settings: none').styled).toEqual([
+      { text: 'hooks loaded by project settings:', dim: true },
+    ])
+  })
+
+  test('a label has at most 40 code points', () => {
+    expect(looksOf(`${'a'.repeat(40)}: x`).styled).toEqual([{ text: `${'a'.repeat(40)}:`, dim: true }])
+    expect(paneSpans(lineRow(`${'a'.repeat(41)}: x`))).toEqual([{ text: `${'a'.repeat(41)}: x` }])
+  })
+
+  test('the summary has its label dim and each run of digits bold', () => {
+    expect(looksOf('Summary: 3 create, 1 change, 2 leave, 0 conflict, 0 hunks')).toEqual({
+      styled: [
+        { text: 'Summary:', dim: true },
+        { text: '3', bold: true },
+        { text: '1', bold: true },
+        { text: '2', bold: true },
+        { text: '0', bold: true },
+        { text: '0', bold: true },
+      ],
+      joined: 'Summary: 3 create, 1 change, 2 leave, 0 conflict, 0 hunks',
+    })
+    expect(looksOf('Summary: 12 create, 0 change, 0 leave, 0 conflict, 2 hunks (1 accepted)').styled).toEqual([
+      { text: 'Summary:', dim: true },
+      { text: '12', bold: true },
+      { text: '0', bold: true },
+      { text: '0', bold: true },
+      { text: '0', bold: true },
+      { text: '2', bold: true },
+      { text: '1', bold: true },
+    ])
+  })
+
+  test('the roles after recommended: are bold unless none, and so is the title of a scope card', () => {
+    expect(looksOf('    recommended: be, fe')).toEqual({
+      styled: [
+        { text: 'recommended:', dim: true },
+        { text: 'be, fe', bold: true },
+      ],
+      joined: '    recommended: be, fe',
+    })
+    expect(looksOf('    recommended: none').styled).toEqual([{ text: 'recommended:', dim: true }])
+    expect(looksOf('    used 3 times; recommended: be')).toEqual({
+      styled: [
+        { text: 'recommended:', dim: true },
+        { text: 'be', bold: true },
+      ],
+      joined: '    used 3 times; recommended: be',
+    })
+    expect(looksOf('Scope card: Backend (be)').styled).toEqual([
+      { text: 'Scope card:', dim: true },
+      { text: 'Backend (be)', bold: true },
+    ])
+  })
+
+  test('a row whose colon follows no label is one plain span', () => {
+    const rows = [
+      'Roles:',
+      'Repo scan (read-only):',
+      '- tool for BE: why',
+      '+ added line',
+      'The model gave no usable recommendation: no role gets a skill unless you pick one.',
+    ]
+    for (const text of rows) expect(paneSpans(lineRow(text))).toEqual([{ text }])
+  })
+
+  test('the spans of every row join to its text, none is empty, and no row is dim as a whole', () => {
+    for (const text of SPAN_ROWS) {
+      for (const isTitle of [false, true]) {
+        const spans = paneSpans({ text, isTitle })
+        expect(spans.map(span => span.text).join('')).toBe(text)
+        expect(spans.filter(span => span.text === '')).toEqual([])
+        expect(spans.filter(span => span.dim === true && span.text === text)).toEqual([])
+      }
+    }
   })
 })
 
