@@ -125,9 +125,9 @@ type World = {
 /**
  * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
  * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
- * option labels each dialog showed, each text the plugin logged to the transcript, each side pane it opened as
- * `ui.open <id> <title>`, each pane it closed as `ui.close <id>`, each value it set the init pane's state to (D-133),
- * and each path it wrote, in order.
+ * option labels each dialog showed, the preview of each option of each dialog (D3), each text the plugin logged to the
+ * transcript, each side pane it opened as `ui.open <id> <title>`, each pane it closed as `ui.close <id>`, each value it
+ * set the init pane's state to (D-133), and each path it wrote, in order.
  */
 type HostLog = {
   readonly ops: string[]
@@ -135,6 +135,7 @@ type HostLog = {
   readonly cwds: string[]
   readonly asks: string[]
   readonly askOptions: string[][]
+  readonly askPreviews: unknown[][]
   readonly logs: string[]
   readonly panes: string[]
   readonly closes: string[]
@@ -176,6 +177,7 @@ function newLog(): HostLog {
     cwds: [],
     asks: [],
     askOptions: [],
+    askPreviews: [],
     logs: [],
     panes: [],
     closes: [],
@@ -483,6 +485,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     const question = asked?.question ?? ''
     log.asks.push(`ask ${question}`)
     log.askOptions.push((asked?.options ?? []).map(option => option.label))
+    log.askPreviews.push((asked?.options ?? []).map(option => ('preview' in option ? option.preview : undefined)))
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
     if (question.startsWith(REVIEW_QUESTION)) isReviewAnswered = true
@@ -1635,6 +1638,103 @@ describe('cadre init with a faked host', () => {
       '    run: claude plugin install security-guidance@claude-plugins-official',
     ])
     expect(lines.filter(line => line.includes('/security-review'))).toEqual([])
+  })
+})
+
+describe('the init pane as the option preview of a dialog on the main screen (D3)', () => {
+  /** A single-select question of the model's own, with two options and no preview. */
+  const PICK_QUESTION = {
+    question: 'Pick one?',
+    header: 'Pick',
+    multiSelect: false,
+    options: [
+      { label: 'A', description: 'a' },
+      { label: 'B', description: 'b' },
+    ],
+  }
+
+  /** The cadre-init pane as the terminal asks cadre to draw it. */
+  const PANE_ON_TERMINAL = { plugin: 'cadre', surface: 'terminal', component: 'Pane', requestId: 'cadre-init' } as const
+
+  /** The Pane props a terminal draws the cadre-init pane with on its main screen: inline, above the prompt. */
+  const INLINE_PANE = {
+    title: 'cadre init',
+    isFocused: false,
+    bodyColumns: 60,
+    placement: 'inline',
+    scroll: { offset: 0, bodyRows: 20 },
+    view: {},
+  } as const
+
+  /** The same pane docked beside the transcript, as a fullscreen terminal seats it. */
+  const DOCK_PANE = { ...INLINE_PANE, placement: 'dock' } as const
+
+  /** The options with no preview of PICK_QUESTION, as the fake host sees a dialog passed through. */
+  const NO_PREVIEWS = [[undefined, undefined]]
+
+  test('after a run, each option of an inline pane dialog gets the same preview, the review first', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    const seen = log.askPreviews.slice(before)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toHaveLength(2)
+    const [first, second] = seen[0] ?? []
+    expect(typeof first === 'string' && first.startsWith('**Review**')).toBe(true)
+    expect(second).toBe(first)
+  })
+
+  test('a docked pane gives no preview', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: DOCK_PANE })
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+  })
+
+  test('with no terminal render of the pane after the run, no preview is given', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+  })
+
+  test('a multi-select question gets no preview', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const before = log.askPreviews.length
+    const questions = [{ ...PICK_QUESTION, multiSelect: true }]
+    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
+    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+  })
+
+  test('a question with no options makes the whole call pass through unchanged', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const before = log.askPreviews.length
+    const questions = [PICK_QUESTION, { ...PICK_QUESTION, question: 'Empty?', options: [] }]
+    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
+    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+  })
+
+  test('an inline pane with no block yet gives no preview', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
   })
 })
 

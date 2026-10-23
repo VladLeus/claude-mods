@@ -13,13 +13,17 @@ import {
   detectText,
   diffLines,
   lineDiff,
+  MAX_PREVIEW_CHARS,
   pad,
+  panePlacement,
   paneRows,
   paneSpans,
   paneView,
+  previewMarkdown,
   reportText,
   shown,
   STATUS_LABEL,
+  withPreviews,
 } from './render'
 import type { PaneRow, PaneSpan } from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
@@ -755,6 +759,203 @@ describe('paneSpans (D1)', () => {
         expect(spans.filter(span => span.dim === true && span.text === text)).toEqual([])
       }
     }
+  })
+})
+
+describe('panePlacement (D3)', () => {
+  test('the placement is read only when it is dock or inline', () => {
+    expect(panePlacement({ placement: 'inline' })).toBe('inline')
+    expect(panePlacement({ placement: 'dock' })).toBe('dock')
+    for (const props of [{}, null, undefined, 'x', { placement: 3 }, { placement: 'Inline' }]) {
+      expect(panePlacement(props)).toBe(null)
+    }
+  })
+})
+
+/** A block of the side pane with this key, title and lines, for the preview tests (D3). */
+function shownBlock(key: PaneKey, title: string, lines: readonly string[]): ShownBlock {
+  return { key, title, lines }
+}
+
+/** Whether a preview line is one of its fences: three or more backticks and nothing else. */
+function isFence(line: string): boolean {
+  return /^`{3,}$/.test(line)
+}
+
+/** `count` lines of 99 characters, each its own, for the cut tests: `<tag> <n>` padded with x. */
+function longLines(tag: string, count: number): string[] {
+  return Array.from({ length: count }, (_, at) => `${tag} ${at}`.padEnd(99, 'x'))
+}
+
+describe('previewMarkdown (D3)', () => {
+  test('no blocks give no preview', () => {
+    expect(previewMarkdown([])).toBe('')
+  })
+
+  test('each block is its bold title and its lines in a fence, in the given order, a blank line between', () => {
+    const blocks = [
+      shownBlock('review', 'Review', ['Roles:', '  BE (be)']),
+      shownBlock('scan', 'Scan', ['  stack: ts']),
+    ]
+    expect(previewMarkdown(blocks).split('\n')).toEqual([
+      '**Review**',
+      '```',
+      'Roles:',
+      '  BE (be)',
+      '```',
+      '',
+      '**Scan**',
+      '```',
+      '  stack: ts',
+      '```',
+    ])
+  })
+
+  test('a fence is one backtick longer than the longest backtick run of its block, and at least three', () => {
+    const blocks = [
+      shownBlock('scan', 'Scan', ['run ``` here', 'and `` there']),
+      shownBlock('roles', 'Roles', ['two `` only']),
+    ]
+    expect(previewMarkdown(blocks).split('\n')).toEqual([
+      '**Scan**',
+      '````',
+      'run ``` here',
+      'and `` there',
+      '````',
+      '',
+      '**Roles**',
+      '```',
+      'two `` only',
+      '```',
+    ])
+  })
+
+  test('a title has its markdown characters escaped with a backslash', () => {
+    const title = 'a*b_c`d[e]f<g>h#i\\j~k|l'
+    expect(previewMarkdown([shownBlock('scan', title, ['x'])]).split('\n')[0]).toBe(
+      '**a\\*b\\_c\\`d\\[e\\]f\\<g\\>h\\#i\\\\j\\~k\\|l**',
+    )
+  })
+
+  test('control characters in a title or a line are removed, so neither can add a line', () => {
+    const bell = String.fromCharCode(7)
+    const block = shownBlock('scan', `Sc\nan${BIDI_OVERRIDE}`, [`a\nb${bell}`, '  c'])
+    expect(previewMarkdown([block]).split('\n')).toEqual(['**Scan**', '```', 'ab', '  c', '```'])
+  })
+
+  test('past the cap the preview is cut after a whole line, its fence closed, and ends with a … line', () => {
+    const lines = longLines('review', 30)
+    const preview = previewMarkdown([shownBlock('review', 'Review', lines), shownBlock('scan', 'Scan', ['x'])])
+    const rows = preview.split('\n')
+    expect(preview.length).toBeLessThanOrEqual(MAX_PREVIEW_CHARS)
+    expect(rows.slice(-2)).toEqual(['```', '…'])
+    expect(rows.filter(isFence)).toHaveLength(2)
+    const kept = rows.slice(2, -2)
+    expect(kept.length > 0 && kept.length < lines.length).toBe(true)
+    expect(kept).toEqual(lines.slice(0, kept.length))
+    expect(rows).not.toContain('**Scan**')
+  })
+
+  test('a block whose first line does not fit is left out with its title, after the closed block before it', () => {
+    const lines = longLines('review', 18)
+    const blocks = [shownBlock('review', 'Review', lines), shownBlock('scan', 'Scan', longLines('scan', 1))]
+    const preview = previewMarkdown(blocks)
+    expect(preview.length).toBeLessThanOrEqual(MAX_PREVIEW_CHARS)
+    expect(preview.split('\n')).toEqual(['**Review**', '```', ...lines, '```', '…'])
+  })
+
+  test('every opened fence is closed and the preview stays under the cap, however many blocks there are', () => {
+    const keys: PaneKey[] = ['scan', 'history', 'roles', 'recommendations', 'review', 'env', 'notes']
+    const blocks = keys.map(key => shownBlock(key, key, longLines(key, 9)))
+    const preview = previewMarkdown(blocks)
+    const rows = preview.split('\n')
+    expect(preview.length).toBeLessThanOrEqual(MAX_PREVIEW_CHARS)
+    expect(rows.filter(isFence).length % 2).toBe(0)
+    expect(rows.at(-1)).toBe('…')
+    const kept = rows.filter(row => !isFence(row) && row !== '' && row !== '…' && !row.startsWith('**'))
+    expect(kept).toEqual(blocks.flatMap(block => block.lines).slice(0, kept.length))
+  })
+})
+
+/** One single-select AskUserQuestion question with two options and no preview, as a model asks it (D3). */
+const PICK_QUESTION = {
+  question: 'Pick one?',
+  header: 'Pick',
+  multiSelect: false,
+  options: [
+    { label: 'A', description: 'a' },
+    { label: 'B', description: 'b' },
+  ],
+}
+
+describe('withPreviews (D3)', () => {
+  test('each option of a single-select question gets the preview, every other field kept, the input unchanged', () => {
+    const questions = [PICK_QUESTION, { question: 'Next?', options: [{ label: 'C' }] }]
+    const before = JSON.stringify(questions)
+    const result = withPreviews(questions, 'P')
+    expect(result).toEqual([
+      {
+        question: 'Pick one?',
+        header: 'Pick',
+        multiSelect: false,
+        options: [
+          { label: 'A', description: 'a', preview: 'P' },
+          { label: 'B', description: 'b', preview: 'P' },
+        ],
+      },
+      { question: 'Next?', options: [{ label: 'C', preview: 'P' }] },
+    ])
+    expect(JSON.stringify(questions)).toBe(before)
+    expect(result === questions || result?.[0] === questions[0]).toBe(false)
+  })
+
+  test('a shape it cannot check gives null, so the call passes through', () => {
+    const bad: unknown[] = [
+      'x',
+      {},
+      null,
+      undefined,
+      [],
+      ['x'],
+      [null],
+      [[]],
+      [{ options: [{ label: 'A' }] }],
+      [{ question: 3, options: [{ label: 'A' }] }],
+      [{ question: 'Q?' }],
+      [{ question: 'Q?', options: 'A' }],
+      [{ question: 'Q?', options: [] }],
+      [{ question: 'Q?', options: ['A'] }],
+      [{ question: 'Q?', options: [null] }],
+      [{ question: 'Q?', options: [{ description: 'a' }] }],
+      [{ question: 'Q?', options: [{ label: 3 }] }],
+      [PICK_QUESTION, { question: 'Q?', options: [] }],
+    ]
+    for (const questions of bad) expect(withPreviews(questions, 'P')).toBe(null)
+  })
+
+  test('only multi-select questions give null; one among single-select ones is copied unchanged', () => {
+    const multi = { ...PICK_QUESTION, question: 'Which?', multiSelect: true }
+    expect(withPreviews([multi], 'P')).toBe(null)
+    const result = withPreviews([PICK_QUESTION, multi], 'P')
+    expect(result?.[1]).toEqual(multi)
+    expect(result?.[1] === multi).toBe(false)
+    expect(result?.[0]?.options).toEqual([
+      { label: 'A', description: 'a', preview: 'P' },
+      { label: 'B', description: 'b', preview: 'P' },
+    ])
+  })
+
+  test('an option that has a preview of its own keeps it', () => {
+    const questions = [{ question: 'Q?', options: [{ label: 'A', preview: 'mine' }, { label: 'B' }] }]
+    expect(withPreviews(questions, 'P')).toEqual([
+      {
+        question: 'Q?',
+        options: [
+          { label: 'A', preview: 'mine' },
+          { label: 'B', preview: 'P' },
+        ],
+      },
+    ])
   })
 })
 
