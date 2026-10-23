@@ -1796,6 +1796,30 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
   })
 
+  test('a question with the Roles chip gets the roles block as the preview of every option (B1)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await seatAfterRun($, INLINE_PANE)
+    const before = log.askPreviews.length
+    const questions = [{ ...PICK_QUESTION, header: 'Roles' }]
+    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
+    const seen = log.askPreviews.slice(before)[0] ?? []
+    expect(seen).toHaveLength(3)
+    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Roles**'))).toBe(true)
+  })
+
+  test('a chip with no block of its own, as Git policy, gets the newest block: the review (B1)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await seatAfterRun($, INLINE_PANE)
+    const before = log.askPreviews.length
+    const questions = [{ ...PICK_QUESTION, header: 'Git policy' }]
+    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
+    const seen = log.askPreviews.slice(before)[0] ?? []
+    expect(seen).toHaveLength(3)
+    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Review**'))).toBe(true)
+  })
+
   test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
     fakeHost(on, pickWorld('A', '  my words  '), log)
