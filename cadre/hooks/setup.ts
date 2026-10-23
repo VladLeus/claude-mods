@@ -84,6 +84,17 @@ const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
  * lazy, so a server whose own name holds `__` is cut at its first `__`.
  */
 const MCP_TOOL_PATTERN = /^mcp__(.+?)__.+$/
+/** The server name of a desktop app connector (R2): a UUID, 8-4-4-4-12 hex digits in either case. */
+const DESKTOP_CONNECTOR_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** The text before a connector's name in an entry of the `claudeAiMcpEverConnected` list of `~/.claude.json` (R2). */
+const CLAUDE_AI_PREFIX = 'claude.ai '
+/** The text a terminal session puts before a claude.ai connector's name in the name of its MCP server (R2). */
+const CONNECTOR_PREFIX = 'claude_ai_'
+/**
+ * At most this many entries of `claudeAiMcpEverConnected` are read (R2): the cap of the other name lists,
+ * MAX_SETTINGS_KEYS.
+ */
+const MAX_CONNECTOR_NAMES = 100
 /** The warning when the host cannot list the commands and skills. */
 const COMMANDS_WARNING = 'could not list commands and skills (treated as unknown)'
 /** The warning when the host cannot list the session tools. */
@@ -309,6 +320,26 @@ function unfitMcpWarnings(names: readonly string[], source: string): string[] {
   return unfitNameWarnings(unfit.length, 'MCP server', source)
 }
 
+/**
+ * Whether an MCP server name is a desktop app connector's (R2): a claude.ai connector of a desktop-app session arrives
+ * as an SDK MCP server named by a UUID (DESKTOP_CONNECTOR_PATTERN), and a role session runs in the terminal, where that
+ * server does not exist.
+ */
+export function isDesktopConnectorName(name: string): boolean {
+  return DESKTOP_CONNECTOR_PATTERN.test(name)
+}
+
+/**
+ * The line that counts the desktop app connectors a scan left out of the session's servers, and says why (R2); none
+ * when it left out none.
+ */
+function desktopConnectorWarnings(count: number): string[] {
+  if (count === 0) return []
+  const reason = '(role sessions run in the terminal, where connectors are claude_ai_* servers)'
+
+  return [`left out ${count} desktop app ${count === 1 ? 'connector' : 'connectors'} ${reason}`]
+}
+
 /** The MCP servers a scan kept from one source, and whether it could not see every server there (A4). */
 type McpScan = {
   readonly refs: readonly McpRef[]
@@ -342,11 +373,12 @@ function toolServerNames(value: unknown): string[] {
 
 /**
  * The MCP servers the session has, from the tool names of the form `mcp__<server>__<tool>` (SCAN-02, D-57): each server
- * once, sorted, with source `session`. Only the name of a tool is read, never its description. A server name a
- * role.json cannot hold (NAME_PATTERN) is dropped. Anything but a list gives [].
+ * once, sorted, with source `session`. Only the name of a tool is read, never its description. A desktop app
+ * connector's server, named by a UUID (isDesktopConnectorName, R2), is left out, and a server name a role.json cannot
+ * hold (NAME_PATTERN) is dropped. Anything but a list gives [].
  */
 export function projectToolServers(value: unknown): McpRef[] {
-  return mcpRefsOf(toolServerNames(value), 'session')
+  return mcpRefsOf(toolServerNames(value).filter(name => !isDesktopConnectorName(name)), 'session')
 }
 
 /** The server names of a `.mcp.json` value, which are the keys of its `mcpServers`. */
@@ -363,22 +395,52 @@ export function projectMcpJson(value: unknown): McpRef[] {
   return mcpRefsOf(mcpServerNames(value), 'project')
 }
 
-/** The server names of a `~/.claude.json` value: its top-level `mcpServers`, and those of the projects at `roots`. */
+/**
+ * The MCP server names of the claude.ai connectors a `~/.claude.json` value lists (R2): of the first
+ * MAX_CONNECTOR_NAMES entries of its own top-level `claudeAiMcpEverConnected` list, each string that starts with
+ * CLAUDE_AI_PREFIX and has a name after it becomes CONNECTOR_PREFIX plus that name, every character outside letters,
+ * digits, `_` and `-` replaced by `_`, as a terminal session names the connector's server; every other entry is
+ * skipped. The list holds every connector the account ever connected, so a disconnected one may be named; only the
+ * names are kept. Anything but a plain object whose own `claudeAiMcpEverConnected` is a list gives [].
+ */
+export function connectorServerNames(value: unknown): string[] {
+  if (!isObject(value) || !Object.hasOwn(value, 'claudeAiMcpEverConnected')) return []
+  const ever = value.claudeAiMcpEverConnected
+  if (!Array.isArray(ever)) return []
+
+  return ever.slice(0, MAX_CONNECTOR_NAMES).flatMap(entry => {
+    if (typeof entry !== 'string' || !entry.startsWith(CLAUDE_AI_PREFIX)) return []
+    const rest = entry.slice(CLAUDE_AI_PREFIX.length)
+
+    return rest === '' ? [] : [CONNECTOR_PREFIX + rest.replace(/[^A-Za-z0-9_-]/g, '_')]
+  })
+}
+
+/**
+ * The server names of a `~/.claude.json` value: its top-level `mcpServers`, those of the projects at `roots`, and its
+ * claude.ai connectors (connectorServerNames, R2).
+ */
 function claudeJsonNames(value: unknown, roots: readonly string[]): string[] {
   if (!isObject(value)) return []
   const wanted = roots.map(trimSlash).filter(root => root !== '')
   const projects = isObject(value.projects) ? Object.entries(value.projects) : []
   const ofThisRepo = projects.filter(([path]) => wanted.includes(trimSlash(path)))
 
-  return [...mcpServerNames(value), ...ofThisRepo.flatMap(([, project]) => fieldKeysOf(project, 'mcpServers'))]
+  return [
+    ...mcpServerNames(value),
+    ...ofThisRepo.flatMap(([, project]) => fieldKeysOf(project, 'mcpServers')),
+    ...connectorServerNames(value),
+  ]
 }
 
 /**
  * The MCP servers named in `~/.claude.json` (SCAN-02, D-58), which a scan reads only after the person consented: the
  * keys of the top-level `mcpServers` and of the `mcpServers` of the project at any of `roots` (the repo root as given
- * and as resolved, trailing slashes ignored), sorted, with source `user-config`. Nothing else in the file is kept: not
- * the server entries, which hold tokens, not the account block and not another project. An empty root form matches no
- * project, and a server name a role.json cannot hold (NAME_PATTERN) is dropped. Anything but a plain object gives [].
+ * and as resolved, trailing slashes ignored), and the claude.ai connectors of its `claudeAiMcpEverConnected` list as a
+ * terminal session names their servers (connectorServerNames, R2), sorted, with source `user-config`. Nothing else in
+ * the file is kept: not the server entries, which hold tokens, not the account block and not another project. An empty
+ * root form matches no project, and a server name a role.json cannot hold (NAME_PATTERN) is dropped. Anything but a
+ * plain object gives [].
  */
 export function projectClaudeJson(value: unknown, roots: readonly string[]): McpRef[] {
   return mcpRefsOf(claudeJsonNames(value, roots), 'user-config')
@@ -582,8 +644,9 @@ async function commandRefs(io: InitIo, warnings: string[]): Promise<SkillRef[]> 
 }
 
 /**
- * The MCP servers of the session, from the host's tool list; a list the host cannot give adds a warning. The scan is
- * partial when a server name was dropped.
+ * The MCP servers of the session, from the host's tool list; a list the host cannot give adds a warning. The servers
+ * of desktop app connectors (isDesktopConnectorName) are left out with one line that counts each of them once (R2),
+ * and never make the scan partial; the scan is partial when another server name was dropped.
  */
 async function sessionMcpScan(io: InitIo, warnings: string[]): Promise<McpScan> {
   const value = await io.tools()
@@ -593,10 +656,13 @@ async function sessionMcpScan(io: InitIo, warnings: string[]): Promise<McpScan> 
     return NO_MCP
   }
   const names = toolServerNames(value)
-  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
-  warnings.push(...unfitMcpWarnings(names, 'the session tools'))
+  const connectors = new Set(names.filter(isDesktopConnectorName))
+  const kept = names.filter(name => !isDesktopConnectorName(name))
+  warnings.push(...hiddenNameWarnings(kept, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(kept, 'the session tools'))
+  warnings.push(...desktopConnectorWarnings(connectors.size))
 
-  return mcpScanOf(projectToolServers(value), names)
+  return mcpScanOf(projectToolServers(value), kept)
 }
 
 /**
@@ -740,12 +806,14 @@ function mergeMcp(lists: readonly (readonly McpRef[])[]): McpRef[] {
  * The user-setup scan (SCAN-02, D-57): every source is read through the port and projected at once to names, counts and
  * booleans, so no value, command, token or file content can reach a later module. The sources are the three settings
  * files, the installed and enabled plugins, the commands and skills, the MCP servers of the repo's `.mcp.json`, of the
- * session and, only when `isClaudeJsonAllowed` is true, of `~/.claude.json` (D-58), the agent files, the CLAUDE.md
- * chain, the global CLAUDE.md and the auto-memory file names. A source the port cannot read adds a warning and is
- * treated as unknown, never as empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor a home folder,
- * the user-level sources are skipped. `isMcpPartial` is true when an MCP server name was dropped from any source, or
- * `~/.claude.json` was not read (A4). `plugins` holds the enabled and the installed keys, `installedPlugins` the
- * installed keys alone, so no settings file can make a plugin look installed (decision #69 A1).
+ * session, desktop app connectors left out with one warning (R2), and, only when `isClaudeJsonAllowed` is true, of
+ * `~/.claude.json` (D-58), the claude.ai connectors of its `claudeAiMcpEverConnected` list included (R2), the agent
+ * files, the CLAUDE.md chain, the global CLAUDE.md and the auto-memory file names. A source the port cannot read adds a
+ * warning and is treated as unknown, never as empty; one that is not there is quiet. With neither CLAUDE_CONFIG_DIR nor
+ * a home folder, the user-level sources are skipped. `isMcpPartial` is true when an MCP server name was dropped from
+ * any source, a left-out desktop app connector aside, or `~/.claude.json` was not read (A4). `plugins` holds the
+ * enabled and the installed keys, `installedPlugins` the installed keys alone, so no settings file can make a plugin
+ * look installed (decision #69 A1).
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
