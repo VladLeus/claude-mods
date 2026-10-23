@@ -452,13 +452,21 @@ export type ShownBlock = {
 }
 
 /**
- * The side-pane state of one init run (D-133): the blocks the cadre init pane shows, newest first; only register.tsx
- * reads and writes it. It is declared in this types contract because `claude plugin validate` takes a plugin's state
- * keys from the manifest's `types` file only.
+ * The side-pane state of one init run (D-133): `initPane`, the blocks the cadre init pane shows, newest first, and
+ * `initHeader`, the header chip of the question open now (R1); only register.tsx reads and writes them. They are
+ * declared in this types contract because `claude plugin validate` takes a plugin's state keys from the manifest's
+ * `types` file only.
  */
 declare module 'claude-code' {
   interface PluginState {
-    cadre: { initPane: ShownBlock[] }
+    cadre: {
+      initPane: ShownBlock[]
+      /**
+       * The header chip of the AskUserQuestion question open now, or null when none is; the cadre init pane draws that
+       * question's block (R1).
+       */
+      initHeader: string | null
+    }
   }
 }
 

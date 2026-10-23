@@ -2008,12 +2008,12 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
   })
 
-  test('a run clears the header when it ends, after the clear of each of its own dialogs', async ($, on) => {
+  test('a run clears the header when it ends, after the clear of its last dialog', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run(DRY_RUN)
-    expect(log.headerWrites.at(-1)).toBe(null)
-    expect(log.headerWrites).toHaveLength(2 * log.asks.length + 1)
+    // The last dialog's own clear, then the run's: a write that update tries again only adds another null.
+    expect(log.headerWrites.slice(-2)).toEqual([null, null])
   })
 })
 

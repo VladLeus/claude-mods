@@ -445,6 +445,19 @@ export function previewBlockFor(header: unknown, blocks: readonly ShownBlock[]):
 }
 
 /**
+ * The header chip of the question an AskUserQuestion call asks first (R1), which the cadre init pane draws the block of
+ * (previewBlockFor): the `header` of the call's first question when that question is an object with a string header;
+ * null for anything else. A tool call's args are untrusted input, so their shape is checked before the header is read.
+ */
+export function askedHeader(questions: unknown): string | null {
+  if (!Array.isArray(questions)) return null
+  const first: unknown = questions[0]
+  if (!isObject(first) || typeof first.header !== 'string') return null
+
+  return first.header
+}
+
+/**
  * An AskUserQuestion question whose shape withPreviews checked (D3): an object with a string `question` and options it
  * may rewrite.
  */

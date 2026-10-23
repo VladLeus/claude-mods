@@ -32,7 +32,17 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { answersFromNotes, askRewrite, detectText, panePlacement, paneRows, paneSpans, paneView } from './render'
+import {
+  answersFromNotes,
+  askedHeader,
+  askRewrite,
+  detectText,
+  panePlacement,
+  paneRows,
+  paneSpans,
+  paneView,
+  previewBlockFor,
+} from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
 
@@ -44,6 +54,11 @@ const PANE_TITLE = 'cadre init'
 const NO_BLOCKS: ShownBlock[] = []
 /** The blocks of the cadre init side pane, newest first; a run's first block replaces the last run's (D-133). */
 const initPane = atom({ plugin: 'cadre', key: 'initPane' }, NO_BLOCKS)
+/**
+ * The header of the question open now, set by the AskUserQuestion hook; the pane draws its block, the newest block
+ * when null (R1).
+ */
+const initHeader = atom({ plugin: 'cadre', key: 'initHeader' }, null)
 /**
  * The placement the last terminal render of the cadre init pane reported (D3); null before any. A run resets it when
  * it opens the pane and clears it when it closes the pane, so a dialog after the run never carries the pane.
@@ -510,11 +525,13 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
 
 /**
  * Closes the cadre-init pane once the run that opened it settled (D2); a close the host refuses is swallowed. The
- * placement is cleared after it, so the model's own dialogs after the run get no preview of the pane (D3).
+ * placement is cleared after it, so the model's own dialogs after the run get no preview of the pane (D3), and the
+ * header is cleared too, so the pane draws the newest block again (R1); a header write the host refuses is swallowed.
  */
 async function closePane($: EngineInterface): Promise<void> {
   await $.ui.close({ id: PANE }).catch(() => undefined)
   lastPlacement = null
+  await update($, initHeader, () => null).catch(() => undefined)
 }
 
 export const register: Register = on => {
@@ -541,17 +558,19 @@ export const register: Register = on => {
     }
   })
 
-  // The cadre init side pane (D-133): the rows of paneRows, coloured by paneSpans (D1). A terminal render records where
-  // the pane is seated (D3).
+  // The cadre init side pane (D-133): one block, the one of the question open now (R1, previewBlockFor), the newest
+  // block between questions, in the rows of paneRows, coloured by paneSpans (D1). A terminal render records where the
+  // pane is seated (D3).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
     const blocks = await read($, initPane)
     if (blocks.length === 0) return <Text>cadre init has not shown anything yet.</Text>
+    const header = await read($, initHeader)
 
     return (
       <Box flexDirection="column">
-        {paneRows(blocks).map((row, at) => (
+        {paneRows(previewBlockFor(header, blocks)).map((row, at) => (
           <Text key={at}>
             {row.text === ''
               ? ' '
@@ -570,27 +589,37 @@ export const register: Register = on => {
     )
   })
 
-  // Only while the terminal main screen seats the pane inline, where the engine hides it behind a dialog: each
-  // single-select question gets its preview of the pane on every option (D3, B1) and a Describe your own option or the
-  // hint line (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). Any other
-  // call, a deny, an error and a result of another shape pass through unchanged. The hook has no .catch on purpose: a
-  // hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
+  // On every surface and placement, before the placement guard, the header of the question asked is written, so the
+  // pane draws that question's block while the dialog is open, and it is cleared once the dialog settles (R1). Only
+  // while the terminal main screen seats the pane inline, where the engine hides it behind a dialog: each single-select
+  // question gets its preview of the pane on every option (D3, B1) and a Describe your own option or the hint line
+  // (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). Any other call, a
+  // deny, an error and a result of another shape pass through unchanged. Apart from the two header writes, the hook
+  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
+  // (C1). Both header writes swallow a refusal on purpose: a hook that throws after next(e) would make the engine run
+  // next(e) again, a second dialog.
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
-    if (lastPlacement !== 'inline') return next(e)
-    const blocks = await read($, initPane).catch(() => NO_BLOCKS)
-    if (blocks.length === 0) return next(e)
     const raw: unknown = e.questions
-    const rewrite = askRewrite(raw, blocks)
-    if (rewrite === null) return next(e)
+    await update($, initHeader, () => askedHeader(raw)).catch(() => undefined)
+    try {
+      if (lastPlacement !== 'inline') return await next(e)
+      const blocks = await read($, initPane).catch(() => NO_BLOCKS)
+      if (blocks.length === 0) return await next(e)
+      const rewrite = askRewrite(raw, blocks)
+      if (rewrite === null) return await next(e)
 
-    // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no mismatch.
-    const r = await next({ ...e, questions: rewrite.questions as typeof e.questions })
-    if (r.deny !== undefined) return r
-    if (r.isError === true) return r
-    const resultValue: unknown = r.result
-    const answers = answersFromNotes(rewrite.asked, resultValue)
-    if (answers === null) return r
+      // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no
+      // mismatch.
+      const r = await next({ ...e, questions: rewrite.questions as typeof e.questions })
+      if (r.deny !== undefined) return r
+      if (r.isError === true) return r
+      const resultValue: unknown = r.result
+      const answers = answersFromNotes(rewrite.asked, resultValue)
+      if (answers === null) return r
 
-    return { ...r, result: { ...r.result, answers } }
+      return { ...r, result: { ...r.result, answers } }
+    } finally {
+      await update($, initHeader, () => null).catch(() => undefined)
+    }
   })
 }
