@@ -32,7 +32,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { detectText, paneRows, paneView } from './render'
+import { detectText, paneRows, paneSpans, paneView } from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
 
@@ -531,7 +531,7 @@ export const register: Register = on => {
     }
   })
 
-  // The cadre init side pane (D-133): the rows of paneRows, each block's title in bold, every row in the normal look.
+  // The cadre init side pane (D-133): the rows of paneRows, coloured by paneSpans (D1).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const blocks = await read($, initPane)
@@ -540,8 +540,18 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {paneRows(blocks).map((row, at) => (
-          <Text key={at} bold={row.isTitle}>
-            {row.text === '' ? ' ' : row.text}
+          <Text key={at}>
+            {row.text === ''
+              ? ' '
+              : paneSpans(row).map(span => (
+                  <Text
+                    {...(span.color === undefined ? {} : { color: span.color })}
+                    {...(span.bold === true ? { bold: true } : {})}
+                    {...(span.dim === true ? { dimColor: true } : {})}
+                  >
+                    {span.text}
+                  </Text>
+                ))}
           </Text>
         ))}
       </Box>
