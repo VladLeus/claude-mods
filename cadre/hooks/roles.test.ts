@@ -19,6 +19,7 @@ import {
   HUMAN_FALLBACK,
   isAutopilotDuration,
   isModelName,
+  isRecordedPartFile,
   MAX_DESCRIPTION_CHARS,
   MAX_PROPOSAL_ERRORS,
   MAX_PURPOSE_CHARS,
@@ -37,6 +38,7 @@ import {
   roleFromTemplate,
   ROLE_TEMPLATE,
   rolesFromProposal,
+  standIn,
   standsFor,
   validateRoleId,
   validateRoles,
@@ -1637,5 +1639,20 @@ describe('isModelName (A4)', () => {
     for (const text of refusals) {
       expect([text, isModelName(text)]).toEqual([text, false])
     }
+  })
+})
+
+describe('safety net: roles helpers (A8)', () => {
+  test('standIn: the role with the template id first, else the first role based on it, else null', () => {
+    expect(standIn('tl', [{ id: 'lead', basedOn: 'tl' }, 'tl'])).toBe('tl')
+    expect(standIn('tl', ['pm', { id: 'lead', basedOn: 'tl' }, { id: 'arch', basedOn: 'tl' }])).toBe('lead')
+    expect(standIn('security', ['pm', { id: 'lead', basedOn: 'tl' }])).toBe(null)
+  })
+
+  test('isRecordedPartFile: a clean .md path below the root is taken; any other path is not', () => {
+    expect(['CLAUDE.md', 'docs/guide.md', '.claude/rules/x.md'].map(isRecordedPartFile)).toEqual([true, true, true])
+    const refused = ['/repo/CLAUDE.md', '../CLAUDE.md', 'docs/./a.md', 'a//b.md', '.GIT/x.md', 'notes.txt', 'a.MD']
+    expect(refused.map(isRecordedPartFile)).toEqual(refused.map(() => false))
+    expect(isRecordedPartFile(`a${String.fromCodePoint(0x202e)}.md`)).toBe(false)
   })
 })

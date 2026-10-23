@@ -23,6 +23,8 @@ import {
   isContextMonitorScript,
   isSafeDir,
   lintDenyPattern,
+  mcpToolName,
+  pluginName,
   roleOwnPaths,
   scopeCardLines,
 } from './scope'
@@ -1844,5 +1846,17 @@ describe('security-guidance for Security (decision #39)', () => {
     const be = compileScope(templateRole('be', { skills: ['security-guidance:x'] }), context({ setup: official }))
 
     expect(pluginKeys(be)).toEqual([...INFRA_KEYS, SECURITY_GUIDANCE_PLUGIN])
+  })
+})
+
+describe('safety net: scope helpers (A8)', () => {
+  test('pluginName: the part of a plugin key before its first @; a key with no @ is its own name', () => {
+    expect(pluginName('superpowers@claude-plugins-official')).toBe('superpowers')
+    expect(pluginName('codex')).toBe('codex')
+  })
+
+  test('mcpToolName: mcp__ and the server name, each character outside A-Z, a-z, 0-9, _ and - made _', () => {
+    expect(mcpToolName('my.server name/x')).toBe('mcp__my_server_name_x')
+    expect(mcpToolName('Jira_cloud-2')).toBe('mcp__Jira_cloud-2')
   })
 })

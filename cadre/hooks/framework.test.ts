@@ -16,6 +16,7 @@ import {
   detectUnsupported,
   gateProblems,
   isDecisionType,
+  isFrameworkId,
   MAX_GATE_PROBLEMS,
   missingFields,
   REQUIRED_FIELDS,
@@ -510,5 +511,13 @@ describe('gateProblems', () => {
 
   test('a gate table that is not an array is reported', () => {
     expect(gateProblems(null)).toEqual(['gates is not an array'])
+  })
+})
+
+describe('safety net: framework helpers (A8)', () => {
+  test('isFrameworkId: gsd, superpowers and none only; any other value is not one', () => {
+    expect(['gsd', 'superpowers', 'none'].map(isFrameworkId)).toEqual([true, true, true])
+    const others: readonly unknown[] = ['GSD', 'builtin', '', ' gsd', null, undefined, 1, ['gsd'], { id: 'gsd' }]
+    expect(others.map(isFrameworkId)).toEqual(others.map(() => false))
   })
 })

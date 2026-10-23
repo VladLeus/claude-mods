@@ -22,6 +22,7 @@ import {
   MAX_RULE_LEVELS,
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
+  missingState,
   notGitRepoReply,
   parseCadreState,
   parseManifest,
@@ -2458,5 +2459,28 @@ describe('git top level', () => {
   test('no git repo above the root is refused with the locked wording', () => {
     expect(notGitRepoReply('init')).toBe('cadre init needs a git repo: run git init first')
     expect(notGitRepoReply('regen')).toBe('cadre regen needs a git repo: run git init first')
+  })
+})
+
+describe('safety net: scan helpers (A8)', () => {
+  test('missingState: absent only for a path not there; a failed, folder or file read is unknown', async () => {
+    const files = { '/repo/a': 'text', '/repo/e': '' }
+    const world = memWorld({ files, dirs: { '/repo/d': [] }, unknownPaths: ['/repo/b'] })
+    const run = memIo(world, [])
+    const caps: number[] = []
+    const io: InitIo = {
+      ...run.io,
+      read: async (path, maxBytes) => {
+        caps.push(maxBytes)
+
+        return run.io.read(path, maxBytes)
+      },
+    }
+    const states: string[] = []
+    for (const path of ['/repo/x', '/repo/b', '/repo/d', '/repo/a', '/repo/e']) {
+      states.push(await missingState(io, path))
+    }
+    expect(states).toEqual(['absent', 'unknown', 'unknown', 'unknown', 'unknown'])
+    expect(caps).toEqual([0, 0, 0, 0, 0])
   })
 })
