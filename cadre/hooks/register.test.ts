@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
+import type { Engine, MountTarget } from 'claude-code/testing'
 
 import type { AskSpec } from '../types'
 import { NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ask'
@@ -1663,20 +1663,25 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   }
 
   /** The cadre-init pane as the terminal asks cadre to draw it. */
-  const PANE_ON_TERMINAL = { plugin: 'cadre', surface: 'terminal', component: 'Pane', requestId: 'cadre-init' } as const
+  const PANE_ON_TERMINAL: Omit<MountTarget<'terminal', 'Pane'>, 'props'> = {
+    plugin: 'cadre',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'cadre-init',
+  }
 
   /** The Pane props a terminal draws the cadre-init pane with on its main screen: inline, above the prompt. */
-  const INLINE_PANE = {
+  const INLINE_PANE: MountTarget<'terminal', 'Pane'>['props'] = {
     title: 'cadre init',
     isFocused: false,
     bodyColumns: 60,
     placement: 'inline',
     scroll: { offset: 0, bodyRows: 20 },
     view: {},
-  } as const
+  }
 
   /** The same pane docked beside the transcript, as a fullscreen terminal seats it. */
-  const DOCK_PANE = { ...INLINE_PANE, placement: 'dock' } as const
+  const DOCK_PANE: MountTarget<'terminal', 'Pane'>['props'] = { ...INLINE_PANE, placement: 'dock' }
 
   /** The options with no preview of PICK_QUESTION, as the fake host sees a dialog passed through. */
   const NO_PREVIEWS = [[undefined, undefined]]
@@ -1716,12 +1721,13 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
    * `props`: inline on the main screen, or docked as fullscreen seats it. It gives the ask of a test that loads ASKER.
    * Every `$.command.run` of this describe goes through it, but the one of the test with no render.
    */
-  async function seatAfterRun($: Engine, props: typeof INLINE_PANE | typeof DOCK_PANE): Promise<Ask> {
+  async function seatAfterRun($: Engine, props: MountTarget<'terminal', 'Pane'>['props']): Promise<Ask> {
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     await $.ui.mount({ ...PANE_ON_TERMINAL, props })
 
     return async (question, spec) => {
       const { text } = await $.command.run({ command: 'ask-probe', args: JSON.stringify({ question, spec }) })
+      if (text === undefined) return null
       const reply: unknown = JSON.parse(text)
 
       return isObject(reply) && typeof reply.answer === 'string' ? reply.answer : null
