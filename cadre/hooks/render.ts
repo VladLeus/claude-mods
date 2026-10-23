@@ -507,36 +507,52 @@ export function withPreviews(questions: unknown, previewOf: (header: unknown) =>
 }
 
 /**
- * The label of the option a previewed question gets so the person can give an answer of their own (A2): beside a
- * preview the engine draws no Other row, so the person picks it, or presses `n`, and types the answer in the dialog's
- * notes.
+ * The label of the option a previewed question with room for one more option gets, so the person can give an answer
+ * of their own (A2, R3): beside a preview the engine draws no Other row, so the person picks it, or presses `n`, and
+ * types the answer in the dialog's notes.
  */
 export const DESCRIBE_OWN_LABEL = 'Describe your own'
 
 /** What the Describe your own option says under its label (A2): how to type an answer of one's own. */
 export const DESCRIBE_OWN_DESCRIPTION = 'Press n, type your answer, then Enter'
 
-/** The last line of a previewed question that has no room left for the Describe your own option (A2). */
+/**
+ * The last line of every previewed single-select question (R3), with or without room for the Describe your own
+ * option: how to type an answer of one's own.
+ */
 export const OWN_ANSWER_HINT = 'Or press n, type your own answer, then Enter.'
+
+/**
+ * The words a question uses for an answer typed in the engine's Other row (R4): beside a preview the engine draws no
+ * Other row, so a previewed question says NOTE_WORDING in their place.
+ */
+export const OTHER_WORDING = 'under Other'
+
+/**
+ * What a previewed question says in place of OTHER_WORDING (R4): beside a preview the engine draws no Other row, and
+ * the notes field, opened with n, is where a typed answer goes.
+ */
+export const NOTE_WORDING = 'as a note (press n)'
 
 /** The most options an AskUserQuestion question may have: the tool's schema allows 2 to 4 (A2). */
 const MAX_DIALOG_OPTIONS = 4
 
 /**
- * A previewed single-select question with a way to give an answer of one's own (A2), since the engine draws no Other
- * row beside a preview: with fewer than MAX_DIALOG_OPTIONS options it gets one last option, DESCRIBE_OWN_LABEL with
- * DESCRIBE_OWN_DESCRIPTION and the given preview; with MAX_DIALOG_OPTIONS options, and no room for one more, its text
- * gets OWN_ANSWER_HINT as its last line. A question that already has an option labelled DESCRIBE_OWN_LABEL gets
- * neither. The result is a new object; the question it is given is never changed.
+ * A previewed single-select question with a way to give an answer of one's own (A2, R3, R4), since the engine draws
+ * no Other row beside a preview: its text has every OTHER_WORDING replaced by NOTE_WORDING and ends with the line
+ * OWN_ANSWER_HINT, added unless the replaced text already ends with it. With fewer than MAX_DIALOG_OPTIONS options and
+ * none labelled DESCRIBE_OWN_LABEL, it also gets one last option, DESCRIBE_OWN_LABEL with DESCRIBE_OWN_DESCRIPTION
+ * and the given preview; otherwise its options are kept. The result is a new object; the question it is given is
+ * never changed.
  */
 export function withDescribeOwn(question: CheckedQuestion, preview: string): CheckedQuestion {
-  if (question.options.some(option => option.label === DESCRIBE_OWN_LABEL)) return { ...question }
-  if (question.options.length >= MAX_DIALOG_OPTIONS) {
-    return { ...question, question: `${question.question}\n${OWN_ANSWER_HINT}` }
-  }
+  const replaced = question.question.replaceAll(OTHER_WORDING, NOTE_WORDING)
+  const text = replaced.endsWith(OWN_ANSWER_HINT) ? replaced : `${replaced}\n${OWN_ANSWER_HINT}`
+  const hasOwn = question.options.some(option => option.label === DESCRIBE_OWN_LABEL)
+  if (hasOwn || question.options.length >= MAX_DIALOG_OPTIONS) return { ...question, question: text }
   const own = { label: DESCRIBE_OWN_LABEL, description: DESCRIBE_OWN_DESCRIPTION, preview }
 
-  return { ...question, options: [...question.options, own] }
+  return { ...question, question: text, options: [...question.options, own] }
 }
 
 /**
@@ -556,11 +572,12 @@ export type AskRewrite = {
 
 /**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
- * D3); null, so the call passes through unchanged, when the pane has no blocks or withPreviews does not rewrite the
- * questions. Each option of each single-select question gets the preview of the one pane block its header needs
- * (previewBlockFor, B1), and each such question then gets the Describe your own option, with that preview, or the
- * hint line (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3);
- * a multi-select question is copied unchanged and has none.
+ * D3, R3, R4); null, so the call passes through unchanged, when the pane has no blocks or withPreviews does not
+ * rewrite the questions. Each option of each single-select question gets the preview of the one pane block its header
+ * needs (previewBlockFor, B1), and each such question then gets NOTE_WORDING for every OTHER_WORDING in its text (R4),
+ * the hint line as its last line (R3) and, when it has room, the Describe your own option with that preview
+ * (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3); a
+ * multi-select question is copied unchanged, OTHER_WORDING included, and has none.
  */
 export function askRewrite(questions: unknown, blocks: readonly ShownBlock[]): AskRewrite | null {
   if (blocks.length === 0) return null
