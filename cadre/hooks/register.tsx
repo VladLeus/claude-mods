@@ -32,7 +32,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { detectText, paneRows, paneSpans, paneView } from './render'
+import { detectText, panePlacement, paneRows, paneSpans, paneView, previewMarkdown, withPreviews } from './render'
 import { runStart } from './start'
 import { runStatus } from './status'
 
@@ -44,6 +44,11 @@ const PANE_TITLE = 'cadre init'
 const NO_BLOCKS: ShownBlock[] = []
 /** The blocks of the cadre init side pane, newest first; a run's first block replaces the last run's (D-133). */
 const initPane = atom({ plugin: 'cadre', key: 'initPane' }, NO_BLOCKS)
+/**
+ * The placement the last terminal render of the cadre init pane reported (D3); null before any. A run resets it when
+ * it opens the pane and clears it when it closes the pane, so a dialog after the run never carries the pane.
+ */
+let lastPlacement: 'dock' | 'inline' | null = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -369,6 +374,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       await update($, initPane, blocks => (pane.isOpened ? paneView(blocks, block) : [block])).catch(() => undefined)
       if (pane.isOpened) return
       pane.isOpened = true
+      lastPlacement = null
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
     complete: async (prompt, system) => {
@@ -502,9 +508,13 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
   }
 }
 
-/** Closes the cadre-init pane once the run that opened it settled (D2); a close the host refuses is swallowed. */
+/**
+ * Closes the cadre-init pane once the run that opened it settled (D2); a close the host refuses is swallowed. The
+ * placement is cleared after it, so the model's own dialogs after the run get no preview of the pane (D3).
+ */
 async function closePane($: EngineInterface): Promise<void> {
   await $.ui.close({ id: PANE }).catch(() => undefined)
+  lastPlacement = null
 }
 
 export const register: Register = on => {
@@ -531,9 +541,11 @@ export const register: Register = on => {
     }
   })
 
-  // The cadre init side pane (D-133): the rows of paneRows, coloured by paneSpans (D1).
+  // The cadre init side pane (D-133): the rows of paneRows, coloured by paneSpans (D1). A terminal render records where
+  // the pane is seated (D3).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
+    if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
     const blocks = await read($, initPane)
     if (blocks.length === 0) return <Text>cadre init has not shown anything yet.</Text>
 
@@ -556,5 +568,19 @@ export const register: Register = on => {
         ))}
       </Box>
     )
+  })
+
+  // The pane's blocks as the preview of each single-select option of a dialog, only while the terminal main screen
+  // seats the pane inline, where the engine hides it behind the dialog (D3); any other call passes through unchanged.
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    if (lastPlacement !== 'inline') return next(e)
+    const blocks = await read($, initPane).catch(() => NO_BLOCKS)
+    if (blocks.length === 0) return next(e)
+    const raw: unknown = e.questions
+    const questions = withPreviews(raw, previewMarkdown(blocks))
+    if (questions === null) return next(e)
+
+    // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no mismatch.
+    return next({ ...e, questions: questions as typeof e.questions })
   })
 }

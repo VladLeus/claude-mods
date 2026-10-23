@@ -10,7 +10,7 @@ import type {
   ShownBlock,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
-import { clean, countedNoun } from './facts'
+import { clean, countedNoun, isObject } from './facts'
 import { chooseFramework } from './framework'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
@@ -263,6 +263,161 @@ export function paneSpans(row: PaneRow): PaneSpan[] {
   if (row.isTitle) return [{ text: row.text, color: 'claude', bold: true }]
 
   return ruleSpans(row.text) ?? opSpans(row.text) ?? fieldRowSpans(row.text) ?? [{ text: row.text }]
+}
+
+/**
+ * The most characters, by String length, the preview of a dialog option holds (D3): the engine replaces a preview
+ * over 2000 characters with a placeholder, and 1900 leaves room.
+ */
+export const MAX_PREVIEW_CHARS = 1900
+
+/** The last line of a preview that was cut (D3). */
+const CUT_LINE = '…'
+
+/** The characters a preview title escapes with a backslash, so the title draws as its own text (D3). */
+const TITLE_MARKUP = /[*_`[\]<>#\\~|]/g
+
+/**
+ * Where the terminal seated the cadre init pane, read from its render props (D3): `dock` or `inline` when the props
+ * say exactly that, else null, as on an engine whose Pane props carry no placement.
+ */
+export function panePlacement(props: unknown): 'dock' | 'inline' | null {
+  if (!isObject(props)) return null
+  const { placement } = props
+
+  return placement === 'dock' || placement === 'inline' ? placement : null
+}
+
+/** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */
+type PreviewBlock = {
+  readonly title: string
+  readonly fence: string
+  readonly lines: readonly string[]
+}
+
+/** The longest run of backticks in the lines; 0 when there is none. */
+function longestBacktickRun(lines: readonly string[]): number {
+  let longest = 0
+  for (const line of lines) {
+    for (const run of line.match(/`+/g) ?? []) longest = Math.max(longest, run.length)
+  }
+
+  return longest
+}
+
+/**
+ * One block as a preview draws it (D3): the title cleaned as a report cell, its markdown characters escaped and set
+ * in bold; each line cleaned as a report cell; a fence one backtick longer than the longest run in the lines, and at
+ * least three.
+ */
+function previewBlock(block: ShownBlock): PreviewBlock {
+  const lines = block.lines.map(reportText)
+  const title = `**${reportText(block.title).replace(TITLE_MARKUP, '\\$&')}**`
+
+  return { title, fence: '`'.repeat(Math.max(3, longestBacktickRun(lines) + 1)), lines }
+}
+
+/**
+ * The preview of blocks that do not fit whole (D3), kept up to MAX_PREVIEW_CHARS: a line goes in only while it, the
+ * closing fence of its block and a final `…` line still fit; a block's title and opening fence go in only with its
+ * first line, so no block is left with an opening fence and no line; on the cut the open fence is closed and a `…`
+ * line ends the preview.
+ */
+function cutPreview(parts: readonly PreviewBlock[]): string {
+  const out: string[] = []
+  let length = 0
+  const added = (lines: readonly string[]): number =>
+    lines.reduce((sum, line, at) => sum + (out.length === 0 && at === 0 ? 0 : 1) + line.length, 0)
+  const fits = (lines: readonly string[], fence: string): boolean =>
+    length + added(lines) + 1 + fence.length + 1 + CUT_LINE.length <= MAX_PREVIEW_CHARS
+  const push = (lines: readonly string[]): void => {
+    length += added(lines)
+    out.push(...lines)
+  }
+  for (const part of parts) {
+    const [first, ...rest] = part.lines
+    const head = [...(out.length === 0 ? [] : ['']), part.title, part.fence]
+    const opening = first === undefined ? head : [...head, first]
+    if (!fits(opening, part.fence)) break
+    push(opening)
+    for (const line of rest) {
+      if (!fits([line], part.fence)) {
+        push([part.fence, CUT_LINE])
+
+        return out.join('\n')
+      }
+      push([line])
+    }
+    push([part.fence])
+  }
+  push([CUT_LINE])
+
+  return out.join('\n')
+}
+
+/**
+ * The cadre init side pane as the markdown preview of a dialog option (D3), for the terminal main screen, where the
+ * engine hides the pane while a dialog is open. Per block, in the order given (the pane's: newest first), its title in
+ * bold, cleaned as a report cell (reportText) with its markdown characters escaped, then its lines, each cleaned as a
+ * report cell with its indent kept, in a fence one backtick longer than any backtick run in them and at least three:
+ * the fence keeps every scanned or typed value literal, so none can format the preview or end the fence. A blank line
+ * parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed, and ends with
+ * a `…` line (cutPreview); lengths are String lengths, never fewer than the code points. No blocks give ''.
+ */
+export function previewMarkdown(blocks: readonly ShownBlock[]): string {
+  const parts = blocks.map(previewBlock)
+  const whole = parts.flatMap((part, at) => [
+    ...(at === 0 ? [] : ['']),
+    part.title,
+    part.fence,
+    ...part.lines,
+    part.fence,
+  ])
+  const text = whole.join('\n')
+  if (text.length <= MAX_PREVIEW_CHARS) return text
+
+  return cutPreview(parts)
+}
+
+/** An AskUserQuestion question whose shape withPreviews checked (D3): an object with options it may rewrite. */
+type CheckedQuestion = Record<string, unknown> & { readonly options: readonly Record<string, unknown>[] }
+
+/** Whether a value is an AskUserQuestion option a preview may go on (D3): an object with a string `label`. */
+function isPreviewOption(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && typeof value.label === 'string'
+}
+
+/**
+ * Whether a value is an AskUserQuestion question withPreviews may rewrite (D3): an object with a string `question`
+ * and one option or more, each one a preview may go on.
+ */
+function isPreviewQuestion(value: unknown): value is CheckedQuestion {
+  if (!isObject(value) || typeof value.question !== 'string') return false
+  const { options } = value
+
+  return Array.isArray(options) && options.length > 0 && options.every(isPreviewOption)
+}
+
+/**
+ * The questions of an AskUserQuestion call with `preview` on each option of each single-select question (D3). A tool
+ * call's args are unknown to the plugin, so their shape is checked before any rewrite, and null means the call passes
+ * through unchanged: null for anything but a list of one question or more, each an object with a string `question`
+ * and one option or more, each an object with a string `label`, and null when every question is multi-select
+ * (`multiSelect` true). The list is new: each question and option is a copy made with a spread, a multi-select
+ * question is copied unchanged, and an option with a `preview` key of its own keeps it; the input is never changed.
+ */
+export function withPreviews(questions: unknown, preview: string): Record<string, unknown>[] | null {
+  if (!Array.isArray(questions) || questions.length === 0 || !questions.every(isPreviewQuestion)) return null
+  if (questions.every(question => question.multiSelect === true)) return null
+
+  return questions.map(question => {
+    if (question.multiSelect === true) return { ...question }
+    const options = question.options.map(option =>
+      Object.hasOwn(option, 'preview') ? { ...option } : { ...option, preview },
+    )
+
+    return { ...question, options }
+  })
 }
 
 /** One changed line of a line diff (G-02-1f, D-141): a line only the new text has, or one only the old text had. */
