@@ -1468,12 +1468,14 @@ describe('launch exports', () => {
   })
 })
 
-describe('safety net: setup helpers (A8)', () => {
+describe('safety net: memoryFolderOf (A8)', () => {
   test('memoryFolderOf: <userDir>/projects/<the root with each non-alphanumeric made ->/memory', () => {
     expect(memoryFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo/memory')
     expect(memoryFolderOf('/cfg', '/Users/v/my.repo_x')).toBe('/cfg/projects/-Users-v-my-repo-x/memory')
   })
+})
 
+describe('safety net: markdownFileNames (A8)', () => {
   test('markdownFileNames: the regular, unlinked files whose names end in .md, in listing order', () => {
     const entries = [
       entry('b.md'),

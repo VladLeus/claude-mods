@@ -1135,12 +1135,14 @@ describe('the improver plugin (G-02-1f, D-141)', () => {
   })
 })
 
-describe('safety net: assign helpers (A8)', () => {
+describe('safety net: asciiLower (A8)', () => {
   test('asciiLower lowercases A-Z only and keeps every non-ASCII letter as it is', () => {
     expect(asciiLower('GSD:Plan-Phase_2')).toBe('gsd:plan-phase_2')
     expect(asciiLower('ÄPFEL-İX-ß')).toBe('Äpfel-İx-ß')
   })
+})
 
+describe('safety net: skillCount (A8)', () => {
   test('skillCount: the count of the name in the form the scan keeps it (asciiLower), 0 for a name never seen', () => {
     const counts = new Map([['gsd:plan-phase', 3]])
     const found = [skillCount('GSD:Plan-Phase', counts), skillCount('gsd:plan-phase', counts), skillCount('x', counts)]

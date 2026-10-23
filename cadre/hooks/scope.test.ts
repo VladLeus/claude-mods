@@ -1849,12 +1849,14 @@ describe('security-guidance for Security (decision #39)', () => {
   })
 })
 
-describe('safety net: scope helpers (A8)', () => {
+describe('safety net: pluginName (A8)', () => {
   test('pluginName: the part of a plugin key before its first @; a key with no @ is its own name', () => {
     expect(pluginName('superpowers@claude-plugins-official')).toBe('superpowers')
     expect(pluginName('codex')).toBe('codex')
   })
+})
 
+describe('safety net: mcpToolName (A8)', () => {
   test('mcpToolName: mcp__ and the server name, each character outside A-Z, a-z, 0-9, _ and - made _', () => {
     expect(mcpToolName('my.server name/x')).toBe('mcp__my_server_name_x')
     expect(mcpToolName('Jira_cloud-2')).toBe('mcp__Jira_cloud-2')

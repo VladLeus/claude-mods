@@ -1263,29 +1263,37 @@ describe('utf8Bytes', () => {
   })
 })
 
-describe('safety net: facts helpers (A8)', () => {
+describe('safety net: trimSlash (A8)', () => {
   test('trimSlash drops every trailing slash, gives an empty string for the root and keeps null', () => {
     const trimmed = [trimSlash('/repo/'), trimSlash('/repo//'), trimSlash('/repo'), trimSlash('/'), trimSlash(null)]
     expect(trimmed).toEqual(['/repo', '/repo', '/repo', '', null])
   })
+})
 
+describe('safety net: relativeTo (A8)', () => {
   test('relativeTo: empty for the base, /rest below it, null outside it or for a null, empty or root base', () => {
     expect([relativeTo('/repo', '/repo/'), relativeTo('/repo/a/b.md', '/repo')]).toEqual(['', '/a/b.md'])
     expect(relativeTo('/repository/a', '/repo')).toBe(null)
     expect([relativeTo('/a', null), relativeTo('/a', ''), relativeTo('/a', '/')]).toEqual([null, null, null])
   })
+})
 
+describe('safety net: idLabel (A8)', () => {
   test('idLabel: a string cleaned and capped at 40 code points; anything else is one fixed token', () => {
     expect(idLabel(`be${String.fromCodePoint(0x202e)}\n`)).toBe('be')
     expect(idLabel('x'.repeat(50))).toBe(`${'x'.repeat(39)}…`)
     expect([idLabel(7), idLabel(null), idLabel({ id: 'be' })]).toEqual(Array(3).fill('<non-string id>'))
   })
+})
 
+describe('safety net: keysOf (A8)', () => {
   test('keysOf: the own key names of a plain object, never its values; [] for anything else', () => {
     expect(keysOf({ b: 1, a: { c: 2 } })).toEqual(['b', 'a'])
     expect([keysOf(['a']), keysOf(null), keysOf('ab')]).toEqual([[], [], []])
   })
+})
 
+describe('safety net: hookScriptsMatching (A8)', () => {
   test('hookScriptsMatching: each matched basename of a command hook, once per event, with its source', () => {
     const settings = {
       hooks: {
