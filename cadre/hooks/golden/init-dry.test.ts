@@ -9,4 +9,24 @@ describe('golden: init --dry-run (D-219)', () => {
     const { world, answers } = GOLDEN_WORLDS.nothing
     expect(await captureInit(world, answers)).toEqual(GOLDEN_INIT_DRY.nothing)
   })
+
+  test('gsd: six roles with a proven user GSD that is in use, with the INIT_ANSWERS defaults', async () => {
+    const { world, answers } = GOLDEN_WORLDS.gsd
+    expect(await captureInit(world, answers)).toEqual(GOLDEN_INIT_DRY.gsd)
+  })
+
+  test('superpowers: six roles with superpowers in use, with the INIT_ANSWERS defaults', async () => {
+    const { world, answers } = GOLDEN_WORLDS.superpowers
+    expect(await captureInit(world, answers)).toEqual(GOLDEN_INIT_DRY.superpowers)
+  })
+
+  test('everyStep: two frameworks in use and the secret world, with the instruction parts declined', async () => {
+    const { world, answers } = GOLDEN_WORLDS.everyStep
+    expect(await captureInit(world, answers)).toEqual(GOLDEN_INIT_DRY.everyStep)
+  })
+
+  test('parts: instruction parts and two memories handed out by the model recommendations', async () => {
+    const { world, answers } = GOLDEN_WORLDS.parts
+    expect(await captureInit(world, answers)).toEqual(GOLDEN_INIT_DRY.parts)
+  })
 })

@@ -8,6 +8,7 @@ import { runInit } from '../init'
 import { memIo } from '../testkit'
 import type { MemRun, MemWorld } from '../testkit'
 import type { GoldenAsk, GoldenBlock, GoldenRun } from './types'
+import { queuedIo } from './worlds'
 
 /**
  * The golden of a finished run: each question split on '\n' with its spec's header (null when none), options and
@@ -34,5 +35,27 @@ export async function captureInit(world: MemWorld, answers: Readonly<Record<stri
   const run = memIo(world, answers)
   const reply = await runInit(run.io, { dryRun: true })
 
+  return captureRun(run, reply)
+}
+
+/**
+ * The golden of `/cadre init --dry-run` over `world` through queuedIo, as init.test drives the review go-backs: a list
+ * under a prefix answers its questions in turn, its last answer repeating; a plain answer answers every time.
+ */
+export async function captureQueued(
+  world: MemWorld,
+  answers: Readonly<Record<string, string | readonly (string | null)[]>>,
+): Promise<GoldenRun> {
+  const run = queuedIo(world, answers)
+  const reply = await runInit(run.io, { dryRun: true })
+
+  return captureRun(run, reply)
+}
+
+/**
+ * The golden of a run that init refused or cancelled, from the run and its reply (captureRun): its asks are empty when
+ * the refusal came before the first question.
+ */
+export async function captureReply(run: MemRun, reply: string): Promise<GoldenRun> {
   return captureRun(run, reply)
 }
