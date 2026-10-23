@@ -7,6 +7,7 @@ import type {
   FileOpKind,
   FrameworkAdapter,
   Gate,
+  PaneKey,
   ShownBlock,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
@@ -380,6 +381,70 @@ export function previewMarkdown(blocks: readonly ShownBlock[]): string {
 }
 
 /**
+ * A counted suffix at the very end of a header chip (B1): ` <i>/<n>` (ask.ts countedChip) or ` <i> of <n>` (the hunk
+ * chip).
+ */
+const COUNTED_SUFFIX = / (?:\d+\/\d+|\d+ of \d+)$/
+
+/**
+ * The topic of a header chip (B1): the chip without one counted suffix at its very end, ` <i>/<n>` as ask.ts
+ * countedChip counts a chip, or ` <i> of <n>` as the hunk chip does; any other header is kept as it is.
+ */
+export function headerTopic(header: string): string {
+  return header.replace(COUNTED_SUFFIX, '')
+}
+
+/**
+ * The pane blocks the preview of a question may show, by the topic of its header chip (B1, headerTopic): the blocks
+ * the question is asked after, and the first of them the pane holds wins. A header with no key here, or none of whose
+ * blocks the pane holds, gets the newest block (previewBlockFor); claude.json, Git policy and the hunk chips have no
+ * block of their own, so no key. The keys mirror ask.ts ASK_HEADERS and its counted chips by their text, because
+ * render.ts cannot import ask.ts (ask.ts imports render.ts); a render.test.ts test keeps the two in step.
+ */
+export const PREVIEW_BLOCKS = Object.freeze<Record<string, readonly PaneKey[]>>({
+  History: Object.freeze(['scan']),
+  Roles: Object.freeze(['roles']),
+  Adjust: Object.freeze(['roles']),
+  Describe: Object.freeze(['roles']),
+  Framework: Object.freeze(['roles']),
+  Duration: Object.freeze(['roles']),
+  Model: Object.freeze(['roles']),
+  Launch: Object.freeze(['roles']),
+  'Launch dir': Object.freeze(['roles']),
+  Security: Object.freeze(['recommendations']),
+  MCP: Object.freeze(['recommendations']),
+  Skills: Object.freeze(['recommendations']),
+  Skill: Object.freeze(['skills']),
+  Instructions: Object.freeze(['instructions']),
+  Topic: Object.freeze(['instructions']),
+  Memory: Object.freeze(['instructions']),
+  Regen: Object.freeze(['instructions']),
+  Env: Object.freeze(['env']),
+  Review: Object.freeze(['review']),
+  Conflict: Object.freeze(['review']),
+  Improver: Object.freeze(['improver', 'instructions']),
+})
+
+/**
+ * The pane block the preview of a question shows (B1), as a list of one: of the blocks PREVIEW_BLOCKS lists for the
+ * topic of its header (headerTopic), read as an own key only, the first one the pane holds; the newest block when the
+ * header is not text, its topic has no key, or the pane holds none of its blocks; no block when the pane is empty.
+ */
+export function previewBlockFor(header: unknown, blocks: readonly ShownBlock[]): ShownBlock[] {
+  const [newest] = blocks
+  if (newest === undefined) return []
+  if (typeof header !== 'string') return [newest]
+  const topic = headerTopic(header)
+  if (!Object.hasOwn(PREVIEW_BLOCKS, topic)) return [newest]
+  for (const key of PREVIEW_BLOCKS[topic] ?? []) {
+    const block = blocks.find(shown => shown.key === key)
+    if (block !== undefined) return [block]
+  }
+
+  return [newest]
+}
+
+/**
  * An AskUserQuestion question whose shape withPreviews checked (D3): an object with a string `question` and options it
  * may rewrite.
  */
@@ -479,14 +544,14 @@ export type AskRewrite = {
 /**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
  * D3); null, so the call passes through unchanged, when the pane has no blocks or withPreviews does not rewrite the
- * questions. Each option of each single-select question gets the preview of the pane's blocks (withPreviews), and
- * each such question then gets the Describe your own option or the hint line (withDescribeOwn), with an AskedQuestion
- * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged and has
- * none.
+ * questions. Each option of each single-select question gets the preview of the one pane block its header needs
+ * (previewBlockFor, B1), and each such question then gets the Describe your own option, with that preview, or the
+ * hint line (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3);
+ * a multi-select question is copied unchanged and has none.
  */
 export function askRewrite(questions: unknown, blocks: readonly ShownBlock[]): AskRewrite | null {
   if (blocks.length === 0) return null
-  const previewOf = (header: unknown): string => previewMarkdown(blocks)
+  const previewOf = (header: unknown): string => previewMarkdown(previewBlockFor(header, blocks))
   const previewed = withPreviews(questions, previewOf)
   if (previewed === null) return null
   const pairs = previewed.map(question => {
