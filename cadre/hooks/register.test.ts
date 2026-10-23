@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
-import type { AskSpec } from '../types'
-import { NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ask'
+import type { AskSpec, PaneKey } from '../types'
+import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ask'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { sha256Hex } from './hash'
@@ -115,6 +115,8 @@ type World = {
    * its question's annotation.
    */
   readonly notes?: Readonly<Record<string, string>>
+  /** Runs inside the fake dialog before it answers, so a test can look at the pane while a question is open (R1). */
+  readonly onAsk?: () => Promise<void>
   /** What `clock.now` answers, in epoch milliseconds. */
   readonly now: number
   /** What `session.id` answers. */
@@ -147,6 +149,8 @@ type HostLog = {
   readonly panes: string[]
   readonly closes: string[]
   readonly paneWrites: unknown[]
+  /** Each value written to the init header state (R1). */
+  readonly headerWrites: unknown[]
   readonly writes: string[]
 }
 
@@ -189,6 +193,7 @@ function newLog(): HostLog {
     panes: [],
     closes: [],
     paneWrites: [],
+    headerWrites: [],
     writes: [],
   }
 }
@@ -442,7 +447,8 @@ function hasPath(world: World, path: string): boolean {
  * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs,
  * process and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript
  * text is kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is
- * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. A pane closed is kept in `log.closes`,
+ * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. Each value of the init header state is
+ * kept in `log.headerWrites` and stored, never refused (R1). A pane closed is kept in `log.closes`,
  * and the close is refused when `world.denyClose`. The model answers `world.replies` in
  * order. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path
  * kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state
@@ -471,8 +477,14 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: undefined }
   })
-  // The init pane's blocks are the plugin's own state (D-133, T-02-49); a write of any other state is forbidden.
+  // The init pane's blocks and the header of the question open now are the plugin's own state (D-133, T-02-49, R1);
+  // the header is never refused, and a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
+    if (e.plugin === 'cadre' && e.key === 'initHeader') {
+      log.headerWrites.push(e.value)
+
+      return next(e)
+    }
     if (e.plugin !== 'cadre' || e.key !== 'initPane') {
       log.ops.push('forbidden state.set')
 
@@ -493,6 +505,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.asks.push(`ask ${question}`)
     log.askOptions.push((asked?.options ?? []).map(option => option.label))
     log.askPreviews.push((asked?.options ?? []).map(option => ('preview' in option ? option.preview : undefined)))
+    await world.onAsk?.()
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
     if (question.startsWith(REVIEW_QUESTION)) isReviewAnswered = true
@@ -1650,39 +1663,39 @@ describe('cadre init with a faked host', () => {
   })
 })
 
+/** A single-select question of the model's own, with two options and no preview. */
+const PICK_QUESTION = {
+  question: 'Pick one?',
+  header: 'Pick',
+  multiSelect: false,
+  options: [
+    { label: 'A', description: 'a' },
+    { label: 'B', description: 'b' },
+  ],
+}
+
+/** The cadre-init pane as the terminal asks cadre to draw it. */
+const PANE_ON_TERMINAL: Omit<MountTarget<'terminal', 'Pane'>, 'props'> = {
+  plugin: 'cadre',
+  surface: 'terminal',
+  component: 'Pane',
+  requestId: 'cadre-init',
+}
+
+/** The Pane props a terminal draws the cadre-init pane with on its main screen: inline, above the prompt. */
+const INLINE_PANE: MountTarget<'terminal', 'Pane'>['props'] = {
+  title: 'cadre init',
+  isFocused: false,
+  bodyColumns: 60,
+  placement: 'inline',
+  scroll: { offset: 0, bodyRows: 20 },
+  view: {},
+}
+
+/** The same pane docked beside the transcript, as a fullscreen terminal seats it. */
+const DOCK_PANE: MountTarget<'terminal', 'Pane'>['props'] = { ...INLINE_PANE, placement: 'dock' }
+
 describe('the init pane as the option preview of a dialog on the main screen (D3)', () => {
-  /** A single-select question of the model's own, with two options and no preview. */
-  const PICK_QUESTION = {
-    question: 'Pick one?',
-    header: 'Pick',
-    multiSelect: false,
-    options: [
-      { label: 'A', description: 'a' },
-      { label: 'B', description: 'b' },
-    ],
-  }
-
-  /** The cadre-init pane as the terminal asks cadre to draw it. */
-  const PANE_ON_TERMINAL: Omit<MountTarget<'terminal', 'Pane'>, 'props'> = {
-    plugin: 'cadre',
-    surface: 'terminal',
-    component: 'Pane',
-    requestId: 'cadre-init',
-  }
-
-  /** The Pane props a terminal draws the cadre-init pane with on its main screen: inline, above the prompt. */
-  const INLINE_PANE: MountTarget<'terminal', 'Pane'>['props'] = {
-    title: 'cadre init',
-    isFocused: false,
-    bodyColumns: 60,
-    placement: 'inline',
-    scroll: { offset: 0, bodyRows: 20 },
-    view: {},
-  }
-
-  /** The same pane docked beside the transcript, as a fullscreen terminal seats it. */
-  const DOCK_PANE: MountTarget<'terminal', 'Pane'>['props'] = { ...INLINE_PANE, placement: 'dock' }
-
   /** The options with no preview of PICK_QUESTION, as the fake host sees a dialog passed through. */
   const NO_PREVIEWS = [[undefined, undefined]]
 
@@ -1874,6 +1887,133 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(await ask('Pick one?', PICK_SPEC)).toBe(null)
     expect(log.asks.at(-1)).toBe('ask Pick one?')
     expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+})
+
+describe('the init pane draws the block of the question being asked (R1)', () => {
+  /**
+   * `init --dry-run` as the person types it at the prompt, with the origin and presentation the engine stamps on a run:
+   * the kit's types ask for both, and cadre reads neither.
+   */
+  const DRY_RUN: Parameters<Engine['command']['run']>[0] = {
+    command: 'cadre',
+    args: 'init --dry-run',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 80 },
+  }
+
+  /** INIT_ANSWERS with `Pick one?` answered A. */
+  const PICK_ANSWERS = { ...INIT_ANSWERS, 'Pick one?': 'A' }
+
+  /** What one drawing of the cadre-init pane shows (R1): the text of its first row, and how many rows it has. */
+  type Drawn = {
+    readonly first: string | undefined
+    readonly rows: number
+  }
+
+  /** What the pane showed while the test's own dialog was open, and the header last written by then (R1). */
+  type Open = {
+    readonly drawn: Drawn
+    readonly header: unknown
+  }
+
+  /**
+   * Has the terminal draw the cadre-init pane with `props` and gives what it shows, then lets the drawing go: the kit
+   * holds one drawing of the pane at a time, so the next mount is a fresh one.
+   */
+  async function drawPane($: Engine, props: MountTarget<'terminal', 'Pane'>['props']): Promise<Drawn> {
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props })
+    const box = await ui.find({ type: 'Box' })
+    const first = await ui.find({ type: 'Text' })
+    await ui.unmount()
+
+    return { first: first?.text, rows: box?.children.length ?? 0 }
+  }
+
+  /** What a drawing of only the pane's block of this key shows (R1): its title row, then one row per line. */
+  function blockDrawn(log: HostLog, key: PaneKey): Drawn {
+    return { first: PANE_TITLES[key], rows: 1 + paneLines(log, key).length }
+  }
+
+  /**
+   * The onAsk of a world whose `Pick one?` dialog has the terminal draw the pane with `props` while it is open (R1):
+   * what the pane showed and the header last written by then go into `open`. Init's own dialogs are left alone.
+   */
+  function drawWhileOpen(
+    $: Engine,
+    log: HostLog,
+    props: MountTarget<'terminal', 'Pane'>['props'],
+    open: Open[],
+  ): () => Promise<void> {
+    return async () => {
+      if (!(log.asks.at(-1) ?? '').startsWith('ask Pick one?')) return
+      open.push({ drawn: await drawPane($, props), header: log.headerWrites.at(-1) })
+    }
+  }
+
+  test('after a run, a mount of the pane draws only the newest block: the review', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    expect(paneOf(log)[0]?.key).toBe('review')
+    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+  })
+
+  test('an inline pane drawn while a question is open shows its block, the newest once it settles', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, INLINE_PANE, open) }), log)
+    await $.command.run(DRY_RUN)
+    await drawPane($, INLINE_PANE)
+    const before = log.headerWrites.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
+    expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
+    expect(log.headerWrites.slice(before)).toEqual(['Roles', null])
+    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+    expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('a docked pane drawn while a question is open shows its block too: every placement', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, DOCK_PANE, open) }), log)
+    await $.command.run(DRY_RUN)
+    await drawPane($, DOCK_PANE)
+    const before = log.headerWrites.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
+    expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
+    expect(log.headerWrites.slice(before)).toEqual(['Roles', null])
+    expect(await drawPane($, DOCK_PANE)).toEqual(blockDrawn(log, 'review'))
+  })
+
+  test('a header with no block of its own, as Git policy, draws the newest block while open', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, INLINE_PANE, open) }), log)
+    await $.command.run(DRY_RUN)
+    await drawPane($, INLINE_PANE)
+    const questions = [{ ...PICK_QUESTION, header: 'Git policy' }]
+    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
+    expect(open).toEqual([{ drawn: blockDrawn(log, 'review'), header: 'Git policy' }])
+  })
+
+  test('a dismissed dialog still clears the header, so the pane draws the newest block after it', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    await drawPane($, INLINE_PANE)
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
+    expect(askHeads(log).at(-1)).toBe('ask Pick one?')
+    expect(log.headerWrites.at(-1)).toBe(null)
+    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+  })
+
+  test('a run clears the header when it ends, after the clear of each of its own dialogs', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    expect(log.headerWrites.at(-1)).toBe(null)
+    expect(log.headerWrites).toHaveLength(2 * log.asks.length + 1)
   })
 })
 

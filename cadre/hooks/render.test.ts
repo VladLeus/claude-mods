@@ -9,6 +9,7 @@ import { GSD_GATES } from './gsd'
 import {
   adaptersReportLines,
   answersFromNotes,
+  askedHeader,
   askRewrite,
   cardList,
   choiceLine,
@@ -978,6 +979,30 @@ describe('previewBlockFor (B1)', () => {
     for (const header of ['Env', 'Git policy', 3, undefined, '__proto__', 'constructor']) {
       expect(previewBlockFor(header, pane)).toEqual([pane[0]])
     }
+  })
+})
+
+describe('askedHeader (R1)', () => {
+  test('the header of the first question of the call', () => {
+    expect(askedHeader([{ question: 'Q?', header: 'Roles', options: [] }])).toBe('Roles')
+    const two = [
+      { question: 'Q?', header: 'Roles', options: [] },
+      { question: 'Next?', header: 'Env', options: [] },
+    ]
+    expect(askedHeader(two)).toBe('Roles')
+  })
+
+  test('no string header on the first question, or no list of questions, gives null', () => {
+    const none: unknown[] = [
+      [{ question: 'Q?', options: [] }],
+      [{ question: 'Q?', header: 3, options: [] }],
+      [null, { question: 'Next?', header: 'Env', options: [] }],
+      [],
+      'x',
+      null,
+      undefined,
+    ]
+    for (const questions of none) expect(askedHeader(questions)).toBe(null)
   })
 })
 
