@@ -7,6 +7,8 @@ import { clean } from './facts'
 import { GSD_GATES } from './gsd'
 import {
   adaptersReportLines,
+  answersFromNotes,
+  askRewrite,
   cardList,
   choiceLine,
   detectReportLines,
@@ -23,9 +25,10 @@ import {
   reportText,
   shown,
   STATUS_LABEL,
+  withDescribeOwn,
   withPreviews,
 } from './render'
-import type { PaneRow, PaneSpan } from './render'
+import type { AskedQuestion, CheckedQuestion, PaneRow, PaneSpan } from './render'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
 import { BIDI_OVERRIDE } from './testkit'
 
@@ -888,11 +891,40 @@ const PICK_QUESTION = {
   ],
 }
 
+/** Questions whose shape withPreviews cannot check (D3, A1): a call that asks them passes through unchanged. */
+const UNCHECKED_QUESTIONS: readonly unknown[] = [
+  'x',
+  {},
+  null,
+  undefined,
+  [],
+  ['x'],
+  [null],
+  [[]],
+  [{ options: [{ label: 'A' }] }],
+  [{ question: 3, options: [{ label: 'A' }] }],
+  [{ question: 'Q?' }],
+  [{ question: 'Q?', options: 'A' }],
+  [{ question: 'Q?', options: [] }],
+  [{ question: 'Q?', options: ['A'] }],
+  [{ question: 'Q?', options: [null] }],
+  [{ question: 'Q?', options: [{ description: 'a' }] }],
+  [{ question: 'Q?', options: [{ label: 3 }] }],
+  [PICK_QUESTION, { question: 'Q?', options: [] }],
+]
+
+/** PICK_QUESTION with these options after its A and B, each described by its label in lower case (A2). */
+function pickWith(...labels: readonly string[]): CheckedQuestion {
+  const more = labels.map(label => ({ label, description: label.toLowerCase() }))
+
+  return { ...PICK_QUESTION, options: [...PICK_QUESTION.options, ...more] }
+}
+
 describe('withPreviews (D3)', () => {
   test('each option of a single-select question gets the preview, every other field kept, the input unchanged', () => {
     const questions = [PICK_QUESTION, { question: 'Next?', options: [{ label: 'C' }] }]
     const before = JSON.stringify(questions)
-    const result = withPreviews(questions, 'P')
+    const result = withPreviews(questions, () => 'P')
     expect(result).toEqual([
       {
         question: 'Pick one?',
@@ -910,33 +942,13 @@ describe('withPreviews (D3)', () => {
   })
 
   test('a shape it cannot check gives null, so the call passes through', () => {
-    const bad: unknown[] = [
-      'x',
-      {},
-      null,
-      undefined,
-      [],
-      ['x'],
-      [null],
-      [[]],
-      [{ options: [{ label: 'A' }] }],
-      [{ question: 3, options: [{ label: 'A' }] }],
-      [{ question: 'Q?' }],
-      [{ question: 'Q?', options: 'A' }],
-      [{ question: 'Q?', options: [] }],
-      [{ question: 'Q?', options: ['A'] }],
-      [{ question: 'Q?', options: [null] }],
-      [{ question: 'Q?', options: [{ description: 'a' }] }],
-      [{ question: 'Q?', options: [{ label: 3 }] }],
-      [PICK_QUESTION, { question: 'Q?', options: [] }],
-    ]
-    for (const questions of bad) expect(withPreviews(questions, 'P')).toBe(null)
+    for (const questions of UNCHECKED_QUESTIONS) expect(withPreviews(questions, () => 'P')).toBe(null)
   })
 
   test('only multi-select questions give null; one among single-select ones is copied unchanged', () => {
     const multi = { ...PICK_QUESTION, question: 'Which?', multiSelect: true }
-    expect(withPreviews([multi], 'P')).toBe(null)
-    const result = withPreviews([PICK_QUESTION, multi], 'P')
+    expect(withPreviews([multi], () => 'P')).toBe(null)
+    const result = withPreviews([PICK_QUESTION, multi], () => 'P')
     expect(result?.[1]).toEqual(multi)
     expect(result?.[1] === multi).toBe(false)
     expect(result?.[0]?.options).toEqual([
@@ -947,7 +959,7 @@ describe('withPreviews (D3)', () => {
 
   test('an option that has a preview of its own keeps it', () => {
     const questions = [{ question: 'Q?', options: [{ label: 'A', preview: 'mine' }, { label: 'B' }] }]
-    expect(withPreviews(questions, 'P')).toEqual([
+    expect(withPreviews(questions, () => 'P')).toEqual([
       {
         question: 'Q?',
         options: [
@@ -956,6 +968,188 @@ describe('withPreviews (D3)', () => {
         ],
       },
     ])
+  })
+
+  test('each single-select question gets the preview made for its own header, undefined when it has none', () => {
+    const questions = [PICK_QUESTION, { question: 'Next?', options: [{ label: 'C' }] }]
+    const result = withPreviews(questions, header => `P ${String(header)}`)
+    expect(result?.map(question => question.options)).toEqual([
+      [
+        { label: 'A', description: 'a', preview: 'P Pick' },
+        { label: 'B', description: 'b', preview: 'P Pick' },
+      ],
+      [{ label: 'C', preview: 'P undefined' }],
+    ])
+  })
+})
+
+describe('withDescribeOwn (A2)', () => {
+  /** The option a question with room for it gets, with the preview 'P'. */
+  const OWN_OPTION = {
+    label: 'Describe your own',
+    description: 'Press n, type your answer, then Enter',
+    preview: 'P',
+  }
+
+  test('a question with 2 or 3 options gets one last option to type an own answer, with the preview', () => {
+    expect(withDescribeOwn(PICK_QUESTION, 'P')).toEqual({
+      question: 'Pick one?',
+      header: 'Pick',
+      multiSelect: false,
+      options: [{ label: 'A', description: 'a' }, { label: 'B', description: 'b' }, OWN_OPTION],
+    })
+    const three = withDescribeOwn(pickWith('C'), 'P')
+    expect(three).toEqual({ ...pickWith('C'), options: [...pickWith('C').options, OWN_OPTION] })
+  })
+
+  test('a question with 4 options keeps them and gets the hint line as the last line of its text', () => {
+    const four = pickWith('C', 'D')
+    const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
+    expect(withDescribeOwn(four, 'P')).toEqual({ ...four, question: hinted })
+  })
+
+  test('a question that already has a Describe your own option gets neither the option nor the hint', () => {
+    const two = { ...PICK_QUESTION, options: [{ label: 'A' }, { label: 'Describe your own', description: 'mine' }] }
+    for (const question of [two, pickWith('C', 'Describe your own')]) {
+      const result = withDescribeOwn(question, 'P')
+      expect(result).toEqual(question)
+      expect(result === question).toBe(false)
+    }
+  })
+
+  test('the question it is given is never changed, and the result is a new object', () => {
+    for (const question of [pickWith('C'), pickWith('C', 'D')]) {
+      const before = JSON.stringify(question)
+      const result = withDescribeOwn(question, 'P')
+      expect(JSON.stringify(question)).toBe(before)
+      expect(result === question).toBe(false)
+    }
+  })
+})
+
+describe('askRewrite (A1, A2)', () => {
+  /** A pane of one block, so a question's preview is that block whatever its header. */
+  const BLOCKS = [shownBlock('review', 'Review', ['Roles:', '  BE (be)'])]
+
+  test('no blocks give null, so the call passes through', () => {
+    expect(askRewrite([PICK_QUESTION], [])).toBe(null)
+  })
+
+  test('a shape withPreviews cannot check gives null', () => {
+    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, BLOCKS)).toBe(null)
+  })
+
+  test('only multi-select questions give null', () => {
+    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], BLOCKS)).toBe(null)
+  })
+
+  test('a single-select question gets the preview on every option, Describe your own included, asked as is', () => {
+    const questions = [PICK_QUESTION]
+    const before = JSON.stringify(questions)
+    const preview = previewMarkdown(BLOCKS)
+    const rewrite = askRewrite(questions, BLOCKS)
+    expect(rewrite?.questions).toEqual([
+      {
+        ...PICK_QUESTION,
+        options: [
+          { label: 'A', description: 'a', preview },
+          { label: 'B', description: 'b', preview },
+          { label: 'Describe your own', description: 'Press n, type your answer, then Enter', preview },
+        ],
+      },
+    ])
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+    expect(JSON.stringify(questions)).toBe(before)
+  })
+
+  test('a 4-option question is asked with the hint line, and its asked entry pairs the two texts', () => {
+    const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
+    const rewrite = askRewrite([pickWith('C', 'D')], BLOCKS)
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
+    expect(rewrite?.questions[0]?.question).toBe(hinted)
+    expect(rewrite?.questions[0]?.options).toHaveLength(4)
+  })
+
+  test('a multi-select question among single-select ones is copied unchanged and has no asked entry', () => {
+    const multi = { ...PICK_QUESTION, question: 'Which?', multiSelect: true }
+    const rewrite = askRewrite([PICK_QUESTION, multi], BLOCKS)
+    expect(rewrite?.questions[1]).toEqual(multi)
+    expect(rewrite?.questions[1] === multi).toBe(false)
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+  })
+})
+
+describe('answersFromNotes (A3)', () => {
+  /** The one question these results answer, asked as the dialog showed it. */
+  const ASKED: readonly AskedQuestion[] = [{ question: 'Q?', asked: 'Q?' }]
+
+  /** A dialog result that answers Q? with `answer`, with `notes` typed for it when given. */
+  function answered(answer: string, notes?: string): Record<string, unknown> {
+    const result = { answers: { 'Q?': answer } }
+
+    return notes === undefined ? result : { ...result, annotations: { 'Q?': { notes } } }
+  }
+
+  test('notes typed in the dialog are the answer, trimmed, whatever was chosen', () => {
+    expect(answersFromNotes(ASKED, answered('A', '  my words  '))).toEqual({ 'Q?': 'my words' })
+    expect(answersFromNotes(ASKED, answered('(notes only)', 'my words'))).toEqual({ 'Q?': 'my words' })
+    expect(answersFromNotes(ASKED, answered('Describe your own', ' mine '))).toEqual({ 'Q?': 'mine' })
+  })
+
+  test('with blank or no notes the chosen answer stays, and Describe your own is an empty answer', () => {
+    expect(answersFromNotes(ASKED, answered('B', '   '))).toEqual({ 'Q?': 'B' })
+    expect(answersFromNotes(ASKED, answered('B'))).toEqual({ 'Q?': 'B' })
+    expect(answersFromNotes(ASKED, answered('Describe your own'))).toEqual({ 'Q?': '' })
+  })
+
+  test('the answer is stored under the question as asked, and the text the dialog showed is dropped', () => {
+    const asked = [{ question: 'Q?', asked: 'Q?\nhint' }]
+    expect(answersFromNotes(asked, { answers: { 'Q?\nhint': 'C' } })).toEqual({ 'Q?': 'C' })
+    const noted = { answers: { 'Q?\nhint': 'C' }, annotations: { 'Q?\nhint': { notes: 'mine' } } }
+    expect(answersFromNotes(asked, noted)).toEqual({ 'Q?': 'mine' })
+  })
+
+  test('another question keeps its answer, and a question with no answer and no notes adds no key', () => {
+    const both = { answers: { 'Q?': 'A', 'Other?': 'Describe your own' } }
+    expect(answersFromNotes(ASKED, both)).toEqual({ 'Q?': 'A', 'Other?': 'Describe your own' })
+    const other = answersFromNotes(ASKED, { answers: { 'Other?': 'X' } })
+    expect(other === null ? null : Object.keys(other)).toEqual(['Other?'])
+  })
+
+  test('a malformed annotation counts as no notes, and only own keys are read', () => {
+    for (const annotation of [null, { notes: 3 }, 'x']) {
+      const result = { answers: { 'Q?': 'B' }, annotations: { 'Q?': annotation } }
+      expect(answersFromNotes(ASKED, result)).toEqual({ 'Q?': 'B' })
+    }
+    const inherited = [
+      { question: 'constructor', asked: 'constructor' },
+      { question: 'toString', asked: 'toString' },
+    ]
+    const none = answersFromNotes(inherited, { answers: {}, annotations: {} })
+    expect(none === null ? null : Object.keys(none)).toEqual([])
+  })
+
+  test('a result whose shape does not validate gives null', () => {
+    const bad: unknown[] = [
+      'x',
+      null,
+      {},
+      { answers: 'x' },
+      { answers: [] },
+      { answers: { 'Q?': 3 } },
+      { answers: {}, annotations: 'x' },
+      { answers: {}, annotations: [] },
+    ]
+    for (const result of bad) expect(answersFromNotes(ASKED, result)).toBe(null)
+  })
+
+  test('the result it reads is never changed', () => {
+    const result = { answers: { 'Q?\nhint': 'C', 'Other?': 'X' }, annotations: { 'Q?\nhint': { notes: ' mine ' } } }
+    const before = JSON.stringify(result)
+    const answers = answersFromNotes([{ question: 'Q?', asked: 'Q?\nhint' }], result)
+    expect(answers).toEqual({ 'Other?': 'X', 'Q?': 'mine' })
+    expect(JSON.stringify(result)).toBe(before)
+    expect(answers === result.answers).toBe(false)
   })
 })
 

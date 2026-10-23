@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
+import type { AskSpec } from '../types'
 import { NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ask'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
@@ -108,6 +110,11 @@ type World = {
    * valid when a later plan adds questions; a question no prefix matches is dismissed, as Esc does.
    */
   readonly answers: Readonly<Record<string, string>>
+  /**
+   * The notes typed in a dialog, keyed by question prefix as answers are (A3); a dialog a key matches answers them as
+   * its question's annotation.
+   */
+  readonly notes?: Readonly<Record<string, string>>
   /** What `clock.now` answers, in epoch milliseconds. */
   readonly now: number
   /** What `session.id` answers. */
@@ -489,8 +496,10 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
     if (question.startsWith(REVIEW_QUESTION)) isReviewAnswered = true
+    const notes = world.notes === undefined ? undefined : answerFor(world.notes, question)
+    const annotations = notes === undefined ? {} : { annotations: { [question]: { notes } } }
 
-    return { result: { questions: e.questions, answers: { [question]: answer } } }
+    return { result: { questions: e.questions, answers: { [question]: answer }, ...annotations } }
   })
   on('command.list', async () => ({ value: world.commands }))
   on('tool.list', async () => ({ value: world.tools }))
@@ -1672,26 +1681,78 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   /** The options with no preview of PICK_QUESTION, as the fake host sees a dialog passed through. */
   const NO_PREVIEWS = [[undefined, undefined]]
 
+  /** What $.ui.ask is given for `Pick one?` (A3): options A and B under the chip Pick. */
+  const PICK_SPEC: AskSpec = { options: ['A', 'B'], header: 'Pick' }
+
+  /**
+   * A plugin whose `/ask-probe` command asks the question in its args through the real $.ui.ask, as cadre's own init
+   * asks do, and replies `{"answer":<text>}`, or `{}` when the ask rejects (A3). The kit's `$` has no $.ui.ask; this
+   * ask runs through cadre's tool.call hook and the fake host beneath it. Its register closes over nothing of this
+   * file, as the kit requires of an inline plugin.
+   */
+  const ASKER = {
+    name: 'asker',
+    register(on: HostOn) {
+      on('command.run', { command: 'ask-probe' }, async ($, e) => {
+        const { question, spec }: { readonly question: string; readonly spec: AskSpec } = JSON.parse(e.args)
+        const text = await $.ui.ask(question, spec).then(
+          answer => JSON.stringify({ answer }),
+          () => '{}',
+        )
+
+        return { text }
+      })
+    },
+  }
+
+  /** The test options that load ASKER beside cadre. */
+  const WITH_ASKER = { plugins: [ASKER] }
+
+  /** A question asked through ASKER: the answer $.ui.ask resolved to, or null when it rejected. */
+  type Ask = (question: string, spec: AskSpec) => Promise<string | null>
+
+  /**
+   * Runs `init --dry-run`, so the pane holds the run's blocks, then has the terminal draw the cadre-init pane with
+   * `props`: inline on the main screen, or docked as fullscreen seats it. It gives the ask of a test that loads ASKER.
+   * Every `$.command.run` of this describe goes through it, but the one of the test with no render.
+   */
+  async function seatAfterRun($: Engine, props: typeof INLINE_PANE | typeof DOCK_PANE): Promise<Ask> {
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props })
+
+    return async (question, spec) => {
+      const { text } = await $.command.run({ command: 'ask-probe', args: JSON.stringify({ question, spec }) })
+      const reply: unknown = JSON.parse(text)
+
+      return isObject(reply) && typeof reply.answer === 'string' ? reply.answer : null
+    }
+  }
+
+  /** initWorld with `Pick one?` answered `answer` and, when given, `notes` typed in that dialog's notes (A3). */
+  function pickWorld(answer: string, notes?: string): World {
+    const answers = { ...INIT_ANSWERS, 'Pick one?': answer }
+
+    return initWorld(notes === undefined ? { answers } : { answers, notes: { 'Pick one?': notes } })
+  }
+
   test('after a run, each option of an inline pane dialog gets the same preview, the review first', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
     await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    expect(log.askOptions.slice(before)).toEqual([['A', 'B', 'Describe your own']])
     const seen = log.askPreviews.slice(before)
     expect(seen).toHaveLength(1)
-    expect(seen[0]).toHaveLength(2)
-    const [first, second] = seen[0] ?? []
+    const [first, ...rest] = seen[0] ?? []
     expect(typeof first === 'string' && first.startsWith('**Review**')).toBe(true)
-    expect(second).toBe(first)
+    expect(rest).toEqual([first, first])
   })
 
   test('a docked pane gives no preview', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    await $.ui.mount({ ...PANE_ON_TERMINAL, props: DOCK_PANE })
+    await seatAfterRun($, DOCK_PANE)
     const before = log.askPreviews.length
     await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
     expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
@@ -1709,8 +1770,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   test('a multi-select question gets no preview', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
     const questions = [{ ...PICK_QUESTION, multiSelect: true }]
     await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
@@ -1720,8 +1780,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   test('a question with no options makes the whole call pass through unchanged', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
-    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
     const questions = [PICK_QUESTION, { ...PICK_QUESTION, question: 'Empty?', options: [] }]
     await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
@@ -1735,6 +1794,56 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const before = log.askPreviews.length
     await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
     expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+  })
+
+  test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('A', '  my words  '), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('my words')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+
+  test('Describe your own with no note resolves to an empty answer (A3)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('Describe your own'), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+
+  test('an option chosen with no note resolves to its label (A3)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('B'), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('B')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
+  })
+
+  test('a 4-option question gets the hint line and keeps its answer key (A2, A3)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('C'), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', { options: ['A', 'B', 'C', 'D'], header: 'Pick' })).toBe('C')
+    expect(log.asks.at(-1)).toBe('ask Pick one?\nOr press n, type your own answer, then Enter.')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'C', 'D'])
+  })
+
+  test('a docked pane adds no option and takes no note as the answer (A1)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('A', '  my words  '), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B'])
+  })
+
+  test('a dismissed dialog still rejects $.ui.ask: the deny passes through', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe(null)
+    expect(log.asks.at(-1)).toBe('ask Pick one?')
+    expect(log.askOptions.at(-1)).toEqual(['A', 'B', 'Describe your own'])
   })
 })
 
