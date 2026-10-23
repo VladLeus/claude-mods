@@ -916,3 +916,30 @@ export const installedPlugins = {
     'gsd@x': [{ scope: 'user', version: '1.0.0' }],
   },
 }
+
+/**
+ * Copied byte-identically from init.test.ts for the own-skills golden (only `export` added where a golden module
+ * needs one): the own-skills entry prefix, OWN_ACCEPTED and ownSkillsWorld (`skill recommendation in init (G-02-1b)` >
+ * `a dry run asks the model once and shows the roles it recommends on each skill row`).
+ */
+/** The start of the entry question of the user's own skills (G-02-1b), as an answer key matches it. */
+const OWN_SKILLS_ENTRY_PREFIX = 'How do you want to hand out your own skills'
+
+/** INIT_ANSWERS with the user's own skills handed out by the model's recommendations (G-02-1b). */
+export const OWN_ACCEPTED: Readonly<Record<string, string>> = {
+  ...INIT_ANSWERS,
+  [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations',
+}
+
+/**
+ * A git repo with two of the user's own skills, deploy-notes described and my-skill not, and these replies of the
+ * model; `over` changes the fields it names.
+ */
+export function ownSkillsWorld(replies: readonly (string | null)[], over: Partial<MemWorld> = {}): MemWorld {
+  const commands = [
+    { name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' },
+    { name: 'my-skill', source: 'project' },
+  ]
+
+  return gitWorld({ commands, replies, ...over })
+}
