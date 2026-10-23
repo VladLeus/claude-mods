@@ -9,9 +9,11 @@ import type {
   InitIo,
   InitLocations,
   McpRef,
+  PaneKey,
   PortEntry,
   PortRead,
   PortStat,
+  RepoScan,
   RoleSpec,
   RunOptions,
   SettingsSource,
@@ -507,4 +509,92 @@ export function secretWorld(over: Partial<MemWorld> = {}): MemWorld {
     },
     ...over,
   })
+}
+
+/**
+ * The first line of each question a run asked: the line the question constants and the INIT_ANSWERS keys match, since
+ * every question carries its context line on its second line (D-136). A re-asked question starts with its refusal.
+ */
+export function firstLines(asked: readonly string[]): string[] {
+  return asked.map(question => question.split('\n')[0] ?? '')
+}
+
+/**
+ * The fixture user's config folder, listed with nothing in it: a private write lists it before it writes under
+ * `<userDir>/cadre`, and refuses when it cannot (02-GAPS-B3 S3).
+ */
+export const USER_DIR_LISTED: Readonly<Record<string, readonly PortEntry[]>> = { '/home/u/.claude': [] }
+
+/**
+ * A session in the git repo /repo: its `.git` folder is there, the user's config folder lists (USER_DIR_LISTED), and
+ * `over` changes the fields it names.
+ */
+export function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({ dirs: { '/repo/.git': [], ...USER_DIR_LISTED }, ...over })
+}
+
+/** The port of a run that also records every path it was asked to stat, in order. */
+export function withStats(run: MemRun): { readonly io: InitIo; readonly stats: string[] } {
+  const stats: string[] = []
+  const io: InitIo = {
+    ...run.io,
+    stat: async path => {
+      stats.push(path)
+
+      return run.io.stat(path)
+    },
+  }
+
+  return { io, stats }
+}
+
+/**
+ * The port of a run that also records its questions (as `ask <first line>`, firstLines), log entries and side-pane
+ * blocks (as `show <key>`) in one list, in the order they happened.
+ */
+export function withEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
+  const events: string[] = []
+  const io: InitIo = {
+    ...run.io,
+    ask: async (question, spec) => {
+      events.push(`ask ${question.split('\n')[0] ?? ''}`)
+
+      return run.io.ask(question, spec)
+    },
+    log: text => {
+      events.push(`log ${text}`)
+      run.io.log(text)
+    },
+    show: async block => {
+      events.push(`show ${block.key}`)
+      await run.io.show(block)
+    },
+  }
+
+  return { io, events }
+}
+
+/** The lines of the last side-pane block of this key a run showed; empty when it showed none (D-133). */
+export function shownBlock(run: MemRun, key: PaneKey): readonly string[] {
+  return run.shown.filter(block => block.key === key).at(-1)?.lines ?? []
+}
+
+/** Every title and line a run showed in the side pane, in order, to scan for what must never be shown. */
+export function paneText(run: MemRun): string[] {
+  return run.shown.flatMap(block => [block.title, ...block.lines])
+}
+
+/** A repo scan that found nothing; `over` changes the fields it names. */
+export function repoScan(over: Partial<RepoScan> = {}): RepoScan {
+  return {
+    findings: [],
+    languages: [],
+    codeDirs: [],
+    hasSource: false,
+    cappedFolders: [],
+    isOverallCapped: false,
+    cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
+    warnings: [],
+    ...over,
+  }
 }

@@ -301,7 +301,9 @@ import {
   EMPTY_FACTS,
   emptySetupScan,
   entry,
+  firstLines,
   FRAMEWORKS,
+  gitWorld,
   hostWorld,
   INIT_ANSWERS,
   leaks,
@@ -309,39 +311,23 @@ import {
   memHost,
   memIo,
   memWorld,
+  paneText,
+  repoScan,
   SECRET_FIXTURES,
   secretWorld,
   session,
+  shownBlock,
   skillRef,
   templateRole,
+  USER_DIR_LISTED,
+  withEvents,
+  withStats,
   withWrites,
 } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
-
-/**
- * The first line of each question a run asked: the line the question constants and the INIT_ANSWERS keys match, since
- * every question carries its context line on its second line (D-136). A re-asked question starts with its refusal.
- */
-function firstLines(asked: readonly string[]): string[] {
-  return asked.map(question => question.split('\n')[0] ?? '')
-}
-
-/**
- * The fixture user's config folder, listed with nothing in it: a private write lists it before it writes under
- * `<userDir>/cadre`, and refuses when it cannot (02-GAPS-B3 S3).
- */
-const USER_DIR_LISTED: Readonly<Record<string, readonly PortEntry[]>> = { '/home/u/.claude': [] }
-
-/**
- * A session in the git repo /repo: its `.git` folder is there, the user's config folder lists (USER_DIR_LISTED), and
- * `over` changes the fields it names.
- */
-function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return memWorld({ dirs: { '/repo/.git': [], ...USER_DIR_LISTED }, ...over })
-}
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -369,72 +355,6 @@ const COMMON_DIR_CALL: HostCall = { argv: GIT_COMMON_DIR_ARGV, options: { cwd: '
  * CLAUDE.md or a memory asks the whole-file questions of D-63, as it did before the consent.
  */
 const PARTS_DECLINED: Readonly<Record<string, string>> = { ...INIT_ANSWERS, [CONTENT_QUESTION]: 'No, skip it' }
-
-/** The port of a run that also records every path it was asked to stat, in order. */
-function withStats(run: MemRun): { readonly io: InitIo; readonly stats: string[] } {
-  const stats: string[] = []
-  const io: InitIo = {
-    ...run.io,
-    stat: async path => {
-      stats.push(path)
-
-      return run.io.stat(path)
-    },
-  }
-
-  return { io, stats }
-}
-
-/**
- * The port of a run that also records its questions (as `ask <first line>`, firstLines), log entries and side-pane
- * blocks (as `show <key>`) in one list, in the order they happened.
- */
-function withEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
-  const events: string[] = []
-  const io: InitIo = {
-    ...run.io,
-    ask: async (question, spec) => {
-      events.push(`ask ${question.split('\n')[0] ?? ''}`)
-
-      return run.io.ask(question, spec)
-    },
-    log: text => {
-      events.push(`log ${text}`)
-      run.io.log(text)
-    },
-    show: async block => {
-      events.push(`show ${block.key}`)
-      await run.io.show(block)
-    },
-  }
-
-  return { io, events }
-}
-
-/** The lines of the last side-pane block of this key a run showed; empty when it showed none (D-133). */
-function shownBlock(run: MemRun, key: PaneKey): readonly string[] {
-  return run.shown.filter(block => block.key === key).at(-1)?.lines ?? []
-}
-
-/** Every title and line a run showed in the side pane, in order, to scan for what must never be shown. */
-function paneText(run: MemRun): string[] {
-  return run.shown.flatMap(block => [block.title, ...block.lines])
-}
-
-/** A repo scan that found nothing; `over` changes the fields it names. */
-function repoScan(over: Partial<RepoScan> = {}): RepoScan {
-  return {
-    findings: [],
-    languages: [],
-    codeDirs: [],
-    hasSource: false,
-    cappedFolders: [],
-    isOverallCapped: false,
-    cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
-    warnings: [],
-    ...over,
-  }
-}
 
 describe('initGuard', () => {
   test('a session nobody can be asked in is refused first, before any stat or read', async () => {

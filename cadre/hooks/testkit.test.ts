@@ -12,7 +12,9 @@ import {
   emptySetupScan,
   entry,
   entryAt,
+  firstLines,
   FRAMEWORKS,
+  gitWorld,
   hostWorld,
   INIT_ANSWERS,
   leaks,
@@ -20,12 +22,18 @@ import {
   memHost,
   memIo,
   memWorld,
+  paneText,
+  repoScan,
   SECRET_FIXTURES,
   secretUserSettings,
   secretWorld,
   session,
+  shownBlock,
   skillRef,
   templateRole,
+  USER_DIR_LISTED,
+  withEvents,
+  withStats,
   withWrites,
   ZERO_WIDTH_SPACE,
 } from './testkit'
@@ -494,5 +502,71 @@ describe('testkit host', () => {
       { path: '/repo/a', text: 'second', isWritten: true },
     ])
     expect(twice.files).toEqual({ '/repo/a': 'second' })
+  })
+})
+
+describe('init helpers moved from init.test (D-206)', () => {
+  test('firstLines keeps only the first line of each question asked', () => {
+    expect(firstLines(['Git policy?\nthe context line', 'Roles?', ''])).toEqual(['Git policy?', 'Roles?', ''])
+  })
+
+  test('gitWorld lists /repo/.git and the user folder of USER_DIR_LISTED, and keeps a field over names', () => {
+    expect(USER_DIR_LISTED).toEqual({ '/home/u/.claude': [] })
+    expect(gitWorld().dirs).toEqual({ '/repo/.git': [], '/home/u/.claude': [] })
+    const world = gitWorld({ sessionId: null })
+    expect(world.sessionId).toBeNull()
+    expect(world.dirs).toEqual({ '/repo/.git': [], '/home/u/.claude': [] })
+    expect(world.interactive).toBe(true)
+  })
+
+  test('withStats records every path stat-ed, in order, and answers as the run does', async () => {
+    const run = memIo(memWorld({ files: { '/repo/a.txt': 'abc' } }), [])
+    const { io, stats } = withStats(run)
+    expect(await io.stat('/repo/a.txt')).toEqual({ kind: 'file', size: 3, isLink: false, realPath: '/repo/a.txt' })
+    expect(await io.stat('/repo/none')).toBeNull()
+    expect(stats).toEqual(['/repo/a.txt', '/repo/none'])
+  })
+
+  test('withEvents records asks by first line, log lines and shown block keys in the order they happened', async () => {
+    const run = memIo(memWorld({}), ['yes'])
+    const { io, events } = withEvents(run)
+    io.log('first')
+    expect(await io.ask('Proceed?\nthe context line', SPEC)).toBe('yes')
+    await io.show({ key: 'scan', title: 'Scan', lines: [] })
+    expect(events).toEqual(['log first', 'ask Proceed?', 'show scan'])
+    expect(run.asked).toEqual(['Proceed?\nthe context line'])
+    expect(run.logged).toEqual(['first'])
+    expect(run.shown).toEqual([{ key: 'scan', title: 'Scan', lines: [] }])
+  })
+
+  test('shownBlock gives the lines of the last block a run showed under a key, [] when it showed none', async () => {
+    const run = memIo(memWorld({}), [])
+    await run.io.show({ key: 'scan', title: 'Scan', lines: ['old'] })
+    await run.io.show({ key: 'roles', title: 'Roles', lines: ['pm'] })
+    await run.io.show({ key: 'scan', title: 'Scan', lines: ['new'] })
+    expect(shownBlock(run, 'scan')).toEqual(['new'])
+    expect(shownBlock(run, 'review')).toEqual([])
+  })
+
+  test('paneText flattens every shown block into its title and its lines, in order', async () => {
+    const run = memIo(memWorld({}), [])
+    await run.io.show({ key: 'scan', title: 'Scan', lines: ['a', 'b'] })
+    await run.io.show({ key: 'roles', title: 'Roles', lines: [] })
+    expect(paneText(run)).toEqual(['Scan', 'a', 'b', 'Roles'])
+  })
+
+  test('repoScan is a scan that found nothing, and over changes the fields it names', () => {
+    expect(repoScan()).toEqual({
+      findings: [],
+      languages: [],
+      codeDirs: [],
+      hasSource: false,
+      cappedFolders: [],
+      isOverallCapped: false,
+      cadre: { dir: 'absent', manifest: null, manifestState: 'absent', state: null, stateState: 'absent' },
+      warnings: [],
+    })
+    expect(repoScan({ hasSource: true }).hasSource).toBe(true)
+    expect(repoScan({ hasSource: true }).findings).toEqual([])
   })
 })
