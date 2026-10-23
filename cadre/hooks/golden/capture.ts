@@ -9,9 +9,10 @@ import type { GenerateInput } from '../generate'
 import { sha256Hex } from '../hash'
 import { runInit } from '../init'
 import { MANIFEST_PATH } from '../plan'
+import { runStart } from '../start'
 import { memHost, memIo } from '../testkit'
-import type { HostWorld, MemRun, MemWorld } from '../testkit'
-import type { GoldenApply, GoldenAsk, GoldenBlock, GoldenRun, GoldenWrite } from './types'
+import type { HostWorld, MemHost, MemRun, MemWorld } from '../testkit'
+import type { GoldenApply, GoldenAsk, GoldenBlock, GoldenCommand, GoldenRun, GoldenWrite } from './types'
 import { queuedIo } from './worlds'
 
 /**
@@ -100,4 +101,35 @@ export async function captureFiles(input: GenerateInput): Promise<Readonly<Recor
   )
 
   return Object.fromEntries(hashes)
+}
+
+/**
+ * The golden of a command that ran through the fake host `host` (memHost): the reply split on '\n', every write as its
+ * path, the sha256 of its text and whether the host wrote it, and every host run as its argv joined by one space, then
+ * ` @ ` and its cwd (`-` when it has none), as captureApply encodes them.
+ */
+export async function captureCommand(reply: string, host: MemHost): Promise<GoldenCommand> {
+  const writes = await Promise.all(
+    host.writes.map(
+      async (write): Promise<GoldenWrite> => ({
+        path: write.path,
+        sha256: await sha256Hex(write.text),
+        isWritten: write.isWritten,
+      }),
+    ),
+  )
+  const calls = host.calls.map(call => `${call.argv.join(' ')} @ ${call.options.cwd ?? '-'}`)
+
+  return { reply: reply.split('\n'), writes, calls }
+}
+
+/**
+ * The golden of `/cadre start <role>` with no `--terminal` over `world` through a fake host over `host`, as
+ * start.test.ts runs runStart: a port with no answers, and the reply, writes and host runs of captureCommand.
+ */
+export async function captureStart(world: MemWorld, host: HostWorld, role: string): Promise<GoldenCommand> {
+  const port = memHost(host)
+  const reply = await runStart(memIo(world, {}).io, port.io, { id: role, terminal: 'none' })
+
+  return captureCommand(reply, port)
 }

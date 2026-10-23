@@ -51,3 +51,15 @@ export type GoldenApply = {
   /** The text of the manifest write split on '\n'; empty when the run wrote no manifest. */
   readonly manifest: readonly string[]
 }
+
+/**
+ * One command run through a fake host (regen, start, status, epic): its reply, and every write and host run it asked
+ * the host for, in the encodings of GoldenApply.
+ */
+export type GoldenCommand = {
+  /** The reply split on '\n'. */
+  readonly reply: readonly string[]
+  readonly writes: readonly GoldenWrite[]
+  /** Each host run in call order: its argv joined by one space, then ` @ ` and its cwd, or `-` when it has none. */
+  readonly calls: readonly string[]
+}

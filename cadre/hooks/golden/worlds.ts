@@ -10,13 +10,18 @@ import type {
   Facts,
   FrameworkId,
   GsdFact,
+  HostRun,
   InitFacts,
   InitIo,
+  ManifestEntry,
   RoleSpec,
   ScopeContext,
 } from '../../types'
+import { cadreJsonText, roleJsonText } from '../generate'
 import type { GenerateInput } from '../generate'
+import { sha256Hex } from '../hash'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
+import { stableJson } from '../plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles'
 import { compileScope } from '../scope'
 import {
@@ -26,10 +31,13 @@ import {
   gitWorld,
   INIT_ANSWERS,
   memIo,
+  memWorld,
+  secretUserSettings,
   secretWorld,
+  templateRole,
   USER_DIR_LISTED,
 } from '../testkit'
-import type { MemRun, MemWorld } from '../testkit'
+import type { HostRunRule, MemRun, MemWorld } from '../testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
 export const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
@@ -310,3 +318,104 @@ export const GOLDEN_WORLDS = Object.freeze({
    */
   parts: { world: memoriesWorld(), answers: PARTS_ANSWERS },
 })
+
+/**
+ * Copied byte-identically from start.test.ts (only `export` added where a golden module needs one): the BE role, the
+ * git and claude host rules its runStart specs answer with, repoWorld (`gatherLaunchUser (D-98)`), guardedWorld
+ * (`launch user settings (D-103)`), and appliedWorld with the launcher and manifest fixtures it writes, and withoutFile
+ * (`runStart refusals (LNCH-04, D-107)`).
+ */
+
+/** The BE role of the template. */
+const BE = templateRole('be')
+
+/** The argv that asks git for the absolute common dir of the repo (D-98). */
+const GIT_ARGV = ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir']
+
+/** A fake host rule that answers the git argv with this run; null is a run the host rejected. */
+function gitRule(result: HostRun | null): HostRunRule {
+  return { argv: GIT_ARGV, result }
+}
+
+/** The git run of the fixture repo: git answers /repo/.git, with its line break. */
+export const GIT_OK = gitRule({ exitCode: 0, stdout: '/repo/.git\n', stderr: '' })
+
+/** A git repo at /repo whose .git folder is there; `over` changes the fields it names. */
+export function repoWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({ dirs: { '/repo/.git': [] }, ...over })
+}
+
+/** The command of the secret read guard that the project settings register on Read (D-103). */
+const PROJECT_GUARD = 'node /repo/.claude/hooks/gsd-secret-read-guard.js'
+
+/** Project settings that register the secret read guard on Read. */
+const PROJECT_GUARD_SETTINGS = {
+  hooks: { PreToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: PROJECT_GUARD }] }] },
+}
+
+/** The secret world with the project settings holding the guard too (D-103). */
+export function guardedWorld(): MemWorld {
+  return secretWorld({ settings: { user: secretUserSettings(), project: PROJECT_GUARD_SETTINGS, local: {} } })
+}
+
+/** The text of BE's launcher in the start worlds; runStart reads only its hash, to compare it with the manifest. */
+const LAUNCHER_TEXT = '#!/bin/sh\n# the launcher of role be\nexit 0\n'
+
+/** Where BE's launcher lies in the start worlds. */
+export const LAUNCHER_PATH = '/repo/.cadre/bin/be'
+
+/** Where the manifest lies in the start worlds. */
+const MANIFEST_FILE = '/repo/.cadre/manifest.json'
+
+/** The argv of the version check of the PATH claude (D-107). */
+const CLAUDE_ARGV = ['claude', '--version']
+
+/** A fake host rule that answers `claude --version` with this run; null is a run the host rejected. */
+export function claudeRule(result: HostRun | null): HostRunRule {
+  return { argv: CLAUDE_ARGV, result }
+}
+
+/** `claude --version` of a claude new enough for cadre. */
+export const CLAUDE_OK = claudeRule({ exitCode: 0, stdout: '2.1.304 (Claude Code)\n', stderr: '' })
+
+/** The manifest text that records these entries. */
+function manifestText(files: readonly ManifestEntry[]): string {
+  return stableJson({ schema: 1, cadreVersion: '0.2.0', files })
+}
+
+/** The manifest entry of BE's launcher with the sha256 of LAUNCHER_TEXT. */
+async function launcherEntry(): Promise<ManifestEntry> {
+  return { path: '.cadre/bin/be', sha256: await sha256Hex(LAUNCHER_TEXT), mode: 'exec' }
+}
+
+/**
+ * A git repo at /repo after a plain init of BE (D-102, LNCH-04): the cadre.json of BE alone on the built-in default,
+ * launched at the git root, recording `readUserMcp`, BE's role.json written from `role`, the folder `.cadre/be`, the
+ * launcher and a manifest whose `.cadre/bin/be` entry holds the launcher's sha256.
+ */
+export async function appliedWorld(role: RoleSpec = BE, readUserMcp = false): Promise<MemWorld> {
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+    readUserMcp,
+  })
+
+  return memWorld({
+    dirs: { '/repo/.git': [], '/repo/.cadre/be': [] },
+    files: {
+      '/repo/.cadre/cadre.json': state,
+      '/repo/.cadre/be/role.json': roleJsonText(role),
+      [LAUNCHER_PATH]: LAUNCHER_TEXT,
+      [MANIFEST_FILE]: manifestText([await launcherEntry()]),
+    },
+  })
+}
+
+/** `world` with no file at `path`. */
+export function withoutFile(world: MemWorld, path: string): MemWorld {
+  return { ...world, files: Object.fromEntries(Object.entries(world.files).filter(([key]) => key !== path)) }
+}
