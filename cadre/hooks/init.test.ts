@@ -974,6 +974,19 @@ describe('runInit', () => {
     expect(run.shown[0]?.lines).toEqual(scanSummaryLines(gathered.repo, gathered.setup))
   })
 
+  test('a desktop app connector in the session tools is left out with one line in the scan block (R2)', async () => {
+    const uuid = 'bffcbad4-dacc-4759-8f45-f8c9abe5e705'
+    const tools = [{ name: `mcp__${uuid}__append_values`, description: 'x', mcp: true }]
+    const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.shown[0]?.key).toBe('scan')
+    expect(run.shown[0]?.lines).toContain(
+      'warning: left out 1 desktop app connector (role sessions run in the terminal, where connectors are ' +
+        'claude_ai_* servers)',
+    )
+    expect(JSON.stringify(run.shown)).not.toContain(uuid)
+  })
+
   test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
