@@ -1,11 +1,34 @@
 /**
- * The worlds of the golden suite (D-219), each with the answers its init run is given: test support, not a test
- * itself. The fixture constants and builders below are copied byte-identically from init.test.ts (only `export` added
- * where a golden module needs one), so a golden runs the world its source spec runs. Only the golden modules import it.
+ * The worlds of the golden suite (D-219), each with the answers its init run is given, and the desiredFiles inputs:
+ * test support, not a test itself. The fixture constants and builders below are copied byte-identically from
+ * init.test.ts and generate.test.ts (only `export` added where a golden module needs one), so a golden runs the world
+ * its source spec runs. Only the golden modules import it.
  */
-import type { Facts, GsdFact, InitFacts, InitIo } from '../../types'
+import type {
+  CadreState,
+  CompiledScope,
+  Facts,
+  FrameworkId,
+  GsdFact,
+  InitFacts,
+  InitIo,
+  RoleSpec,
+  ScopeContext,
+} from '../../types'
+import type { GenerateInput } from '../generate'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
-import { EMPTY_FACTS, entry, gitWorld, INIT_ANSWERS, memIo, secretWorld, USER_DIR_LISTED } from '../testkit'
+import { ROLE_TEMPLATE, roleFromTemplate } from '../roles'
+import { compileScope } from '../scope'
+import {
+  EMPTY_FACTS,
+  emptySetupScan,
+  entry,
+  gitWorld,
+  INIT_ANSWERS,
+  memIo,
+  secretWorld,
+  USER_DIR_LISTED,
+} from '../testkit'
 import type { MemRun, MemWorld } from '../testkit'
 
 /** The status file autopilot keeps for session s1 of the fixture user. */
@@ -171,6 +194,68 @@ export function queuedIo(world: MemWorld, answers: Readonly<Record<string, strin
 /** A world where every per-role step asks: two frameworks in use, the secret world's names, GSD hunks to answer. */
 function everyStepWorld(): MemWorld {
   return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
+}
+
+/**
+ * A git repo at /repo whose user-level GSD is proven (PROVEN_FACTS), so INIT_ANSWERS puts PM, Team Lead and Security on
+ * GSD, and whose `.planning/config.json` already holds workflow.text_mode false, so `mode` is the one hunk init asks;
+ * INIT_ANSWERS accepts it, and cadre can run it.
+ */
+export function modeWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const config = { '/repo/.planning/config.json': '{"workflow":{"text_mode":false}}' }
+
+  return gitWorld({ facts: PROVEN_FACTS, files: config, ...over })
+}
+
+/** The six template roles, as init builds them with nothing assigned. */
+export const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
+
+/**
+ * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
+ * context fields it names.
+ */
+function scopeOf(
+  role: RoleSpec,
+  framework: FrameworkId,
+  team: readonly RoleSpec[],
+  over: Partial<ScopeContext> = {},
+): CompiledScope {
+  const ctx: ScopeContext = {
+    framework,
+    setup: emptySetupScan(),
+    codeDirs: [],
+    isAttended: false,
+    mcpRoute: 'merged',
+    launchStart: { kind: 'git-root' },
+    roles: team,
+    ...over,
+  }
+
+  return compileScope(role, ctx)
+}
+
+/** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
+function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
+  return {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework,
+    gitPolicy: 'definitions',
+    roles: team.map(role => role.id),
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  }
+}
+
+/** The input init gives desiredFiles for a team that runs one framework; `over` changes the fields it names. */
+export function inputOf(team: readonly RoleSpec[], framework: FrameworkId, over: Partial<GenerateInput> = {}): GenerateInput {
+  return {
+    roles: team,
+    scopes: new Map(team.map((role): [string, CompiledScope] => [role.id, scopeOf(role, framework, team)])),
+    state: stateOf(team, framework),
+    only: null,
+    ...over,
+  }
 }
 
 /**
