@@ -4,7 +4,7 @@
  * compare that value with their fixture; a scratch run prints it to make the fixture. Only the golden modules import
  * it.
  */
-import type { RawFacts, TerminalChoice } from '../../types'
+import type { HostIo, InitIo, RawFacts, TerminalChoice } from '../../types'
 import { runEpic, runEpicDone } from '../epic'
 import { normalizeFacts } from '../facts'
 import { desiredFiles } from '../generate'
@@ -15,7 +15,7 @@ import { MANIFEST_PATH } from '../plan'
 import { detectText } from '../render'
 import { runStart } from '../start'
 import { runStatus } from '../status'
-import { memHost, memIo } from '../testkit'
+import { memHost, memIo, withEvents } from '../testkit'
 import type { HostWorld, MemHost, MemRun, MemWorld } from '../testkit'
 import type { GoldenApply, GoldenAsk, GoldenBlock, GoldenCommand, GoldenRun, GoldenWrite } from './types'
 import { queuedIo } from './worlds'
@@ -208,4 +208,148 @@ export async function captureEpicDone(
  */
 export function captureDetect(raw: RawFacts, configDir: string | null, root: string, isAdapters: boolean): string[] {
   return detectText(normalizeFacts(raw, configDir, root), isAdapters).split('\n')
+}
+
+/** Each host run in call order as JSON of its argv and its options (cwd, timeoutMs, env, stdin): nothing is lost. */
+export function callsOf(host: MemHost): string[] {
+  return host.calls.map(call => JSON.stringify([call.argv, call.options]))
+}
+
+/**
+ * The host runs of `/cadre epic <key> [title]` over `world` through a fake host over `host`, driven as captureEpic
+ * drives it (a port with no answers): each run as callsOf gives it, so its timeout, env and stdin are pinned too.
+ */
+export async function captureEpicCalls(
+  world: MemWorld,
+  host: HostWorld,
+  options: { readonly key: string; readonly title: string; readonly terminal: Exclude<TerminalChoice, 'none'> },
+): Promise<string[]> {
+  const port = memHost(host)
+  await runEpic(memIo(world, {}).io, port.io, options)
+
+  return callsOf(port)
+}
+
+/**
+ * The host runs of `/cadre epic done <key> [--force]` over `world` through a fake host over `host`, driven as
+ * captureEpicDone drives it (a port with no answers in order): each run as callsOf gives it.
+ */
+export async function captureEpicDoneCalls(
+  world: MemWorld,
+  host: HostWorld,
+  options: { readonly key: string; readonly force: boolean },
+): Promise<string[]> {
+  const port = memHost(host)
+  await runEpicDone(memIo(world, []).io, port.io, options)
+
+  return callsOf(port)
+}
+
+/**
+ * The host runs of `/cadre status <role>` over `world` through a fake host over `host`, driven as captureStatus drives
+ * it (a port with no answers): each run as callsOf gives it.
+ */
+export async function captureStatusCalls(world: MemWorld, host: HostWorld, role: string): Promise<string[]> {
+  const port = memHost(host)
+  await runStatus(memIo(world, {}).io, port.io, { id: role })
+
+  return callsOf(port)
+}
+
+/**
+ * The host runs of `/cadre start <role>` with no `--terminal` over `world` through a fake host over `host`, driven as
+ * captureStart drives it (a port with no answers): each run as callsOf gives it.
+ */
+export async function captureStartCalls(world: MemWorld, host: HostWorld, role: string): Promise<string[]> {
+  const port = memHost(host)
+  await runStart(memIo(world, {}).io, port.io, { id: role, terminal: 'none' })
+
+  return callsOf(port)
+}
+
+/**
+ * The port of `run` that records in one list, in the order they happened, each question, log entry and side-pane block
+ * as withEvents does, and each completion as `prompt <sha256 of ${system}\n---\n${prompt}>` (the form of
+ * MemRun.prompts, so it matches promptHashes) at the place it was asked: its slot is taken before the reply comes.
+ */
+function timelineIo(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
+  const { io, events } = withEvents(run)
+
+  return {
+    io: {
+      ...io,
+      complete: async (prompt, system) => {
+        const slot = events.push('') - 1
+        const reply = await io.complete(prompt, system)
+        events[slot] = `prompt ${await sha256Hex(`${system}\n---\n${prompt}`)}`
+
+        return reply
+      },
+    },
+    events,
+  }
+}
+
+/**
+ * The HostIo of `host` that also records into `events` each write as `write <path> <sha256 of its text> <true|false>`
+ * at the place it was asked (its slot is taken before the host answers), and each run as `run <JSON of its argv and
+ * options>` before it runs. `env` is the host's.
+ */
+function timelineHost(host: MemHost, events: string[]): HostIo {
+  return {
+    write: async (path, text) => {
+      const slot = events.push('') - 1
+      const isWritten = await host.io.write(path, text)
+      events[slot] = `write ${path} ${await sha256Hex(text)} ${isWritten}`
+
+      return isWritten
+    },
+    run: async (argv, options) => {
+      events.push(`run ${JSON.stringify([argv, options])}`)
+
+      return host.io.run(argv, options)
+    },
+    env: name => host.io.env(name),
+  }
+}
+
+/**
+ * The event order of `/cadre init --dry-run` over `world`, each question answered by its longest prefix in `answers`
+ * as captureInit answers it: every question, log entry, side-pane block and prompt, as timelineIo records them.
+ */
+export async function captureTimeline(world: MemWorld, answers: Readonly<Record<string, string>>): Promise<string[]> {
+  const { io, events } = timelineIo(memIo(world, answers))
+  await runInit(io, { dryRun: true })
+
+  return events
+}
+
+/**
+ * The event order of `/cadre init --dry-run` over `world` through queuedIo, as captureQueued drives the review
+ * go-backs: every question, log entry, side-pane block and prompt, as timelineIo records them.
+ */
+export async function captureTimelineQueued(
+  world: MemWorld,
+  answers: Readonly<Record<string, string | readonly (string | null)[]>>,
+): Promise<string[]> {
+  const { io, events } = timelineIo(queuedIo(world, answers))
+  await runInit(io, { dryRun: true })
+
+  return events
+}
+
+/**
+ * The event order of a plain `/cadre init` over `world` through a fake host over `host`, as captureApply drives it:
+ * every question, log entry, side-pane block and prompt as timelineIo records them, with every write and host run
+ * between them as timelineHost records them.
+ */
+export async function captureTimelineApply(
+  world: MemWorld,
+  answers: Readonly<Record<string, string>>,
+  host: HostWorld,
+): Promise<string[]> {
+  const { io, events } = timelineIo(memIo(world, answers))
+  await runInit(io, { dryRun: false, host: timelineHost(memHost(host), events) })
+
+  return events
 }
