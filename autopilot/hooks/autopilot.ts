@@ -1027,7 +1027,9 @@ export type GoalVerdict = { met: boolean; condition: string }
  * The goal evaluator's verdicts from whole transcript lines. The engine writes
  * each as a top-level attachment row (`{"type":"attachment","attachment":
  * {"type":"goal_status","met":…,"condition":…}}`); a verdict anywhere else (a
- * tool input, message text) is not the engine's and is ignored.
+ * tool input, message text) is not the engine's and is ignored. A row with
+ * `"sentinel":true` only marks the goal set (`met:false`) or cleared without a
+ * verdict (`met:true`, e.g. `/goal clear`): it never counts as met.
  */
 export function goalVerdictsFromRows(lines: readonly string[]): GoalVerdict[] {
   const verdicts: GoalVerdict[] = []
@@ -1037,7 +1039,7 @@ export function goalVerdictsFromRows(lines: readonly string[]): GoalVerdict[] {
     const attachment = row.attachment as Record<string, unknown> | null | undefined
     if (!attachment || typeof attachment !== 'object' || attachment.type !== 'goal_status') continue
     if (typeof attachment.met !== 'boolean' || typeof attachment.condition !== 'string') continue
-    verdicts.push({ met: attachment.met, condition: attachment.condition })
+    verdicts.push({ met: attachment.met && attachment.sentinel !== true, condition: attachment.condition })
   }
 
   return verdicts
