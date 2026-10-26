@@ -14,6 +14,7 @@ import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } 
 import { isObject, parseJsonValue } from './core/json'
 import { clean, compareText, reportText } from './core/text'
 import { MAX_READ_BYTES } from './facts'
+import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
 import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
@@ -540,7 +541,7 @@ export async function runStatus(
   const guard = await repoGuard(io, 'status')
   if (guard.kind === 'refuse') return guard.text
   const { locations } = guard
-  const checkout = checkoutOf(await host.run(CHECKOUT_ARGV(locations.root), { timeoutMs: 30_000 }))
+  const checkout = checkoutOf(await host.run(CHECKOUT_ARGV(locations.root), { timeoutMs: GIT_TIMEOUT_MS }))
   const teamRoot = checkout.kind === 'linked' && checkout.main !== null ? checkout.main : locations.root
   const team = await readTeam(io, teamRoot, 'status', id)
   if (team.kind === 'refuse') return team.text
