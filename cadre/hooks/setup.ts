@@ -701,7 +701,10 @@ async function agentNames(
 }
 
 /** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
-export function claudeJsonPathOf(ctx: SetupContext): string | null {
+export function claudeJsonPathOf(ctx: {
+  readonly configDir: string | null
+  readonly home: string | null
+}): string | null {
   if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
 
   return ctx.home === null ? null : `${ctx.home}/.claude.json`
