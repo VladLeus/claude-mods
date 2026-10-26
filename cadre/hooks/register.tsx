@@ -17,7 +17,6 @@ import { utf8Bytes } from './core/text'
 import { runEpic, runEpicDone } from './epic'
 import {
   detectRefusal,
-  displayPath,
   factReadPlan,
   HOME_UNUSABLE_WARNING,
   isFileInsideRoot,
@@ -32,6 +31,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
+import { displayPath } from './paths'
 import {
   answersFromNotes,
   askedHeader,

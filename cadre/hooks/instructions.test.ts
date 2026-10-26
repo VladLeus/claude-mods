@@ -4,7 +4,6 @@ import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } f
 import { contextText } from './ask'
 import { sha256Hex } from './core/hash'
 import { asSentence } from './core/text'
-import { displayPath } from './facts'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -61,6 +60,7 @@ import {
   unreadableWarning,
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartRecord, RegenPromptItem } from './instructions'
+import { displayPath } from './paths'
 import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, templateRole } from './testkit'
 import type { MemWorld } from './testkit'
 

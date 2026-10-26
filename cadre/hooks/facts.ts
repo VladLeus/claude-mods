@@ -15,6 +15,7 @@ import type {
 } from '../types'
 import { fieldKeysOf, isObject } from './core/json'
 import { clean } from './core/text'
+import { displayPath, isSafeConfigDir, MAX_WARNING_CHARS, relativeTo, safeWarnings, trimSlash } from './paths'
 
 /**
  * The most bytes of one file a parser sees. register.tsx applies it after the host's own read cap; a larger file is
@@ -29,8 +30,6 @@ export const MAX_KEY_CHARS = 120
 const MAX_EVENT_CHARS = 60
 /** Code points a version text keeps; longer text is not a version. */
 const MAX_VERSION_CHARS = 40
-/** Code points a host warning keeps, the ellipsis included. */
-const MAX_WARNING_CHARS = 240
 /** At most this many changed names are named per kind; the rest are counted in one more warning. */
 const MAX_HIDDEN_NAME_WARNINGS = 5
 /** Code points a changed name keeps in its warning, once cleaned. */
@@ -136,40 +135,6 @@ export function parseRepoEntries(value: unknown): RepoEntry[] {
   }
 
   return entries
-}
-
-/**
- * Replaces each occurrence of an absolute path with its display form, at path boundaries only: the match may not
- * sit inside a longer path or name (`/repo` is not in `/home/u/repo` or `/repo-other`). A trailing `/` on the path
- * is ignored, and a path too short to be one is left alone, so an empty or root-only value never rewrites the text.
- */
-function maskPath(text: string, needle: string | null, replacement: string): string {
-  if (needle === null) return text
-  const trimmed = needle.replace(/\/+$/, '')
-  if (trimmed.length < 2) return text
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-  return text.replace(new RegExp(`(?<![\\w.~-])${escaped}(?=$|/|[^\\w.-]|\\.(?=$|[^\\w.-]))`, 'g'), () => replacement)
-}
-
-/**
- * A host warning with the repo root, the home folder and a safe CLAUDE_CONFIG_DIR replaced by `<repo>`, `~` and
- * `$CLAUDE_CONFIG_DIR`, then cleaned and capped. A warning that is not a string becomes ''.
- */
-function safeWarning(warning: unknown, raw: RawFacts, configDir: string | null): string {
-  if (typeof warning !== 'string') return ''
-  const withoutRoot = maskPath(warning, raw.root, '<repo>')
-  const withoutHome = maskPath(withoutRoot, raw.home, '~')
-  const withoutConfig = maskPath(withoutHome, safeConfigDir(configDir), '$CLAUDE_CONFIG_DIR')
-
-  return clean(withoutConfig, MAX_WARNING_CHARS)
-}
-
-/** The host's warnings as display-safe text; a warning that cleans to nothing is dropped. */
-function safeWarnings(warnings: unknown, raw: RawFacts, configDir: string | null): string[] {
-  if (!Array.isArray(warnings)) return []
-
-  return warnings.map(warning => safeWarning(warning, raw, configDir)).filter(text => text !== '')
 }
 
 function isSettingsEntry(entry: unknown): entry is RawFacts['settings'][number] {
@@ -305,59 +270,6 @@ export function parseInstalledPlugins(value: unknown, root: string, givenRoot: s
 }
 
 /**
- * Whether a config dir value is usable: an absolute POSIX path with no empty, `.` or `..` segment. Any other value
- * is ignored. Symlinks and case-insensitive paths cannot be resolved here, so the host must realpath the repo root,
- * the home folder and CLAUDE_CONFIG_DIR before calling.
- */
-export function isSafeConfigDir(value: unknown): boolean {
-  if (typeof value !== 'string' || !value.startsWith('/')) return false
-
-  return !value.split('/').slice(1).some(segment => segment === '' || segment === '.' || segment === '..')
-}
-
-/**
- * The part of `path` below `base`: '' when they name the same folder, a string starting with `/` when `path` is
- * inside `base`, and null otherwise. A base that is null, empty or `/` is never a folder that contains a path. It is
- * exported for the instruction read (02-GAPS-B2 N10).
- */
-export function relativeTo(path: string, base: string | null): string | null {
-  const trimmed = (base ?? '').replace(/\/+$/, '')
-  if (trimmed === '') return null
-  if (path === trimmed) return ''
-  if (path.startsWith(`${trimmed}/`)) return path.slice(trimmed.length)
-
-  return null
-}
-
-/**
- * A path as the report may show it: under the repo root as `<repo>/...`, under the home folder as `~/...`, under a
- * safe CLAUDE_CONFIG_DIR as `$CLAUDE_CONFIG_DIR/...` (IN-03), and anything else as the cleaned path. The repo root is
- * checked first, so a repo inside home reads as `<repo>`, and home before the config dir, so `~/x` stays `~/x`.
- */
-export function displayPath(
-  path: string,
-  home: string | null,
-  root: string,
-  configDir: string | null = null,
-): string {
-  const underRoot = relativeTo(path, root)
-  if (underRoot !== null) return clean(`<repo>${underRoot}`)
-  const underHome = relativeTo(path, home)
-  if (underHome !== null) return clean(`~${underHome}`)
-  const underConfig = relativeTo(path, safeConfigDir(configDir))
-  if (underConfig !== null) return clean(`$CLAUDE_CONFIG_DIR${underConfig}`)
-
-  return clean(path)
-}
-
-/** CLAUDE_CONFIG_DIR without trailing slashes when it is safe, else null. */
-function safeConfigDir(configDir: string | null): string | null {
-  const trimmed = trimSlash(configDir)
-
-  return isSafeConfigDir(trimmed) ? trimmed : null
-}
-
-/**
  * Whether a host stat answer shows a regular file whose real path lies inside the root (WR-02). register.tsx reads a
  * repo file only then, so a symlink to a file outside the repo, a device, a FIFO or a folder is never read. A stat
  * without a realPath, or one that lands on the root itself, does not count.
@@ -437,13 +349,6 @@ function gsdTarget(location: GsdLocation, dir: string, manifestPath: string): Gs
     identityPath: `${dir}/bin/lib/package-identity.cjs`,
     manifestPath,
   }
-}
-
-/** A path without its trailing slashes, so a path below it is `${trimmed}/${name}`; '' for `/`, and null stays null. */
-export function trimSlash(path: string): string
-export function trimSlash(path: string | null): string | null
-export function trimSlash(path: string | null): string | null {
-  return path === null ? null : path.replace(/\/+$/, '')
 }
 
 /**

@@ -37,10 +37,11 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { displayPath, isChangedByClean, isDirInsideRoot, MAX_READ_BYTES, relativeTo, trimSlash } from './facts'
+import { isChangedByClean, isDirInsideRoot, MAX_READ_BYTES } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'
+import { displayPath, relativeTo, trimSlash } from './paths'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'
 

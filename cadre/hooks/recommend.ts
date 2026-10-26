@@ -16,8 +16,8 @@ import { isObject, parseJsonValue } from './core/json'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { clean, reportText } from './core/text'
-import { displayPath, isSafeConfigDir, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
+import { displayPath, isSafeConfigDir, trimSlash } from './paths'
 import { standsFor } from './roles'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */

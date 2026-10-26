@@ -13,7 +13,6 @@ import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
 import { clean, compareText, sortedUnique } from './core/text'
 import {
-  displayPath,
   foldEnabledPlugins,
   hiddenNameWarnings,
   hookScriptsMatching,
@@ -25,8 +24,8 @@ import {
   parseEnabledPlugins,
   parseInstalledPlugins,
   SOURCE_ORDER,
-  trimSlash,
 } from './facts'
+import { displayPath, trimSlash } from './paths'
 import { listingState, missingState } from './scan'
 
 /**
