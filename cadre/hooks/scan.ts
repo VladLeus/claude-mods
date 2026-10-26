@@ -16,6 +16,7 @@ import type {
   ScanKind,
 } from '../types'
 import { isRoleId } from './command'
+import { freezeRows } from './core/freeze'
 import {
   clean,
   compareText,
@@ -31,7 +32,6 @@ import {
   trimSlash,
 } from './facts'
 import { isFrameworkId } from './framework'
-import { freezeRows } from './freeze'
 
 /**
  * How long an autopilot status file's `beat` counts as alive: twice the 30 second heartbeat autopilot writes, because

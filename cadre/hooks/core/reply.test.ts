@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { countedNoun, idsOrNone } from './facts'
+import { countedNoun, idsOrNone } from '../facts'
 import { cappedErrors, MAX_REPLY_ERRORS, REPLY_ERRORS_INTRO, unfenced, withReplyErrors } from './reply'
 
 describe('reply helpers (S7)', () => {

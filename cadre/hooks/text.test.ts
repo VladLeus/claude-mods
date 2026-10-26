@@ -89,6 +89,7 @@ import {
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
+import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import {
   EPIC_BRANCH_PREFIX,
   EPIC_CANCELLED,
@@ -387,7 +388,6 @@ import {
   lineDiff,
   STATUS_LABEL,
 } from './render'
-import { cappedErrors, REPLY_ERRORS_INTRO } from './reply'
 import {
   chainLines,
   CUSTOM_PURPOSE,

@@ -1,6 +1,6 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
 import { isRoleId } from './command'
-import { freezeRows } from './freeze'
+import { freezeRows } from './core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './kickoff'
 
 /**

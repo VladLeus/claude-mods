@@ -22,8 +22,8 @@ import {
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from './assign'
+import { freezeRows } from './core/freeze'
 import { compareText, sortedUnique } from './facts'
-import { freezeRows } from './freeze'
 import { PRIVATE_INSTRUCTIONS_LINK } from './plan'
 import { cardList, reportText, shown } from './render'
 import { chainLines, standsFor } from './roles'

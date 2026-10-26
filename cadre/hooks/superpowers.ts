@@ -8,7 +8,7 @@ import type {
   PluginVersion,
   RepoEntry,
 } from '../types'
-import { freezeRows } from './freeze'
+import { freezeRows } from './core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
 
 /**

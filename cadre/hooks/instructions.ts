@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import { ASK_HEADERS, countedChip } from './ask'
 import { sha256Hex } from './core/hash'
+import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import {
   asSentence,
   clean,
@@ -42,7 +43,6 @@ import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'
 import { shown } from './render'
-import { cappedErrors, unfenced, withReplyErrors } from './reply'
 import { MAX_HEADING_CHARS } from './roles'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'
