@@ -54,6 +54,7 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
+import { TOP_OF_FILE } from './records'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 
 /** Every line break of a text. */
@@ -182,12 +183,6 @@ export function instructionsEntry(scan: InstructionScan, topics: readonly Instru
 /** Why init cancels when a question of the instruction hand-out is dismissed or not answered (A1, D-45). */
 export const HANDOUT_DISMISSED_REASON =
   'A question on which roles get instruction parts was dismissed or not answered.'
-
-/**
- * How a part with no heading is named: the text before the first heading of its file (G-02-1f); the built role file's
- * markers name it the same way (generate.ts).
- */
-export const TOP_OF_FILE = '(top of file)'
 
 /**
  * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, then its heading

@@ -19,7 +19,6 @@ import {
   HUMAN_FALLBACK,
   isAutopilotDuration,
   isModelName,
-  isRecordedPartFile,
   MAX_DESCRIPTION_CHARS,
   MAX_PROPOSAL_ERRORS,
   MAX_PURPOSE_CHARS,
@@ -1647,14 +1646,5 @@ describe('safety net: standIn (A8)', () => {
     expect(standIn('tl', [{ id: 'lead', basedOn: 'tl' }, 'tl'])).toBe('tl')
     expect(standIn('tl', ['pm', { id: 'lead', basedOn: 'tl' }, { id: 'arch', basedOn: 'tl' }])).toBe('lead')
     expect(standIn('security', ['pm', { id: 'lead', basedOn: 'tl' }])).toBe(null)
-  })
-})
-
-describe('safety net: isRecordedPartFile (A8)', () => {
-  test('isRecordedPartFile: a clean .md path below the root is taken; any other path is not', () => {
-    expect(['CLAUDE.md', 'docs/guide.md', '.claude/rules/x.md'].map(isRecordedPartFile)).toEqual([true, true, true])
-    const refused = ['/repo/CLAUDE.md', '../CLAUDE.md', 'docs/./a.md', 'a//b.md', '.GIT/x.md', 'notes.txt', 'a.MD']
-    expect(refused.map(isRecordedPartFile)).toEqual(refused.map(() => false))
-    expect(isRecordedPartFile(`a${String.fromCodePoint(0x202e)}.md`)).toBe(false)
   })
 })

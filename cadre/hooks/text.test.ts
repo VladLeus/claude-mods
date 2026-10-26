@@ -329,7 +329,6 @@ import {
   REGEN_RECOMMEND_SYSTEM,
   repoImportWarning,
   RULES_UNLISTED_WARNING,
-  TOP_OF_FILE,
   topicContextLine,
   topicHeader,
   topicItems,
@@ -377,6 +376,7 @@ import {
   TOOL_SCRIPTS,
   UNKNOWN_CONFIG_TEXT,
 } from './recommend'
+import { TOP_OF_FILE } from './records'
 import {
   adaptersReportLines,
   choiceLine,

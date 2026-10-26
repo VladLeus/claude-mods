@@ -41,7 +41,7 @@ import { sha256Hex } from './core/hash'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { isSha256Hex } from './core/names'
 import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
-import { isChangedByClean, MAX_READ_BYTES } from './facts'
+import { MAX_READ_BYTES } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
 import { editWriteRules } from './launch'
 import {
@@ -55,9 +55,9 @@ import {
 import { MANIFEST_PATH } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
+import { recordedParts, recordsOf } from './records'
 import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'
-import { partRecordOf } from './roles'
 import { missingState } from './scan'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
@@ -214,11 +214,6 @@ export function privateClaudeMdText(id: string, repo: string, parts: readonly In
   return `${header}${partsBody(parts)}`
 }
 
-/** Part records as a hand-out record holds them: file, heading and hash, in the order given. */
-function recordsOf(parts: readonly InstructionPartRecord[]): InstructionPartRecord[] {
-  return parts.map(({ file, heading, hash }) => ({ file, heading, hash }))
-}
-
 /**
  * The text of a role's hand-out record (G-02-1f Storage split, D-140 q2-a), as stableJson writes it: schema 1, each
  * global part the role was given by file, heading and hash, in read order, each memory it was given by file, folder,
@@ -266,18 +261,6 @@ export type InstructionsRecord = {
   readonly parts: readonly InstructionPartRecord[]
   readonly partsNotGiven: readonly InstructionPartRecord[]
   readonly memories: readonly RecordedMemory[]
-}
-
-/** Whether a recorded global part names its file as text regen can map back to a path: not empty, and clean. */
-function isRecordedGlobalFile(file: string): boolean {
-  return file !== '' && !isChangedByClean(file, Number.POSITIVE_INFINITY)
-}
-
-/** A list of global part records partRecordOf takes; null when the value is not such a list. */
-function recordedParts(value: unknown): InstructionPartRecord[] | null {
-  if (!Array.isArray(value)) return null
-
-  return allOrNull(value, item => partRecordOf(item, isRecordedGlobalFile))
 }
 
 /** A recorded memory: a text file, folder and summary and a lowercase hex SHA-256; null for anything else. */

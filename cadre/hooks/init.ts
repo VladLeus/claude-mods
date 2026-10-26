@@ -199,7 +199,6 @@ import {
   REGEN_RECOMMEND_SYSTEM,
   regenRecommendPrompt,
   repoInstructionNames,
-  TOP_OF_FILE,
   topicItems,
   TOPICS_SYSTEM,
   topicsPrompt,
@@ -237,12 +236,12 @@ import {
   resolveToolCommand,
 } from './recommend'
 import type { HunkCandidate } from './recommend'
+import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
 import {
   applyAdjust,
   EFFORTS,
   isAutopilotDuration,
-  isRecordedPartFile,
   MODEL_ALIASES,
   parseAdjust,
   parseProposal,
@@ -2652,11 +2651,6 @@ function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly 
       return [roleId, scan.parts.filter(part => part.source === 'repo' && partIds.has(part.id))]
     }),
   )
-}
-
-/** A part as a role's records name it (G-02-1f Regen): its file, heading and hash, nothing of its text. */
-function partRecord(part: Pick<InstructionPart, 'file' | 'heading' | 'hash'>): InstructionPartRecord {
-  return { file: part.file, heading: part.heading, hash: part.hash }
 }
 
 /**
