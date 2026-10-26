@@ -1,9 +1,10 @@
 /**
  * The steps of a render as the host runs them, a layer 1 module: the kinds of step, the absolute argv of each with no
- * shell (the `/bin/chmod 700` of a private folder level included), and the one way to run a step through the host. It
- * imports only the types, so /cadre start and init both run their steps here, and init no longer imports start for it.
+ * shell (the `/bin/chmod 700` of a private folder level included), the one way to run a step through the host, and
+ * the one check of a host run that failed. It imports only the types, so /cadre start, init and epic use it with no
+ * cycle, and init no longer imports start for it.
  */
-import type { HostIo } from '../../types'
+import type { HostIo, HostRun } from '../../types'
 
 /**
  * One step of a render, in the order /cadre start runs it; every path is absolute:
@@ -57,4 +58,12 @@ export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolea
   const run = await host.run(argv, { timeoutMs: RENDER_STEP_TIMEOUT_MS })
 
   return run !== null && run.exitCode === 0
+}
+
+/**
+ * Whether a host run failed: the host rejected it (null) or it exited non-zero. A site that reads the run after the
+ * check keeps the inline check, which narrows the run for TypeScript; this boolean does not (ASKED #56).
+ */
+export function hasRunFailed(run: HostRun | null): boolean {
+  return run === null || run.exitCode !== 0
 }

@@ -171,7 +171,7 @@ import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
-import { isStepDone, privateModeArgv } from './host/steps'
+import { hasRunFailed, isStepDone, privateModeArgv } from './host/steps'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -2914,7 +2914,7 @@ async function isPrivateFolderMade(host: HostIo, folder: string, files: readonly
   if (!(await isStepDone(host, { kind: 'mkdir', path: deepest }))) return false
   for (const level of levels) {
     const run = await host.run(privateModeArgv(level), { timeoutMs: CHMOD_TIMEOUT_MS })
-    if (run === null || run.exitCode !== 0) return false
+    if (hasRunFailed(run)) return false
   }
 
   return true
@@ -3884,7 +3884,7 @@ export async function applyConfirmed(
   const failures: HunkRun[] = []
   for (const run of hunkRuns(draft.hunks, gathered.setup, gsd)) {
     const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
-    if (result === null || result.exitCode !== 0) failures.push(run)
+    if (hasRunFailed(result)) failures.push(run)
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
   const installs =

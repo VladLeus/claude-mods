@@ -28,6 +28,7 @@ import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
+import { hasRunFailed } from './host/steps'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
@@ -1018,7 +1019,7 @@ async function mirrorSteps(
   if (!(await host.write(file, excludesText(global.text, hidden)))) return excludesFailed
   for (const argv of [WORKTREE_CONFIG_ARGV(root), EXCLUDES_CONFIG_ARGV(worktree, file)]) {
     const configured = await host.run(argv, { timeoutMs: GIT_TIMEOUT_MS })
-    if (configured === null || configured.exitCode !== 0) return excludesFailed
+    if (hasRunFailed(configured)) return excludesFailed
   }
 
   const ran: EpicStep[] = []
@@ -1026,7 +1027,7 @@ async function mirrorSteps(
     ran.filter(step => step.kind === kind).map(step => step.path.slice(worktree.length + 1))
   for (const step of plan.steps) {
     const done = await host.run(epicStepArgv(step), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
-    if (done === null || done.exitCode !== 0) {
+    if (hasRunFailed(done)) {
       const failure = epicStepFailedReply(step.path.slice(worktree.length + 1))
 
       return { failure, links: made('link'), copies: made('copy'), warnings }
@@ -1192,7 +1193,7 @@ type OpenedRole = { readonly line: string; readonly command: string | null; read
 async function openedRole(host: HostIo, plan: TerminalPlan, command: string): Promise<OpenedRole> {
   if (plan.kind === 'refuse') return { line: command, command, refusal: plan.text }
   const opened = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })
-  if (opened === null || opened.exitCode !== 0) return { line: command, command, refusal: null }
+  if (hasRunFailed(opened)) return { line: command, command, refusal: null }
 
   return { line: `opened in a new ${plan.name}`, command: null, refusal: null }
 }
@@ -1497,7 +1498,7 @@ export async function runEpic(
   const headCommit = commit !== null && commit.exitCode === 0 ? commit.stdout.trim() : ''
   const base = headBranch === '' ? headCommit : headBranch
   const added = await host.run(worktreeAddArgv(root, path, branch, isNew), { timeoutMs: GIT_ADD_TIMEOUT_MS })
-  if (added === null || added.exitCode !== 0) return epicAddFailedReply(branch, isNew)
+  if (hasRunFailed(added)) return epicAddFailedReply(branch, isNew)
 
   const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
   const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''
@@ -1910,7 +1911,7 @@ async function lockRefusal(host: HostIo, root: string, worktree: DoneWorktree): 
   if (ps === null || (ps.exitCode !== 0 && ps.exitCode !== 1)) return epicLockUnknownReply(pid)
   if (ps.exitCode === 0) return epicLockLiveReply(pid)
   const unlocked = await host.run(UNLOCK_ARGV(root, worktree.path), { timeoutMs: GIT_TIMEOUT_MS })
-  if (unlocked === null || unlocked.exitCode !== 0) return epicUnlockFailedReply(pid)
+  if (hasRunFailed(unlocked)) return epicUnlockFailedReply(pid)
 
   return null
 }
@@ -1978,7 +1979,7 @@ export async function runEpicDone(
     await host.run(linkRemoveArgv(target), { timeoutMs: MIRROR_STEP_TIMEOUT_MS })
   }
   const removed = await host.run(REMOVE_ARGV(main.root, path, options.force), { timeoutMs: REMOVE_TIMEOUT_MS })
-  if (removed === null || removed.exitCode !== 0) return epicRemoveFailedReply(key)
+  if (hasRunFailed(removed)) return epicRemoveFailedReply(key)
 
   return epicRemovedText(key, path, branch)
 }
