@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import { ASK_HEADERS, countedChip } from './ask'
 import { sha256Hex } from './core/hash'
+import { isObject, parseJsonValue } from './core/json'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import {
   asSentence,
@@ -32,16 +33,7 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import {
-  displayPath,
-  isChangedByClean,
-  isDirInsideRoot,
-  isObject,
-  MAX_READ_BYTES,
-  parseJsonValue,
-  relativeTo,
-  trimSlash,
-} from './facts'
+import { displayPath, isChangedByClean, isDirInsideRoot, MAX_READ_BYTES, relativeTo, trimSlash } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'

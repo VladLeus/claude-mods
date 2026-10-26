@@ -86,18 +86,11 @@ import type {
 } from './apply'
 import { withContext } from './ask'
 import { sha256Hex } from './core/hash'
+import { stableJson } from './core/json'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
-import {
-  gitignoreLines,
-  isSafeOpPath,
-  MANIFEST_PATH,
-  mergeIgnoreBlock,
-  planReadPaths,
-  planWithManifest,
-  stableJson,
-} from './plan'
+import { gitignoreLines, isSafeOpPath, MANIFEST_PATH, mergeIgnoreBlock, planReadPaths, planWithManifest } from './plan'
 import type { PlanInput, PlannedFiles } from './plan'
 import { isUnmetHunk } from './recommend'
 import type { GsdToolContext } from './recommend'

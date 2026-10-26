@@ -13,6 +13,7 @@ import type {
   PortRead,
 } from '../types'
 import { sha256Hex } from './core/hash'
+import { stableJson } from './core/json'
 import { compareText } from './core/text'
 import {
   buildPlan,
@@ -35,7 +36,6 @@ import {
   RUNTIME_RENDERED,
   RUNTIME_STAMP_FILE,
   SECURITY_REPORTS_LINE,
-  stableJson,
 } from './plan'
 import type { PlanInput } from './plan'
 import { parseManifest } from './scan'
@@ -179,50 +179,6 @@ describe('classifyFile', () => {
     expect(classifyFile('new', null, UNKNOWN)).toBe('conflict')
     expect(classifyFile('new', 'old', UNKNOWN)).toBe('conflict')
     expect(classifyFile('new', 'new', UNKNOWN)).toBe('conflict')
-  })
-})
-
-describe('stableJson', () => {
-  test('sorts the keys at every depth, keeps arrays in order and ends with a newline', () => {
-    const value = { b: 1, a: { d: [2, { z: 1, y: 0 }], c: null } }
-
-    expect(stableJson(value)).toBe(
-      '{\n  "a": {\n    "c": null,\n    "d": [\n      2,\n      {\n        "y": 0,\n        "z": 1\n      }\n' +
-        '    ]\n  },\n  "b": 1\n}\n',
-    )
-  })
-
-  test('gives the same text whatever order the keys were added in', () => {
-    const first = { schema: 1, files: [{ path: 'a', mode: 'file' }], cadreVersion: VERSION }
-    const second = { cadreVersion: VERSION, files: [{ mode: 'file', path: 'a' }], schema: 1 }
-
-    expect(stableJson(first)).toBe(stableJson(second))
-  })
-
-  test('orders keys by code unit, not by locale: capitals first', () => {
-    const keys = Object.keys(JSON.parse(stableJson({ b: 1, B: 2, a: 3, A: 4 })))
-
-    expect(keys).toEqual(['A', 'B', 'a', 'b'])
-  })
-
-  test('keeps an own key named __proto__ as a key', () => {
-    const value = JSON.parse('{"a": 2, "__proto__": 1}')
-
-    expect(stableJson(value)).toBe('{\n  "__proto__": 1,\n  "a": 2\n}\n')
-  })
-
-  test('writes a value that is not an object, and the empty containers, with one trailing newline', () => {
-    expect(stableJson('a')).toBe('"a"\n')
-    expect(stableJson(null)).toBe('null\n')
-    expect(stableJson([])).toBe('[]\n')
-    expect(stableJson({})).toBe('{}\n')
-  })
-
-  test('does not change the value it is given', () => {
-    const value = Object.freeze({ b: Object.freeze([1]), a: 1 })
-
-    expect(stableJson(value)).toBe('{\n  "a": 1,\n  "b": [\n    1\n  ]\n}\n')
-    expect(Object.keys(value)).toEqual(['b', 'a'])
   })
 })
 

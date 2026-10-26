@@ -41,16 +41,9 @@ import {
 } from './apply'
 import type { RecordedMemory } from './apply'
 import { sha256Hex } from './core/hash'
+import { isObject, parseJsonValue, stableJson } from './core/json'
 import { clean, compareText, reportText, shown, sortedUnique } from './core/text'
-import {
-  displayPath,
-  isDirInsideRoot,
-  isObject,
-  MAX_READ_BYTES,
-  parseJsonValue,
-  SOURCE_ORDER,
-  trimSlash,
-} from './facts'
+import { displayPath, isDirInsideRoot, MAX_READ_BYTES, SOURCE_ORDER, trimSlash } from './facts'
 import { desiredFiles, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
@@ -73,7 +66,6 @@ import {
   PROBE_EXPECTATIONS_FILE,
   RUNTIME_KICKOFF_FILE,
   RUNTIME_STAMP_FILE,
-  stableJson,
 } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'

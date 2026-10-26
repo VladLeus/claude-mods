@@ -14,8 +14,8 @@ import type {
   SetupScan,
 } from '../types'
 import { BUILTIN_ADAPTER } from './builtin'
+import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
-import { isObject } from './facts'
 import {
   asciiLine,
   builtClaudeMdPath,
@@ -44,7 +44,7 @@ import {
 } from './generate'
 import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
-import { buildPlan, isSafeOpPath, stableJson } from './plan'
+import { buildPlan, isSafeOpPath } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { parseCadreState } from './scan'
 import { compileScope, infraViolations, scopeCardLines } from './scope'

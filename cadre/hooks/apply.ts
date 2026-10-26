@@ -38,21 +38,12 @@ import { ADAPTERS } from './adapters'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { sha256Hex } from './core/hash'
+import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
-import {
-  allOrNull,
-  displayPath,
-  isChangedByClean,
-  isDirInsideRoot,
-  isFileInsideRoot,
-  isObject,
-  MAX_READ_BYTES,
-  parseJsonValue,
-  trimSlash,
-} from './facts'
+import { displayPath, isChangedByClean, isDirInsideRoot, isFileInsideRoot, MAX_READ_BYTES, trimSlash } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
 import { editWriteRules, INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
-import { MANIFEST_PATH, stableJson } from './plan'
+import { MANIFEST_PATH } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
 import { diffLines, lineDiff } from './render'

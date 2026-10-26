@@ -13,6 +13,7 @@ import type {
   RepoEntry,
   SettingsSource,
 } from '../types'
+import { fieldKeysOf, isObject } from './core/json'
 import { clean } from './core/text'
 
 /**
@@ -111,45 +112,6 @@ export function hiddenNameWarnings(names: readonly string[], kind: string, maxCh
   if (rest === 0) return named
 
   return [...named, `ignored ${rest} more ${kind} names that have hidden characters or are too long`]
-}
-
-/** A plain object: not null and not an array. */
-export function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** The parsed JSON of a text, boxed so that a JSON `null` differs from text that is not JSON (which gives null). */
-export function parseJsonValue(text: string): { readonly value: unknown } | null {
-  try {
-    return { value: JSON.parse(text) }
-  } catch {
-    return null
-  }
-}
-
-/**
- * Each value parsed, or null when any value does not parse (02-GAPS-B3 S6): the all-or-nothing list check of the
- * records.
- */
-export function allOrNull<T>(values: readonly unknown[], parse: (value: unknown) => T | null): T[] | null {
-  const parsed: T[] = []
-  for (const value of values) {
-    const item = parse(value)
-    if (item === null) return null
-    parsed.push(item)
-  }
-
-  return parsed
-}
-
-/** The own key names of a plain object; [] for anything else. Only the names are read, never the values. */
-export function keysOf(value: unknown): string[] {
-  return isObject(value) ? Object.keys(value) : []
-}
-
-/** The own key names of the plain object under `field`, such as `enabledPlugins`; [] when either is not one. */
-export function fieldKeysOf(value: unknown, field: string): string[] {
-  return isObject(value) ? keysOf(value[field]) : []
 }
 
 function isEntryKind(value: unknown): value is EntryKind {

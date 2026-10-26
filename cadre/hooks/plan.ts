@@ -11,8 +11,8 @@ import type {
   ReadState,
 } from '../types'
 import { sha256Hex } from './core/hash'
+import { stableJson } from './core/json'
 import { compareText, pad, reportText, sortedUnique } from './core/text'
-import { isObject } from './facts'
 import { isSafeRelativePath } from './scan'
 
 /**
@@ -26,27 +26,6 @@ const KIND_WIDTH = 10
 
 /** The indent of a line that belongs to the row above it, so the text lines up under the path. */
 const DETAIL_INDENT = ' '.repeat(2 + KIND_WIDTH)
-
-/** The value with the keys of every object sorted by code unit; arrays keep their order. */
-function sortedKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortedKeys)
-  if (!isObject(value)) return value
-  const pairs = Object.keys(value)
-    .sort(compareText)
-    .map((key): [string, unknown] => [key, sortedKeys(value[key])])
-
-  return Object.fromEntries(pairs)
-}
-
-/**
- * A value as stable JSON: the keys of every object sorted by code unit, arrays in their order, two-space indent and one
- * trailing newline. The same value always gives the same text, so a re-run hashes a generated file the same way
- * (PLAN-04). A key that is a whole number, such as "10", comes first and in numeric order, as JavaScript orders it,
- * which is also the same on every run.
- */
-export function stableJson(value: unknown): string {
-  return `${JSON.stringify(sortedKeys(value), null, 2)}\n`
-}
 
 /** A file on disk as classifyFile sees it: not there, unreadable, or there with the SHA-256 of its text. */
 type DiskHash =

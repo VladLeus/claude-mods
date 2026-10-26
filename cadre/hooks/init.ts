@@ -138,6 +138,7 @@ import {
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import { sha256Hex } from './core/hash'
+import { isObject } from './core/json'
 import {
   asSentence,
   cardList,
@@ -157,7 +158,6 @@ import {
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
   isDirInsideRoot,
-  isObject,
   MAX_READ_BYTES,
   relativeTo,
   trimSlash,

@@ -1,8 +1,8 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { freezeRows } from './core/freeze'
+import { isObject, parseJsonValue } from './core/json'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, sortedUnique } from './core/text'
-import { isObject, parseJsonValue } from './facts'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**

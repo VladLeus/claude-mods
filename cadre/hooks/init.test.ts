@@ -82,8 +82,9 @@ import {
   SECURITY_PLUGINS,
 } from './assign'
 import { sha256Hex } from './core/hash'
+import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import {
   cadreJsonText,
   desiredFiles,
@@ -272,7 +273,7 @@ import {
 } from './instructions'
 import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
-import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan, stableJson } from './plan'
+import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan } from './plan'
 import {
   attendedNote,
   missingSecurityPlugins,

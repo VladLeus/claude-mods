@@ -11,8 +11,8 @@ import type {
   ShownBlock,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
+import { isObject } from './core/json'
 import { countedNoun, pad, reportText } from './core/text'
-import { isObject } from './facts'
 import { chooseFramework } from './framework'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */

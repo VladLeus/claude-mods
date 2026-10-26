@@ -24,6 +24,7 @@ import type {
   ScopeContext,
 } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import {
   EPIC_RECORD_FILE,
@@ -40,7 +41,6 @@ import type { GenerateInput } from '../generate'
 import { gatherScans, scopesFor } from '../init'
 import type { Gathered } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
-import { stableJson } from '../plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles'
 import { CHECKOUT_ARGV } from '../scan'
 import { compileScope } from '../scope'

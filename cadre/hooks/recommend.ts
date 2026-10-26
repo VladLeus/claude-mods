@@ -12,8 +12,9 @@ import type {
   ToolCommand,
 } from '../types'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './assign'
+import { isObject, parseJsonValue } from './core/json'
 import { clean, reportText } from './core/text'
-import { displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
+import { displayPath, isSafeConfigDir, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
 import { standsFor } from './roles'
 

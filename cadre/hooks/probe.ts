@@ -5,7 +5,7 @@
  * compiled scope, the value the scope card comes from (D-80), and states the same rules in probeVerdicts for the specs.
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../types'
-import { isObject, parseJsonValue } from './facts'
+import { isObject, parseJsonValue } from './core/json'
 import { asciiLine } from './generate'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */

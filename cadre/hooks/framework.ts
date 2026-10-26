@@ -10,8 +10,8 @@ import type {
   RepoEntry,
   UnsupportedMarker,
 } from '../types'
+import { isObject } from './core/json'
 import { idLabel } from './core/text'
-import { isObject } from './facts'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this

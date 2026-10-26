@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Facts, GsdReadTarget, PluginVersion, RawFacts, RawGsdCandidate } from '../types'
 import {
-  allOrNull,
   detectRefusal,
   displayPath,
   factReadPlan,
@@ -17,7 +16,6 @@ import {
   isChangedByClean,
   isGsdIdentitySource,
   isSafeConfigDir,
-  keysOf,
   normalizeFacts,
   parseEnabledPlugins,
   parseGsdManifest,
@@ -1193,24 +1191,6 @@ describe('isFileInsideRoot (WR-02)', () => {
   })
 })
 
-describe('allOrNull (02-GAPS-B3 S6)', () => {
-  test('gives each value parsed, in order, or null when any one does not parse', () => {
-    const isNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null)
-    const calls: unknown[] = []
-    const counted = (value: unknown): number | null => {
-      calls.push(value)
-
-      return isNumber(value)
-    }
-
-    expect(allOrNull([1, 2], value => value)).toEqual([1, 2])
-    expect(allOrNull([1, 'x'], isNumber)).toBeNull()
-    expect(allOrNull([], isNumber)).toEqual([])
-    expect(allOrNull(['x', 1, 2], counted)).toBeNull()
-    expect(calls).toEqual(['x'])
-  })
-})
-
 describe('safety net: trimSlash (A8)', () => {
   test('trimSlash drops every trailing slash, gives an empty string for the root and keeps null', () => {
     const trimmed = [trimSlash('/repo/'), trimSlash('/repo//'), trimSlash('/repo'), trimSlash('/'), trimSlash(null)]
@@ -1223,13 +1203,6 @@ describe('safety net: relativeTo (A8)', () => {
     expect([relativeTo('/repo', '/repo/'), relativeTo('/repo/a/b.md', '/repo')]).toEqual(['', '/a/b.md'])
     expect(relativeTo('/repository/a', '/repo')).toBe(null)
     expect([relativeTo('/a', null), relativeTo('/a', ''), relativeTo('/a', '/')]).toEqual([null, null, null])
-  })
-})
-
-describe('safety net: keysOf (A8)', () => {
-  test('keysOf: the own key names of a plain object, never its values; [] for anything else', () => {
-    expect(keysOf({ b: 1, a: { c: 2 } })).toEqual(['b', 'a'])
-    expect([keysOf(['a']), keysOf(null), keysOf('ab')]).toEqual([[], [], []])
   })
 })
 

@@ -4,8 +4,8 @@ import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, PaneKey, Rep
 import { ADAPTERS, detectAll } from './adapters'
 import { ASK_HEADERS, countedChip, PANE_TITLES } from './ask'
 import { BUILTIN_ADAPTER } from './builtin'
+import { isObject } from './core/json'
 import { pad, reportText } from './core/text'
-import { isObject } from './facts'
 import { GSD_GATES } from './gsd'
 import {
   adaptersReportLines,

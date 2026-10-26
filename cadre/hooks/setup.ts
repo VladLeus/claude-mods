@@ -9,23 +9,20 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
+import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { clean, compareText, sortedUnique } from './core/text'
 import {
   displayPath,
-  fieldKeysOf,
   foldEnabledPlugins,
   hiddenNameWarnings,
   hookScriptsMatching,
   isChangedByClean,
   isDirInsideRoot,
   isFileInsideRoot,
-  isObject,
-  keysOf,
   MAX_KEY_CHARS,
   MAX_READ_BYTES,
   parseEnabledPlugins,
   parseInstalledPlugins,
-  parseJsonValue,
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
