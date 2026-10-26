@@ -210,7 +210,6 @@ import {
   cadreStatePath,
   displayPath,
   GITIGNORE_FILE,
-  isDirInsideRoot,
   isRepoFolder,
   isSafeRelativePath,
   launcherPath,
