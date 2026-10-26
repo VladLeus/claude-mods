@@ -15,6 +15,7 @@ import type {
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText } from './core/text'
+import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_RENDERED, RUNTIME_STAMP_FILE } from './paths'
 import {
   buildPlan,
   classifyFile,
@@ -24,17 +25,13 @@ import {
   IGNORE_BEGIN,
   IGNORE_END,
   ignoreLines,
-  INBOX_FILE,
   isSafeOpPath,
   MANIFEST_PATH,
   mergeIgnoreBlock,
   planReadPaths,
   planSummary,
   planWithManifest,
-  PROBE_EXPECTATIONS_FILE,
   renderPlan,
-  RUNTIME_RENDERED,
-  RUNTIME_STAMP_FILE,
   SECURITY_REPORTS_LINE,
 } from './plan'
 import type { PlanInput } from './plan'

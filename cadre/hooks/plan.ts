@@ -13,7 +13,7 @@ import type {
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText, pad, reportText, sortedUnique } from './core/text'
-import { isSafeRelativePath } from './scan'
+import { isSafeRelativePath, RUNTIME_RENDERED } from './paths'
 
 /**
  * The repo-relative path of the manifest, which records every file cadre generated with its hash. Re-runs, regen and a
@@ -57,50 +57,6 @@ export const IGNORE_BEGIN = '# >>> cadre'
 
 /** The end marker of the cadre block in the root `.gitignore`; an on-disk contract like IGNORE_BEGIN (D-64). */
 export const IGNORE_END = '# <<< cadre'
-
-/**
- * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`, after it removed the old one first. The launcher
- * refuses to start when it is missing, when the role files are newer than it (they changed after the render), or
- * when the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render did
- * not finish; so a half-written render never starts a session (D-102).
- */
-export const RUNTIME_STAMP_FILE = 'stamp'
-
-/** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
-export const INBOX_FILE = 'inbox.md'
-
-/**
- * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
- * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.
- */
-export const RUNTIME_KICKOFF_FILE = 'kickoff.txt'
-
-/** What `<launcher> --probe` checks the startup inventory of a role against, rendered by `/cadre start` (D-130). */
-export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
-
-/**
- * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder (D-140
- * q1-b), which the launcher adds with `--add-dir` and /cadre start makes on every render. A link, so it has no trailing
- * slash: git does not match a link with a folder pattern (02-GAPS-B2 M2).
- */
-export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
-
-/**
- * The per-user files and folders /cadre start renders into `.cadre/<id>/.runtime/` at launch: the final settings, the
- * MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
- * inbox and the stamp written last (D-66, D-84, D-102, D-114, D-130, 02-GAPS-B2 M2). The `all` git policy ignores
- * exactly these.
- */
-export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
-  'settings.json',
-  'mcp.json',
-  'overlay/',
-  'instructions/',
-  PRIVATE_INSTRUCTIONS_LINK,
-  PROBE_EXPECTATIONS_FILE,
-  INBOX_FILE,
-  RUNTIME_STAMP_FILE,
-])
 
 /** The scratch copies a conflict plans beside a user-edited file are for diffing and never go into git (D-99). */
 const CADRE_NEW_LINE = '.cadre/**/*.cadre-new'

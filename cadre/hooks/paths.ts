@@ -4,7 +4,7 @@
  * than one area uses. It imports only core and the types, so every area above it can import it with no cycle, and no
  * area reaches into another for a path.
  */
-import type { EntryKind, PortEntry, RawFacts } from '../types'
+import type { EntryKind, InitIo, PortEntry, RawFacts } from '../types'
 import { isObject } from './core/json'
 import { clean } from './core/text'
 
@@ -242,4 +242,194 @@ export function claudeJsonPathOf(ctx: {
   if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
 
   return ctx.home === null ? null : `${ctx.home}/.claude.json`
+}
+
+/** One path segment of a repo-relative path: letters, digits, dot, underscore, at sign and dash. */
+const SAFE_SEGMENT = /^[A-Za-z0-9._@-]+$/
+
+/**
+ * Whether a path is a plain repo-relative path: segments of letters, digits, `.`, `_`, `@` and `-`, none of them `.` or
+ * `..`, joined by single slashes, with no leading or trailing slash. Such a path cannot leave the folder it is joined
+ * to, and a shell character, a space or a backslash cannot be in it.
+ */
+export function isSafeRelativePath(path: string): boolean {
+  if (path === '') return false
+
+  return path.split('/').every(segment => segment !== '.' && segment !== '..' && SAFE_SEGMENT.test(segment))
+}
+
+/**
+ * The stamp `/cadre start` writes last into `.cadre/<id>/.runtime/`, after it removed the old one first. The launcher
+ * refuses to start when it is missing, when the role files are newer than it (they changed after the render), or
+ * when the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render did
+ * not finish; so a half-written render never starts a session (D-102).
+ */
+export const RUNTIME_STAMP_FILE = 'stamp'
+
+/** The inbox of a role in `.cadre/<id>/.runtime/`, where other roles append their notes for it (D-114). */
+export const INBOX_FILE = 'inbox.md'
+
+/**
+ * An epic's kickoff of a role in `.cadre/<id>/.runtime/` (D-158): /cadre epic writes it for each role it renders into
+ * the epic worktree, and the launcher starts with it in place of the role's own `.cadre/<id>/kickoff.txt`.
+ */
+export const RUNTIME_KICKOFF_FILE = 'kickoff.txt'
+
+/** What `<launcher> --probe` checks the startup inventory of a role against, rendered by `/cadre start` (D-130). */
+export const PROBE_EXPECTATIONS_FILE = 'probe-expectations.json'
+
+/**
+ * The name of the link in a role's `.runtime` to its private instructions folder in the user's config folder (D-140
+ * q1-b), which the launcher adds with `--add-dir` and /cadre start makes on every render. A link, so it has no trailing
+ * slash: git does not match a link with a folder pattern (02-GAPS-B2 M2).
+ */
+export const PRIVATE_INSTRUCTIONS_LINK = 'private-instructions'
+
+/**
+ * The per-user files and folders /cadre start renders into `.cadre/<id>/.runtime/` at launch: the final settings, the
+ * MCP file, the skill overlay, the linked instructions, the private instructions link, the probe expectations, the
+ * inbox and the stamp written last (D-66, D-84, D-102, D-114, D-130, 02-GAPS-B2 M2). The `all` git policy ignores
+ * exactly these.
+ */
+export const RUNTIME_RENDERED: readonly string[] = Object.freeze([
+  'settings.json',
+  'mcp.json',
+  'overlay/',
+  'instructions/',
+  PRIVATE_INSTRUCTIONS_LINK,
+  PROBE_EXPECTATIONS_FILE,
+  INBOX_FILE,
+  RUNTIME_STAMP_FILE,
+])
+
+/** The repo name used in the memory slug when the common dir gives no folder name to name it after. */
+const FALLBACK_REPO_NAME = 'repo'
+
+/** The name of a git folder inside a checkout, and the end of a bare repo's folder name. */
+const GIT_DIR_NAME = '.git'
+
+/** A character a memory slug may not hold: anything but letters, digits, dot, underscore and dash, per code point. */
+const UNSAFE_SLUG_CHARS = /[^A-Za-z0-9._-]/gu
+
+/** The repo's name from its git common dir, as memorySlug says; empty when the common dir gives none. */
+function repoName(gitCommonDir: string): string {
+  const parts = gitCommonDir.split('/').filter(part => part !== '')
+  const last = parts.at(-1) ?? ''
+  if (last === GIT_DIR_NAME) return parts.at(-2) ?? ''
+  if (last.endsWith(GIT_DIR_NAME)) return last.slice(0, -GIT_DIR_NAME.length)
+
+  return last
+}
+
+/**
+ * The folder name of a repo's role memory (D-91): the repo's name, then `-` and the first 8 hex characters of the hash
+ * of the git common dir, so two repos with the same name do not share memory. When the common dir is a `.git` folder
+ * the name is that of the folder holding it (`/w/repo/.git` is `repo`); otherwise it is the common dir's own name with
+ * one trailing `.git` removed, so a bare repo `/srv/repo.git` is `repo` and a submodule's `/super/.git/modules/sub` is
+ * `sub`. An empty name is `repo`. Every character outside letters, digits, `.`, `_` and `-` becomes `-`, so the slug is
+ * always one safe path segment. A linked worktree has the same common dir as its main checkout, so all roles of all
+ * worktrees of a repo share one memory folder (D-20).
+ */
+export function memorySlug(gitCommonDir: string, hashHex: string): string {
+  const name = repoName(gitCommonDir)
+  const base = name === '' ? FALLBACK_REPO_NAME : name
+
+  return `${base}-${hashHex.slice(0, 8)}`.replace(UNSAFE_SLUG_CHARS, '-')
+}
+
+/**
+ * The absolute memory folder of a role (D-20, D-91): `<userDir>/cadre/<slug>/<id>`, the folder the scope card names.
+ * It follows CLAUDE_CONFIG_DIR as userDir does, so it is `~/.claude/cadre/...` only when that is not set. It is
+ * absolute because the engine ignores a repo-relative `autoMemoryDirectory` (spike S2). The role id is a validated
+ * slug, so it is safe in a path. It needs only the user folder and the git common dir with its hash, so apply names
+ * the folders of the private files from the same facts as /cadre start (G-02-1f, D-140 q2-a).
+ */
+export function roleMemoryDir(
+  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
+  id: string,
+): string {
+  return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
+}
+
+/** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
+export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
+
+/** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
+export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
+
+/**
+ * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
+ * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
+ * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
+ */
+export function privateInstructionsDir(
+  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
+  id: string,
+): string {
+  return `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`
+}
+
+/**
+ * The absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it (02-GAPS-B2
+ * S7: one home; the instruction reader resolves doc links with it too).
+ */
+export function resolveSegments(path: string): string {
+  const kept: string[] = []
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue
+    if (part === '..') kept.pop()
+    else kept.push(part)
+  }
+
+  return `/${kept.join('/')}`
+}
+
+/** The display prefix of a path in the repo. */
+const REPO_PREFIX = '<repo>/'
+
+/** The display prefix of a path in the home folder. */
+const HOME_PREFIX = '~/'
+
+/** The display prefix of a path in a CLAUDE_CONFIG_DIR outside the home folder. */
+const CONFIG_PREFIX = '$CLAUDE_CONFIG_DIR/'
+
+/** A folder and a path below it, joined with one `/`. */
+export function joinedPath(folder: string, rest: string): string {
+  return `${trimSlash(folder)}/${rest}`
+}
+
+/**
+ * The path a display form stands for (displayPath read back): `<repo>/`, `~/` and `$CLAUDE_CONFIG_DIR/` under their
+ * folders; any other form is already the path. It names a chain file of the read, and regen the file of a recorded
+ * global part (G-02-1f Regen).
+ */
+export function pathFromDisplay(
+  shown: string,
+  sources: { readonly root: string; readonly home: string | null; readonly configDir: string | null },
+): string {
+  const { root, home, configDir } = sources
+  if (shown.startsWith(REPO_PREFIX)) return joinedPath(root, shown.slice(REPO_PREFIX.length))
+  if (home !== null && shown.startsWith(HOME_PREFIX)) return joinedPath(home, shown.slice(HOME_PREFIX.length))
+  if (configDir !== null && shown.startsWith(CONFIG_PREFIX)) {
+    return joinedPath(configDir, shown.slice(CONFIG_PREFIX.length))
+  }
+
+  return shown
+}
+
+/**
+ * Whether a repo-relative path is a folder whose real path lies inside the repo (isDirInsideRoot): a link anywhere in
+ * the path that leads out, a file, and a folder whose real path the host could not give are not. The launcher folder
+ * question checks a typed folder with it, and regen checks the folder `.cadre/cadre.json` stores.
+ */
+export async function isRepoFolder(io: InitIo, root: string, path: string): Promise<boolean> {
+  return isDirInsideRoot(await io.stat(`${root}/${path}`), root)
+}
+
+/** The repo-relative path of the repo state regen re-renders from. */
+export const CADRE_STATE_FILE = '.cadre/cadre.json'
+
+/** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
+export function roleJsonPath(id: string): string {
+  return `.cadre/${id}/role.json`
 }

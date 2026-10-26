@@ -22,7 +22,7 @@ import { isRoleId } from './core/role-id'
 import { clean, compareText, shown, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, MAX_READ_BYTES } from './facts'
 import { isFrameworkId } from './framework'
-import { isFileInsideRoot, trimSlash } from './paths'
+import { isFileInsideRoot, isSafeRelativePath, trimSlash } from './paths'
 
 /**
  * How long an autopilot status file's `beat` counts as alive: twice the 30 second heartbeat autopilot writes, because
@@ -47,9 +47,6 @@ const MAX_TOP_CHARS = 240
 
 /** A cadre version as the manifest and the state file record it: three numbers joined by dots. */
 const VERSION_TEXT = /^\d+\.\d+\.\d+$/
-
-/** One path segment of a repo-relative path: letters, digits, dot, underscore, at sign and dash. */
-const SAFE_SEGMENT = /^[A-Za-z0-9._@-]+$/
 
 /**
  * The path of a session's autopilot status file, `<home>/.claude/autopilot/<id>.json`, with trailing slashes on the
@@ -435,17 +432,6 @@ export async function ruleFiles(io: InitIo, root: string, walk: RuleWalk): Promi
   }
 
   return sortedUnique(found)
-}
-
-/**
- * Whether a path is a plain repo-relative path: segments of letters, digits, `.`, `_`, `@` and `-`, none of them `.` or
- * `..`, joined by single slashes, with no leading or trailing slash. Such a path cannot leave the folder it is joined
- * to, and a shell character, a space or a backslash cannot be in it.
- */
-export function isSafeRelativePath(path: string): boolean {
-  if (path === '') return false
-
-  return path.split('/').every(segment => segment !== '.' && segment !== '..' && SAFE_SEGMENT.test(segment))
 }
 
 /** Whether a value is a cadre version text: x.y.z, or `unknown` when cadre could not read its own version. */

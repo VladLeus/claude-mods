@@ -340,8 +340,6 @@ import {
   unreadableWarning,
 } from './instructions'
 import {
-  INSTRUCTIONS_RECORD_FILE,
-  PRIVATE_INSTRUCTIONS_FOLDER,
   RUNTIME_SETTINGS_KEYS,
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
@@ -349,20 +347,24 @@ import {
   undeniedMemoryWarning,
   unsafeMemoryNameWarning,
 } from './launch'
-import { HOME_UNUSABLE_WARNING } from './paths'
+import {
+  HOME_UNUSABLE_WARNING,
+  INBOX_FILE,
+  INSTRUCTIONS_RECORD_FILE,
+  PRIVATE_INSTRUCTIONS_FOLDER,
+  PROBE_EXPECTATIONS_FILE,
+  RUNTIME_KICKOFF_FILE,
+  RUNTIME_RENDERED,
+  RUNTIME_STAMP_FILE,
+} from './paths'
 import {
   gitignoreLines,
   HUNK_FILES,
   IGNORE_BEGIN,
   IGNORE_END,
   ignoreLines,
-  INBOX_FILE,
   MANIFEST_PATH,
   planSummary,
-  PROBE_EXPECTATIONS_FILE,
-  RUNTIME_KICKOFF_FILE,
-  RUNTIME_RENDERED,
-  RUNTIME_STAMP_FILE,
   SECURITY_REPORTS_LINE,
 } from './plan'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'

@@ -14,7 +14,6 @@ import {
   gemfileGems,
   gitRootRefusal,
   goModules,
-  isSafeRelativePath,
   listingState,
   MANIFEST_FILES,
   MARKER_ROWS,
@@ -1876,40 +1875,6 @@ describe('listingState', () => {
 
     expect(await listingState(run.io, '/repo/file')).toEqual({ state: 'unknown' })
     expect(await listingState(run.io, '/repo/u')).toEqual({ state: 'unknown' })
-  })
-})
-
-describe('isSafeRelativePath', () => {
-  test('a path of plain segments joined by single slashes is safe', () => {
-    for (const path of ['.cadre/be/role.json', 'a', 'a/b', '.gitignore', 'INDEX.md', 'a-b_c.d@e/f']) {
-      expect(isSafeRelativePath(path)).toBe(true)
-    }
-  })
-
-  test('an empty path, an absolute path, a dot segment and an empty segment are not safe', () => {
-    for (const path of ['', '/x', 'a/../b', '..', '.', './a', 'a/.', 'a//b', 'a/', '/']) {
-      expect(isSafeRelativePath(path)).toBe(false)
-    }
-  })
-
-  test('a backslash, a space, a control character, a non-ASCII letter or a shell character is not safe', () => {
-    const unsafe = [
-      `a${BACKSLASH}b`,
-      'a/ b',
-      ' a',
-      'a b',
-      'a\nb',
-      `a${String.fromCharCode(0)}b`,
-      `a${BIDI_OVERRIDE}b`,
-      `caf${String.fromCharCode(0xe9)}/x`,
-      '~/x',
-      '$HOME/x',
-      'a/*',
-      'a:b',
-    ]
-    for (const path of unsafe) {
-      expect(isSafeRelativePath(path)).toBe(false)
-    }
   })
 })
 

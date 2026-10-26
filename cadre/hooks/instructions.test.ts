@@ -37,7 +37,6 @@ import {
   parseRegenRecommendation,
   parseTopics,
   partChanges,
-  pathFromDisplay,
   readInstructionFiles,
   readMemories,
   RECOMMEND_SYSTEM,
@@ -60,7 +59,6 @@ import {
   unreadableWarning,
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartRecord, RegenPromptItem } from './instructions'
-import { displayPath } from './paths'
 import { BIDI_OVERRIDE, emptySetupScan, entry, link, memIo, memWorld, templateRole } from './testkit'
 import type { MemWorld } from './testkit'
 
@@ -1706,15 +1704,5 @@ describe('regen recommendation (G-02-1f Regen)', () => {
       'unknown item "I9"',
       'item I1 is not true or false',
     ])
-  })
-})
-
-describe('safety net: instructions helpers (A8)', () => {
-  test('pathFromDisplay reads back what displayPath shows: a repo path, a home path, a path with a space', () => {
-    const sources = { root: '/repo', home: '/home/u', configDir: null }
-    const paths = ['/repo/docs/guide.md', '/home/u/.claude/CLAUDE.md', '/home/u/work notes/CLAUDE.md']
-    const shown = paths.map(path => displayPath(path, sources.home, sources.root, sources.configDir))
-    expect(shown).toEqual(['<repo>/docs/guide.md', '~/.claude/CLAUDE.md', '~/work notes/CLAUDE.md'])
-    expect(shown.map(text => pathFromDisplay(text, sources))).toEqual(paths)
   })
 })

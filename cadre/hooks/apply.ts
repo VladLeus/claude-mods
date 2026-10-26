@@ -43,8 +43,15 @@ import { isSha256Hex } from './core/names'
 import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
 import { isChangedByClean, MAX_READ_BYTES } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
-import { editWriteRules, INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
-import { displayPath, isDirInsideRoot, isFileInsideRoot, trimSlash } from './paths'
+import { editWriteRules } from './launch'
+import {
+  displayPath,
+  INSTRUCTIONS_RECORD_FILE,
+  isDirInsideRoot,
+  isFileInsideRoot,
+  PRIVATE_INSTRUCTIONS_FOLDER,
+  trimSlash,
+} from './paths'
 import { MANIFEST_PATH } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'

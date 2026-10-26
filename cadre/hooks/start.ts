@@ -48,35 +48,27 @@ import { desiredFiles, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from './instructions'
-import {
-  claudeMdImports,
-  INSTRUCTIONS_RECORD_FILE,
-  isPartsFlowRole,
-  isSafeFileName,
-  launchPlan,
-  privateInstructionsDir,
-  roleMemoryDir,
-  unsafeMemoryNameWarning,
-} from './launch'
+import { claudeMdImports, isPartsFlowRole, isSafeFileName, launchPlan, unsafeMemoryNameWarning } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import {
   claudeJsonPathOf,
   displayPath,
+  INBOX_FILE,
+  INSTRUCTIONS_RECORD_FILE,
   isDirInsideRoot,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
+  PRIVATE_INSTRUCTIONS_LINK,
+  privateInstructionsDir,
+  PROBE_EXPECTATIONS_FILE,
+  roleMemoryDir,
+  RUNTIME_KICKOFF_FILE,
+  RUNTIME_STAMP_FILE,
   trimSlash,
   userDirOf,
 } from './paths'
-import {
-  INBOX_FILE,
-  MANIFEST_PATH,
-  PRIVATE_INSTRUCTIONS_LINK,
-  PROBE_EXPECTATIONS_FILE,
-  RUNTIME_KICKOFF_FILE,
-  RUNTIME_STAMP_FILE,
-} from './plan'
+import { MANIFEST_PATH } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { CLAUDE_JSON_MAX_BYTES, claudeMdPathsOf, hookScriptOf } from './setup'

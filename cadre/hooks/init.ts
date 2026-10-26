@@ -193,7 +193,6 @@ import {
   parseTopics,
   partChanges,
   partsOfText,
-  pathFromDisplay,
   readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
@@ -207,13 +206,19 @@ import {
   unreadableWarning,
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
-import { isPartsFlowRole, isSafeFileName, roleMemoryDir } from './launch'
+import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
+  CADRE_STATE_FILE,
   displayPath,
   isDirInsideRoot,
+  isRepoFolder,
+  isSafeRelativePath,
   MARKDOWN_EXTENSION,
   memoryFolderOf,
+  pathFromDisplay,
   relativeTo,
+  roleJsonPath,
+  roleMemoryDir,
   trimSlash,
   userDirOf,
 } from './paths'
@@ -254,7 +259,6 @@ import {
   autopilotStatusPath,
   findGitTop,
   gitRootRefusal,
-  isSafeRelativePath,
   MAX_FOLDER_ENTRIES,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
@@ -2461,15 +2465,6 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
 }
 
 /**
- * Whether a repo-relative path is a folder whose real path lies inside the repo (isDirInsideRoot): a link anywhere in
- * the path that leads out, a file, and a folder whose real path the host could not give are not. The launcher folder
- * question checks a typed folder with it, and regen checks the folder `.cadre/cadre.json` stores.
- */
-async function isRepoFolder(io: InitIo, root: string, path: string): Promise<boolean> {
-  return isDirInsideRoot(await io.stat(`${root}/${path}`), root)
-}
-
-/**
  * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath, and
  * it must be a folder inside the repo (isRepoFolder), so a link anywhere in the path that leads out is refused, and so
  * is a folder whose real path the host could not give.
@@ -4235,9 +4230,6 @@ export function regenTotalWarning(id: string): string {
   return `regen stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB for ${id}: its instruction parts were not compared`
 }
 
-/** The repo-relative path of the repo state regen re-renders from. */
-const CADRE_STATE_FILE = '.cadre/cadre.json'
-
 /** What a read of regen, /cadre start or /cadre status gives: the value it found, or the exact reply that refuses. */
 export type RegenRead<T> =
   | { readonly kind: 'ok'; readonly value: T }
@@ -4268,11 +4260,6 @@ async function regenState(
   if (start.kind === 'dir' && !(await isRepoFolder(io, root, start.path))) return regenRefusal(REGEN_BAD_STATE)
 
   return { kind: 'ok', value: state }
-}
-
-/** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
-function roleJsonPath(id: string): string {
-  return `.cadre/${id}/role.json`
 }
 
 /** The team regen read: every listed role, and the role.json text each was parsed from, keyed by its id (A5). */

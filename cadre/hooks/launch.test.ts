@@ -16,15 +16,12 @@ import { sortedUnique } from './core/text'
 import {
   claudeMdImports,
   instructionPlan,
-  INSTRUCTIONS_RECORD_FILE,
   isPartsFlowRole,
   launchPlan,
   linkedMemoryDeny,
   lintRuntimeDenyPattern,
-  memorySlug,
   overlayLinks,
   renderRuntimeSettings,
-  roleMemoryDir,
   RUNTIME_SETTINGS_KEYS,
   runtimeDeny,
   UNDENIED_MEMORY_FOLDER_WARNING,
@@ -33,6 +30,7 @@ import {
   undeniedMemoryWarning,
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
+import { INSTRUCTIONS_RECORD_FILE, memorySlug, roleMemoryDir } from './paths'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { compileScope, infraViolations, roleOwnPaths } from './scope'
 import {

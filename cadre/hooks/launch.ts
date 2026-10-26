@@ -1,7 +1,14 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, shown, sortedUnique } from './core/text'
 import { isChangedByClean } from './facts'
-import { mangledProjectDir, memoryFolderOf } from './paths'
+import {
+  INSTRUCTIONS_RECORD_FILE,
+  mangledProjectDir,
+  memoryFolderOf,
+  privateInstructionsDir,
+  resolveSegments,
+  roleMemoryDir,
+} from './paths'
 import {
   isContextMonitorScript,
   isSafeDir,
@@ -132,15 +139,6 @@ type LinkSet = {
 /** A group that plans no link and no warning. */
 const NO_LINKS: LinkSet = Object.freeze({ links: Object.freeze([]), warnings: Object.freeze([]) })
 
-/** The repo name used in the memory slug when the common dir gives no folder name to name it after. */
-const FALLBACK_REPO_NAME = 'repo'
-
-/** The name of a git folder inside a checkout, and the end of a bare repo's folder name. */
-const GIT_DIR_NAME = '.git'
-
-/** A character a memory slug may not hold: anything but letters, digits, dot, underscore and dash, per code point. */
-const UNSAFE_SLUG_CHARS = /[^A-Za-z0-9._-]/gu
-
 /** A repo root a permission rule can hold: a canonical absolute path of safe characters (`/a/b`), nothing else. */
 const SAFE_ROOT = /^(?:\/[A-Za-z0-9._-]+)+$/
 
@@ -191,64 +189,6 @@ const MAX_NAME_CHARS = 255
 
 /** A skill or agent name that may become a link name: a plain name of 1 to 80 characters (T-02-46). */
 const SAFE_OVERLAY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
-
-/** The repo's name from its git common dir, as memorySlug says; empty when the common dir gives none. */
-function repoName(gitCommonDir: string): string {
-  const parts = gitCommonDir.split('/').filter(part => part !== '')
-  const last = parts.at(-1) ?? ''
-  if (last === GIT_DIR_NAME) return parts.at(-2) ?? ''
-  if (last.endsWith(GIT_DIR_NAME)) return last.slice(0, -GIT_DIR_NAME.length)
-
-  return last
-}
-
-/**
- * The folder name of a repo's role memory (D-91): the repo's name, then `-` and the first 8 hex characters of the hash
- * of the git common dir, so two repos with the same name do not share memory. When the common dir is a `.git` folder
- * the name is that of the folder holding it (`/w/repo/.git` is `repo`); otherwise it is the common dir's own name with
- * one trailing `.git` removed, so a bare repo `/srv/repo.git` is `repo` and a submodule's `/super/.git/modules/sub` is
- * `sub`. An empty name is `repo`. Every character outside letters, digits, `.`, `_` and `-` becomes `-`, so the slug is
- * always one safe path segment. A linked worktree has the same common dir as its main checkout, so all roles of all
- * worktrees of a repo share one memory folder (D-20).
- */
-export function memorySlug(gitCommonDir: string, hashHex: string): string {
-  const name = repoName(gitCommonDir)
-  const base = name === '' ? FALLBACK_REPO_NAME : name
-
-  return `${base}-${hashHex.slice(0, 8)}`.replace(UNSAFE_SLUG_CHARS, '-')
-}
-
-/**
- * The absolute memory folder of a role (D-20, D-91): `<userDir>/cadre/<slug>/<id>`, the folder the scope card names.
- * It follows CLAUDE_CONFIG_DIR as userDir does, so it is `~/.claude/cadre/...` only when that is not set. It is
- * absolute because the engine ignores a repo-relative `autoMemoryDirectory` (spike S2). The role id is a validated
- * slug, so it is safe in a path. It needs only the user folder and the git common dir with its hash, so apply names
- * the folders of the private files from the same facts as /cadre start (G-02-1f, D-140 q2-a).
- */
-export function roleMemoryDir(
-  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
-  id: string,
-): string {
-  return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
-}
-
-/** The subfolder of a role memory folder that holds the role's private text file, on every load path (D-140). */
-export const PRIVATE_INSTRUCTIONS_FOLDER = 'instructions'
-
-/** The file name of a role's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
-export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
-
-/**
- * A role's private instructions folder, `<role memory folder>/instructions` (D-140 q1-b, q2-a): apply writes the
- * private text file there, the launcher adds it through `.runtime/private-instructions`, and the role's settings deny
- * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
- */
-export function privateInstructionsDir(
-  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
-  id: string,
-): string {
-  return `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`
-}
 
 /**
  * The reason a deny pattern must not be emitted into the runtime settings, or null when it is fine. An exact absolute
@@ -547,21 +487,6 @@ function withoutCode(text: string): string {
   kept.push(text.slice(copied))
 
   return kept.join('')
-}
-
-/**
- * The absolute path with its empty and `.` segments dropped and each `..` taking off the segment before it (02-GAPS-B2
- * S7: one home; the instruction reader resolves doc links with it too).
- */
-export function resolveSegments(path: string): string {
-  const kept: string[] = []
-  for (const part of path.split('/')) {
-    if (part === '' || part === '.') continue
-    if (part === '..') kept.pop()
-    else kept.push(part)
-  }
-
-  return `/${kept.join('/')}`
 }
 
 /**

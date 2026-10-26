@@ -4,13 +4,17 @@ import {
   displayPath,
   isFileInsideRoot,
   isSafeConfigDir,
+  isSafeRelativePath,
   markdownFileNames,
   memoryFolderOf,
+  pathFromDisplay,
   relativeTo,
   resolvedPath,
   trimSlash,
 } from './paths'
-import { entry } from './testkit'
+import { BIDI_OVERRIDE, entry } from './testkit'
+
+const BACKSLASH = String.fromCharCode(92)
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -137,5 +141,49 @@ describe('safety net: markdownFileNames (A8)', () => {
       entry('README.MD'),
     ]
     expect(markdownFileNames(entries)).toEqual(['b.md', 'a.md'])
+  })
+})
+
+describe('isSafeRelativePath', () => {
+  test('a path of plain segments joined by single slashes is safe', () => {
+    for (const path of ['.cadre/be/role.json', 'a', 'a/b', '.gitignore', 'INDEX.md', 'a-b_c.d@e/f']) {
+      expect(isSafeRelativePath(path)).toBe(true)
+    }
+  })
+
+  test('an empty path, an absolute path, a dot segment and an empty segment are not safe', () => {
+    for (const path of ['', '/x', 'a/../b', '..', '.', './a', 'a/.', 'a//b', 'a/', '/']) {
+      expect(isSafeRelativePath(path)).toBe(false)
+    }
+  })
+
+  test('a backslash, a space, a control character, a non-ASCII letter or a shell character is not safe', () => {
+    const unsafe = [
+      `a${BACKSLASH}b`,
+      'a/ b',
+      ' a',
+      'a b',
+      'a\nb',
+      `a${String.fromCharCode(0)}b`,
+      `a${BIDI_OVERRIDE}b`,
+      `caf${String.fromCharCode(0xe9)}/x`,
+      '~/x',
+      '$HOME/x',
+      'a/*',
+      'a:b',
+    ]
+    for (const path of unsafe) {
+      expect(isSafeRelativePath(path)).toBe(false)
+    }
+  })
+})
+
+describe('safety net: instructions helpers (A8)', () => {
+  test('pathFromDisplay reads back what displayPath shows: a repo path, a home path, a path with a space', () => {
+    const sources = { root: '/repo', home: '/home/u', configDir: null }
+    const paths = ['/repo/docs/guide.md', '/home/u/.claude/CLAUDE.md', '/home/u/work notes/CLAUDE.md']
+    const shown = paths.map(path => displayPath(path, sources.home, sources.root, sources.configDir))
+    expect(shown).toEqual(['<repo>/docs/guide.md', '~/.claude/CLAUDE.md', '~/work notes/CLAUDE.md'])
+    expect(shown.map(text => pathFromDisplay(text, sources))).toEqual(paths)
   })
 })

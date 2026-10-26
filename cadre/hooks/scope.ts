@@ -24,7 +24,7 @@ import {
 } from './assign'
 import { freezeRows } from './core/freeze'
 import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
-import { PRIVATE_INSTRUCTIONS_LINK } from './plan'
+import { PRIVATE_INSTRUCTIONS_LINK } from './paths'
 import { chainLines, standsFor } from './roles'
 
 /**

@@ -40,14 +40,17 @@ import {
 import { isChangedByClean, MAX_READ_BYTES } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
-import { claudeMdImports, resolveSegments } from './launch'
+import { claudeMdImports } from './launch'
 import {
   displayPath,
   isDirInsideRoot,
+  joinedPath,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   MAX_FILE_NAME_CHARS,
+  pathFromDisplay,
   relativeTo,
+  resolveSegments,
   trimSlash,
   userDirOf,
 } from './paths'
@@ -611,39 +614,6 @@ type ReadState = {
   readonly unread: string[]
   /** Every repo file read, in read order: the docs they link to are read last (readDocs). */
   readonly repoFiles: ReadFile[]
-}
-
-/** The display prefix of a path in the repo. */
-const REPO_PREFIX = '<repo>/'
-
-/** The display prefix of a path in the home folder. */
-const HOME_PREFIX = '~/'
-
-/** The display prefix of a path in a CLAUDE_CONFIG_DIR outside the home folder. */
-const CONFIG_PREFIX = '$CLAUDE_CONFIG_DIR/'
-
-/** A folder and a path below it, joined with one `/`. */
-function joinedPath(folder: string, rest: string): string {
-  return `${trimSlash(folder)}/${rest}`
-}
-
-/**
- * The path a display form stands for (displayPath read back): `<repo>/`, `~/` and `$CLAUDE_CONFIG_DIR/` under their
- * folders; any other form is already the path. It names a chain file of the read, and regen the file of a recorded
- * global part (G-02-1f Regen).
- */
-export function pathFromDisplay(
-  shown: string,
-  sources: { readonly root: string; readonly home: string | null; readonly configDir: string | null },
-): string {
-  const { root, home, configDir } = sources
-  if (shown.startsWith(REPO_PREFIX)) return joinedPath(root, shown.slice(REPO_PREFIX.length))
-  if (home !== null && shown.startsWith(HOME_PREFIX)) return joinedPath(home, shown.slice(HOME_PREFIX.length))
-  if (configDir !== null && shown.startsWith(CONFIG_PREFIX)) {
-    return joinedPath(configDir, shown.slice(CONFIG_PREFIX.length))
-  }
-
-  return shown
 }
 
 /** Where a path lies: in the repo first, then in the config folder, else elsewhere (G-02-1f Sources). */
