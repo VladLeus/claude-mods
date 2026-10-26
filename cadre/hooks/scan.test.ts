@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InitIo, PortEntry, PortRead, RepoScan, ScanFinding, ScanKind } from '../types'
 import { MAX_READ_BYTES } from './facts'
 import { findGitTop } from './git/checkout'
+import { gitRootRefusal, notGitRepoReply } from './guards/repo'
 import { isDirInsideRoot } from './paths'
 import {
   AUTOPILOT_FRESH_MS,
@@ -12,7 +13,6 @@ import {
   cargoDeps,
   composerDeps,
   gemfileGems,
-  gitRootRefusal,
   goModules,
   listingState,
   MANIFEST_FILES,
@@ -23,7 +23,6 @@ import {
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
   missingState,
-  notGitRepoReply,
   pyprojectDeps,
   readRepoFile,
   requirementsDeps,

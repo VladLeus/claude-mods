@@ -164,6 +164,7 @@ import {
 } from './generate'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GSD_ADAPTER, GSD_AUTONOMY, GSD_CONFIG_FILE, GSD_GATES, GSD_HOOK_NOTES, gsdKickoffText } from './gsd'
+import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {
   HISTORY_DISMISSED_REASON,
@@ -245,7 +246,6 @@ import {
   MODEL_EFFORT_CONTEXT,
   MODEL_MODE_QUESTION,
   NEXT_STEP_NOTE,
-  NOT_INTERACTIVE_REPLY,
   notHandedOutWarning,
   OWN_SKILLS_ENTRY_OPTIONS,
   ownSkillContextLine,

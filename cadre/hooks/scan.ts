@@ -11,7 +11,7 @@ import type {
 } from '../types'
 import { freezeRows } from './core/freeze'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
-import { clean, compareText, shown, sortedUnique } from './core/text'
+import { compareText, shown, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, MAX_READ_BYTES } from './facts'
 import { isFileInsideRoot, trimSlash } from './paths'
 import { parseCadreState, parseManifest } from './state/cadre-files'
@@ -33,9 +33,6 @@ const MAX_ENTRY_NAME_CHARS = 255
 
 /** Code points of a repo path a warning shows. */
 const MAX_WARNING_PATH_CHARS = 120
-
-/** Code points of the git top level a refusal shows. */
-const MAX_TOP_CHARS = 240
 
 /**
  * The path of a session's autopilot status file, `<home>/.claude/autopilot/<id>.json`, with trailing slashes on the
@@ -1029,22 +1026,4 @@ export function undecidedFacts(repo: RepoScan): string[] {
     ...(hasKind('test') ? [] : ['tests']),
     ...(hasKind('e2e') ? [] : ['E2E']),
   ]
-}
-
-/** The cadre commands a refusal is worded for. */
-export type CommandWord = 'init' | 'regen' | 'start' | 'status' | 'epic'
-
-/**
- * The refusal when the session root is not the git top level, naming the top level, else null (D-56). Trailing
- * slashes are ignored when the two are compared, and the top level is shown cleaned and capped at 240 code points.
- */
-export function gitRootRefusal(root: string, top: string, command: CommandWord): string | null {
-  if (trimSlash(root) === trimSlash(top)) return null
-
-  return `run /cadre ${command} from the repo root: ${clean(top, MAX_TOP_CHARS)}`
-}
-
-/** The refusal when no git repo is above the session root, with the wording D-97 fixes. */
-export function notGitRepoReply(command: CommandWord): string {
-  return `cadre ${command} needs a git repo: run git init first`
 }

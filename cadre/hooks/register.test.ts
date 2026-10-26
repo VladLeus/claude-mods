@@ -10,6 +10,7 @@ import { cadreJsonText, roleJsonText } from './generate'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
+import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
   cancelledReply,
   CLAUDE_JSON_QUESTION,
@@ -21,7 +22,6 @@ import {
   INIT_HOME_ROOT_REPLY,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
-  NOT_INTERACTIVE_REPLY,
   policyLine,
   PRIVATE_FILES_HEADING,
   privateFoldersUnknownWarning,
