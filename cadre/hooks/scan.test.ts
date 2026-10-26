@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, PortEntry, PortRead, RepoScan, ScanFinding, ScanKind } from '../types'
 import { MAX_READ_BYTES } from './facts'
+import { findGitTop } from './git/checkout'
 import { isDirInsideRoot } from './paths'
 import {
   AUTOPILOT_FRESH_MS,
@@ -10,7 +11,6 @@ import {
   autopilotStatusPath,
   cargoDeps,
   composerDeps,
-  findGitTop,
   gemfileGems,
   gitRootRefusal,
   goModules,

@@ -7,6 +7,7 @@ import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
+import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
 import {
@@ -31,7 +32,7 @@ import {
   ROLES_QUESTION,
 } from './init'
 import { OWN_ANSWER_HINT } from './render'
-import { autopilotReply, CHECKOUT_ARGV } from './scan'
+import { autopilotReply } from './scan'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,

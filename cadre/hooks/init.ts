@@ -165,6 +165,7 @@ import {
   trackedRepoParts,
   untrackedPartsWarning,
 } from './generate'
+import { findGitTop } from './git/checkout'
 import { gitCommonDirOf } from './git/common-dir'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
@@ -258,7 +259,6 @@ import {
   autopilotReply,
   autopilotRunState,
   autopilotStatusPath,
-  findGitTop,
   gitRootRefusal,
   MAX_FOLDER_ENTRIES,
   MAX_SCAN_ENTRIES,

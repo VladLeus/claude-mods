@@ -2,8 +2,9 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../types'
 import { cadreJsonText, roleJsonText } from './generate'
+import { CHECKOUT_ARGV } from './git/checkout'
 import { noStateReply, regenNoRole } from './init'
-import { autopilotLogPath, autopilotStatusPath, CHECKOUT_ARGV } from './scan'
+import { autopilotLogPath, autopilotStatusPath } from './scan'
 import type { RunState } from './scan'
 import {
   BEAT_MAX_BYTES,

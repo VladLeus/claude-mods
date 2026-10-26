@@ -26,10 +26,10 @@ import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { reportText, sortedUnique } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
+import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
-import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {
   claudeRefusal,
   clipboardRun,

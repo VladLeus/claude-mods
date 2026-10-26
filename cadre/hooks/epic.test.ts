@@ -94,9 +94,9 @@ import {
 import type { EpicStep, WorktreeEntry } from './epic'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, ROLE_LINE_MAX, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
+import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
 import { readTeam, regenNoRole } from './init'
-import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {
   claudeTooOldReply,
   COPIED_LINE,

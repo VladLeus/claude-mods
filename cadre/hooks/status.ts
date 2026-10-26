@@ -14,9 +14,10 @@ import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } 
 import { isObject, parseJsonValue } from './core/json'
 import { clean, compareText, reportText } from './core/text'
 import { MAX_READ_BYTES } from './facts'
+import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
 import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
-import { autopilotLogPath, autopilotRunState, autopilotStatusPath, CHECKOUT_ARGV, checkoutOf } from './scan'
+import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
 import type { RunState } from './scan'
 
 /**
