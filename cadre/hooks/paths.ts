@@ -441,3 +441,11 @@ export const BESIDE_SUFFIX = '.cadre-new'
 
 /** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
 export const GITIGNORE_FILE = '.gitignore'
+
+/**
+ * The repo-relative path of a role's launcher, `.cadre/bin/<id>`: generate writes it, and init, start and epic compare
+ * or read it; a caller that needs it absolute joins the root to it.
+ */
+export function launcherPath(id: string): string {
+  return `.cadre/bin/${id}`
+}

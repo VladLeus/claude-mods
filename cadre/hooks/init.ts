@@ -213,6 +213,7 @@ import {
   isDirInsideRoot,
   isRepoFolder,
   isSafeRelativePath,
+  launcherPath,
   MARKDOWN_EXTENSION,
   memoryFolderOf,
   pathFromDisplay,
@@ -4366,7 +4367,7 @@ export async function compileTeam(
 
 /** Whether a repo-relative path is one of this role's own: in its folder `.cadre/<id>/`, or its launcher. */
 function isRolePath(path: string, id: string): boolean {
-  return path.startsWith(`.cadre/${id}/`) || path === `.cadre/bin/${id}`
+  return path.startsWith(`.cadre/${id}/`) || path === launcherPath(id)
 }
 
 /**

@@ -56,6 +56,7 @@ import {
   INBOX_FILE,
   INSTRUCTIONS_RECORD_FILE,
   isDirInsideRoot,
+  launcherPath,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
@@ -1309,7 +1310,7 @@ export function launcherMissingReply(id: string): string {
  */
 export function launcherChangedReply(id: string): string {
   const role = reportText(id)
-  const launcher = `.cadre/bin/${role}`
+  const launcher = launcherPath(role)
 
   return (
     `${launcher} was changed outside cadre: restore it, or run /cadre init and answer Take new for it, ` +
@@ -1342,7 +1343,7 @@ export async function launcherRead(io: InitIo, root: string, id: string): Promis
   const manifestRead = await readRepoFile(io, root, MANIFEST_PATH, MAX_READ_BYTES)
   const manifest = manifestRead.state === 'text' ? parseManifest(manifestRead.text) : null
   if (manifest === null) return { kind: 'refuse', text: START_NO_MANIFEST }
-  const path = `.cadre/bin/${id}`
+  const path = launcherPath(id)
   const entry = manifest.files.find(file => file.path === path)
   if (entry === undefined) return { kind: 'refuse', text: launcherMissingReply(id) }
   const launcher = await readRepoFile(io, root, path, MAX_READ_BYTES)
@@ -1372,7 +1373,7 @@ function launcherOutdatedWarning(id: string): string {
  * for the role today, holds a launcher `.cadre/bin/<id>` whose text differs from `onDisk`; none otherwise.
  */
 function launcherDrift(id: string, onDisk: string, desired: readonly DesiredFile[]): string[] {
-  const today = desired.find(file => file.path === `.cadre/bin/${id}`)
+  const today = desired.find(file => file.path === launcherPath(id))
   if (today === undefined || today.content === onDisk) return []
 
   return [launcherOutdatedWarning(id)]
@@ -1401,7 +1402,7 @@ const RENDER_STEP_TIMEOUT_MS = 10_000
 
 /** The command that starts a role: the absolute path of its launcher `<root>/.cadre/bin/<id>`, as one shell word. */
 export function launcherCommand(root: string, id: string): string {
-  return shQuote(`${root}/.cadre/bin/${id}`)
+  return shQuote(`${root}/${launcherPath(id)}`)
 }
 
 /** How long pbcopy may run before it is given up. */

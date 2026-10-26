@@ -12,7 +12,7 @@ import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
-import { cadreStatePath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from './paths'
+import { cadreStatePath, launcherPath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from './paths'
 import { TOP_OF_FILE } from './records'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
@@ -557,7 +557,7 @@ function indexRow(role: RoleSpec, scope: CompiledScope): string {
     adapterOf(scope.card.framework).name,
     `${role.model} + ${role.effort}`,
     scopeSummary(role, scope),
-    `.cadre/bin/${role.id}`,
+    launcherPath(role.id),
     `thoughts/shared/handoffs/${role.id}/`,
   ]
 
@@ -647,7 +647,7 @@ function roleFiles(
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
     { path: rolePath(role.id, 'mcp.json'), content: mcpText(scope), mode: 'file' },
     ...builtFiles(role.id, parts),
-    { path: `.cadre/bin/${role.id}`, content: launcherText(role, scope, start), mode: 'exec' },
+    { path: launcherPath(role.id), content: launcherText(role, scope, start), mode: 'exec' },
   ]
 }
 

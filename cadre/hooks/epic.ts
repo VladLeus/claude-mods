@@ -27,6 +27,7 @@ import { reportText, sortedUnique } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
+import { launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {
@@ -1312,7 +1313,7 @@ async function renderedLines(
     }
     warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
     // Open only the launcher cadre checked in main (03.1-W4 S1).
-    const launcher = await io.read(`${worktree}/.cadre/bin/${id}`, MAX_READ_BYTES)
+    const launcher = await io.read(`${worktree}/${launcherPath(id)}`, MAX_READ_BYTES)
     rendered.push({ id, line: epicWorktreeLauncherCheck(id, launcher, team.launchers.get(id)) })
   }
 
