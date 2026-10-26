@@ -1,7 +1,7 @@
 import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
-import { isRoleId } from './command'
 import { freezeRows } from './core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './core/kickoff-text'
+import { isRoleId } from './core/role-id'
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is

@@ -15,9 +15,9 @@ import type {
   ScanFinding,
   ScanKind,
 } from '../types'
-import { isRoleId } from './command'
 import { freezeRows } from './core/freeze'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
+import { isRoleId } from './core/role-id'
 import { clean, compareText, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, isFileInsideRoot, MAX_READ_BYTES, trimSlash } from './facts'
 import { isFrameworkId } from './framework'

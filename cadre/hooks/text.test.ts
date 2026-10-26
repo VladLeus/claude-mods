@@ -88,9 +88,10 @@ import {
   skillUsesText,
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
-import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
+import { helpText, USAGE_LINES } from './command'
 import { UNNAMED_ROLE } from './core/kickoff-text'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
+import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
 import {
   EPIC_BRANCH_PREFIX,

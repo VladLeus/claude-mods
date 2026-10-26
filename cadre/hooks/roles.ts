@@ -16,11 +16,11 @@ import type {
   ScanKind,
   TemplateRoleId,
 } from '../types'
-import { isRoleId, RESERVED_ROLE_IDS } from './command'
 import { freezeRows } from './core/freeze'
 import { allOrNull, isObject, parseJsonValue } from './core/json'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
+import { isRoleId, RESERVED_ROLE_IDS } from './core/role-id'
 import { clean, idLabel } from './core/text'
 import { isChangedByClean } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
