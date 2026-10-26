@@ -144,7 +144,7 @@ import {
   WORKTREES_DIR,
   XDG_ARGV,
 } from './epic'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, HOME_UNUSABLE_WARNING, SOURCE_ORDER } from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, SOURCE_ORDER } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS, REQUIRED_FIELDS, SUPPORTED_IDS, UNSUPPORTED_MARKERS } from './framework'
 import {
   cadreJsonText,
@@ -349,6 +349,7 @@ import {
   undeniedMemoryWarning,
   unsafeMemoryNameWarning,
 } from './launch'
+import { HOME_UNUSABLE_WARNING } from './paths'
 import {
   gitignoreLines,
   HUNK_FILES,

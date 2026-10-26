@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { displayPath, isSafeConfigDir, relativeTo, trimSlash } from './paths'
+import { displayPath, isFileInsideRoot, isSafeConfigDir, relativeTo, resolvedPath, trimSlash } from './paths'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -58,5 +58,53 @@ describe('safety net: relativeTo (A8)', () => {
     expect([relativeTo('/repo', '/repo/'), relativeTo('/repo/a/b.md', '/repo')]).toEqual(['', '/a/b.md'])
     expect(relativeTo('/repository/a', '/repo')).toBe(null)
     expect([relativeTo('/a', null), relativeTo('/a', ''), relativeTo('/a', '/')]).toEqual([null, null, null])
+  })
+})
+
+describe('resolvedPath', () => {
+  test('uses the place a path lands when the host answered it', () => {
+    expect(resolvedPath('/link/repo', '/repo', 'the repo root')).toEqual({ path: '/repo', warning: null })
+  })
+
+  test('uses the path as given, with a warning, when the host gave no realPath', () => {
+    expect(resolvedPath('/link/repo', undefined, 'the repo root')).toEqual({
+      path: '/link/repo',
+      warning: 'could not resolve the repo root (used as given)',
+    })
+  })
+
+  test('treats an empty realPath as no answer', () => {
+    const resolved = resolvedPath('/home/u', '', 'the home folder')
+    expect(resolved.path).toBe('/home/u')
+    expect(resolved.warning).toBe('could not resolve the home folder (used as given)')
+  })
+
+  test('the warning names the role of the path and never the path itself', () => {
+    const resolved = resolvedPath('/Users/someone/repo', undefined, 'the repo root')
+    expect(String(resolved.warning)).toContain('could not resolve the repo root')
+    expect(String(resolved.warning)).not.toContain('/Users/someone')
+  })
+})
+
+describe('isFileInsideRoot (WR-02)', () => {
+  test('a regular file whose real path is inside the root counts', () => {
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(true)
+  })
+
+  test('a file whose real path is outside the root does not, nor one beside it that shares a prefix', () => {
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/home/u/.ssh/id_ed25519' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo-other/VERSION' }, '/repo')).toBe(false)
+  })
+
+  test('a device, a FIFO or a folder (any kind but file) does not count', () => {
+    expect(isFileInsideRoot({ kind: 'other', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'dir', realPath: '/repo/.claude/gsd-core/VERSION' }, '/repo')).toBe(false)
+  })
+
+  // Guard: passes before the fix by design; it proves a stat that shows no file inside the root is refused.
+  test('a stat with no realPath, one on the root itself, or no stat at all does not count', () => {
+    expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
+    expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
   })
 })

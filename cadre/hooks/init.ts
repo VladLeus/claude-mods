@@ -154,7 +154,7 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { detectRefusal, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isDirInsideRoot, MAX_READ_BYTES } from './facts'
+import { detectRefusal, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import {
   builtClaudeMdPath,
@@ -208,7 +208,7 @@ import {
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName, roleMemoryDir } from './launch'
-import { displayPath, relativeTo, trimSlash } from './paths'
+import { displayPath, isDirInsideRoot, relativeTo, trimSlash } from './paths'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,

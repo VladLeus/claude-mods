@@ -20,9 +20,9 @@ import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { SHA256_HEX } from './core/names'
 import { isRoleId } from './core/role-id'
 import { clean, compareText, shown, sortedUnique } from './core/text'
-import { hiddenNameWarnings, isChangedByClean, isFileInsideRoot, MAX_READ_BYTES } from './facts'
+import { hiddenNameWarnings, isChangedByClean, MAX_READ_BYTES } from './facts'
 import { isFrameworkId } from './framework'
-import { trimSlash } from './paths'
+import { isFileInsideRoot, trimSlash } from './paths'
 
 /**
  * How long an autopilot status file's `beat` counts as alive: twice the 30 second heartbeat autopilot writes, because

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, PortEntry, PortRead, RepoScan, ScanFinding, ScanKind } from '../types'
-import { isDirInsideRoot, MAX_READ_BYTES } from './facts'
+import { MAX_READ_BYTES } from './facts'
+import { isDirInsideRoot } from './paths'
 import {
   AUTOPILOT_FRESH_MS,
   autopilotReply,

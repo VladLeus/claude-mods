@@ -43,7 +43,7 @@ import type { RecordedMemory } from './apply'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import { clean, compareText, reportText, shown, sortedUnique } from './core/text'
-import { isDirInsideRoot, MAX_READ_BYTES, SOURCE_ORDER } from './facts'
+import { MAX_READ_BYTES, SOURCE_ORDER } from './facts'
 import { desiredFiles, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
@@ -59,7 +59,7 @@ import {
   unsafeMemoryNameWarning,
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { displayPath, trimSlash } from './paths'
+import { displayPath, isDirInsideRoot, trimSlash } from './paths'
 import {
   INBOX_FILE,
   MANIFEST_PATH,

@@ -18,12 +18,9 @@ import { runEpic, runEpicDone } from './epic'
 import {
   detectRefusal,
   factReadPlan,
-  HOME_UNUSABLE_WARNING,
-  isFileInsideRoot,
   MAX_READ_BYTES,
   normalizeFacts,
   parseRepoEntries,
-  resolvedPath,
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
@@ -31,7 +28,7 @@ import {
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import { displayPath } from './paths'
+import { displayPath, HOME_UNUSABLE_WARNING, isFileInsideRoot, resolvedPath } from './paths'
 import {
   answersFromNotes,
   askedHeader,

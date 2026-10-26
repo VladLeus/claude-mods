@@ -17,15 +17,13 @@ import {
   hiddenNameWarnings,
   hookScriptsMatching,
   isChangedByClean,
-  isDirInsideRoot,
-  isFileInsideRoot,
   MAX_KEY_CHARS,
   MAX_READ_BYTES,
   parseEnabledPlugins,
   parseInstalledPlugins,
   SOURCE_ORDER,
 } from './facts'
-import { displayPath, trimSlash } from './paths'
+import { displayPath, isDirInsideRoot, isFileInsideRoot, trimSlash } from './paths'
 import { listingState, missingState } from './scan'
 
 /**
