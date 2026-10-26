@@ -139,6 +139,8 @@ import {
 import type { NameAssignment, SkillGroup } from './assign'
 import { sha256Hex } from './core/hash'
 import { isObject } from './core/json'
+import { labelled } from './core/labelled'
+import type { Labelled } from './core/labelled'
 import {
   asSentence,
   cardList,
@@ -476,20 +478,6 @@ export function pluginVersionOf(text: string): string | null {
   if (typeof version !== 'string' || !PLUGIN_VERSION.test(version)) return null
 
   return version
-}
-
-/** A dialog answer with the value it stands for. */
-type Labelled<T> = {
-  readonly label: string
-  readonly value: T
-}
-
-/** The value whose label the answer names, trimmed and in any case; null when it names none, so it is asked again. */
-function labelled<T>(entries: readonly Labelled<T>[], answer: string): T | null {
-  const wanted = answer.trim().toLowerCase()
-  const found = entries.find(entry => entry.label.toLowerCase() === wanted)
-
-  return found === undefined ? null : found.value
 }
 
 /** What the guard decided: refuse with this text, or go on with the session's locations. */
