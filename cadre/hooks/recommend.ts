@@ -13,6 +13,8 @@ import type {
 } from '../types'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './assign'
 import { isObject, parseJsonValue } from './core/json'
+import { labelled } from './core/labelled'
+import type { Labelled } from './core/labelled'
 import { clean, reportText } from './core/text'
 import { displayPath, isSafeConfigDir, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
@@ -148,6 +150,12 @@ const DECLINE_OPTION = 'Decline'
 /** The buttons of a hunk question, in this order: the dialog focuses the first option; the order is fixed. */
 const HUNK_OPTIONS: readonly string[] = Object.freeze([ACCEPT_OPTION, DECLINE_OPTION])
 
+/** Each hunk answer with whether it accepts the hunk: only Accept does (ROLE-04). */
+const HUNK_ANSWERS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: ACCEPT_OPTION, value: true },
+  { label: DECLINE_OPTION, value: false },
+])
+
 /** The last line of a hunk question for a change autonomy cannot work without. */
 const REQUIRED_NOTE = 'Required for unattended GSD roles.'
 
@@ -190,11 +198,7 @@ export function hunkQuestion(
  * Accept accepts a hunk (ROLE-04): any other answer is null, so it is asked again and then cancels the run.
  */
 export function parseHunkAnswer(answer: string): boolean | null {
-  const wanted = answer.trim().toLowerCase()
-  if (wanted === ACCEPT_OPTION.toLowerCase()) return true
-  if (wanted === DECLINE_OPTION.toLowerCase()) return false
-
-  return null
+  return labelled(HUNK_ANSWERS, answer)
 }
 
 /**

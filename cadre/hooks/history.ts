@@ -2,6 +2,8 @@ import type { InitIo, InitLocations, PortEntry } from '../types'
 import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ask'
 import type { StepResult } from './ask'
 import { HISTORY_MAX_SESSIONS } from './assign'
+import { labelled } from './core/labelled'
+import type { Labelled } from './core/labelled'
 import { asciiLower, compareText } from './core/text'
 import { listingState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
@@ -229,9 +231,9 @@ export function historyQuestion(total: number): string {
 }
 
 /** Each history answer with what it allows, the declining one first: only the yes reads a transcript (D-59). */
-const HISTORY_CONSENTS: readonly { readonly label: string; readonly isAllowed: boolean }[] = Object.freeze([
-  { label: 'No, skip it', isAllowed: false },
-  { label: 'Yes, scan names and counts', isAllowed: true },
+const HISTORY_CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: 'No, skip it', value: false },
+  { label: 'Yes, scan names and counts', value: true },
 ])
 
 /**
@@ -242,10 +244,7 @@ export const HISTORY_OPTIONS: readonly string[] = Object.freeze(HISTORY_CONSENTS
 
 /** Whether an answer allows the scan, matched trimmed and in any case; null when it names neither answer. */
 function parseHistoryConsent(answer: string): boolean | null {
-  const wanted = answer.trim().toLowerCase()
-  const found = HISTORY_CONSENTS.find(consent => consent.label.toLowerCase() === wanted)
-
-  return found === undefined ? null : found.isAllowed
+  return labelled(HISTORY_CONSENTS, answer)
 }
 
 /**

@@ -7,6 +7,7 @@ import type { InitIo, RoleSpec } from '../types'
 import { accepted, askChoice, choiceResult, quotedLabels, withContext } from './ask'
 import type { StepResult } from './ask'
 import { parseRoleList } from './assign'
+import { labelled } from './core/labelled'
 
 /**
  * The entry answer that gives every item its recommended roles (G-02-1f Entry choices, G-02-1b), the same for the
@@ -67,10 +68,7 @@ function entryLabels(entry: HandoutEntry): readonly EntryLabel[] {
 
 /** The entry answer an answer names, trimmed and in any case; null when it names none, so it is asked again. */
 function parseEntry(labels: readonly EntryLabel[], answer: string): EntryChoice | null {
-  const wanted = answer.trim().toLowerCase()
-  const found = labels.find(entry => entry.label.toLowerCase() === wanted)
-
-  return found === undefined ? null : found.value
+  return labelled(labels, answer)
 }
 
 /** Every item's id with the roles recommended for it, in item order (G-02-1f Entry choices: Accept). */

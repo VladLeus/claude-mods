@@ -21,6 +21,8 @@ import type {
 import { ASK_HEADERS, countedChip } from './ask'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue } from './core/json'
+import { labelled } from './core/labelled'
+import type { Labelled } from './core/labelled'
 import { MAX_HEADING_CHARS } from './core/names'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import {
@@ -56,19 +58,13 @@ export const CONTENT_QUESTION =
   'Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? ' +
   'Nothing from your global files or memories is committed, and originals are never edited.'
 
-/** A content consent answer with whether it allows the read. */
-type ContentConsent = {
-  readonly label: string
-  readonly isAllowed: boolean
-}
-
 /**
  * Each content consent answer, the declining one first: the engine dialog starts with its first option focused, so a
  * quick Submit declines, and option 0 never consents (G-02-1f "Consent first", D-134).
  */
-const CONTENT_CONSENTS: readonly ContentConsent[] = Object.freeze([
-  { label: 'No, skip it', isAllowed: false },
-  { label: 'Yes, read them', isAllowed: true },
+const CONTENT_CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: 'No, skip it', value: false },
+  { label: 'Yes, read them', value: true },
 ])
 
 /** The answers to the content consent question, No, skip it first (D-134). */
@@ -79,10 +75,7 @@ export const CONTENT_OPTIONS: readonly string[] = Object.freeze(CONTENT_CONSENTS
  * case; null when it names neither, so it is asked again.
  */
 export function parseContentConsent(answer: string): boolean | null {
-  const wanted = answer.trim().toLowerCase()
-  const found = CONTENT_CONSENTS.find(entry => entry.label.toLowerCase() === wanted)
-
-  return found === undefined ? null : found.isAllowed
+  return labelled(CONTENT_CONSENTS, answer)
 }
 
 /** Why init cancels when the content consent is dismissed or not answered (A1, D-45). */
