@@ -85,9 +85,9 @@ import type {
   PrivateWriteCheck,
 } from './apply'
 import { withContext } from './ask'
+import { sha256Hex } from './core/hash'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
-import { sha256Hex } from './hash'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import {
   gitignoreLines,

@@ -10,8 +10,8 @@ import type {
   PortRead,
   ReadState,
 } from '../types'
+import { sha256Hex } from './core/hash'
 import { compareText, isObject, sortedUnique } from './facts'
-import { sha256Hex } from './hash'
 import { pad, reportText } from './render'
 import { isSafeRelativePath } from './scan'
 

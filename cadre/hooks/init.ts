@@ -137,6 +137,7 @@ import {
   skillUsesText,
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
+import { sha256Hex } from './core/hash'
 import {
   asSentence,
   clean,
@@ -168,7 +169,6 @@ import {
 } from './generate'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
-import { sha256Hex } from './hash'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
 import {

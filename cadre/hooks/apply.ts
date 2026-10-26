@@ -37,6 +37,7 @@ import type {
 import { ADAPTERS } from './adapters'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
+import { sha256Hex } from './core/hash'
 import {
   allOrNull,
   compareText,
@@ -52,7 +53,6 @@ import {
   trimSlash,
 } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
-import { sha256Hex } from './hash'
 import { editWriteRules, INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './launch'
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'

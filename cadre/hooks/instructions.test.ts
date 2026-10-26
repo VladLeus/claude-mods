@@ -2,9 +2,9 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
 import { contextText } from './ask'
+import { sha256Hex } from './core/hash'
 import { asSentence } from './facts'
 import { displayPath } from './facts'
-import { sha256Hex } from './hash'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

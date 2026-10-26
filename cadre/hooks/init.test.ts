@@ -81,6 +81,7 @@ import {
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
 } from './assign'
+import { sha256Hex } from './core/hash'
 import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import {
   cadreJsonText,
@@ -90,7 +91,6 @@ import {
   roleJsonText,
   untrackedPartsWarning,
 } from './generate'
-import { sha256Hex } from './hash'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
   ADJUST_DISMISSED_REASON,

@@ -12,8 +12,8 @@ import type {
   Plan,
   PortRead,
 } from '../types'
+import { sha256Hex } from './core/hash'
 import { compareText } from './facts'
-import { sha256Hex } from './hash'
 import {
   buildPlan,
   classifyFile,

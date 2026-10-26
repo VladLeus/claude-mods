@@ -16,9 +16,9 @@ import type {
   TerminalChoice,
 } from '../types'
 import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath, privateClaudeMdText } from './apply'
+import { sha256Hex } from './core/hash'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
-import { sha256Hex } from './hash'
 import { compileTeam, readTeam, repoGuard } from './init'
 import { launchPlan, unsafeMemoryNameWarning } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'

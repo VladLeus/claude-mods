@@ -3,10 +3,10 @@ import type { Engine, MountTarget } from 'claude-code/testing'
 
 import type { AskSpec, PaneKey } from '../types'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ask'
+import { sha256Hex } from './core/hash'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
-import { sha256Hex } from './hash'
 import {
   cancelledReply,
   CLAUDE_JSON_QUESTION,

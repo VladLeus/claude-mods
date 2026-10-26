@@ -40,6 +40,7 @@ import {
   roleFolderLevels,
 } from './apply'
 import type { RecordedMemory } from './apply'
+import { sha256Hex } from './core/hash'
 import {
   clean,
   compareText,
@@ -53,7 +54,6 @@ import {
   trimSlash,
 } from './facts'
 import { desiredFiles, shQuote } from './generate'
-import { sha256Hex } from './hash'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from './instructions'

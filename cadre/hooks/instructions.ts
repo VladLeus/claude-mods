@@ -19,6 +19,7 @@ import type {
   SetupScan,
 } from '../types'
 import { ASK_HEADERS, countedChip } from './ask'
+import { sha256Hex } from './core/hash'
 import {
   asSentence,
   clean,
@@ -39,7 +40,6 @@ import {
 } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
-import { sha256Hex } from './hash'
 import { claudeMdImports, resolveSegments } from './launch'
 import { shown } from './render'
 import { cappedErrors, unfenced, withReplyErrors } from './reply'

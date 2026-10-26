@@ -23,6 +23,7 @@ import type {
   RoleSpec,
   ScopeContext,
 } from '../../types'
+import { sha256Hex } from '../core/hash'
 import {
   EPIC_RECORD_FILE,
   epicRecordText,
@@ -36,7 +37,6 @@ import { compareText } from '../facts'
 import type { ProbedGsdCandidate } from '../facts'
 import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
 import type { GenerateInput } from '../generate'
-import { sha256Hex } from '../hash'
 import { gatherScans, scopesFor } from '../init'
 import type { Gathered } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'

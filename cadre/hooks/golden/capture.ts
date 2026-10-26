@@ -5,11 +5,11 @@
  * it.
  */
 import type { HostIo, InitIo, RawFacts, TerminalChoice } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { runEpic, runEpicDone } from '../epic'
 import { normalizeFacts } from '../facts'
 import { desiredFiles } from '../generate'
 import type { GenerateInput } from '../generate'
-import { sha256Hex } from '../hash'
 import { runInit, runRegen } from '../init'
 import { MANIFEST_PATH } from '../plan'
 import { detectText } from '../render'

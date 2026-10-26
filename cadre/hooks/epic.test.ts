@@ -12,6 +12,7 @@ import type {
   TerminalChoice,
 } from '../types'
 import { instructionsRecordPath, instructionsRecordText } from './apply'
+import { sha256Hex } from './core/hash'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
@@ -92,7 +93,6 @@ import {
 import type { EpicStep, WorktreeEntry } from './epic'
 import { isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
 import { cadreJsonText, ROLE_LINE_MAX, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
-import { sha256Hex } from './hash'
 import { readTeam, regenNoRole } from './init'
 import { stableJson } from './plan'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
