@@ -24,7 +24,6 @@ import type {
   Plan,
   PortEntry,
   PortRead,
-  PortStat,
   ReadState,
   RepoScan,
   RoleCarry,
@@ -135,7 +134,6 @@ import {
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import { sha256Hex } from './core/hash'
-import { isObject } from './core/json'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import {
@@ -251,9 +249,10 @@ import {
   rolesFromProposal,
   standsFor,
 } from './roles'
-import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES, readRepoFile, undecidedFacts } from './scan'
+import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES, undecidedFacts } from './scan'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
+import { readRepoFile } from './scan/port-read'
 import { MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
 import {
   attendedByConfig,
@@ -398,29 +397,6 @@ export async function gitPolicyStep(io: InitIo): Promise<StepResult<GitPolicy>> 
   return choiceResult(await askChoice(io, ask), GIT_POLICY_DISMISSED_REASON)
 }
 
-/**
- * What the init port answers before it reads a file, or null when the file may be read: `absent` only when the probe
- * says the path is not there, `unknown` when the probe or the stat failed or the stat shows anything but a regular
- * file (a folder, FIFO or device is never read), `too-large` when the stat size is over `maxBytes` (Pitfall 6).
- */
-export function portProbeOf(isThere: boolean | null, stat: PortStat | null, maxBytes: number): PortRead | null {
-  if (isThere === false) return { state: 'absent' }
-  if (isThere === null) return { state: 'unknown' }
-  if (stat === null || stat.kind !== 'file') return { state: 'unknown' }
-  if (stat.size > maxBytes) return { state: 'too-large', bytes: stat.size }
-
-  return null
-}
-
-/** What the init port answers once a file was read: `unknown` when no text came, `too-large` over `maxBytes` UTF-8 bytes. */
-export function portTextOf(text: unknown, maxBytes: number): PortRead {
-  if (typeof text !== 'string') return { state: 'unknown' }
-  const bytes = utf8Bytes(text)
-  if (bytes > maxBytes) return { state: 'too-large', bytes }
-
-  return { state: 'text', text }
-}
-
 /** The role ids of a team in role order, joined with `, `, as a question's refusal or context line names them. */
 function idsOf(roles: readonly RoleSpec[]): string {
   return roles.map(role => role.id).join(', ')
@@ -441,24 +417,6 @@ const POLICY_LINES: Readonly<Record<GitPolicy, string>> = Object.freeze({
 /** The one line that states a git policy and what stays out of git under it. */
 export function policyLine(policy: GitPolicy): string {
   return POLICY_LINES[policy]
-}
-
-/** A plugin version as cadre writes it: three numbers joined by dots. */
-const PLUGIN_VERSION = /^\d+\.\d+\.\d+$/
-
-/** The `version` in the text of cadre's own plugin.json when it is a plain `x.y.z`; null for anything else (D-89). */
-export function pluginVersionOf(text: string): string | null {
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch {
-    return null
-  }
-  if (!isObject(value)) return null
-  const { version } = value
-  if (typeof version !== 'string' || !PLUGIN_VERSION.test(version)) return null
-
-  return version
 }
 
 /** The ~/.claude.json consent question (D-58): the file holds account data, so it is read only after a yes. */

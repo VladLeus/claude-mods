@@ -55,7 +55,8 @@ import {
   userDirOf,
 } from './paths'
 import { TOP_OF_FILE } from './records'
-import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
+import { ruleFiles, RULES_FOLDER } from './scan'
+import { listingState, readRepoFile } from './scan/port-read'
 
 /** Every line break of a text. */
 const LINE_BREAKS = /\r\n|\r|\n/g

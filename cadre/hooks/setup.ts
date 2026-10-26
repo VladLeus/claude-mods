@@ -35,7 +35,7 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
-import { listingState, missingState } from './scan'
+import { listingState, missingState } from './scan/port-read'
 
 /**
  * Where a scan looks: the repo root as the host resolved it and as given, the home folder and CLAUDE_CONFIG_DIR. Every

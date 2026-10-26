@@ -61,7 +61,7 @@ import type { GsdToolContext } from './recommend'
 import { recordedParts, recordsOf } from './records'
 import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'
-import { missingState } from './scan'
+import { missingState } from './scan/port-read'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
 export type ConflictChoice = 'mine' | 'new'

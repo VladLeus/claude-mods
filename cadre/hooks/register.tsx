@@ -26,7 +26,7 @@ import {
   runtimeSkipProblem,
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
-import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'
+import { runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
 import { displayPath, HOME_UNUSABLE_WARNING, isFileInsideRoot, resolvedPath } from './paths'
 import {
@@ -40,6 +40,7 @@ import {
   paneView,
   previewBlockFor,
 } from './render'
+import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start'
 import { runStatus } from './status'
 

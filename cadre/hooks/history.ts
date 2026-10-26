@@ -6,7 +6,7 @@ import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { asciiLower, compareText } from './core/text'
 import { mangledProjectDir, userDirOf } from './paths'
-import { listingState } from './scan'
+import { listingState } from './scan/port-read'
 
 /**
  * The most bytes of one session transcript the scan reads, the host's own read cap. A bigger session is skipped and

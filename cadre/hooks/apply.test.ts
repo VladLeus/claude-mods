@@ -95,7 +95,7 @@ import type { PlanInput, PlannedFiles } from './plan'
 import { isUnmetHunk } from './recommend'
 import type { GsdToolContext } from './recommend'
 import { lineDiff } from './render'
-import { readRepoFile } from './scan'
+import { readRepoFile } from './scan/port-read'
 import { parseManifest } from './state/cadre-files'
 import {
   BIDI_OVERRIDE,

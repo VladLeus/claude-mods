@@ -13,7 +13,8 @@ import { freezeRows } from './core/freeze'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { compareText, shown, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, MAX_READ_BYTES } from './facts'
-import { isFileInsideRoot, trimSlash } from './paths'
+import { trimSlash } from './paths'
+import { listingState, missingState, readRepoFile } from './scan/port-read'
 import { parseCadreState, parseManifest } from './state/cadre-files'
 
 /**
@@ -289,51 +290,6 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   pathRow('e2e', 'Rails system tests', 'dir', /^test\/system$/),
   pathRow('e2e', 'Cucumber features', 'file', /^features\/(?:[^/]+\/)?[^/]+\.feature$/),
 ])
-
-/**
- * Whether a path the port could not stat or list is missing (`absent`) or there but out of reach (`unknown`). The
- * port's read answers `absent` only for a path that is not there, so a read capped at 0 bytes tells the two apart and
- * never returns any of the file's text. The setup scan uses the same probe, so both scans tell a missing path from a
- * failed one the same way.
- */
-export async function missingState(io: InitIo, path: string): Promise<'absent' | 'unknown'> {
-  const probe = await io.read(path, 0)
-
-  return probe.state === 'absent' ? 'absent' : 'unknown'
-}
-
-/** A folder as listingState sees it: present with its entries, or absent, or unknown when it cannot be listed. */
-export type Listing =
-  | { readonly state: 'present'; readonly entries: readonly PortEntry[] }
-  | { readonly state: 'absent' }
-  | { readonly state: 'unknown' }
-
-/**
- * A folder's listing through the port. The port's list answers null both for a folder that is not there and for one
- * it cannot list, so a null listing is told apart by missingState: a missing path is `absent`, anything else (a file,
- * a failed stat or listing) is `unknown`, because unknown is never the same as absent.
- */
-export async function listingState(io: InitIo, path: string): Promise<Listing> {
-  const entries = await io.list(path)
-  if (entries !== null) return { state: 'present', entries }
-
-  return { state: await missingState(io, path) }
-}
-
-/**
- * Reads a repo file through the port, only when its resolved stat is a regular file whose real path is inside the
- * root (WR-02), so a link that leaves the repo, a folder, a device or a FIFO is `unknown` and never read. A path with
- * no stat is never read either: missingState tells a missing file (`absent`) from one the port could not stat
- * (`unknown`). A file over `maxBytes` UTF-8 bytes comes back `too-large`.
- */
-export async function readRepoFile(io: InitIo, root: string, relPath: string, maxBytes: number): Promise<PortRead> {
-  const path = `${trimSlash(root)}/${relPath}`
-  const stat = await io.stat(path)
-  if (stat === null) return { state: await missingState(io, path) }
-  if (!isFileInsideRoot(stat, root)) return { state: 'unknown' }
-
-  return io.read(path, maxBytes)
-}
 
 /** The repo folder of the rule files (G-02-1f Sources), below the root; walked with its sub-folders (02-GAPS-B2 M4). */
 export const RULES_FOLDER = '.claude/rules'
