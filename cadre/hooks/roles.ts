@@ -19,6 +19,7 @@ import type {
 import { freezeRows } from './core/freeze'
 import { allOrNull, isObject, parseJsonValue } from './core/json'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './core/kickoff-text'
+import { ENV_NAME_PATTERN, MAX_HEADING_CHARS, MAX_HOOK_NAME_CHARS, NAME_PATTERN, SHA256_HEX } from './core/names'
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
 import { isRoleId, RESERVED_ROLE_IDS } from './core/role-id'
 import { clean, idLabel } from './core/text'
@@ -682,21 +683,6 @@ export function isModelName(text: string): boolean {
   return MODEL_ALIASES.includes(text)
 }
 
-/**
- * An MCP server, skill or command name as a role.json lists it: a letter or digit, then up to 99 more letters, digits
- * and plugin, scope and version punctuation (`:_.@-`). The setup scan keeps only names that match it.
- */
-export const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.@-]{0,99}$/
-
-/**
- * An environment variable name a role carries (D-60): upper case letters, digits and underscores, at most 64
- * characters. The setup scan keeps only env names that match it.
- */
-export const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,63}$/
-
-/** The most characters of a hook script basename a role carries (D-62); the setup scan drops a longer one. */
-export const MAX_HOOK_NAME_CHARS = 80
-
 /** A hook script basename a role carries (D-62): 1 to MAX_HOOK_NAME_CHARS letters, digits, `.`, `_` and `-`. */
 const HOOK_NAME_PATTERN = new RegExp(`^[A-Za-z0-9._-]{1,${MAX_HOOK_NAME_CHARS}}$`)
 
@@ -742,20 +728,6 @@ function groupsOf(value: unknown): InstructionGroup[] | null {
   }
 
   return groups
-}
-
-/**
- * The most code points a part's heading keeps (G-02-1f Part unit): splitSections cuts a heading to it, and a role.json
- * record of a repo part holds no longer one (parseRoleJson).
- */
-export const MAX_HEADING_CHARS = 80
-
-/** A SHA-256 as a part record holds it: 64 lowercase hex characters, as sha256Hex gives it. */
-const SHA256_HEX = /^[0-9a-f]{64}$/
-
-/** Whether a text is a SHA-256 as cadre records it (G-02-1f Regen): 64 lowercase hex characters. */
-export function isSha256Hex(text: string): boolean {
-  return SHA256_HEX.test(text)
 }
 
 /** The extension of every file a repo part comes from: the read of the instruction files takes only `.md` files. */

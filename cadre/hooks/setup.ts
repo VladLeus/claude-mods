@@ -10,6 +10,7 @@ import type {
   SkillRef,
 } from '../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
+import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
 import { clean, compareText, sortedUnique } from './core/text'
 import {
   displayPath,
@@ -26,7 +27,6 @@ import {
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
-import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './roles'
 import { listingState, missingState } from './scan'
 
 /**

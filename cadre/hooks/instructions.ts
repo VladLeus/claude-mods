@@ -21,6 +21,7 @@ import type {
 import { ASK_HEADERS, countedChip } from './ask'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue } from './core/json'
+import { MAX_HEADING_CHARS } from './core/names'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import {
   asSentence,
@@ -37,7 +38,6 @@ import { displayPath, isChangedByClean, isDirInsideRoot, MAX_READ_BYTES, relativ
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'
-import { MAX_HEADING_CHARS } from './roles'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'
 

@@ -39,6 +39,7 @@ import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext 
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { sha256Hex } from './core/hash'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
+import { isSha256Hex } from './core/names'
 import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
 import { displayPath, isChangedByClean, isDirInsideRoot, isFileInsideRoot, MAX_READ_BYTES, trimSlash } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
@@ -48,7 +49,7 @@ import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
 import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'
-import { isSha256Hex, partRecordOf } from './roles'
+import { partRecordOf } from './roles'
 import { missingState } from './scan'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
