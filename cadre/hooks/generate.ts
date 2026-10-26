@@ -12,7 +12,14 @@ import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
-import { cadreStatePath, launcherPath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from './paths'
+import {
+  cadreStatePath,
+  handoffFolderOf,
+  launcherPath,
+  PROBE_EXPECTATIONS_FILE,
+  roleJsonPath,
+  RUNTIME_STAMP_FILE,
+} from './paths'
 import { TOP_OF_FILE } from './records'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
@@ -558,7 +565,7 @@ function indexRow(role: RoleSpec, scope: CompiledScope): string {
     `${role.model} + ${role.effort}`,
     scopeSummary(role, scope),
     launcherPath(role.id),
-    `thoughts/shared/handoffs/${role.id}/`,
+    `${handoffFolderOf(role.id)}/`,
   ]
 
   return `| ${cells.join(' | ')} |`

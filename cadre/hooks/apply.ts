@@ -47,6 +47,7 @@ import { editWriteRules } from './launch'
 import {
   BESIDE_SUFFIX,
   displayPath,
+  foldersAbove,
   GITIGNORE_FILE,
   INSTRUCTIONS_RECORD_FILE,
   isDirInsideRoot,
@@ -444,13 +445,6 @@ export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
   const manifest = await manifestAfter(input.manifest, changed)
 
   return [...steps, { kind: 'manifest', path: MANIFEST_PATH, text: stableJson(manifest) }]
-}
-
-/** The folders above a repo-relative path, below the root, from the top: `.cadre` and `.cadre/be` for `.cadre/be/x`. */
-function foldersAbove(path: string): string[] {
-  const segments = path.split('/')
-
-  return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
 }
 
 /** The steps that name a repo-relative path: every step but a private one, whose folder lies outside the repo. */

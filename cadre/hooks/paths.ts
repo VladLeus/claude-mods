@@ -449,3 +449,18 @@ export const GITIGNORE_FILE = '.gitignore'
 export function launcherPath(id: string): string {
   return `.cadre/bin/${id}`
 }
+
+/**
+ * The repo-relative handoff folder of a role, `thoughts/shared/handoffs/<id>`, where autopilot's handoffs go, with no
+ * trailing slash: a caller that lists it as a folder adds the `/`.
+ */
+export function handoffFolderOf(id: string): string {
+  return `thoughts/shared/handoffs/${id}`
+}
+
+/** The folders above a repo-relative path, from the top: `a/b/c` gives `a` and `a/b`. */
+export function foldersAbove(path: string): string[] {
+  const segments = path.split('/')
+
+  return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
+}

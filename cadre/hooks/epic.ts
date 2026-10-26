@@ -27,7 +27,7 @@ import { reportText, sortedUnique } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
-import { launcherPath } from './paths'
+import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {
@@ -636,13 +636,6 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/
  */
 function protectedFolders(roleIds: readonly string[]): string[] {
   return [CADRE_DIR, `${CADRE_DIR}/bin`, ...roleIds.map(id => `${CADRE_DIR}/${id}`)]
-}
-
-/** The folders above a repo-relative path, from the top: `a/b/c` gives `a` and `a/b`. */
-function foldersAbove(path: string): string[] {
-  const segments = path.split('/')
-
-  return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
 }
 
 /** The repo-relative folder a path lies in, '' for the root. */

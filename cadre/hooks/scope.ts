@@ -24,7 +24,7 @@ import {
 } from './assign'
 import { freezeRows } from './core/freeze'
 import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
-import { PRIVATE_INSTRUCTIONS_LINK } from './paths'
+import { handoffFolderOf, PRIVATE_INSTRUCTIONS_LINK } from './paths'
 import { chainLines, standsFor } from './roles'
 
 /**
@@ -115,7 +115,7 @@ function checkedRule(text: string, enforcement: Enforcement, checks: readonly Pr
  * Sorted, and a fresh array on every call.
  */
 export function roleOwnPaths(id: string): string[] {
-  return [`.cadre/${id}/`, '.planning/', `thoughts/shared/handoffs/${id}/`].sort(compareText)
+  return [`.cadre/${id}/`, '.planning/', `${handoffFolderOf(id)}/`].sort(compareText)
 }
 
 /** The lowercase folder names inside the own paths of a role id. A file system or matcher may ignore case. */
@@ -571,7 +571,7 @@ function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root'
 function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   if (start.kind === 'git-root') return []
   const folder = startFolderText(start)
-  const handoffs = `thoughts/shared/handoffs/${role.id}/`
+  const handoffs = `${handoffFolderOf(role.id)}/`
 
   return [
     rule(`project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`, 'none'),

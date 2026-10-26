@@ -3,7 +3,6 @@ import { compareText, shown, sortedUnique } from './core/text'
 import { isChangedByClean } from './facts'
 import {
   INSTRUCTIONS_RECORD_FILE,
-  mangledProjectDir,
   memoryFolderOf,
   privateInstructionsDir,
   resolveSegments,
@@ -575,11 +574,6 @@ function globalLinks(id: string, user: LaunchUser): LinkSet {
   return { links, warnings }
 }
 
-/** The folder where the engine keeps the auto-memory files of a project root: `<userDir>/projects/<mangled>/memory`. */
-function projectMemoryDir(user: LaunchUser, root: string): string {
-  return `${user.userDir}/projects/${mangledProjectDir(root)}/memory`
-}
-
 /**
  * The links for the auto-memory files of this repo. The engine keeps them in the user's
  * `projects/<mangled root>/memory` folder, and the scan lists both such folders, that of the root as a realpath and
@@ -590,8 +584,8 @@ function projectMemoryDir(user: LaunchUser, root: string): string {
  */
 function memoryLinks(id: string, user: LaunchUser): LinkSet {
   const sources: readonly (readonly [string, readonly string[]])[] = [
-    [projectMemoryDir(user, user.root), user.memoryFiles],
-    [projectMemoryDir(user, user.givenRoot), user.givenMemoryFiles],
+    [memoryFolderOf(user.userDir, user.root), user.memoryFiles],
+    [memoryFolderOf(user.userDir, user.givenRoot), user.givenMemoryFiles],
   ]
   const targets = new Map<string, string>()
   for (const [folder, names] of sources) {

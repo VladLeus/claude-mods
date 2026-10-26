@@ -15,7 +15,7 @@ import { isObject, parseJsonValue } from './core/json'
 import { clean, compareText, reportText } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
-import { mangledProjectDir, trimSlash, userDirOf } from './paths'
+import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath, CHECKOUT_ARGV, checkoutOf } from './scan'
 import type { RunState } from './scan'
 
@@ -447,7 +447,7 @@ export function newestHandoff(entries: readonly PortEntry[]): string | null {
  */
 async function handoffOf(io: InitIo, folder: string | null, id: string): Promise<string | null> {
   if (folder === null) return null
-  const handoffs = `thoughts/shared/handoffs/${id}`
+  const handoffs = handoffFolderOf(id)
   const entries = await io.list(`${trimSlash(folder)}/${handoffs}`)
   if (entries === null) return null
   const name = newestHandoff(entries)
