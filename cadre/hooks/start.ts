@@ -787,7 +787,7 @@ export async function gitCommonDirOf(
   io: InitIo,
   host: HostIo,
   root: string,
-): Promise<Pick<LaunchUser, 'gitCommonDir' | 'commonDirHash'> | null> {
+): Promise<{ readonly gitCommonDir: string; readonly commonDirHash: string } | null> {
   const run = await host.run(GIT_COMMON_DIR_ARGV, { cwd: root, timeoutMs: GIT_TIMEOUT_MS })
   if (run === null || run.exitCode !== 0) return null
   if (!run.stdout.startsWith('/')) return null
