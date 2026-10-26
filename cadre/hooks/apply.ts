@@ -45,7 +45,9 @@ import { MAX_READ_BYTES } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
 import { editWriteRules } from './launch'
 import {
+  BESIDE_SUFFIX,
   displayPath,
+  GITIGNORE_FILE,
   INSTRUCTIONS_RECORD_FILE,
   isDirInsideRoot,
   isFileInsideRoot,
@@ -91,12 +93,6 @@ export function parseConflictAnswer(answer: string): ConflictChoice | null {
 
   return null
 }
-
-/** The suffix of the copy a conflict plans beside a user-edited file: the same value plan.ts uses (D-67). */
-const BESIDE_SUFFIX = '.cadre-new'
-
-/** The repo-relative path of the root `.gitignore`, whose op writes the merged block text. */
-const GITIGNORE_PATH = '.gitignore'
 
 /**
  * The files init asks Keep mine or Take new for, in plan order (D-67, D-105): every conflict file op except the
@@ -355,7 +351,7 @@ function besideOriginal(path: string, files: ReadonlyMap<string, DesiredFile>): 
  * leave writes nothing.
  */
 function opSteps(op: FileOp, input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): ApplyStep[] {
-  if (op.path === GITIGNORE_PATH) return ignoreSteps(op, input.gitignore)
+  if (op.path === GITIGNORE_FILE) return ignoreSteps(op, input.gitignore)
   const file = files.get(op.path)
   if (file !== undefined) return isWritten(op, input.choices) ? writeOf(op.path, file.content, op.mode) : []
   const original = besideOriginal(op.path, files)
@@ -380,7 +376,7 @@ function manifestOpOf(plan: Plan): FileOp | null {
 function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): DesiredFile[] {
   const taken: DesiredFile[] = []
   for (const op of input.plan.ops) {
-    if (op.kind !== 'conflict' || op.path === MANIFEST_PATH || op.path === GITIGNORE_PATH) continue
+    if (op.kind !== 'conflict' || op.path === MANIFEST_PATH || op.path === GITIGNORE_FILE) continue
     const file = files.get(op.path)
     if (file === undefined || !isWritten(op, input.choices)) continue
     taken.push({ path: op.path, content: file.content, mode: op.mode })

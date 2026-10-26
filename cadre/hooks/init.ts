@@ -209,6 +209,7 @@ import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
   CADRE_STATE_FILE,
   displayPath,
+  GITIGNORE_FILE,
   isDirInsideRoot,
   isRepoFolder,
   isSafeRelativePath,
@@ -2620,9 +2621,6 @@ export type PlanResult = {
   /** The merged root `.gitignore` text; null when no block is planned or the block cannot be merged. */
   readonly gitignore: string | null
 }
-
-/** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
-const GITIGNORE_FILE = '.gitignore'
 
 /** Each repo-relative path read through readRepoFile, one at a time, keyed by the path. */
 async function readPaths(io: InitIo, root: string, paths: readonly string[]): Promise<ReadonlyMap<string, PortRead>> {

@@ -13,7 +13,7 @@ import type {
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText, pad, reportText, sortedUnique } from './core/text'
-import { isSafeRelativePath, RUNTIME_RENDERED } from './paths'
+import { BESIDE_SUFFIX, GITIGNORE_FILE, isSafeRelativePath, RUNTIME_RENDERED } from './paths'
 
 /**
  * The repo-relative path of the manifest, which records every file cadre generated with its hash. Re-runs, regen and a
@@ -69,9 +69,6 @@ export const SECURITY_REPORTS_LINE = 'CLAUDE-SECURITY-*/'
 
 /** The lines that already ignore the `thoughts/` folder, where the handoffs live (D-64). */
 const THOUGHTS_LINES: readonly string[] = ['thoughts/', '/thoughts', 'thoughts', '/thoughts/']
-
-/** The repo-relative path of the root `.gitignore`, the one file besides `.cadre/` a plan may write (PLAN-06). */
-const GITIGNORE_PATH = '.gitignore'
 
 /** The lines of a text, each with its own line ending, so joining them gives the text back byte for byte. */
 function linesOf(text: string): string[] {
@@ -170,17 +167,14 @@ export const HUNK_FILES: readonly string[] = Object.freeze(['.planning/config.js
  */
 export function isSafeOpPath(path: string): boolean {
   if (!isSafeRelativePath(path)) return false
-  if (path === GITIGNORE_PATH) return true
+  if (path === GITIGNORE_FILE) return true
   if (!path.startsWith('.cadre/')) return false
 
   return !path.split('/').some(segment => segment.toLowerCase() === '.runtime')
 }
 
 /** The paths cadre plans itself: the manifest, and the `.gitignore` through its marked block. */
-const OWN_PATHS: readonly string[] = [MANIFEST_PATH, GITIGNORE_PATH]
-
-/** The suffix of the copy a conflict plans beside a user-edited file, so the person can diff the two (D-67). */
-const BESIDE_SUFFIX = '.cadre-new'
+const OWN_PATHS: readonly string[] = [MANIFEST_PATH, GITIGNORE_FILE]
 
 /** The note under a conflict: the file is the user's now, and the new version goes beside it. */
 const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is planned beside it'
@@ -305,7 +299,7 @@ function ignorePart(gitignore: PlanInput['gitignore']): Part {
   const kind: FileOpKind = existing === null ? 'create' : merged === existing ? 'leave' : 'change'
   const op: FileOp = {
     kind,
-    path: GITIGNORE_PATH,
+    path: GITIGNORE_FILE,
     mode: 'file',
     note: null,
     detail: [IGNORE_BEGIN, ...lines, IGNORE_END],

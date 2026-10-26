@@ -433,3 +433,9 @@ export const CADRE_STATE_FILE = '.cadre/cadre.json'
 export function roleJsonPath(id: string): string {
   return `.cadre/${id}/role.json`
 }
+
+/** The suffix of the copy a conflict plans beside a user-edited file, so the person can diff the two (D-67). */
+export const BESIDE_SUFFIX = '.cadre-new'
+
+/** The repo-relative path of the root `.gitignore`, which holds the cadre block (D-64). */
+export const GITIGNORE_FILE = '.gitignore'
