@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  cadreStatePath,
   displayPath,
+  handoffFolderOf,
   isFileInsideRoot,
   isSafeConfigDir,
   isSafeRelativePath,
+  launcherPath,
   markdownFileNames,
   memoryFolderOf,
   pathFromDisplay,
@@ -185,5 +188,23 @@ describe('safety net: instructions helpers (A8)', () => {
     const shown = paths.map(path => displayPath(path, sources.home, sources.root, sources.configDir))
     expect(shown).toEqual(['<repo>/docs/guide.md', '~/.claude/CLAUDE.md', '~/work notes/CLAUDE.md'])
     expect(shown.map(text => pathFromDisplay(text, sources))).toEqual(paths)
+  })
+})
+
+describe('cadreStatePath', () => {
+  test('cadreStatePath is the repo-relative path of the repo state', () => {
+    expect(cadreStatePath()).toBe('.cadre/cadre.json')
+  })
+})
+
+describe('launcherPath', () => {
+  test('launcherPath is the repo-relative launcher of a role, below .cadre/bin', () => {
+    expect([launcherPath('be'), launcherPath('pm')]).toEqual(['.cadre/bin/be', '.cadre/bin/pm'])
+  })
+})
+
+describe('handoffFolderOf', () => {
+  test('handoffFolderOf is the repo-relative handoff folder of a role, with no trailing slash', () => {
+    expect(handoffFolderOf('be')).toBe('thoughts/shared/handoffs/be')
   })
 })
