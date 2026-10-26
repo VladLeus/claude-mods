@@ -226,7 +226,7 @@ export function memorySlug(gitCommonDir: string, hashHex: string): string {
  * the folders of the private files from the same facts as /cadre start (G-02-1f, D-140 q2-a).
  */
 export function roleMemoryDir(
-  user: Pick<LaunchUser, 'userDir' | 'gitCommonDir' | 'commonDirHash'>,
+  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
   id: string,
 ): string {
   return `${user.userDir}/cadre/${memorySlug(user.gitCommonDir, user.commonDirHash)}/${id}`
@@ -244,7 +244,7 @@ export const INSTRUCTIONS_RECORD_FILE = 'instructions.json'
  * writes to it (privateInstructionsDeny, 02-GAPS-B2 S3), all from this one path.
  */
 export function privateInstructionsDir(
-  user: Pick<LaunchUser, 'userDir' | 'gitCommonDir' | 'commonDirHash'>,
+  user: { readonly userDir: string; readonly gitCommonDir: string; readonly commonDirHash: string },
   id: string,
 ): string {
   return `${roleMemoryDir(user, id)}/${PRIVATE_INSTRUCTIONS_FOLDER}`

@@ -634,7 +634,7 @@ function joinedPath(folder: string, rest: string): string {
  */
 export function pathFromDisplay(
   shown: string,
-  sources: Pick<InstructionSources, 'root' | 'home' | 'configDir'>,
+  sources: { readonly root: string; readonly home: string | null; readonly configDir: string | null },
 ): string {
   const { root, home, configDir } = sources
   if (shown.startsWith(REPO_PREFIX)) return joinedPath(root, shown.slice(REPO_PREFIX.length))
