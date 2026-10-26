@@ -63,7 +63,6 @@ import {
   privateClaudeMdText,
   privateLevels,
   privateLevelsProblem,
-  privateModeArgv,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
@@ -89,6 +88,7 @@ import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { MAX_READ_BYTES } from './facts'
 import { GSD_AUTONOMY } from './gsd'
+import { privateModeArgv } from './host/steps'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from './paths'
 import { gitignoreLines, isSafeOpPath, MANIFEST_PATH, mergeIgnoreBlock, planReadPaths, planWithManifest } from './plan'
 import type { PlanInput, PlannedFiles } from './plan'

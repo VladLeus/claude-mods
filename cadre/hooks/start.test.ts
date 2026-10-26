@@ -20,6 +20,9 @@ import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, desiredFiles, roleJsonText } from './generate'
+import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
+import { renderArgv } from './host/steps'
+import type { RenderStep } from './host/steps'
 import { compileTeam, readTeam, repoGuard } from './init'
 import { launchPlan, unsafeMemoryNameWarning } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
@@ -32,7 +35,6 @@ import {
   clipboardRun,
   COPIED_LINE,
   gatherLaunchUser,
-  GIT_COMMON_DIR_ARGV,
   hookSourcesFor,
   isSupportedClaude,
   launcherChangedReply,
@@ -54,7 +56,6 @@ import {
   privateFolderRefusal,
   privateLinkRefusal,
   readClaudeJson,
-  renderArgv,
   renderFailedReply,
   renderPaths,
   renderSteps,
@@ -72,7 +73,7 @@ import {
   unreadableMemoryIndexWarning,
   unreadableRecordWarning,
 } from './start'
-import type { LaunchUserRead, RenderInput, RenderStep, TerminalPlan } from './start'
+import type { LaunchUserRead, RenderInput, TerminalPlan } from './start'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,

@@ -162,6 +162,7 @@ import {
   settingsText,
   untrackedPartsWarning,
 } from './generate'
+import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GSD_ADAPTER, GSD_AUTONOMY, GSD_CONFIG_FILE, GSD_GATES, GSD_HOOK_NOTES, gsdKickoffText } from './gsd'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {
@@ -408,7 +409,6 @@ import { MANIFEST_FILES, MARKER_ROWS, SKIP_DIRS, SOURCE_EXTENSIONS } from './sca
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'
 import {
   COPIED_LINE,
-  GIT_COMMON_DIR_ARGV,
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   memoryBlockText,

@@ -32,19 +32,16 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
-import {
-  instructionsRecordPath,
-  parseInstructionsRecord,
-  privateLevelsProblem,
-  privateModeArgv,
-  roleFolderLevels,
-} from './apply'
+import { instructionsRecordPath, parseInstructionsRecord, privateLevelsProblem, roleFolderLevels } from './apply'
 import type { RecordedMemory } from './apply'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import { clean, compareText, reportText, shown, sortedUnique } from './core/text'
 import { MAX_READ_BYTES, SOURCE_ORDER } from './facts'
 import { desiredFiles, shQuote } from './generate'
+import { gitCommonDirOf, mainCheckoutOf } from './git/common-dir'
+import { isStepDone } from './host/steps'
+import type { RenderStep } from './host/steps'
 import { compileTeam, readTeam, regenBadRole, repoGuard, scanWarnings } from './init'
 import type { RegenRead } from './init'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from './instructions'
@@ -124,21 +121,6 @@ export const STALE_LINK_FOLDERS: readonly string[] = Object.freeze([
   'instructions/global',
   'instructions/memory',
 ])
-
-/**
- * One step of a render, in the order /cadre start runs it; every path is absolute:
- * - `remove`: remove a link, the stamp of an earlier render, or the DONE.md an earlier run left (`/bin/rm -f`);
- * - `mkdir`: make a folder and the folders above it (`/bin/mkdir -p`);
- * - `chmod`: make a private folder level mode 700 (`/bin/chmod 700`, 02-GAPS-B3 S7);
- * - `link`: make `path` a symbolic link to `target` (`/bin/ln -sfn`);
- * - `write`: write the text to the path; the host writes it, so it has no argv.
- */
-export type RenderStep =
-  | { readonly kind: 'remove'; readonly path: string }
-  | { readonly kind: 'mkdir'; readonly path: string }
-  | { readonly kind: 'chmod'; readonly path: string }
-  | { readonly kind: 'link'; readonly path: string; readonly target: string }
-  | { readonly kind: 'write'; readonly path: string; readonly text: string }
 
 /**
  * What /cadre start does in the memory folder of a parts-flow role (G-02-1f, D-140 q3-a), as gatherLaunchUser decides
@@ -524,35 +506,10 @@ export function renderSteps(input: RenderInput): RenderResult {
   return { steps, warnings: kept.map(link => notReplacedWarning(input.root, link.path)), refusal: null }
 }
 
-/**
- * The argv that runs a step, absolute and with no shell (RESEARCH 3.2): `/bin/rm -f --` for a removal, never `-r`;
- * `/bin/mkdir -p --` for a folder; `/bin/chmod 700` for a private folder level (privateModeArgv, 02-GAPS-B3 S7);
- * `/bin/ln -sfn <target> <path>` for a link. A write has none: the host writes it.
- */
-export function renderArgv(step: RenderStep): readonly string[] | null {
-  if (step.kind === 'remove') return ['/bin/rm', '-f', '--', step.path]
-  if (step.kind === 'mkdir') return ['/bin/mkdir', '-p', '--', step.path]
-  if (step.kind === 'chmod') return privateModeArgv(step.path)
-  if (step.kind === 'link') return ['/bin/ln', '-sfn', step.target, step.path]
-
-  return null
-}
-
 /** The text of the stamp a render writes last: the cadre version that rendered, on one line. */
 export function stampText(cadreVersion: string): string {
   return `rendered by cadre ${cadreVersion}\n`
 }
-
-/** The argv that asks git for the repo's common dir as an absolute path; it runs at the repo root (D-98, D-91). */
-export const GIT_COMMON_DIR_ARGV: readonly string[] = Object.freeze([
-  'git',
-  'rev-parse',
-  '--path-format=absolute',
-  '--git-common-dir',
-])
-
-/** How long the git run may take before it is given up. */
-const GIT_TIMEOUT_MS = 10_000
 
 /** The refusal when there is no HOME: the role files are rendered from the user's own folder (D-98). */
 export const START_NO_HOME = 'cadre start needs HOME to render the role files, so it stopped.'
@@ -774,39 +731,6 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
   }
 
   return sortedUnique(found)
-}
-
-/**
- * The git common dir of the repo with its SHA-256, which name the role memory folders (roleMemoryDir, D-20, D-91):
- * GIT_COMMON_DIR_ARGV run at the repo root gives it, its output without the final line break, which must start with
- * `/`; it is then the realpath of its stat when the host resolves it, else as git gave it. Null when the host rejects
- * the run, it exits non-zero or its output is not an absolute path. /cadre start and apply both look the folders up
- * through it (G-02-1f, D-140 q2-a), so they always name the same ones.
- */
-export async function gitCommonDirOf(
-  io: InitIo,
-  host: HostIo,
-  root: string,
-): Promise<{ readonly gitCommonDir: string; readonly commonDirHash: string } | null> {
-  const run = await host.run(GIT_COMMON_DIR_ARGV, { cwd: root, timeoutMs: GIT_TIMEOUT_MS })
-  if (run === null || run.exitCode !== 0) return null
-  if (!run.stdout.startsWith('/')) return null
-  const given = run.stdout.endsWith('\n') ? run.stdout.slice(0, -1) : run.stdout
-  const gitCommonDir = (await io.stat(given))?.realPath ?? given
-
-  return { gitCommonDir, commonDirHash: await sha256Hex(gitCommonDir) }
-}
-
-/**
- * The main checkout of a linked worktree nested in it (D-20, D-157, 03.1-W3 M1): the folder of the git common dir when
- * it is `<main>/.git` and the root lies below `<main>/`, as `.claude/worktrees/<slug>` does; null for the main
- * checkout, a common dir elsewhere, or a submodule's.
- */
-export function mainCheckoutOf(gitCommonDir: string, root: string): string | null {
-  if (!gitCommonDir.endsWith('/.git')) return null
-  const main = gitCommonDir.slice(0, -'/.git'.length)
-
-  return root.startsWith(`${main}/`) ? main : null
 }
 
 /** The begin marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract, as IGNORE_BEGIN is. */
@@ -1397,9 +1321,6 @@ export async function claudeRefusal(host: HostIo, home: string | null): Promise<
   return claudeTooOldReply(run.stdout.split('\n')[0] ?? '')
 }
 
-/** How long one removal, folder or link step of a render may run before it is given up. */
-const RENDER_STEP_TIMEOUT_MS = 10_000
-
 /** The command that starts a role: the absolute path of its launcher `<root>/.cadre/bin/<id>`, as one shell word. */
 export function launcherCommand(root: string, id: string): string {
   return shQuote(`${root}/${launcherPath(id)}`)
@@ -1613,20 +1534,6 @@ async function renderDiskOf(
   }
 
   return { stats, listings }
-}
-
-/**
- * Runs one step of a render through the host: a write through host.write; a removal, a folder, a chmod or a link
- * through host.run with its renderArgv, absolute and with no shell, done only when it exits 0. Apply makes the role
- * memory folders of the private files with it too, as a mkdir step (G-02-1f).
- */
-export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
-  if (step.kind === 'write') return host.write(step.path, step.text)
-  const argv = renderArgv(step)
-  if (argv === null) return false
-  const run = await host.run(argv, { timeoutMs: RENDER_STEP_TIMEOUT_MS })
-
-  return run !== null && run.exitCode === 0
 }
 
 /**

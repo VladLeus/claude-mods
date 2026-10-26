@@ -38,13 +38,13 @@ import {
 import type { ProbedGsdCandidate } from '../facts'
 import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
 import type { GenerateInput } from '../generate'
+import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { gatherScans, scopesFor } from '../init'
 import type { Gathered } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles'
 import { CHECKOUT_ARGV } from '../scan'
 import { compileScope } from '../scope'
-import { GIT_COMMON_DIR_ARGV } from '../start'
 import { titleGrepArgv } from '../status'
 import {
   DEFAULT_LOCATIONS,

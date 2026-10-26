@@ -617,14 +617,6 @@ export function privateLevels(folder: string, files: readonly PrivateFile[]): st
   return roleFolderLevels(folder).filter(level => isInSubfolder || level !== subfolder)
 }
 
-/** The mode of every private folder level (02-GAPS-B2 N13): only the user may list, enter or change it. */
-const PRIVATE_FOLDER_MODE = '700'
-
-/** The argv that makes a folder private: `/bin/chmod 700` on its absolute path (02-GAPS-B2 N13). */
-export function privateModeArgv(path: string): readonly string[] {
-  return ['/bin/chmod', PRIVATE_FOLDER_MODE, path]
-}
-
 /**
  * The way to a private file from the top (02-GAPS-B3 S3): the levels of roleFolderLevels above the role memory folder
  * (`<userDir>/cadre` and `<repo>-<hash8>`), the role memory folder, its instructions/ subfolder when the file lies in

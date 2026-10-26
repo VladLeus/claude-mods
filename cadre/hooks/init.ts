@@ -67,7 +67,6 @@ import {
   privateCheckPaths,
   privateClaudeMdPath,
   privateLevels,
-  privateModeArgv,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
@@ -166,10 +165,12 @@ import {
   trackedRepoParts,
   untrackedPartsWarning,
 } from './generate'
+import { gitCommonDirOf } from './git/common-dir'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { historyStep } from './history'
 import type { HistoryScan } from './history'
+import { isStepDone, privateModeArgv } from './host/steps'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -270,7 +271,6 @@ import {
 import type { CommandWord } from './scan'
 import { compileScope, MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
-import { gitCommonDirOf, isStepDone } from './start'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =

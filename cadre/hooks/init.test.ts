@@ -93,6 +93,7 @@ import {
   roleJsonText,
   untrackedPartsWarning,
 } from './generate'
+import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
   ADJUST_DISMISSED_REASON,
@@ -295,7 +296,6 @@ import {
 import { autopilotReply, parseCadreState, scanRepo } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
-import { GIT_COMMON_DIR_ARGV } from './start'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
