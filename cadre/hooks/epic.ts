@@ -26,6 +26,7 @@ import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { reportText, sortedUnique } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
+import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { foldersAbove, launcherPath } from './paths'
@@ -53,9 +54,6 @@ export const EPIC_BRANCH_PREFIX = 'epic/'
 
 /** How long `git worktree add` may run before it is given up: a big checkout with its hooks takes long (Pitfall 8). */
 export const GIT_ADD_TIMEOUT_MS = 120_000
-
-/** How long any other git run of /cadre epic may run before it is given up (Pitfall 8). */
-export const GIT_TIMEOUT_MS = 30_000
 
 /** The most characters an epic slug keeps (D-162). */
 export const SLUG_MAX = 48
