@@ -13,6 +13,7 @@ import type {
   RepoEntry,
   SettingsSource,
 } from '../types'
+import { clean } from './core/text'
 
 /**
  * The most bytes of one file a parser sees. register.tsx applies it after the host's own read cap; a larger file is
@@ -33,8 +34,6 @@ const MAX_WARNING_CHARS = 240
 const MAX_HIDDEN_NAME_WARNINGS = 5
 /** Code points a changed name keeps in its warning, once cleaned. */
 const MAX_HIDDEN_NAME_CHARS = 60
-/** The character a cut value ends with. */
-const ELLIPSIS = '\u2026'
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
 const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
 /**
@@ -89,44 +88,6 @@ type ReadEnv = {
 }
 
 /**
- * Strips control, bidi, format, surrogate and private-use characters from a foreign string and caps its length
- * with an ellipsis; anything that is not a string becomes ''. The length counts code points, not UTF-16 units.
- * `maxChars` must be at least 1; a smaller cap gives ''.
- */
-export function clean(value: unknown, maxChars = 120): string {
-  if (typeof value !== 'string' || maxChars < 1) return ''
-  const stripped = value.replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}]/gu, '')
-  const points = Array.from(stripped)
-  if (points.length <= maxChars) return stripped
-
-  return `${points.slice(0, Math.max(0, maxChars - 1)).join('')}${ELLIPSIS}`
-}
-
-/** Ids or names as a row or a context line names them: joined with `, `, or `none` for none (02-GAPS-B2 S7). */
-export function idsOrNone(ids: readonly string[]): string {
-  return ids.length === 0 ? 'none' : ids.join(', ')
-}
-
-/** A count with its noun, singular for exactly one: `1 file`, `0 files`, `2 files` (02-GAPS-B2 S7). */
-export function countedNoun(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`
-}
-
-/** The marks a sentence may end with: a period, a question mark or an exclamation mark. */
-const SENTENCE_END = /[.!?]$/
-
-/**
- * A text as the first sentence of a context line (02-GAPS-B2 N1): a final '.' added unless it already ends in '.', '!'
- * or '?'; '' stays ''.
- */
-export function asSentence(text: string): string {
-  if (text === '') return ''
-  if (SENTENCE_END.test(text)) return text
-
-  return `${text}.`
-}
-
-/**
  * Whether `clean` would change a foreign name at this cap: a stripped character, or a cut to the cap. Such a name is
  * never matched as a marker or a plugin key, because its cleaned form could pass for a real one (WR-03).
  */
@@ -166,21 +127,6 @@ export function parseJsonValue(text: string): { readonly value: unknown } | null
   }
 }
 
-/** Orders two texts by code unit, so a sort never depends on the locale of the machine. */
-export function compareText(a: string, b: string): number {
-  if (a === b) return 0
-
-  return a < b ? -1 : 1
-}
-
-/**
- * The names once each, in code unit order (compareText), as a new array: the same list on every host, whatever its
- * locale, so a list built from it hashes the same on every run. The input is never changed.
- */
-export function sortedUnique(names: readonly string[]): string[] {
-  return Array.from(new Set(names)).sort(compareText)
-}
-
 /**
  * Each value parsed, or null when any value does not parse (02-GAPS-B3 S6): the all-or-nothing list check of the
  * records.
@@ -204,30 +150,6 @@ export function keysOf(value: unknown): string[] {
 /** The own key names of the plain object under `field`, such as `enabledPlugins`; [] when either is not one. */
 export function fieldKeysOf(value: unknown, field: string): string[] {
   return isObject(value) ? keysOf(value[field]) : []
-}
-
-/** Code points of an id that a message shows. */
-const MAX_ID_LABEL_CHARS = 40
-
-/**
- * An id as message text: a string is cleaned and capped at 40 code points, so a hostile id cannot add a line or hide
- * itself, and anything else is a fixed token. It never stringifies a value.
- */
-export function idLabel(id: unknown): string {
-  if (typeof id !== 'string') return '<non-string id>'
-
-  return clean(id, MAX_ID_LABEL_CHARS)
-}
-
-/** The length of a text in UTF-8 bytes, which is what a file size and a read cap count; not its UTF-16 length. */
-export function utf8Bytes(text: string): number {
-  let bytes = 0
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0
-    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
-  }
-
-  return bytes
 }
 
 function isEntryKind(value: unknown): value is EntryKind {

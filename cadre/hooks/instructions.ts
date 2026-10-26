@@ -26,23 +26,25 @@ import {
   clean,
   compareText,
   countedNoun,
-  displayPath,
   idLabel,
   idsOrNone,
+  shown,
+  sortedUnique,
+  utf8Bytes,
+} from './core/text'
+import {
+  displayPath,
   isChangedByClean,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
   parseJsonValue,
   relativeTo,
-  sortedUnique,
   trimSlash,
-  utf8Bytes,
 } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'
-import { shown } from './render'
 import { MAX_HEADING_CHARS } from './roles'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'

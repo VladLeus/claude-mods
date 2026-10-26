@@ -1,7 +1,8 @@
 import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { freezeRows } from './core/freeze'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
-import { clean, compareText, countedNoun, idLabel, idsOrNone, isObject, parseJsonValue, sortedUnique } from './facts'
+import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, sortedUnique } from './core/text'
+import { isObject, parseJsonValue } from './facts'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**
@@ -296,14 +297,6 @@ export function classifySkills(
   }
 
   return { assigned, groups: groupByPlugin(asked) }
-}
-
-/**
- * A name with only A-Z lowercased, every other character as it is: the form the history scan keeps a name in, so the
- * scan and the skill hints share one rule and a skill name in any ASCII case finds its count (D-59, WR-02).
- */
-export function asciiLower(name: string): string {
-  return name.replace(/[A-Z]/g, letter => letter.toLowerCase())
 }
 
 /**

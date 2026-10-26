@@ -14,7 +14,8 @@ import type {
   SetupScan,
 } from '../types'
 import { BUILTIN_ADAPTER } from './builtin'
-import { compareText, isObject } from './facts'
+import { compareText } from './core/text'
+import { isObject } from './facts'
 import {
   asciiLine,
   builtClaudeMdPath,

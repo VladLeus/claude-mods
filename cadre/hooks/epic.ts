@@ -22,11 +22,11 @@ import type {
   TerminalChoice,
 } from '../types'
 import { askChoice, quotedLabels } from './ask'
-import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue, sortedUnique } from './facts'
+import { reportText, sortedUnique } from './core/text'
+import { allOrNull, isObject, MAX_READ_BYTES, parseJsonValue } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
 import { stableJson } from './plan'
-import { reportText } from './render'
 import { standIn, standsFor } from './roles'
 import { CHECKOUT_ARGV, checkoutOf } from './scan'
 import {

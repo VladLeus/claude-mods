@@ -17,9 +17,8 @@ import type {
 } from '../types'
 import { isRoleId } from './command'
 import { freezeRows } from './core/freeze'
+import { clean, compareText, sortedUnique } from './core/text'
 import {
-  clean,
-  compareText,
   fieldKeysOf,
   hiddenNameWarnings,
   isChangedByClean,
@@ -28,7 +27,6 @@ import {
   keysOf,
   MAX_READ_BYTES,
   parseJsonValue,
-  sortedUnique,
   trimSlash,
 } from './facts'
 import { isFrameworkId } from './framework'

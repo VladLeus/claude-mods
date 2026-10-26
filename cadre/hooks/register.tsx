@@ -13,6 +13,7 @@ import type {
   ShownBlock,
 } from '../types'
 import { helpText, parseCommand } from './command'
+import { utf8Bytes } from './core/text'
 import { runEpic, runEpicDone } from './epic'
 import {
   detectRefusal,
@@ -27,7 +28,6 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
-  utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
 import { pluginVersionOf, portProbeOf, portTextOf, runInit, runRegen } from './init'

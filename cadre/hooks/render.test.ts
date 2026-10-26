@@ -4,14 +4,14 @@ import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, PaneKey, Rep
 import { ADAPTERS, detectAll } from './adapters'
 import { ASK_HEADERS, countedChip, PANE_TITLES } from './ask'
 import { BUILTIN_ADAPTER } from './builtin'
-import { clean, isObject } from './facts'
+import { pad, reportText } from './core/text'
+import { isObject } from './facts'
 import { GSD_GATES } from './gsd'
 import {
   adaptersReportLines,
   answersFromNotes,
   askedHeader,
   askRewrite,
-  cardList,
   choiceLine,
   detectReportLines,
   detectText,
@@ -20,7 +20,6 @@ import {
   lineDiff,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
-  pad,
   panePlacement,
   paneRows,
   paneSpans,
@@ -28,8 +27,6 @@ import {
   PREVIEW_BLOCKS,
   previewBlockFor,
   previewMarkdown,
-  reportText,
-  shown,
   STATUS_LABEL,
   withDescribeOwn,
   withPreviews,
@@ -174,69 +171,6 @@ describe('choiceLine', () => {
     expect(choiceLine({ kind: 'none' })).toBe(
       'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
     )
-  })
-})
-
-describe('pad', () => {
-  test('pads with spaces up to the width', () => {
-    expect(pad('Status', 13)).toBe('Status       ')
-  })
-
-  test('a text at the width or longer gets one trailing space, so columns never touch', () => {
-    expect(pad('abc', 3)).toBe('abc ')
-    expect(pad('abcd', 3)).toBe('abcd ')
-  })
-
-  test('the width counts code points, so an astral character takes one column', () => {
-    const astral = '\u{1F600}'
-
-    expect(pad(astral, 3)).toBe(`${astral}  `)
-  })
-})
-
-describe('reportText', () => {
-  test('a text over 240 code points is cut to 240, the last one an ellipsis', () => {
-    const shown = reportText('a'.repeat(300))
-
-    expect(Array.from(shown).length).toBe(240)
-    expect(shown.endsWith('…')).toBe(true)
-    expect(shown).toBe(`${'a'.repeat(239)}…`)
-  })
-
-  test('a text of exactly 240 code points is kept whole', () => {
-    expect(reportText('a'.repeat(240))).toBe('a'.repeat(240))
-  })
-
-  test('unsafe characters are removed before the text is shown', () => {
-    expect(reportText('x\u202Ey')).toBe('xy')
-  })
-})
-
-describe('shown and cardList', () => {
-  test('shown is a scanned name cleaned and capped at 110 code points, the last one an ellipsis', () => {
-    const long = 'x'.repeat(200)
-
-    expect(shown(long)).toBe(clean(long, 110))
-    expect(shown(long)).toBe(`${'x'.repeat(109)}…`)
-    expect(shown('x'.repeat(110))).toBe('x'.repeat(110))
-  })
-
-  test('shown removes a hidden character from a name', () => {
-    expect(shown(`a${BIDI_OVERRIDE}b`)).toBe('ab')
-  })
-
-  test('cardList is none for no names and lists up to 12 names as they are', () => {
-    const twelve = Array.from({ length: 12 }, (_, index) => `n${index + 1}`)
-
-    expect(cardList([])).toBe('none')
-    expect(cardList(['a'])).toBe('a')
-    expect(cardList(twelve)).toBe(twelve.join(', '))
-  })
-
-  test('cardList of more than 12 names lists the first 12, then counts the rest', () => {
-    const names = Array.from({ length: 15 }, (_, index) => `n${index + 1}`)
-
-    expect(cardList(names)).toBe([...names.slice(0, 12), '+3 more'].join(', '))
   })
 })
 

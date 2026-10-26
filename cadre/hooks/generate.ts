@@ -9,11 +9,10 @@ import type {
 } from '../types'
 import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
-import { clean, compareText, sortedUnique } from './facts'
+import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
 import { TOP_OF_FILE } from './instructions'
 import { MAX_ROLE_CHARS } from './kickoff'
 import { PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE, stableJson } from './plan'
-import { cardList, reportText } from './render'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
 

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
 import { contextText } from './ask'
 import { sha256Hex } from './core/hash'
-import { asSentence } from './facts'
+import { asSentence } from './core/text'
 import { displayPath } from './facts'
 import {
   CONTENT_DISMISSED_REASON,

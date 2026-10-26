@@ -19,7 +19,8 @@ import type {
 import { isRoleId, RESERVED_ROLE_IDS } from './command'
 import { freezeRows } from './core/freeze'
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
-import { allOrNull, clean, idLabel, isChangedByClean, isObject, parseJsonValue } from './facts'
+import { clean, idLabel } from './core/text'
+import { allOrNull, isChangedByClean, isObject, parseJsonValue } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './kickoff'
 

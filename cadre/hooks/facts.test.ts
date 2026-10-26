@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Facts, GsdReadTarget, PluginVersion, RawFacts, RawGsdCandidate } from '../types'
 import {
   allOrNull,
-  clean,
   detectRefusal,
   displayPath,
   factReadPlan,
@@ -13,7 +12,6 @@ import {
   HOME_ROOT_REPLY,
   homeRootRefusal,
   hookScriptsMatching,
-  idLabel,
   isFileInsideRoot,
   isRuntimeCallAllowed,
   isChangedByClean,
@@ -33,9 +31,7 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
-  sortedUnique,
   trimSlash,
-  utf8Bytes,
 } from './facts'
 import type { ProbedGsdCandidate } from './facts'
 
@@ -133,32 +129,6 @@ function emptyFacts(over: Partial<Facts>): Facts {
     ...over,
   }
 }
-
-describe('clean', () => {
-  test('removes bidi and line-break characters, joining the text around them', () => {
-    expect(clean('a\u202Eb\nc')).toBe('abc')
-  })
-
-  test('a value that is not a string becomes the empty string', () => {
-    expect(clean(42)).toBe('')
-  })
-
-  test('a longer value is cut to the cap, with an ellipsis as the last character', () => {
-    expect(clean('x'.repeat(200), 10)).toBe(`${'x'.repeat(9)}\u2026`)
-  })
-
-  test('a value exactly at the cap is returned unchanged', () => {
-    expect(clean('x'.repeat(10), 10)).toBe('x'.repeat(10))
-  })
-
-  test('a cap below 1 gives the empty string', () => {
-    expect(clean('abc', 0)).toBe('')
-  })
-
-  test('lone surrogates and private-use characters are stripped', () => {
-    expect(clean('a\uD800b\uE000c')).toBe('abc')
-  })
-})
 
 describe('parseRepoEntries', () => {
   test('keeps the name, kind and isLink of each entry and drops size and mtime', () => {
@@ -1223,17 +1193,6 @@ describe('isFileInsideRoot (WR-02)', () => {
   })
 })
 
-describe('sortedUnique', () => {
-  test('gives each name once, in code unit order, as a new array', () => {
-    const names = ['b', 'a', 'b']
-
-    expect(sortedUnique(names)).toEqual(['a', 'b'])
-    expect(sortedUnique(['b', 'B', 'a', '_'])).toEqual(['B', '_', 'a', 'b'])
-    expect(sortedUnique([])).toEqual([])
-    expect(names).toEqual(['b', 'a', 'b'])
-  })
-})
-
 describe('allOrNull (02-GAPS-B3 S6)', () => {
   test('gives each value parsed, in order, or null when any one does not parse', () => {
     const isNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null)
@@ -1252,17 +1211,6 @@ describe('allOrNull (02-GAPS-B3 S6)', () => {
   })
 })
 
-describe('utf8Bytes', () => {
-  test('counts UTF-8 bytes, not UTF-16 units', () => {
-    expect(utf8Bytes('')).toBe(0)
-    expect(utf8Bytes('abc')).toBe(3)
-    expect(utf8Bytes('é')).toBe(2)
-    expect(utf8Bytes('€')).toBe(3)
-    expect(utf8Bytes('😀')).toBe(4)
-    expect(utf8Bytes('\ud800')).toBe(3)
-  })
-})
-
 describe('safety net: trimSlash (A8)', () => {
   test('trimSlash drops every trailing slash, gives an empty string for the root and keeps null', () => {
     const trimmed = [trimSlash('/repo/'), trimSlash('/repo//'), trimSlash('/repo'), trimSlash('/'), trimSlash(null)]
@@ -1275,14 +1223,6 @@ describe('safety net: relativeTo (A8)', () => {
     expect([relativeTo('/repo', '/repo/'), relativeTo('/repo/a/b.md', '/repo')]).toEqual(['', '/a/b.md'])
     expect(relativeTo('/repository/a', '/repo')).toBe(null)
     expect([relativeTo('/a', null), relativeTo('/a', ''), relativeTo('/a', '/')]).toEqual([null, null, null])
-  })
-})
-
-describe('safety net: idLabel (A8)', () => {
-  test('idLabel: a string cleaned and capped at 40 code points; anything else is one fixed token', () => {
-    expect(idLabel(`be${String.fromCodePoint(0x202e)}\n`)).toBe('be')
-    expect(idLabel('x'.repeat(50))).toBe(`${'x'.repeat(39)}…`)
-    expect([idLabel(7), idLabel(null), idLabel({ id: 'be' })]).toEqual(Array(3).fill('<non-string id>'))
   })
 })
 

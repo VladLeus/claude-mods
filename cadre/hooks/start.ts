@@ -41,15 +41,13 @@ import {
 } from './apply'
 import type { RecordedMemory } from './apply'
 import { sha256Hex } from './core/hash'
+import { clean, compareText, reportText, shown, sortedUnique } from './core/text'
 import {
-  clean,
-  compareText,
   displayPath,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
   parseJsonValue,
-  sortedUnique,
   SOURCE_ORDER,
   trimSlash,
 } from './facts'
@@ -78,7 +76,6 @@ import {
   stableJson,
 } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
-import { reportText, shown } from './render'
 import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import {
   CLAUDE_JSON_MAX_BYTES,

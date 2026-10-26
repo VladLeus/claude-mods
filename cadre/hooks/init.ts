@@ -140,21 +140,27 @@ import type { NameAssignment, SkillGroup } from './assign'
 import { sha256Hex } from './core/hash'
 import {
   asSentence,
+  cardList,
   clean,
   compareText,
   countedNoun,
+  idsOrNone,
+  pad,
+  reportText,
+  shown,
+  sortedUnique,
+  utf8Bytes,
+} from './core/text'
+import {
   detectRefusal,
   displayPath,
   FILE_SYSTEM_ROOT_REPLY,
   HOME_ROOT_REPLY,
-  idsOrNone,
   isDirInsideRoot,
   isObject,
   MAX_READ_BYTES,
   relativeTo,
-  sortedUnique,
   trimSlash,
-  utf8Bytes,
 } from './facts'
 import { chooseFramework, SUPPORTED_IDS } from './framework'
 import {
@@ -224,7 +230,7 @@ import {
   resolveToolCommand,
 } from './recommend'
 import type { HunkCandidate } from './recommend'
-import { cardList, choiceLine, pad, reportText, shown } from './render'
+import { choiceLine } from './render'
 import {
   applyAdjust,
   EFFORTS,

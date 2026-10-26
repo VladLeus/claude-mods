@@ -1,8 +1,8 @@
 import type { InitIo, InitLocations, PortEntry } from '../types'
 import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ask'
 import type { StepResult } from './ask'
-import { asciiLower, HISTORY_MAX_SESSIONS } from './assign'
-import { compareText } from './facts'
+import { HISTORY_MAX_SESSIONS } from './assign'
+import { asciiLower, compareText } from './core/text'
 import { listingState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'
 

@@ -1,5 +1,5 @@
 import type { KickoffContext } from '../types'
-import { clean } from './facts'
+import { clean } from './core/text'
 
 /** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
 export const MAX_ROLE_CHARS = 40

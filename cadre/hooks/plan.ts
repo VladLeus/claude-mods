@@ -11,8 +11,8 @@ import type {
   ReadState,
 } from '../types'
 import { sha256Hex } from './core/hash'
-import { compareText, isObject, sortedUnique } from './facts'
-import { pad, reportText } from './render'
+import { compareText, pad, reportText, sortedUnique } from './core/text'
+import { isObject } from './facts'
 import { isSafeRelativePath } from './scan'
 
 /**

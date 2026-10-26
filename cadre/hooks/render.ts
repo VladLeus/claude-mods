@@ -11,7 +11,8 @@ import type {
   ShownBlock,
 } from '../types'
 import { ADAPTERS, detectAll } from './adapters'
-import { clean, countedNoun, isObject } from './facts'
+import { countedNoun, pad, reportText } from './core/text'
+import { isObject } from './facts'
 import { chooseFramework } from './framework'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
@@ -24,18 +25,6 @@ const GATE_ID_WIDTH = 28
 const GATE_TYPE_WIDTH = 15
 const GATE_HUMAN_WIDTH = 8
 
-/**
- * The most code points one report cell keeps, the ellipsis included. It is the same cap facts.ts gives a host warning,
- * so no untrusted text reaches the report longer than a warning may be.
- */
-const MAX_REPORT_CHARS = 240
-
-/** The most code points of a scanned name that a card rule or a warning shows. A scanned name is data, not trusted. */
-const MAX_SHOWN_CHARS = 110
-
-/** The most names one card list shows before it counts the rest. */
-const MAX_CARD_LIST = 12
-
 /** The title line of the detect report. It says that nothing was written. */
 const TITLE = 'cadre detect  (read-only, nothing was written)'
 
@@ -45,44 +34,6 @@ export const STATUS_LABEL: Readonly<Record<DetectStatus, string>> = {
   installed: 'installed',
   'not-found': 'not found',
   unsupported: 'unsupported',
-}
-
-/**
- * The text padded with spaces to a column width in code points. A text already at the width or longer gets one
- * trailing space, so two columns never run together.
- */
-export function pad(text: string, width: number): string {
-  const length = Array.from(text).length
-  if (length >= width) return `${text} `
-
-  return `${text}${' '.repeat(width - length)}`
-}
-
-/**
- * Text from Facts or a detection as the report may show it: unsafe characters removed, then capped at MAX_REPORT_CHARS
- * code points. The plan and card renderers reuse it for every value that comes from outside the code, so a hostile
- * value cannot add a line or hide text.
- */
-export function reportText(text: string): string {
-  return clean(text, MAX_REPORT_CHARS)
-}
-
-/** A scanned name or pattern as a card rule or a warning shows it: unsafe characters removed and the length capped. */
-export function shown(text: string): string {
-  return clean(text, MAX_SHOWN_CHARS)
-}
-
-/**
- * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
- * `+N more`. A rule passes each scanned name through `shown` first. A line can still pass the 240 code points a card
- * line keeps, so a rule puts its fixed text before a list, or on its own line, never after it (B6).
- */
-export function cardList(names: readonly string[]): string {
-  if (names.length === 0) return 'none'
-  const rest = names.length - MAX_CARD_LIST
-  if (rest <= 0) return names.join(', ')
-
-  return [...names.slice(0, MAX_CARD_LIST), `+${rest} more`].join(', ')
 }
 
 /** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */

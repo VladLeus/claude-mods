@@ -4,7 +4,6 @@ import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
-  asciiLower,
   assignToRoles,
   cappedNames,
   classifyMcp,
@@ -1132,13 +1131,6 @@ describe('the improver plugin (G-02-1f, D-141)', () => {
   test('CLAUDE_MD_PLUGIN is the exact key in claude-plugins-official; no role is given it as infra or security', () => {
     expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
     expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(CLAUDE_MD_PLUGIN)
-  })
-})
-
-describe('safety net: asciiLower (A8)', () => {
-  test('asciiLower lowercases A-Z only and keeps every non-ASCII letter as it is', () => {
-    expect(asciiLower('GSD:Plan-Phase_2')).toBe('gsd:plan-phase_2')
-    expect(asciiLower('ÄPFEL-İX-ß')).toBe('Äpfel-İx-ß')
   })
 })
 

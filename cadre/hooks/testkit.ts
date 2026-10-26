@@ -22,7 +22,7 @@ import type {
   SkillRef,
   TemplateRoleId,
 } from '../types'
-import { utf8Bytes } from './facts'
+import { utf8Bytes } from './core/text'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
 
 /**

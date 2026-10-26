@@ -13,7 +13,7 @@ import type {
   PortRead,
 } from '../types'
 import { sha256Hex } from './core/hash'
-import { compareText } from './facts'
+import { compareText } from './core/text'
 import {
   buildPlan,
   classifyFile,

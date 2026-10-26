@@ -90,6 +90,7 @@ import {
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
+import { countedNoun, idsOrNone } from './core/text'
 import {
   EPIC_BRANCH_PREFIX,
   EPIC_CANCELLED,
@@ -141,14 +142,7 @@ import {
   WORKTREES_DIR,
   XDG_ARGV,
 } from './epic'
-import {
-  countedNoun,
-  FILE_SYSTEM_ROOT_REPLY,
-  HOME_ROOT_REPLY,
-  HOME_UNUSABLE_WARNING,
-  idsOrNone,
-  SOURCE_ORDER,
-} from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, HOME_UNUSABLE_WARNING, SOURCE_ORDER } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS, REQUIRED_FIELDS, SUPPORTED_IDS, UNSUPPORTED_MARKERS } from './framework'
 import {
   cadreJsonText,

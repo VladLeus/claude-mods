@@ -1,6 +1,6 @@
 import type { CompiledScope, RoleSpec } from '../types'
-import { compareText, isChangedByClean, sortedUnique } from './facts'
-import { shown } from './render'
+import { compareText, shown, sortedUnique } from './core/text'
+import { isChangedByClean } from './facts'
 import {
   isContextMonitorScript,
   isSafeDir,

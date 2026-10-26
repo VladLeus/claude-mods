@@ -82,7 +82,8 @@ import {
   SECURITY_PLUGINS,
 } from './assign'
 import { sha256Hex } from './core/hash'
-import { compareText, FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
+import { compareText } from './core/text'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, isObject, MAX_READ_BYTES } from './facts'
 import {
   cadreJsonText,
   desiredFiles,

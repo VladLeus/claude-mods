@@ -4,8 +4,7 @@
  * import each other.
  */
 import type { AskSpec, InitIo, PaneKey } from '../types'
-import { clean } from './facts'
-import { reportText } from './render'
+import { clean, reportText } from './core/text'
 
 /** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
 export const MAX_ASKS = 3

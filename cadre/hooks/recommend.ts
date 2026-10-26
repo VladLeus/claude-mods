@@ -12,9 +12,9 @@ import type {
   ToolCommand,
 } from '../types'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './assign'
-import { clean, displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
+import { clean, reportText } from './core/text'
+import { displayPath, isObject, isSafeConfigDir, parseJsonValue, trimSlash } from './facts'
 import { GSD_CONFIG_FILE } from './gsd'
-import { reportText } from './render'
 import { standsFor } from './roles'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */

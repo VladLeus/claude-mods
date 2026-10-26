@@ -11,9 +11,9 @@
  * `/usr/bin/grep` over a transcript.
  */
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } from '../types'
-import { clean, compareText, isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
+import { clean, compareText, reportText } from './core/text'
+import { isObject, MAX_READ_BYTES, parseJsonValue, trimSlash } from './facts'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
-import { reportText } from './render'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath, CHECKOUT_ARGV, checkoutOf } from './scan'
 import type { RunState } from './scan'
 import { mangledProjectDir, userDirOf } from './setup'

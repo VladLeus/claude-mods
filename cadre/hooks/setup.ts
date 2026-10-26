@@ -9,9 +9,8 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
+import { clean, compareText, sortedUnique } from './core/text'
 import {
-  clean,
-  compareText,
   displayPath,
   fieldKeysOf,
   foldEnabledPlugins,
@@ -28,7 +27,6 @@ import {
   parseInstalledPlugins,
   parseJsonValue,
   SOURCE_ORDER,
-  sortedUnique,
   trimSlash,
 } from './facts'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './roles'

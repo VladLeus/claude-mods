@@ -24,6 +24,7 @@ import type {
   ScopeContext,
 } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { compareText } from '../core/text'
 import {
   EPIC_RECORD_FILE,
   epicRecordText,
@@ -33,7 +34,6 @@ import {
   STATUS_ARGV,
   WORKTREE_LIST_ARGV,
 } from '../epic'
-import { compareText } from '../facts'
 import type { ProbedGsdCandidate } from '../facts'
 import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
 import type { GenerateInput } from '../generate'

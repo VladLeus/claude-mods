@@ -11,7 +11,8 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
-import { isObject, sortedUnique } from './facts'
+import { sortedUnique } from './core/text'
+import { isObject } from './facts'
 import {
   claudeMdImports,
   instructionPlan,

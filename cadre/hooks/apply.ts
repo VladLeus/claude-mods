@@ -38,10 +38,9 @@ import { ADAPTERS } from './adapters'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { sha256Hex } from './core/hash'
+import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
 import {
   allOrNull,
-  compareText,
-  countedNoun,
   displayPath,
   isChangedByClean,
   isDirInsideRoot,
@@ -49,7 +48,6 @@ import {
   isObject,
   MAX_READ_BYTES,
   parseJsonValue,
-  sortedUnique,
   trimSlash,
 } from './facts'
 import { builtClaudeMdPath, partsBody } from './generate'
@@ -57,7 +55,7 @@ import { editWriteRules, INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER }
 import { MANIFEST_PATH, stableJson } from './plan'
 import { resolveToolCommand } from './recommend'
 import type { GsdToolContext } from './recommend'
-import { diffLines, lineDiff, reportText } from './render'
+import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'
 import { isSha256Hex, partRecordOf } from './roles'
 import { missingState } from './scan'
