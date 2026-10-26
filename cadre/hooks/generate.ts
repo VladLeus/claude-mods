@@ -12,7 +12,7 @@ import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
-import { PROBE_EXPECTATIONS_FILE, RUNTIME_STAMP_FILE } from './paths'
+import { cadreStatePath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from './paths'
 import { TOP_OF_FILE } from './records'
 import { MAX_PURPOSE_CHARS } from './roles'
 import { scopeCardLines } from './scope'
@@ -454,7 +454,10 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
   const kickoff = rootWord(rolePath(role.id, 'kickoff.txt'))
   const stamp = `"$rt"/${RUNTIME_STAMP_FILE}`
   const expectations = `"$rt"/${PROBE_EXPECTATIONS_FILE}`
-  const renderInputs = [STATE_PATH, ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name))]
+  const renderInputs = [
+    cadreStatePath(),
+    ...['role.json', 'settings.json', 'mcp.json'].map(name => rolePath(role.id, name)),
+  ]
   const fresh = [...renderInputs.map(rootWord), '"$rt"/settings.json', '"$rt"/mcp.json', expectations].join(' ')
   const jsonFiles = '"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1'
   const usage = errorLine(`cadre: usage: .cadre/bin/${id} [--probe]`)
@@ -475,7 +478,7 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
       'this script never renders it.',
     'set -eu',
     ROOT_LINE,
-    `[ -f ${rootWord(rolePath(role.id, 'role.json'))} ] || ${refusal(foreign)}`,
+    `[ -f ${rootWord(roleJsonPath(role.id))} ] || ${refusal(foreign)}`,
     `[ -f ${rootWord(rolePath(role.id, 'ROLE.md'))} ] && [ -f ${kickoff} ] || ${refusal(missing)}`,
     `rt=${rootWord(rolePath(role.id, '.runtime'))}`,
     `${RUNTIME_KICKOFF_TEST}${kickoff}; fi`,
@@ -608,9 +611,6 @@ export type GenerateInput = {
 /** The repo-relative path of the index, which lists every role. */
 const INDEX_PATH = '.cadre/INDEX.md'
 
-/** The repo-relative path of the repo state file. */
-const STATE_PATH = '.cadre/cadre.json'
-
 /**
  * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
  * were read from the repo (roleClaudeMdText). Whenever init passes repoParts every role gets its built file, the
@@ -641,7 +641,7 @@ function roleFiles(
   if (scope === undefined) return []
 
   return [
-    { path: rolePath(role.id, 'role.json'), content: roleJsonText(role), mode: 'file' },
+    { path: roleJsonPath(role.id), content: roleJsonText(role), mode: 'file' },
     { path: rolePath(role.id, 'ROLE.md'), content: roleMdText(role, scope), mode: 'file' },
     { path: rolePath(role.id, 'kickoff.txt'), content: kickoffText(role, scope.card.framework), mode: 'file' },
     { path: rolePath(role.id, 'settings.json'), content: settingsText(scope), mode: 'file' },
@@ -668,7 +668,7 @@ export function desiredFiles(input: GenerateInput): DesiredFile[] {
     input.repoParts === undefined ? null : (input.repoParts.get(id) ?? [])
   const files = selected.flatMap(role => roleFiles(role, scopes.get(role.id), state.launchStart, partsOf(role.id)))
   files.push({ path: INDEX_PATH, content: indexMdText(roles, scopes), mode: 'file' })
-  if (only === null) files.push({ path: STATE_PATH, content: cadreJsonText(state), mode: 'file' })
+  if (only === null) files.push({ path: cadreStatePath(), content: cadreJsonText(state), mode: 'file' })
 
   return files.sort((a, b) => compareText(a.path, b.path))
 }

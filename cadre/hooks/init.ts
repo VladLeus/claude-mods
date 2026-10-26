@@ -207,7 +207,7 @@ import {
 import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
-  CADRE_STATE_FILE,
+  cadreStatePath,
   displayPath,
   GITIGNORE_FILE,
   isDirInsideRoot,
@@ -4244,7 +4244,7 @@ async function regenState(
   root: string,
   command: TeamCommand,
 ): Promise<RegenRead<CadreState>> {
-  const read = await readRepoFile(io, root, CADRE_STATE_FILE, MAX_READ_BYTES)
+  const read = await readRepoFile(io, root, cadreStatePath(), MAX_READ_BYTES)
   if (read.state === 'absent') return regenRefusal(noStateReply(command))
   const state = read.state === 'text' ? parseCadreState(read.text) : null
   if (state === null) return regenRefusal(REGEN_BAD_STATE)

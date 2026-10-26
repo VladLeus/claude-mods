@@ -426,8 +426,10 @@ export async function isRepoFolder(io: InitIo, root: string, path: string): Prom
   return isDirInsideRoot(await io.stat(`${root}/${path}`), root)
 }
 
-/** The repo-relative path of the repo state regen re-renders from. */
-export const CADRE_STATE_FILE = '.cadre/cadre.json'
+/** The repo-relative path of the repo state (D-89), which init writes and regen, start and status read. */
+export function cadreStatePath(): string {
+  return '.cadre/cadre.json'
+}
 
 /** The repo-relative path of a role's role.json: what regen reads the role from, and never plans (A5). */
 export function roleJsonPath(id: string): string {
