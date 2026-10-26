@@ -7,7 +7,7 @@ import {
   MAX_ROLE_CHARS,
   MAX_SPEC_PATH_CHARS,
   UNNAMED_ROLE,
-} from './kickoff'
+} from './kickoff-text'
 
 /** A character outside the BMP, which takes two UTF-16 units but is one code point. */
 const ASTRAL = '\u{1F600}'

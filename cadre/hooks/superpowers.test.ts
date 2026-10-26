@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, RepoEntry } from '../types'
+import { DONE_MARKER_LINE } from './core/kickoff-text'
 import { gateProblems, missingFields } from './framework'
-import { DONE_MARKER_LINE } from './kickoff'
 import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
 import { emptySetupScan } from './testkit'
 

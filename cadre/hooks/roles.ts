@@ -18,11 +18,11 @@ import type {
 } from '../types'
 import { isRoleId, RESERVED_ROLE_IDS } from './command'
 import { freezeRows } from './core/freeze'
+import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
 import { clean, idLabel } from './core/text'
 import { allOrNull, isChangedByClean, isObject, parseJsonValue } from './facts'
 import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
-import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './kickoff'
 
 /**
  * One row of the role template (D-54), the team every repo starts from. PM has no Bash (ROLE-05), and PM, TL and

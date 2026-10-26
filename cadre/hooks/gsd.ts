@@ -12,7 +12,7 @@ import type {
   SetupScan,
 } from '../types'
 import { freezeRows } from './core/freeze'
-import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './core/kickoff-text'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to

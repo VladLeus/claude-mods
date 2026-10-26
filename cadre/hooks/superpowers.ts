@@ -9,7 +9,7 @@ import type {
   RepoEntry,
 } from '../types'
 import { freezeRows } from './core/freeze'
-import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './kickoff'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './core/kickoff-text'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the

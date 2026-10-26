@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Detection, Facts, RepoEntry } from '../types'
 import { gateProblems, missingFields } from './framework'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './builtin'
-import { DONE_MARKER_LINE } from './kickoff'
+import { DONE_MARKER_LINE } from './core/kickoff-text'
 import { emptySetupScan } from './testkit'
 
 /** Facts with every list empty. A test sets only the list it reads. */

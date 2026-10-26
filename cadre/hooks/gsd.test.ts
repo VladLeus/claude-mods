@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../types'
+import { DONE_MARKER_LINE } from './core/kickoff-text'
 import { gateProblems, missingFields } from './framework'
 import {
   detectGsd,
@@ -13,7 +14,6 @@ import {
   gsdHookFacts,
   gsdKickoffText,
 } from './gsd'
-import { DONE_MARKER_LINE } from './kickoff'
 import { adaptersReportLines } from './render'
 import { emptySetupScan } from './testkit'
 

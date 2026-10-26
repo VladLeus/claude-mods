@@ -1,5 +1,10 @@
-import type { KickoffContext } from '../types'
-import { clean } from './core/text'
+/**
+ * The kickoff text rules every framework adapter shares, a layer 0 leaf: the role and spec path caps, the unnamed
+ * fallback, the done marker rule and how outside text is cleaned. It imports only core/text, so the built-in, GSD and
+ * superpowers adapters, roles and generate can all import it with no cycle across their areas.
+ */
+import type { KickoffContext } from '../../types'
+import { clean } from './text'
 
 /** The role name is short and shown once, on the first line. A longer name is cut, counted in code points. */
 export const MAX_ROLE_CHARS = 40

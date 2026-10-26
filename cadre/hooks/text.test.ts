@@ -89,6 +89,7 @@ import {
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, RESERVED_ROLE_IDS, USAGE_LINES } from './command'
+import { UNNAMED_ROLE } from './core/kickoff-text'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import { countedNoun, idsOrNone } from './core/text'
 import {
@@ -337,7 +338,6 @@ import {
   unfollowedImportWarning,
   unreadableWarning,
 } from './instructions'
-import { UNNAMED_ROLE } from './kickoff'
 import {
   INSTRUCTIONS_RECORD_FILE,
   PRIVATE_INSTRUCTIONS_FOLDER,
