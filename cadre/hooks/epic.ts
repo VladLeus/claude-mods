@@ -29,7 +29,7 @@ import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate
 import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { hasRunFailed } from './host/steps'
-import { compileTeam, readTeam, regenBadRole, repoGuard } from './init'
+import { repoGuard } from './init'
 import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
 import {
@@ -46,6 +46,7 @@ import {
 } from './start'
 import type { TerminalPlan } from './start'
 import { roleRunState } from './status'
+import { compileTeam, readTeam, regenBadRole } from './team'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'

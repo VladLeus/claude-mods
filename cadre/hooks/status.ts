@@ -16,10 +16,11 @@ import { clean, compareText, reportText } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
-import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
+import { repoGuard } from './init'
 import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
 import type { RunState } from './scan'
+import { readTeam, regenBadRole, resolvedFramework } from './team'
 
 /**
  * Where a role's autopilot run stands, read from disk (D-111): `done` when autopilot's log ended the session's last run

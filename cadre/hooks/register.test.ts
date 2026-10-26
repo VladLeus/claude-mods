@@ -25,14 +25,13 @@ import {
   policyLine,
   PRIVATE_FILES_HEADING,
   privateFoldersUnknownWarning,
-  REGEN_NO_STATE,
-  regenNoRole,
   REVIEW_QUESTION,
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
 } from './init'
 import { OWN_ANSWER_HINT } from './render'
 import { autopilotReply } from './scan'
+import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,

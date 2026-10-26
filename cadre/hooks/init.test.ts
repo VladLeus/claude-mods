@@ -113,7 +113,6 @@ import {
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   commandRefusal,
-  compileTeam,
   CONFLICT_CONTEXT,
   CONSENT_DISMISSED_REASON,
   consentStep,
@@ -138,7 +137,6 @@ import {
   frameworkReason,
   frameworkRoleQuestion,
   frameworkStep,
-  gatherScans,
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
   GIT_POLICY_OPTIONS,
@@ -178,7 +176,6 @@ import {
   MAX_PROPOSE_ATTEMPTS,
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
-  MCP_ROUTE,
   mcpContextLine,
   MEMORY_DISMISSED_REASON,
   memoryContextLine,
@@ -189,7 +186,6 @@ import {
   MODEL_MODE_QUESTION,
   modelStep,
   NEXT_STEP_NOTE,
-  noStateReply,
   NOT_INTERACTIVE_REPLY,
   notHandedOutWarning,
   ownSkillContextLine,
@@ -208,25 +204,17 @@ import {
   proposalLines,
   provenUserDir,
   PYTHON_TIMEOUT_MS,
-  readTeam,
   REGEN_BAD_MANIFEST,
-  REGEN_BAD_STATE,
   REGEN_DISMISSED_REASON,
   REGEN_ITEM_OPTIONS,
   REGEN_NO_MANIFEST,
-  REGEN_NO_STATE,
-  regenBadRole,
   regenCancelledReply,
   regenHeader,
   regenMemoryContextLine,
   regenMemoryQuestion,
-  regenNeedsFramework,
-  regenNoRole,
   regenPartContextLine,
   regenPartQuestion,
   regenTotalWarning,
-  repoGuard,
-  resolvedFramework,
   REVIEW_DISMISSED_REASON,
   REVIEW_OPTIONS,
   REVIEW_QUESTION,
@@ -245,8 +233,6 @@ import {
   scanContextLine,
   scanSummaryLines,
   scanWarningLines,
-  scanWarnings,
-  scopesFor,
   SECURITY_INSTALL_CONTEXT,
   SECURITY_INSTALL_DISMISSED_REASON,
   SECURITY_INSTALL_PREFIX,
@@ -258,7 +244,7 @@ import {
   unusableRecordWarning,
   withSecuritySkill,
 } from './init'
-import type { AdjustOutcome, ApplyOutcome, Gathered, InitOptions, RegenOptions, ReviewItem } from './init'
+import type { AdjustOutcome, ApplyOutcome, InitOptions, RegenOptions, ReviewItem } from './init'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -294,9 +280,21 @@ import {
   rolesFromProposal,
 } from './roles'
 import { autopilotReply, scanRepo } from './scan'
+import { gatherScans, scanWarnings } from './scan/gather'
+import type { Gathered } from './scan/gather'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 import { parseCadreState } from './state/cadre-files'
+import {
+  MCP_ROUTE,
+  REGEN_BAD_STATE,
+  REGEN_NO_STATE,
+  regenBadRole,
+  regenNeedsFramework,
+  regenNoRole,
+  resolvedFramework,
+  scopesFor,
+} from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -479,48 +477,6 @@ describe('initGuard', () => {
     })
     const active = memIo(gitWorld({ files: { [STATUS_PATH]: '{"isOn":true,"beat":1000000}' } }), {})
     expect(await initGuard(active.io, 'regen')).toEqual({ kind: 'refuse', text: autopilotReply('active', 'regen') })
-  })
-})
-
-describe('gatherScans', () => {
-  /** A repo with a TypeScript test file and a session that has the sentry MCP server. */
-  const scanned = gitWorld({
-    dirs: { '/repo/.git': [], '/repo': [entry('src', 'dir')], '/repo/src': [entry('a.test.ts')] },
-    tools: [{ name: 'mcp__sentry__issues', description: 'Sentry issues', mcp: true }],
-    files: { '/home/u/.claude.json': '{"mcpServers":{"linear":{"command":"x"}}}' },
-  })
-
-  test('gatherScans gives the facts and the repo and setup scans of the session, as the scans give them', async () => {
-    for (const isAllowed of [false, true]) {
-      const gathered = await gatherScans(memIo(scanned, {}).io, DEFAULT_LOCATIONS, isAllowed)
-      expect(gathered.facts).toEqual(scanned.facts)
-      expect(gathered.repo).toEqual(await scanRepo(memIo(scanned, {}).io, '/repo'))
-      const ctx = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
-      expect(gathered.setup).toEqual(await scanSetup(memIo(scanned, {}).io, ctx, isAllowed))
-      expect(gathered.repo.languages).toEqual(['TypeScript'])
-    }
-  })
-
-  test('without consent gatherScans never reads ~/.claude.json', async () => {
-    const run = memIo(scanned, {})
-    const gathered = await gatherScans(run.io, DEFAULT_LOCATIONS, false)
-    expect(run.reads).not.toContain('/home/u/.claude.json')
-    expect(gathered.setup.mcp.map(server => server.name)).toEqual(['sentry'])
-  })
-
-  test('with consent gatherScans reads ~/.claude.json once and keeps its server names', async () => {
-    const run = memIo(scanned, {})
-    const gathered = await gatherScans(run.io, DEFAULT_LOCATIONS, true)
-    expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
-    expect(gathered.setup.mcp.map(server => server.name)).toEqual(['linear', 'sentry'])
-  })
-
-  test('the setup scan looks for the project of the root as given as well as the root as resolved', async () => {
-    const claudeJson = '{"projects":{"/link/repo":{"mcpServers":{"jira":{}}}}}'
-    const world = gitWorld({ files: { '/home/u/.claude.json': claudeJson } })
-    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
-    const gathered = await gatherScans(memIo(world, {}).io, locations, true)
-    expect(gathered.setup.mcp.map(server => server.name)).toEqual(['jira'])
   })
 })
 
@@ -743,57 +699,6 @@ describe('truncatedLine (G-02-1e)', () => {
     expect(truncatedLine(repo)).toBe(`  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`)
   })
 })
-
-/** What the scans of one run found, with these warnings in each of the three scans. */
-function gatheredWith(facts: readonly string[], repo: readonly string[], setup: readonly string[]): Gathered {
-  return {
-    facts: { facts: { ...EMPTY_FACTS, warnings: facts }, gsdUserDir: null },
-    repo: repoScan({ warnings: repo }),
-    setup: emptySetupScan({ warnings: setup }),
-  }
-}
-
-describe('scanWarnings', () => {
-  test('the warnings of the locations, the facts, the repo scan and the setup scan, in that order', () => {
-    const locations = { ...DEFAULT_LOCATIONS, warnings: ['root given through a link'] }
-    const gathered = gatheredWith(['facts a', 'facts b'], ['repo a'], ['setup a'])
-    expect(scanWarnings(locations, gathered)).toEqual([
-      'root given through a link',
-      'facts a',
-      'facts b',
-      'repo a',
-      'setup a',
-    ])
-  })
-
-  test('a warning given twice, in one list or in two, is listed once where it first comes', () => {
-    const locations = { ...DEFAULT_LOCATIONS, warnings: ['same', 'loc'] }
-    const gathered = gatheredWith(['facts', 'same'], ['repo', 'facts'], ['repo', 'setup', 'setup'])
-    expect(scanWarnings(locations, gathered)).toEqual(['same', 'loc', 'facts', 'repo', 'setup'])
-  })
-
-  test('with no warning anywhere the list is empty, and so are its lines', () => {
-    expect(scanWarnings(DEFAULT_LOCATIONS, gatheredWith([], [], []))).toEqual([])
-    expect(scanWarningLines([])).toEqual([])
-  })
-
-  test('each warning is one line that starts with warning:', () => {
-    expect(scanWarningLines(['a'])).toEqual(['warning: a'])
-    expect(scanWarningLines(['a', 'b c'])).toEqual(['warning: a', 'warning: b c'])
-  })
-
-  test('a guard only in local settings adds no warning: launch renders it from every settings source (D-103)', () => {
-    const gathered = { ...gatheredWith(['facts a'], [], []), setup: { ...guardFrom(['local']), warnings: ['setup a'] } }
-    expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual(['facts a', 'setup a'])
-  })
-})
-
-/** A setup scan whose hooks register the GSD secret read guard once from each of these settings sources. */
-function guardFrom(sources: readonly HookScript['source'][]): Gathered['setup'] {
-  return emptySetupScan({
-    hooks: sources.map(source => ({ script: 'gsd-secret-read-guard.js', event: 'PreToolUse', source })),
-  })
-}
 
 /** Settings with one PreToolUse hook that runs the GSD secret read guard. */
 const GUARD_SETTINGS = {
@@ -7534,151 +7439,6 @@ describe('runRegen', () => {
       const reply = await regenBe(await regenWorld(team, { readUserMcp }, base))
       expect([readUserMcp, reply.split('\n')[0]]).toEqual([readUserMcp, 'cadre regen be --dry-run'])
       expect([readUserMcp, leaks(reply, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])]).toEqual([readUserMcp, []])
-    }
-  })
-})
-
-describe('repoGuard and readTeam', () => {
-  /** BE and PM on the repo default, in the order cadre.json lists them. */
-  const team = [templateRole('be'), templateRole('pm')]
-  /** BE's role.json in the fixtures. */
-  const BE_ROLE = '/repo/.cadre/be/role.json'
-  /** PM's role.json in the fixtures. */
-  const PM_ROLE = '/repo/.cadre/pm/role.json'
-  /** The commands whose refusal of a missing cadre.json is worded for them. */
-  const STATE_COMMANDS: readonly ('regen' | 'start' | 'status')[] = ['regen', 'start', 'status']
-
-  /** A git repo at /repo holding every file init writes for `roles` and the state `over`, cadre.json included. */
-  async function teamWorld(roles: readonly RoleSpec[] = team, over: Partial<CadreState> = {}): Promise<MemWorld> {
-    const files = await plannedFiles(gitWorld(), roles, over)
-
-    return gitWorld({ dirs: { '/repo/.git': [], '/repo/.cadre': [] }, files: onDisk(files) })
-  }
-
-  /** `world` with BE's role.json replaced by text that is not JSON. */
-  function withBadRole(world: MemWorld): MemWorld {
-    return { ...world, files: { ...world.files, [BE_ROLE]: 'not json' } }
-  }
-
-  test('repoGuard refuses in the start wording, in the order of initGuard: root, home, git, top level', async () => {
-    const noRoot = memIo(gitWorld({ locations: null }), {})
-    expect(await repoGuard(noRoot.io, 'start')).toEqual({
-      kind: 'refuse',
-      text: 'cadre start could not read the session root, so it stopped before reading anything.',
-    })
-    const home = withStats(memIo(memWorld({ locations: { ...DEFAULT_LOCATIONS, root: '/home/u' } }), {}))
-    expect(await repoGuard(home.io, 'start')).toEqual({
-      kind: 'refuse',
-      text: commandRefusal(HOME_ROOT_REPLY, 'start'),
-    })
-    expect(home.stats).toEqual([])
-    const noGit = memIo(memWorld({}), {})
-    expect(await repoGuard(noGit.io, 'start')).toEqual({
-      kind: 'refuse',
-      text: 'cadre start needs a git repo: run git init first',
-    })
-    const appLocations = { ...DEFAULT_LOCATIONS, root: '/repo/app', givenRoot: '/repo/app' }
-    const below = memIo(gitWorld({ locations: appLocations }), {})
-    expect(await repoGuard(below.io, 'start')).toEqual({
-      kind: 'refuse',
-      text: 'run /cadre start from the repo root: /repo',
-    })
-  })
-
-  test('repoGuard never asks whether anyone is there and never reads the autopilot status file', async () => {
-    const files = { [STATUS_PATH]: '{"isOn":true,"phase":"running","beat":1000000}' }
-    const run = memIo(gitWorld({ interactive: false, files }), {})
-    const io: InitIo = {
-      ...run.io,
-      isInteractive: async () => {
-        throw new Error('repoGuard must not ask whether anyone is there')
-      },
-    }
-    expect(await repoGuard(io, 'start')).toEqual({ kind: 'ok', locations: DEFAULT_LOCATIONS })
-    expect(run.reads).toEqual([])
-    // The same world stops the regen guard, so the pass above is repoGuard leaving the autopilot check out.
-    expect(await initGuard(memIo(gitWorld({ files }), {}).io, 'regen')).toEqual({
-      kind: 'refuse',
-      text: autopilotReply('active', 'regen'),
-    })
-  })
-
-  test('noStateReply words the missing cadre.json for its command, and regen keeps its text (D-68)', () => {
-    expect(noStateReply('start')).toBe('cadre start needs .cadre/cadre.json from /cadre init: run /cadre init first.')
-    expect(noStateReply('status')).toBe('cadre status needs .cadre/cadre.json from /cadre init: run /cadre init first.')
-    expect(REGEN_NO_STATE).toBe(noStateReply('regen'))
-  })
-
-  test('readTeam refuses a missing cadre.json in the wording of its command', async () => {
-    for (const command of STATE_COMMANDS) {
-      const read = await readTeam(memIo(gitWorld(), {}).io, '/repo', command, 'be')
-      expect([command, read]).toEqual([command, { kind: 'refuse', text: noStateReply(command) }])
-    }
-  })
-
-  test('readTeam refuses an id cadre.json does not list, naming the roles it lists', async () => {
-    const read = await readTeam(memIo(await teamWorld(), {}).io, '/repo', 'start', 'qa')
-    expect(read).toEqual({ kind: 'refuse', text: regenNoRole('qa', ['be', 'pm']) })
-  })
-
-  test("readTeam keeps runRegen's order: the id, then each role.json, then a role with no framework", async () => {
-    const badRole = withBadRole(await teamWorld())
-    expect(await readTeam(memIo(badRole, {}).io, '/repo', 'start', 'qa')).toEqual({
-      kind: 'refuse',
-      text: regenNoRole('qa', ['be', 'pm']),
-    })
-    expect(await readTeam(memIo(badRole, {}).io, '/repo', 'start', 'pm')).toEqual({
-      kind: 'refuse',
-      text: regenBadRole('be'),
-    })
-    const unframed = await teamWorld(team, { framework: null })
-    expect(await readTeam(memIo(withBadRole(unframed), {}).io, '/repo', 'start', 'pm')).toEqual({
-      kind: 'refuse',
-      text: regenBadRole('be'),
-    })
-    expect(await readTeam(memIo(unframed, {}).io, '/repo', 'start', 'pm')).toEqual({
-      kind: 'refuse',
-      text: regenNeedsFramework('be'),
-    })
-  })
-
-  test('readTeam gives the state, every listed role in cadre.json order and the text each was read from', async () => {
-    const world = await teamWorld()
-    const read = await readTeam(memIo(world, {}).io, '/repo', 'start', 'pm')
-    if (read.kind !== 'ok') throw new Error(`readTeam refused: ${read.text}`)
-    expect(read.value.state).toEqual(stateOf(team))
-    expect(read.value.roles.map(role => role.id)).toEqual(['be', 'pm'])
-    expect([...read.value.texts]).toEqual([
-      ['be', world.files[BE_ROLE]],
-      ['pm', world.files[PM_ROLE]],
-    ])
-  })
-
-  test('compileTeam gathers with the stored consent and compiles every role for the stored launch start', async () => {
-    const start: LaunchStart = { kind: 'dir', path: 'apps/web' }
-    const world = gitWorld({ files: { '/home/u/.claude.json': '{"mcpServers":{"linear":{"command":"x"}}}' } })
-    const run = memIo(world, {})
-    const state = stateOf(team, { launchStart: start, readUserMcp: true })
-    const { gathered, scopes } = await compileTeam(run.io, DEFAULT_LOCATIONS, state, team)
-    expect(gathered).toEqual(await scansOf(world, true))
-    expect(run.reads.filter(path => path === '/home/u/.claude.json')).toHaveLength(1)
-    expect(scopes).toEqual(scopesFor(team, 'none', gathered, [], start))
-    expect(scopes).not.toEqual(scopesFor(team, 'none', gathered, [], { kind: 'git-root' }))
-  })
-
-  test('compileTeam judges attended from the config on disk, as regen does (D-70, D-72)', async () => {
-    const config = '/repo/.planning/config.json'
-    const cases: readonly (readonly [string | null, boolean])[] = [
-      [null, true],
-      ['{"mode":"interactive","workflow":{"text_mode":false}}', true],
-      ['{"mode":"yolo","workflow":{"text_mode":false}}', false],
-    ]
-    for (const [text, isAttended] of cases) {
-      const world = text === null ? gitWorld() : gitWorld({ files: { [config]: text } })
-      const state = stateOf(team, { framework: 'gsd' })
-      const { scopes } = await compileTeam(memIo(world, {}).io, DEFAULT_LOCATIONS, state, team)
-      // BE has Bash, so only the config decides; a GSD role without Bash, such as PM, is always attended.
-      expect([text, cardOf(scopes, 'be').isAttended]).toEqual([text, isAttended])
     }
   })
 })

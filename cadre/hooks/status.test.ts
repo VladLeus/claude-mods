@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../types'
 import { cadreJsonText, roleJsonText } from './generate'
 import { CHECKOUT_ARGV } from './git/checkout'
-import { noStateReply, regenNoRole } from './init'
 import { autopilotLogPath, autopilotStatusPath } from './scan'
 import type { RunState } from './scan'
 import {
@@ -20,6 +19,7 @@ import {
   titleGrepArgv,
   transcriptCandidates,
 } from './status'
+import { noStateReply, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entryAt, hostWorld, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostRunRule, HostWrite, MemWorld } from './testkit'
 

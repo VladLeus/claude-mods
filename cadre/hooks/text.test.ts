@@ -237,7 +237,6 @@ import {
   launchLine,
   LINKED_MEMORIES_ROW,
   MANIFEST_SKIPPED_NOTE,
-  MCP_ROUTE,
   mcpContextLine,
   MEMORY_DISMISSED_REASON,
   memoryContextLine,
@@ -261,12 +260,10 @@ import {
   privateFoldersUnknownWarning,
   proposalLines,
   REGEN_BAD_MANIFEST,
-  REGEN_BAD_STATE,
   REGEN_CANCELLED,
   REGEN_DISMISSED_REASON,
   REGEN_ITEM_OPTIONS,
   REGEN_NO_MANIFEST,
-  REGEN_NO_STATE,
   regenCancelledReply,
   regenHeader,
   regenMemoryContextLine,
@@ -433,6 +430,7 @@ import {
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
 import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
+import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
 

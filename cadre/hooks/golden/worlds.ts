@@ -40,12 +40,13 @@ import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from 
 import type { GenerateInput } from '../generate'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { gatherScans, scopesFor } from '../init'
-import type { Gathered } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles'
+import { gatherScans } from '../scan/gather'
+import type { Gathered } from '../scan/gather'
 import { compileScope } from '../scope'
 import { titleGrepArgv } from '../status'
+import { scopesFor } from '../team'
 import {
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,

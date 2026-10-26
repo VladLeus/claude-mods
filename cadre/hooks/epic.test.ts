@@ -96,7 +96,6 @@ import { MAX_READ_BYTES } from './facts'
 import { cadreJsonText, ROLE_LINE_MAX, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
-import { readTeam, regenNoRole } from './init'
 import {
   claudeTooOldReply,
   COPIED_LINE,
@@ -110,6 +109,7 @@ import {
   terminalPlan,
   worktreeClaudeMd,
 } from './start'
+import { readTeam, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'
 
