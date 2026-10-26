@@ -293,9 +293,10 @@ import {
   roleFromTemplate,
   rolesFromProposal,
 } from './roles'
-import { autopilotReply, parseCadreState, scanRepo } from './scan'
+import { autopilotReply, scanRepo } from './scan'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
+import { parseCadreState } from './state/cadre-files'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,

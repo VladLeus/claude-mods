@@ -46,8 +46,8 @@ import type { GenerateInput } from './generate'
 import { GSD_ADAPTER } from './gsd'
 import { buildPlan, isSafeOpPath } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { parseCadreState } from './scan'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
+import { parseCadreState } from './state/cadre-files'
 import { SUPERPOWERS_ADAPTER } from './superpowers'
 import {
   ABSOLUTE_PATH_MARKERS,

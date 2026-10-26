@@ -35,7 +35,7 @@ import {
   SECURITY_REPORTS_LINE,
 } from './plan'
 import type { PlanInput } from './plan'
-import { parseManifest } from './scan'
+import { parseManifest } from './state/cadre-files'
 import { BIDI_OVERRIDE } from './testkit'
 
 const VERSION = '0.2.0'

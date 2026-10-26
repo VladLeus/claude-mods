@@ -68,8 +68,9 @@ import {
 } from './paths'
 import { MANIFEST_PATH } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
-import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
+import { readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
 import { CLAUDE_JSON_MAX_BYTES, claudeMdPathsOf, hookScriptOf } from './setup'
+import { parseManifest } from './state/cadre-files'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
 const SETTINGS_FILE = 'settings.json'

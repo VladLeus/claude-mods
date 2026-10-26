@@ -263,7 +263,6 @@ import {
   MAX_FOLDER_ENTRIES,
   MAX_SCAN_ENTRIES,
   notGitRepoReply,
-  parseCadreState,
   readRepoFile,
   scanRepo,
   undecidedFacts,
@@ -271,6 +270,7 @@ import {
 import type { CommandWord } from './scan'
 import { compileScope, MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
+import { parseCadreState } from './state/cadre-files'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
 export const NOT_INTERACTIVE_REPLY =
