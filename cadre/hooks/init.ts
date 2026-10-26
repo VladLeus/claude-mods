@@ -706,7 +706,7 @@ function cadreSummary(cadre: RepoScan['cadre']): string {
 function pluginSummary(plugins: readonly string[]): string {
   if (plugins.length === 0) return '0'
 
-  return `${plugins.length} (${cardList(plugins.map(shown))})`
+  return `${plugins.length} (${cardList(plugins.map(plugin => shown(plugin)))})`
 }
 
 /**
@@ -733,7 +733,7 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
     `  plugins: ${pluginSummary(setup.plugins)}`,
     `  skills: ${setup.skills.length}; agents: ${setup.agents.length}; MCP servers: ${mcp}`,
     `  global ~/.claude/CLAUDE.md: ${globalMd}; memories: ${setup.memoryFiles.length}; ` +
-      `CLAUDE.md files: ${cardList(setup.claudeMd.map(shown))}`,
+      `CLAUDE.md files: ${cardList(setup.claudeMd.map(file => shown(file)))}`,
   ]
 }
 

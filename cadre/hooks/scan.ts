@@ -19,7 +19,7 @@ import { freezeRows } from './core/freeze'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { SHA256_HEX } from './core/names'
 import { isRoleId } from './core/role-id'
-import { clean, compareText, sortedUnique } from './core/text'
+import { clean, compareText, shown, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, isFileInsideRoot, MAX_READ_BYTES, trimSlash } from './facts'
 import { isFrameworkId } from './framework'
 
@@ -305,11 +305,6 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   pathRow('e2e', 'Rails system tests', 'dir', /^test\/system$/),
   pathRow('e2e', 'Cucumber features', 'file', /^features\/(?:[^/]+\/)?[^/]+\.feature$/),
 ])
-
-/** A repo path as a warning shows it: cleaned and capped. */
-function shown(path: string): string {
-  return clean(path, MAX_WARNING_PATH_CHARS)
-}
 
 /**
  * Whether a path the port could not stat or list is missing (`absent`) or there but out of reach (`unknown`). The
@@ -658,7 +653,7 @@ function isWalkable(entry: PortEntry): boolean {
 function listWarning(path: string): string {
   if (path === '') return 'could not list the repo root (treated as unknown)'
 
-  return `could not list ${shown(path)} (treated as unknown)`
+  return `could not list ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
 }
 
 /**
@@ -762,10 +757,10 @@ function packageFilesOf(seen: readonly Seen[]): string[] {
  */
 async function readDependencies(found: Findings, io: InitIo, root: string, path: string): Promise<string | null> {
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (read.state !== 'text') return `could not read ${shown(path)} (treated as unknown)`
+  if (read.state !== 'text') return `could not read ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
 
   const value = parseJsonValue(read.text)?.value
-  if (!isObject(value)) return `could not parse ${shown(path)} as JSON (treated as unknown)`
+  if (!isObject(value)) return `could not parse ${shown(path, MAX_WARNING_PATH_CHARS)} as JSON (treated as unknown)`
 
   const names = new Set(DEPENDENCY_GROUPS.flatMap(group => keysOf(value[group])))
   for (const row of MARKER_ROWS) {
@@ -1042,9 +1037,9 @@ function manifestsOf(seen: readonly Seen[]): ManifestKind[] {
 async function readManifest(found: Findings, io: InitIo, root: string, kind: ManifestKind): Promise<string | null> {
   const path = MANIFEST_FILES[kind]
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (read.state !== 'text') return `could not read ${shown(path)} (treated as unknown)`
+  if (read.state !== 'text') return `could not read ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
   const listed = manifestNames(kind, read.text)
-  if (listed === null) return `could not parse ${shown(path)} as JSON (treated as unknown)`
+  if (listed === null) return `could not parse ${shown(path, MAX_WARNING_PATH_CHARS)} as JSON (treated as unknown)`
 
   const names = new Set(listed)
   for (const row of MARKER_ROWS) {

@@ -117,9 +117,13 @@ export function reportText(text: string): string {
   return clean(text, MAX_REPORT_CHARS)
 }
 
-/** A scanned name or pattern as a card rule or a warning shows it: unsafe characters removed and the length capped. */
-export function shown(text: string): string {
-  return clean(text, MAX_SHOWN_CHARS)
+/**
+ * A scanned name, pattern or path as a card rule or a warning shows it: unsafe characters removed and the length
+ * capped at `maxChars` code points, MAX_SHOWN_CHARS unless the caller keeps a cap of its own. Map with an arrow
+ * (`names.map(name => shown(name))`), never `map(shown)`: map passes the index second, which would become the cap.
+ */
+export function shown(value: string, maxChars = MAX_SHOWN_CHARS): string {
+  return clean(value, maxChars)
 }
 
 /** The last item of a list that counts the names it leaves out: `+N more`, the one wording every capped list uses. */

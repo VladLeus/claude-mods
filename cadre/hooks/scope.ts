@@ -420,7 +420,8 @@ function bashRule(role: RoleSpec): ScopeRule {
 /** The rule for the code dirs that are denied; none when no dir is. */
 function deniedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.dirs.length === 0) return []
-  const text = `Reads and edits under ${cardList(deny.dirs.map(shown))} are denied; the patterns match at any depth`
+  const dirList = cardList(deny.dirs.map(dir => shown(dir)))
+  const text = `Reads and edits under ${dirList} are denied; the patterns match at any depth`
 
   return [rule(text, 'best-effort')]
 }
@@ -431,15 +432,17 @@ function deniedDirRules(deny: DenyPlan): ScopeRule[] {
  */
 function ownDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.ownDirs.length === 0) return []
+  const dirList = cardList(deny.ownDirs.map(dir => shown(dir)))
 
-  return [rule(`Reads and edits under ${cardList(deny.ownDirs.map(shown))} are never denied (own folders)`, 'none')]
+  return [rule(`Reads and edits under ${dirList} are never denied (own folders)`, 'none')]
 }
 
 /** The rule for the code dirs the committed template leaves to the launch render; none when no dir is skipped. */
 function skippedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.skippedDirs.length === 0) return []
+  const dirList = cardList(deny.skippedDirs.map(dir => shown(dir)))
   const text =
-    `Reads and edits under ${cardList(deny.skippedDirs.map(shown))} are not denied in the committed template: ` +
+    `Reads and edits under ${dirList} are not denied in the committed template: ` +
     "those names match the role's own folders at any depth (exact denies are rendered at launch)"
 
   return [rule(text, 'best-effort')]
@@ -462,7 +465,7 @@ const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server d
 function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
   if (deny.mcp.length === 0) return [rule('No other scanned MCP servers to deny', enforcement)]
-  const text = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(shown))}`
+  const text = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(name => shown(name)))}`
   const checks = deny.mcp.map((name): ProbeCheck => ({ kind: 'tool-prefix-absent', token: `${mcpToolName(name)}__` }))
   const listed = checkedRule(text, enforcement, checks)
   if (route === 'strict') return [listed]
@@ -587,10 +590,11 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
  */
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
+  const pluginList = cardList(plugins.map(plugin => shown(plugin)))
 
   return [
     ...bypassRules(role),
-    rule(`Plugins: only ${cardList(plugins.map(shown))} load (--setting-sources project whitelist)`, 'hard'),
+    rule(`Plugins: only ${pluginList} load (--setting-sources project whitelist)`, 'hard'),
     bashRule(role),
     ...deniedDirRules(deny),
     ...ownDirRules(deny),
