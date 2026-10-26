@@ -59,7 +59,16 @@ import {
   unsafeMemoryNameWarning,
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
-import { displayPath, isDirInsideRoot, trimSlash } from './paths'
+import {
+  claudeJsonPathOf,
+  displayPath,
+  isDirInsideRoot,
+  MARKDOWN_EXTENSION,
+  markdownFileNames,
+  memoryFolderOf,
+  trimSlash,
+  userDirOf,
+} from './paths'
 import {
   INBOX_FILE,
   MANIFEST_PATH,
@@ -70,16 +79,7 @@ import {
 } from './plan'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { parseManifest, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
-import {
-  CLAUDE_JSON_MAX_BYTES,
-  claudeJsonPathOf,
-  claudeMdPathsOf,
-  hookScriptOf,
-  MARKDOWN_EXTENSION,
-  markdownFileNames,
-  memoryFolderOf,
-  userDirOf,
-} from './setup'
+import { CLAUDE_JSON_MAX_BYTES, claudeMdPathsOf, hookScriptOf } from './setup'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
 const SETTINGS_FILE = 'settings.json'

@@ -23,7 +23,18 @@ import {
   parseInstalledPlugins,
   SOURCE_ORDER,
 } from './facts'
-import { displayPath, isDirInsideRoot, isFileInsideRoot, trimSlash } from './paths'
+import {
+  claudeJsonPathOf,
+  displayPath,
+  isDirInsideRoot,
+  isFileInsideRoot,
+  MARKDOWN_EXTENSION,
+  markdownFileNames,
+  MAX_FILE_NAME_CHARS,
+  memoryFolderOf,
+  trimSlash,
+  userDirOf,
+} from './paths'
 import { listingState, missingState } from './scan'
 
 /**
@@ -63,10 +74,6 @@ export const CLAUDE_JSON_MAX_BYTES = 4 * 1024 * 1024
 const MAX_REF_NAME_CHARS = 100
 /** Code points a skill's purpose keeps: its one-line description, cleaned and cut to this (D-139). */
 const MAX_SKILL_PURPOSE_CHARS = 120
-/** Code points a memory file name keeps; the longest name a file system allows (02-GAPS-B2 S7: one home). */
-export const MAX_FILE_NAME_CHARS = 255
-/** The extension of an agent file, a rule file and a memory file (02-GAPS-B2 S7: one home). */
-export const MARKDOWN_EXTENSION = '.md'
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
 const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
@@ -464,25 +471,6 @@ export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
   return Array.from(new Set(claudeMdPathsOf(value).map(path => displayPath(path, ctx.home, ctx.root, ctx.configDir))))
 }
 
-/**
- * The folder name Claude Code gives a project's data under `projects/`: every character of the path that is not an
- * ASCII letter or digit becomes `-`, one for each UTF-16 unit.
- */
-export function mangledProjectDir(path: string): string {
-  return path.replace(/[^A-Za-z0-9]/g, '-')
-}
-
-/**
- * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, else
- * `<home>/.claude`; null when there is neither. The setup scan and the history scan both take it from here, so the two
- * never disagree on it (IN-02).
- */
-export function userDirOf(ctx: { readonly configDir: string | null; readonly home: string | null }): string | null {
-  if (ctx.configDir !== null) return ctx.configDir
-
-  return ctx.home === null ? null : `${ctx.home}/.claude`
-}
-
 /** A path as a warning shows it: its display form (`<repo>/...`, `~/...`), never the path itself (D-57). */
 function shownPath(ctx: SetupContext, path: string): string {
   return displayPath(path, ctx.home, ctx.root, ctx.configDir)
@@ -570,24 +558,6 @@ async function isInsideRepo(
   if (stat !== null || (await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
 
   return false
-}
-
-/**
- * The names of the regular files in a listing that end in `.md` (02-GAPS-B2 S7: one home); a folder, a link or another
- * kind is not one.
- */
-export function markdownFileNames(entries: readonly PortEntry[]): string[] {
-  return entries
-    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN_EXTENSION))
-    .map(entry => entry.name)
-}
-
-/**
- * The auto-memory folder the engine keeps for a project root in the user folder: `<userDir>/projects/<root mangled by
- * mangledProjectDir>/memory` (D-100; 02-GAPS-B2 S7: one home).
- */
-export function memoryFolderOf(userDir: string, root: string): string {
-  return `${userDir}/projects/${mangledProjectDir(root)}/memory`
 }
 
 /** Each settings source the port can read as a plain object, in override order; any other source adds a warning. */
@@ -698,16 +668,6 @@ async function agentNames(
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
-}
-
-/** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
-export function claudeJsonPathOf(ctx: {
-  readonly configDir: string | null
-  readonly home: string | null
-}): string | null {
-  if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
-
-  return ctx.home === null ? null : `${ctx.home}/.claude.json`
 }
 
 /**

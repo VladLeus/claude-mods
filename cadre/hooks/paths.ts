@@ -4,7 +4,7 @@
  * than one area uses. It imports only core and the types, so every area above it can import it with no cycle, and no
  * area reaches into another for a path.
  */
-import type { EntryKind, RawFacts } from '../types'
+import type { EntryKind, PortEntry, RawFacts } from '../types'
 import { isObject } from './core/json'
 import { clean } from './core/text'
 
@@ -190,4 +190,56 @@ export function userFolderOf(env: ReadEnv, warnings: string[]): string | null {
   warnings.push(NO_USER_FOLDER_WARNING)
 
   return null
+}
+
+/** Code points a memory file name keeps; the longest name a file system allows (02-GAPS-B2 S7: one home). */
+export const MAX_FILE_NAME_CHARS = 255
+/** The extension of an agent file, a rule file and a memory file (02-GAPS-B2 S7: one home). */
+export const MARKDOWN_EXTENSION = '.md'
+
+/**
+ * The folder name Claude Code gives a project's data under `projects/`: every character of the path that is not an
+ * ASCII letter or digit becomes `-`, one for each UTF-16 unit.
+ */
+export function mangledProjectDir(path: string): string {
+  return path.replace(/[^A-Za-z0-9]/g, '-')
+}
+
+/**
+ * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, else
+ * `<home>/.claude`; null when there is neither. The setup scan and the history scan both take it from here, so the two
+ * never disagree on it (IN-02).
+ */
+export function userDirOf(ctx: { readonly configDir: string | null; readonly home: string | null }): string | null {
+  if (ctx.configDir !== null) return ctx.configDir
+
+  return ctx.home === null ? null : `${ctx.home}/.claude`
+}
+
+/**
+ * The names of the regular files in a listing that end in `.md` (02-GAPS-B2 S7: one home); a folder, a link or another
+ * kind is not one.
+ */
+export function markdownFileNames(entries: readonly PortEntry[]): string[] {
+  return entries
+    .filter(entry => entry.kind === 'file' && !entry.isLink && entry.name.endsWith(MARKDOWN_EXTENSION))
+    .map(entry => entry.name)
+}
+
+/**
+ * The auto-memory folder the engine keeps for a project root in the user folder: `<userDir>/projects/<root mangled by
+ * mangledProjectDir>/memory` (D-100; 02-GAPS-B2 S7: one home).
+ */
+export function memoryFolderOf(userDir: string, root: string): string {
+  return `${userDir}/projects/${mangledProjectDir(root)}/memory`
+}
+
+/** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
+export function claudeJsonPathOf(ctx: {
+  readonly configDir: string | null
+  readonly home: string | null
+}): string | null {
+  if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
+
+  return ctx.home === null ? null : `${ctx.home}/.claude.json`
 }

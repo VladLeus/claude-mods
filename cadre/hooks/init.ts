@@ -208,7 +208,15 @@ import {
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName, roleMemoryDir } from './launch'
-import { displayPath, isDirInsideRoot, relativeTo, trimSlash } from './paths'
+import {
+  displayPath,
+  isDirInsideRoot,
+  MARKDOWN_EXTENSION,
+  memoryFolderOf,
+  relativeTo,
+  trimSlash,
+  userDirOf,
+} from './paths'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
   attendedNote,
@@ -257,7 +265,7 @@ import {
 } from './scan'
 import type { CommandWord } from './scan'
 import { compileScope, MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
-import { MARKDOWN_EXTENSION, memoryFolderOf, scanSetup, userDirOf } from './setup'
+import { scanSetup } from './setup'
 import { gitCommonDirOf, isStepDone } from './start'
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */

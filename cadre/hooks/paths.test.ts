@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { displayPath, isFileInsideRoot, isSafeConfigDir, relativeTo, resolvedPath, trimSlash } from './paths'
+import {
+  displayPath,
+  isFileInsideRoot,
+  isSafeConfigDir,
+  markdownFileNames,
+  memoryFolderOf,
+  relativeTo,
+  resolvedPath,
+  trimSlash,
+} from './paths'
+import { entry } from './testkit'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -106,5 +116,26 @@ describe('isFileInsideRoot (WR-02)', () => {
     expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
     expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
     expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
+  })
+})
+
+describe('safety net: memoryFolderOf (A8)', () => {
+  test('memoryFolderOf: <userDir>/projects/<the root with each non-alphanumeric made ->/memory', () => {
+    expect(memoryFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo/memory')
+    expect(memoryFolderOf('/cfg', '/Users/v/my.repo_x')).toBe('/cfg/projects/-Users-v-my-repo-x/memory')
+  })
+})
+
+describe('safety net: markdownFileNames (A8)', () => {
+  test('markdownFileNames: the regular, unlinked files whose names end in .md, in listing order', () => {
+    const entries = [
+      entry('b.md'),
+      entry('notes.txt'),
+      entry('docs.md', 'dir'),
+      entry('linked.md', 'file', true),
+      entry('a.md'),
+      entry('README.MD'),
+    ]
+    expect(markdownFileNames(entries)).toEqual(['b.md', 'a.md'])
   })
 })

@@ -5,8 +5,8 @@ import { HISTORY_MAX_SESSIONS } from './assign'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { asciiLower, compareText } from './core/text'
+import { mangledProjectDir, userDirOf } from './paths'
 import { listingState } from './scan'
-import { mangledProjectDir, userDirOf } from './setup'
 
 /**
  * The most bytes of one session transcript the scan reads, the host's own read cap. A bigger session is skipped and

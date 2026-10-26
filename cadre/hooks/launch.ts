@@ -1,6 +1,7 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, shown, sortedUnique } from './core/text'
 import { isChangedByClean } from './facts'
+import { mangledProjectDir, memoryFolderOf } from './paths'
 import {
   isContextMonitorScript,
   isSafeDir,
@@ -9,7 +10,6 @@ import {
   roleOwnPaths,
   SECRET_READ_DENY,
 } from './scope'
-import { mangledProjectDir, memoryFolderOf } from './setup'
 
 /**
  * The only settings keys a rendered runtime file may hold (D-84). The render adds a key from this list and nothing

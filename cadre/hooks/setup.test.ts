@@ -2,16 +2,13 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../types'
 import { MAX_READ_BYTES } from './facts'
+import { claudeJsonPathOf, mangledProjectDir, userDirOf } from './paths'
 import {
   CLAUDE_JSON_MAX_BYTES,
-  claudeJsonPathOf,
   claudeMdPathsOf,
   connectorServerNames,
   hookScriptOf,
   isDesktopConnectorName,
-  mangledProjectDir,
-  markdownFileNames,
-  memoryFolderOf,
   projectAncestors,
   projectClaudeJson,
   projectCommands,
@@ -20,7 +17,6 @@ import {
   projectSettings,
   projectToolServers,
   scanSetup,
-  userDirOf,
 } from './setup'
 import type { SetupContext } from './setup'
 import {
@@ -1465,27 +1461,6 @@ describe('launch exports', () => {
     expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg' })).toBe('/cfg/.claude.json')
     expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg', home: null })).toBe('/cfg/.claude.json')
     expect(claudeJsonPathOf({ ...CTX, home: null })).toBeNull()
-  })
-})
-
-describe('safety net: memoryFolderOf (A8)', () => {
-  test('memoryFolderOf: <userDir>/projects/<the root with each non-alphanumeric made ->/memory', () => {
-    expect(memoryFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo/memory')
-    expect(memoryFolderOf('/cfg', '/Users/v/my.repo_x')).toBe('/cfg/projects/-Users-v-my-repo-x/memory')
-  })
-})
-
-describe('safety net: markdownFileNames (A8)', () => {
-  test('markdownFileNames: the regular, unlinked files whose names end in .md, in listing order', () => {
-    const entries = [
-      entry('b.md'),
-      entry('notes.txt'),
-      entry('docs.md', 'dir'),
-      entry('linked.md', 'file', true),
-      entry('a.md'),
-      entry('README.MD'),
-    ]
-    expect(markdownFileNames(entries)).toEqual(['b.md', 'a.md'])
   })
 })
 

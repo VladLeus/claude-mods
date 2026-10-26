@@ -15,10 +15,9 @@ import { isObject, parseJsonValue } from './core/json'
 import { clean, compareText, reportText } from './core/text'
 import { MAX_READ_BYTES } from './facts'
 import { readTeam, regenBadRole, repoGuard, resolvedFramework } from './init'
-import { trimSlash } from './paths'
+import { mangledProjectDir, trimSlash, userDirOf } from './paths'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath, CHECKOUT_ARGV, checkoutOf } from './scan'
 import type { RunState } from './scan'
-import { mangledProjectDir, userDirOf } from './setup'
 
 /**
  * Where a role's autopilot run stands, read from disk (D-111): `done` when autopilot's log ended the session's last run

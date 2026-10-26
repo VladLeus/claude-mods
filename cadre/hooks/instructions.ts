@@ -41,9 +41,17 @@ import { isChangedByClean, MAX_READ_BYTES } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports, resolveSegments } from './launch'
-import { displayPath, isDirInsideRoot, relativeTo, trimSlash } from './paths'
+import {
+  displayPath,
+  isDirInsideRoot,
+  MARKDOWN_EXTENSION,
+  markdownFileNames,
+  MAX_FILE_NAME_CHARS,
+  relativeTo,
+  trimSlash,
+  userDirOf,
+} from './paths'
 import { listingState, readRepoFile, ruleFiles, RULES_FOLDER } from './scan'
-import { MARKDOWN_EXTENSION, markdownFileNames, MAX_FILE_NAME_CHARS, userDirOf } from './setup'
 
 /** Every line break of a text. */
 const LINE_BREAKS = /\r\n|\r|\n/g
