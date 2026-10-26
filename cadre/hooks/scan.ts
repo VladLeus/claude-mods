@@ -17,6 +17,7 @@ import type {
 } from '../types'
 import { freezeRows } from './core/freeze'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
+import { SHA256_HEX } from './core/names'
 import { isRoleId } from './core/role-id'
 import { clean, compareText, sortedUnique } from './core/text'
 import { hiddenNameWarnings, isChangedByClean, isFileInsideRoot, MAX_READ_BYTES, trimSlash } from './facts'
@@ -42,9 +43,6 @@ const MAX_WARNING_PATH_CHARS = 120
 
 /** Code points of the git top level a refusal shows. */
 const MAX_TOP_CHARS = 240
-
-/** A lowercase hex SHA-256: exactly 64 characters, 0 to 9 and a to f. */
-const SHA256_HEX = /^[0-9a-f]{64}$/
 
 /** A cadre version as the manifest and the state file record it: three numbers joined by dots. */
 const VERSION_TEXT = /^\d+\.\d+\.\d+$/
