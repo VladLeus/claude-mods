@@ -2,7 +2,7 @@ import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef,
 import { freezeRows } from './core/freeze'
 import { isObject, parseJsonValue } from './core/json'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
-import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, sortedUnique } from './core/text'
+import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, moreLine, sortedUnique } from './core/text'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**
@@ -708,7 +708,7 @@ const MAX_SHOWN_NAMES = 5
 export function cappedNames(names: readonly string[]): string {
   const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
   const rest = names.length - shown.length
-  const items = rest > 0 ? [...shown, `+${rest} more`] : shown
+  const items = rest > 0 ? [...shown, moreLine(rest)] : shown
 
   return items.join(', ')
 }

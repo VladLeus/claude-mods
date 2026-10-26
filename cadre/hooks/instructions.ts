@@ -30,6 +30,7 @@ import {
   countedNoun,
   idLabel,
   idsOrNone,
+  moreLine,
   shown,
   sortedUnique,
   utf8Bytes,
@@ -207,7 +208,7 @@ function cappedList(items: readonly string[], max: number): string {
   const shown = items.slice(0, max)
   const rest = items.length - shown.length
 
-  return (rest > 0 ? [...shown, `+${rest} more`] : shown).join(', ')
+  return (rest > 0 ? [...shown, moreLine(rest)] : shown).join(', ')
 }
 
 /** The most sources a topic's context line names before it counts the rest. */

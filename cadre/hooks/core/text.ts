@@ -122,6 +122,11 @@ export function shown(text: string): string {
   return clean(text, MAX_SHOWN_CHARS)
 }
 
+/** The last item of a list that counts the names it leaves out: `+N more`, the one wording every capped list uses. */
+export function moreLine(count: number): string {
+  return `+${count} more`
+}
+
 /**
  * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
  * `+N more`. A rule passes each scanned name through `shown` first. A line can still pass the 240 code points a card
@@ -132,7 +137,7 @@ export function cardList(names: readonly string[]): string {
   const rest = names.length - MAX_CARD_LIST
   if (rest <= 0) return names.join(', ')
 
-  return [...names.slice(0, MAX_CARD_LIST), `+${rest} more`].join(', ')
+  return [...names.slice(0, MAX_CARD_LIST), moreLine(rest)].join(', ')
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   countedNoun,
   idLabel,
   idsOrNone,
+  moreLine,
   pad,
   reportText,
   shown,
@@ -143,6 +144,16 @@ describe('shown and cardList', () => {
     const names = Array.from({ length: 15 }, (_, index) => `n${index + 1}`)
 
     expect(cardList(names)).toBe([...names.slice(0, 12), '+3 more'].join(', '))
+  })
+})
+
+describe('moreLine', () => {
+  test('one name left out is counted as +1 more', () => {
+    expect(moreLine(1)).toBe('+1 more')
+  })
+
+  test('twelve names left out are counted as +12 more', () => {
+    expect(moreLine(12)).toBe('+12 more')
   })
 })
 
