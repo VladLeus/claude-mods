@@ -1,11 +1,10 @@
 import type { InitIo, SetupScan } from '../types'
 import { sortedUnique } from './core/text'
-import { markdownFileNames, MAX_FILE_NAME_CHARS, memoryFolderOf, userDirOf } from './paths'
-import { hiddenNameWarnings } from './scan/facts/normalize'
+import { userDirOf } from './paths'
 import { agentNames } from './scan/setup/agents'
 import { claudeMdChain, isGlobalClaudeMdThere } from './scan/setup/claude-md'
 import { mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './scan/setup/mcp'
-import { listFolder } from './scan/setup/read'
+import { memoryFileNames } from './scan/setup/memory'
 import type { SetupContext } from './scan/setup/read'
 import {
   hookNameWarnings,
@@ -13,32 +12,11 @@ import {
   projectSettings,
   readSettings,
   settingsNameWarnings,
-  stableNames,
 } from './scan/setup/settings'
 import { commandRefs } from './scan/setup/skills'
 
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
 const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
-
-/**
- * The `.md` file names in the auto-memory folders of this repo, with their extension; their text is never read. The
- * folder of the root as resolved and the one of the root as given are both listed, once each when they are the same,
- * as `~/.claude.json` is matched by both root forms.
- */
-async function memoryFileNames(
-  io: InitIo,
-  ctx: SetupContext,
-  userDir: string | null,
-  warnings: string[],
-): Promise<string[]> {
-  if (userDir === null) return []
-  const folders = new Set([ctx.root, ctx.givenRoot].map(root => memoryFolderOf(userDir, root)))
-  const names: string[] = []
-  for (const folder of folders) names.push(...markdownFileNames(await listFolder(io, ctx, folder, warnings)))
-  warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
-
-  return sortedUnique(stableNames(names, MAX_FILE_NAME_CHARS))
-}
 
 /**
  * The user-setup scan (SCAN-02, D-57): every source is read through the port and projected at once to names, counts and
