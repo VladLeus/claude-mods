@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../types'
-import { DONE_MARKER_LINE } from './core/kickoff-text'
-import { gateProblems, missingFields } from './framework'
+import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../../../types'
+import { DONE_MARKER_LINE } from '../../core/kickoff-text'
+import { adaptersReportLines } from '../../render'
+import { emptySetupScan } from '../../testkit'
+import { gateProblems, missingFields } from '../contract'
 import {
   detectGsd,
   GSD_ADAPTER,
@@ -13,9 +15,7 @@ import {
   gsdAutonomyHunks,
   gsdHookFacts,
   gsdKickoffText,
-} from './gsd'
-import { adaptersReportLines } from './render'
-import { emptySetupScan } from './testkit'
+} from './adapter'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {

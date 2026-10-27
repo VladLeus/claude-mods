@@ -1,8 +1,13 @@
-import type { Detection, Facts, FrameworkAdapter, FrameworkId } from '../types'
-import { BUILTIN_ADAPTER } from './builtin'
-import { detectUnsupported } from './framework'
-import { GSD_ADAPTER } from './gsd'
-import { SUPERPOWERS_ADAPTER } from './superpowers'
+/**
+ * The framework registry, a layer 2 module: the adapters cadre drives in report order, the adapter of a framework id
+ * and the detection of every adapter. It imports the contract and the adapter of each framework/<id>/ folder, so
+ * adding a framework is one folder and one line here (D-244), and every module that reads an adapter goes through it.
+ */
+import type { Detection, Facts, FrameworkAdapter, FrameworkId } from '../../types'
+import { detectUnsupported } from './contract'
+import { GSD_ADAPTER } from './gsd/adapter'
+import { BUILTIN_ADAPTER } from './none/adapter'
+import { SUPERPOWERS_ADAPTER } from './superpowers/adapter'
 
 /**
  * The adapters cadre drives, in report order: GSD, superpowers, then the built-in fallback (D-17). The built-in

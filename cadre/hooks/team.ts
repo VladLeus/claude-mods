@@ -16,9 +16,9 @@ import type {
   ScopeContext,
   SetupScan,
 } from '../types'
-import { ADAPTERS } from './adapters'
 import { idsOrNone } from './core/text'
 import { MAX_READ_BYTES } from './facts'
+import { ADAPTERS } from './framework/registry'
 import type { CommandWord } from './guards/repo'
 import { cadreStatePath, isRepoFolder, roleJsonPath } from './paths'
 import { isAttendedFromConfig, isUnmetHunk } from './recommend'

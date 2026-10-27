@@ -1,3 +1,8 @@
+/**
+ * The adapter contract every framework fills, a layer 2 module: the decision types, the unsupported markers and their
+ * detection, the framework choice, and the runtime checks of an adapter's fields and gates (DET-04). It imports only
+ * core and the types, so the registry, roles, init and render import it with no cycle.
+ */
 import type {
   Choice,
   DecisionType,
@@ -9,10 +14,10 @@ import type {
   Gate,
   RepoEntry,
   UnsupportedMarker,
-} from '../types'
-import { SUPPORTED_IDS } from './core/framework-id'
-import { isObject } from './core/json'
-import { idLabel } from './core/text'
+} from '../../types'
+import { SUPPORTED_IDS } from '../core/framework-id'
+import { isObject } from '../core/json'
+import { idLabel } from '../core/text'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this

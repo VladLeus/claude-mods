@@ -16,7 +16,7 @@ import { isObject, parseJsonValue } from './core/json'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { clean, reportText } from './core/text'
-import { GSD_CONFIG_FILE } from './gsd'
+import { GSD_CONFIG_FILE } from './framework/gsd/adapter'
 import { displayPath, isSafeConfigDir, trimSlash } from './paths'
 import { standsFor } from './roles'
 

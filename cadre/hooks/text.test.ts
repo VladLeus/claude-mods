@@ -18,7 +18,6 @@ import type {
   ScopeContext,
   SkillRef,
 } from '../types'
-import { ADAPTERS } from './adapters'
 import {
   changedBeforeRunWarning,
   CONFLICT_OPTIONS,
@@ -87,7 +86,6 @@ import {
   SKILLS_SYSTEM,
   skillUsesText,
 } from './assign'
-import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, USAGE_LINES } from './command'
 import { FRAMEWORK_IDS, SUPPORTED_IDS } from './core/framework-id'
 import { UNNAMED_ROLE } from './core/kickoff-text'
@@ -146,7 +144,18 @@ import {
   XDG_ARGV,
 } from './epic'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, SOURCE_ORDER } from './facts'
-import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework'
+import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
+import {
+  GSD_ADAPTER,
+  GSD_AUTONOMY,
+  GSD_CONFIG_FILE,
+  GSD_GATES,
+  GSD_HOOK_NOTES,
+  gsdKickoffText,
+} from './framework/gsd/adapter'
+import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './framework/none/adapter'
+import { ADAPTERS } from './framework/registry'
+import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './framework/superpowers/adapter'
 import {
   cadreJsonText,
   GIT_TRACKING_UNKNOWN_WARNING,
@@ -164,7 +173,6 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
-import { GSD_ADAPTER, GSD_AUTONOMY, GSD_CONFIG_FILE, GSD_GATES, GSD_HOOK_NOTES, gsdKickoffText } from './gsd'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {
@@ -430,7 +438,6 @@ import {
 } from './start'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
-import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
 import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'

@@ -7,11 +7,11 @@ import type {
   LaunchStart,
   RoleSpec,
 } from '../types'
-import { adapterOf } from './adapters'
 import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
+import { adapterOf } from './framework/registry'
 import {
   cadreStatePath,
   handoffFolderOf,

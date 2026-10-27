@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan, RoleSpec, ScanFinding, ScanKind, TemplateRoleId } from '../types'
-import { BUILTIN_GATES } from './builtin'
-import { DECISION_TYPES } from './framework'
-import { GSD_GATES } from './gsd'
+import { DECISION_TYPES } from './framework/contract'
+import { GSD_GATES } from './framework/gsd/adapter'
+import { BUILTIN_GATES } from './framework/none/adapter'
+import { SUPERPOWERS_GATES } from './framework/superpowers/adapter'
 import {
   applyAdjust,
   AUTOPILOT_THRESHOLD,
@@ -43,7 +44,6 @@ import {
   validateRoles,
 } from './roles'
 import type { AdjustOp, TemplateRole } from './roles'
-import { SUPERPOWERS_GATES } from './superpowers'
 import { BIDI_OVERRIDE, ZERO_WIDTH_SPACE } from './testkit'
 
 /** A repo scan with nothing found and source present. A test sets only what it reads. */

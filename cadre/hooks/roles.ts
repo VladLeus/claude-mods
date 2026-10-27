@@ -23,7 +23,7 @@ import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/name
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
 import { isRoleId, RESERVED_ROLE_IDS } from './core/role-id'
 import { clean, idLabel } from './core/text'
-import { DECISION_TYPES } from './framework'
+import { DECISION_TYPES } from './framework/contract'
 import { partRecordsOf } from './records'
 
 /**

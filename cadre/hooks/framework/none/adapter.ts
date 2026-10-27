@@ -1,7 +1,11 @@
-import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../types'
-import { freezeRows } from './core/freeze'
-import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from './core/kickoff-text'
-import { isRoleId } from './core/role-id'
+/**
+ * The built-in fallback's adapter, a layer 2 module in the folder of its framework id `none`: its detection, gates and
+ * kickoff text, filled into the adapter contract. It imports only core and the types; the registry lists it.
+ */
+import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '../../../types'
+import { freezeRows } from '../../core/freeze'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from '../../core/kickoff-text'
+import { isRoleId } from '../../core/role-id'
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is

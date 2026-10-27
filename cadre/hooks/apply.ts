@@ -34,7 +34,6 @@ import type {
   SetupScan,
   WriteStat,
 } from '../types'
-import { ADAPTERS } from './adapters'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { sha256Hex } from './core/hash'
@@ -42,6 +41,7 @@ import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { isSha256Hex } from './core/names'
 import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
 import { MAX_READ_BYTES } from './facts'
+import { ADAPTERS } from './framework/registry'
 import { builtClaudeMdPath, partsBody } from './generate'
 import { editWriteRules } from './launch'
 import {

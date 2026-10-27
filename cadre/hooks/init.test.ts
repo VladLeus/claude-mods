@@ -39,7 +39,6 @@ import type {
   TemplateRoleId,
   UnsupportedId,
 } from '../types'
-import { detectAll } from './adapters'
 import {
   CONFLICT_OPTIONS,
   conflictQuestion,
@@ -83,6 +82,7 @@ import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { detectAll } from './framework/registry'
 import {
   cadreJsonText,
   desiredFiles,

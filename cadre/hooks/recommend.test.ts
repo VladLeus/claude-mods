@@ -14,7 +14,7 @@ import type {
 } from '../types'
 import { pluginInstallArgv } from './apply'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './assign'
-import { GSD_AUTONOMY } from './gsd'
+import { GSD_AUTONOMY } from './framework/gsd/adapter'
 import {
   attendedNote,
   configValue,

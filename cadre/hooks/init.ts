@@ -35,7 +35,6 @@ import type {
   SkillRef,
   WriteStat,
 } from '../types'
-import { ADAPTERS, detectAll } from './adapters'
 import {
   applyListPaths,
   applySteps,
@@ -151,7 +150,8 @@ import {
   utf8Bytes,
 } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
-import { chooseFramework } from './framework'
+import { chooseFramework } from './framework/contract'
+import { ADAPTERS, detectAll } from './framework/registry'
 import {
   builtClaudeMdPath,
   desiredFiles,

@@ -10,10 +10,10 @@ import type {
   PaneKey,
   ShownBlock,
 } from '../types'
-import { ADAPTERS, detectAll } from './adapters'
 import { isObject } from './core/json'
 import { countedNoun, pad, reportText } from './core/text'
-import { chooseFramework } from './framework'
+import { chooseFramework } from './framework/contract'
+import { ADAPTERS, detectAll } from './framework/registry'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
 const NAME_WIDTH = 14

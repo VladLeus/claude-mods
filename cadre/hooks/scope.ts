@@ -12,7 +12,6 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
-import { adapterOf } from './adapters'
 import {
   FRAMEWORK_START_SKILLS,
   INFRA_MCP_SERVERS,
@@ -24,6 +23,7 @@ import {
 } from './assign'
 import { freezeRows } from './core/freeze'
 import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
+import { adapterOf } from './framework/registry'
 import { handoffFolderOf, PRIVATE_INSTRUCTIONS_LINK } from './paths'
 import { chainLines, standsFor } from './roles'
 

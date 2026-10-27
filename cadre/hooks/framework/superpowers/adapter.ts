@@ -1,3 +1,7 @@
+/**
+ * The superpowers adapter, a layer 2 module in the superpowers framework folder: its detection, gates and kickoff
+ * text, filled into the adapter contract. It imports only core and the types; the registry lists it.
+ */
 import type {
   Detection,
   Facts,
@@ -7,9 +11,9 @@ import type {
   PluginFlag,
   PluginVersion,
   RepoEntry,
-} from '../types'
-import { freezeRows } from './core/freeze'
-import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './core/kickoff-text'
+} from '../../../types'
+import { freezeRows } from '../../core/freeze'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the

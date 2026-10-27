@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, RepoEntry } from '../types'
-import { DONE_MARKER_LINE } from './core/kickoff-text'
-import { gateProblems, missingFields } from './framework'
-import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './superpowers'
-import { emptySetupScan } from './testkit'
+import type { Detection, Facts, RepoEntry } from '../../../types'
+import { DONE_MARKER_LINE } from '../../core/kickoff-text'
+import { emptySetupScan } from '../../testkit'
+import { gateProblems, missingFields } from '../contract'
+import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './adapter'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {

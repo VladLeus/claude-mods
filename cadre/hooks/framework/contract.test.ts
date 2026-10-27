@@ -9,8 +9,8 @@ import type {
   Gate,
   RepoEntry,
   SettingProposal,
-} from '../types'
-import { isFrameworkId, SUPPORTED_IDS } from './core/framework-id'
+} from '../../types'
+import { isFrameworkId, SUPPORTED_IDS } from '../core/framework-id'
 import {
   chooseFramework,
   DECISION_TYPES,
@@ -21,7 +21,7 @@ import {
   missingFields,
   REQUIRED_FIELDS,
   UNSUPPORTED_MARKERS,
-} from './framework'
+} from './contract'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {

@@ -13,9 +13,11 @@ import type {
   ScopeContext,
   SetupScan,
 } from '../types'
-import { BUILTIN_ADAPTER } from './builtin'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
+import { GSD_ADAPTER } from './framework/gsd/adapter'
+import { BUILTIN_ADAPTER } from './framework/none/adapter'
+import { SUPERPOWERS_ADAPTER } from './framework/superpowers/adapter'
 import {
   asciiLine,
   builtClaudeMdPath,
@@ -43,12 +45,10 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import type { GenerateInput } from './generate'
-import { GSD_ADAPTER } from './gsd'
 import { buildPlan, isSafeOpPath } from './plan'
 import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { parseCadreState } from './state/cadre-files'
-import { SUPERPOWERS_ADAPTER } from './superpowers'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, RepoEntry } from '../types'
-import { gateProblems, missingFields } from './framework'
-import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './builtin'
-import { DONE_MARKER_LINE } from './core/kickoff-text'
-import { emptySetupScan } from './testkit'
+import type { Detection, Facts, RepoEntry } from '../../../types'
+import { gateProblems, missingFields } from '../contract'
+import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './adapter'
+import { DONE_MARKER_LINE } from '../../core/kickoff-text'
+import { emptySetupScan } from '../../testkit'
 
 /** Facts with every list empty. A test sets only the list it reads. */
 function facts(over: Partial<Facts>): Facts {

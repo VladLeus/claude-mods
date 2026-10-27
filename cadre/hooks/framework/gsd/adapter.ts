@@ -1,3 +1,8 @@
+/**
+ * The GSD adapter, a layer 2 module in GSD's framework folder: GSD's detection, hooks, gates, autonomy proposals and
+ * hunks, and kickoff text, filled into the adapter contract. It imports only core and the types, so the registry and
+ * every module above layer 2 can import it with no cycle.
+ */
 import type {
   AdapterFact,
   AutonomyHunks,
@@ -10,9 +15,9 @@ import type {
   RepoEntry,
   SettingProposal,
   SetupScan,
-} from '../types'
-import { freezeRows } from './core/freeze'
-import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from './core/kickoff-text'
+} from '../../../types'
+import { freezeRows } from '../../core/freeze'
+import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { adapterOf, ADAPTERS } from './adapters'
-import { BUILTIN_ADAPTER } from './builtin'
-import { gateProblems, isDecisionType, missingFields, REQUIRED_FIELDS } from './framework'
-import { GSD_ADAPTER } from './gsd'
-import { SUPERPOWERS_ADAPTER } from './superpowers'
+import { gateProblems, isDecisionType, missingFields, REQUIRED_FIELDS } from './contract'
+import { GSD_ADAPTER } from './gsd/adapter'
+import { BUILTIN_ADAPTER } from './none/adapter'
+import { adapterOf, ADAPTERS } from './registry'
+import { SUPERPOWERS_ADAPTER } from './superpowers/adapter'
 
 describe('ADAPTERS', () => {
   test('lists GSD, superpowers and the built-in fallback in that order', () => {
