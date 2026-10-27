@@ -1,6 +1,5 @@
 import type { CompiledScope, RoleSpec } from '../types'
-import { compareText, shown, sortedUnique } from './core/text'
-import { isChangedByClean } from './facts'
+import { compareText, isChangedByClean, shown, sortedUnique } from './core/text'
 import {
   INSTRUCTIONS_RECORD_FILE,
   memoryFolderOf,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Facts, GsdReadTarget, PluginVersion, RawFacts, RawGsdCandidate } from '../types'
+import { isChangedByClean } from './core/text'
 import {
   detectRefusal,
   factReadPlan,
@@ -11,7 +12,6 @@ import {
   homeRootRefusal,
   hookScriptsMatching,
   isRuntimeCallAllowed,
-  isChangedByClean,
   isGsdIdentitySource,
   normalizeFacts,
   parseEnabledPlugins,

@@ -11,12 +11,11 @@ import type {
 } from '../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
-import { clean, compareText, sortedUnique } from './core/text'
+import { clean, compareText, isChangedByClean, sortedUnique } from './core/text'
 import {
   foldEnabledPlugins,
   hiddenNameWarnings,
   hookScriptsMatching,
-  isChangedByClean,
   MAX_KEY_CHARS,
   MAX_READ_BYTES,
   parseEnabledPlugins,

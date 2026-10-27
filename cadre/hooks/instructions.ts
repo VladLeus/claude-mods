@@ -32,12 +32,13 @@ import {
   countedNoun,
   idLabel,
   idsOrNone,
+  isChangedByClean,
   moreLine,
   shown,
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { isChangedByClean, MAX_READ_BYTES } from './facts'
+import { MAX_READ_BYTES } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports } from './launch'

@@ -14,7 +14,7 @@ import type {
   SettingsSource,
 } from '../types'
 import { fieldKeysOf, isObject } from './core/json'
-import { clean } from './core/text'
+import { clean, isChangedByClean } from './core/text'
 import { displayPath, MAX_WARNING_CHARS, safeWarnings, trimSlash, userFolderOf } from './paths'
 import type { ReadEnv } from './paths'
 
@@ -72,14 +72,6 @@ export const HOME_ROOT_REPLY =
 export const FILE_SYSTEM_ROOT_REPLY =
   'cadre detect needs a repo root other than the file system root (/). ' +
   'Open the session in a repo and run /cadre detect again.'
-
-/**
- * Whether `clean` would change a foreign name at this cap: a stripped character, or a cut to the cap. Such a name is
- * never matched as a marker or a plugin key, because its cleaned form could pass for a real one (WR-03).
- */
-export function isChangedByClean(value: string, maxChars: number): boolean {
-  return clean(value, maxChars) !== value
-}
 
 /**
  * One warning per name that clean would change at `maxChars`, naming its cleaned form capped at MAX_HIDDEN_NAME_CHARS,
