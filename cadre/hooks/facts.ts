@@ -2,7 +2,7 @@ import type { EntryKind, Facts, RawFacts, RepoEntry } from '../types'
 import { fieldKeysOf, isObject } from './core/json'
 import { clean, isChangedByClean } from './core/text'
 import { gsdFactOf, usableCandidates } from './framework/gsd/identity'
-import { MAX_WARNING_CHARS, safeWarnings, trimSlash } from './paths'
+import { MAX_WARNING_CHARS, safeWarnings } from './paths'
 import {
   foldEnabledPlugins,
   MAX_KEY_CHARS,
@@ -25,14 +25,6 @@ const MAX_HIDDEN_NAME_WARNINGS = 5
 const MAX_HIDDEN_NAME_CHARS = 60
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
 const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
-
-/** Reply when the session root is the home folder or contains it; detection would read the whole home. */
-export const HOME_ROOT_REPLY =
-  'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
-/** Reply when the session root is the file system root; detection would read the whole disk (WR-06). */
-export const FILE_SYSTEM_ROOT_REPLY =
-  'cadre detect needs a repo root other than the file system root (/). ' +
-  'Open the session in a repo and run /cadre detect again.'
 
 /**
  * One warning per name that clean would change at `maxChars`, naming its cleaned form capped at MAX_HIDDEN_NAME_CHARS,
@@ -116,35 +108,4 @@ function entryNames(value: unknown): string[] {
   if (!Array.isArray(value)) return []
 
   return value.flatMap(item => (isObject(item) && typeof item.name === 'string' ? [item.name] : []))
-}
-
-/**
- * The reply when the session root is the home folder or contains it, else null. Both paths are compared after
- * trimming a trailing `/`, and the rule applies only when `home` is non-empty. Pure: it reads nothing. detectRefusal
- * applies it to every pair of root and home forms.
- */
-export function homeRootRefusal(root: string, home: string | null): string | null {
-  if (home === null || home === '') return null
-  const trimmedHome = home.replace(/\/+$/, '')
-  const trimmedRoot = root.replace(/\/+$/, '')
-  if (trimmedRoot === trimmedHome || trimmedHome.startsWith(`${trimmedRoot}/`)) return HOME_ROOT_REPLY
-
-  return null
-}
-
-/**
- * The reply that stops `/cadre detect` before any read, else null (WR-06). Any root form that is `/` or trims to
- * empty is refused, whatever HOME is; then every root form (as given and as resolved) is checked against every home
- * form, so a root used as given still meets a home that was resolved, and the other way round.
- */
-export function detectRefusal(roots: readonly string[], homes: readonly (string | null)[]): string | null {
-  if (roots.some(root => trimSlash(root) === '')) return FILE_SYSTEM_ROOT_REPLY
-  for (const root of roots) {
-    for (const home of homes) {
-      const refusal = homeRootRefusal(root, home)
-      if (refusal !== null) return refusal
-    }
-  }
-
-  return null
 }

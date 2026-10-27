@@ -142,7 +142,6 @@ import {
   WORKTREES_DIR,
   XDG_ARGV,
 } from './epic'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {
   GSD_ADAPTER,
@@ -174,6 +173,7 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {

@@ -81,7 +81,7 @@ import {
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { MAX_READ_BYTES } from './facts'
 import { attendedNote, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd/hunks'
 import { detectAll } from './framework/registry'
 import {
@@ -93,6 +93,7 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {

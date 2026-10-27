@@ -6,10 +6,11 @@
  */
 import type { InitIo, InitLocations } from '../../types'
 import { clean } from '../core/text'
-import { detectRefusal, MAX_READ_BYTES } from '../facts'
+import { MAX_READ_BYTES } from '../facts'
 import { findGitTop } from '../git/checkout'
 import { trimSlash } from '../paths'
 import { autopilotReply, autopilotRunState, autopilotStatusPath } from '../scan/autopilot'
+import { detectRefusal } from './refusals'
 
 /** Code points of the git top level a refusal shows. */
 const MAX_TOP_CHARS = 240

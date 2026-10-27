@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo } from '../../types'
-import { HOME_ROOT_REPLY, MAX_READ_BYTES } from '../facts'
+import { MAX_READ_BYTES } from '../facts'
 import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init'
 import { autopilotReply } from '../scan/autopilot'
 import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
+import { HOME_ROOT_REPLY } from './refusals'
 import { commandRefusal, gitRootRefusal, initGuard, NOT_INTERACTIVE_REPLY, notGitRepoReply, repoGuard } from './repo'
 
 describe('initGuard', () => {

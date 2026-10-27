@@ -5,11 +5,11 @@ import type { AskSpec, PaneKey } from '../types'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ask'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { cadreJsonText, roleJsonText } from './generate'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
   cancelledReply,

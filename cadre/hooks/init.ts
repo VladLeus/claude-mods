@@ -148,7 +148,7 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { MAX_READ_BYTES } from './facts'
 import { chooseFramework } from './framework/contract'
 import { SECRET_READ_GUARD } from './framework/gsd/adapter'
 import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
@@ -167,6 +167,7 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { gitCommonDirOf } from './git/common-dir'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
