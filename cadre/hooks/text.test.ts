@@ -89,6 +89,7 @@ import {
 } from './assign'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './builtin'
 import { helpText, USAGE_LINES } from './command'
+import { FRAMEWORK_IDS, SUPPORTED_IDS } from './core/framework-id'
 import { UNNAMED_ROLE } from './core/kickoff-text'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import { RESERVED_ROLE_IDS } from './core/role-id'
@@ -145,7 +146,7 @@ import {
   XDG_ARGV,
 } from './epic'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, SOURCE_ORDER } from './facts'
-import { DECISION_TYPES, FRAMEWORK_IDS, REQUIRED_FIELDS, SUPPORTED_IDS, UNSUPPORTED_MARKERS } from './framework'
+import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework'
 import {
   cadreJsonText,
   GIT_TRACKING_UNKNOWN_WARNING,

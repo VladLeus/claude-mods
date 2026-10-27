@@ -15,6 +15,7 @@ import type {
   ScanKind,
   TemplateRoleId,
 } from '../types'
+import { FRAMEWORK_IDS } from './core/framework-id'
 import { freezeRows } from './core/freeze'
 import { isObject, parseJsonValue } from './core/json'
 import { cleanKickoffTextOr, MAX_ROLE_CHARS } from './core/kickoff-text'
@@ -22,7 +23,7 @@ import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/name
 import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './core/reply'
 import { isRoleId, RESERVED_ROLE_IDS } from './core/role-id'
 import { clean, idLabel } from './core/text'
-import { DECISION_TYPES, FRAMEWORK_IDS } from './framework'
+import { DECISION_TYPES } from './framework'
 import { partRecordsOf } from './records'
 
 /**

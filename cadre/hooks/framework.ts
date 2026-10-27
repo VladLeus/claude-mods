@@ -10,6 +10,7 @@ import type {
   RepoEntry,
   UnsupportedMarker,
 } from '../types'
+import { SUPPORTED_IDS } from './core/framework-id'
 import { isObject } from './core/json'
 import { idLabel } from './core/text'
 
@@ -70,23 +71,6 @@ export function detectUnsupported(facts: Facts): Detection[] {
 /** Whether the repo root has an entry with exactly this name that is a directory or a symlink to anything. */
 function hasDirOrLink(entries: readonly RepoEntry[], name: string): boolean {
   return entries.some(entry => entry.name === name && (entry.kind === 'dir' || entry.isLink))
-}
-
-/**
- * The supported adapter ids, in the order every ambiguous and installed-only list is shown. `none` is the built-in
- * fallback, not a framework found in the repo, so it is never ranked here.
- */
-export const SUPPORTED_IDS: readonly FrameworkId[] = ['gsd', 'superpowers']
-
-/**
- * Every framework id cadre stores for a repo or a role: the supported frameworks, then `none`, the built-in fallback.
- * Role parsing and the `.cadre/cadre.json` reader both check against this one list.
- */
-export const FRAMEWORK_IDS: readonly FrameworkId[] = Object.freeze([...SUPPORTED_IDS, 'none'])
-
-/** Whether a value is one of FRAMEWORK_IDS; anything that is not such a string is not. */
-export function isFrameworkId(value: unknown): value is FrameworkId {
-  return FRAMEWORK_IDS.some(id => id === value)
 }
 
 /**

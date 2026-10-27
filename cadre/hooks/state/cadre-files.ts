@@ -1,13 +1,13 @@
 /**
  * The two state files of `.cadre/` as text, a layer 1 module: the parsers of `manifest.json` and `cadre.json` with
- * their field checks, each null for text that is not one (T-02-12). It imports core, paths, framework's isFrameworkId
+ * their field checks, each null for text that is not one (T-02-12). It imports core, paths
  * and the types, so scan, init and start parse the files here with no cycle; scan.ts keeps the reads of the files.
  */
 import type { CadreState, GitPolicy, LaunchStart, Manifest, ManifestEntry } from '../../types'
+import { isFrameworkId } from '../core/framework-id'
 import { isObject, parseJsonValue } from '../core/json'
 import { SHA256_HEX } from '../core/names'
 import { isRoleId } from '../core/role-id'
-import { isFrameworkId } from '../framework'
 import { isSafeRelativePath } from '../paths'
 
 /** A cadre version as the manifest and the state file record it: three numbers joined by dots. */

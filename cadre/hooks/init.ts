@@ -133,6 +133,7 @@ import {
   skillUsesText,
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
+import { SUPPORTED_IDS } from './core/framework-id'
 import { sha256Hex } from './core/hash'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
@@ -150,7 +151,7 @@ import {
   utf8Bytes,
 } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
-import { chooseFramework, SUPPORTED_IDS } from './framework'
+import { chooseFramework } from './framework'
 import {
   builtClaudeMdPath,
   desiredFiles,

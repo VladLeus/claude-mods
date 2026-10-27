@@ -10,17 +10,16 @@ import type {
   RepoEntry,
   SettingProposal,
 } from '../types'
+import { isFrameworkId, SUPPORTED_IDS } from './core/framework-id'
 import {
   chooseFramework,
   DECISION_TYPES,
   detectUnsupported,
   gateProblems,
   isDecisionType,
-  isFrameworkId,
   MAX_GATE_PROBLEMS,
   missingFields,
   REQUIRED_FIELDS,
-  SUPPORTED_IDS,
   UNSUPPORTED_MARKERS,
 } from './framework'
 
