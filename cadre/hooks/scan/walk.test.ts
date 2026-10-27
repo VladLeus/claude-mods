@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, RepoScan, ScanFinding, ScanKind } from '../../types'
-import { scanRepo, SOURCE_EXTENSIONS, undecidedFacts } from '../scan'
+import { scanRepo, undecidedFacts } from '../scan'
 import { entry, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
+import { SOURCE_EXTENSIONS } from './markers'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_DEPTH, MAX_SCAN_ENTRIES, SKIP_DIRS } from './walk'
 
 /** `count` plain files named f0000.txt, f0001.txt and so on; none is a marker or a source file. */
