@@ -171,7 +171,6 @@ import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { historyStep } from './history'
-import type { HistoryScan } from './history'
 import { hasRunFailed, isStepDone, privateModeArgv } from './host/steps'
 import {
   CONTENT_DISMISSED_REASON,
@@ -245,6 +244,7 @@ import {
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
+import type { HistoryScan } from './scan/history'
 import { readRepoFile } from './scan/port-read'
 import { undecidedFacts } from './scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'

@@ -5,6 +5,7 @@ import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, moreLine, sortedUnique } from './core/text'
 import { ADAPTERS } from './framework/registry'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
+import { HISTORY_MAX_SESSIONS } from './scan/history'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
@@ -298,9 +299,6 @@ export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
 
   return `Which roles get ${label} skills (${group.names.length})?${usesText(uses)} ${ROLE_ANSWER_HINT}`
 }
-
-/** The most sessions the history scan reads: the newest by modification time (D-59). */
-export const HISTORY_MAX_SESSIONS = 50
 
 /** What a skill's purpose reads when the engine gave the skill no description (D-139, G-02-1b). */
 export const NO_SKILL_PURPOSE = 'No description.'

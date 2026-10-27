@@ -184,7 +184,6 @@ import {
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from './history'
-import type { HistoryScan } from './history'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -405,6 +404,7 @@ import {
   ROLE_TEMPLATE,
 } from './roles'
 import { SOURCE_ORDER } from './scan/facts/settings'
+import type { HistoryScan } from './scan/history'
 import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan/markers'
 import { SKIP_DIRS } from './scan/walk'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'

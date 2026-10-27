@@ -12,7 +12,6 @@ import {
   EFFORTS,
   envQuestion,
   groupUses,
-  HISTORY_MAX_SESSIONS,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
@@ -53,6 +52,7 @@ import {
   DEFAULT_PERMISSION_MODE,
   EMPTY_CARRY,
 } from './roles'
+import { HISTORY_MAX_SESSIONS } from './scan/history'
 import { BIDI_OVERRIDE } from './testkit'
 
 /** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
