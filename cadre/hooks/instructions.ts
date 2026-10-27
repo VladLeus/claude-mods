@@ -38,7 +38,6 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { MAX_READ_BYTES } from './facts'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
 import { claudeMdImports } from './launch'
@@ -56,6 +55,7 @@ import {
   userDirOf,
 } from './paths'
 import { TOP_OF_FILE } from './records'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { listingState, readRepoFile } from './scan/port-read'
 import { ruleFiles, RULES_FOLDER } from './scan/rules'
 

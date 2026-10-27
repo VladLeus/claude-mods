@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../types'
-import { MAX_READ_BYTES } from './facts'
 import { claudeJsonPathOf, mangledProjectDir, userDirOf } from './paths'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeMdPathsOf,

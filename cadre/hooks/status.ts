@@ -13,13 +13,13 @@
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortEntry, PortRead } from '../types'
 import { isObject, parseJsonValue } from './core/json'
 import { clean, compareText, reportText } from './core/text'
-import { MAX_READ_BYTES } from './facts'
 import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { repoGuard } from './guards/repo'
 import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan/autopilot'
 import type { RunState } from './scan/autopilot'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { readTeam, regenBadRole, resolvedFramework } from './team'
 
 /**

@@ -12,7 +12,6 @@ import type {
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
 import { clean, compareText, isChangedByClean, sortedUnique } from './core/text'
-import { hiddenNameWarnings, MAX_READ_BYTES } from './facts'
 import {
   claudeJsonPathOf,
   displayPath,
@@ -25,6 +24,7 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
+import { hiddenNameWarnings, MAX_READ_BYTES } from './scan/facts/normalize'
 import {
   foldEnabledPlugins,
   hookScriptsMatching,

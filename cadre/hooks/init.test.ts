@@ -81,7 +81,6 @@ import {
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
-import { MAX_READ_BYTES } from './facts'
 import { attendedNote, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd/hunks'
 import { detectAll } from './framework/registry'
 import {
@@ -265,6 +264,7 @@ import {
   roleFromTemplate,
   rolesFromProposal,
 } from './roles'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'

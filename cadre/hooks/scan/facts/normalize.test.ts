@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Facts, RawFacts, RawGsdCandidate } from '../types'
-import { isChangedByClean } from './core/text'
-import { hiddenNameWarnings, normalizeFacts, parseRepoEntries } from './facts'
-import type { ProbedGsdCandidate } from './framework/gsd/identity'
+import type { Facts, RawFacts, RawGsdCandidate } from '../../../types'
+import { isChangedByClean } from '../../core/text'
+import type { ProbedGsdCandidate } from '../../framework/gsd/identity'
+import { hiddenNameWarnings, normalizeFacts, parseRepoEntries } from './normalize'
 
 /** A value planted in settings env and in a hook command; it must never reach Facts. */
 const SENTINEL = 'SENTINEL_SECRET_123'

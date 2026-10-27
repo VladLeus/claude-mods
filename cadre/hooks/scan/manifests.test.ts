@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan, ScanFinding, ScanKind } from '../../types'
-import { MAX_READ_BYTES } from '../facts'
 import { entry, leaks, link, memIo, memWorld, SECRET_FIXTURES } from '../testkit'
 import type { MemWorld } from '../testkit'
+import { MAX_READ_BYTES } from './facts/normalize'
 import { cargoDeps, composerDeps, gemfileGems, goModules, pyprojectDeps, requirementsDeps } from './manifests'
 import { MANIFEST_FILES, MARKER_ROWS } from './markers'
 import type { MarkerRow } from './markers'

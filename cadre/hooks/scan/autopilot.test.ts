@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortRead } from '../../types'
-import { MAX_READ_BYTES } from '../facts'
 import { memIo, memWorld } from '../testkit'
 import { AUTOPILOT_FRESH_MS, autopilotReply, autopilotRunState, autopilotStatusPath } from './autopilot'
+import { MAX_READ_BYTES } from './facts/normalize'
 
 const NOW = 1_000_000
 

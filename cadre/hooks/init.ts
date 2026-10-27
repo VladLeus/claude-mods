@@ -148,7 +148,6 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
-import { MAX_READ_BYTES } from './facts'
 import { chooseFramework } from './framework/contract'
 import { SECRET_READ_GUARD } from './framework/gsd/adapter'
 import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
@@ -243,6 +242,7 @@ import {
   rolesFromProposal,
   standsFor,
 } from './roles'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'

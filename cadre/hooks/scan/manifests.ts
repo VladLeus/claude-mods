@@ -7,7 +7,7 @@
 import type { InitIo } from '../../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from '../core/json'
 import { shown } from '../core/text'
-import { MAX_READ_BYTES } from '../facts'
+import { MAX_READ_BYTES } from './facts/normalize'
 import { addFinding, MANIFEST_FILES, MARKER_ROWS } from './markers'
 import type { Findings, ManifestKind } from './markers'
 import { readRepoFile } from './port-read'

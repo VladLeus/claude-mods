@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry, RepoScan, ScanFinding, ScanKind } from '../../types'
-import { MAX_READ_BYTES } from '../facts'
 import {
   BE_FILE,
   BIDI_OVERRIDE,
@@ -15,6 +14,7 @@ import {
   stateText,
 } from '../testkit'
 import type { MemWorld } from '../testkit'
+import { MAX_READ_BYTES } from './facts/normalize'
 import { scanRepo } from './repo'
 import { SKIP_DIRS } from './walk'
 

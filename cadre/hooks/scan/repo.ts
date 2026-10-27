@@ -7,9 +7,9 @@
  */
 import type { InitIo, ReadState, RepoScan, ScanFinding, ScanKind } from '../../types'
 import { compareText } from '../core/text'
-import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts'
 import { trimSlash } from '../paths'
 import { parseCadreState, parseManifest } from '../state/cadre-files'
+import { hiddenNameWarnings, MAX_READ_BYTES } from './facts/normalize'
 import { manifestsOf, packageFilesOf, readDependencies, readManifest } from './manifests'
 import { addMarkers, SOURCE_EXTENSIONS } from './markers'
 import type { Findings } from './markers'

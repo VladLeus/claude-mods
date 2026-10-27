@@ -1,8 +1,14 @@
-import type { EntryKind, Facts, RawFacts, RepoEntry } from '../types'
-import { fieldKeysOf, isObject } from './core/json'
-import { clean, isChangedByClean } from './core/text'
-import { gsdFactOf, usableCandidates } from './framework/gsd/identity'
-import { MAX_WARNING_CHARS, safeWarnings } from './paths'
+/**
+ * Facts normalisation, a layer 3 module: the host's raw reads turned into the typed, cleaned Facts detection reads,
+ * the repo and docs listings as entries, the warnings for names that clean would change (WR-03), and MAX_READ_BYTES,
+ * the read cap every parser shares. Pure: it reads nothing. It imports core, GSD's identity, paths, the settings
+ * parsers and the types, so detect, init, the scans and every reader of a host file use it.
+ */
+import type { EntryKind, Facts, RawFacts, RepoEntry } from '../../../types'
+import { fieldKeysOf, isObject } from '../../core/json'
+import { clean, isChangedByClean } from '../../core/text'
+import { gsdFactOf, usableCandidates } from '../../framework/gsd/identity'
+import { MAX_WARNING_CHARS, safeWarnings } from '../../paths'
 import {
   foldEnabledPlugins,
   MAX_KEY_CHARS,
@@ -10,7 +16,7 @@ import {
   parseEnabledPlugins,
   parseHookScripts,
   parseInstalledPlugins,
-} from './scan/facts/settings'
+} from './settings'
 
 /**
  * The most bytes of one file a parser sees. register.tsx applies it after the host's own read cap; a larger file is

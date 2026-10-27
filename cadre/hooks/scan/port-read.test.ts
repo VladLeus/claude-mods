@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo } from '../../types'
-import { MAX_READ_BYTES } from '../facts'
 import { entry, memIo, memWorld } from '../testkit'
+import { MAX_READ_BYTES } from './facts/normalize'
 import { listingState, missingState, readRepoFile } from './port-read'
 
 describe('readRepoFile', () => {

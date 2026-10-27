@@ -24,7 +24,6 @@ import type {
 import { askChoice, quotedLabels } from './ask'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { reportText, sortedUnique } from './core/text'
-import { MAX_READ_BYTES } from './facts'
 import { asciiLine, hasRuntimeKickoff, ROLE_LINE_MAX, shQuote } from './generate'
 import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
@@ -32,6 +31,7 @@ import { repoGuard } from './guards/repo'
 import { hasRunFailed } from './host/steps'
 import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles'
+import { MAX_READ_BYTES } from './scan/facts/normalize'
 import {
   claudeRefusal,
   clipboardRun,
