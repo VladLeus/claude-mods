@@ -575,6 +575,41 @@ export type HostIo = {
   readonly env: (name: HostEnvName) => Promise<string | null>
 }
 
+/**
+ * What the one runtime identity call gave (D-28, WR-01): its stdout when it exited 0, else null, and `could-not-run`
+ * when the call threw, which covers node missing from PATH and a timeout alike; the error itself is never read (IN-05).
+ */
+export type IdentityRunResult = {
+  readonly stdout: string | null
+  readonly problem: 'could-not-run' | null
+}
+
+/**
+ * The read port the facts collector goes through (MUST 18). register.tsx builds it from closures over `$`, so
+ * scan/facts/collect never sees `$`; collectFacts and locationsOf are the only ones it is given to. Every member but
+ * runIdentity maps a host throw to null and never reads an error text. It reads, and runs the one gated runtime
+ * identity call, nothing else: it has no general run, write or spawn member (T-02.1-26).
+ */
+export type FactsPort = {
+  /** Whether the path exists; null when the host could not say. */
+  readonly exists: (path: string) => Promise<boolean | null>
+  /** A folder's listing, unvalidated; null when it cannot be listed. */
+  readonly list: (path: string) => Promise<unknown>
+  /** A file's text, unvalidated; null when it cannot be read. */
+  readonly read: (path: string) => Promise<unknown>
+  /** A path's stat, always asked with `resolve`; null when the host refused it. */
+  readonly stat: (path: string) => Promise<PortStat | null>
+  /** HOME or CLAUDE_CONFIG_DIR, unvalidated; null when it cannot be read. The host reads literal names only. */
+  readonly env: (name: 'HOME' | 'CLAUDE_CONFIG_DIR') => Promise<unknown>
+  /** One settings source, unvalidated; null when it cannot be read. */
+  readonly settings: (source: SettingsSource) => Promise<unknown>
+  /**
+   * The runtime identity call: an argv runtimeIdentityArgv gave, run with `cwd`, the GSD folder, as its working
+   * folder so it never runs in the repo (WR-01). A non-zero exit gives no stdout; a throw gives `could-not-run`.
+   */
+  readonly runIdentity: (argv: readonly string[], cwd: string) => Promise<IdentityRunResult>
+}
+
 /** The git policy for `.cadre/` (D-65, D-90): commit all, commit definitions (the default), or ignore all of it. */
 export type GitPolicy = 'all' | 'definitions' | 'ignore'
 
