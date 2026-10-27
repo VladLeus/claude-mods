@@ -153,6 +153,7 @@ import { chooseFramework } from './framework/contract'
 import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
 import { provenUserDir } from './framework/gsd/identity'
+import { resolveToolCommand } from './framework/gsd/tools'
 import { ADAPTERS, detectAll } from './framework/registry'
 import {
   builtClaudeMdPath,
@@ -223,14 +224,7 @@ import {
   userDirOf,
 } from './paths'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
-import {
-  hunkQuestion,
-  missingSecurityPlugins,
-  parseHunkAnswer,
-  recommend,
-  recommendationLines,
-  resolveToolCommand,
-} from './recommend'
+import { hunkQuestion, missingSecurityPlugins, parseHunkAnswer, recommend, recommendationLines } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
 import {

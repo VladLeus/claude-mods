@@ -154,6 +154,7 @@ import {
   gsdKickoffText,
 } from './framework/gsd/adapter'
 import { NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd/hunks'
+import { TOOL_SCRIPTS } from './framework/gsd/tools'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './framework/none/adapter'
 import { ADAPTERS } from './framework/registry'
 import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './framework/superpowers/adapter'
@@ -375,7 +376,7 @@ import {
   SECURITY_REPORTS_LINE,
 } from './plan'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
-import { hunkQuestion, INSTALL_COMMANDS, recommend, recommendationLines, TOOL_SCRIPTS } from './recommend'
+import { hunkQuestion, INSTALL_COMMANDS, recommend, recommendationLines } from './recommend'
 import { TOP_OF_FILE } from './records'
 import {
   adaptersReportLines,
