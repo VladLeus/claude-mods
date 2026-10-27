@@ -182,12 +182,9 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
-  isMemoryIndexName,
   isReadableConfigFile,
   MAX_TOTAL_BYTES,
   memoryItems,
-  memoryOverSizeWarning,
-  NO_MEMORY_SUMMARY,
   overSizeWarning,
   parseContentConsent,
   parseRecommendation,
@@ -204,7 +201,6 @@ import {
   topicItems,
   TOPICS_SYSTEM,
   topicsPrompt,
-  unreadableWarning,
 } from './instructions'
 import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
@@ -245,6 +241,12 @@ import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import type { HistoryScan } from './scan/history'
+import {
+  isMemoryIndexName,
+  memoryOverSizeWarning,
+  NO_MEMORY_SUMMARY,
+  unreadableWarning,
+} from './scan/instructions/memories'
 import { readRepoFile } from './scan/port-read'
 import { undecidedFacts } from './scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'

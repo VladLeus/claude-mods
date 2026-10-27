@@ -320,18 +320,14 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
-  MEMORY_INDEX_FILE,
-  MEMORY_UNLISTED_WARNING,
   memoryItemContextLine,
   memoryItemHeader,
   memoryItemQuestion,
   memoryItems,
-  memoryOverSizeWarning,
   moreDocsWarning,
   morePartsWarning,
   outsideWarning,
   overSizeWarning,
-  NO_MEMORY_SUMMARY,
   RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
   repoImportWarning,
@@ -343,7 +339,6 @@ import {
   TOPICS_SYSTEM,
   totalCapWarning,
   unfollowedImportWarning,
-  unreadableWarning,
 } from './instructions'
 import {
   RUNTIME_SETTINGS_KEYS,
@@ -405,6 +400,13 @@ import {
 } from './roles'
 import { SOURCE_ORDER } from './scan/facts/settings'
 import type { HistoryScan } from './scan/history'
+import {
+  MEMORY_INDEX_FILE,
+  MEMORY_UNLISTED_WARNING,
+  memoryOverSizeWarning,
+  NO_MEMORY_SUMMARY,
+  unreadableWarning,
+} from './scan/instructions/memories'
 import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan/markers'
 import { SKIP_DIRS } from './scan/walk'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'
