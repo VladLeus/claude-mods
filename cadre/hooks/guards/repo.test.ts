@@ -5,7 +5,7 @@ import { HOME_ROOT_REPLY, MAX_READ_BYTES } from '../facts'
 import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init'
 import { autopilotReply } from '../scan'
 import { DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
-import { commandRefusal, initGuard, NOT_INTERACTIVE_REPLY } from './repo'
+import { commandRefusal, initGuard, NOT_INTERACTIVE_REPLY, repoGuard } from './repo'
 
 describe('initGuard', () => {
   test('a session nobody can be asked in is refused first, before any stat or read', async () => {
@@ -127,5 +127,50 @@ describe('initGuard', () => {
     })
     const active = memIo(gitWorld({ files: { [STATUS_PATH]: '{"isOn":true,"beat":1000000}' } }), {})
     expect(await initGuard(active.io, 'regen')).toEqual({ kind: 'refuse', text: autopilotReply('active', 'regen') })
+  })
+})
+
+describe('repoGuard', () => {
+  test('repoGuard refuses in the start wording, in the order of initGuard: root, home, git, top level', async () => {
+    const noRoot = memIo(gitWorld({ locations: null }), {})
+    expect(await repoGuard(noRoot.io, 'start')).toEqual({
+      kind: 'refuse',
+      text: 'cadre start could not read the session root, so it stopped before reading anything.',
+    })
+    const home = withStats(memIo(memWorld({ locations: { ...DEFAULT_LOCATIONS, root: '/home/u' } }), {}))
+    expect(await repoGuard(home.io, 'start')).toEqual({
+      kind: 'refuse',
+      text: commandRefusal(HOME_ROOT_REPLY, 'start'),
+    })
+    expect(home.stats).toEqual([])
+    const noGit = memIo(memWorld({}), {})
+    expect(await repoGuard(noGit.io, 'start')).toEqual({
+      kind: 'refuse',
+      text: 'cadre start needs a git repo: run git init first',
+    })
+    const appLocations = { ...DEFAULT_LOCATIONS, root: '/repo/app', givenRoot: '/repo/app' }
+    const below = memIo(gitWorld({ locations: appLocations }), {})
+    expect(await repoGuard(below.io, 'start')).toEqual({
+      kind: 'refuse',
+      text: 'run /cadre start from the repo root: /repo',
+    })
+  })
+
+  test('repoGuard never asks whether anyone is there and never reads the autopilot status file', async () => {
+    const files = { [STATUS_PATH]: '{"isOn":true,"phase":"running","beat":1000000}' }
+    const run = memIo(gitWorld({ interactive: false, files }), {})
+    const io: InitIo = {
+      ...run.io,
+      isInteractive: async () => {
+        throw new Error('repoGuard must not ask whether anyone is there')
+      },
+    }
+    expect(await repoGuard(io, 'start')).toEqual({ kind: 'ok', locations: DEFAULT_LOCATIONS })
+    expect(run.reads).toEqual([])
+    // The same world stops the regen guard, so the pass above is repoGuard leaving the autopilot check out.
+    expect(await initGuard(memIo(gitWorld({ files }), {}).io, 'regen')).toEqual({
+      kind: 'refuse',
+      text: autopilotReply('active', 'regen'),
+    })
   })
 })
