@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { sha256Hex } from '../../core/hash'
-import { readInstructionFiles } from '../../instructions'
-import type { InstructionSources } from '../../instructions'
 import { BIDI_OVERRIDE, entry, link, memIo, memWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import {
@@ -13,6 +11,8 @@ import {
   NO_MEMORY_SUMMARY,
   readMemories,
 } from './memories'
+import { readInstructionFiles } from './read'
+import type { InstructionSources } from './read'
 
 /** The auto-memory folder of the fixture repo for the fixture user. */
 const MEMORY = '/home/u/.claude/projects/-repo/memory'

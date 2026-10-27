@@ -182,27 +182,21 @@ import {
   instructionLines,
   instructionReviewLines,
   instructionsEntry,
-  isReadableConfigFile,
-  MAX_TOTAL_BYTES,
   memoryItems,
-  overSizeWarning,
   parseContentConsent,
   parseRecommendation,
   parseRegenRecommendation,
   parseTopics,
   partChanges,
-  partsOfText,
-  readInstructionFiles,
   RECOMMEND_SYSTEM,
   recommendPrompt,
   REGEN_RECOMMEND_SYSTEM,
   regenRecommendPrompt,
-  repoInstructionNames,
   topicItems,
   TOPICS_SYSTEM,
   topicsPrompt,
 } from './instructions'
-import type { InstructionSources, MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
+import type { MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
   displayPath,
@@ -247,6 +241,15 @@ import {
   NO_MEMORY_SUMMARY,
   unreadableWarning,
 } from './scan/instructions/memories'
+import {
+  isReadableConfigFile,
+  MAX_TOTAL_BYTES,
+  overSizeWarning,
+  partsOfText,
+  readInstructionFiles,
+  repoInstructionNames,
+} from './scan/instructions/read'
+import type { InstructionSources } from './scan/instructions/read'
 import { readRepoFile } from './scan/port-read'
 import { undecidedFacts } from './scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'

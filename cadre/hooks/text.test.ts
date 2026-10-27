@@ -310,7 +310,6 @@ import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
-  configFileWarning,
   contentContextLine,
   entryContextLine,
   fallbackTopics,
@@ -324,21 +323,13 @@ import {
   memoryItemHeader,
   memoryItemQuestion,
   memoryItems,
-  moreDocsWarning,
-  morePartsWarning,
-  outsideWarning,
-  overSizeWarning,
   RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
-  repoImportWarning,
-  RULES_UNLISTED_WARNING,
   topicContextLine,
   topicHeader,
   topicItems,
   topicQuestion,
   TOPICS_SYSTEM,
-  totalCapWarning,
-  unfollowedImportWarning,
 } from './instructions'
 import {
   RUNTIME_SETTINGS_KEYS,
@@ -407,6 +398,17 @@ import {
   NO_MEMORY_SUMMARY,
   unreadableWarning,
 } from './scan/instructions/memories'
+import {
+  configFileWarning,
+  moreDocsWarning,
+  morePartsWarning,
+  outsideWarning,
+  overSizeWarning,
+  repoImportWarning,
+  RULES_UNLISTED_WARNING,
+  totalCapWarning,
+  unfollowedImportWarning,
+} from './scan/instructions/read'
 import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan/markers'
 import { SKIP_DIRS } from './scan/walk'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'

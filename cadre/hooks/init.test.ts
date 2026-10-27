@@ -242,9 +242,7 @@ import {
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
-  overSizeWarning,
   parseContentConsent,
-  partsOfText,
   RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
   TOPICS_SYSTEM,
@@ -267,6 +265,7 @@ import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { unreadableWarning } from './scan/instructions/memories'
+import { overSizeWarning, partsOfText } from './scan/instructions/read'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { scanRepo } from './scan/repo'
 import { scanSetup } from './scan/setup/setup'
