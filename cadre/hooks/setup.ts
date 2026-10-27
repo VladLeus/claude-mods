@@ -1,20 +1,17 @@
 import type { InitIo, PortEntry, SetupScan } from '../types'
-import { isObject } from './core/json'
 import { sortedUnique } from './core/text'
 import {
-  displayPath,
   isDirInsideRoot,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   MAX_FILE_NAME_CHARS,
   memoryFolderOf,
-  trimSlash,
   userDirOf,
 } from './paths'
 import { hiddenNameWarnings } from './scan/facts/normalize'
-import { missingState } from './scan/port-read'
+import { claudeMdChain, isGlobalClaudeMdThere } from './scan/setup/claude-md'
 import { MAX_REF_NAME_CHARS, mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './scan/setup/mcp'
-import { isInsideRepo, listFolder, unreadableWarning } from './scan/setup/read'
+import { isInsideRepo, listFolder } from './scan/setup/read'
 import type { SetupContext } from './scan/setup/read'
 import {
   hookNameWarnings,
@@ -26,38 +23,8 @@ import {
 } from './scan/setup/settings'
 import { commandRefs } from './scan/setup/skills'
 
-/** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
-const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
-/** The warning when the host cannot list the CLAUDE.md files above the repo. */
-const CHAIN_WARNING = 'could not read the CLAUDE.md chain (treated as unknown)'
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
 const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
-
-/**
- * The CLAUDE.md files of a `$.fs.ancestors` answer as absolute paths, in the order the host gave them (the file system
- * root first). Only the folder and the name an entry carries are read, so the text of the files cannot be kept; a name
- * that was not asked for, such as AGENTS.md, is dropped, and a file is listed once. Anything but a list gives [].
- */
-export function claudeMdPathsOf(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const paths = value.flatMap(item => {
-    if (!isObject(item) || typeof item.dir !== 'string' || typeof item.name !== 'string') return []
-    if (!CLAUDE_MD_NAMES.includes(item.name)) return []
-
-    return [`${trimSlash(item.dir)}/${item.name}`]
-  })
-
-  return Array.from(new Set(paths))
-}
-
-/**
- * The CLAUDE.md files of a `$.fs.ancestors` answer (claudeMdPathsOf), each as its display form: `<repo>/CLAUDE.md`,
- * `~/work/CLAUDE.md`, or the cleaned path outside both, in the order the host gave them and once each. Anything but a
- * list gives [].
- */
-export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
-  return Array.from(new Set(claudeMdPathsOf(value).map(path => displayPath(path, ctx.home, ctx.root, ctx.configDir))))
-}
 
 /**
  * The `.md` files of the repo's `.claude/agents`, listed only when its stat shows a folder whose real path is inside
@@ -84,37 +51,6 @@ async function agentNames(
   warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
-}
-
-/** The CLAUDE.md files above and in the repo, as display forms; a chain the host cannot give adds a warning. */
-async function claudeMdChain(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<string[]> {
-  const value = await io.ancestors(CLAUDE_MD_NAMES)
-  if (!Array.isArray(value)) {
-    warnings.push(CHAIN_WARNING)
-
-    return []
-  }
-
-  return projectAncestors(value, ctx)
-}
-
-/**
- * Whether the user folder holds a CLAUDE.md file. Its stat answers; its text is never read. A stat that fails on a
- * path that is there (missingState) adds a warning and counts as no file, because unknown is not absent.
- */
-async function isGlobalClaudeMdThere(
-  io: InitIo,
-  ctx: SetupContext,
-  userDir: string | null,
-  warnings: string[],
-): Promise<boolean> {
-  if (userDir === null) return false
-  const path = `${userDir}/CLAUDE.md`
-  const stat = await io.stat(path)
-  if (stat !== null) return stat.kind === 'file'
-  if ((await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
-
-  return false
 }
 
 /**
