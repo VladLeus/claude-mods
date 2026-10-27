@@ -9,7 +9,7 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
-import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
+import { fieldKeysOf, isObject, keysOf } from './core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
 import { clean, compareText, isChangedByClean, sortedUnique } from './core/text'
 import {
@@ -33,19 +33,9 @@ import {
   parseInstalledPlugins,
   SOURCE_ORDER,
 } from './scan/facts/settings'
-import { listingState, missingState } from './scan/port-read'
-
-/**
- * Where a scan looks: the repo root as the host resolved it and as given, the home folder and CLAUDE_CONFIG_DIR. Every
- * path is absolute and has no trailing slash, or is null. A scan reads from these paths and shows them only in display
- * form (`<repo>/...`, `~/...`), never as they are.
- */
-export type SetupContext = {
-  readonly root: string
-  readonly givenRoot: string
-  readonly home: string | null
-  readonly configDir: string | null
-}
+import { missingState } from './scan/port-read'
+import { isInsideRepo, listFolder, readJson, readJsonFile, shownPath, unreadableWarning } from './scan/setup/read'
+import type { SetupContext } from './scan/setup/read'
 
 /** One settings source and the value the host read from it, unvalidated. */
 type SettingsEntry = {
@@ -467,95 +457,6 @@ export function claudeMdPathsOf(value: unknown): string[] {
  */
 export function projectAncestors(value: unknown, ctx: SetupContext): string[] {
   return Array.from(new Set(claudeMdPathsOf(value).map(path => displayPath(path, ctx.home, ctx.root, ctx.configDir))))
-}
-
-/** A path as a warning shows it: its display form (`<repo>/...`, `~/...`), never the path itself (D-57). */
-function shownPath(ctx: SetupContext, path: string): string {
-  return displayPath(path, ctx.home, ctx.root, ctx.configDir)
-}
-
-/** The warning for a path the scan could not read: its display form, never the path itself (D-57). */
-function unreadableWarning(ctx: SetupContext, path: string): string {
-  return `could not read ${shownPath(ctx, path)} (treated as unknown)`
-}
-
-/** A JSON file as the port read it: not there, unknown (unreadable, over the cap or not JSON), or its parsed value. */
-type JsonRead =
-  | { readonly state: 'absent' }
-  | { readonly state: 'unknown' }
-  | { readonly state: 'parsed'; readonly value: unknown }
-
-/**
- * A JSON file read through the port, up to `maxBytes`. A file that is not there is absent and quiet; one that cannot be
- * read, is over the cap or does not parse is unknown with a warning, because unknown is never the same as absent.
- */
-async function readJsonFile(
-  io: InitIo,
-  ctx: SetupContext,
-  path: string,
-  maxBytes: number,
-  warnings: string[],
-): Promise<JsonRead> {
-  const read = await io.read(path, maxBytes)
-  if (read.state === 'absent') return { state: 'absent' }
-  const json = read.state === 'text' ? parseJsonValue(read.text) : null
-  if (json === null) {
-    warnings.push(unreadableWarning(ctx, path))
-
-    return { state: 'unknown' }
-  }
-
-  return { state: 'parsed', value: json.value }
-}
-
-/** The value of a JSON file read by readJsonFile, with its warning; null when the file is absent or unknown. */
-async function readJson(
-  io: InitIo,
-  ctx: SetupContext,
-  path: string,
-  maxBytes: number,
-  warnings: string[],
-): Promise<unknown> {
-  const read = await readJsonFile(io, ctx, path, maxBytes, warnings)
-
-  return read.state === 'parsed' ? read.value : null
-}
-
-/**
- * A folder's listing, by listingState: a folder that is not there gives [] quietly, and one that cannot be listed gives
- * [] with a warning, because unknown is not absent.
- */
-async function listFolder(
-  io: InitIo,
-  ctx: SetupContext,
-  path: string,
-  warnings: string[],
-): Promise<readonly PortEntry[]> {
-  const listing = await listingState(io, path)
-  if (listing.state === 'present') return listing.entries
-  if (listing.state === 'unknown') warnings.push(unreadableWarning(ctx, path))
-
-  return []
-}
-
-/**
- * Whether a repo path may be read or listed: its stat must pass `isInside`, the containment rule for its kind (WR-02).
- * A path that fails it adds a warning; a path with no stat is told apart by missingState, so a missing path is quiet
- * and one the port could not stat adds a warning, because unknown is not absent.
- */
-async function isInsideRepo(
-  io: InitIo,
-  ctx: SetupContext,
-  path: string,
-  isInside: (stat: unknown, root: string) => boolean,
-  warnings: string[],
-): Promise<boolean> {
-  const stat = await io.stat(path)
-  const isAllowed = stat !== null && isInside(stat, ctx.root)
-  if (isAllowed) return true
-  if (stat !== null || (await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
-
-  return false
 }
 
 /** Each settings source the port can read as a plain object, in override order; any other source adds a warning. */

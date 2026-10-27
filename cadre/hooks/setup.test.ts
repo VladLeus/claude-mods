@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { SettingsSource, SetupScan } from '../types'
 import { claudeJsonPathOf, mangledProjectDir, userDirOf } from './paths'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
+import type { SetupContext } from './scan/setup/read'
 import {
   CLAUDE_JSON_MAX_BYTES,
   claudeMdPathsOf,
@@ -18,7 +19,6 @@ import {
   projectToolServers,
   scanSetup,
 } from './setup'
-import type { SetupContext } from './setup'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
