@@ -15,6 +15,7 @@ import type {
   RepoEntry,
   SettingProposal,
   SetupScan,
+  SkillRef,
 } from '../../../types'
 import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
@@ -321,6 +322,22 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   autonomyHunks: gsdAutonomyHunks,
   kickoffText: gsdKickoffText,
   roleFacts: gsdHookFacts,
+  startSkills: Object.freeze([
+    'gsd-autonomous',
+    'gsd-discuss-phase',
+    'gsd-plan-phase',
+    'gsd-execute-phase',
+    'gsd-validate-phase',
+    'gsd-code-review',
+  ]),
+  /** A GSD skill is named `gsd-...`. */
+  ownsSkill: (skill: SkillRef) => skill.name.startsWith('gsd-'),
+  pluginsToEnable: Object.freeze([]),
+  agentPrefix: 'gsd-',
+  needsBash: true,
+  roleStart: () => '/gsd-autonomous',
+  install: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
+  factsHeading: 'GSD hooks registered (activation depends on GSD config)',
 })
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */

@@ -82,6 +82,14 @@ function adapter(over: Partial<FrameworkAdapter>): FrameworkAdapter {
     autonomyNote: 'none needed',
     autonomyHunks: () => null,
     kickoffText: () => 'k',
+    startSkills: [],
+    ownsSkill: () => false,
+    pluginsToEnable: [],
+    agentPrefix: null,
+    needsBash: false,
+    roleStart: () => 's',
+    install: null,
+    factsHeading: null,
     ...over,
   }
 }

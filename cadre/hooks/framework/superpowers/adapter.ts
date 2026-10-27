@@ -11,6 +11,7 @@ import type {
   PluginFlag,
   PluginVersion,
   RepoEntry,
+  SkillRef,
 } from '../../../types'
 import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
@@ -246,4 +247,19 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   /** superpowers has no config file to change, so it offers no autonomy hunks (A5). */
   autonomyHunks: () => null,
   kickoffText: superpowersKickoffText,
+  startSkills: Object.freeze([
+    'superpowers:brainstorming',
+    'superpowers:writing-plans',
+    'superpowers:executing-plans',
+    'superpowers:subagent-driven-development',
+  ]),
+  /** A superpowers skill is named `superpowers:...` or is added by the superpowers plugin. */
+  ownsSkill: (skill: SkillRef) => skill.plugin === 'superpowers' || skill.name.startsWith('superpowers:'),
+  /** Every scanned `superpowers@` key is enabled, so the start skills are there. */
+  pluginsToEnable: Object.freeze(['superpowers']),
+  agentPrefix: null,
+  needsBash: false,
+  roleStart: () => 'superpowers:brainstorming',
+  install: 'claude plugin install superpowers@claude-plugins-official',
+  factsHeading: null,
 })

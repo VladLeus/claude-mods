@@ -123,4 +123,14 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   /** The built-in fallback has no config file to change, so it offers no autonomy hunks (A5). */
   autonomyHunks: () => null,
   kickoffText: builtinKickoffText,
+  /** The built-in fallback starts from the kickoff text alone, so it has no start skill and owns no skill. */
+  startSkills: Object.freeze([]),
+  ownsSkill: () => false,
+  pluginsToEnable: Object.freeze([]),
+  agentPrefix: null,
+  needsBash: false,
+  /** The role's plan file, which the built-in kickoff asks the role to write first. */
+  roleStart: (roleId: string) => `the plan in .cadre/${roleId}/.runtime/plan.md`,
+  install: null,
+  factsHeading: null,
 })

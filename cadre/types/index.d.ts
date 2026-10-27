@@ -331,6 +331,25 @@ export type FrameworkAdapter = {
   readonly kickoffText: (ctx: KickoffContext) => string
   /** Facts the adapter adds to the detection output, such as GSD's hooks. Optional. */
   readonly roleFacts?: (facts: Facts) => readonly AdapterFact[]
+  /**
+   * The skills that start and check work in this framework (D-77). Every role on it must be able to run them, so scope
+   * compile links or enables them; they come through the adapter and are never asked about.
+   */
+  readonly startSkills: readonly string[]
+  /** Whether a scanned skill belongs to this framework, and so comes through the adapter instead of a question. */
+  readonly ownsSkill: (skill: SkillRef) => boolean
+  /** The plugins a role on this framework enables besides the plugins of its skills, such as the framework's own. */
+  readonly pluginsToEnable: readonly string[]
+  /** The name prefix of the setup agents the overlay links for a role on this framework; null links none. */
+  readonly agentPrefix: string | null
+  /** Whether the framework's workflows need Bash: a role on it without Bash runs them through a person (A1). */
+  readonly needsBash: boolean
+  /** What the kickoff role line of a role starts the session with: a command, a skill or a file. */
+  readonly roleStart: (roleId: string) => string
+  /** The command a person runs to install the framework; null when there is nothing to install. */
+  readonly install: string | null
+  /** The heading of the detect report line that lists the adapter's roleFacts; null when no line is shown. */
+  readonly factsHeading: string | null
 }
 
 /** A repo-root entry that marks a framework cadre does not drive in v1. */
