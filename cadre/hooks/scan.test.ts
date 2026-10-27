@@ -1935,7 +1935,7 @@ describe('existing .cadre', () => {
   })
 })
 
-describe('git top level', () => {
+describe('findGitTop', () => {
   /** A port over the world that also records every path it is asked to stat. */
   function statSpy(world: MemWorld): { readonly io: InitIo; readonly statted: string[] } {
     const run = memIo(world, [])
@@ -2021,7 +2021,9 @@ describe('git top level', () => {
     expect(await findGitTop(spy.io, '')).toEqual({ state: 'none' })
     expect(spy.statted).toEqual([])
   })
+})
 
+describe('gitRootRefusal and notGitRepoReply', () => {
   test('a root that is the top level has no refusal, with or without a trailing slash', () => {
     expect(gitRootRefusal('/repo', '/repo', 'init')).toBeNull()
     expect(gitRootRefusal('/repo/', '/repo', 'init')).toBeNull()
