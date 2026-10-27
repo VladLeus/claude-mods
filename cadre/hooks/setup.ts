@@ -1,17 +1,11 @@
-import type { InitIo, PortEntry, SetupScan } from '../types'
+import type { InitIo, SetupScan } from '../types'
 import { sortedUnique } from './core/text'
-import {
-  isDirInsideRoot,
-  MARKDOWN_EXTENSION,
-  markdownFileNames,
-  MAX_FILE_NAME_CHARS,
-  memoryFolderOf,
-  userDirOf,
-} from './paths'
+import { markdownFileNames, MAX_FILE_NAME_CHARS, memoryFolderOf, userDirOf } from './paths'
 import { hiddenNameWarnings } from './scan/facts/normalize'
+import { agentNames } from './scan/setup/agents'
 import { claudeMdChain, isGlobalClaudeMdThere } from './scan/setup/claude-md'
-import { MAX_REF_NAME_CHARS, mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './scan/setup/mcp'
-import { isInsideRepo, listFolder } from './scan/setup/read'
+import { mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './scan/setup/mcp'
+import { listFolder } from './scan/setup/read'
 import type { SetupContext } from './scan/setup/read'
 import {
   hookNameWarnings,
@@ -25,33 +19,6 @@ import { commandRefs } from './scan/setup/skills'
 
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
 const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
-
-/**
- * The `.md` files of the repo's `.claude/agents`, listed only when its stat shows a folder whose real path is inside
- * the repo (isDirInsideRoot, the rule `.mcp.json` follows), so a link out of the repo is never listed and adds a
- * warning, and so does a failed stat; a folder that is not there is quiet.
- */
-async function repoAgentEntries(io: InitIo, ctx: SetupContext, warnings: string[]): Promise<readonly PortEntry[]> {
-  const path = `${ctx.root}/.claude/agents`
-  if (!(await isInsideRepo(io, ctx, path, isDirInsideRoot, warnings))) return []
-
-  return listFolder(io, ctx, path, warnings)
-}
-
-/** The agents in the user folder and in the repo's `.claude/agents`: the `.md` files, by name without the extension. */
-async function agentNames(
-  io: InitIo,
-  ctx: SetupContext,
-  userDir: string | null,
-  warnings: string[],
-): Promise<string[]> {
-  const userEntries = userDir === null ? [] : await listFolder(io, ctx, `${userDir}/agents`, warnings)
-  const entries = [...userEntries, ...(await repoAgentEntries(io, ctx, warnings))]
-  const names = markdownFileNames(entries).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
-  warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
-
-  return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
-}
 
 /**
  * The `.md` file names in the auto-memory folders of this repo, with their extension; their text is never read. The
