@@ -15,7 +15,7 @@ import type {
 import { helpText, parseCommand } from './command'
 import { utf8Bytes } from './core/text'
 import { runEpic, runEpicDone } from './epic'
-import { detectRefusal, factReadPlan, MAX_READ_BYTES, normalizeFacts, parseRepoEntries } from './facts'
+import { detectRefusal, MAX_READ_BYTES, normalizeFacts, parseRepoEntries } from './facts'
 import { runtimeBuiltPath, runtimeIdentityArgv, runtimeSkipProblem } from './framework/gsd/identity'
 import type { ProbedGsdCandidate, RuntimeProblem } from './framework/gsd/identity'
 import { runInit, runRegen } from './init'
@@ -32,6 +32,7 @@ import {
   paneView,
   previewBlockFor,
 } from './render'
+import { factReadPlan } from './scan/facts/plan'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start'
 import { runStatus } from './status'
