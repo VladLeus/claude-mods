@@ -4,7 +4,6 @@ import type {
   AskSpec,
   CadreState,
   Choice,
-  CompiledScope,
   DesiredFile,
   Detection,
   DetectStatus,
@@ -34,7 +33,6 @@ import type {
   RoleChange,
   RoleProposal,
   RoleSpec,
-  ScopeCard,
   ScopeContext,
   SetupScan,
   SkillRef,
@@ -293,6 +291,7 @@ import {
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
+  cardOf,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
   emptySetupScan,
@@ -307,13 +306,18 @@ import {
   memHost,
   memIo,
   memWorld,
+  onDisk,
   paneText,
+  plannedFiles,
   repoScan,
+  scansOf,
   SECRET_FIXTURES,
   secretWorld,
   session,
   shownBlock,
   skillRef,
+  stateOf,
+  STATUS_PATH,
   templateRole,
   USER_DIR_LISTED,
   withEvents,
@@ -321,9 +325,6 @@ import {
   withWrites,
 } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
-
-/** The status file autopilot keeps for session s1 of the fixture user. */
-const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -5860,50 +5861,9 @@ const FULL_DIRS = {
 /** The package.json of FULL_DIRS: React is a dependency, so FE is kept. */
 const FULL_FILES = { '/repo/package.json': '{"dependencies":{"react":"18.0.0"}}' }
 
-/** The scans of a run in `world`, gathered as init gathers them; ~/.claude.json is read only when it is allowed. */
-async function scansOf(world: MemWorld, isClaudeJsonAllowed = false): Promise<Gathered> {
-  return gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, isClaudeJsonAllowed)
-}
-
 /** The roles init keeps for `world` with the INIT_ANSWERS defaults: the template proposal of its scan, unchanged. */
 async function defaultRoles(world: MemWorld): Promise<readonly RoleSpec[]> {
   return proposeRoles((await scansOf(world)).repo).roles
-}
-
-/**
- * The repo state the init fixtures plan: the built-in default, committed definitions, the git root, cadre 0.2.0 and
- * no consent to read ~/.claude.json.
- */
-function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): CadreState {
-  return {
-    schema: 1,
-    cadreVersion: '0.2.0',
-    framework: 'none',
-    gitPolicy: 'definitions',
-    roles: roles.map(role => role.id),
-    launchStart: { kind: 'git-root' },
-    readUserMcp: false,
-    ...over,
-  }
-}
-
-/**
- * The files planned for these roles, as given, in `world`: every scope compiled on the state's default and for its
- * launch start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent
- * (A1). Init always passes repo parts, none here, so every role gets its header-only built CLAUDE.md (02-GAPS-B2 S1);
- * init also records them in role.json (initFiles), which a regen world of a role.json written before the records leaves
- * out.
- */
-async function plannedFiles(
-  world: MemWorld,
-  roles: readonly RoleSpec[],
-  over: Partial<CadreState> = {},
-): Promise<DesiredFile[]> {
-  const state = stateOf(roles, over)
-  const gathered = await scansOf(world, state.readUserMcp)
-  const scopes = scopesFor(roles, state.framework, gathered, [], state.launchStart)
-
-  return desiredFiles({ roles, scopes, state, only: null, repoParts: new Map() })
 }
 
 /**
@@ -5949,11 +5909,6 @@ async function emptyDiskPlan(
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
 const GIT_TEAM_HAS_SECURITY = true
 
-/** The text of each file at its absolute path under /repo. */
-function onDisk(files: readonly DesiredFile[]): Record<string, string> {
-  return Object.fromEntries(files.map(file => [`/repo/${file.path}`, file.content]))
-}
-
 /** The manifest text a run that generated these files records: their hashes and modes in path order. */
 async function manifestOf(files: readonly DesiredFile[], cadreVersion = '0.2.0'): Promise<string> {
   const entries: ManifestEntry[] = []
@@ -5971,14 +5926,6 @@ function opKinds(reply: string): Map<string, string> {
   }
 
   return kinds
-}
-
-/** The card of a role's compiled scope; a missing scope stops the test with a clear message. */
-function cardOf(scopes: ReadonlyMap<string, CompiledScope>, id: string): ScopeCard {
-  const scope = scopes.get(id)
-  if (scope === undefined) throw new Error(`no scope for ${id}`)
-
-  return scope.card
 }
 
 /** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */

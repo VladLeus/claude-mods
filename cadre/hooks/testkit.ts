@@ -1,5 +1,8 @@
 import type {
   AskSpec,
+  CadreState,
+  CompiledScope,
+  DesiredFile,
   Facts,
   FrameworkId,
   HostEnvName,
@@ -16,6 +19,7 @@ import type {
   RepoScan,
   RoleSpec,
   RunOptions,
+  ScopeCard,
   SettingsSource,
   SetupScan,
   ShownBlock,
@@ -23,7 +27,11 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { utf8Bytes } from './core/text'
+import { desiredFiles } from './generate'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { gatherScans } from './scan/gather'
+import type { Gathered } from './scan/gather'
+import { scopesFor } from './team'
 
 /**
  * Support for the Phase 2 tests, not a test itself: it is deliberately not named `*.test.ts`, so `claude plugin test`
@@ -598,3 +606,89 @@ export function repoScan(over: Partial<RepoScan> = {}): RepoScan {
     ...over,
   }
 }
+
+/** The status file autopilot keeps for session s1 of the fixture user. */
+export const STATUS_PATH = '/home/u/.claude/autopilot/s1.json'
+
+/** The scans of a run in `world`, gathered as init gathers them; ~/.claude.json is read only when it is allowed. */
+export async function scansOf(world: MemWorld, isClaudeJsonAllowed = false): Promise<Gathered> {
+  return gatherScans(memIo(world, {}).io, DEFAULT_LOCATIONS, isClaudeJsonAllowed)
+}
+
+/**
+ * The repo state the init fixtures plan: the built-in default, committed definitions, the git root, cadre 0.2.0 and
+ * no consent to read ~/.claude.json.
+ */
+export function stateOf(roles: readonly RoleSpec[], over: Partial<CadreState> = {}): CadreState {
+  return {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: roles.map(role => role.id),
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+    ...over,
+  }
+}
+
+/**
+ * The files planned for these roles, as given, in `world`: every scope compiled on the state's default and for its
+ * launch start (D-122), none attended, from scans that read ~/.claude.json only when the state records the consent
+ * (A1). Init always passes repo parts, none here, so every role gets its header-only built CLAUDE.md (02-GAPS-B2 S1);
+ * init also records them in role.json (initFiles), which a regen world of a role.json written before the records leaves
+ * out.
+ */
+export async function plannedFiles(
+  world: MemWorld,
+  roles: readonly RoleSpec[],
+  over: Partial<CadreState> = {},
+): Promise<DesiredFile[]> {
+  const state = stateOf(roles, over)
+  const gathered = await scansOf(world, state.readUserMcp)
+  const scopes = scopesFor(roles, state.framework, gathered, [], state.launchStart)
+
+  return desiredFiles({ roles, scopes, state, only: null, repoParts: new Map() })
+}
+
+/** The text of each file at its absolute path under /repo. */
+export function onDisk(files: readonly DesiredFile[]): Record<string, string> {
+  return Object.fromEntries(files.map(file => [`/repo/${file.path}`, file.content]))
+}
+
+/** The card of a role's compiled scope; a missing scope stops the test with a clear message. */
+export function cardOf(scopes: ReadonlyMap<string, CompiledScope>, id: string): ScopeCard {
+  const scope = scopes.get(id)
+  if (scope === undefined) throw new Error(`no scope for ${id}`)
+
+  return scope.card
+}
+
+/** A sha256 in hex for the manifest and state fixtures: 64 times the letter a. */
+export const SHA_A = 'a'.repeat(64)
+
+/** BE's role.json as a manifest file entry, recorded with SHA_A. */
+export const BE_FILE = { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' }
+
+/** A manifest as JSON text with these file entries; `over` replaces or adds top-level fields. */
+export function manifestText(files: readonly unknown[], over: Readonly<Record<string, unknown>> = {}): string {
+  return JSON.stringify({ schema: 1, cadreVersion: '0.2.0', files, ...over })
+}
+
+/** A `.cadre/cadre.json` as JSON text; `over` replaces or adds fields. */
+export function stateText(over: Readonly<Record<string, unknown>> = {}): string {
+  const state = {
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'gsd',
+    gitPolicy: 'definitions',
+    roles: ['be'],
+    launchStart: { kind: 'git-root' },
+    readUserMcp: false,
+  }
+
+  return JSON.stringify({ ...state, ...over })
+}
+
+/** One backslash, built from its character code so the source holds none. */
+export const BACKSLASH = String.fromCharCode(92)

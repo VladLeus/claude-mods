@@ -1,32 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { BACKSLASH, BE_FILE, manifestText, SHA_A, stateText } from '../testkit'
 import { parseCadreState, parseManifest } from './cadre-files'
 
-const SHA_A = 'a'.repeat(64)
 const SHA_B = '0123456789abcdef'.repeat(4)
-const BE_FILE = { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' }
 const BE_LAUNCHER = { path: '.cadre/bin/be', sha256: SHA_B, mode: 'exec' }
-const BACKSLASH = String.fromCharCode(92)
-
-/** A manifest as JSON text with these file entries; `over` replaces or adds top-level fields. */
-function manifestText(files: readonly unknown[], over: Readonly<Record<string, unknown>> = {}): string {
-  return JSON.stringify({ schema: 1, cadreVersion: '0.2.0', files, ...over })
-}
-
-/** A `.cadre/cadre.json` as JSON text; `over` replaces or adds fields. */
-function stateText(over: Readonly<Record<string, unknown>> = {}): string {
-  const state = {
-    schema: 1,
-    cadreVersion: '0.2.0',
-    framework: 'gsd',
-    gitPolicy: 'definitions',
-    roles: ['be'],
-    launchStart: { kind: 'git-root' },
-    readUserMcp: false,
-  }
-
-  return JSON.stringify({ ...state, ...over })
-}
 
 describe('parseManifest', () => {
   test('a valid manifest comes back with its files in order', () => {

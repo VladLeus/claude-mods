@@ -16,9 +16,7 @@ import {
   resolvedPath,
   trimSlash,
 } from './paths'
-import { BIDI_OVERRIDE, entry } from './testkit'
-
-const BACKSLASH = String.fromCharCode(92)
+import { BACKSLASH, BIDI_OVERRIDE, entry } from './testkit'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {

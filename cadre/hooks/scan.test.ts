@@ -31,7 +31,18 @@ import {
   undecidedFacts,
 } from './scan'
 import type { MarkerRow, RuleWalk } from './scan'
-import { BIDI_OVERRIDE, entry, leaks, link, memIo, memWorld, SECRET_FIXTURES } from './testkit'
+import {
+  BE_FILE,
+  BIDI_OVERRIDE,
+  entry,
+  leaks,
+  link,
+  manifestText,
+  memIo,
+  memWorld,
+  SECRET_FIXTURES,
+  stateText,
+} from './testkit'
 import type { MemWorld } from './testkit'
 
 const NOW = 1_000_000
@@ -1619,29 +1630,7 @@ describe('per-folder cap (G-02-1e)', () => {
   })
 })
 
-const SHA_A = 'a'.repeat(64)
-const BE_FILE = { path: '.cadre/be/role.json', sha256: SHA_A, mode: 'file' }
 const ELLIPSIS = String.fromCharCode(0x2026)
-
-/** A manifest as JSON text with these file entries; `over` replaces or adds top-level fields. */
-function manifestText(files: readonly unknown[], over: Readonly<Record<string, unknown>> = {}): string {
-  return JSON.stringify({ schema: 1, cadreVersion: '0.2.0', files, ...over })
-}
-
-/** A `.cadre/cadre.json` as JSON text; `over` replaces or adds fields. */
-function stateText(over: Readonly<Record<string, unknown>> = {}): string {
-  const state = {
-    schema: 1,
-    cadreVersion: '0.2.0',
-    framework: 'gsd',
-    gitPolicy: 'definitions',
-    roles: ['be'],
-    launchStart: { kind: 'git-root' },
-    readUserMcp: false,
-  }
-
-  return JSON.stringify({ ...state, ...over })
-}
 
 /** The rules folder of the fixture repo. */
 const RULES_DIR = '/repo/.claude/rules'
