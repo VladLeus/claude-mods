@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
   asciiLower,
+  asSentence,
   cardList,
   clean,
   countedNoun,
@@ -39,6 +40,18 @@ describe('clean', () => {
 
   test('lone surrogates and private-use characters are stripped', () => {
     expect(clean('a\uD800b\uE000c')).toBe('abc')
+  })
+})
+
+describe('asSentence (02-GAPS-B2 N1)', () => {
+  test('a text gets a final period unless it ends in a sentence mark; an empty text stays empty', () => {
+    expect(['', 'Deploy the app', 'Done.', 'Why?', 'Go!'].map(asSentence)).toEqual([
+      '',
+      'Deploy the app.',
+      'Done.',
+      'Why?',
+      'Go!',
+    ])
   })
 })
 

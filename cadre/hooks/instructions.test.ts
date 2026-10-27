@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
 import { contextText } from './ask'
 import { sha256Hex } from './core/hash'
-import { asSentence } from './core/text'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -153,18 +152,6 @@ type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly err
 function errorsOf(result: Parsed): readonly string[] {
   return result.kind === 'invalid' ? result.errors : []
 }
-
-describe('asSentence (02-GAPS-B2 N1)', () => {
-  test('a text gets a final period unless it ends in a sentence mark; an empty text stays empty', () => {
-    expect(['', 'Deploy the app', 'Done.', 'Why?', 'Go!'].map(asSentence)).toEqual([
-      '',
-      'Deploy the app.',
-      'Done.',
-      'Why?',
-      'Go!',
-    ])
-  })
-})
 
 describe('splitSections', () => {
   test("a line that starts with '# ' or '## ' starts a section, its heading the text after the hashes", () => {
