@@ -28,8 +28,8 @@ import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { RUNTIME_KICKOFF_FILE } from './paths'
 import { ignoreLines } from './plan'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
+import { CLAUDE_JSON_MAX_BYTES } from './scan/setup/mcp'
 import { compileScope } from './scope'
-import { CLAUDE_JSON_MAX_BYTES } from './setup'
 import {
   claudeTooOldReply,
   clipboardRun,
