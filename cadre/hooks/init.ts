@@ -150,6 +150,8 @@ import {
 } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import { chooseFramework } from './framework/contract'
+import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
+import type { HunkCandidate } from './framework/gsd/hunks'
 import { provenUserDir } from './framework/gsd/identity'
 import { ADAPTERS, detectAll } from './framework/registry'
 import {
@@ -222,18 +224,13 @@ import {
 } from './paths'
 import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithManifest, renderPlan } from './plan'
 import {
-  attendedNote,
-  hunkCandidates,
-  hunkOp,
   hunkQuestion,
-  isUnmetHunk,
   missingSecurityPlugins,
   parseHunkAnswer,
   recommend,
   recommendationLines,
   resolveToolCommand,
 } from './recommend'
-import type { HunkCandidate } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
 import {

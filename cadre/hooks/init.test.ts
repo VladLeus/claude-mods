@@ -82,6 +82,7 @@ import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
+import { attendedNote, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd/hunks'
 import { detectAll } from './framework/registry'
 import {
   cadreJsonText,
@@ -252,14 +253,7 @@ import {
 import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan } from './plan'
-import {
-  attendedNote,
-  missingSecurityPlugins,
-  NOT_SET_TEXT,
-  recommend,
-  recommendationLines,
-  UNKNOWN_CONFIG_TEXT,
-} from './recommend'
+import { missingSecurityPlugins, recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
 import {
   AUTOPILOT_THRESHOLD,
