@@ -40,7 +40,6 @@ import {
 } from './core/text'
 import { ACCEPT_RECOMMENDATIONS } from './handout'
 import type { HandoutEntry, HandoutItem } from './handout'
-import { claudeMdImports } from './launch'
 import {
   displayPath,
   isDirInsideRoot,
@@ -56,6 +55,7 @@ import {
 } from './paths'
 import { TOP_OF_FILE } from './records'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
+import { claudeMdImports } from './scan/instructions/imports'
 import { listingState, readRepoFile } from './scan/port-read'
 import { ruleFiles, RULES_FOLDER } from './scan/rules'
 
