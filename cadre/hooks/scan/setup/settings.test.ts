@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../../../types'
-import { scanSetup } from '../../setup'
 import { ABSOLUTE_PATH_MARKERS, entry, leaks, memIo, memWorld, SECRET_FIXTURES, secretWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
 import { projectHooks, projectSettings } from './settings'
+import { scanSetup } from './setup'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
 const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }

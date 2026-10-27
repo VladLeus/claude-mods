@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SetupScan } from '../../../types'
-import { scanSetup } from '../../setup'
 import { BIDI_OVERRIDE, memIo, memWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import {
@@ -12,6 +11,7 @@ import {
   projectToolServers,
 } from './mcp'
 import type { SetupContext } from './read'
+import { scanSetup } from './setup'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
 const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }

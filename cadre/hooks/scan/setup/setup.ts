@@ -1,19 +1,18 @@
-import type { InitIo, SetupScan } from '../types'
-import { sortedUnique } from './core/text'
-import { userDirOf } from './paths'
-import { agentNames } from './scan/setup/agents'
-import { claudeMdChain, isGlobalClaudeMdThere } from './scan/setup/claude-md'
-import { mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './scan/setup/mcp'
-import { memoryFileNames } from './scan/setup/memory'
-import type { SetupContext } from './scan/setup/read'
-import {
-  hookNameWarnings,
-  installedPluginKeys,
-  projectSettings,
-  readSettings,
-  settingsNameWarnings,
-} from './scan/setup/settings'
-import { commandRefs } from './scan/setup/skills'
+/**
+ * The user-setup scan entry, a layer 3 module: scanSetup reads every setup source through the port and projects it at
+ * once to names, counts and booleans, through the settings, skills, MCP, agent, CLAUDE.md and memory scans beside it
+ * (SCAN-02, D-57, D-58). It imports core, paths, those scans and the types, so gather scans the user's setup here.
+ */
+import type { InitIo, SetupScan } from '../../../types'
+import { sortedUnique } from '../../core/text'
+import { userDirOf } from '../../paths'
+import { agentNames } from './agents'
+import { claudeMdChain, isGlobalClaudeMdThere } from './claude-md'
+import { mergeMcp, projectMcpScan, sessionMcpScan, userConfigMcpScan } from './mcp'
+import { memoryFileNames } from './memory'
+import type { SetupContext } from './read'
+import { hookNameWarnings, installedPluginKeys, projectSettings, readSettings, settingsNameWarnings } from './settings'
+import { commandRefs } from './skills'
 
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
 const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'

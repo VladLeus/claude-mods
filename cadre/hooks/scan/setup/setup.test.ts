@@ -1,16 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { SetupScan } from '../types'
-import { claudeJsonPathOf, mangledProjectDir, userDirOf } from './paths'
-import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { claudeMdPathsOf, projectAncestors } from './scan/setup/claude-md'
-import { CLAUDE_JSON_MAX_BYTES, projectClaudeJson, projectMcpJson, projectToolServers } from './scan/setup/mcp'
-import type { SetupContext } from './scan/setup/read'
-import { hookScriptOf } from './scan/setup/settings'
-import { projectCommands } from './scan/setup/skills'
+import type { SetupScan } from '../../../types'
+import { claudeJsonPathOf, mangledProjectDir, userDirOf } from '../../paths'
+import {
+  ABSOLUTE_PATH_MARKERS,
+  entry,
+  leaks,
+  memIo,
+  memWorld,
+  SECRET_FIXTURES,
+  secretUserSettings,
+} from '../../testkit'
+import type { MemWorld } from '../../testkit'
+import { MAX_READ_BYTES } from '../facts/normalize'
+import { claudeMdPathsOf, projectAncestors } from './claude-md'
+import { CLAUDE_JSON_MAX_BYTES, projectClaudeJson, projectMcpJson, projectToolServers } from './mcp'
+import type { SetupContext } from './read'
+import { hookScriptOf } from './settings'
 import { scanSetup } from './setup'
-import { ABSOLUTE_PATH_MARKERS, entry, leaks, memIo, memWorld, SECRET_FIXTURES, secretUserSettings } from './testkit'
-import type { MemWorld } from './testkit'
+import { projectCommands } from './skills'
 
 /** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
 const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }

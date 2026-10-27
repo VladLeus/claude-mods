@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskSpec, ShownBlock, TemplateRoleId } from '../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import { scanSetup } from './setup'
+import { scanSetup } from './scan/setup/setup'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,

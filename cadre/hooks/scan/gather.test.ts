@@ -2,11 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { HookScript } from '../../types'
 import { scanWarningLines } from '../init'
-import { scanSetup } from '../setup'
 import { DEFAULT_LOCATIONS, EMPTY_FACTS, emptySetupScan, entry, gitWorld, memIo, repoScan } from '../testkit'
 import { gatherScans, scanWarnings } from './gather'
 import type { Gathered } from './gather'
 import { scanRepo } from './repo'
+import { scanSetup } from './setup/setup'
 
 describe('gatherScans', () => {
   /** A repo with a TypeScript test file and a session that has the sentry MCP server. */
