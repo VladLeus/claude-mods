@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan, ScanFinding, ScanKind } from '../../types'
-import { scanRepo } from '../scan'
 import { entry, link, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { MARKER_ROWS } from './markers'
 import type { MarkerRow } from './markers'
+import { scanRepo } from './repo'
 
 /** The scan of the repo /repo whose folders, files and links are in memory. */
 async function scanOf(over: Partial<MemWorld>): Promise<RepoScan> {

@@ -1,14 +1,21 @@
-import type { InitIo, ReadState, RepoScan, ScanFinding, ScanKind } from '../types'
-import { compareText } from './core/text'
-import { hiddenNameWarnings, MAX_READ_BYTES } from './facts'
-import { trimSlash } from './paths'
-import { manifestsOf, packageFilesOf, readDependencies, readManifest } from './scan/manifests'
-import { addMarkers, SOURCE_EXTENSIONS } from './scan/markers'
-import type { Findings } from './scan/markers'
-import { listingState, readRepoFile } from './scan/port-read'
-import { MAX_ENTRY_NAME_CHARS, walk } from './scan/walk'
-import type { Seen } from './scan/walk'
-import { parseCadreState, parseManifest } from './state/cadre-files'
+/**
+ * The read-only repo scan, a layer 3 module: the stack, the backend and frontend frameworks, tests and E2E, each with
+ * the path that proves it, the source languages and top-level code folders, what an earlier run left in `.cadre/`,
+ * and the facts a capped scan may have missed (SCAN-01, D-55, D-67, D-137). It writes nothing and runs nothing. It
+ * imports core, the facts read cap and name warnings, paths, state, the other scans and the types, so gather and init
+ * scan the repo here.
+ */
+import type { InitIo, ReadState, RepoScan, ScanFinding, ScanKind } from '../../types'
+import { compareText } from '../core/text'
+import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts'
+import { trimSlash } from '../paths'
+import { parseCadreState, parseManifest } from '../state/cadre-files'
+import { manifestsOf, packageFilesOf, readDependencies, readManifest } from './manifests'
+import { addMarkers, SOURCE_EXTENSIONS } from './markers'
+import type { Findings } from './markers'
+import { listingState, readRepoFile } from './port-read'
+import { MAX_ENTRY_NAME_CHARS, walk } from './walk'
+import type { Seen } from './walk'
 
 /** One `.cadre/` file as the scan reports it: its state, and its parsed value when it is present. */
 type CadreFile<T> = {

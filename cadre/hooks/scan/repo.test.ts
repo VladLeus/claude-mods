@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, PortEntry, RepoScan, ScanFinding, ScanKind } from '../types'
-import { MAX_READ_BYTES } from './facts'
-import { findGitTop } from './git/checkout'
-import { gitRootRefusal, notGitRepoReply } from './guards/repo'
-import { scanRepo } from './scan'
-import { SKIP_DIRS } from './scan/walk'
+import type { PortEntry, RepoScan, ScanFinding, ScanKind } from '../../types'
+import { MAX_READ_BYTES } from '../facts'
 import {
   BE_FILE,
   BIDI_OVERRIDE,
@@ -17,8 +13,10 @@ import {
   memWorld,
   SECRET_FIXTURES,
   stateText,
-} from './testkit'
-import type { MemWorld } from './testkit'
+} from '../testkit'
+import type { MemWorld } from '../testkit'
+import { scanRepo } from './repo'
+import { SKIP_DIRS } from './walk'
 
 /** The scan of the repo /repo whose folders, files and links are in memory. */
 async function scanOf(over: Partial<MemWorld>): Promise<RepoScan> {
@@ -540,8 +538,6 @@ describe('scanRepo', () => {
   })
 })
 
-const ELLIPSIS = String.fromCharCode(0x2026)
-
 describe('existing .cadre', () => {
   const MANIFEST = manifestText([BE_FILE])
   const STATE = stateText()
@@ -752,124 +748,5 @@ describe('existing .cadre', () => {
       'could not parse package.json as JSON (treated as unknown)',
       'ignored .cadre/manifest.json: not a valid cadre manifest (treated as unknown)',
     ])
-  })
-})
-
-describe('findGitTop', () => {
-  /** A port over the world that also records every path it is asked to stat. */
-  function statSpy(world: MemWorld): { readonly io: InitIo; readonly statted: string[] } {
-    const run = memIo(world, [])
-    const statted: string[] = []
-    const io: InitIo = {
-      ...run.io,
-      stat: async path => {
-        statted.push(path)
-
-        return run.io.stat(path)
-      },
-    }
-
-    return { io, statted }
-  }
-
-  test('a .git folder above the root gives that folder as the top level', async () => {
-    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
-
-    expect(await findGitTop(run.io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
-  })
-
-  test('a .git file, as a linked worktree has, counts too', async () => {
-    const run = memIo(memWorld({ files: { '/repo/.git': 'gitdir: /elsewhere/.git/worktrees/repo' } }), [])
-
-    expect(await findGitTop(run.io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
-  })
-
-  test('the root itself may be the top level', async () => {
-    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
-
-    expect(await findGitTop(run.io, '/repo')).toEqual({ state: 'found', top: '/repo' })
-    expect(await findGitTop(run.io, '/repo/')).toEqual({ state: 'found', top: '/repo' })
-  })
-
-  test('the nearest .git wins, so a repo inside a repo has its own top level', async () => {
-    const run = memIo(memWorld({ dirs: { '/repo/.git': [], '/repo/sub/.git': [] } }), [])
-
-    expect(await findGitTop(run.io, '/repo/sub/deep')).toEqual({ state: 'found', top: '/repo/sub' })
-  })
-
-  test('a .git at the file system root is found as /', async () => {
-    const run = memIo(memWorld({ dirs: { '/.git': [] } }), [])
-
-    expect(await findGitTop(run.io, '/repo')).toEqual({ state: 'found', top: '/' })
-  })
-
-  test('with no .git on the way up the answer is none, after trying each folder up to /', async () => {
-    const spy = statSpy(memWorld({}))
-
-    expect(await findGitTop(spy.io, '/repo/sub')).toEqual({ state: 'none' })
-    expect(spy.statted).toEqual(['/repo/sub/.git', '/repo/.git', '/.git'])
-  })
-
-  test('the walk uses stat only, never a read, a listing or a prompt', async () => {
-    const run = memIo(memWorld({ dirs: { '/repo/.git': [] } }), [])
-    await findGitTop(run.io, '/repo/sub')
-
-    expect(run.reads).toEqual([])
-    expect(run.asked).toEqual([])
-  })
-
-  test('a .git that cannot be stat is passed over and the walk goes on', async () => {
-    const world = memWorld({ dirs: { '/repo/.git': [] }, unknownPaths: ['/repo/sub/.git'] })
-
-    expect(await findGitTop(memIo(world, []).io, '/repo/sub')).toEqual({ state: 'found', top: '/repo' })
-    expect(await findGitTop(memIo(memWorld({ unknownPaths: ['/repo/.git'] }), []).io, '/repo')).toEqual({
-      state: 'none',
-    })
-  })
-
-  test('a .git that is neither a file nor a folder does not count', async () => {
-    const run = memIo(memWorld({}), [])
-    const io: InitIo = { ...run.io, stat: async () => ({ kind: 'other', size: 0, isLink: true }) }
-
-    expect(await findGitTop(io, '/repo')).toEqual({ state: 'none' })
-  })
-
-  test('a root that is not an absolute path has no top level and is not walked', async () => {
-    const spy = statSpy(memWorld({ dirs: { '/repo/.git': [] } }))
-
-    expect(await findGitTop(spy.io, 'repo/sub')).toEqual({ state: 'none' })
-    expect(await findGitTop(spy.io, '')).toEqual({ state: 'none' })
-    expect(spy.statted).toEqual([])
-  })
-})
-
-describe('gitRootRefusal and notGitRepoReply', () => {
-  test('a root that is the top level has no refusal, with or without a trailing slash', () => {
-    expect(gitRootRefusal('/repo', '/repo', 'init')).toBeNull()
-    expect(gitRootRefusal('/repo/', '/repo', 'init')).toBeNull()
-    expect(gitRootRefusal('/repo', '/repo/', 'init')).toBeNull()
-    expect(gitRootRefusal('/repo//', '/repo/', 'regen')).toBeNull()
-  })
-
-  test('a root below the top level is refused with the top level named', () => {
-    expect(gitRootRefusal('/repo/sub', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
-    expect(gitRootRefusal('/repo/sub', '/repo', 'regen')).toBe('run /cadre regen from the repo root: /repo')
-    expect(gitRootRefusal('/repo-other', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
-  })
-
-  test('the top level is shown cleaned and capped at 240 code points', () => {
-    const hidden = gitRootRefusal('/x/sub', `/re${BIDI_OVERRIDE}po`, 'init')
-    const long = gitRootRefusal('/x/sub', `/${'a'.repeat(300)}`, 'init')
-    const prefix = 'run /cadre init from the repo root: '
-
-    expect(hidden).toBe(`${prefix}/repo`)
-    expect(long?.startsWith(prefix)).toBe(true)
-    expect(Array.from(long?.slice(prefix.length) ?? '')).toHaveLength(240)
-    expect(long?.endsWith(ELLIPSIS)).toBe(true)
-  })
-
-  test('no git repo above the root is refused with the locked wording', () => {
-    expect(notGitRepoReply('init')).toBe('cadre init needs a git repo: run git init first')
-    expect(notGitRepoReply('regen')).toBe('cadre regen needs a git repo: run git init first')
   })
 })

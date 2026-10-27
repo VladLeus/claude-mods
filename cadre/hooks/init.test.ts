@@ -264,10 +264,10 @@ import {
   roleFromTemplate,
   rolesFromProposal,
 } from './roles'
-import { scanRepo } from './scan'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
+import { scanRepo } from './scan/repo'
 import { compileScope, scopeCardLines } from './scope'
 import { scanSetup } from './setup'
 import { parseCadreState } from './state/cadre-files'

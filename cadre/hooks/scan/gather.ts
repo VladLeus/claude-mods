@@ -4,8 +4,8 @@
  * gather the scans and list their warnings here with no cycle, and none of them reaches into init for them.
  */
 import type { InitFacts, InitIo, InitLocations, RepoScan, SetupScan } from '../../types'
-import { scanRepo } from '../scan'
 import { scanSetup } from '../setup'
+import { scanRepo } from './repo'
 
 /** What the scans of one run found: the detect facts, the repo scan and the names-only user-setup scan. */
 export type Gathered = {

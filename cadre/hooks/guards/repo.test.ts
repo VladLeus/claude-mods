@@ -4,8 +4,8 @@ import type { InitIo } from '../../types'
 import { HOME_ROOT_REPLY, MAX_READ_BYTES } from '../facts'
 import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init'
 import { autopilotReply } from '../scan/autopilot'
-import { DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
-import { commandRefusal, initGuard, NOT_INTERACTIVE_REPLY, repoGuard } from './repo'
+import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
+import { commandRefusal, gitRootRefusal, initGuard, NOT_INTERACTIVE_REPLY, notGitRepoReply, repoGuard } from './repo'
 
 describe('initGuard', () => {
   test('a session nobody can be asked in is refused first, before any stat or read', async () => {
@@ -172,5 +172,38 @@ describe('repoGuard', () => {
       kind: 'refuse',
       text: autopilotReply('active', 'regen'),
     })
+  })
+})
+
+const ELLIPSIS = String.fromCharCode(0x2026)
+
+describe('gitRootRefusal and notGitRepoReply', () => {
+  test('a root that is the top level has no refusal, with or without a trailing slash', () => {
+    expect(gitRootRefusal('/repo', '/repo', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo/', '/repo', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo', '/repo/', 'init')).toBeNull()
+    expect(gitRootRefusal('/repo//', '/repo/', 'regen')).toBeNull()
+  })
+
+  test('a root below the top level is refused with the top level named', () => {
+    expect(gitRootRefusal('/repo/sub', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
+    expect(gitRootRefusal('/repo/sub', '/repo', 'regen')).toBe('run /cadre regen from the repo root: /repo')
+    expect(gitRootRefusal('/repo-other', '/repo', 'init')).toBe('run /cadre init from the repo root: /repo')
+  })
+
+  test('the top level is shown cleaned and capped at 240 code points', () => {
+    const hidden = gitRootRefusal('/x/sub', `/re${BIDI_OVERRIDE}po`, 'init')
+    const long = gitRootRefusal('/x/sub', `/${'a'.repeat(300)}`, 'init')
+    const prefix = 'run /cadre init from the repo root: '
+
+    expect(hidden).toBe(`${prefix}/repo`)
+    expect(long?.startsWith(prefix)).toBe(true)
+    expect(Array.from(long?.slice(prefix.length) ?? '')).toHaveLength(240)
+    expect(long?.endsWith(ELLIPSIS)).toBe(true)
+  })
+
+  test('no git repo above the root is refused with the locked wording', () => {
+    expect(notGitRepoReply('init')).toBe('cadre init needs a git repo: run git init first')
+    expect(notGitRepoReply('regen')).toBe('cadre regen needs a git repo: run git init first')
   })
 })

@@ -24,7 +24,7 @@ import {
   recommendationLines,
 } from './recommend'
 import { standsFor } from './roles'
-import { scanRepo } from './scan'
+import { scanRepo } from './scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from './testkit'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
