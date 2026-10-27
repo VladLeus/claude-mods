@@ -35,7 +35,7 @@ import {
   STATUS_ARGV,
   WORKTREE_LIST_ARGV,
 } from '../epic'
-import type { ProbedGsdCandidate } from '../facts'
+import type { ProbedGsdCandidate } from '../framework/gsd/identity'
 import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
 import type { GenerateInput } from '../generate'
 import { CHECKOUT_ARGV } from '../git/checkout'

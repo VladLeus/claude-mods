@@ -194,7 +194,6 @@ import {
   privateFilesRow,
   privateFoldersUnknownWarning,
   proposalLines,
-  provenUserDir,
   PYTHON_TIMEOUT_MS,
   REGEN_BAD_MANIFEST,
   REGEN_DISMISSED_REASON,
@@ -4556,24 +4555,6 @@ const PROVEN_FACTS: InitFacts = {
   facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
   gsdUserDir: '/home/u/.claude/gsd-core',
 }
-
-describe('provenUserDir', () => {
-  test('the raw user-level GSD dir when the facts prove the user GSD', () => {
-    expect(provenUserDir(PROVEN_FACTS)).toBe('/home/u/.claude/gsd-core')
-  })
-
-  test('null for an unproven user GSD, a proven repo copy alone, or no raw dir', () => {
-    const unproven: readonly GsdFact['identity'][] = ['absent', 'unknown']
-    for (const identity of unproven) {
-      const facts = { ...EMPTY_FACTS, gsd: [{ ...PROVEN_USER_GSD, identity }] }
-      expect(provenUserDir({ ...PROVEN_FACTS, facts })).toBeNull()
-    }
-    const repoCopy: GsdFact = { ...PROVEN_USER_GSD, location: 'project', dir: '<repo>/.claude/gsd-core' }
-    expect(provenUserDir({ ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [repoCopy] } })).toBeNull()
-    expect(provenUserDir({ ...PROVEN_FACTS, gsdUserDir: null })).toBeNull()
-    expect(provenUserDir({ facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' })).toBeNull()
-  })
-})
 
 describe('hunkStep', () => {
   /** PM, Team Lead and Security on the repo default framework: a repo with no source keeps them. */

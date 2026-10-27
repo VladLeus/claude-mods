@@ -15,17 +15,9 @@ import type {
 import { helpText, parseCommand } from './command'
 import { utf8Bytes } from './core/text'
 import { runEpic, runEpicDone } from './epic'
-import {
-  detectRefusal,
-  factReadPlan,
-  MAX_READ_BYTES,
-  normalizeFacts,
-  parseRepoEntries,
-  runtimeBuiltPath,
-  runtimeIdentityArgv,
-  runtimeSkipProblem,
-} from './facts'
-import type { ProbedGsdCandidate, RuntimeProblem } from './facts'
+import { detectRefusal, factReadPlan, MAX_READ_BYTES, normalizeFacts, parseRepoEntries } from './facts'
+import { runtimeBuiltPath, runtimeIdentityArgv, runtimeSkipProblem } from './framework/gsd/identity'
+import type { ProbedGsdCandidate, RuntimeProblem } from './framework/gsd/identity'
 import { runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
 import { displayPath, HOME_UNUSABLE_WARNING, isFileInsideRoot, resolvedPath } from './paths'

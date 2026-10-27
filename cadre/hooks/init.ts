@@ -8,7 +8,6 @@ import type {
   GitPolicy,
   HostIo,
   HunkOp,
-  InitFacts,
   InitIo,
   InitLocations,
   InstructionGroup,
@@ -151,6 +150,7 @@ import {
 } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import { chooseFramework } from './framework/contract'
+import { provenUserDir } from './framework/gsd/identity'
 import { ADAPTERS, detectAll } from './framework/registry'
 import {
   builtClaudeMdPath,
@@ -2118,17 +2118,6 @@ export async function carryStep(
   }
 
   return accepted(roles.map(role => ({ ...role, carry })))
-}
-
-/**
- * The user-level GSD dir cadre may run a write through (D-28, D-71, D-72): the raw dir the detect pipeline gave, but
- * only when the facts hold a user-level GSD whose identity is proven; null otherwise, so an unproven GSD or the repo's
- * own copy is never run.
- */
-export function provenUserDir(initFacts: InitFacts): string | null {
-  const isProven = initFacts.facts.gsd.some(fact => fact.location === 'user' && fact.identity === 'proven')
-
-  return isProven ? initFacts.gsdUserDir : null
 }
 
 /** Why init cancels when a hunk question is dismissed (A1, ROLE-04); unread answers give NO_USABLE_ANSWER_REASON. */

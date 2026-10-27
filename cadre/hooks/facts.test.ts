@@ -11,21 +11,13 @@ import {
   HOME_ROOT_REPLY,
   homeRootRefusal,
   hookScriptsMatching,
-  isRuntimeCallAllowed,
-  isGsdIdentitySource,
   normalizeFacts,
   parseEnabledPlugins,
-  parseGsdManifest,
   parseHookScripts,
   parseInstalledPlugins,
   parseRepoEntries,
-  parseRuntimeIdentity,
-  parseVersionText,
-  runtimeBuiltPath,
-  runtimeIdentityArgv,
-  runtimeSkipProblem,
 } from './facts'
-import type { ProbedGsdCandidate } from './facts'
+import type { ProbedGsdCandidate } from './framework/gsd/identity'
 
 /** A value planted in settings env and in a hook command; it must never reach Facts. */
 const SENTINEL = 'SENTINEL_SECRET_123'
@@ -708,135 +700,6 @@ describe('factReadPlan', () => {
     const plan = factReadPlan({ root: '/home/u', home: '/home/u', configDir: null })
     expect(plan.gsd.map(target => target.location)).toEqual(['project'])
     expect(plan.warnings.join(' ')).toContain('user-level installs were not checked')
-  })
-})
-
-describe('isGsdIdentitySource', () => {
-  test('the identity line that declares the GSD package name proves the install', () => {
-    expect(isGsdIdentitySource('const packageName = "@opengsd/gsd-core";')).toBe(true)
-  })
-
-  test('the identity line with leading spaces or a trailing carriage return proves the install', () => {
-    expect(isGsdIdentitySource('x\n  const packageName = "@opengsd/gsd-core";\r\ny')).toBe(true)
-  })
-
-  test('the identity line inside a comment or a longer line does not prove the install', () => {
-    expect(isGsdIdentitySource('// const packageName = "@opengsd/gsd-core";')).toBe(false)
-    expect(isGsdIdentitySource('x; const packageName = "@opengsd/gsd-core";')).toBe(false)
-    expect(isGsdIdentitySource('const packageName = "@opengsd/gsd-core"; evil()')).toBe(false)
-  })
-
-  test('a bare mention of gsd-core, or no text at all, does not prove it', () => {
-    expect(isGsdIdentitySource('gsd-core')).toBe(false)
-    expect(isGsdIdentitySource(null)).toBe(false)
-  })
-})
-
-describe('parseRuntimeIdentity', () => {
-  test('stdout that opens with the GSD identity object gives its version', () => {
-    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core","version":"1.16.0"}')).toEqual({
-      version: '1.16.0',
-    })
-  })
-
-  test('a decoy that names another package and only mentions GSD later is refused', () => {
-    expect(parseRuntimeIdentity('{"packageName":"get-shit-done-cc","note":"@opengsd/gsd-core"}')).toBeNull()
-  })
-
-  test('a package name that merely starts with the GSD name is refused', () => {
-    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core-evil","version":"1.0.0"}')).toBeNull()
-  })
-
-  test('a duplicate packageName key whose last value is another package is refused', () => {
-    const stdout = '{"packageName":"@opengsd/gsd-core","packageName":"evil","version":"1.0.0"}'
-    expect(parseRuntimeIdentity(stdout)).toBeNull()
-  })
-
-  test('output that is not complete JSON, and no output at all, are refused', () => {
-    expect(parseRuntimeIdentity('{"packageName":"@opengsd/gsd-core"')).toBeNull()
-    expect(parseRuntimeIdentity(null)).toBeNull()
-    expect(parseRuntimeIdentity(42)).toBeNull()
-  })
-})
-
-describe('parseVersionText', () => {
-  test('the text is trimmed and a version is kept', () => {
-    expect(parseVersionText(' 1.16.0\n')).toBe('1.16.0')
-  })
-
-  test('text that is not a version, or a version longer than 40 characters, gives null', () => {
-    expect(parseVersionText('latest')).toBeNull()
-    expect(parseVersionText(`1.0.0-${'a'.repeat(40)}`)).toBeNull()
-  })
-
-  test('a version of exactly 40 characters is kept and one of 41 is not', () => {
-    expect(parseVersionText(`1.0.0-${'a'.repeat(34)}`)).toBe(`1.0.0-${'a'.repeat(34)}`)
-    expect(parseVersionText(`1.0.0-${'a'.repeat(35)}`)).toBeNull()
-  })
-})
-
-describe('parseGsdManifest', () => {
-  test('a manifest with a numeric manifestVersion and a valid version gives that version', () => {
-    expect(parseGsdManifest({ manifestVersion: 2, version: '1.16.0', files: {} })).toEqual({ version: '1.16.0' })
-  })
-
-  test('a manifest without a numeric manifestVersion gives null', () => {
-    expect(parseGsdManifest({ version: '1.16.0', files: {} })).toBeNull()
-  })
-})
-
-describe('runtimeIdentityArgv', () => {
-  test('a present user install with no proven identity gets the runtime identity call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, null, true, true)).toEqual([
-      'node',
-      '/home/u/.claude/gsd-core/bin/gsd-tools.cjs',
-      'runtime-identity',
-      '--raw',
-    ])
-  })
-
-  test('a repo-local install never gets a runtime call, even when present and unproven (D-28)', () => {
-    expect(runtimeIdentityArgv(PROJECT_TARGET, null, true, true)).toBeNull()
-  })
-
-  test('a user install that its identity module already proves gets no runtime call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true, true)).toBeNull()
-  })
-
-  test('an absent user install gets no runtime call', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, null, false, true)).toBeNull()
-  })
-
-  test('a present, unproven user install whose runtime is not built gets no runtime call (WR-01)', () => {
-    expect(runtimeIdentityArgv(USER_TARGET, null, true, false)).toBeNull()
-  })
-})
-
-describe('runtimeBuiltPath', () => {
-  test('is the compiled cli-exit.cjs under the install bin/lib folder', () => {
-    expect(runtimeBuiltPath(USER_TARGET)).toBe('/home/u/.claude/gsd-core/bin/lib/cli-exit.cjs')
-  })
-})
-
-describe('isRuntimeCallAllowed', () => {
-  test('only a present, unproven user-level install is allowed', () => {
-    expect(isRuntimeCallAllowed(USER_TARGET, null, true)).toBe(true)
-    expect(isRuntimeCallAllowed(PROJECT_TARGET, null, true)).toBe(false)
-    expect(isRuntimeCallAllowed(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true)).toBe(false)
-    expect(isRuntimeCallAllowed(USER_TARGET, null, false)).toBe(false)
-  })
-})
-
-describe('runtimeSkipProblem', () => {
-  test('a present, unproven user install with no built runtime is not-built (WR-01)', () => {
-    expect(runtimeSkipProblem(USER_TARGET, null, true, false)).toBe('not-built')
-  })
-
-  test('a built runtime, a repo-local install, a proven identity or an absent install is no problem', () => {
-    expect(runtimeSkipProblem(USER_TARGET, null, true, true)).toBeNull()
-    expect(runtimeSkipProblem(PROJECT_TARGET, null, true, false)).toBeNull()
-    expect(runtimeSkipProblem(USER_TARGET, 'const packageName = "@opengsd/gsd-core";', true, false)).toBeNull()
-    expect(runtimeSkipProblem(USER_TARGET, null, false, false)).toBeNull()
   })
 })
 
