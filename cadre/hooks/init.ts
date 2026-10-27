@@ -150,6 +150,7 @@ import {
 } from './core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, MAX_READ_BYTES } from './facts'
 import { chooseFramework } from './framework/contract'
+import { SECRET_READ_GUARD } from './framework/gsd/adapter'
 import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
 import { provenUserDir } from './framework/gsd/identity'
@@ -2054,9 +2055,6 @@ export function envContextLine(roles: readonly RoleSpec[]): string {
 
 /** Why init cancels when the env variables question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
 export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or not answered.'
-
-/** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */
-const SECRET_READ_GUARD = /^gsd-secret-read-guard\.(?:js|cjs|sh)$/
 
 /** The first line of the side-pane block that lists every scanned env name before the env question (D-135). */
 const ENV_PANE_HEADING = 'Env variable names in your settings (values are never read):'

@@ -322,3 +322,6 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   kickoffText: gsdKickoffText,
   roleFacts: gsdHookFacts,
 })
+
+/** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */
+export const SECRET_READ_GUARD = /^gsd-secret-read-guard\.(?:js|cjs|sh)$/
