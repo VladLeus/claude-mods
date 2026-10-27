@@ -13,7 +13,6 @@ import type {
   SkillRef,
 } from '../types'
 import {
-  FRAMEWORK_START_SKILLS,
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
@@ -205,9 +204,10 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
  * only for a `security-guidance:` skill the person gave it (decision #69 B4).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
-  const skills = [...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills]
+  const adapter = adapterOf(ctx.framework)
+  const skills = [...adapter.startSkills, ...role.skills]
   const wanted = new Set(skills.map(skillPlugin).filter((plugin): plugin is string => plugin !== null))
-  if (ctx.framework === 'superpowers') wanted.add('superpowers')
+  for (const plugin of adapter.pluginsToEnable) wanted.add(plugin)
   const scanned = ctx.setup.plugins.filter(key => {
     const name = pluginName(key)
     const exact = SECURITY_PLUGINS.find(official => pluginName(official) === name)
@@ -242,7 +242,7 @@ function hasScannedSkill(skill: SkillRef, given: ReadonlySet<string>, enabled: R
 
 /** The scanned skill names this role does not have; see hasScannedSkill. */
 function notGivenSkills(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[]): string[] {
-  const given = new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills])
+  const given = new Set([...INFRA_SKILLS, ...adapterOf(ctx.framework).startSkills, ...role.skills])
   const enabled = new Set(plugins.map(pluginName))
   const missing = ctx.setup.skills.filter(skill => !hasScannedSkill(skill, given, enabled))
 
@@ -349,9 +349,11 @@ function denyFor(role: RoleSpec, ctx: ScopeContext): DenyPlan {
  * enabled instead.
  */
 function overlayFor(role: RoleSpec, ctx: ScopeContext): CompiledScope['overlay'] {
-  const names = [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[ctx.framework], ...role.skills]
+  const adapter = adapterOf(ctx.framework)
+  const names = [...INFRA_SKILLS, ...adapter.startSkills, ...role.skills]
   const skills = sortedUnique(names.filter(name => skillPlugin(name) === null))
-  const agents = ctx.framework === 'gsd' ? sortedUnique(ctx.setup.agents.filter(name => name.startsWith('gsd-'))) : []
+  const prefix = adapter.agentPrefix
+  const agents = prefix === null ? [] : sortedUnique(ctx.setup.agents.filter(name => name.startsWith(prefix)))
 
   return { skills, agents }
 }
@@ -517,7 +519,7 @@ function partialMcpRules(setup: SetupScan): ScopeRule[] {
  * through a person, which makes it attended (A1).
  */
 function isGsdWithoutBash(role: RoleSpec, ctx: ScopeContext): boolean {
-  return ctx.framework === 'gsd' && !role.hasBash
+  return adapterOf(ctx.framework).needsBash && !role.hasBash
 }
 
 /**
@@ -727,7 +729,7 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
     ...INFRA_SKILLS.filter(name => !scope.overlay.skills.includes(name)).map(
       name => `handoff skill ${name} is not in the overlay`,
     ),
-    ...FRAMEWORK_START_SKILLS[framework]
+    ...adapterOf(framework).startSkills
       .map(name => startSkillProblem(name, scope, framework))
       .filter((problem): problem is string => problem !== null),
     ...scope.flags

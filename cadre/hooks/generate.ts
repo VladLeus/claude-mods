@@ -7,7 +7,7 @@ import type {
   LaunchStart,
   RoleSpec,
 } from '../types'
-import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
+import { INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
@@ -47,10 +47,7 @@ export function asciiLine(text: string, maxChars: number): string {
 
 /** What the role line starts the session with: the GSD workflow, a superpowers skill, or the built-in plan file. */
 function startText(roleId: string, framework: FrameworkId): string {
-  if (framework === 'gsd') return '/gsd-autonomous'
-  if (framework === 'superpowers') return 'superpowers:brainstorming'
-
-  return `the plan in .cadre/${roleId}/.runtime/plan.md`
+  return adapterOf(framework).roleStart(roleId)
 }
 
 /**
@@ -546,7 +543,7 @@ function namesCell(names: readonly string[]): string {
  * its own (D-77).
  */
 function skillCount(role: RoleSpec, scope: CompiledScope): number {
-  return new Set([...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[scope.card.framework], ...role.skills]).size
+  return new Set([...INFRA_SKILLS, ...adapterOf(scope.card.framework).startSkills, ...role.skills]).size
 }
 
 /** The one-line scope of a role: its Bash, the MCP servers it is given and how many skills it can run. */

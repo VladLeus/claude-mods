@@ -11,7 +11,6 @@ import {
   CLAUDE_MD_PLUGIN,
   EFFORTS,
   envQuestion,
-  FRAMEWORK_START_SKILLS,
   groupUses,
   HISTORY_MAX_SESSIONS,
   INFRA_MCP_SERVERS,
@@ -19,7 +18,6 @@ import {
   INFRA_SKILLS,
   INFRA_TOOLS,
   INSTRUCTION_LABELS,
-  isFrameworkSkill,
   isSecurityReviewSkill,
   MCP_ROLE_ROWS,
   mcpQuestion,
@@ -46,6 +44,7 @@ import {
   skillUsesText,
 } from './assign'
 import type { SkillGroup } from './assign'
+import { adapterOf, ADAPTERS } from './framework/registry'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -421,8 +420,8 @@ describe('skill assignment', () => {
     expect([INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS].every(list => Object.isFrozen(list))).toBe(true)
   })
 
-  test('FRAMEWORK_START_SKILLS names the start skills of each framework, none for the built-in one, all frozen', () => {
-    expect(FRAMEWORK_START_SKILLS.gsd).toEqual([
+  test('the adapters name the start skills of each framework, none for the built-in one, all frozen', () => {
+    expect(adapterOf('gsd').startSkills).toEqual([
       'gsd-autonomous',
       'gsd-discuss-phase',
       'gsd-plan-phase',
@@ -430,35 +429,34 @@ describe('skill assignment', () => {
       'gsd-validate-phase',
       'gsd-code-review',
     ])
-    expect(FRAMEWORK_START_SKILLS.superpowers).toEqual([
+    expect(adapterOf('superpowers').startSkills).toEqual([
       'superpowers:brainstorming',
       'superpowers:writing-plans',
       'superpowers:executing-plans',
       'superpowers:subagent-driven-development',
     ])
-    expect(FRAMEWORK_START_SKILLS.none).toEqual([])
-    expect(Object.isFrozen(FRAMEWORK_START_SKILLS)).toBe(true)
-    expect(Object.values(FRAMEWORK_START_SKILLS).every(list => Object.isFrozen(list))).toBe(true)
+    expect(adapterOf('none').startSkills).toEqual([])
+    expect(ADAPTERS.every(adapter => Object.isFrozen(adapter) && Object.isFrozen(adapter.startSkills))).toBe(true)
   })
 
   test('a gsd- skill belongs to gsd, and a superpowers skill to superpowers', () => {
-    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'gsd')).toBe(true)
-    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'superpowers')).toBe(true)
-    expect(isFrameworkSkill(skill('superpowers:brainstorming'), 'superpowers')).toBe(true)
-    expect(isFrameworkSkill(skill('brainstorming', 'superpowers'), 'superpowers')).toBe(true)
+    expect(adapterOf('gsd').ownsSkill(skill('gsd-plan-phase'))).toBe(true)
+    expect(adapterOf('superpowers').ownsSkill(skill('superpowers:brainstorming', 'superpowers'))).toBe(true)
+    expect(adapterOf('superpowers').ownsSkill(skill('superpowers:brainstorming'))).toBe(true)
+    expect(adapterOf('superpowers').ownsSkill(skill('brainstorming', 'superpowers'))).toBe(true)
   })
 
   test('a skill of one framework is not one of the other, and gsd- must start the name', () => {
-    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'superpowers')).toBe(false)
-    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'gsd')).toBe(false)
-    expect(isFrameworkSkill(skill('my-gsd-tool'), 'gsd')).toBe(false)
-    expect(isFrameworkSkill(skill('gsdx'), 'gsd')).toBe(false)
+    expect(adapterOf('superpowers').ownsSkill(skill('gsd-plan-phase'))).toBe(false)
+    expect(adapterOf('gsd').ownsSkill(skill('superpowers:brainstorming', 'superpowers'))).toBe(false)
+    expect(adapterOf('gsd').ownsSkill(skill('my-gsd-tool'))).toBe(false)
+    expect(adapterOf('gsd').ownsSkill(skill('gsdx'))).toBe(false)
   })
 
   test('with framework none no skill is a framework skill', () => {
-    expect(isFrameworkSkill(skill('gsd-plan-phase'), 'none')).toBe(false)
-    expect(isFrameworkSkill(skill('superpowers:brainstorming', 'superpowers'), 'none')).toBe(false)
-    expect(isFrameworkSkill(skill('my-skill'), 'none')).toBe(false)
+    expect(adapterOf('none').ownsSkill(skill('gsd-plan-phase'))).toBe(false)
+    expect(adapterOf('none').ownsSkill(skill('superpowers:brainstorming', 'superpowers'))).toBe(false)
+    expect(adapterOf('none').ownsSkill(skill('my-skill'))).toBe(false)
   })
 
   test('table skills go to their roles, infra and framework skills are skipped, the rest are grouped by plugin', () => {

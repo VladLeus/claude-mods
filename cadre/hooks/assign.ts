@@ -1,8 +1,9 @@
-import type { Effort, FrameworkId, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
+import type { Effort, InstructionGroup, McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
 import { freezeRows } from './core/freeze'
 import { isObject, parseJsonValue } from './core/json'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, moreLine, sortedUnique } from './core/text'
+import { ADAPTERS } from './framework/registry'
 import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
 
 /**
@@ -38,46 +39,6 @@ export const INFRA_TOOLS: readonly string[] = Object.freeze([
  * and never denied (ISO-04, D-77). Scope compile imports this list instead of naming the server a second time.
  */
 export const INFRA_MCP_SERVERS: readonly string[] = Object.freeze(['autopilot'])
-
-/**
- * The skills that start and check work in each framework (D-77). Every role of that framework must be able to run
- * them, so scope compile links or enables them; they come through the adapter and are never asked about. The built-in
- * fallback has none: it starts from the kickoff text alone.
- */
-export const FRAMEWORK_START_SKILLS: Readonly<Record<FrameworkId, readonly string[]>> = Object.freeze({
-  gsd: Object.freeze([
-    'gsd-autonomous',
-    'gsd-discuss-phase',
-    'gsd-plan-phase',
-    'gsd-execute-phase',
-    'gsd-validate-phase',
-    'gsd-code-review',
-  ]),
-  superpowers: Object.freeze([
-    'superpowers:brainstorming',
-    'superpowers:writing-plans',
-    'superpowers:executing-plans',
-    'superpowers:subagent-driven-development',
-  ]),
-  none: Object.freeze([]),
-})
-
-/**
- * Whether a skill belongs to a framework, and so comes through its adapter instead of a question. A GSD skill is named
- * `gsd-...`. A superpowers skill is named `superpowers:...` or is added by the superpowers plugin. The built-in
- * fallback owns no skill.
- */
-export function isFrameworkSkill(skill: SkillRef, framework: FrameworkId): boolean {
-  if (framework === 'gsd') return skill.name.startsWith('gsd-')
-  if (framework === 'superpowers') return skill.plugin === 'superpowers' || skill.name.startsWith('superpowers:')
-
-  return false
-}
-
-/** Whether a skill belongs to any framework cadre has an adapter for. */
-function isAnyFrameworkSkill(skill: SkillRef): boolean {
-  return isFrameworkSkill(skill, 'gsd') || isFrameworkSkill(skill, 'superpowers')
-}
 
 /**
  * One row of a name table. A scanned name that `pattern` matches goes to the template roles in `roles`; `label` says in
@@ -289,7 +250,7 @@ export function classifySkills(
   const assigned: NameAssignment[] = []
   const asked: SkillRef[] = []
   for (const skill of uniqueSkills(skills)) {
-    if (INFRA_SKILLS.includes(skill.name) || isAnyFrameworkSkill(skill)) continue
+    if (INFRA_SKILLS.includes(skill.name) || ADAPTERS.some(adapter => adapter.ownsSkill(skill))) continue
 
     const roleIds = presentRoleIds(SKILL_ROLE_ROWS, skill.name, roles)
     if (roleIds.length === 0) asked.push(skill)

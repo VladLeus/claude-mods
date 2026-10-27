@@ -10,9 +10,10 @@ import type {
   SetupScan,
   TemplateRoleId,
 } from '../types'
-import { FRAMEWORK_START_SKILLS, INFRA_SKILLS } from './assign'
+import { INFRA_SKILLS } from './assign'
 import { isObject } from './core/json'
 import { sortedUnique } from './core/text'
+import { adapterOf } from './framework/registry'
 import {
   claudeMdImports,
   instructionPlan,
@@ -122,7 +123,7 @@ const USER_HOOKS = [
 ]
 
 /** The skills every role on GSD has in its overlay: the handoff skills and the start skills of GSD. */
-const GSD_SKILLS: readonly string[] = [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS.gsd]
+const GSD_SKILLS: readonly string[] = [...INFRA_SKILLS, ...adapterOf('gsd').startSkills]
 
 /** A launching user that has something to carry, the skills of a GSD overlay, and one env value no role carries. */
 function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -1483,7 +1484,7 @@ describe('overlayLinks', () => {
     expect(plan.warnings).toEqual([
       'Code dir * has an unusual name and is not denied',
       'memory file .bad.md has an unsafe name: not linked',
-      ...sortedUnique(FRAMEWORK_START_SKILLS.gsd).map(notFound),
+      ...sortedUnique(adapterOf('gsd').startSkills).map(notFound),
     ])
   })
 
@@ -1508,7 +1509,7 @@ describe('overlayLinks', () => {
     const role = templateRole('be')
     const scope = compileScope(role, context({ setup: emptySetupScan({ agents: ['gsd-planner', 'my-agent'] }) }))
     const launcher = user({
-      userSkills: [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS.gsd],
+      userSkills: [...INFRA_SKILLS, ...adapterOf('gsd').startSkills],
       userAgents: ['gsd-planner', 'my-agent'],
     })
     const plan = launchPlan(role, scope, launcher)
@@ -1575,9 +1576,9 @@ const ASSIGNMENTS: readonly (readonly [string, (role: RoleSpec) => RoleSpec])[] 
 /** Every skill name the matrix overlays could hold, so the user of the matrix has all of them. */
 const MATRIX_SKILLS: readonly string[] = sortedUnique([
   ...INFRA_SKILLS,
-  ...FRAMEWORK_START_SKILLS.gsd,
-  ...FRAMEWORK_START_SKILLS.superpowers,
-  ...FRAMEWORK_START_SKILLS.none,
+  ...adapterOf('gsd').startSkills,
+  ...adapterOf('superpowers').startSkills,
+  ...adapterOf('none').startSkills,
   ...MATRIX_SETUP.skills.map(item => item.name),
 ])
 

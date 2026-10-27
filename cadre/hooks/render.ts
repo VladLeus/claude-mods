@@ -748,15 +748,19 @@ function unsupportedNoteLines(detections: readonly Detection[], choice: Choice):
   return [`Warning: also detected but unsupported: ${names.join(', ')}`]
 }
 
-/** The one line that lists the GSD hooks settings register, each with what it does to a role (D-05). */
+/**
+ * One line per adapter with a facts heading and role facts, such as the GSD hooks settings register: the heading, then
+ * each fact with what it does to a role (D-05).
+ */
 function gsdHookLines(facts: Facts): string[] {
-  const gsd = ADAPTERS.find(adapter => adapter.id === 'gsd')
-  if (gsd === undefined) return []
-  const hooks = gsd.roleFacts?.(facts) ?? []
-  if (hooks.length === 0) return []
-  const items = hooks.map(hook => `${hook.name} (${hook.note})`).join(', ')
+  return ADAPTERS.flatMap(adapter => {
+    if (adapter.factsHeading === null || adapter.roleFacts === undefined) return []
+    const hooks = adapter.roleFacts(facts)
+    if (hooks.length === 0) return []
+    const items = hooks.map(hook => `${hook.name} (${hook.note})`).join(', ')
 
-  return [`GSD hooks registered (activation depends on GSD config): ${items}`]
+    return [`${adapter.factsHeading}: ${items}`]
+  })
 }
 
 /** One line per host warning, with the text cleaned and capped as every report cell is. */

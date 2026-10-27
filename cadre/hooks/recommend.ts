@@ -5,6 +5,7 @@ import type { Labelled } from './core/labelled'
 import { reportText } from './core/text'
 import { targetText } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
+import { adapterOf } from './framework/registry'
 import { standsFor } from './roles'
 
 /** The dialog button that accepts a hunk; a typed answer of the same word counts the same, in any case. */
@@ -73,8 +74,8 @@ export const INSTALL_COMMANDS: Readonly<{
   claudeSecurity: string
   securityGuidance: string
 }> = Object.freeze({
-  gsd: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
-  superpowers: 'claude plugin install superpowers@claude-plugins-official',
+  gsd: adapterOf('gsd').install ?? '',
+  superpowers: adapterOf('superpowers').install ?? '',
   playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
   devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
   claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',

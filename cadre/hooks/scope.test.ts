@@ -14,7 +14,8 @@ import type {
   SettingsSource,
   SetupScan,
 } from '../types'
-import { CLAUDE_SECURITY_PLUGIN, FRAMEWORK_START_SKILLS, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './assign'
+import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './assign'
+import { adapterOf } from './framework/registry'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
 import type { ChainRole } from './roles'
 import {
@@ -527,7 +528,7 @@ describe('scope rules', () => {
     const missing: string[] = []
     for (const framework of frameworks) {
       const scope = compileScope(templateRole('qa'), context({ framework, setup: scanned }))
-      for (const name of [...INFRA_SKILLS, ...FRAMEWORK_START_SKILLS[framework]]) {
+      for (const name of [...INFRA_SKILLS, ...adapterOf(framework).startSkills]) {
         const plugin = name.slice(0, Math.max(name.indexOf(':'), 0))
         const isPresent =
           plugin === ''
