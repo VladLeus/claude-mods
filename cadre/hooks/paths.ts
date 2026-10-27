@@ -227,11 +227,20 @@ export function markdownFileNames(entries: readonly PortEntry[]): string[] {
 }
 
 /**
+ * The folder the engine keeps a project root's data in, in the user folder: `<userDir>/projects/<root mangled by
+ * mangledProjectDir>`. History and memory both build on it with the user folder as given, with no trim (unlike
+ * status.ts transcriptFolderOf, which trims a trailing slash).
+ */
+export function projectFolderOf(userDir: string, root: string): string {
+  return `${userDir}/projects/${mangledProjectDir(root)}`
+}
+
+/**
  * The auto-memory folder the engine keeps for a project root in the user folder: `<userDir>/projects/<root mangled by
  * mangledProjectDir>/memory` (D-100; 02-GAPS-B2 S7: one home).
  */
 export function memoryFolderOf(userDir: string, root: string): string {
-  return `${userDir}/projects/${mangledProjectDir(root)}/memory`
+  return `${projectFolderOf(userDir, root)}/memory`
 }
 
 /** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */

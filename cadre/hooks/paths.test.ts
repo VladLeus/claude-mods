@@ -11,6 +11,7 @@ import {
   markdownFileNames,
   memoryFolderOf,
   pathFromDisplay,
+  projectFolderOf,
   relativeTo,
   resolvedPath,
   trimSlash,
@@ -123,6 +124,13 @@ describe('isFileInsideRoot (WR-02)', () => {
     expect(isFileInsideRoot({ kind: 'file' }, '/repo')).toBe(false)
     expect(isFileInsideRoot({ kind: 'file', realPath: '/repo' }, '/repo')).toBe(false)
     expect(isFileInsideRoot(undefined, '/repo')).toBe(false)
+  })
+})
+
+describe('projectFolderOf', () => {
+  test('projectFolderOf: <userDir>/projects/<the root mangled>, with the user folder as given (no trim)', () => {
+    expect(projectFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
+    expect(projectFolderOf('/cfg/', '/a b')).toBe('/cfg//projects/-a-b')
   })
 })
 

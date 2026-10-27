@@ -5,7 +5,7 @@ import { HISTORY_MAX_SESSIONS } from './assign'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { asciiLower, compareText } from './core/text'
-import { mangledProjectDir, userDirOf } from './paths'
+import { projectFolderOf, userDirOf } from './paths'
 import { listingState } from './scan/port-read'
 
 /**
@@ -84,7 +84,7 @@ const SKILL_NAME = /"skill":"([^"\\]*)"/g
 
 /** The folder that holds this repo's session transcripts: `projects/<mangled repo path>` in the user folder (D-59). */
 export function historyDir(userDir: string, root: string): string {
-  return `${userDir}/projects/${mangledProjectDir(root)}`
+  return projectFolderOf(userDir, root)
 }
 
 /** Whether a listing entry is a session transcript: a regular `.jsonl` file, not a link. */
