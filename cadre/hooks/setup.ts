@@ -12,16 +12,7 @@ import type {
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from './core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS, NAME_PATTERN } from './core/names'
 import { clean, compareText, isChangedByClean, sortedUnique } from './core/text'
-import {
-  foldEnabledPlugins,
-  hiddenNameWarnings,
-  hookScriptsMatching,
-  MAX_KEY_CHARS,
-  MAX_READ_BYTES,
-  parseEnabledPlugins,
-  parseInstalledPlugins,
-  SOURCE_ORDER,
-} from './facts'
+import { hiddenNameWarnings, MAX_READ_BYTES } from './facts'
 import {
   claudeJsonPathOf,
   displayPath,
@@ -34,6 +25,14 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
+import {
+  foldEnabledPlugins,
+  hookScriptsMatching,
+  MAX_KEY_CHARS,
+  parseEnabledPlugins,
+  parseInstalledPlugins,
+  SOURCE_ORDER,
+} from './scan/facts/settings'
 import { listingState, missingState } from './scan/port-read'
 
 /**

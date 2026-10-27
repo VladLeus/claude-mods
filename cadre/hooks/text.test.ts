@@ -142,7 +142,7 @@ import {
   WORKTREES_DIR,
   XDG_ARGV,
 } from './epic'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY, SOURCE_ORDER } from './facts'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './facts'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {
   GSD_ADAPTER,
@@ -404,6 +404,7 @@ import {
   proposeRoles,
   ROLE_TEMPLATE,
 } from './roles'
+import { SOURCE_ORDER } from './scan/facts/settings'
 import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan/markers'
 import { SKIP_DIRS } from './scan/walk'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'
