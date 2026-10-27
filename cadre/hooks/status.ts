@@ -18,8 +18,8 @@ import { GIT_TIMEOUT_MS } from './git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { repoGuard } from './guards/repo'
 import { handoffFolderOf, mangledProjectDir, trimSlash, userDirOf } from './paths'
-import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan'
-import type { RunState } from './scan'
+import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from './scan/autopilot'
+import type { RunState } from './scan/autopilot'
 import { readTeam, regenBadRole, resolvedFramework } from './team'
 
 /**

@@ -9,7 +9,7 @@ import { clean } from '../core/text'
 import { detectRefusal, MAX_READ_BYTES } from '../facts'
 import { findGitTop } from '../git/checkout'
 import { trimSlash } from '../paths'
-import { autopilotReply, autopilotRunState, autopilotStatusPath } from '../scan'
+import { autopilotReply, autopilotRunState, autopilotStatusPath } from '../scan/autopilot'
 
 /** Code points of the git top level a refusal shows. */
 const MAX_TOP_CHARS = 240

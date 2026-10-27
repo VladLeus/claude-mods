@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InitIo } from '../../types'
 import { HOME_ROOT_REPLY, MAX_READ_BYTES } from '../facts'
 import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init'
-import { autopilotReply } from '../scan'
+import { autopilotReply } from '../scan/autopilot'
 import { DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
 import { commandRefusal, initGuard, NOT_INTERACTIVE_REPLY, repoGuard } from './repo'
 

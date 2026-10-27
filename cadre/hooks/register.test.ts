@@ -30,7 +30,7 @@ import {
   ROLES_QUESTION,
 } from './init'
 import { OWN_ANSWER_HINT } from './render'
-import { autopilotReply } from './scan'
+import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
