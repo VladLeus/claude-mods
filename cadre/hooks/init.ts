@@ -242,10 +242,11 @@ import {
   rolesFromProposal,
   standsFor,
 } from './roles'
-import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES, undecidedFacts } from './scan'
+import { undecidedFacts } from './scan'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
+import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'
 import { MEMORY_PATTERN, pluginName, scopeCardLines } from './scope'
 import {
   attendedByConfig,

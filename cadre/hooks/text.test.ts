@@ -404,7 +404,8 @@ import {
   proposeRoles,
   ROLE_TEMPLATE,
 } from './roles'
-import { MANIFEST_FILES, MARKER_ROWS, SKIP_DIRS, SOURCE_EXTENSIONS } from './scan'
+import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan'
+import { SKIP_DIRS } from './scan/walk'
 import { compileScope, MEMORY_PATTERN, scopeCardLines, SECRET_READ_DENY } from './scope'
 import {
   COPIED_LINE,
