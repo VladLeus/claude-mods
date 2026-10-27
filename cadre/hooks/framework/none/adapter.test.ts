@@ -312,4 +312,18 @@ describe('BUILTIN_ADAPTER', () => {
     expect(BUILTIN_ADAPTER.autonomyHunks(emptySetupScan())).toBeNull()
     expect(BUILTIN_ADAPTER.autonomyHunks(emptySetupScan({ carry }))).toBeNull()
   })
+
+  test('it carries the D-244 framework fields with the values of today', () => {
+    expect(BUILTIN_ADAPTER.startSkills).toEqual([])
+    expect(BUILTIN_ADAPTER.ownsSkill({ name: 'gsd-x', plugin: null })).toBe(false)
+    expect(BUILTIN_ADAPTER.ownsSkill({ name: 'brainstorming', plugin: 'superpowers' })).toBe(false)
+    expect(BUILTIN_ADAPTER.pluginsToEnable).toEqual([])
+    expect(BUILTIN_ADAPTER.agentPrefix).toBeNull()
+    expect(BUILTIN_ADAPTER.needsBash).toBe(false)
+    expect(BUILTIN_ADAPTER.roleStart('be')).toBe('the plan in .cadre/be/.runtime/plan.md')
+    expect(BUILTIN_ADAPTER.install).toBeNull()
+    expect(BUILTIN_ADAPTER.factsHeading).toBeNull()
+    const lists = [BUILTIN_ADAPTER.startSkills, BUILTIN_ADAPTER.pluginsToEnable]
+    expect(lists.every(list => Object.isFrozen(list))).toBe(true)
+  })
 })

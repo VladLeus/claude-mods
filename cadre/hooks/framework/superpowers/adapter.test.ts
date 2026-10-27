@@ -496,4 +496,24 @@ describe('SUPERPOWERS_ADAPTER', () => {
     expect(SUPERPOWERS_ADAPTER.autonomyHunks(emptySetupScan())).toBeNull()
     expect(SUPERPOWERS_ADAPTER.autonomyHunks(emptySetupScan({ carry }))).toBeNull()
   })
+
+  test('it carries the D-244 framework fields with the values of today', () => {
+    expect(SUPERPOWERS_ADAPTER.startSkills).toEqual([
+      'superpowers:brainstorming',
+      'superpowers:writing-plans',
+      'superpowers:executing-plans',
+      'superpowers:subagent-driven-development',
+    ])
+    expect(SUPERPOWERS_ADAPTER.ownsSkill({ name: 'brainstorming', plugin: 'superpowers' })).toBe(true)
+    expect(SUPERPOWERS_ADAPTER.ownsSkill({ name: 'superpowers:brainstorming', plugin: null })).toBe(true)
+    expect(SUPERPOWERS_ADAPTER.ownsSkill({ name: 'gsd-x', plugin: null })).toBe(false)
+    expect(SUPERPOWERS_ADAPTER.pluginsToEnable).toEqual(['superpowers'])
+    expect(SUPERPOWERS_ADAPTER.agentPrefix).toBeNull()
+    expect(SUPERPOWERS_ADAPTER.needsBash).toBe(false)
+    expect(SUPERPOWERS_ADAPTER.roleStart('be')).toBe('superpowers:brainstorming')
+    expect(SUPERPOWERS_ADAPTER.install).toBe('claude plugin install superpowers@claude-plugins-official')
+    expect(SUPERPOWERS_ADAPTER.factsHeading).toBeNull()
+    const lists = [SUPERPOWERS_ADAPTER.startSkills, SUPERPOWERS_ADAPTER.pluginsToEnable]
+    expect(lists.every(list => Object.isFrozen(list))).toBe(true)
+  })
 })

@@ -682,4 +682,24 @@ describe('GSD_ADAPTER', () => {
   test('it declares every required adapter field under the framework contract', () => {
     expect(missingFields(GSD_ADAPTER)).toEqual([])
   })
+
+  test('it carries the D-244 framework fields with the values of today', () => {
+    expect(GSD_ADAPTER.startSkills).toEqual([
+      'gsd-autonomous',
+      'gsd-discuss-phase',
+      'gsd-plan-phase',
+      'gsd-execute-phase',
+      'gsd-validate-phase',
+      'gsd-code-review',
+    ])
+    expect(GSD_ADAPTER.ownsSkill({ name: 'gsd-x', plugin: null })).toBe(true)
+    expect(GSD_ADAPTER.ownsSkill({ name: 'x', plugin: null })).toBe(false)
+    expect(GSD_ADAPTER.pluginsToEnable).toEqual([])
+    expect(GSD_ADAPTER.agentPrefix).toBe('gsd-')
+    expect(GSD_ADAPTER.needsBash).toBe(true)
+    expect(GSD_ADAPTER.roleStart('be')).toBe('/gsd-autonomous')
+    expect(GSD_ADAPTER.install).toBe('npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global')
+    expect(GSD_ADAPTER.factsHeading).toBe('GSD hooks registered (activation depends on GSD config)')
+    expect([GSD_ADAPTER.startSkills, GSD_ADAPTER.pluginsToEnable].every(list => Object.isFrozen(list))).toBe(true)
+  })
 })
