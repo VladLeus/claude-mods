@@ -152,15 +152,8 @@ import type { HunkCandidate } from './framework/gsd/hunks'
 import { provenUserDir } from './framework/gsd/identity'
 import { resolveToolCommand } from './framework/gsd/tools'
 import { ADAPTERS, detectAll } from './framework/registry'
-import {
-  GIT_TRACKING_UNKNOWN_WARNING,
-  gitTrackedArgv,
-  repoPartFiles,
-  trackedFilesOf,
-  trackedRepoParts,
-  untrackedPartsWarning,
-} from './generate'
 import { desiredFiles } from './generate/files'
+import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
 import { gitCommonDirOf } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
@@ -3407,38 +3400,6 @@ async function installPlugins(
   }
 
   return { installed, installProblems }
-}
-
-/** How long the git tracked-files run may take. */
-const GIT_TRACKED_TIMEOUT_MS = 10_000
-
-/**
- * The repo parts a plain init may write, with the warnings of those it leaves out (02-GAPS-B2 M3). With no repo part
- * the map is given back unchanged and git is not asked. Else gitTrackedArgv runs at the repo root through the host:
- * a run the host rejects or that exits non-zero keeps no repo part (trackedRepoParts with null) and warns
- * GIT_TRACKING_UNKNOWN_WARNING, so the check fails closed; else only the parts of the files git named are kept, and
- * each source file it did not name is an untrackedPartsWarning, in file order.
- */
-async function trackedParts(
-  host: HostIo,
-  root: string,
-  repoParts: ReadonlyMap<string, readonly InstructionPart[]>,
-): Promise<{
-  readonly repoParts: ReadonlyMap<string, readonly InstructionPart[]>
-  readonly warnings: readonly string[]
-}> {
-  const files = repoPartFiles(repoParts)
-  if (files.length === 0) return { repoParts, warnings: [] }
-  const run = await host.run(gitTrackedArgv(files), { cwd: root, timeoutMs: GIT_TRACKED_TIMEOUT_MS })
-  if (run === null || run.exitCode !== 0) {
-    return { repoParts: trackedRepoParts(repoParts, null), warnings: [GIT_TRACKING_UNKNOWN_WARNING] }
-  }
-  const tracked = trackedFilesOf(run.stdout)
-
-  return {
-    repoParts: trackedRepoParts(repoParts, tracked),
-    warnings: files.filter(file => !tracked.has(file)).map(untrackedPartsWarning),
-  }
 }
 
 /** Where the private files of an apply go: the roles that have one, the paths apply may write, and why none is. */

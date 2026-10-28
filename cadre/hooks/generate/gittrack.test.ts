@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart } from '../types'
+import type { InstructionPart } from '../../types'
+import { BIDI_OVERRIDE } from '../testkit'
 import {
   GIT_TRACKING_UNKNOWN_WARNING,
   gitTrackedArgv,
@@ -8,8 +9,7 @@ import {
   trackedFilesOf,
   trackedRepoParts,
   untrackedPartsWarning,
-} from './generate'
-import { BIDI_OVERRIDE } from './testkit'
+} from './gittrack'
 
 /** An instruction part as the reader gives it, from the repo unless told otherwise; the hash is a fixed stand-in. */
 function part(
