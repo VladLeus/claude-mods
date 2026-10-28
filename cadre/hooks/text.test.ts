@@ -49,6 +49,14 @@ import {
 } from './apply'
 import type { HunkRun } from './apply'
 import {
+  APPLIED_NONE_NOTE,
+  appliedLines,
+  MANIFEST_SKIPPED_NOTE,
+  NEXT_STEP_NOTE,
+  privateFoldersUnknownWarning,
+} from './apply/run'
+import type { ApplyOutcome } from './apply/run'
+import {
   ALL_ENV_OPTION,
   ALL_OPTION,
   envQuestion,
@@ -166,8 +174,6 @@ import {
   ADJUST_QUESTION,
   ADJUST_ROUNDS_NOTE,
   adjustContextLine,
-  APPLIED_NONE_NOTE,
-  appliedLines,
   ASSIGNMENT_DISMISSED_REASON,
   cancelledReply,
   cardLines,
@@ -222,7 +228,6 @@ import {
   launchContextLine,
   launchLine,
   LINKED_MEMORIES_ROW,
-  MANIFEST_SKIPPED_NOTE,
   mcpContextLine,
   MEMORY_DISMISSED_REASON,
   memoryContextLine,
@@ -230,7 +235,6 @@ import {
   MODEL_DISMISSED_REASON,
   MODEL_EFFORT_CONTEXT,
   MODEL_MODE_QUESTION,
-  NEXT_STEP_NOTE,
   notHandedOutWarning,
   OWN_SKILLS_ENTRY_OPTIONS,
   ownSkillContextLine,
@@ -242,7 +246,6 @@ import {
   policyLine,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
-  privateFoldersUnknownWarning,
   proposalLines,
   REGEN_BAD_MANIFEST,
   REGEN_CANCELLED,
@@ -277,7 +280,6 @@ import {
   teamContextLine,
   unusableRecordWarning,
 } from './init'
-import type { ApplyOutcome } from './init'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

@@ -56,6 +56,16 @@ import {
   privateClaudeMdText,
 } from './apply'
 import type { HunkRun } from './apply'
+import {
+  APPLIED_NONE_NOTE,
+  appliedLines,
+  MANIFEST_SKIPPED_NOTE,
+  NEXT_STEP_NOTE,
+  PLUGIN_RUN_TIMEOUT_MS,
+  privateFoldersUnknownWarning,
+  PYTHON_TIMEOUT_MS,
+} from './apply/run'
+import type { ApplyOutcome } from './apply/run'
 import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
@@ -77,8 +87,6 @@ import {
   ADJUST_ROUNDS_NOTE,
   adjustContextLine,
   adjustLoop,
-  APPLIED_NONE_NOTE,
-  appliedLines,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
   cancelledReply,
@@ -143,7 +151,6 @@ import {
   launchLine,
   launchStartStep,
   LINKED_MEMORIES_ROW,
-  MANIFEST_SKIPPED_NOTE,
   MAX_ADJUST_ROUNDS,
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
@@ -156,20 +163,16 @@ import {
   MODEL_EFFORT_CONTEXT,
   MODEL_MODE_QUESTION,
   modelStep,
-  NEXT_STEP_NOTE,
   notHandedOutWarning,
   ownSkillContextLine,
   parseGitPolicy,
   parseReviewItem,
   partDroppedLine,
   planStep,
-  PLUGIN_RUN_TIMEOUT_MS,
   policyLine,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
-  privateFoldersUnknownWarning,
   proposalLines,
-  PYTHON_TIMEOUT_MS,
   REGEN_BAD_MANIFEST,
   REGEN_DISMISSED_REASON,
   REGEN_ITEM_OPTIONS,
@@ -206,7 +209,7 @@ import {
   unusableRecordWarning,
   withSecuritySkill,
 } from './init'
-import type { AdjustOutcome, ApplyOutcome, InitOptions, RegenOptions, ReviewItem } from './init'
+import type { AdjustOutcome, InitOptions, RegenOptions, ReviewItem } from './init'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

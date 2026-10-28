@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
 import type { AskSpec, PaneKey } from '../types'
+import { MANIFEST_SKIPPED_NOTE, NEXT_STEP_NOTE, privateFoldersUnknownWarning } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { cadreJsonText, roleJsonText } from './generate/docs'
@@ -19,11 +20,8 @@ import {
   GIT_POLICY_QUESTION,
   INIT_FILE_SYSTEM_ROOT_REPLY,
   INIT_HOME_ROOT_REPLY,
-  MANIFEST_SKIPPED_NOTE,
-  NEXT_STEP_NOTE,
   policyLine,
   PRIVATE_FILES_HEADING,
-  privateFoldersUnknownWarning,
   REVIEW_QUESTION,
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
