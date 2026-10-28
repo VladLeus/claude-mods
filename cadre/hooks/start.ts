@@ -77,6 +77,7 @@ import { hookScriptOf } from './scan/setup/settings'
 import { parseManifest } from './state/cadre-files'
 import { compileTeam, readTeam, regenBadRole } from './team'
 import type { RegenRead } from './team'
+import { terminalHostOf } from './ui/open'
 import {
   clipboardRun,
   COPIED_LINE,
@@ -84,7 +85,6 @@ import {
   NOT_COPIED_LINE,
   TERMINAL_OPEN_TIMEOUT_MS,
   terminalPlan,
-  UNAME_TIMEOUT_MS,
 } from './ui/terminal'
 
 /** The name of the rendered runtime settings in `.runtime` (D-84). */
@@ -1352,10 +1352,7 @@ async function terminalLine(
     readonly command: string
   },
 ): Promise<string> {
-  const uname = await host.run(['/usr/bin/uname', '-s'], { timeoutMs: UNAME_TIMEOUT_MS })
-  const isMacOs = uname !== null && uname.exitCode === 0 && uname.stdout === 'Darwin\n'
-  const tmux = await host.env('TMUX')
-  const termProgram = await host.env('TERM_PROGRAM')
+  const { isMacOs, tmux, termProgram } = await terminalHostOf(host)
   const plan = terminalPlan({ ...input, tmux, termProgram, isMacOs })
   if (plan.kind === 'refuse') return plan.text
   const open = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })

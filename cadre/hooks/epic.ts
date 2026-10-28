@@ -36,6 +36,7 @@ import { claudeRefusal, launcherRead, renderRole } from './start'
 import { roleRunState } from './status'
 import { compileTeam, readTeam, regenBadRole } from './team'
 import { askChoice, quotedLabels } from './ui/ask'
+import { terminalHostOf } from './ui/open'
 import {
   clipboardRun,
   COPIED_LINE,
@@ -43,7 +44,6 @@ import {
   NOT_COPIED_LINE,
   TERMINAL_OPEN_TIMEOUT_MS,
   terminalPlan,
-  UNAME_TIMEOUT_MS,
 } from './ui/terminal'
 import type { TerminalPlan } from './ui/terminal'
 
@@ -1214,10 +1214,7 @@ async function openedLines(
   worktree: string,
   terminal: Exclude<TerminalChoice, 'none'>,
 ): Promise<string[]> {
-  const uname = await host.run(['/usr/bin/uname', '-s'], { timeoutMs: UNAME_TIMEOUT_MS })
-  const isMacOs = uname !== null && uname.exitCode === 0 && uname.stdout === 'Darwin\n'
-  const tmux = await host.env('TMUX')
-  const termProgram = await host.env('TERM_PROGRAM')
+  const { isMacOs, tmux, termProgram } = await terminalHostOf(host)
   const lines: string[] = []
   const commands: string[] = []
   const refusals: string[] = []
