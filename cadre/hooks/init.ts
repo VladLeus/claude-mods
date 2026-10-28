@@ -163,7 +163,6 @@ import {
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
   contentContextLine,
-  fallbackTopics,
   HANDOUT_DISMISSED_REASON,
   instructionLines,
   instructionReviewLines,
@@ -172,15 +171,12 @@ import {
   parseContentConsent,
   parseRecommendation,
   parseRegenRecommendation,
-  parseTopics,
   partChanges,
   RECOMMEND_SYSTEM,
   recommendPrompt,
   REGEN_RECOMMEND_SYSTEM,
   regenRecommendPrompt,
   topicItems,
-  TOPICS_SYSTEM,
-  topicsPrompt,
 } from './instructions'
 import type { MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
@@ -241,6 +237,7 @@ import type { Checked } from './suggest/checked'
 import { proposeFromText } from './suggest/propose'
 import type { Described } from './suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillCount, skillsPrompt } from './suggest/skills'
+import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './suggest/topics'
 import {
   attendedByConfig,
   compileAll,

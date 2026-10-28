@@ -296,7 +296,6 @@ import {
   CONTENT_QUESTION,
   contentContextLine,
   entryContextLine,
-  fallbackTopics,
   HANDOUT_DISMISSED_REASON,
   INSTRUCTIONS_ENTRY_OPTIONS,
   INSTRUCTIONS_ENTRY_QUESTION,
@@ -313,7 +312,6 @@ import {
   topicHeader,
   topicItems,
   topicQuestion,
-  TOPICS_SYSTEM,
 } from './instructions'
 import {
   RUNTIME_SETTINGS_KEYS,
@@ -431,6 +429,7 @@ import { statusReportText } from './status'
 import type { StatusReport } from './status'
 import { PROPOSE_SYSTEM } from './suggest/propose'
 import { SKILLS_SYSTEM } from './suggest/skills'
+import { fallbackTopics, TOPICS_SYSTEM } from './suggest/topics'
 import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
