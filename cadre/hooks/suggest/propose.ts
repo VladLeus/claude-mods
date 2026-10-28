@@ -1,9 +1,15 @@
-import type { ProposedRole, RoleSpec, TemplateRoleId } from '../types'
-import { isObject, parseJsonValue } from './core/json'
-import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
-import { idLabel } from './core/text'
-import { ROLE_TEMPLATE, roleOf } from './roles/template'
-import type { RoleTraits } from './roles/template'
+/**
+ * The roles proposal prompt, a layer 7 module: the prompt that turns the person's description into roles, the check
+ * of the model's reply and the roles it gives (ROLE-02, D-46, D-83, D-92), and the Describe path's model call with its
+ * fallback line. It imports the checked call, core, the role template, role validation and the types, so init's
+ * describe step reads it here.
+ */
+import type { InitIo, ProposedRole, RoleSpec, TemplateRoleId } from '../../types'
+import { isObject, parseJsonValue } from '../core/json'
+import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
+import { clean, idLabel } from '../core/text'
+import { ROLE_TEMPLATE, roleOf } from '../roles/template'
+import type { RoleTraits } from '../roles/template'
 import {
   CUSTOM_TRAITS,
   MAX_DESCRIPTION_CHARS,
@@ -13,7 +19,9 @@ import {
   TEMPLATE_IDS,
   titleOf,
   validateRoles,
-} from './roles/validate'
+} from '../roles/validate'
+import { checkedCompletion } from './checked'
+import type { Checked } from './checked'
 
 /** What the model is told when it turns the person's description into roles (D-83); the reply is validated in code. */
 export const PROPOSE_SYSTEM = [
@@ -125,4 +133,46 @@ function traitsOf(basedOn: TemplateRoleId | null): RoleTraits {
  */
 export function rolesFromProposal(proposed: readonly ProposedRole[]): RoleSpec[] {
   return proposed.map(role => roleOf(role, traitsOf(role.basedOn)))
+}
+
+/** Code points of the model's errors the fallback line shows, so a long list never cuts off the line's end. */
+const MAX_FALLBACK_ERROR_CHARS = 120
+
+/** The sentence that ends the fallback line. */
+const FALLBACK_NOTE = 'Using the template proposal; you can still adjust it.'
+
+/**
+ * What describeStep gives: the described roles, a return to the template, the fallback and why, or a cancel with
+ * its reason (A1, D-136).
+ */
+export type Described =
+  | { readonly kind: 'roles'; readonly roles: readonly RoleSpec[] }
+  | { readonly kind: 'template' }
+  | { readonly kind: 'fallback'; readonly message: string }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/** The line init prints when the described structure cannot be used: the last errors, cut so the line keeps its end. */
+function fallbackMessage(errors: readonly string[]): string {
+  const reason = clean(errors.join('; '), MAX_FALLBACK_ERROR_CHARS)
+
+  return `Could not use the described structure: ${reason}. ${FALLBACK_NOTE}`
+}
+
+/**
+ * Turns the person's description into roles through the model (D-83). The prompt carries the description as a JSON
+ * string and nothing from a scan (proposePrompt); every reply is validated by parseProposal, and an invalid one is
+ * sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it falls back with the
+ * last errors.
+ */
+export async function proposeFromText(io: InitIo, text: string): Promise<Described> {
+  const parse = (reply: string): Checked<Described> => {
+    const parsed = parseProposal(reply)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: { kind: 'roles', roles: rolesFromProposal(parsed.roles) } }
+  }
+  const prompt = (errors: readonly string[]): string => proposePrompt(text, errors)
+  const fallback = (errors: readonly string[]): Described => ({ kind: 'fallback', message: fallbackMessage(errors) })
+
+  return checkedCompletion(io, PROPOSE_SYSTEM, prompt, parse, fallback)
 }

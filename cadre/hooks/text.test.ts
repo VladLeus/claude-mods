@@ -350,7 +350,6 @@ import {
   lineDiff,
   STATUS_LABEL,
 } from './render'
-import { PROPOSE_SYSTEM } from './roles'
 import { CUSTOM_PURPOSE } from './roles/adjust'
 import {
   CLAUDE_MD_PLUGIN,
@@ -431,6 +430,7 @@ import {
 } from './start'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
+import { PROPOSE_SYSTEM } from './suggest/propose'
 import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'

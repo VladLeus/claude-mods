@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { TemplateRoleId } from '../types'
-import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './roles'
-import { BIDI_OVERRIDE } from './testkit'
+import type { TemplateRoleId } from '../../types'
+import { BIDI_OVERRIDE } from '../testkit'
+import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './propose'
 
 /** The template ids in template order, which every proposal and its change list must keep. */
 const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']

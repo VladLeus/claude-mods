@@ -239,7 +239,6 @@ import { buildPlan, planReadPaths } from './plan/plan'
 import { renderPlan } from './plan/text'
 import { recommendationLines } from './recommend'
 import { choiceLine } from './render'
-import { PROPOSE_SYSTEM, rolesFromProposal } from './roles'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
@@ -263,6 +262,7 @@ import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { parseCadreState } from './state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
+import { PROPOSE_SYSTEM, rolesFromProposal } from './suggest/propose'
 import {
   MCP_ROUTE,
   REGEN_BAD_STATE,

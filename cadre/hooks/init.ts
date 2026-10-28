@@ -209,7 +209,6 @@ import { planSummary, renderPlan } from './plan/text'
 import { hunkQuestion, parseHunkAnswer, recommendationLines } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
-import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './roles'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'
@@ -243,6 +242,8 @@ import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, pluginName } from './scope/lint'
 import { checkedCompletion } from './suggest/checked'
 import type { Checked } from './suggest/checked'
+import { proposeFromText } from './suggest/propose'
+import type { Described } from './suggest/propose'
 import {
   attendedByConfig,
   compileAll,
@@ -661,12 +662,6 @@ export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or
 /** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
 const ROLE_LABEL_WIDTH = 24
 
-/** Code points of the model's errors the fallback line shows, so a long list never cuts off the line's end. */
-const MAX_FALLBACK_ERROR_CHARS = 120
-
-/** The sentence that ends the fallback line. */
-const FALLBACK_NOTE = 'Using the template proposal; you can still adjust it.'
-
 /** The roles as the proposal lists them: a heading, then one line per role with its title, id and purpose. */
 function roleLines(roles: readonly RoleSpec[]): string[] {
   const rows = roles.map(role => `  ${pad(`${role.title} (${role.id})`, ROLE_LABEL_WIDTH)}${role.purpose}`)
@@ -704,16 +699,6 @@ export function rolesContextLine(roles: readonly RoleSpec[], changes: readonly R
   return `${proposed}; ${changes.length} ${noun} from the scan.`
 }
 
-/**
- * What describeStep gives: the described roles, a return to the template, the fallback and why, or a cancel with
- * its reason (A1, D-136).
- */
-type Described =
-  | { readonly kind: 'roles'; readonly roles: readonly RoleSpec[] }
-  | { readonly kind: 'template' }
-  | { readonly kind: 'fallback'; readonly message: string }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
 /** An answer to the describe question: one of its buttons, or the typed description. */
 type DescribeAnswer =
   | { readonly kind: 'template' }
@@ -729,32 +714,6 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
   if (text === '') return null
 
   return { kind: 'text', text }
-}
-
-/** The line init prints when the described structure cannot be used: the last errors, cut so the line keeps its end. */
-function fallbackMessage(errors: readonly string[]): string {
-  const reason = clean(errors.join('; '), MAX_FALLBACK_ERROR_CHARS)
-
-  return `Could not use the described structure: ${reason}. ${FALLBACK_NOTE}`
-}
-
-/**
- * Turns the person's description into roles through the model (D-83). The prompt carries the description as a JSON
- * string and nothing from a scan (proposePrompt); every reply is validated by parseProposal, and an invalid one is
- * sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it falls back with the
- * last errors.
- */
-async function proposeFromText(io: InitIo, text: string): Promise<Described> {
-  const parse = (reply: string): Checked<Described> => {
-    const parsed = parseProposal(reply)
-    if (parsed.kind === 'invalid') return parsed
-
-    return { kind: 'ok', value: { kind: 'roles', roles: rolesFromProposal(parsed.roles) } }
-  }
-  const prompt = (errors: readonly string[]): string => proposePrompt(text, errors)
-  const fallback = (errors: readonly string[]): Described => ({ kind: 'fallback', message: fallbackMessage(errors) })
-
-  return checkedCompletion(io, PROPOSE_SYSTEM, prompt, parse, fallback)
 }
 
 /**
