@@ -6,8 +6,7 @@
 import type { InstructionTopic, MemoryItem, RoleSpec } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
-import { idLabel } from '../core/text'
-import { invalidReply, NOT_JSON_ERROR, ROLES_INTRO } from './checked'
+import { invalidReply, NOT_JSON_ERROR, roleMapOf, ROLES_INTRO } from './checked'
 
 /** What parseRecommendation gives: the roles recommended for each topic and memory, or every error found. */
 export type RecommendReply =
@@ -55,45 +54,12 @@ export function recommendPrompt(
   return withReplyErrors(lines, errors)
 }
 
-/**
- * The errors of one map of a recommendation reply, whose keys are `kind` ids (topic or memory): an unknown id, a value
- * that is no list, an unknown role.
- */
-function mapErrors(
-  kind: string,
-  named: Readonly<Record<string, unknown>>,
-  ids: readonly string[],
-  roleIds: readonly string[],
-): string[] {
-  return Object.entries(named).flatMap(([key, value]) => {
-    if (!ids.includes(key)) return [`unknown ${kind} "${idLabel(key)}"`]
-    if (!Array.isArray(value)) return [`${kind} ${key} is not a list of role ids`]
-    const unknown = value.filter((id: unknown) => typeof id !== 'string' || !roleIds.includes(id))
-
-    return unknown.map((id: unknown) => `${kind} ${key} names an unknown role "${idLabel(id)}"`)
-  })
-}
-
 /** The errors of a reply that lacks a map: no topics object, no memories object, or both. */
 function missingMaps(topics: unknown, memories: unknown): string[] {
   return [
     ...(isObject(topics) ? [] : ['the reply has no "topics" object']),
     ...(isObject(memories) ? [] : ['the reply has no "memories" object']),
   ]
-}
-
-/** The roles a checked map gives each id, once each and in role order; an id it leaves out gets none. */
-function rolesByMap(
-  named: Readonly<Record<string, unknown>>,
-  ids: readonly string[],
-  roleIds: readonly string[],
-): [string, readonly string[]][] {
-  return ids.map(id => {
-    const value: unknown = Object.hasOwn(named, id) ? named[id] : []
-    const listed: readonly unknown[] = Array.isArray(value) ? value : []
-
-    return [id, roleIds.filter(role => listed.includes(role))]
-  })
 }
 
 /**
@@ -118,15 +84,11 @@ export function parseRecommendation(
   const topicsMap = topics === undefined && topicIds.length === 0 ? {} : topics
   const memoriesMap = memories === undefined && memoryIds.length === 0 ? {} : memories
   if (!isObject(topicsMap) || !isObject(memoriesMap)) return invalidReply(missingMaps(topicsMap, memoriesMap))
-  const errors = [
-    ...mapErrors('topic', topicsMap, topicIds, roleIds),
-    ...mapErrors('memory', memoriesMap, memoryIds, roleIds),
-  ]
+  const topicRoles = roleMapOf('topic', topicsMap, topicIds, roleIds)
+  const memoryRoles = roleMapOf('memory', memoriesMap, memoryIds, roleIds)
+  const errors = [...topicRoles.errors, ...memoryRoles.errors]
   if (errors.length > 0) return invalidReply(errors)
-  const recommended = new Map([
-    ...rolesByMap(topicsMap, topicIds, roleIds),
-    ...rolesByMap(memoriesMap, memoryIds, roleIds),
-  ])
+  const recommended = new Map([...topicRoles.roles, ...memoryRoles.roles])
 
   return { kind: 'ok', recommended }
 }

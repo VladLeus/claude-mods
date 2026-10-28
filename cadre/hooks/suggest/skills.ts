@@ -6,8 +6,8 @@
 import type { RoleSpec, SkillRef } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
-import { asciiLower, countedNoun, idLabel } from '../core/text'
-import { invalidReply, NOT_JSON_ERROR, ROLES_INTRO } from './checked'
+import { asciiLower, countedNoun } from '../core/text'
+import { invalidReply, NOT_JSON_ERROR, roleMapOf, ROLES_INTRO } from './checked'
 
 /** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
 export function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
@@ -73,28 +73,6 @@ export type SkillRecommendReply =
   | { readonly kind: 'ok'; readonly recommended: ReadonlyMap<string, readonly string[]> }
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
 
-/** The errors of one entry of the reply's skills object: an unknown skill, a value that is no list, unknown roles. */
-function skillEntryErrors(
-  key: string,
-  value: unknown,
-  skillIds: readonly string[],
-  roleIds: readonly string[],
-): string[] {
-  if (!skillIds.includes(key)) return [`unknown skill "${idLabel(key)}"`]
-  if (!Array.isArray(value)) return [`skill ${key} is not a list of role ids`]
-  const unknown = value.filter((id: unknown) => typeof id !== 'string' || !roleIds.includes(id))
-
-  return unknown.map((id: unknown) => `skill ${key} names an unknown role "${idLabel(id)}"`)
-}
-
-/** The roles a checked skills object gives one skill, once each and in role order; a skill it leaves out gets none. */
-function skillRoles(named: Readonly<Record<string, unknown>>, id: string, roleIds: readonly string[]): string[] {
-  const value: unknown = Object.hasOwn(named, id) ? named[id] : []
-  const listed: readonly unknown[] = Array.isArray(value) ? value : []
-
-  return roleIds.filter(role => listed.includes(role))
-}
-
 /**
  * The model's skill recommendation as the role ids recommended for each own skill (G-02-1b). The reply is untrusted:
  * one code fence around it is stripped, and only known skill and role ids survive. Every problem is listed at once
@@ -111,9 +89,9 @@ export function parseSkillRecommendation(
   if (json === null) return invalidReply([NOT_JSON_ERROR])
   const named = isObject(json.value) ? json.value.skills : undefined
   if (!isObject(named)) return invalidReply(['the reply has no "skills" object'])
-  const errors = Object.entries(named).flatMap(([key, value]) => skillEntryErrors(key, value, skillIds, roleIds))
-  if (errors.length > 0) return invalidReply(errors)
-  const recommended = new Map(skillIds.map((id): [string, readonly string[]] => [id, skillRoles(named, id, roleIds)]))
+  const map = roleMapOf('skill', named, skillIds, roleIds)
+  if (map.errors.length > 0) return invalidReply(map.errors)
+  const recommended = new Map(map.roles)
 
   return { kind: 'ok', recommended }
 }

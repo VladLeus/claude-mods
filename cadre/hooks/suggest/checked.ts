@@ -5,6 +5,7 @@
  */
 import type { InitIo } from '../../types'
 import { cappedErrors } from '../core/reply'
+import { idLabel } from '../core/text'
 
 /** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
 export const MAX_PROPOSE_ATTEMPTS = 3
@@ -52,3 +53,31 @@ export function invalidReply(
 
 /** The line that introduces the roles in the skills and the recommendation prompts. */
 export const ROLES_INTRO = 'The roles of the team, one per line: id | title | purpose.'
+
+/**
+ * One role map of a model reply, whose keys are `kind` ids (skill, topic or memory) and whose values list role ids:
+ * the errors of its entries (an unknown id, a value that is no list, an unknown role), and the roles it gives each
+ * id, once each and in role order; an id it leaves out gets none.
+ */
+export function roleMapOf(
+  kind: string,
+  named: Readonly<Record<string, unknown>>,
+  ids: readonly string[],
+  roleIds: readonly string[],
+): { readonly errors: readonly string[]; readonly roles: readonly [string, readonly string[]][] } {
+  const errors = Object.entries(named).flatMap(([key, value]) => {
+    if (!ids.includes(key)) return [`unknown ${kind} "${idLabel(key)}"`]
+    if (!Array.isArray(value)) return [`${kind} ${key} is not a list of role ids`]
+    const unknown = value.filter((id: unknown) => typeof id !== 'string' || !roleIds.includes(id))
+
+    return unknown.map((id: unknown) => `${kind} ${key} names an unknown role "${idLabel(id)}"`)
+  })
+  const roles = ids.map((id): [string, readonly string[]] => {
+    const value: unknown = Object.hasOwn(named, id) ? named[id] : []
+    const listed: readonly unknown[] = Array.isArray(value) ? value : []
+
+    return [id, roleIds.filter(role => listed.includes(role))]
+  })
+
+  return { errors, roles }
+}
