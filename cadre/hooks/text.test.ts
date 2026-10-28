@@ -38,7 +38,6 @@ import {
   noHomeInstallText,
   otherChangesWarning,
   otherFilesLines,
-  privateWriteProblem,
   PYTHON_VERSION_ARGV,
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
@@ -54,6 +53,7 @@ import {
   privateFoldersUnknownWarning,
 } from './apply/run'
 import type { ApplyOutcome } from './apply/run'
+import { privateWriteProblem } from './apply/safety'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,

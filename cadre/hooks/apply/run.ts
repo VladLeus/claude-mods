@@ -7,26 +7,17 @@
  */
 import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
 import {
-  applyListPaths,
-  applyStatPaths,
   applySteps,
-  chmodArgv,
-  chmodProblem,
   hunkFailureLine,
   improveBuiltFiles,
   improverLine,
   installedLine,
   installFailureText,
-  listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   pluginInstallArgv,
-  privateCheckPaths,
-  privateLevels,
-  privateWriteProblem,
   PYTHON_VERSION_ARGV,
   pythonProblem,
   restoreSteps,
-  writeProblem,
 } from '../apply'
 import type { BuiltFile, HunkRun, ImproverTally } from '../apply'
 import { reportText } from '../core/text'
@@ -38,6 +29,17 @@ import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath } from './private'
 import type { ApplyInput, ApplyStep, PrivateFile, PrivateRole } from './private'
+import {
+  applyListPaths,
+  applyStatPaths,
+  chmodArgv,
+  chmodProblem,
+  listedLinkProblem,
+  privateCheckPaths,
+  privateLevels,
+  privateWriteProblem,
+  writeProblem,
+} from './safety'
 
 /** The first applied line when an apply had no step to run: every planned file is already on the disk (D-105). */
 export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to date.'

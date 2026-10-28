@@ -31,9 +31,9 @@ import type {
   SettingsSource,
   TerminalChoice,
 } from '../types'
-import { privateLevelsProblem, roleFolderLevels } from './apply'
 import { instructionsRecordPath, parseInstructionsRecord } from './apply/private'
 import type { RecordedMemory } from './apply/private'
+import { privateLevelsProblem, roleFolderLevels } from './apply/safety'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import { clean, compareText, reportText, shown, sortedUnique } from './core/text'
