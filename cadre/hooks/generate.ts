@@ -14,7 +14,7 @@ import {
 import { TOP_OF_FILE } from './records'
 import { INFRA_SKILLS } from './roles/infra'
 import { MAX_PURPOSE_CHARS } from './roles/validate'
-import { scopeCardLines } from './scope'
+import { scopeCardLines } from './scope/card'
 
 /**
  * The most characters the role line of a kickoff may have (D-79; 240 since the inbox sentence of D-114,

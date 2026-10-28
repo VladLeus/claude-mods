@@ -265,7 +265,8 @@ import { overSizeWarning, partsOfText } from './scan/instructions/read'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { scanRepo } from './scan/repo'
 import { scanSetup } from './scan/setup/setup'
-import { compileScope, scopeCardLines } from './scope'
+import { compileScope } from './scope'
+import { scopeCardLines } from './scope/card'
 import { parseCadreState } from './state/cadre-files'
 import {
   MCP_ROUTE,

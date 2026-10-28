@@ -1,7 +1,7 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, isChangedByClean, shown, sortedUnique } from './core/text'
 import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from './paths'
-import { mcpToolName } from './scope'
+import { mcpToolName } from './scope/card'
 import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from './scope/lint'
 
 /**

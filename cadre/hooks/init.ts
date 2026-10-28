@@ -246,7 +246,7 @@ import type { InstructionSources } from './scan/instructions/read'
 import { readRepoFile } from './scan/port-read'
 import { undecidedFacts } from './scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'
-import { scopeCardLines } from './scope'
+import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, pluginName } from './scope/lint'
 import {
   attendedByConfig,

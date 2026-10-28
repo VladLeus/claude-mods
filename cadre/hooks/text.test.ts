@@ -407,7 +407,8 @@ import {
 } from './scan/instructions/read'
 import { MANIFEST_FILES, MARKER_ROWS, SOURCE_EXTENSIONS } from './scan/markers'
 import { SKIP_DIRS } from './scan/walk'
-import { compileScope, scopeCardLines } from './scope'
+import { compileScope } from './scope'
+import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, SECRET_READ_DENY } from './scope/lint'
 import {
   COPIED_LINE,
