@@ -118,13 +118,9 @@ import {
   parseEnvNames,
   parseModelEffort,
   parseRoleList,
-  parseSkillRecommendation,
   PER_ROLE,
   SAME_FOR_ALL,
   skillGroupQuestion,
-  SKILLS_SYSTEM,
-  skillCount,
-  skillsPrompt,
   skillUsesText,
 } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
@@ -244,6 +240,7 @@ import { checkedCompletion } from './suggest/checked'
 import type { Checked } from './suggest/checked'
 import { proposeFromText } from './suggest/propose'
 import type { Described } from './suggest/propose'
+import { parseSkillRecommendation, SKILLS_SYSTEM, skillCount, skillsPrompt } from './suggest/skills'
 import {
   attendedByConfig,
   compileAll,

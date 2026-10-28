@@ -71,7 +71,6 @@ import {
   PER_ROLE,
   SAME_FOR_ALL,
   skillGroupQuestion,
-  SKILLS_SYSTEM,
   skillUsesText,
 } from './assign'
 import { helpText, USAGE_LINES } from './command'
@@ -431,6 +430,7 @@ import {
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
 import { PROPOSE_SYSTEM } from './suggest/propose'
+import { SKILLS_SYSTEM } from './suggest/skills'
 import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
