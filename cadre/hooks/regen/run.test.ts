@@ -30,24 +30,19 @@ import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { HOME_ROOT_REPLY } from '../guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import {
-  dryRunPrivateWarning,
   improverNotOfferedWarning,
   memoryDroppedLine,
   notHandedOutWarning,
   partDroppedLine,
-  REGEN_BAD_MANIFEST,
   REGEN_DISMISSED_REASON,
   REGEN_ITEM_OPTIONS,
-  REGEN_NO_MANIFEST,
   regenCancelledReply,
   regenHeader,
   regenMemoryContextLine,
   regenMemoryQuestion,
   regenPartContextLine,
   regenPartQuestion,
-  regenTotalWarning,
   runInit,
-  unusableRecordWarning,
 } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
@@ -84,6 +79,13 @@ import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import type { PartRecord } from './part-changes'
 import { runRegen } from './run'
 import type { RegenOptions } from './run'
+import {
+  dryRunPrivateWarning,
+  REGEN_BAD_MANIFEST,
+  REGEN_NO_MANIFEST,
+  regenTotalWarning,
+  unusableRecordWarning,
+} from './side-read'
 
 /** Settings with one PreToolUse hook that runs the GSD secret read guard. */
 const GUARD_SETTINGS = {

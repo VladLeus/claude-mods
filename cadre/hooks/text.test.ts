@@ -187,7 +187,6 @@ import {
   DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
-  dryRunPrivateWarning,
   DURATION_DISMISSED_REASON,
   DURATION_OPTIONS,
   DURATION_QUESTION,
@@ -246,18 +245,15 @@ import {
   PRIVATE_FILES_HEADING,
   privateFilesRow,
   proposalLines,
-  REGEN_BAD_MANIFEST,
   REGEN_CANCELLED,
   REGEN_DISMISSED_REASON,
   REGEN_ITEM_OPTIONS,
-  REGEN_NO_MANIFEST,
   regenCancelledReply,
   regenHeader,
   regenMemoryContextLine,
   regenMemoryQuestion,
   regenPartContextLine,
   regenPartQuestion,
-  regenTotalWarning,
   REVIEW_DISMISSED_REASON,
   REVIEW_OPTIONS,
   REVIEW_QUESTION,
@@ -277,7 +273,6 @@ import {
   securityInstallQuestion,
   skillsContextLine,
   teamContextLine,
-  unusableRecordWarning,
 } from './init'
 import {
   CONTENT_DISMISSED_REASON,
@@ -323,6 +318,13 @@ import { DRY_RUN_NOTE, planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion } from './recommend'
 import { TOP_OF_FILE } from './records'
+import {
+  dryRunPrivateWarning,
+  REGEN_BAD_MANIFEST,
+  REGEN_NO_MANIFEST,
+  regenTotalWarning,
+  unusableRecordWarning,
+} from './regen/side-read'
 import { CUSTOM_PURPOSE } from './roles/adjust'
 import {
   CLAUDE_MD_PLUGIN,

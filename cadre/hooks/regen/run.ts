@@ -7,8 +7,9 @@
 import type { HostIo, InitIo } from '../../types'
 import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
-import { regenApply, regenCancelledReply, regenHandout, regenPlan, regenReplyText, regenScans } from '../init'
+import { regenApply, regenCancelledReply, regenHandout, regenPlan, regenReplyText } from '../init'
 import { readTeam, regenBadRole } from '../team'
+import { regenScans } from './side-read'
 
 /**
  * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
