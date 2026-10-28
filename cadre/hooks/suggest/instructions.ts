@@ -1,12 +1,13 @@
 /**
  * The instruction recommendation prompt, a layer 7 module: the prompt that asks which roles need each topic of the
  * instruction files and each memory, and the check of the model's reply (G-02-1f Recommendation, Memories). It
- * imports suggest/topics, core and the types, so init reads it here.
+ * imports the checked call, suggest/topics, core and the types, so init reads it here.
  */
 import type { InstructionTopic, MemoryItem, RoleSpec } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
 import { idLabel } from '../core/text'
+import { NOT_JSON_ERROR } from './checked'
 import { invalid } from './topics'
 
 /** What parseRecommendation gives: the roles recommended for each topic and memory, or every error found. */
@@ -115,7 +116,7 @@ export function parseRecommendation(
   roleIds: readonly string[],
 ): RecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid(['the reply is not JSON'])
+  if (json === null) return invalid([NOT_JSON_ERROR])
   const topics = isObject(json.value) ? json.value.topics : undefined
   const memories = isObject(json.value) ? json.value.memories : undefined
   const topicsMap = topics === undefined && topicIds.length === 0 ? {} : topics

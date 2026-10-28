@@ -38,3 +38,6 @@ export async function checkedCompletion<T>(
 
   return fallback(errors)
 }
+
+/** The error every reply check gives a model reply that is not JSON. */
+export const NOT_JSON_ERROR = 'the reply is not JSON'

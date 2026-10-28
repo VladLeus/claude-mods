@@ -20,7 +20,7 @@ import {
   titleOf,
   validateRoles,
 } from '../roles/validate'
-import { checkedCompletion } from './checked'
+import { checkedCompletion, NOT_JSON_ERROR } from './checked'
 import type { Checked } from './checked'
 
 /** What the model is told when it turns the person's description into roles (D-83); the reply is validated in code. */
@@ -104,7 +104,7 @@ function listProblems(roles: readonly ProposedRole[], entryCount: number): strin
  */
 export function parseProposal(text: string): ProposalReply {
   const json = parseJsonValue(unfenced(text))
-  if (json === null) return { kind: 'invalid', errors: ['the reply is not JSON'] }
+  if (json === null) return { kind: 'invalid', errors: [NOT_JSON_ERROR] }
   const list = isObject(json.value) ? json.value.roles : undefined
   if (!Array.isArray(list)) return { kind: 'invalid', errors: ['the reply has no "roles" list'] }
 

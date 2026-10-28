@@ -1,8 +1,8 @@
 /**
  * The regen recommendation prompt, a layer 7 module: the prompt that asks whether one role needs each new or changed
- * part and memory a regen asks about, and the check of the model's reply (G-02-1f Regen, D-142). It imports
- * suggest/topics, core, records, the memory summaries of the instruction scan and the types, so init's regen reads it
- * here.
+ * part and memory a regen asks about, and the check of the model's reply (G-02-1f Regen, D-142). It imports the
+ * checked call, suggest/topics, core, records, the memory summaries of the instruction scan and the types, so init's
+ * regen reads it here.
  */
 import type { InstructionPart, MemoryItem, RoleSpec } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
@@ -10,6 +10,7 @@ import { unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { TOP_OF_FILE } from '../records'
 import { summaryText } from '../scan/instructions/memories'
+import { NOT_JSON_ERROR } from './checked'
 import { invalid, preview } from './topics'
 
 /** One new or changed item a regen asks about, as its recommendation prompt lists it (G-02-1f Regen, D-142). */
@@ -79,7 +80,7 @@ export type RegenRecommendReply =
  */
 export function parseRegenRecommendation(reply: string, itemIds: readonly string[]): RegenRecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid(['the reply is not JSON'])
+  if (json === null) return invalid([NOT_JSON_ERROR])
   const items = isObject(json.value) ? json.value.items : undefined
   if (!isObject(items)) return invalid(['the reply has no "items" object'])
   const errors = Object.entries(items).flatMap(([key, value]) => {

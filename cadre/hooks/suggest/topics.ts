@@ -1,8 +1,8 @@
 /**
  * The topic grouping prompt, a layer 7 module: the prompt that groups the instruction parts into topics across files,
- * the check of the model's reply and the one-topic-per-file fallback (G-02-1f Part unit). It imports core, records,
- * the memory reads of the instruction scan and the types, so init, the instructions block and the other suggest/
- * modules read it here.
+ * the check of the model's reply and the one-topic-per-file fallback (G-02-1f Part unit). It imports the checked
+ * call, core, records, the memory reads of the instruction scan and the types, so init, the instructions block and
+ * the other suggest/ modules read it here.
  */
 import type { InstructionPart, InstructionScan, InstructionTopic } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
@@ -10,6 +10,7 @@ import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { TOP_OF_FILE } from '../records'
 import { LINE_BREAKS, MAX_SUMMARY_CHARS } from '../scan/instructions/memories'
+import { NOT_JSON_ERROR } from './checked'
 
 /** The most code points a topic title keeps (G-02-1f). */
 const MAX_TITLE_CHARS = 60
@@ -126,7 +127,7 @@ function placementErrors(reads: readonly TopicRead[], partIds: readonly string[]
  */
 export function parseTopics(reply: string, partIds: readonly string[]): TopicsReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid(['the reply is not JSON'])
+  if (json === null) return invalid([NOT_JSON_ERROR])
   const list = isObject(json.value) ? json.value.topics : undefined
   if (!Array.isArray(list)) return invalid(['the reply has no "topics" list'])
   const known = new Set(partIds)

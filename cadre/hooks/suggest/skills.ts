@@ -1,12 +1,13 @@
 /**
  * The skill recommendation prompt, a layer 7 module: the prompt that asks which roles get each of the person's own
  * skills, with the ids and use counts it lists them by, and the check of the model's reply (G-02-1b, D-139). It
- * imports core and the types, so init and assign read it here.
+ * imports the checked call, core and the types, so init and assign read it here.
  */
 import type { RoleSpec, SkillRef } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
 import { asciiLower, countedNoun, idLabel } from '../core/text'
+import { NOT_JSON_ERROR } from './checked'
 
 /** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
 export function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
@@ -115,7 +116,7 @@ export function parseSkillRecommendation(
   roleIds: readonly string[],
 ): SkillRecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalidSkillReply(['the reply is not JSON'])
+  if (json === null) return invalidSkillReply([NOT_JSON_ERROR])
   const named = isObject(json.value) ? json.value.skills : undefined
   if (!isObject(named)) return invalidSkillReply(['the reply has no "skills" object'])
   const errors = Object.entries(named).flatMap(([key, value]) => skillEntryErrors(key, value, skillIds, roleIds))
