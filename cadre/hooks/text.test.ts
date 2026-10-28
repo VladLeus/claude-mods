@@ -280,7 +280,6 @@ import {
   topicItems,
   topicQuestion,
 } from './instructions'
-import { RUNTIME_SETTINGS_KEYS } from './launch'
 import {
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
@@ -288,6 +287,7 @@ import {
   undeniedMemoryWarning,
 } from './launch/deny'
 import { unsafeMemoryNameWarning } from './launch/links'
+import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
 import {
   HOME_UNUSABLE_WARNING,
   INBOX_FILE,

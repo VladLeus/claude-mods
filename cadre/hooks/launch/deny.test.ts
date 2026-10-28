@@ -13,7 +13,7 @@ import type {
 import { isObject } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
-import { launchPlan, renderRuntimeSettings, RUNTIME_SETTINGS_KEYS } from '../launch'
+import { launchPlan } from '../launch'
 import type { LaunchPlan } from '../launch'
 import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
 import { INFRA_SKILLS } from '../roles/infra'
@@ -41,6 +41,7 @@ import {
 } from './deny'
 import { isPartsFlowRole } from './links'
 import type { LaunchUser } from './links'
+import { renderRuntimeSettings, RUNTIME_SETTINGS_KEYS } from './settings'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
