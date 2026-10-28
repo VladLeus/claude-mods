@@ -2,10 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionScan, InstructionTopic } from '../../../types'
 import { sha256Hex } from '../../core/hash'
-import { contentContextLine, instructionLines, topicContextLine } from '../../instructions'
+import { contentContextLine, topicContextLine } from '../../instructions'
 import { fallbackTopics, topicsPrompt } from '../../suggest/topics'
 import { emptySetupScan, entry, link, memIo, memWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
+import { instructionLines } from '../../ui/blocks/instructions'
 import { unreadableWarning } from './memories'
 import {
   configFileWarning,

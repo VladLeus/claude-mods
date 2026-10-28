@@ -146,8 +146,6 @@ import {
   CONTENT_QUESTION,
   contentContextLine,
   HANDOUT_DISMISSED_REASON,
-  instructionLines,
-  instructionReviewLines,
   instructionsEntry,
   memoryItems,
   parseContentConsent,
@@ -242,6 +240,7 @@ import {
   withContext,
 } from './ui/ask'
 import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
+import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
 

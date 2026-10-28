@@ -287,8 +287,6 @@ import {
   HANDOUT_DISMISSED_REASON,
   INSTRUCTIONS_ENTRY_OPTIONS,
   INSTRUCTIONS_ENTRY_QUESTION,
-  instructionLines,
-  instructionReviewLines,
   instructionsEntry,
   memoryItemContextLine,
   memoryItemHeader,
@@ -422,6 +420,7 @@ import {
   withContext,
 } from './ui/ask'
 import { STATUS_LABEL } from './ui/blocks/cards'
+import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines, truncatedLine } from './ui/blocks/scan'
 import { diffLines, lineDiff } from './ui/diff'
