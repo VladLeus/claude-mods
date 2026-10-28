@@ -49,3 +49,6 @@ export function invalidReply(
 ): { readonly kind: 'invalid'; readonly errors: readonly string[] } {
   return { kind: 'invalid', errors: cappedErrors(errors) }
 }
+
+/** The line that introduces the roles in the skills and the recommendation prompts. */
+export const ROLES_INTRO = 'The roles of the team, one per line: id | title | purpose.'
