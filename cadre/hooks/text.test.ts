@@ -322,7 +322,7 @@ import { gitignoreLines, IGNORE_BEGIN, IGNORE_END, ignoreLines, SECURITY_REPORTS
 import { HUNK_FILES } from './plan/plan'
 import { planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
-import { hunkQuestion, recommendationLines } from './recommend'
+import { hunkQuestion } from './recommend'
 import { TOP_OF_FILE } from './records'
 import { CUSTOM_PURPOSE } from './roles/adjust'
 import {
@@ -422,6 +422,7 @@ import {
   withContext,
 } from './ui/ask'
 import { STATUS_LABEL } from './ui/blocks/cards'
+import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines, truncatedLine } from './ui/blocks/scan'
 import { diffLines, lineDiff } from './ui/diff'
 

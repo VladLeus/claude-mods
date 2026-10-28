@@ -174,7 +174,7 @@ import {
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { planReadPaths, planWithManifest } from './plan/plan'
 import { planSummary, renderPlan } from './plan/text'
-import { hunkQuestion, parseHunkAnswer, recommendationLines } from './recommend'
+import { hunkQuestion, parseHunkAnswer } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
@@ -242,6 +242,7 @@ import {
   withContext,
 } from './ui/ask'
 import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
+import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
 
 /** The reply when the session root cannot be read: init stops before it reads anything. */

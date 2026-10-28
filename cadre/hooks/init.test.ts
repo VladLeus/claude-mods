@@ -219,7 +219,6 @@ import { isPartsFlowRole } from './launch'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
 import { renderPlan } from './plan/text'
-import { recommendationLines } from './recommend'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
@@ -305,6 +304,7 @@ import {
   withContext,
 } from './ui/ask'
 import type { ChoiceAsk, StepResult } from './ui/ask'
+import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
 
 /**
