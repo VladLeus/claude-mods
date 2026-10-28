@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { FactsPort, HostIo, IdentityRunResult, InitIo, PortRead, ShownBlock } from '../types'
-import { helpText, parseCommand } from './command'
+import { helpText, parseCommand } from './command/command'
 import { detectText } from './detect/report'
 import { runEpic, runEpicDone } from './epic'
 import { detectRefusal } from './guards/refusals'

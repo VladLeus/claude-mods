@@ -1,5 +1,10 @@
-import type { CadreCommand, TerminalChoice } from '../types'
-import { ROLE_ID_PATTERN } from './core/role-id'
+/**
+ * The command parser, a layer 9 module: the `/cadre` arguments as one command (help, detect, init, regen, start,
+ * status, epic, epic done), with the text a reply echoes back cleaned of invisible characters and capped, and the
+ * usage lines and help text. It imports core/role-id and the types, so register dispatches every /cadre command here.
+ */
+import type { CadreCommand, TerminalChoice } from '../../types'
+import { ROLE_ID_PATTERN } from '../core/role-id'
 
 /** The most code points a reply echoes back, the ellipsis included. */
 const MAX_ECHOED = 40
