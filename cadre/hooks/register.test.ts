@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
 import type { AskSpec, PaneKey } from '../types'
-import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ask'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { cadreJsonText, roleJsonText } from './generate/docs'
@@ -42,6 +41,7 @@ import {
   secretUserSettings,
   templateRole,
 } from './testkit'
+import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]

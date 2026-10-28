@@ -2,9 +2,10 @@
  * The ask machinery every init step shares (D-45, D-133, D-136): one ask, the refusal loop, context lines, pane
  * blocks, notes and step results. init.ts and history.ts both import it, and it imports neither, so the two never
  * import each other.
+ * ui/ask is a layer 8 module: the init stages, regen, apply and epic import it.
  */
-import type { AskSpec, InitIo, PaneKey } from '../types'
-import { clean, reportText } from './core/text'
+import type { AskSpec, InitIo, PaneKey } from '../../types'
+import { clean, reportText } from '../core/text'
 
 /** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
 export const MAX_ASKS = 3

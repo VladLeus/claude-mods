@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
-import { contextText } from './ask'
 import { sha256Hex } from './core/hash'
 import {
   CONTENT_DISMISSED_REASON,
@@ -30,6 +29,7 @@ import type { MemoryRecord, PartRecord } from './instructions'
 import { NO_MEMORY_SUMMARY } from './scan/instructions/memories'
 import { fallbackTopics } from './suggest/topics'
 import { emptySetupScan, templateRole } from './testkit'
+import { contextText } from './ui/ask'
 
 /**
  * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes

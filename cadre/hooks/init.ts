@@ -82,23 +82,6 @@ import type {
   RecordedMemory,
 } from './apply'
 import {
-  accepted,
-  ASK_HEADERS,
-  askChoice,
-  askedText,
-  askOnce,
-  cancelled,
-  choiceResult,
-  contextText,
-  countedChip,
-  MAX_ASKS,
-  noteLine,
-  quotedLabels,
-  showBlock,
-  withContext,
-} from './ask'
-import type { AskResult, ChoiceAsk, StepResult } from './ask'
-import {
   ALL_ENV_OPTION,
   ALL_OPTION,
   assignToRoles,
@@ -246,6 +229,23 @@ import {
   scopesFor,
 } from './team'
 import type { RegenRead } from './team'
+import {
+  accepted,
+  ASK_HEADERS,
+  askChoice,
+  askedText,
+  askOnce,
+  cancelled,
+  choiceResult,
+  contextText,
+  countedChip,
+  MAX_ASKS,
+  noteLine,
+  quotedLabels,
+  showBlock,
+  withContext,
+} from './ui/ask'
+import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
 
 /** The reply when the session root cannot be read: init stops before it reads anything. */
 export const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')

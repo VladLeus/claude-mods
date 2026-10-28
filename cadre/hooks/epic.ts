@@ -21,7 +21,6 @@ import type {
   TemplateRoleId,
   TerminalChoice,
 } from '../types'
-import { askChoice, quotedLabels } from './ask'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { reportText, sortedUnique } from './core/text'
 import { asciiLine, ROLE_LINE_MAX } from './generate/kickoff'
@@ -48,6 +47,7 @@ import {
 import type { TerminalPlan } from './start'
 import { roleRunState } from './status'
 import { compileTeam, readTeam, regenBadRole } from './team'
+import { askChoice, quotedLabels } from './ui/ask'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'

@@ -1,6 +1,4 @@
 import type { InitIo, InitLocations } from '../types'
-import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ask'
-import type { StepResult } from './ask'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { userDirOf } from './paths'
@@ -14,6 +12,8 @@ import {
   scanHistory,
 } from './scan/history'
 import type { HistoryScan } from './scan/history'
+import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ui/ask'
+import type { StepResult } from './ui/ask'
 
 /** The line init prints when this repo has no session history: no session folder, or no transcript in it (SCAN-03). */
 export const NO_HISTORY_NOTE = 'No session history for this repo.'

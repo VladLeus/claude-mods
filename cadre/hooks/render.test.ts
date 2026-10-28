@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, PaneKey, RepoEntry, ShownBlock } from '../types'
-import { ASK_HEADERS, countedChip, PANE_TITLES } from './ask'
 import { isObject } from './core/json'
 import { pad, reportText } from './core/text'
 import { GSD_GATES } from './framework/gsd/adapter'
@@ -34,6 +33,7 @@ import {
 } from './render'
 import type { AskedQuestion, CheckedQuestion, PaneRow, PaneSpan } from './render'
 import { BIDI_OVERRIDE } from './testkit'
+import { ASK_HEADERS, countedChip, PANE_TITLES } from './ui/ask'
 
 /** The superpowers plugin key this repo enables. */
 const SUPERPOWERS_KEY = 'superpowers@claude-plugins-official'

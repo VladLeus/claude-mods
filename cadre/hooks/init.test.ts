@@ -57,17 +57,6 @@ import {
   privateClaudeMdText,
 } from './apply'
 import type { HunkRun } from './apply'
-import {
-  ASK_HEADERS,
-  askChoice,
-  MAX_ASKS,
-  NO_USABLE_ANSWER_REASON,
-  PANE_TITLES,
-  quotedLabels,
-  refusalLine,
-  withContext,
-} from './ask'
-import type { ChoiceAsk, StepResult } from './ask'
 import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
@@ -310,6 +299,17 @@ import {
   withWrites,
 } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
+import {
+  ASK_HEADERS,
+  askChoice,
+  MAX_ASKS,
+  NO_USABLE_ANSWER_REASON,
+  PANE_TITLES,
+  quotedLabels,
+  refusalLine,
+  withContext,
+} from './ui/ask'
+import type { ChoiceAsk, StepResult } from './ui/ask'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right

@@ -34,7 +34,6 @@ import type {
   SetupScan,
   WriteStat,
 } from '../types'
-import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
 import { sha256Hex } from './core/hash'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { isSha256Hex } from './core/names'
@@ -63,6 +62,7 @@ import type { LineDiff } from './render'
 import { CLAUDE_SECURITY_PLUGIN } from './roles/infra'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { missingState } from './scan/port-read'
+import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ui/ask'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
 export type ConflictChoice = 'mine' | 'new'

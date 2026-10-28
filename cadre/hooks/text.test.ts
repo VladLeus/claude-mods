@@ -49,15 +49,6 @@ import {
 } from './apply'
 import type { HunkRun } from './apply'
 import {
-  ASK_HEADERS,
-  countedChip,
-  NO_USABLE_ANSWER_REASON,
-  PANE_TITLES,
-  quotedLabels,
-  refusalLine,
-  withContext,
-} from './ask'
-import {
   ALL_ENV_OPTION,
   ALL_OPTION,
   envQuestion,
@@ -433,6 +424,15 @@ import { fallbackTopics, TOPICS_SYSTEM } from './suggest/topics'
 import { MCP_ROUTE, REGEN_BAD_STATE, REGEN_NO_STATE } from './team'
 import { EMPTY_FACTS, emptySetupScan, entry, INIT_ANSWERS, memIo, memWorld, templateRole } from './testkit'
 import type { MemRun, MemWorld } from './testkit'
+import {
+  ASK_HEADERS,
+  countedChip,
+  NO_USABLE_ANSWER_REASON,
+  PANE_TITLES,
+  quotedLabels,
+  refusalLine,
+  withContext,
+} from './ui/ask'
 
 /** What user text may never hold: the name of an internal planning phase, such as `Phase 3.1` (G-02-3b). */
 const PHASE_NAME = /Phase \d/

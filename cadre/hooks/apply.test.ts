@@ -83,7 +83,6 @@ import type {
   PrivateRole,
   PrivateWriteCheck,
 } from './apply'
-import { withContext } from './ask'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { GSD_AUTONOMY } from './framework/gsd/adapter'
@@ -112,6 +111,7 @@ import {
   withWrites,
 } from './testkit'
 import type { HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
+import { withContext } from './ui/ask'
 
 const VERSION = '0.2.0'
 

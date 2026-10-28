@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { memIo, memWorld } from '../testkit'
 import { askChoice, MAX_ASKS, refusalLine } from './ask'
-import { memIo, memWorld } from './testkit'
 
 /** The question of the refuse cases: its parser takes only the answer `ok`. */
 const QUESTION = 'Pick one?'

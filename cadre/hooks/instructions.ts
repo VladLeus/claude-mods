@@ -16,7 +16,6 @@ import type {
   RoleSpec,
   SetupScan,
 } from '../types'
-import { ASK_HEADERS, countedChip } from './ask'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { asSentence, clean, countedNoun, idsOrNone, moreLine, shown } from './core/text'
@@ -26,6 +25,7 @@ import { TOP_OF_FILE } from './records'
 import { isMemoryIndexName } from './scan/instructions/memories'
 import type { InstructionSources } from './scan/instructions/read'
 import { fallbackTopics } from './suggest/topics'
+import { ASK_HEADERS, countedChip } from './ui/ask'
 
 /**
  * The content consent question (G-02-1f "Consent first", D-134): no instruction or memory text is read before a yes,

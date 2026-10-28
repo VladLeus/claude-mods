@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../types'
-import { NO_USABLE_ANSWER_REASON, withContext } from './ask'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, historyStep } from './history'
 import type { HistoryScan } from './scan/history'
 import { DEFAULT_LOCATIONS, entry, memIo, memWorld } from './testkit'
 import type { MemWorld } from './testkit'
+import { NO_USABLE_ANSWER_REASON, withContext } from './ui/ask'
 
 /** The session folder of the fixture repo /repo for the fixture user /home/u. */
 const DIR = '/home/u/.claude/projects/-repo'
