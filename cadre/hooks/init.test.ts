@@ -228,7 +228,6 @@ import {
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
   parseContentConsent,
-  REGEN_RECOMMEND_SYSTEM,
 } from './instructions'
 import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
@@ -262,6 +261,7 @@ import { parseCadreState } from './state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
 import { RECOMMEND_SYSTEM } from './suggest/instructions'
 import { PROPOSE_SYSTEM, rolesFromProposal } from './suggest/propose'
+import { REGEN_RECOMMEND_SYSTEM } from './suggest/regen'
 import { TOPICS_SYSTEM } from './suggest/topics'
 import {
   MCP_ROUTE,

@@ -169,13 +169,10 @@ import {
   instructionsEntry,
   memoryItems,
   parseContentConsent,
-  parseRegenRecommendation,
   partChanges,
-  REGEN_RECOMMEND_SYSTEM,
-  regenRecommendPrompt,
   topicItems,
 } from './instructions'
-import type { MemoryRecord, PartChanges, RegenItems, RegenPromptItem } from './instructions'
+import type { MemoryRecord, PartChanges, RegenItems } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
   displayPath,
@@ -234,6 +231,8 @@ import type { Checked } from './suggest/checked'
 import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from './suggest/instructions'
 import { proposeFromText } from './suggest/propose'
 import type { Described } from './suggest/propose'
+import { parseRegenRecommendation, REGEN_RECOMMEND_SYSTEM, regenRecommendPrompt } from './suggest/regen'
+import type { RegenPromptItem } from './suggest/regen'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillCount, skillsPrompt } from './suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './suggest/topics'
 import {
