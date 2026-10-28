@@ -371,24 +371,20 @@ import {
   lineDiff,
   STATUS_LABEL,
 } from './render'
+import { CUSTOM_PURPOSE, EFFORTS, MODEL_ALIASES, PROPOSE_SYSTEM, proposeRoles } from './roles'
 import {
   chainLines,
-  CUSTOM_PURPOSE,
   DECISION_OWNERS,
   DEFAULT_DURATION,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   DEFAULT_PERMISSION_MODE,
-  EFFORTS,
   HUMAN_FALLBACK,
-  MODEL_ALIASES,
   NO_FRONTEND_REASON,
   NO_SOURCE_REASON,
   NO_TESTS_REASON,
-  PROPOSE_SYSTEM,
-  proposeRoles,
   ROLE_TEMPLATE,
-} from './roles'
+} from './roles/template'
 import { SOURCE_ORDER } from './scan/facts/settings'
 import type { HistoryScan } from './scan/history'
 import {

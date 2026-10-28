@@ -28,7 +28,7 @@ import type {
 } from '../types'
 import { utf8Bytes } from './core/text'
 import { desiredFiles } from './generate'
-import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { scopesFor } from './team'

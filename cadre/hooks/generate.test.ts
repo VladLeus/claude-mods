@@ -46,7 +46,8 @@ import {
 } from './generate'
 import type { GenerateInput } from './generate'
 import { buildPlan, isSafeOpPath } from './plan'
-import { isAutopilotDuration, parseRoleJson, ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { isAutopilotDuration, parseRoleJson } from './roles'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
 import { parseCadreState } from './state/cadre-files'
 import {

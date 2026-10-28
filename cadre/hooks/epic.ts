@@ -30,7 +30,7 @@ import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { repoGuard } from './guards/repo'
 import { hasRunFailed } from './host/steps'
 import { foldersAbove, launcherPath } from './paths'
-import { standIn, standsFor } from './roles'
+import { standIn, standsFor } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import {
   claudeRefusal,

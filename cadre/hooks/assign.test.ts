@@ -51,7 +51,7 @@ import {
   DEFAULT_MODEL,
   DEFAULT_PERMISSION_MODE,
   EMPTY_CARRY,
-} from './roles'
+} from './roles/template'
 import { HISTORY_MAX_SESSIONS } from './scan/history'
 import { BIDI_OVERRIDE } from './testkit'
 

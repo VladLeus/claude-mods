@@ -4,7 +4,8 @@ import { isObject, parseJsonValue } from './core/json'
 import { cappedErrors, unfenced, withReplyErrors } from './core/reply'
 import { asciiLower, clean, compareText, countedNoun, idLabel, idsOrNone, moreLine, sortedUnique } from './core/text'
 import { ADAPTERS } from './framework/registry'
-import { EFFORTS, isModelName, MODEL_ALIASES, standsFor } from './roles'
+import { EFFORTS, isModelName, MODEL_ALIASES } from './roles'
+import { standsFor } from './roles/template'
 import { HISTORY_MAX_SESSIONS } from './scan/history'
 
 /**

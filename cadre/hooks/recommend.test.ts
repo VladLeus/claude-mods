@@ -23,7 +23,7 @@ import {
   recommend,
   recommendationLines,
 } from './recommend'
-import { standsFor } from './roles'
+import { standsFor } from './roles/template'
 import { scanRepo } from './scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from './testkit'
 

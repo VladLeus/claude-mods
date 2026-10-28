@@ -6,7 +6,7 @@ import { reportText } from './core/text'
 import { targetText } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
 import { adapterOf } from './framework/registry'
-import { standsFor } from './roles'
+import { standsFor } from './roles/template'
 
 /** The dialog button that accepts a hunk; a typed answer of the same word counts the same, in any case. */
 const ACCEPT_OPTION = 'Accept'

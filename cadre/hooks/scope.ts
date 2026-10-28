@@ -24,7 +24,7 @@ import { freezeRows } from './core/freeze'
 import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
 import { adapterOf } from './framework/registry'
 import { handoffFolderOf, PRIVATE_INSTRUCTIONS_LINK } from './paths'
-import { chainLines, standsFor } from './roles'
+import { chainLines, standsFor } from './roles/template'
 
 /**
  * The reads every role is denied, best effort (ROLE-05, D-97c): the repo's .env files and the user's ssh and aws

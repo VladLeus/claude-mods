@@ -229,8 +229,8 @@ import {
   proposePrompt,
   proposeRoles,
   rolesFromProposal,
-  standsFor,
 } from './roles'
+import { standsFor } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'

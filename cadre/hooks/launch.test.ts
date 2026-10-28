@@ -31,7 +31,7 @@ import {
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INSTRUCTIONS_RECORD_FILE, memorySlug, roleMemoryDir } from './paths'
-import { ROLE_TEMPLATE, roleFromTemplate } from './roles'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { compileScope, infraViolations, roleOwnPaths } from './scope'
 import {
   BIDI_OVERRIDE,

@@ -252,15 +252,8 @@ import { isPartsFlowRole } from './launch'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan } from './plan'
 import { missingSecurityPlugins, recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
-import {
-  AUTOPILOT_THRESHOLD,
-  parseRoleJson,
-  PROPOSE_SYSTEM,
-  proposeRoles,
-  ROLE_TEMPLATE,
-  roleFromTemplate,
-  rolesFromProposal,
-} from './roles'
+import { parseRoleJson, PROPOSE_SYSTEM, proposeRoles, rolesFromProposal } from './roles'
+import { AUTOPILOT_THRESHOLD, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'

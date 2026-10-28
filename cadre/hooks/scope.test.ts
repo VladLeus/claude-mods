@@ -16,8 +16,8 @@ import type {
 } from '../types'
 import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './assign'
 import { adapterOf } from './framework/registry'
-import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles'
-import type { ChainRole } from './roles'
+import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
+import type { ChainRole } from './roles/template'
 import {
   compileScope,
   infraViolations,
