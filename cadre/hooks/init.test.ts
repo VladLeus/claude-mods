@@ -46,15 +46,17 @@ import {
   improverNoChangeNote,
   installedLine,
   installFailureText,
-  instructionsRecordPath,
   MARKETPLACE_ADD_ARGV,
   otherChangesWarning,
-  instructionsRecordText,
-  privateClaudeMdPath,
-  privateClaudeMdText,
 } from './apply'
 import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+import {
+  instructionsRecordPath,
+  instructionsRecordText,
+  privateClaudeMdPath,
+  privateClaudeMdText,
+} from './apply/private'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,

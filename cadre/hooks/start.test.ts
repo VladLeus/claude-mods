@@ -15,7 +15,12 @@ import type {
   ScopeContext,
   TerminalChoice,
 } from '../types'
-import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath, privateClaudeMdText } from './apply'
+import {
+  instructionsRecordPath,
+  instructionsRecordText,
+  privateClaudeMdPath,
+  privateClaudeMdText,
+} from './apply/private'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { cadreJsonText, roleJsonText } from './generate/docs'

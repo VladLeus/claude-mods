@@ -34,12 +34,10 @@ import {
   improverUnreadableNote,
   installedLine,
   installFailureText,
-  instructionsRecordText,
   MARKETPLACE_ADD_ARGV,
   noHomeInstallText,
   otherChangesWarning,
   otherFilesLines,
-  privateClaudeMdText,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
   uncheckedFilesWarning,
@@ -47,6 +45,7 @@ import {
 } from './apply'
 import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+import { instructionsRecordText, privateClaudeMdText } from './apply/private'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,

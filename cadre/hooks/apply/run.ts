@@ -17,13 +17,10 @@ import {
   improverLine,
   installedLine,
   installFailureText,
-  instructionsRecordPath,
-  instructionsRecordText,
   listedLinkProblem,
   MARKETPLACE_ADD_ARGV,
   pluginInstallArgv,
   privateCheckPaths,
-  privateClaudeMdPath,
   privateLevels,
   privateWriteProblem,
   PYTHON_VERSION_ARGV,
@@ -31,7 +28,7 @@ import {
   restoreSteps,
   writeProblem,
 } from '../apply'
-import type { ApplyInput, ApplyStep, BuiltFile, HunkRun, ImproverTally, PrivateFile, PrivateRole } from '../apply'
+import type { BuiltFile, HunkRun, ImproverTally } from '../apply'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
@@ -39,6 +36,8 @@ import { hasRunFailed, isStepDone, privateModeArgv } from '../host/steps'
 import { displayPath, roleMemoryDir, trimSlash, userDirOf } from '../paths'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath } from './private'
+import type { ApplyInput, ApplyStep, PrivateFile, PrivateRole } from './private'
 
 /** The first applied line when an apply had no step to run: every planned file is already on the disk (D-105). */
 export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to date.'

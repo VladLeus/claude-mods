@@ -11,7 +11,7 @@ import type {
   RoleSpec,
   TerminalChoice,
 } from '../types'
-import { instructionsRecordPath, instructionsRecordText } from './apply'
+import { instructionsRecordPath, instructionsRecordText } from './apply/private'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import {

@@ -31,19 +31,12 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
-import {
-  applySteps,
-  builtRoleFiles,
-  hunkRuns,
-  hunksAfterRuns,
-  instructionsRecordPath,
-  noHomeInstallText,
-  parseInstructionsRecord,
-  setupAfterInstalls,
-} from './apply'
-import type { ApplyInput, HunkRun, InstructionsRecord, PrivateRole, RecordedMemory } from './apply'
+import { applySteps, builtRoleFiles, hunkRuns, hunksAfterRuns, noHomeInstallText, setupAfterInstalls } from './apply'
+import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './apply/conflict'
 import type { ConflictChoice } from './apply/conflict'
+import { instructionsRecordPath, parseInstructionsRecord } from './apply/private'
+import type { ApplyInput, InstructionsRecord, PrivateRole, RecordedMemory } from './apply/private'
 import {
   appliedLines,
   installPlugins,
