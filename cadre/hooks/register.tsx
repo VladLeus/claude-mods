@@ -7,22 +7,13 @@ import { runEpic, runEpicDone } from './epic'
 import { detectRefusal } from './guards/refusals'
 import { runInit, runRegen } from './init'
 import type { InitOptions, RegenOptions } from './init'
-import {
-  answersFromNotes,
-  askedHeader,
-  askRewrite,
-  detectText,
-  panePlacement,
-  paneRows,
-  paneSpans,
-  paneView,
-  previewBlockFor,
-} from './render'
+import { answersFromNotes, askedHeader, askRewrite, detectText, previewBlockFor } from './render'
 import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collect'
 import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start'
 import { runStatus } from './status'
+import { panePlacement, paneRows, paneSpans, paneView } from './ui/pane'
 
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
