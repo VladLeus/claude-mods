@@ -48,8 +48,7 @@ import {
   regenManifestSkippedNote,
   repoNameOf,
   roleFoldersOf,
-  writeImproved,
-  writeSteps,
+  writeWithImprover,
 } from './apply/run'
 import type { ApplyOutcome, OwedPrivate } from './apply/run'
 import { applySteps } from './apply/steps'
@@ -2881,10 +2880,7 @@ export async function applyConfirmed(
   const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
   const offered = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const allowed = privatePlan.allowed
-  const written =
-    offered.length === 0
-      ? await writeSteps(io, host, locations, steps, allowed)
-      : await writeImproved(io, host, { locations, input, steps, offered, allowed })
+  const written = await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {
     ...written,
@@ -3859,9 +3855,13 @@ async function regenApply(
   const filter = { repoIds: withParts, privateFolders, roleFolders }
   const built = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const isOffered = built.length > 0 && handed.isSession
-  const written = isOffered
-    ? await writeImproved(io, host, { locations, input: applyInput, steps, offered: built, allowed })
-    : await writeSteps(io, host, locations, steps, allowed)
+  const written = await writeWithImprover(io, host, {
+    locations,
+    input: applyInput,
+    steps,
+    offered: isOffered ? built : [],
+    allowed,
+  })
   const notOffered = built.length > 0 && !handed.isSession ? [improverNotOfferedWarning(role.id)] : []
 
   const improverWarnings = [...written.improverWarnings, ...notOffered]

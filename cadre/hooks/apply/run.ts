@@ -335,6 +335,28 @@ export async function writeImproved(
 }
 
 /**
+ * Writes a confirmed apply of init or regen, the one place that decides on the improver pass (MUST 10): with no built
+ * file offered it runs the steps alone (writeSteps), else the improver pass between the file writes and the manifest
+ * (writeImproved). Init offers the built files when claude-md-management is installed; regen offers them only in a
+ * session that can ask.
+ */
+export async function writeWithImprover(
+  io: InitIo,
+  host: HostIo,
+  args: {
+    readonly locations: InitLocations
+    readonly input: ApplyInput
+    readonly steps: readonly ApplyStep[]
+    readonly offered: readonly BuiltFile[]
+    readonly allowed: ReadonlySet<string>
+  },
+): Promise<ApplyOutcome> {
+  const { locations, steps, offered, allowed } = args
+
+  return offered.length === 0 ? writeSteps(io, host, locations, steps, allowed) : writeImproved(io, host, args)
+}
+
+/**
  * The lines a plain init or regen reply ends with (D-105, LNCH-01). First `Applied: wrote <n> file(s) (<m>
  * executable).`, `file` when n is 1, n counting every write that landed (the `.gitignore`, the manifest and the
  * private files included) and m the launchers made executable, or APPLIED_NONE_NOTE when nothing was written and no
