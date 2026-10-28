@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../types'
-import { pad } from './core/text'
-import { GSD_GATES } from './framework/gsd/adapter'
-import { BUILTIN_ADAPTER } from './framework/none/adapter'
-import { ADAPTERS, detectAll } from './framework/registry'
-import { SUPERPOWERS_ADAPTER } from './framework/superpowers/adapter'
-import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './render'
+import type { Choice, Facts, FrameworkAdapter, GsdFact, HookScript, RepoEntry } from '../../types'
+import { pad } from '../core/text'
+import { GSD_GATES } from '../framework/gsd/adapter'
+import { BUILTIN_ADAPTER } from '../framework/none/adapter'
+import { ADAPTERS, detectAll } from '../framework/registry'
+import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
+import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './report'
 
 /** The superpowers plugin key this repo enables. */
 const SUPERPOWERS_KEY = 'superpowers@claude-plugins-official'

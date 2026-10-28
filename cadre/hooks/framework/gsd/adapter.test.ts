@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../../../types'
 import { DONE_MARKER_LINE } from '../../core/kickoff-text'
-import { adaptersReportLines } from '../../render'
+import { adaptersReportLines } from '../../detect/report'
 import { emptySetupScan } from '../../testkit'
 import { gateProblems, missingFields } from '../contract'
 import {

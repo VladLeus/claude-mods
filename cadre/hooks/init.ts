@@ -124,6 +124,7 @@ import {
   sortedUnique,
   utf8Bytes,
 } from './core/text'
+import { choiceLine } from './detect/report'
 import { chooseFramework } from './framework/contract'
 import { SECRET_READ_GUARD } from './framework/gsd/adapter'
 import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
@@ -177,7 +178,6 @@ import { planReadPaths, planWithManifest } from './plan/plan'
 import { planSummary, renderPlan } from './plan/text'
 import { hunkQuestion, parseHunkAnswer, recommendationLines } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
-import { choiceLine } from './render'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'

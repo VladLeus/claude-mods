@@ -70,6 +70,7 @@ import { UNNAMED_ROLE } from './core/kickoff-text'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
+import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './detect/report'
 import {
   EPIC_BRANCH_PREFIX,
   EPIC_CANCELLED,
@@ -327,7 +328,6 @@ import { planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion, recommendationLines } from './recommend'
 import { TOP_OF_FILE } from './records'
-import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './render'
 import { CUSTOM_PURPOSE } from './roles/adjust'
 import {
   CLAUDE_MD_PLUGIN,

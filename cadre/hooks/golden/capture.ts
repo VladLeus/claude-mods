@@ -6,12 +6,12 @@
  */
 import type { HostIo, InitIo, RawFacts, TerminalChoice } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { detectText } from '../detect/report'
 import { runEpic, runEpicDone } from '../epic'
 import { desiredFiles } from '../generate/files'
 import type { GenerateInput } from '../generate/files'
 import { runInit, runRegen } from '../init'
 import { MANIFEST_PATH } from '../plan/classify'
-import { detectText } from '../render'
 import { normalizeFacts } from '../scan/facts/normalize'
 import { runStart } from '../start'
 import { runStatus } from '../status'

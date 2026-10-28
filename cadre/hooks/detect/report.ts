@@ -1,8 +1,13 @@
-import type { Choice, Detection, Facts, FrameworkAdapter, Gate } from '../types'
-import { pad, reportText } from './core/text'
-import { chooseFramework } from './framework/contract'
-import { ADAPTERS, detectAll } from './framework/registry'
-import { STATUS_LABEL } from './ui/blocks/cards'
+/**
+ * The detect report, a layer 9 module: the read-only report of /cadre detect, its framework table, notes and adapter
+ * choice line (D-04), and the adapter contract view of --adapters (D-09). It imports the framework adapters, the
+ * status labels of ui/blocks/cards, core and the types, so register, init and the goldens read it here.
+ */
+import type { Choice, Detection, Facts, FrameworkAdapter, Gate } from '../../types'
+import { pad, reportText } from '../core/text'
+import { chooseFramework } from '../framework/contract'
+import { ADAPTERS, detectAll } from '../framework/registry'
+import { STATUS_LABEL } from '../ui/blocks/cards'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
 const NAME_WIDTH = 14

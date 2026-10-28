@@ -61,6 +61,7 @@ import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
+import { choiceLine } from './detect/report'
 import { attendedNote, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd/hunks'
 import { detectAll } from './framework/registry'
 import { cadreJsonText, roleClaudeMdText, roleJsonText } from './generate/docs'
@@ -224,7 +225,6 @@ import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
 import { renderPlan } from './plan/text'
 import { recommendationLines } from './recommend'
-import { choiceLine } from './render'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
