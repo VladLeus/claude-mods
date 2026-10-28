@@ -26,7 +26,7 @@ import {
 } from '../generate'
 import { buildPlan, isSafeOpPath } from '../plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { compileScope } from '../scope'
+import { compileScope } from '../scope/compile'
 import { infraViolations } from '../scope/lint'
 import {
   ABSOLUTE_PATH_MARKERS,

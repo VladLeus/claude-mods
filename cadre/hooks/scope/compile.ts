@@ -1,18 +1,25 @@
-import type { CompiledScope, RoleSpec, ScopeContext } from '../types'
-import { sortedUnique } from './core/text'
-import { adapterOf } from './framework/registry'
-import { PRIVATE_INSTRUCTIONS_LINK } from './paths'
+/**
+ * The scope compiler, a layer 5 module: the whole scope of one role from one computation, so the settings template,
+ * the MCP file, the launcher flags, the skill overlay and the card cannot drift apart (ROLE-05, D-80, D-84): the
+ * plugins under the whitelist, the deny list, the overlay and the flags. It imports the scope lint and card, core,
+ * paths, the framework registry, the role template, the infra catalog and the types, so team compiles every role's
+ * scope here.
+ */
+import type { CompiledScope, RoleSpec, ScopeContext } from '../../types'
+import { sortedUnique } from '../core/text'
+import { adapterOf } from '../framework/registry'
+import { PRIVATE_INSTRUCTIONS_LINK } from '../paths'
 import {
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
   INFRA_SKILLS,
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
-} from './roles/infra'
-import { standsFor } from './roles/template'
-import { cardFor, mcpToolName, notGivenMcp } from './scope/card'
-import type { DenyPlan } from './scope/card'
-import { isSafeDir, lintAll, ownNames, ownRoots, pluginName, SECRET_READ_DENY, skillPlugin } from './scope/lint'
+} from '../roles/infra'
+import { standsFor } from '../roles/template'
+import { cardFor, mcpToolName, notGivenMcp } from './card'
+import type { DenyPlan } from './card'
+import { isSafeDir, lintAll, ownNames, ownRoots, pluginName, SECRET_READ_DENY, skillPlugin } from './lint'
 
 /** The enabledPlugins record of these plugin keys, every one on, with the keys inserted in sorted order. */
 function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean>> {

@@ -14,9 +14,9 @@ import type {
   SetupScan,
 } from '../../types'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { compileScope } from '../scope'
 import { BIDI_OVERRIDE, emptySetupScan, FRAMEWORKS, leaks, session, skillRef, templateRole } from '../testkit'
 import { mcpToolName, scopeCardLines } from './card'
+import { compileScope } from './compile'
 
 /** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
 function context(over: Partial<ScopeContext> = {}): ScopeContext {

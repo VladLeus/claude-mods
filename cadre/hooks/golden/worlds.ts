@@ -45,7 +45,7 @@ import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { gatherScans } from '../scan/gather'
 import type { Gathered } from '../scan/gather'
-import { compileScope } from '../scope'
+import { compileScope } from '../scope/compile'
 import { titleGrepArgv } from '../status'
 import { scopesFor } from '../team'
 import {

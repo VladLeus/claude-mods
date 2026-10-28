@@ -11,7 +11,7 @@ import {
   probeVerdicts,
 } from './probe'
 import type { InitInventory, ProbeVerdict } from './probe'
-import { compileScope } from './scope'
+import { compileScope } from './scope/compile'
 import { emptySetupScan, session, templateRole } from './testkit'
 
 /**

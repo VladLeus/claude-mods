@@ -11,15 +11,23 @@ import type {
   ScopeContext,
   ScopeRule,
   SettingsSource,
-} from '../types'
-import { adapterOf } from './framework/registry'
-import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './roles/infra'
-import { chainLines, EMPTY_CARRY } from './roles/template'
-import type { ChainRole } from './roles/template'
-import { compileScope } from './scope'
-import { scopeCardLines } from './scope/card'
-import { isContextMonitorScript, roleOwnPaths } from './scope/lint'
-import { ABSOLUTE_PATH_MARKERS, BIDI_OVERRIDE, emptySetupScan, leaks, session, skillRef, templateRole } from './testkit'
+} from '../../types'
+import { adapterOf } from '../framework/registry'
+import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from '../roles/infra'
+import { chainLines, EMPTY_CARRY } from '../roles/template'
+import type { ChainRole } from '../roles/template'
+import {
+  ABSOLUTE_PATH_MARKERS,
+  BIDI_OVERRIDE,
+  emptySetupScan,
+  leaks,
+  session,
+  skillRef,
+  templateRole,
+} from '../testkit'
+import { scopeCardLines } from './card'
+import { compileScope } from './compile'
+import { isContextMonitorScript, roleOwnPaths } from './lint'
 
 /** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
 function context(over: Partial<ScopeContext> = {}): ScopeContext {

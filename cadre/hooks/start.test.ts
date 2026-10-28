@@ -30,7 +30,7 @@ import { RUNTIME_KICKOFF_FILE } from './paths'
 import { ignoreLines } from './plan/gitignore'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { CLAUDE_JSON_MAX_BYTES } from './scan/setup/mcp'
-import { compileScope } from './scope'
+import { compileScope } from './scope/compile'
 import {
   claudeTooOldReply,
   clipboardRun,

@@ -26,7 +26,7 @@ import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
 import { readRepoFile } from './scan/port-read'
-import { compileScope } from './scope'
+import { compileScope } from './scope/compile'
 import { parseCadreState } from './state/cadre-files'
 
 /** The framework a role runs on: its own, else the repo default, else `none`, the built-in fallback (D-73, D-17). */

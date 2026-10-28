@@ -10,8 +10,8 @@ import type {
   SetupScan,
 } from '../../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { compileScope } from '../scope'
 import { emptySetupScan, FRAMEWORKS, session, skillRef, templateRole } from '../testkit'
+import { compileScope } from './compile'
 import { infraViolations, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
 
 /** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
