@@ -280,13 +280,13 @@ import {
   topicItems,
   topicQuestion,
 } from './instructions'
+import { RUNTIME_SETTINGS_KEYS } from './launch'
 import {
-  RUNTIME_SETTINGS_KEYS,
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
   UNDENIED_RECORD_WARNING,
   undeniedMemoryWarning,
-} from './launch'
+} from './launch/deny'
 import { unsafeMemoryNameWarning } from './launch/links'
 import {
   HOME_UNUSABLE_WARNING,

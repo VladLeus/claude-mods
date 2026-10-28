@@ -10,7 +10,7 @@ import type { HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../typ
 import { sha256Hex } from '../core/hash'
 import { compareText, countedNoun, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
-import { editWriteRules } from '../launch'
+import { editWriteRules } from '../launch/deny'
 import { displayPath, isFileInsideRoot, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
