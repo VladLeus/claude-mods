@@ -30,7 +30,6 @@ import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { HOME_ROOT_REPLY } from '../guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import {
-  improverNotOfferedWarning,
   memoryDroppedLine,
   notHandedOutWarning,
   partDroppedLine,
@@ -77,6 +76,7 @@ import {
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import type { PartRecord } from './part-changes'
+import { improverNotOfferedWarning } from './plan'
 import { runRegen } from './run'
 import type { RegenOptions } from './run'
 import {

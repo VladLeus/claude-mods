@@ -207,7 +207,6 @@ import {
   IMPROVER_INSTALL_CONTEXT,
   IMPROVER_INSTALL_DISMISSED_REASON,
   IMPROVER_INSTALL_QUESTION,
-  improverNotOfferedWarning,
   improverRunLine,
   INIT_CANCELLED,
   INIT_FILE_SYSTEM_ROOT_REPLY,
@@ -318,6 +317,7 @@ import { DRY_RUN_NOTE, planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion } from './recommend'
 import { TOP_OF_FILE } from './records'
+import { improverNotOfferedWarning } from './regen/plan'
 import {
   dryRunPrivateWarning,
   REGEN_BAD_MANIFEST,

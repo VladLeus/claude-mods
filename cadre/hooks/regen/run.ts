@@ -7,8 +7,9 @@
 import type { HostIo, InitIo } from '../../types'
 import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
-import { regenApply, regenCancelledReply, regenHandout, regenPlan, regenReplyText } from '../init'
+import { regenCancelledReply, regenHandout } from '../init'
 import { readTeam, regenBadRole } from '../team'
+import { regenApply, regenPlan, regenReplyText } from './plan'
 import { regenScans } from './side-read'
 
 /**
