@@ -241,7 +241,7 @@ import {
 import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
 import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan } from './plan'
-import { missingSecurityPlugins, recommend, recommendationLines } from './recommend'
+import { recommendationLines } from './recommend'
 import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, rolesFromProposal } from './roles'
 import {
@@ -252,6 +252,7 @@ import {
   SECURITY_PLUGINS,
 } from './roles/infra'
 import { proposeRoles } from './roles/propose'
+import { missingSecurityPlugins, recommend } from './roles/recommend'
 import { parseRoleJson } from './roles/rolejson'
 import { AUTOPILOT_THRESHOLD, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'

@@ -349,7 +349,7 @@ import {
   SECURITY_REPORTS_LINE,
 } from './plan'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
-import { hunkQuestion, INSTALL_COMMANDS, recommend, recommendationLines } from './recommend'
+import { hunkQuestion, recommendationLines } from './recommend'
 import { TOP_OF_FILE } from './records'
 import {
   adaptersReportLines,
@@ -376,6 +376,7 @@ import {
   SKILL_ROLE_ROWS,
 } from './roles/infra'
 import { proposeRoles } from './roles/propose'
+import { INSTALL_COMMANDS, recommend } from './roles/recommend'
 import {
   chainLines,
   DECISION_OWNERS,
