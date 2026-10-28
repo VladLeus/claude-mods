@@ -77,8 +77,9 @@ export type OwedPrivate = Pick<PrivateRole, 'id' | 'parts' | 'memories' | 'parts
 
 /**
  * What one apply did (D-105, LNCH-01). Every path is repo-relative, except that of a private file:
- * - `written`: each path whose write landed, in step order, the `.gitignore`, the manifest and the private files of
- *   the role memory folders included, a private file as displayPath shows it (`~/...`, G-02-1f);
+ * - `written`: each path whose write landed, in step order and once per kind and absolute path (D-242), the
+ *   `.gitignore`, the manifest and the private files of the role memory folders included, a private file as
+ *   displayPath shows it (`~/...`, G-02-1f);
  * - `executable`: each launcher whose chmod ran and exited 0;
  * - `failed`: each path whose write the host refused or failed;
  * - `refused`: the writeProblem or listedLinkProblem text of each write that was not tried, because the stat of the
@@ -164,9 +165,27 @@ async function isPrivateFolderMade(host: HostIo, folder: string, files: readonly
   return true
 }
 
-/** What writePrivate did: the private files written, as displayPath shows them, and the warning of each one not. */
+/** One file an apply wrote (D-242): a repo file or a private file, by its absolute path. */
+type WrittenFile = { readonly kind: 'repo' | 'private'; readonly path: string }
+
+/** The key of a written file in a written set: its kind and absolute path, never its display text (D-242). */
+function writtenKey(file: WrittenFile): string {
+  return `${file.kind}:${file.path}`
+}
+
+/**
+ * How a reply shows a written file (D-242): a repo file by its repo-relative path, a private file as displayPath shows
+ * it, `~/...` under the home folder.
+ */
+function shownPath(locations: InitLocations, file: WrittenFile): string {
+  if (file.kind === 'repo') return file.path.slice(trimSlash(locations.root).length + 1)
+
+  return displayPath(file.path, locations.home, locations.root, locations.configDir)
+}
+
+/** What writePrivate did: the private files written, and the warning of each one not. */
 type PrivateOutcome = {
-  readonly written: readonly string[]
+  readonly written: readonly WrittenFile[]
   readonly problems: readonly string[]
 }
 
@@ -190,18 +209,18 @@ export async function writePrivate(
   for (const path of paths.stats) stats.set(path, await io.statForWrite(path))
   const listings = new Map<string, readonly PortEntry[] | null>()
   for (const folder of paths.listings) listings.set(folder, await io.list(folder))
-  const shownPath = (path: string): string => displayPath(path, locations.home, locations.root, locations.configDir)
   const refusals = step.files.map(file => privateWriteProblem(file.path, { allowed, stats, listings, locations }))
   const problems = refusals.filter((refusal): refusal is string => refusal !== null)
   const tried = step.files.filter((_, index) => refusals[index] === null)
   if (tried.length === 0) return { written: [], problems }
-  const notWritten = (file: PrivateFile): string => `could not write ${shownPath(file.path)}`
+  const notWritten = (file: PrivateFile): string =>
+    `could not write ${shownPath(locations, { kind: 'private', path: file.path })}`
   if (!(await isPrivateFolderMade(host, step.path, tried))) {
     return { written: [], problems: [...problems, ...tried.map(notWritten)] }
   }
-  const written: string[] = []
+  const written: WrittenFile[] = []
   for (const file of tried) {
-    if (await host.write(file.path, file.text)) written.push(shownPath(file.path))
+    if (await host.write(file.path, file.text)) written.push({ kind: 'private', path: file.path })
     else problems.push(notWritten(file))
   }
 
@@ -231,6 +250,23 @@ export async function writeSteps(
   steps: readonly ApplyStep[],
   allowed: ReadonlySet<string> = new Set(),
 ): Promise<ApplyOutcome> {
+  return (await runSteps(io, host, locations, steps, allowed)).outcome
+}
+
+/** What one run of the steps did: its outcome, and the files it wrote as records, in write order, each once (D-242). */
+type StepsRun = { readonly outcome: ApplyOutcome; readonly files: readonly WrittenFile[] }
+
+/**
+ * Runs the steps as writeSteps describes, and keeps the written set by kind and absolute path (D-242): the reply shows
+ * each record by its old display rule (shownPath), and a chmod reads the repo paths of the records, as before.
+ */
+async function runSteps(
+  io: InitIo,
+  host: HostIo,
+  locations: InitLocations,
+  steps: readonly ApplyStep[],
+  allowed: ReadonlySet<string>,
+): Promise<StepsRun> {
   const { root } = locations
   const base = trimSlash(root)
   const stats = new Map<string, WriteStat>()
@@ -240,6 +276,12 @@ export async function writeSteps(
     listings.set(folder, await io.list(folder === '' ? base : `${base}/${folder}`))
   }
   const written = new Set<string>()
+  const files: WrittenFile[] = []
+  const land = (file: WrittenFile): void => {
+    if (written.has(writtenKey(file))) return
+    written.add(writtenKey(file))
+    files.push(file)
+  }
   const executable: string[] = []
   const failed: string[] = []
   const refused: string[] = []
@@ -249,7 +291,8 @@ export async function writeSteps(
   let manifestSkipped = false
   for (const step of steps) {
     if (step.kind === 'chmod') {
-      const problem = chmodProblem(step.path, written)
+      const repoPaths = new Set(files.flatMap(file => (file.kind === 'repo' ? [shownPath(locations, file)] : [])))
+      const problem = chmodProblem(step.path, repoPaths)
       if (problem !== null) {
         chmodRefusals.push(problem)
         continue
@@ -261,7 +304,7 @@ export async function writeSteps(
     }
     if (step.kind === 'private') {
       const outcome = await writePrivate(io, host, step, { locations, allowed })
-      for (const path of outcome.written) written.add(path)
+      for (const file of outcome.written) land(file)
       privateProblems.push(...outcome.problems)
       continue
     }
@@ -274,13 +317,12 @@ export async function writeSteps(
       refused.push(problem)
       continue
     }
-    if (await host.write(`${base}/${step.path}`, step.text)) written.add(step.path)
+    if (await host.write(`${base}/${step.path}`, step.text)) land({ kind: 'repo', path: `${base}/${step.path}` })
     else failed.push(step.path)
   }
-
-  return {
+  const outcome: ApplyOutcome = {
     ...NOTHING_APPLIED,
-    written: [...written],
+    written: files.map(file => shownPath(locations, file)),
     executable,
     failed,
     refused,
@@ -289,6 +331,8 @@ export async function writeSteps(
     privateProblems,
     manifestSkipped,
   }
+
+  return { outcome, files }
 }
 
 /**
@@ -312,23 +356,26 @@ export async function writeImproved(
 ): Promise<ApplyOutcome> {
   const { locations, input, allowed } = apply
   const fileSteps = apply.steps.filter(step => step.kind !== 'manifest')
-  const first = await writeSteps(io, host, locations, fileSteps, allowed)
-  const landed = new Set(first.written)
-  const shownPath = (path: string): string => displayPath(path, locations.home, locations.root, locations.configDir)
-  const files = apply.offered.filter(file => landed.has(file.repoPath ?? shownPath(file.path)))
+  const first = await runSteps(io, host, locations, fileSteps, allowed)
+  const landed = new Set(first.files.map(writtenKey))
+  const isLanded = (file: BuiltFile): boolean =>
+    landed.has(writtenKey({ kind: file.repoPath === null ? 'private' : 'repo', path: file.path }))
+  const files = apply.offered.filter(isLanded)
   const pass = await improveBuiltFiles(io, host, files, locations)
   const manifest = (await applySteps({ ...input, improved: pass.accepted })).filter(step => step.kind === 'manifest')
-  const isSkipped = first.failed.length > 0 || first.refused.length > 0
+  const isSkipped = first.outcome.failed.length > 0 || first.outcome.refused.length > 0
   const later = [...restoreSteps(pass.restores), ...(isSkipped ? [] : manifest)]
-  const second = later.length === 0 ? NOTHING_APPLIED : await writeSteps(io, host, locations, later, allowed)
+  const none: StepsRun = { outcome: NOTHING_APPLIED, files: [] }
+  const second = later.length === 0 ? none : await runSteps(io, host, locations, later, allowed)
+  const rewritten = second.files.filter(file => !landed.has(writtenKey(file)))
 
   return {
-    ...first,
-    written: [...first.written, ...second.written.filter(path => !landed.has(path))],
-    failed: [...first.failed, ...second.failed],
-    refused: [...first.refused, ...second.refused],
-    privateProblems: [...first.privateProblems, ...second.privateProblems],
-    manifestSkipped: (isSkipped && manifest.length > 0) || second.manifestSkipped,
+    ...first.outcome,
+    written: [...first.files, ...rewritten].map(file => shownPath(locations, file)),
+    failed: [...first.outcome.failed, ...second.outcome.failed],
+    refused: [...first.outcome.refused, ...second.outcome.refused],
+    privateProblems: [...first.outcome.privateProblems, ...second.outcome.privateProblems],
+    manifestSkipped: (isSkipped && manifest.length > 0) || second.outcome.manifestSkipped,
     improverWarnings: pass.warnings,
     improved: files.length === 0 ? null : { changed: pass.changed, total: pass.total },
   }
