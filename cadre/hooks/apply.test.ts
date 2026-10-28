@@ -25,9 +25,6 @@ import {
   changedBeforeRunWarning,
   chmodArgv,
   chmodProblem,
-  CONFLICT_OPTIONS,
-  conflictPaths,
-  conflictQuestion,
   hunkFailureLine,
   hunkProposal,
   hunkRuns,
@@ -55,7 +52,6 @@ import {
   noHomeInstallText,
   otherChangesWarning,
   otherFilesLines,
-  parseConflictAnswer,
   parseInstructionsRecord,
   pluginInstallArgv,
   privateCheckPaths,
@@ -73,16 +69,9 @@ import {
   UNGUARDED_RUN_REASON,
   writeProblem,
 } from './apply'
-import type {
-  ApplyStep,
-  BuiltFile,
-  BuiltFilter,
-  ConflictChoice,
-  HunkRun,
-  PrivateFile,
-  PrivateRole,
-  PrivateWriteCheck,
-} from './apply'
+import type { ApplyStep, BuiltFile, BuiltFilter, HunkRun, PrivateFile, PrivateRole, PrivateWriteCheck } from './apply'
+import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './apply/conflict'
+import type { ConflictChoice } from './apply/conflict'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { GSD_AUTONOMY } from './framework/gsd/adapter'

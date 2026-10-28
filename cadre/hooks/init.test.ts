@@ -39,8 +39,6 @@ import type {
   UnsupportedId,
 } from '../types'
 import {
-  CONFLICT_OPTIONS,
-  conflictQuestion,
   hunkFailureLine,
   improverArgv,
   improverGuardFlags,
@@ -56,6 +54,7 @@ import {
   privateClaudeMdText,
 } from './apply'
 import type { HunkRun } from './apply'
+import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,

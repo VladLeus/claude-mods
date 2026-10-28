@@ -20,8 +20,6 @@ import type {
 } from '../types'
 import {
   changedBeforeRunWarning,
-  CONFLICT_OPTIONS,
-  conflictQuestion,
   hunkFailureLine,
   IMPROVER_OPTIONS,
   improverArgv,
@@ -48,6 +46,7 @@ import {
   UNGUARDED_RUN_REASON,
 } from './apply'
 import type { HunkRun } from './apply'
+import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
 import {
   APPLIED_NONE_NOTE,
   appliedLines,

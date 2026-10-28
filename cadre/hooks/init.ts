@@ -34,18 +34,16 @@ import type {
 import {
   applySteps,
   builtRoleFiles,
-  CONFLICT_OPTIONS,
-  conflictPaths,
-  conflictQuestion,
   hunkRuns,
   hunksAfterRuns,
   instructionsRecordPath,
   noHomeInstallText,
-  parseConflictAnswer,
   parseInstructionsRecord,
   setupAfterInstalls,
 } from './apply'
-import type { ApplyInput, ConflictChoice, HunkRun, InstructionsRecord, PrivateRole, RecordedMemory } from './apply'
+import type { ApplyInput, HunkRun, InstructionsRecord, PrivateRole, RecordedMemory } from './apply'
+import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './apply/conflict'
+import type { ConflictChoice } from './apply/conflict'
 import {
   appliedLines,
   installPlugins,
