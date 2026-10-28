@@ -7,7 +7,6 @@
  */
 import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
 import {
-  hunkFailureLine,
   improveBuiltFiles,
   improverLine,
   installedLine,
@@ -18,7 +17,7 @@ import {
   pythonProblem,
   restoreSteps,
 } from '../apply'
-import type { BuiltFile, HunkRun, ImproverTally } from '../apply'
+import type { BuiltFile, ImproverTally } from '../apply'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
@@ -26,6 +25,8 @@ import { hasRunFailed, isStepDone, privateModeArgv } from '../host/steps'
 import { displayPath, roleMemoryDir, trimSlash, userDirOf } from '../paths'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { hunkFailureLine } from './hunks'
+import type { HunkRun } from './hunks'
 import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath } from './private'
 import type { ApplyInput, ApplyStep, PrivateFile, PrivateRole } from './private'
 import {

@@ -20,7 +20,6 @@ import type {
 } from '../types'
 import {
   changedBeforeRunWarning,
-  hunkFailureLine,
   IMPROVER_OPTIONS,
   improverArgv,
   improverBlockLines,
@@ -42,8 +41,9 @@ import {
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
 } from './apply'
-import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+import { hunkFailureLine } from './apply/hunks'
+import type { HunkRun } from './apply/hunks'
 import { instructionsRecordText, privateClaudeMdText } from './apply/private'
 import {
   APPLIED_NONE_NOTE,

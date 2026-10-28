@@ -39,7 +39,6 @@ import type {
   UnsupportedId,
 } from '../types'
 import {
-  hunkFailureLine,
   improverArgv,
   improverGuardFlags,
   improverLine,
@@ -49,8 +48,9 @@ import {
   MARKETPLACE_ADD_ARGV,
   otherChangesWarning,
 } from './apply'
-import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+import { hunkFailureLine } from './apply/hunks'
+import type { HunkRun } from './apply/hunks'
 import {
   instructionsRecordPath,
   instructionsRecordText,
