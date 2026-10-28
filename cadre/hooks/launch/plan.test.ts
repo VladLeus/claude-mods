@@ -8,22 +8,22 @@ import type {
   ScopeContext,
   SettingsTemplate,
   SetupScan,
-} from '../types'
-import { isObject } from './core/json'
-import { sortedUnique } from './core/text'
-import { adapterOf } from './framework/registry'
-import { launchPlan } from './launch'
-import type { LaunchPlan } from './launch'
-import { linkedMemoryDeny, lintRuntimeDenyPattern, runtimeDeny } from './launch/deny'
-import { isPartsFlowRole } from './launch/links'
-import type { LaunchUser, OverlayLink } from './launch/links'
-import { renderRuntimeSettings, RUNTIME_SETTINGS_KEYS } from './launch/settings'
-import { memorySlug, roleMemoryDir } from './paths'
-import { INFRA_SKILLS } from './roles/infra'
-import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
-import { compileScope } from './scope/compile'
-import { infraViolations, roleOwnPaths } from './scope/lint'
-import { emptySetupScan, FRAMEWORKS, leaks, SECRET_FIXTURES, session, skillRef, templateRole } from './testkit'
+} from '../../types'
+import { isObject } from '../core/json'
+import { sortedUnique } from '../core/text'
+import { adapterOf } from '../framework/registry'
+import { memorySlug, roleMemoryDir } from '../paths'
+import { INFRA_SKILLS } from '../roles/infra'
+import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
+import { compileScope } from '../scope/compile'
+import { infraViolations, roleOwnPaths } from '../scope/lint'
+import { emptySetupScan, FRAMEWORKS, leaks, SECRET_FIXTURES, session, skillRef, templateRole } from '../testkit'
+import { linkedMemoryDeny, lintRuntimeDenyPattern, runtimeDeny } from './deny'
+import { isPartsFlowRole } from './links'
+import type { LaunchUser, OverlayLink } from './links'
+import { launchPlan } from './plan'
+import type { LaunchPlan } from './plan'
+import { renderRuntimeSettings, RUNTIME_SETTINGS_KEYS } from './settings'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`

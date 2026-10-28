@@ -1,9 +1,15 @@
-import type { CompiledScope, RoleSpec } from '../types'
-import { settingsDeny } from './launch/deny'
-import { instructionPlan, sortedLinks } from './launch/links'
-import type { LaunchUser, OverlayLink } from './launch/links'
-import { overlayLinks } from './launch/overlay'
-import { settingsFor } from './launch/settings'
+/**
+ * The launch plan, a layer 9 module: the launch half of D-66 for one role (D-98), the rendered runtime settings, the
+ * symlinks to create under `.cadre/<id>/.runtime/` and the warnings to show, in step order; it reads, writes and keeps
+ * nothing. It imports the launch denies, links, overlay and settings and the types, so /cadre start renders a role
+ * here.
+ */
+import type { CompiledScope, RoleSpec } from '../../types'
+import { settingsDeny } from './deny'
+import { instructionPlan, sortedLinks } from './links'
+import type { LaunchUser, OverlayLink } from './links'
+import { overlayLinks } from './overlay'
+import { settingsFor } from './settings'
 
 /**
  * The launch half of D-66, for one role: the rendered runtime settings, every symlink to create under

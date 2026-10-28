@@ -3,12 +3,12 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { CompiledScope, ScopeContext } from '../../types'
 import { sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
-import { launchPlan } from '../launch'
 import { INFRA_SKILLS } from '../roles/infra'
 import { compileScope } from '../scope/compile'
 import { BIDI_OVERRIDE, emptySetupScan, templateRole } from '../testkit'
 import type { LaunchUser } from './links'
 import { overlayLinks } from './overlay'
+import { launchPlan } from './plan'
 
 /** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
 const HASH = `1a2b3c4d${'0'.repeat(56)}`
