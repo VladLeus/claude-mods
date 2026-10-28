@@ -1,7 +1,7 @@
 /**
  * The command parser, a layer 9 module: the `/cadre` arguments as one command (help, detect, init, regen, start,
- * status, epic, epic done), with the text a reply echoes back cleaned of invisible characters and capped, and the
- * usage lines and help text. It imports core/role-id and the types, so register dispatches every /cadre command here.
+ * status, epic, epic done), with the text a reply echoes back cleaned of invisible characters and capped. It
+ * imports core/role-id and the types, so register dispatches every /cadre command here.
  */
 import type { CadreCommand, TerminalChoice } from '../../types'
 import { ROLE_ID_PATTERN } from '../core/role-id'
@@ -12,31 +12,6 @@ const MAX_ECHOED = 40
 const INVISIBLE_CHARS = /\p{Cf}/gu
 /** Control characters and line or paragraph separators; each becomes a space so separate words stay separate. */
 const BREAK_CHARS = /[\p{Cc}\p{Zl}\p{Zp}]/gu
-/** Width, in characters, the command column is padded to in the usage lines; the tests share it. */
-export const COMMAND_COLUMN = 30
-
-/**
- * The lines `/cadre` prints: a title, then each command and what it shows. A command that writes nothing says so,
- * and every row starts its description in the same column.
- */
-export const USAGE_LINES: readonly string[] = [
-  'cadre commands:',
-  `  ${'/cadre detect'.padEnd(COMMAND_COLUMN)}show which dev framework this repo uses, with evidence (read-only)`,
-  `  ${'/cadre detect --adapters'.padEnd(COMMAND_COLUMN)}also show the contract cadre would drive each framework with`,
-  `  ${'/cadre init'.padEnd(COMMAND_COLUMN)}guided setup: scan, propose roles, review the file plan, then write it`,
-  `  ${'/cadre init --dry-run'.padEnd(COMMAND_COLUMN)}the same guided flow; prints the plan and writes nothing`,
-  `  ${'/cadre regen <id>'.padEnd(COMMAND_COLUMN)}re-render one role from its role.json and write its files`,
-  `  ${'/cadre regen <id> --dry-run'.padEnd(COMMAND_COLUMN)}print that role's plan and write nothing`,
-  `  ${'/cadre start <id>'.padEnd(COMMAND_COLUMN)}render a role's runtime files, then print and copy ` +
-    'its launcher command',
-  `  ${'/cadre start <id> --terminal'.padEnd(COMMAND_COLUMN)}also open it in a new Terminal window, ` +
-    'iTerm tab or tmux window (macOS)',
-  `  ${'/cadre status <id>'.padEnd(COMMAND_COLUMN)}show from disk whether a role's autopilot run ` +
-    'is done, running, stopped, not started or unknown',
-  `  ${'/cadre epic <KEY> [title]'.padEnd(COMMAND_COLUMN)}create or reuse the epic's worktree and open its roles there`,
-  `  ${'/cadre epic done <KEY>'.padEnd(COMMAND_COLUMN)}remove a finished epic's worktree ` +
-    '(clean, merged, no role running)',
-]
 
 /**
  * Takes every `--name` switch (no value) out of the arguments, ignoring case; whether there was one. A switch is a
@@ -212,14 +187,4 @@ export function parseCommand(args: string): CadreCommand {
   if (epic) return epicCommand(text.slice(epic[0].length)) ?? unknownCommand(text)
 
   return unknownCommand(text)
-}
-
-/**
- * The reply to `/cadre` without a command, or with unknown input: the usage lines, preceded by an
- * `Unknown subcommand:` line when the input was not a known command.
- */
-export function helpText(unknown: string | null): string {
-  if (unknown === null) return USAGE_LINES.join('\n')
-
-  return [`Unknown subcommand: ${unknown}`, ...USAGE_LINES].join('\n')
 }

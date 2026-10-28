@@ -72,7 +72,7 @@ import {
   skillGroupQuestion,
   skillUsesText,
 } from './assign'
-import { helpText, USAGE_LINES } from './command/command'
+import { helpText, USAGE_LINES } from './command/usage'
 import { FRAMEWORK_IDS, SUPPORTED_IDS } from './core/framework-id'
 import { UNNAMED_ROLE } from './core/kickoff-text'
 import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
