@@ -327,15 +327,7 @@ import { planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion, recommendationLines } from './recommend'
 import { TOP_OF_FILE } from './records'
-import {
-  adaptersReportLines,
-  choiceLine,
-  detectReportLines,
-  detectText,
-  diffLines,
-  lineDiff,
-  STATUS_LABEL,
-} from './render'
+import { adaptersReportLines, choiceLine, detectReportLines, detectText, diffLines, lineDiff } from './render'
 import { CUSTOM_PURPOSE } from './roles/adjust'
 import {
   CLAUDE_MD_PLUGIN,
@@ -433,6 +425,7 @@ import {
   refusalLine,
   withContext,
 } from './ui/ask'
+import { STATUS_LABEL } from './ui/blocks/cards'
 
 /** What user text may never hold: the name of an internal planning phase, such as `Phase 3.1` (G-02-3b). */
 const PHASE_NAME = /Phase \d/

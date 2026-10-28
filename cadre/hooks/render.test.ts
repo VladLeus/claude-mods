@@ -27,7 +27,6 @@ import {
   PREVIEW_BLOCKS,
   previewBlockFor,
   previewMarkdown,
-  STATUS_LABEL,
   withDescribeOwn,
   withPreviews,
 } from './render'
@@ -171,17 +170,6 @@ describe('choiceLine', () => {
     expect(choiceLine({ kind: 'none' })).toBe(
       'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers',
     )
-  })
-})
-
-describe('STATUS_LABEL', () => {
-  test('names each status as the report shows it', () => {
-    expect(STATUS_LABEL).toEqual({
-      'in-use': 'in use',
-      installed: 'installed',
-      'not-found': 'not found',
-      unsupported: 'unsupported',
-    })
   })
 })
 

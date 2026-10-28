@@ -1,7 +1,6 @@
 import type {
   Choice,
   Detection,
-  DetectStatus,
   Enforcement,
   Facts,
   FileOpKind,
@@ -14,6 +13,7 @@ import { isObject } from './core/json'
 import { countedNoun, pad, reportText } from './core/text'
 import { chooseFramework } from './framework/contract'
 import { ADAPTERS, detectAll } from './framework/registry'
+import { STATUS_LABEL } from './ui/blocks/cards'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
 const NAME_WIDTH = 14
@@ -27,14 +27,6 @@ const GATE_HUMAN_WIDTH = 8
 
 /** The title line of the detect report. It says that nothing was written. */
 const TITLE = 'cadre detect  (read-only, nothing was written)'
-
-/** The word each detection status shows in the report. */
-export const STATUS_LABEL: Readonly<Record<DetectStatus, string>> = {
-  'in-use': 'in use',
-  installed: 'installed',
-  'not-found': 'not found',
-  unsupported: 'unsupported',
-}
 
 /** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */
 export type PaneRow = {
