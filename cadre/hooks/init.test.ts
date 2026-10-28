@@ -228,7 +228,6 @@ import {
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
   parseContentConsent,
-  RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
 } from './instructions'
 import type { PartRecord } from './instructions'
@@ -261,6 +260,7 @@ import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { parseCadreState } from './state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
+import { RECOMMEND_SYSTEM } from './suggest/instructions'
 import { PROPOSE_SYSTEM, rolesFromProposal } from './suggest/propose'
 import { TOPICS_SYSTEM } from './suggest/topics'
 import {

@@ -306,7 +306,6 @@ import {
   memoryItemHeader,
   memoryItemQuestion,
   memoryItems,
-  RECOMMEND_SYSTEM,
   REGEN_RECOMMEND_SYSTEM,
   topicContextLine,
   topicHeader,
@@ -427,6 +426,7 @@ import {
 } from './start'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
+import { RECOMMEND_SYSTEM } from './suggest/instructions'
 import { PROPOSE_SYSTEM } from './suggest/propose'
 import { SKILLS_SYSTEM } from './suggest/skills'
 import { fallbackTopics, TOPICS_SYSTEM } from './suggest/topics'

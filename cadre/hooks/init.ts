@@ -169,11 +169,8 @@ import {
   instructionsEntry,
   memoryItems,
   parseContentConsent,
-  parseRecommendation,
   parseRegenRecommendation,
   partChanges,
-  RECOMMEND_SYSTEM,
-  recommendPrompt,
   REGEN_RECOMMEND_SYSTEM,
   regenRecommendPrompt,
   topicItems,
@@ -234,6 +231,7 @@ import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, pluginName } from './scope/lint'
 import { checkedCompletion } from './suggest/checked'
 import type { Checked } from './suggest/checked'
+import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from './suggest/instructions'
 import { proposeFromText } from './suggest/propose'
 import type { Described } from './suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillCount, skillsPrompt } from './suggest/skills'

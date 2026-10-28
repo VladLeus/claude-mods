@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../../types'
-import { RECOMMEND_SYSTEM, recommendPrompt } from '../instructions'
 import { BIDI_OVERRIDE, templateRole } from '../testkit'
+import { RECOMMEND_SYSTEM, recommendPrompt } from './instructions'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './topics'
 
 /**
