@@ -9,7 +9,6 @@ import {
   builtClaudeMdPath,
   cadreJsonText,
   indexMdText,
-  kickoffText,
   launcherText,
   mcpText,
   roleClaudeMdText,
@@ -19,6 +18,7 @@ import {
   settingsText,
 } from '../generate'
 import { cadreStatePath, launcherPath, roleJsonPath } from '../paths'
+import { kickoffText } from './kickoff'
 
 /** What desiredFiles generates from. */
 export type GenerateInput = {

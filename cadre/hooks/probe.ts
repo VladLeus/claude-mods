@@ -6,7 +6,7 @@
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../types'
 import { isObject, parseJsonValue } from './core/json'
-import { asciiLine } from './generate'
+import { asciiLine } from './generate/kickoff'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
 export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([

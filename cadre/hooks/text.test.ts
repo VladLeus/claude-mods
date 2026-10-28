@@ -149,8 +149,6 @@ import {
   cadreJsonText,
   GIT_TRACKING_UNKNOWN_WARNING,
   indexMdText,
-  kickoffRoleLine,
-  kickoffText,
   launcherText,
   mcpText,
   PROBE_PROMPT,
@@ -161,6 +159,7 @@ import {
   settingsText,
   untrackedPartsWarning,
 } from './generate'
+import { kickoffRoleLine, kickoffText } from './generate/kickoff'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'

@@ -92,7 +92,8 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic'
 import type { EpicStep, WorktreeEntry } from './epic'
-import { cadreJsonText, ROLE_LINE_MAX, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
+import { cadreJsonText, roleJsonText, RUNTIME_KICKOFF_TEST } from './generate'
+import { ROLE_LINE_MAX } from './generate/kickoff'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
 import { MAX_READ_BYTES } from './scan/facts/normalize'

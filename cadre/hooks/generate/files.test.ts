@@ -16,7 +16,6 @@ import { compareText } from '../core/text'
 import {
   cadreJsonText,
   indexMdText,
-  kickoffText,
   launcherText,
   mcpText,
   roleClaudeMdText,
@@ -40,6 +39,7 @@ import {
 } from '../testkit'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
+import { kickoffText } from './kickoff'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
