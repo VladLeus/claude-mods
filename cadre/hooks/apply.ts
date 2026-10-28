@@ -55,7 +55,7 @@ import {
   PRIVATE_INSTRUCTIONS_FOLDER,
   trimSlash,
 } from './paths'
-import { MANIFEST_PATH } from './plan'
+import { MANIFEST_PATH } from './plan/classify'
 import { recordedParts, recordsOf } from './records'
 import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'

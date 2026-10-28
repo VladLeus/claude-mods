@@ -64,7 +64,7 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
-import { MANIFEST_PATH } from './plan'
+import { MANIFEST_PATH } from './plan/classify'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { SOURCE_ORDER } from './scan/facts/settings'

@@ -18,7 +18,6 @@ import { compareText } from './core/text'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_RENDERED, RUNTIME_STAMP_FILE } from './paths'
 import {
   buildPlan,
-  classifyFile,
   gitignoreLines,
   hasThoughtsIgnore,
   HUNK_FILES,
@@ -26,7 +25,6 @@ import {
   IGNORE_END,
   ignoreLines,
   isSafeOpPath,
-  MANIFEST_PATH,
   mergeIgnoreBlock,
   planReadPaths,
   planSummary,
@@ -35,6 +33,7 @@ import {
   SECURITY_REPORTS_LINE,
 } from './plan'
 import type { PlanInput } from './plan'
+import { MANIFEST_PATH } from './plan/classify'
 import { parseManifest } from './state/cadre-files'
 import { BIDI_OVERRIDE } from './testkit'
 
@@ -137,47 +136,6 @@ const HUNK: HunkOp = {
   isRunnable: true,
   command: `${GSD_TOOLS} config-set mode yolo`,
 }
-
-/** What classifyFile takes for the disk. */
-type DiskSeen = Parameters<typeof classifyFile>[2]
-
-const ABSENT: DiskSeen = { state: 'absent' }
-const UNKNOWN: DiskSeen = { state: 'unknown' }
-
-function present(hash: string): DiskSeen {
-  return { state: 'present', hash }
-}
-
-describe('classifyFile', () => {
-  test('a file that is not on disk is created, with or without a manifest entry', () => {
-    expect(classifyFile('new', null, ABSENT)).toBe('create')
-    expect(classifyFile('new', 'old', ABSENT)).toBe('create')
-  })
-
-  test('a file that already holds the desired content is left, whatever the manifest says', () => {
-    expect(classifyFile('new', null, present('new'))).toBe('leave')
-    expect(classifyFile('new', 'old', present('new'))).toBe('leave')
-    expect(classifyFile('new', 'new', present('new'))).toBe('leave')
-  })
-
-  test('a file that still holds what the manifest recorded, while the desired content differs, is changed', () => {
-    expect(classifyFile('new', 'old', present('old'))).toBe('change')
-  })
-
-  test('a file that matches neither the desired content nor the manifest is a conflict', () => {
-    expect(classifyFile('new', 'old', present('edited'))).toBe('conflict')
-  })
-
-  test('a file with no manifest entry whose content differs is a conflict', () => {
-    expect(classifyFile('new', null, present('edited'))).toBe('conflict')
-  })
-
-  test('a file that could not be read is a conflict, never absent or equal', () => {
-    expect(classifyFile('new', null, UNKNOWN)).toBe('conflict')
-    expect(classifyFile('new', 'old', UNKNOWN)).toBe('conflict')
-    expect(classifyFile('new', 'new', UNKNOWN)).toBe('conflict')
-  })
-})
 
 /** The note under a manifest that could not be read: it is kept, so no role's entries are dropped (A6). */
 const MANIFEST_NOTE =
