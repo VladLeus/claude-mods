@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HookScript } from '../../types'
-import { scanWarningLines } from '../init'
 import { DEFAULT_LOCATIONS, EMPTY_FACTS, emptySetupScan, entry, gitWorld, memIo, repoScan } from '../testkit'
+import { scanWarningLines } from '../ui/blocks/scan'
 import { gatherScans, scanWarnings } from './gather'
 import type { Gathered } from './gather'
 import { scanRepo } from './repo'

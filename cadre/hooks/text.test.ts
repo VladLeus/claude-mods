@@ -269,16 +269,12 @@ import {
   ROLES_QUESTION,
   rolesContextLine,
   runInit,
-  scanContextLine,
-  scanSummaryLines,
-  scanWarningLines,
   SECURITY_INSTALL_CONTEXT,
   SECURITY_INSTALL_DISMISSED_REASON,
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
   skillsContextLine,
   teamContextLine,
-  truncatedLine,
   unusableRecordWarning,
 } from './init'
 import type { ApplyOutcome } from './init'
@@ -426,6 +422,7 @@ import {
   withContext,
 } from './ui/ask'
 import { STATUS_LABEL } from './ui/blocks/cards'
+import { scanContextLine, scanSummaryLines, scanWarningLines, truncatedLine } from './ui/blocks/scan'
 import { diffLines, lineDiff } from './ui/diff'
 
 /** What user text may never hold: the name of an internal planning phase, such as `Phase 3.1` (G-02-3b). */
