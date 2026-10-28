@@ -217,15 +217,8 @@ import { gitignoreLines, mergeIgnoreBlock, planReadPaths, planSummary, planWithM
 import { hunkQuestion, missingSecurityPlugins, parseHunkAnswer, recommend, recommendationLines } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
-import {
-  applyAdjust,
-  parseAdjust,
-  parseProposal,
-  parseRoleJson,
-  PROPOSE_SYSTEM,
-  proposePrompt,
-  rolesFromProposal,
-} from './roles'
+import { parseProposal, parseRoleJson, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './roles'
+import { applyAdjust, parseAdjust } from './roles/adjust'
 import { proposeRoles } from './roles/propose'
 import { standsFor } from './roles/template'
 import { EFFORTS, isAutopilotDuration, MODEL_ALIASES } from './roles/validate'

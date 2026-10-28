@@ -5,7 +5,7 @@ import { DECISION_TYPES } from '../framework/contract'
 import { GSD_GATES } from '../framework/gsd/adapter'
 import { BUILTIN_GATES } from '../framework/none/adapter'
 import { SUPERPOWERS_GATES } from '../framework/superpowers/adapter'
-import { applyAdjust } from '../roles'
+import { applyAdjust } from './adjust'
 import {
   AUTOPILOT_THRESHOLD,
   chainLines,

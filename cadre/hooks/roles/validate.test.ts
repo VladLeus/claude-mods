@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec } from '../../types'
-import { applyAdjust } from '../roles'
-import type { AdjustOp } from '../roles'
 import { BIDI_OVERRIDE, ZERO_WIDTH_SPACE } from '../testkit'
+import { applyAdjust } from './adjust'
+import type { AdjustOp } from './adjust'
 import { roleFromTemplate, ROLE_TEMPLATE } from './template'
 import {
   isAutopilotDuration,

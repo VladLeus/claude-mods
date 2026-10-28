@@ -371,7 +371,8 @@ import {
   lineDiff,
   STATUS_LABEL,
 } from './render'
-import { CUSTOM_PURPOSE, PROPOSE_SYSTEM } from './roles'
+import { PROPOSE_SYSTEM } from './roles'
+import { CUSTOM_PURPOSE } from './roles/adjust'
 import { proposeRoles } from './roles/propose'
 import {
   chainLines,
