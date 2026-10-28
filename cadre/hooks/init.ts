@@ -181,16 +181,7 @@ import { parseRegenRecommendation, REGEN_RECOMMEND_SYSTEM, regenRecommendPrompt 
 import type { RegenPromptItem } from './suggest/regen'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillCount, skillsPrompt } from './suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './suggest/topics'
-import {
-  attendedByConfig,
-  compileAll,
-  compileTeam,
-  readTeam,
-  regenBadRole,
-  regenRefusal,
-  resolvedFramework,
-  scopesFor,
-} from './team'
+import { attendedByConfig, compileAll, compileTeam, regenRefusal, resolvedFramework, scopesFor } from './team'
 import type { RegenRead } from './team'
 import {
   accepted,
@@ -3125,7 +3116,7 @@ type RegenScans = {
  * Without a manifest read in full regen cannot keep the other roles' entries, so it refuses (A2), as the scan read it:
  * REGEN_NO_MANIFEST when it is not there, REGEN_BAD_MANIFEST when it cannot be read, is too large or is not valid.
  */
-async function regenScans(
+export async function regenScans(
   io: InitIo,
   locations: InitLocations,
   state: CadreState,
@@ -3626,7 +3617,7 @@ type RegenHanded = {
  * built file from its parts when its text changes; the private side gives the files of the role memory folder to
  * rebuild (privateRoleOf), with the repo's folder name (repoNameOf).
  */
-async function regenHandout(
+export async function regenHandout(
   io: InitIo,
   host: HostIo | null,
   input: {
@@ -3722,7 +3713,7 @@ function withRecordedHash(manifest: Manifest, path: string, sha256: string): Man
  * it is planned with them against that same disk hash as the last one, so it is a change, never a conflict (AUTO-PICK
  * #19 Q2). The warnings are the scan warnings of the run (scanWarnings, A4), then the hand-out's.
  */
-async function regenPlan(
+export async function regenPlan(
   io: InitIo,
   input: {
     readonly id: string
@@ -3768,7 +3759,7 @@ async function regenPlan(
  * as init prints them (scanWarningLines, A4), then the dry-run note when `applied` is null (--dry-run, nothing was
  * written), else the lines of what the apply did (appliedLines), with the regen manifest note (A4).
  */
-function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
+export function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
   const command = applied === null ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
   const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied, regenManifestSkippedNote(id))
   const warnings = scanWarningLines(planned.warnings)
@@ -3786,7 +3777,7 @@ function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome
  * (writeImproved, D-141, D-142); where no one can be asked it does not start, and the outcome carries
  * improverNotOfferedWarning. The warnings of the hand-out's git check are its untrackedParts.
  */
-async function regenApply(
+export async function regenApply(
   io: InitIo,
   host: HostIo,
   input: {
@@ -3822,72 +3813,4 @@ async function regenApply(
   const improverWarnings = [...written.improverWarnings, ...notOffered]
 
   return { ...written, untrackedParts: handed.untracked, improverWarnings }
-}
-
-/**
- * How `/cadre regen <id>` runs (D-68, T-03-16): --dry-run prints the role's plan and holds no host, so it can neither
- * write nor run; plain regen writes that plan through `host`.
- */
-export type RegenOptions =
-  | { readonly id: string; readonly dryRun: true }
-  | { readonly id: string; readonly dryRun: false; readonly host: HostIo }
-
-/**
- * The reply of a regen cancelled at one of its questions: its reason logged as its own line, the one place it is
- * printed (A1), and regenCancelledReply of it, so the reply names it too (AUTO-PICK #19 Q7).
- */
-function regenCancelReply(io: InitIo, reason: string): string {
-  io.log(reportText(reason))
-
-  return regenCancelledReply(reason)
-}
-
-/**
- * `/cadre regen <id> [--dry-run]` (D-68, D-99, D-142). Its guard (initGuard in the regen wording) never asks whether
- * anyone is there, so it also runs in `claude -p`. It then reads the team (readTeam) and refuses with an exact reply,
- * in this order: no `.cadre/cadre.json` (REGEN_NO_STATE); a cadre.json that cannot be read or is not valid, its stored
- * launcher folder included (REGEN_BAD_STATE); an id it does not list (regenNoRole); the first listed role.json, in
- * cadre.json order, that is missing, not valid or holds another id (regenBadRole); when the repo has no default
- * framework, the first listed role with none of its own (regenNeedsFramework, D-73); and last, read by its scans
- * (regenScans), a manifest that is not there (REGEN_NO_MANIFEST) or cannot be read, is too large or is not valid
- * (REGEN_BAD_MANIFEST, A2). Then it hands out what changed in the files and memories the role's records name
- * (regenHandout, G-02-1f Regen): in a session it asks about each new or changed item, and a dismissed or unanswered
- * question cancels with regenCancelledReply, its reason logged as its own line, before anything is written (AUTO-PICK
- * #19 Q7); where no one can be asked it asks and logs nothing and says what it left out. A role.json with no records
- * asks and logs nothing, as before. It plans that one role (regenPlan). --dry-run replies with the plan, the dropped
- * lines, a `warning:` line for each warning and the note that nothing was written; plain regen writes the plan
- * (regenApply): a conflicted file is kept and its `.cadre-new` copy written, as an unanswered conflict is (D-67),
- * cadre.json is never among its files, a manifest the plan keeps as a conflict is not written, and in a session the
- * improver pass runs on the rebuilt files (D-141). It then replies with the plan, the dropped lines, the warnings and
- * what the apply did (regenReplyText). ~/.claude.json is read only when cadre.json records the consent (readUserMcp,
- * A1), so the MCP denies init compiled from it stay. Plain regen and --dry-run differ in the first line and the ending,
- * and a dry run compares no private record (AUTO-PICK #19 Q5) and asks git nothing.
- */
-export async function runRegen(io: InitIo, options: RegenOptions): Promise<string> {
-  const guard = await initGuard(io, 'regen')
-  if (guard.kind === 'refuse') return guard.text
-  const { locations } = guard
-  const { id } = options
-
-  const team = await readTeam(io, locations.root, 'regen', id)
-  if (team.kind === 'refuse') return team.text
-  const { state, roles, texts } = team.value
-  const role = roles.find(listed => listed.id === id)
-  const roleJson = texts.get(id)
-  // Fail closed: every listed role was read, so after the id check the role and its text are always there.
-  if (role === undefined || roleJson === undefined) return regenBadRole(id)
-
-  const scans = await regenScans(io, locations, state, roles)
-  if (scans.kind === 'refuse') return scans.text
-  const { setup } = scans.value.gathered
-  const host = options.dryRun ? null : options.host
-  const handed = await regenHandout(io, host, { id, role, locations, setup })
-  if (handed.kind === 'cancelled') return regenCancelReply(io, handed.reason)
-
-  const input = { id, state, roles, roleJson, locations, scans: scans.value, handed: handed.value }
-  const planned = await regenPlan(io, input)
-  if (options.dryRun) return regenReplyText(planned, id, null)
-  const outcome = await regenApply(io, options.host, { locations, planned, handed: handed.value, setup })
-
-  return regenReplyText(planned, id, outcome)
 }
