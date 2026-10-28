@@ -46,7 +46,7 @@ import {
 } from './generate'
 import type { GenerateInput } from './generate'
 import { buildPlan, isSafeOpPath } from './plan'
-import { parseRoleJson } from './roles'
+import { parseRoleJson } from './roles/rolejson'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { isAutopilotDuration } from './roles/validate'
 import { compileScope, infraViolations, scopeCardLines } from './scope'
