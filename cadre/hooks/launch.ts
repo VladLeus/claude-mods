@@ -1,7 +1,8 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { shown, sortedUnique } from './core/text'
-import { instructionPlan, isPartsFlowRole, runtimeDir, sortedLinks } from './launch/links'
-import type { LaunchUser, LinkSet, OverlayLink } from './launch/links'
+import { instructionPlan, isPartsFlowRole, sortedLinks } from './launch/links'
+import type { LaunchUser, OverlayLink } from './launch/links'
+import { overlayLinks } from './launch/overlay'
 import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from './paths'
 import { mcpToolName } from './scope/card'
 import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from './scope/lint'
@@ -68,9 +69,6 @@ const DOTDOT_MESSAGE = 'a .. segment is not allowed in an absolute pattern'
 /** The warning when the repo path cannot be written into a rule, so the any-depth denies of the template stay. */
 const UNSAFE_ROOT_WARNING =
   'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth'
-
-/** A skill or agent name that may become a link name: a plain name of 1 to 80 characters (T-02-46). */
-const SAFE_OVERLAY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
 
 /**
  * The reason a deny pattern must not be emitted into the runtime settings, or null when it is fine. An exact absolute
@@ -309,62 +307,6 @@ function settingsDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUser): D
     deny: sortedUnique(results.flatMap(result => result.deny)),
     warnings: results.flatMap(result => result.warnings),
   }
-}
-
-/**
- * Whether a skill or agent name may become a link name: a plain name (T-02-46). The pattern has no `/` and starts with
- * a letter or digit, so it alone rules out a `..` segment.
- */
-function isSafeOverlayName(name: string): boolean {
-  return SAFE_OVERLAY_NAME.test(name)
-}
-
-/**
- * The links for one kind of overlay entry, in name order, once each. A name that is not a plain name is not linked and
- * is named in a warning, even when the user has it, and so is a name the user does not have. `extension` is added to
- * the name in the link path and in the target (an agent is a `.md` file, a skill is a folder).
- */
-function overlayGroup(
-  kind: 'skill' | 'agent',
-  names: readonly string[],
-  have: readonly string[],
-  linkDir: string,
-  targetDir: string,
-  extension: string,
-): LinkSet {
-  const links: OverlayLink[] = []
-  const warnings: string[] = []
-  for (const name of sortedUnique(names)) {
-    if (!isSafeOverlayName(name)) {
-      warnings.push(`${kind} ${shown(name)} has an unsafe name: not linked`)
-      continue
-    }
-    if (!have.includes(name)) {
-      warnings.push(`${kind} ${name} was not found in your user ${kind}s: not linked`)
-      continue
-    }
-    links.push({ path: `${linkDir}/${name}${extension}`, target: `${targetDir}/${name}${extension}` })
-  }
-
-  return { links, warnings }
-}
-
-/**
- * The links that build the role's overlay (spike S4 V3): each overlay skill is linked to `<userDir>/skills/<name>`
- * under `.runtime/overlay/.claude/skills/`, and each overlay agent to `<userDir>/agents/<name>.md` under
- * `.runtime/overlay/.claude/agents/`. Under `--setting-sources project` a user-level skill or agent is absent unless an
- * `--add-dir` overlay links it. A skill named `plugin:skill` never reaches the overlay, as compileScope enables its
- * plugin instead. The links are sorted by path, the warnings list the skills before the agents, and a name that is not
- * found among the user's, or is not a safe name, is not linked.
- */
-export function overlayLinks(id: string, overlay: CompiledScope['overlay'], user: LaunchUser): LinkSet {
-  const base = `${runtimeDir(user, id)}/overlay/.claude`
-  const skillsDir = `${user.userDir}/skills`
-  const agentsDir = `${user.userDir}/agents`
-  const skills = overlayGroup('skill', overlay.skills, user.userSkills, `${base}/skills`, skillsDir, '')
-  const agents = overlayGroup('agent', overlay.agents, user.userAgents, `${base}/agents`, agentsDir, '.md')
-
-  return { links: sortedLinks([...skills.links, ...agents.links]), warnings: [...skills.warnings, ...agents.warnings] }
 }
 
 /** The window value when the role carries it and the user has one; null otherwise. */
