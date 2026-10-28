@@ -210,8 +210,8 @@ import {
   trimSlash,
   userDirOf,
 } from './paths'
-import { planReadPaths, planWithManifest } from './plan'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
+import { planReadPaths, planWithManifest } from './plan/plan'
 import { planSummary, renderPlan } from './plan/text'
 import { hunkQuestion, parseHunkAnswer, recommendationLines } from './recommend'
 import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'

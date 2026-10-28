@@ -1,3 +1,9 @@
+/**
+ * The file plan, a layer 5 module: one op per generated file, the manifest and the .gitignore block, each classified
+ * against the disk and the last manifest, then the framework config hunks, with every path held to .cadre/ and the
+ * root .gitignore (PLAN-01, PLAN-04, PLAN-06, D-66, D-67). Nothing here writes. It imports the classification and the
+ * .gitignore block of plan/, paths, core and the types, so init and regen plan here.
+ */
 import type {
   DesiredFile,
   FileOp,
@@ -8,14 +14,14 @@ import type {
   Plan,
   PortRead,
   ReadState,
-} from '../types'
-import { sha256Hex } from './core/hash'
-import { stableJson } from './core/json'
-import { compareText, reportText, sortedUnique } from './core/text'
-import { BESIDE_SUFFIX, GITIGNORE_FILE, isSafeRelativePath } from './paths'
-import { classifyFile, MANIFEST_PATH } from './plan/classify'
-import type { DiskHash } from './plan/classify'
-import { IGNORE_BEGIN, IGNORE_END, mergeIgnoreBlock, OPEN_BLOCK_WARNING } from './plan/gitignore'
+} from '../../types'
+import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
+import { compareText, reportText, sortedUnique } from '../core/text'
+import { BESIDE_SUFFIX, GITIGNORE_FILE, isSafeRelativePath } from '../paths'
+import { classifyFile, MANIFEST_PATH } from './classify'
+import type { DiskHash } from './classify'
+import { IGNORE_BEGIN, IGNORE_END, mergeIgnoreBlock, OPEN_BLOCK_WARNING } from './gitignore'
 
 /**
  * The framework config files a hunk may target (PLAN-06). Phase 2 knows one, GSD's `.planning/config.json`; workstream

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile, FileMode, FileOp, HunkOp, Op, Plan } from '../../types'
-import { buildPlan } from '../plan'
-import type { PlanInput } from '../plan'
 import { BIDI_OVERRIDE } from '../testkit'
+import { buildPlan } from './plan'
+import type { PlanInput } from './plan'
 import { planSummary, renderPlan } from './text'
 
 const VERSION = '0.2.0'

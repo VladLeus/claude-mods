@@ -10,17 +10,17 @@ import type {
   ManifestEntry,
   Plan,
   PortRead,
-} from '../types'
-import { sha256Hex } from './core/hash'
-import { stableJson } from './core/json'
-import { compareText } from './core/text'
+} from '../../types'
+import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
+import { compareText } from '../core/text'
+import { parseManifest } from '../state/cadre-files'
+import { BIDI_OVERRIDE } from '../testkit'
+import { MANIFEST_PATH } from './classify'
+import { gitignoreLines, mergeIgnoreBlock } from './gitignore'
 import { buildPlan, HUNK_FILES, isSafeOpPath, planReadPaths, planWithManifest } from './plan'
 import type { PlanInput } from './plan'
-import { MANIFEST_PATH } from './plan/classify'
-import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
-import { renderPlan } from './plan/text'
-import { parseManifest } from './state/cadre-files'
-import { BIDI_OVERRIDE } from './testkit'
+import { renderPlan } from './text'
 
 const VERSION = '0.2.0'
 const ROLE = '.cadre/be/role.json'

@@ -338,9 +338,9 @@ import {
   RUNTIME_RENDERED,
   RUNTIME_STAMP_FILE,
 } from './paths'
-import { HUNK_FILES } from './plan'
 import { MANIFEST_PATH } from './plan/classify'
 import { gitignoreLines, IGNORE_BEGIN, IGNORE_END, ignoreLines, SECURITY_REPORTS_LINE } from './plan/gitignore'
+import { HUNK_FILES } from './plan/plan'
 import { planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion, recommendationLines } from './recommend'

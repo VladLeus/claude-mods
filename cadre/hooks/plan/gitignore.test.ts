@@ -16,8 +16,6 @@ import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_RENDERED, RUNTIME_STAMP_FILE } from '../paths'
-import { buildPlan } from '../plan'
-import type { PlanInput } from '../plan'
 import { BIDI_OVERRIDE } from '../testkit'
 import { MANIFEST_PATH } from './classify'
 import {
@@ -29,6 +27,8 @@ import {
   mergeIgnoreBlock,
   SECURITY_REPORTS_LINE,
 } from './gitignore'
+import { buildPlan } from './plan'
+import type { PlanInput } from './plan'
 import { renderPlan } from './text'
 
 const VERSION = '0.2.0'

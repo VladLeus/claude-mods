@@ -24,7 +24,7 @@ import {
   roleMdText,
   settingsText,
 } from '../generate'
-import { buildPlan, isSafeOpPath } from '../plan'
+import { buildPlan, isSafeOpPath } from '../plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope, infraViolations } from '../scope'
 import {
