@@ -36,8 +36,9 @@ import {
   WORKTREE_LIST_ARGV,
 } from '../epic'
 import type { ProbedGsdCandidate } from '../framework/gsd/identity'
-import { cadreJsonText, desiredFiles, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
-import type { GenerateInput } from '../generate'
+import { cadreJsonText, roleJsonText, RUNTIME_KICKOFF_TEST } from '../generate'
+import { desiredFiles } from '../generate/files'
+import type { GenerateInput } from '../generate/files'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'

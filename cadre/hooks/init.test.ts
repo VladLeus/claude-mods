@@ -76,12 +76,12 @@ import { attendedNote, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from './framework/gsd
 import { detectAll } from './framework/registry'
 import {
   cadreJsonText,
-  desiredFiles,
   GIT_TRACKING_UNKNOWN_WARNING,
   roleClaudeMdText,
   roleJsonText,
   untrackedPartsWarning,
 } from './generate'
+import { desiredFiles } from './generate/files'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
