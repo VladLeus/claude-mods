@@ -5,9 +5,9 @@
  */
 import type { RoleSpec, SkillRef } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
-import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
+import { unfenced, withReplyErrors } from '../core/reply'
 import { asciiLower, countedNoun, idLabel } from '../core/text'
-import { NOT_JSON_ERROR } from './checked'
+import { invalidReply, NOT_JSON_ERROR } from './checked'
 
 /** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
 export function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
@@ -76,11 +76,6 @@ export type SkillRecommendReply =
   | { readonly kind: 'ok'; readonly recommended: ReadonlyMap<string, readonly string[]> }
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
 
-/** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
-function invalidSkillReply(errors: readonly string[]): SkillRecommendReply {
-  return { kind: 'invalid', errors: cappedErrors(errors) }
-}
-
 /** The errors of one entry of the reply's skills object: an unknown skill, a value that is no list, unknown roles. */
 function skillEntryErrors(
   key: string,
@@ -116,11 +111,11 @@ export function parseSkillRecommendation(
   roleIds: readonly string[],
 ): SkillRecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalidSkillReply([NOT_JSON_ERROR])
+  if (json === null) return invalidReply([NOT_JSON_ERROR])
   const named = isObject(json.value) ? json.value.skills : undefined
-  if (!isObject(named)) return invalidSkillReply(['the reply has no "skills" object'])
+  if (!isObject(named)) return invalidReply(['the reply has no "skills" object'])
   const errors = Object.entries(named).flatMap(([key, value]) => skillEntryErrors(key, value, skillIds, roleIds))
-  if (errors.length > 0) return invalidSkillReply(errors)
+  if (errors.length > 0) return invalidReply(errors)
   const recommended = new Map(skillIds.map((id): [string, readonly string[]] => [id, skillRoles(named, id, roleIds)]))
 
   return { kind: 'ok', recommended }

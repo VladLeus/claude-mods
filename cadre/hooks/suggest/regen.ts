@@ -10,8 +10,8 @@ import { unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { TOP_OF_FILE } from '../records'
 import { summaryText } from '../scan/instructions/memories'
-import { NOT_JSON_ERROR } from './checked'
-import { invalid, preview } from './topics'
+import { invalidReply, NOT_JSON_ERROR } from './checked'
+import { preview } from './topics'
 
 /** One new or changed item a regen asks about, as its recommendation prompt lists it (G-02-1f Regen, D-142). */
 export type RegenPromptItem =
@@ -80,15 +80,15 @@ export type RegenRecommendReply =
  */
 export function parseRegenRecommendation(reply: string, itemIds: readonly string[]): RegenRecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid([NOT_JSON_ERROR])
+  if (json === null) return invalidReply([NOT_JSON_ERROR])
   const items = isObject(json.value) ? json.value.items : undefined
-  if (!isObject(items)) return invalid(['the reply has no "items" object'])
+  if (!isObject(items)) return invalidReply(['the reply has no "items" object'])
   const errors = Object.entries(items).flatMap(([key, value]) => {
     if (!itemIds.includes(key)) return [`unknown item "${idLabel(key)}"`]
 
     return typeof value === 'boolean' ? [] : [`item ${key} is not true or false`]
   })
-  if (errors.length > 0) return invalid(errors)
+  if (errors.length > 0) return invalidReply(errors)
   const isRecommended = (id: string): boolean => Object.hasOwn(items, id) && items[id] === true
 
   return { kind: 'ok', recommended: new Map(itemIds.map((id): [string, boolean] => [id, isRecommended(id)])) }

@@ -1,9 +1,10 @@
 /**
  * The checked model call, a layer 7 module: one model call with its retries, and the reply-check helpers every
- * suggest/ module shares (D-46, D-83; 02-GAPS-B2 S7). It imports the types, so init and the suggest/ modules call the
- * model here.
+ * suggest/ module shares (D-46, D-83; 02-GAPS-B2 S7). It imports core and the types, so init and the suggest/ modules
+ * call the model here.
  */
 import type { InitIo } from '../../types'
+import { cappedErrors } from '../core/reply'
 
 /** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
 export const MAX_PROPOSE_ATTEMPTS = 3
@@ -41,3 +42,10 @@ export async function checkedCompletion<T>(
 
 /** The error every reply check gives a model reply that is not JSON. */
 export const NOT_JSON_ERROR = 'the reply is not JSON'
+
+/** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
+export function invalidReply(
+  errors: readonly string[],
+): { readonly kind: 'invalid'; readonly errors: readonly string[] } {
+  return { kind: 'invalid', errors: cappedErrors(errors) }
+}

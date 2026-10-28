@@ -6,11 +6,11 @@
  */
 import type { InstructionPart, InstructionScan, InstructionTopic } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
-import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
+import { unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { TOP_OF_FILE } from '../records'
 import { LINE_BREAKS, MAX_SUMMARY_CHARS } from '../scan/instructions/memories'
-import { NOT_JSON_ERROR } from './checked'
+import { invalidReply, NOT_JSON_ERROR } from './checked'
 
 /** The most code points a topic title keeps (G-02-1f). */
 const MAX_TITLE_CHARS = 60
@@ -60,11 +60,6 @@ export function topicsPrompt(parts: readonly InstructionPart[], errors: readonly
 export type TopicsReply =
   | { readonly kind: 'ok'; readonly topics: readonly InstructionTopic[] }
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
-
-/** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
-export function invalid(errors: readonly string[]): { readonly kind: 'invalid'; readonly errors: readonly string[] } {
-  return { kind: 'invalid', errors: cappedErrors(errors) }
-}
 
 /** A reply text as a topic keeps it: hidden characters removed, then trimmed; '' for anything but a string. */
 function replyText(value: unknown): string {
@@ -127,13 +122,13 @@ function placementErrors(reads: readonly TopicRead[], partIds: readonly string[]
  */
 export function parseTopics(reply: string, partIds: readonly string[]): TopicsReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid([NOT_JSON_ERROR])
+  if (json === null) return invalidReply([NOT_JSON_ERROR])
   const list = isObject(json.value) ? json.value.topics : undefined
-  if (!Array.isArray(list)) return invalid(['the reply has no "topics" list'])
+  if (!Array.isArray(list)) return invalidReply(['the reply has no "topics" list'])
   const known = new Set(partIds)
   const reads = list.map((entry: unknown, index) => readTopic(entry, index, known))
   const errors = [...reads.flatMap(read => read.errors), ...placementErrors(reads, partIds)]
-  if (errors.length > 0) return invalid(errors)
+  if (errors.length > 0) return invalidReply(errors)
 
   return { kind: 'ok', topics: reads.flatMap(read => (read.topic === null ? [] : [read.topic])) }
 }

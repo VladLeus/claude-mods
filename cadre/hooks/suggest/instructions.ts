@@ -1,14 +1,13 @@
 /**
  * The instruction recommendation prompt, a layer 7 module: the prompt that asks which roles need each topic of the
  * instruction files and each memory, and the check of the model's reply (G-02-1f Recommendation, Memories). It
- * imports the checked call, suggest/topics, core and the types, so init reads it here.
+ * imports the checked call, core and the types, so init reads it here.
  */
 import type { InstructionTopic, MemoryItem, RoleSpec } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
 import { idLabel } from '../core/text'
-import { NOT_JSON_ERROR } from './checked'
-import { invalid } from './topics'
+import { invalidReply, NOT_JSON_ERROR } from './checked'
 
 /** What parseRecommendation gives: the roles recommended for each topic and memory, or every error found. */
 export type RecommendReply =
@@ -116,17 +115,17 @@ export function parseRecommendation(
   roleIds: readonly string[],
 ): RecommendReply {
   const json = parseJsonValue(unfenced(reply))
-  if (json === null) return invalid([NOT_JSON_ERROR])
+  if (json === null) return invalidReply([NOT_JSON_ERROR])
   const topics = isObject(json.value) ? json.value.topics : undefined
   const memories = isObject(json.value) ? json.value.memories : undefined
   const topicsMap = topics === undefined && topicIds.length === 0 ? {} : topics
   const memoriesMap = memories === undefined && memoryIds.length === 0 ? {} : memories
-  if (!isObject(topicsMap) || !isObject(memoriesMap)) return invalid(missingMaps(topicsMap, memoriesMap))
+  if (!isObject(topicsMap) || !isObject(memoriesMap)) return invalidReply(missingMaps(topicsMap, memoriesMap))
   const errors = [
     ...mapErrors('topic', topicsMap, topicIds, roleIds),
     ...mapErrors('memory', memoriesMap, memoryIds, roleIds),
   ]
-  if (errors.length > 0) return invalid(errors)
+  if (errors.length > 0) return invalidReply(errors)
   const recommended = new Map([
     ...rolesByMap(topicsMap, topicIds, roleIds),
     ...rolesByMap(memoriesMap, memoryIds, roleIds),
