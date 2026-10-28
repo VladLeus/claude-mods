@@ -32,7 +32,8 @@ import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INSTRUCTIONS_RECORD_FILE, memorySlug, roleMemoryDir } from './paths'
 import { INFRA_SKILLS } from './roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
-import { compileScope, infraViolations, roleOwnPaths } from './scope'
+import { compileScope } from './scope'
+import { infraViolations, roleOwnPaths } from './scope/lint'
 import {
   BIDI_OVERRIDE,
   emptySetupScan,

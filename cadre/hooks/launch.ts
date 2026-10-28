@@ -1,14 +1,8 @@
 import type { CompiledScope, RoleSpec } from '../types'
 import { compareText, isChangedByClean, shown, sortedUnique } from './core/text'
 import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from './paths'
-import {
-  isContextMonitorScript,
-  isSafeDir,
-  lintDenyPattern,
-  mcpToolName,
-  roleOwnPaths,
-  SECRET_READ_DENY,
-} from './scope'
+import { mcpToolName } from './scope'
+import { isContextMonitorScript, isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from './scope/lint'
 
 /**
  * The only settings keys a rendered runtime file may hold (D-84). The render adds a key from this list and nothing
