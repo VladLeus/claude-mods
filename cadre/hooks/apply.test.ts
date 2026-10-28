@@ -94,7 +94,6 @@ import { MANIFEST_PATH } from './plan/classify'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { isSafeOpPath, planReadPaths, planWithManifest } from './plan/plan'
 import type { PlanInput, PlannedFiles } from './plan/plan'
-import { lineDiff } from './render'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { readRepoFile } from './scan/port-read'
 import { parseManifest } from './state/cadre-files'
@@ -112,6 +111,7 @@ import {
 } from './testkit'
 import type { HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
 import { withContext } from './ui/ask'
+import { lineDiff } from './ui/diff'
 
 const VERSION = '0.2.0'
 

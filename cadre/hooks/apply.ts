@@ -57,12 +57,12 @@ import {
 } from './paths'
 import { MANIFEST_PATH } from './plan/classify'
 import { recordedParts, recordsOf } from './records'
-import { diffLines, lineDiff } from './render'
-import type { LineDiff } from './render'
 import { CLAUDE_SECURITY_PLUGIN } from './roles/infra'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { missingState } from './scan/port-read'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ui/ask'
+import { diffLines, lineDiff } from './ui/diff'
+import type { LineDiff } from './ui/diff'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
 export type ConflictChoice = 'mine' | 'new'
