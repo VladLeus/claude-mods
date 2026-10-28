@@ -1,11 +1,11 @@
 import type { AskSpec, FrameworkId, Recommendation, RepoScan, RoleSpec, SetupScan, TemplateRoleId } from '../types'
-import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './assign'
 import { labelled } from './core/labelled'
 import type { Labelled } from './core/labelled'
 import { reportText } from './core/text'
 import { targetText } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
 import { adapterOf } from './framework/registry'
+import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './roles/infra'
 import { standsFor } from './roles/template'
 
 /** The dialog button that accepts a hunk; a typed answer of the same word counts the same, in any case. */

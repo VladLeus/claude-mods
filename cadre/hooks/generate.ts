@@ -7,7 +7,6 @@ import type {
   LaunchStart,
   RoleSpec,
 } from '../types'
-import { INFRA_SKILLS } from './assign'
 import { stableJson } from './core/json'
 import { MAX_ROLE_CHARS } from './core/kickoff-text'
 import { cardList, clean, compareText, reportText, sortedUnique } from './core/text'
@@ -21,6 +20,7 @@ import {
   RUNTIME_STAMP_FILE,
 } from './paths'
 import { TOP_OF_FILE } from './records'
+import { INFRA_SKILLS } from './roles/infra'
 import { MAX_PURPOSE_CHARS } from './roles/validate'
 import { scopeCardLines } from './scope'
 

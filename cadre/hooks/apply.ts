@@ -35,7 +35,6 @@ import type {
   WriteStat,
 } from '../types'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ask'
-import { CLAUDE_SECURITY_PLUGIN } from './assign'
 import { sha256Hex } from './core/hash'
 import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { isSha256Hex } from './core/names'
@@ -60,6 +59,7 @@ import { MANIFEST_PATH } from './plan'
 import { recordedParts, recordsOf } from './records'
 import { diffLines, lineDiff } from './render'
 import type { LineDiff } from './render'
+import { CLAUDE_SECURITY_PLUGIN } from './roles/infra'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { missingState } from './scan/port-read'
 

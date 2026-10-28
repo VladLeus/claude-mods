@@ -68,16 +68,7 @@ import {
   withContext,
 } from './ask'
 import type { ChoiceAsk, StepResult } from './ask'
-import {
-  CLAUDE_MD_PLUGIN,
-  CLAUDE_SECURITY_PLUGIN,
-  CLAUDE_SECURITY_SKILL,
-  envQuestion,
-  MODEL_EFFORT_OPTIONS,
-  modelEffortRefusal,
-  SECURITY_GUIDANCE_PLUGIN,
-  SECURITY_PLUGINS,
-} from './assign'
+import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
 import { compareText } from './core/text'
@@ -253,6 +244,13 @@ import { buildPlan, gitignoreLines, mergeIgnoreBlock, planReadPaths, renderPlan 
 import { missingSecurityPlugins, recommend, recommendationLines } from './recommend'
 import { choiceLine } from './render'
 import { PROPOSE_SYSTEM, rolesFromProposal } from './roles'
+import {
+  CLAUDE_MD_PLUGIN,
+  CLAUDE_SECURITY_PLUGIN,
+  CLAUDE_SECURITY_SKILL,
+  SECURITY_GUIDANCE_PLUGIN,
+  SECURITY_PLUGINS,
+} from './roles/infra'
 import { proposeRoles } from './roles/propose'
 import { parseRoleJson } from './roles/rolejson'
 import { AUTOPILOT_THRESHOLD, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'

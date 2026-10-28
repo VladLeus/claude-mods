@@ -10,7 +10,6 @@ import type {
   SetupScan,
   TemplateRoleId,
 } from '../types'
-import { INFRA_SKILLS } from './assign'
 import { isObject } from './core/json'
 import { sortedUnique } from './core/text'
 import { adapterOf } from './framework/registry'
@@ -31,6 +30,7 @@ import {
 } from './launch'
 import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
 import { INSTRUCTIONS_RECORD_FILE, memorySlug, roleMemoryDir } from './paths'
+import { INFRA_SKILLS } from './roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { compileScope, infraViolations, roleOwnPaths } from './scope'
 import {

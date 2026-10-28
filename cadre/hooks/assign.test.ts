@@ -8,17 +8,10 @@ import {
   cappedNames,
   classifyMcp,
   classifySkills,
-  CLAUDE_MD_PLUGIN,
   EFFORTS,
   envQuestion,
   groupUses,
-  INFRA_MCP_SERVERS,
-  INFRA_PLUGINS,
-  INFRA_SKILLS,
-  INFRA_TOOLS,
   INSTRUCTION_LABELS,
-  isSecurityReviewSkill,
-  MCP_ROLE_ROWS,
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
@@ -34,8 +27,6 @@ import {
   parseSkillRecommendation,
   PER_ROLE,
   SAME_FOR_ALL,
-  SECURITY_PLUGINS,
-  SKILL_ROLE_ROWS,
   skillCount,
   skillGroupQuestion,
   SKILLS_SYSTEM,
@@ -44,6 +35,15 @@ import {
 } from './assign'
 import type { SkillGroup } from './assign'
 import { adapterOf, ADAPTERS } from './framework/registry'
+import {
+  INFRA_MCP_SERVERS,
+  INFRA_PLUGINS,
+  INFRA_SKILLS,
+  INFRA_TOOLS,
+  isSecurityReviewSkill,
+  MCP_ROLE_ROWS,
+  SKILL_ROLE_ROWS,
+} from './roles/infra'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -1122,13 +1122,6 @@ describe('env question cap (G-02-5)', () => {
     expect(parseEnvNames('all', names)).toEqual(names)
     expect(parseEnvNames('NAME_40, NAME_06', names)).toEqual(['NAME_06', 'NAME_40'])
     expect(parseEnvNames('NAME_41', names)).toBeNull()
-  })
-})
-
-describe('the improver plugin (G-02-1f, D-141)', () => {
-  test('CLAUDE_MD_PLUGIN is the exact key in claude-plugins-official; no role is given it as infra or security', () => {
-    expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
-    expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(CLAUDE_MD_PLUGIN)
   })
 })
 

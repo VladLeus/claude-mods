@@ -60,16 +60,8 @@ import {
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
-  CLAUDE_MD_PLUGIN,
-  CLAUDE_SECURITY_PLUGIN,
-  CLAUDE_SECURITY_SKILL,
   envQuestion,
-  INFRA_MCP_SERVERS,
-  INFRA_PLUGINS,
-  INFRA_SKILLS,
-  INFRA_TOOLS,
   INSTRUCTION_LABELS,
-  MCP_ROLE_ROWS,
   mcpQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
@@ -78,9 +70,6 @@ import {
   ownSkillLines,
   PER_ROLE,
   SAME_FOR_ALL,
-  SECURITY_GUIDANCE_PLUGIN,
-  SECURITY_PLUGINS,
-  SKILL_ROLE_ROWS,
   skillGroupQuestion,
   SKILLS_SYSTEM,
   skillUsesText,
@@ -373,6 +362,19 @@ import {
 } from './render'
 import { PROPOSE_SYSTEM } from './roles'
 import { CUSTOM_PURPOSE } from './roles/adjust'
+import {
+  CLAUDE_MD_PLUGIN,
+  CLAUDE_SECURITY_PLUGIN,
+  CLAUDE_SECURITY_SKILL,
+  INFRA_MCP_SERVERS,
+  INFRA_PLUGINS,
+  INFRA_SKILLS,
+  INFRA_TOOLS,
+  MCP_ROLE_ROWS,
+  SECURITY_GUIDANCE_PLUGIN,
+  SECURITY_PLUGINS,
+  SKILL_ROLE_ROWS,
+} from './roles/infra'
 import { proposeRoles } from './roles/propose'
 import {
   chainLines,

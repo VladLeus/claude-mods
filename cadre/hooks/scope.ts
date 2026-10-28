@@ -12,6 +12,10 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
+import { freezeRows } from './core/freeze'
+import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
+import { adapterOf } from './framework/registry'
+import { handoffFolderOf, PRIVATE_INSTRUCTIONS_LINK } from './paths'
 import {
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
@@ -19,11 +23,7 @@ import {
   INFRA_TOOLS,
   SECURITY_GUIDANCE_PLUGIN,
   SECURITY_PLUGINS,
-} from './assign'
-import { freezeRows } from './core/freeze'
-import { cardList, compareText, reportText, shown, sortedUnique } from './core/text'
-import { adapterOf } from './framework/registry'
-import { handoffFolderOf, PRIVATE_INSTRUCTIONS_LINK } from './paths'
+} from './roles/infra'
 import { chainLines, standsFor } from './roles/template'
 
 /**

@@ -11,7 +11,6 @@ import type {
   TemplateRoleId,
 } from '../types'
 import { pluginInstallArgv } from './apply'
-import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './assign'
 import { GSD_AUTONOMY } from './framework/gsd/adapter'
 import { hunkCandidates, hunkOp, NOT_SET_TEXT } from './framework/gsd/hunks'
 import type { HunkCandidate } from './framework/gsd/hunks'
@@ -23,6 +22,7 @@ import {
   recommend,
   recommendationLines,
 } from './recommend'
+import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './roles/infra'
 import { standsFor } from './roles/template'
 import { scanRepo } from './scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from './testkit'

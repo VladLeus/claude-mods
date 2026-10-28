@@ -104,9 +104,6 @@ import {
   assignToRoles,
   classifyMcp,
   classifySkills,
-  CLAUDE_MD_PLUGIN,
-  CLAUDE_SECURITY_PLUGIN,
-  CLAUDE_SECURITY_SKILL,
   envQuestion,
   groupUses,
   mcpQuestion,
@@ -219,6 +216,7 @@ import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
 import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './roles'
 import { applyAdjust, parseAdjust } from './roles/adjust'
+import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'
 import { parseRoleJson } from './roles/rolejson'
 import { standsFor } from './roles/template'

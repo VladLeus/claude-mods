@@ -14,8 +14,8 @@ import type {
   SettingsSource,
   SetupScan,
 } from '../types'
-import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './assign'
 import { adapterOf } from './framework/registry'
+import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from './roles/infra'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import type { ChainRole } from './roles/template'
 import {
