@@ -28,7 +28,6 @@ import {
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
 } from './init'
-import { OWN_ANSWER_HINT } from './render'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -42,6 +41,7 @@ import {
   templateRole,
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
+import { OWN_ANSWER_HINT } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
