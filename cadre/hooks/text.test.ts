@@ -286,8 +286,8 @@ import {
   UNDENIED_PRIVATE_WARNING,
   UNDENIED_RECORD_WARNING,
   undeniedMemoryWarning,
-  unsafeMemoryNameWarning,
 } from './launch'
+import { unsafeMemoryNameWarning } from './launch/links'
 import {
   HOME_UNUSABLE_WARNING,
   INBOX_FILE,

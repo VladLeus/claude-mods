@@ -109,7 +109,7 @@ import {
   parseContentConsent,
   topicItems,
 } from './instructions'
-import { isPartsFlowRole } from './launch'
+import { isPartsFlowRole } from './launch/links'
 import { GITIGNORE_FILE, isRepoFolder, isSafeRelativePath, memoryFoldersOf, roleJsonPath } from './paths'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { planReadPaths, planWithManifest } from './plan/plan'

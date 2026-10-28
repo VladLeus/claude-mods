@@ -42,8 +42,10 @@ import { gitCommonDirOf, mainCheckoutOf } from './git/common-dir'
 import { repoGuard } from './guards/repo'
 import { isStepDone } from './host/steps'
 import type { RenderStep } from './host/steps'
-import { isPartsFlowRole, isSafeFileName, launchPlan, unsafeMemoryNameWarning } from './launch'
-import type { LaunchPlan, LaunchUser, OverlayLink } from './launch'
+import { launchPlan } from './launch'
+import type { LaunchPlan } from './launch'
+import { isPartsFlowRole, isSafeFileName, unsafeMemoryNameWarning } from './launch/links'
+import type { LaunchUser, OverlayLink } from './launch/links'
 import {
   claudeJsonPathOf,
   displayPath,

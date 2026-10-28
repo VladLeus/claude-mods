@@ -197,7 +197,7 @@ import {
   INSTRUCTIONS_ENTRY_QUESTION,
   parseContentConsent,
 } from './instructions'
-import { isPartsFlowRole } from './launch'
+import { isPartsFlowRole } from './launch/links'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from './plan/text'
