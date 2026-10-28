@@ -15,7 +15,6 @@ import { compareText } from '../core/text'
 import { GSD_ADAPTER } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
-import { builtClaudeMdPath } from '../generate'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { scopeCardLines } from '../scope/card'
 import { compileScope } from '../scope/compile'
@@ -24,6 +23,7 @@ import { BIDI_OVERRIDE, emptySetupScan, FRAMEWORKS, leaks, templateRole } from '
 import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
+import { builtClaudeMdPath } from './launcher'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))

@@ -13,7 +13,6 @@ import type {
 } from '../../types'
 import { isObject } from '../core/json'
 import { compareText } from '../core/text'
-import { launcherText } from '../generate'
 import { buildPlan, isSafeOpPath } from '../plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
@@ -32,6 +31,7 @@ import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, ro
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { kickoffText } from './kickoff'
+import { launcherText } from './launcher'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))

@@ -36,10 +36,10 @@ import {
   WORKTREE_LIST_ARGV,
 } from '../epic'
 import type { ProbedGsdCandidate } from '../framework/gsd/identity'
-import { RUNTIME_KICKOFF_TEST } from '../generate'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import type { GenerateInput } from '../generate/files'
+import { RUNTIME_KICKOFF_TEST } from '../generate/launcher'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'

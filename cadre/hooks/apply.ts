@@ -42,8 +42,8 @@ import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
 import { resolveToolCommand } from './framework/gsd/tools'
 import type { GsdToolContext } from './framework/gsd/tools'
 import { ADAPTERS } from './framework/registry'
-import { builtClaudeMdPath } from './generate'
 import { partsBody } from './generate/docs'
+import { builtClaudeMdPath } from './generate/launcher'
 import { editWriteRules } from './launch'
 import {
   BESIDE_SUFFIX,

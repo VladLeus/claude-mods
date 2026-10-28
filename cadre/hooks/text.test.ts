@@ -145,13 +145,7 @@ import { TOOL_SCRIPTS } from './framework/gsd/tools'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './framework/none/adapter'
 import { ADAPTERS } from './framework/registry'
 import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './framework/superpowers/adapter'
-import {
-  GIT_TRACKING_UNKNOWN_WARNING,
-  launcherText,
-  PROBE_PROMPT,
-  RUNTIME_KICKOFF_TEST,
-  untrackedPartsWarning,
-} from './generate'
+import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate'
 import {
   cadreJsonText,
   indexMdText,
@@ -162,6 +156,7 @@ import {
   settingsText,
 } from './generate/docs'
 import { kickoffRoleLine, kickoffText } from './generate/kickoff'
+import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'

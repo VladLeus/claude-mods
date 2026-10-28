@@ -153,7 +153,6 @@ import { provenUserDir } from './framework/gsd/identity'
 import { resolveToolCommand } from './framework/gsd/tools'
 import { ADAPTERS, detectAll } from './framework/registry'
 import {
-  builtClaudeMdPath,
   GIT_TRACKING_UNKNOWN_WARNING,
   gitTrackedArgv,
   repoPartFiles,
@@ -162,6 +161,7 @@ import {
   untrackedPartsWarning,
 } from './generate'
 import { desiredFiles } from './generate/files'
+import { builtClaudeMdPath } from './generate/launcher'
 import { gitCommonDirOf } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
