@@ -18,7 +18,7 @@ import type {
 import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath, privateClaudeMdText } from './apply'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
-import { cadreJsonText, roleJsonText } from './generate'
+import { cadreJsonText, roleJsonText } from './generate/docs'
 import { desiredFiles } from './generate/files'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { repoGuard } from './guards/repo'

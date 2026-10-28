@@ -146,19 +146,21 @@ import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText } from './framework/
 import { ADAPTERS } from './framework/registry'
 import { SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './framework/superpowers/adapter'
 import {
-  cadreJsonText,
   GIT_TRACKING_UNKNOWN_WARNING,
-  indexMdText,
   launcherText,
-  mcpText,
   PROBE_PROMPT,
+  RUNTIME_KICKOFF_TEST,
+  untrackedPartsWarning,
+} from './generate'
+import {
+  cadreJsonText,
+  indexMdText,
+  mcpText,
   roleClaudeMdText,
   roleJsonText,
   roleMdText,
-  RUNTIME_KICKOFF_TEST,
   settingsText,
-  untrackedPartsWarning,
-} from './generate'
+} from './generate/docs'
 import { kickoffRoleLine, kickoffText } from './generate/kickoff'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'

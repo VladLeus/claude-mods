@@ -13,16 +13,7 @@ import type {
 } from '../../types'
 import { isObject } from '../core/json'
 import { compareText } from '../core/text'
-import {
-  cadreJsonText,
-  indexMdText,
-  launcherText,
-  mcpText,
-  roleClaudeMdText,
-  roleJsonText,
-  roleMdText,
-  settingsText,
-} from '../generate'
+import { launcherText } from '../generate'
 import { buildPlan, isSafeOpPath } from '../plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
@@ -37,6 +28,7 @@ import {
   skillRef,
   templateRole,
 } from '../testkit'
+import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { kickoffText } from './kickoff'

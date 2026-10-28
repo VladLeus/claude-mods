@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleSpec } from '../types'
-import { cadreJsonText, roleJsonText } from './generate'
+import { cadreJsonText, roleJsonText } from './generate/docs'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { autopilotLogPath, autopilotStatusPath } from './scan/autopilot'
 import type { RunState } from './scan/autopilot'

@@ -2,12 +2,12 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { CompiledScope, FrameworkId, RoleSpec, ScopeContext } from '../../types'
 import { stableJson } from '../core/json'
-import { mcpText, roleJsonText, settingsText } from '../generate'
 import { parseRoleJson } from '../roles/rolejson'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { isAutopilotDuration } from '../roles/validate'
 import { compileScope } from '../scope/compile'
 import { emptySetupScan, FRAMEWORKS, templateRole } from '../testkit'
+import { mcpText, roleJsonText, settingsText } from './docs'
 import { asciiLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
 
 /** The six template roles, as init builds them with nothing assigned. */

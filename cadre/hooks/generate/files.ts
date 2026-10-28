@@ -5,19 +5,9 @@
  */
 import type { CadreState, CompiledScope, DesiredFile, InstructionPart, LaunchStart, RoleSpec } from '../../types'
 import { compareText } from '../core/text'
-import {
-  builtClaudeMdPath,
-  cadreJsonText,
-  indexMdText,
-  launcherText,
-  mcpText,
-  roleClaudeMdText,
-  roleJsonText,
-  roleMdText,
-  rolePath,
-  settingsText,
-} from '../generate'
+import { builtClaudeMdPath, launcherText, rolePath } from '../generate'
 import { cadreStatePath, launcherPath, roleJsonPath } from '../paths'
+import { cadreJsonText, indexMdText, mcpText, roleClaudeMdText, roleJsonText, roleMdText, settingsText } from './docs'
 import { kickoffText } from './kickoff'
 
 /** What desiredFiles generates from. */
