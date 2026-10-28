@@ -338,16 +338,9 @@ import {
   RUNTIME_RENDERED,
   RUNTIME_STAMP_FILE,
 } from './paths'
-import {
-  gitignoreLines,
-  HUNK_FILES,
-  IGNORE_BEGIN,
-  IGNORE_END,
-  ignoreLines,
-  planSummary,
-  SECURITY_REPORTS_LINE,
-} from './plan'
+import { HUNK_FILES, planSummary } from './plan'
 import { MANIFEST_PATH } from './plan/classify'
+import { gitignoreLines, IGNORE_BEGIN, IGNORE_END, ignoreLines, SECURITY_REPORTS_LINE } from './plan/gitignore'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion, recommendationLines } from './recommend'
 import { TOP_OF_FILE } from './records'
