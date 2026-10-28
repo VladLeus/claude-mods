@@ -31,7 +31,7 @@ import type {
   SetupScan,
   SkillRef,
 } from '../types'
-import { applySteps, builtRoleFiles, hunkRuns, hunksAfterRuns, noHomeInstallText, setupAfterInstalls } from './apply'
+import { builtRoleFiles, hunkRuns, hunksAfterRuns, noHomeInstallText, setupAfterInstalls } from './apply'
 import type { HunkRun } from './apply'
 import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './apply/conflict'
 import type { ConflictChoice } from './apply/conflict'
@@ -50,6 +50,7 @@ import {
   writeSteps,
 } from './apply/run'
 import type { ApplyOutcome, OwedPrivate } from './apply/run'
+import { applySteps } from './apply/steps'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,

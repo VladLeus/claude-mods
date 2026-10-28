@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile, FileMode, InstructionPart, MemoryItem, Plan, PortRead } from '../../types'
-import { applySteps } from '../apply'
 import { stableJson } from '../core/json'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
@@ -17,6 +16,7 @@ import {
   privateClaudeMdText,
 } from './private'
 import type { ApplyStep, PrivateRole } from './private'
+import { applySteps } from './steps'
 
 const VERSION = '0.2.0'
 

@@ -7,7 +7,6 @@
  */
 import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
 import {
-  applySteps,
   hunkFailureLine,
   improveBuiltFiles,
   improverLine,
@@ -40,6 +39,7 @@ import {
   privateWriteProblem,
   writeProblem,
 } from './safety'
+import { applySteps } from './steps'
 
 /** The first applied line when an apply had no step to run: every planned file is already on the disk (D-105). */
 export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to date.'
