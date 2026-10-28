@@ -227,9 +227,9 @@ import {
   parseRoleJson,
   PROPOSE_SYSTEM,
   proposePrompt,
-  proposeRoles,
   rolesFromProposal,
 } from './roles'
+import { proposeRoles } from './roles/propose'
 import { standsFor } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
