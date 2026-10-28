@@ -33,13 +33,10 @@ import { CLAUDE_JSON_MAX_BYTES } from './scan/setup/mcp'
 import { compileScope } from './scope/compile'
 import {
   claudeTooOldReply,
-  clipboardRun,
-  COPIED_LINE,
   gatherLaunchUser,
   hookSourcesFor,
   isSupportedClaude,
   launcherChangedReply,
-  launcherCommand,
   launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
@@ -51,7 +48,6 @@ import {
   memoryIndexLinkWarning,
   MIN_CLAUDE_VERSION,
   NO_MEMORY_LINKS,
-  NOT_COPIED_LINE,
   openMemoryBlockWarning,
   parseClaudeVersion,
   privateFolderRefusal,
@@ -69,12 +65,10 @@ import {
   START_NO_GIT_DIR,
   START_NO_HOME,
   START_NO_MANIFEST,
-  TERMINAL_MAC_ONLY,
-  terminalPlan,
   unreadableMemoryIndexWarning,
   unreadableRecordWarning,
 } from './start'
-import type { LaunchUserRead, RenderInput, TerminalPlan } from './start'
+import type { LaunchUserRead, RenderInput } from './start'
 import { compileTeam, readTeam } from './team'
 import {
   BIDI_OVERRIDE,
@@ -93,6 +87,15 @@ import {
   templateRole,
 } from './testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemWorld } from './testkit'
+import {
+  clipboardRun,
+  COPIED_LINE,
+  launcherCommand,
+  NOT_COPIED_LINE,
+  TERMINAL_MAC_ONLY,
+  terminalPlan,
+} from './ui/terminal'
+import type { TerminalPlan } from './ui/terminal'
 
 /** The repo root of the fixtures, a realpath. */
 const ROOT = '/repo'
@@ -2201,15 +2204,6 @@ const TMUX_ARGV = [
   `/repo/.cadre/bin/be || ${TMUX_WAIT}`,
 ]
 
-/** The plan that opens BE in a new Terminal window. */
-const TERMINAL_PLAN: TerminalPlan = { kind: 'open', name: 'Terminal window', argv: TERMINAL_ARGV }
-
-/** The plan that opens BE in a new iTerm tab or window: the script does not say which it made. */
-const ITERM_PLAN: TerminalPlan = { kind: 'open', name: 'iTerm tab or window', argv: ITERM_ARGV }
-
-/** The plan that opens BE in a new tmux window. */
-const TMUX_PLAN: TerminalPlan = { kind: 'open', name: 'tmux window', argv: TMUX_ARGV }
-
 /** The plan that refuses with this text. */
 function refusal(text: string): TerminalPlan {
   return { kind: 'refuse', text }
@@ -2262,74 +2256,6 @@ function lastLines(start: OrderedStart): string[] {
 }
 
 describe('copy and terminal (D-109, D-110)', () => {
-  test('off macOS every --terminal refuses with TERMINAL_MAC_ONLY, whatever the variables say (D-132)', () => {
-    const choices: TerminalInput['choice'][] = ['auto', 'terminal', 'iterm', 'tmux', 'invalid']
-
-    expect(TERMINAL_MAC_ONLY).toBe('--terminal works on macOS only: run the command above in a terminal yourself.')
-    for (const choice of choices) {
-      const plan = planFor(choice, { isMacOs: false, tmux: TMUX, termProgram: 'Apple_Terminal' })
-
-      expect([choice, plan]).toEqual([choice, refusal(TERMINAL_MAC_ONLY)])
-    }
-  })
-
-  test('auto opens a tmux window when TMUX is set, over any TERM_PROGRAM; it waits for Enter on a failure', () => {
-    expect(planFor('auto', { tmux: TMUX })).toEqual(TMUX_PLAN)
-    expect(planFor('auto', { tmux: TMUX, termProgram: 'Apple_Terminal' })).toEqual(TMUX_PLAN)
-    expect(planFor('auto', { tmux: TMUX, termProgram: 'iTerm.app' })).toEqual(TMUX_PLAN)
-  })
-
-  test('auto opens a Terminal window for Apple_Terminal and an iTerm tab for iTerm.app, through osascript', () => {
-    expect(planFor('auto', { termProgram: 'Apple_Terminal' })).toEqual(TERMINAL_PLAN)
-    expect(planFor('auto', { termProgram: 'iTerm.app' })).toEqual(ITERM_PLAN)
-  })
-
-  test('auto refuses any other TERM_PROGRAM, shown cleaned, or none; a forced value skips detection', () => {
-    expect(planFor('auto', { termProgram: 'herdr' })).toEqual(refusal(unknownTerminal('herdr')))
-    expect(planFor('auto')).toEqual(refusal(unknownTerminal('unset')))
-    expect(planFor('auto', { termProgram: `her${BIDI_OVERRIDE}dr` })).toEqual(refusal(unknownTerminal('herdr')))
-    expect(planFor('terminal', { termProgram: 'herdr' })).toEqual(TERMINAL_PLAN)
-    expect(planFor('iterm', { termProgram: 'Apple_Terminal' })).toEqual(ITERM_PLAN)
-    expect(planFor('tmux', { termProgram: 'Apple_Terminal' })).toEqual(TMUX_PLAN)
-  })
-
-  test('invalid refuses on macOS, whatever the variables say', () => {
-    expect(planFor('invalid')).toEqual(refusal(INVALID_TERMINAL))
-    expect(planFor('invalid', { tmux: TMUX, termProgram: 'Apple_Terminal' })).toEqual(refusal(INVALID_TERMINAL))
-  })
-
-  test('a root with a space, a quote or a non-ASCII letter: one shell word, only in the last osascript item', () => {
-    const root = `/Users/a b/caf${String.fromCharCode(233)}`
-    const command = launcherCommand(root, 'be')
-    const shellText = `cd -- '${root}' && '${root}/.cadre/bin/be'`
-    const viaOsascript: TerminalInput['choice'][] = ['terminal', 'iterm']
-    const quoted = "/w/my repo's"
-    const quotedCommand = launcherCommand(quoted, 'be')
-
-    expect(command).toBe(`'${root}/.cadre/bin/be'`)
-    for (const choice of viaOsascript) {
-      const argv = argvOf(planFor(choice, { root, command }))
-
-      expect(argv.at(-1)).toBe(shellText)
-      expect(argv.filter(item => item.includes(root))).toEqual([shellText])
-    }
-    expect(argvOf(planFor('tmux', { root, command }))).toEqual([
-      'tmux',
-      'new-window',
-      '-n',
-      'cadre-be',
-      '-c',
-      root,
-      '/bin/sh',
-      '-c',
-      `${command} || ${TMUX_WAIT}`,
-    ])
-    expect(quotedCommand).toBe("'/w/my repo'\\''s/.cadre/bin/be'")
-    expect(argvOf(planFor('terminal', { root: quoted, command: quotedCommand })).at(-1)).toBe(
-      "cd -- '/w/my repo'\\''s' && '/w/my repo'\\''s/.cadre/bin/be'",
-    )
-  })
-
   test('with --terminal the open runs after the copy, uname and the variables; its line ends the reply', async () => {
     const start = await startOrdered('terminal', [DARWIN])
 

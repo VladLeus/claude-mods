@@ -100,20 +100,17 @@ import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import {
   claudeTooOldReply,
-  COPIED_LINE,
   launcherChangedReply,
-  launcherCommand,
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   runStart,
   START_NO_GIT_DIR,
-  TERMINAL_MAC_ONLY,
-  terminalPlan,
   worktreeClaudeMd,
 } from './start'
 import { readTeam, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'
+import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from './ui/terminal'
 
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
 const WORKTREE = '/repo/.claude/worktrees/proj-1-add-retry'

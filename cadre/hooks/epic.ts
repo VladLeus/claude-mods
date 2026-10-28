@@ -32,22 +32,20 @@ import { hasRunFailed } from './host/steps'
 import { foldersAbove, launcherPath } from './paths'
 import { standIn, standsFor } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
-import {
-  claudeRefusal,
-  clipboardRun,
-  COPIED_LINE,
-  launcherCommand,
-  launcherRead,
-  NOT_COPIED_LINE,
-  renderRole,
-  TERMINAL_OPEN_TIMEOUT_MS,
-  terminalPlan,
-  UNAME_TIMEOUT_MS,
-} from './start'
-import type { TerminalPlan } from './start'
+import { claudeRefusal, launcherRead, renderRole } from './start'
 import { roleRunState } from './status'
 import { compileTeam, readTeam, regenBadRole } from './team'
 import { askChoice, quotedLabels } from './ui/ask'
+import {
+  clipboardRun,
+  COPIED_LINE,
+  launcherCommand,
+  NOT_COPIED_LINE,
+  TERMINAL_OPEN_TIMEOUT_MS,
+  terminalPlan,
+  UNAME_TIMEOUT_MS,
+} from './ui/terminal'
+import type { TerminalPlan } from './ui/terminal'
 
 /** The folder below the main checkout's root that holds every epic worktree (D-146), as `claude --worktree` uses. */
 export const WORKTREES_DIR = '.claude/worktrees'

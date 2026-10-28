@@ -378,14 +378,12 @@ import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { MEMORY_PATTERN, SECRET_READ_DENY } from './scope/lint'
 import {
-  COPIED_LINE,
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   memoryBlockText,
   memoryChangedWarning,
   memoryGoneWarning,
   memoryIndexLinkWarning,
-  NOT_COPIED_LINE,
   openMemoryBlockWarning,
   privateFolderRefusal,
   privateLinkRefusal,
@@ -396,7 +394,6 @@ import {
   START_NO_GIT_DIR,
   START_NO_HOME,
   START_NO_MANIFEST,
-  TERMINAL_MAC_ONLY,
   unreadableMemoryIndexWarning,
   unreadableRecordWarning,
 } from './start'
@@ -424,6 +421,7 @@ import { instructionLines, instructionReviewLines } from './ui/blocks/instructio
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines, truncatedLine } from './ui/blocks/scan'
 import { diffLines, lineDiff } from './ui/diff'
+import { COPIED_LINE, NOT_COPIED_LINE, TERMINAL_MAC_ONLY } from './ui/terminal'
 
 /** What user text may never hold: the name of an internal planning phase, such as `Phase 3.1` (G-02-3b). */
 const PHASE_NAME = /Phase \d/
