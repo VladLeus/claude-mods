@@ -241,6 +241,8 @@ import { undecidedFacts } from './scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from './scan/walk'
 import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, pluginName } from './scope/lint'
+import { checkedCompletion } from './suggest/checked'
+import type { Checked } from './suggest/checked'
 import {
   attendedByConfig,
   compileAll,
@@ -633,9 +635,6 @@ export function adjustContextLine(roles: readonly RoleSpec[]): string {
   return `Roles now: ${idsOf(roles)}.`
 }
 
-/** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
-export const MAX_PROPOSE_ATTEMPTS = 3
-
 /** The most times the roles question is asked; the round after them cancels, so no roles are taken unconfirmed (A1). */
 export const MAX_ROLE_ROUNDS = 10
 
@@ -664,9 +663,6 @@ const ROLE_LABEL_WIDTH = 24
 
 /** Code points of the model's errors the fallback line shows, so a long list never cuts off the line's end. */
 const MAX_FALLBACK_ERROR_CHARS = 120
-
-/** The error the next prompt and the fallback line give when the model answered with no text. */
-const NO_TEXT_ERROR = 'the model gave no text'
 
 /** The sentence that ends the fallback line. */
 const FALLBACK_NOTE = 'Using the template proposal; you can still adjust it.'
@@ -740,34 +736,6 @@ function fallbackMessage(errors: readonly string[]): string {
   const reason = clean(errors.join('; '), MAX_FALLBACK_ERROR_CHARS)
 
   return `Could not use the described structure: ${reason}. ${FALLBACK_NOTE}`
-}
-
-/** A model reply as a reply check of checkedCompletion takes it: the value it gives, or every error found. */
-type Checked<T> =
-  | { readonly kind: 'ok'; readonly value: T }
-  | { readonly kind: 'invalid'; readonly errors: readonly string[] }
-
-/**
- * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each reply goes through
- * `parse`, and a reply it cannot take, or no text at all (NO_TEXT_ERROR), is sent back through `prompt` with its exact
- * errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
- */
-async function checkedCompletion<T>(
-  io: InitIo,
-  system: string,
-  prompt: (errors: readonly string[]) => string,
-  parse: (reply: string) => Checked<T>,
-  fallback: (errors: readonly string[]) => T,
-): Promise<T> {
-  let errors: readonly string[] = []
-  for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    const reply = await io.complete(prompt(errors), system)
-    const checked = reply === null ? null : parse(reply)
-    if (checked?.kind === 'ok') return checked.value
-    errors = checked === null ? [NO_TEXT_ERROR] : checked.errors
-  }
-
-  return fallback(errors)
 }
 
 /**

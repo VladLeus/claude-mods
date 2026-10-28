@@ -156,7 +156,6 @@ import {
   LINKED_MEMORIES_ROW,
   MANIFEST_SKIPPED_NOTE,
   MAX_ADJUST_ROUNDS,
-  MAX_PROPOSE_ATTEMPTS,
   MAX_REVIEW_ROUNDS,
   MAX_ROLE_ROUNDS,
   mcpContextLine,
@@ -263,6 +262,7 @@ import { scanSetup } from './scan/setup/setup'
 import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { parseCadreState } from './state/cadre-files'
+import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
 import {
   MCP_ROUTE,
   REGEN_BAD_STATE,
