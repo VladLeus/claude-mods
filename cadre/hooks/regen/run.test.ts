@@ -29,20 +29,7 @@ import { desiredFiles } from '../generate/files'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { HOME_ROOT_REPLY } from '../guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from '../guards/repo'
-import {
-  memoryDroppedLine,
-  notHandedOutWarning,
-  partDroppedLine,
-  REGEN_DISMISSED_REASON,
-  REGEN_ITEM_OPTIONS,
-  regenCancelledReply,
-  regenHeader,
-  regenMemoryContextLine,
-  regenMemoryQuestion,
-  regenPartContextLine,
-  regenPartQuestion,
-  runInit,
-} from '../init'
+import { runInit } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
@@ -77,7 +64,19 @@ import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import type { PartRecord } from './part-changes'
 import { improverNotOfferedWarning } from './plan'
-import { runRegen } from './run'
+import {
+  memoryDroppedLine,
+  notHandedOutWarning,
+  partDroppedLine,
+  REGEN_DISMISSED_REASON,
+  REGEN_ITEM_OPTIONS,
+  regenHeader,
+  regenMemoryContextLine,
+  regenMemoryQuestion,
+  regenPartContextLine,
+  regenPartQuestion,
+} from './review'
+import { regenCancelledReply, runRegen } from './run'
 import type { RegenOptions } from './run'
 import {
   dryRunPrivateWarning,
