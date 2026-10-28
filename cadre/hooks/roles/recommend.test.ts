@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { FrameworkId, Recommendation, RepoScan, RoleSpec, ScanFinding, TemplateRoleId } from '../../types'
-import { pluginInstallArgv } from '../apply'
+import { pluginInstallArgv } from '../apply/installs'
 import { scanRepo } from '../scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from '../testkit'
 import { recommendationLines } from '../ui/blocks/recommendations'

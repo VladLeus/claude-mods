@@ -6,17 +6,7 @@
  * regen run their writes here.
  */
 import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
-import {
-  improveBuiltFiles,
-  improverLine,
-  installedLine,
-  installFailureText,
-  MARKETPLACE_ADD_ARGV,
-  pluginInstallArgv,
-  PYTHON_VERSION_ARGV,
-  pythonProblem,
-  restoreSteps,
-} from '../apply'
+import { improveBuiltFiles, improverLine, restoreSteps } from '../apply'
 import type { BuiltFile, ImproverTally } from '../apply'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
@@ -27,6 +17,14 @@ import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
+import {
+  installedLine,
+  installFailureText,
+  MARKETPLACE_ADD_ARGV,
+  pluginInstallArgv,
+  PYTHON_VERSION_ARGV,
+  pythonProblem,
+} from './installs'
 import { instructionsRecordPath, instructionsRecordText, privateClaudeMdPath } from './private'
 import type { ApplyInput, ApplyStep, PrivateFile, PrivateRole } from './private'
 import {

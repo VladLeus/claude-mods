@@ -31,19 +31,21 @@ import {
   improverNoChangeNote,
   improverQuestion,
   improverUnreadableNote,
-  installedLine,
-  installFailureText,
-  MARKETPLACE_ADD_ARGV,
-  noHomeInstallText,
   otherChangesWarning,
   otherFilesLines,
-  PYTHON_VERSION_ARGV,
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
 } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
 import { hunkFailureLine } from './apply/hunks'
 import type { HunkRun } from './apply/hunks'
+import {
+  installedLine,
+  installFailureText,
+  MARKETPLACE_ADD_ARGV,
+  noHomeInstallText,
+  PYTHON_VERSION_ARGV,
+} from './apply/installs'
 import { instructionsRecordText, privateClaudeMdText } from './apply/private'
 import {
   APPLIED_NONE_NOTE,
