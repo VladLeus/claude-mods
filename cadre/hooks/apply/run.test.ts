@@ -2,11 +2,12 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile } from '../../types'
 import { planWithManifest } from '../plan/plan'
-import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld } from '../testkit'
+import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, USER_DIR_LISTED } from '../testkit'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
-import type { ApplyInput } from './private'
+import type { ApplyInput, ApplyStep } from './private'
 import { writeImproved, writeSteps, writeWithImprover } from './run'
+import type { ApplyOutcome } from './run'
 import { applySteps } from './steps'
 
 /** BE's built CLAUDE.md, repo-relative, as the plan and the reply name it. */
@@ -75,5 +76,68 @@ describe('writeWithImprover', () => {
     expect(helper.calls.filter(call => call.argv[0] === 'claude').map(call => call.argv)).toEqual([
       improverArgv(BE_CLAUDE_MD_PATH),
     ])
+  })
+})
+
+/** BE's role memory folder in the fixture repo (D-140 q2-a): `<userDir>/cadre/<repo>-<hash8>/be`. */
+const BE_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d/be'
+
+/** BE's private text file, at its absolute path in its role memory folder. */
+const BE_TEXT_FILE = `${BE_DIR}/instructions/CLAUDE.md`
+
+/** BE's private text file as a reply shows it, from the home folder. */
+const BE_TEXT_SHOWN = '~/.claude/cadre/repo-1a2b3c4d/be/instructions/CLAUDE.md'
+
+/** A repo file whose repo-relative path is the very text a reply shows for BE's private text file (D-242). */
+const LOOKALIKE_PATH = `/repo/${BE_TEXT_SHOWN}`
+
+/** The writes of the D-242 specs: the lookalike repo file, then BE's private text file in its own private step. */
+const COLLIDING_STEPS: readonly ApplyStep[] = [
+  { kind: 'write', path: BE_TEXT_SHOWN, text: 'repo\n' },
+  { kind: 'private', path: BE_DIR, files: [{ path: BE_TEXT_FILE, text: 'private\n' }] },
+]
+
+/** The lookalike repo file as the improver pass would get it. */
+const LOOKALIKE_FILE: BuiltFile = {
+  path: LOOKALIKE_PATH,
+  repoPath: BE_TEXT_SHOWN,
+  text: 'repo\n',
+  watched: [],
+  runFlags: [],
+}
+
+/** BE's private text file as the improver pass would get it: outside the repo, so not repo-relative. */
+const BE_PRIVATE_FILE: BuiltFile = { path: BE_TEXT_FILE, repoPath: null, text: 'private\n', watched: [], runFlags: [] }
+
+/** Runs writeImproved over COLLIDING_STEPS, offering `offered`, with the host failing the writes of `writeFails`. */
+async function collidingRun(
+  offered: readonly BuiltFile[],
+  writeFails: readonly string[] = [],
+): Promise<ApplyOutcome> {
+  const io = memIo(memWorld({ dirs: USER_DIR_LISTED }), {}).io
+  const host = memHost(hostWorld({ writeFails }))
+  const args = { input: await fixtureInput(), steps: COLLIDING_STEPS, offered, allowed: new Set([BE_TEXT_FILE]) }
+
+  return writeImproved(io, host.io, { locations: DEFAULT_LOCATIONS, ...args })
+}
+
+describe('written set by absolute path and kind (D-242)', () => {
+  test('a written private file is offered by path and kind, and counts beside a repo file shown the same', async () => {
+    const outcome = await collidingRun([BE_PRIVATE_FILE])
+
+    expect(outcome.improved).toEqual({ changed: 0, total: 1 })
+    expect(outcome.written.filter(path => path === BE_TEXT_SHOWN)).toEqual([BE_TEXT_SHOWN, BE_TEXT_SHOWN])
+  })
+
+  test('a repo file whose write failed is not offered when a private file shown the same was written', async () => {
+    const outcome = await collidingRun([LOOKALIKE_FILE], [LOOKALIKE_PATH])
+
+    expect(outcome.improved).toBeNull()
+  })
+
+  test('a private file whose write failed is not offered when a repo file shown the same was written', async () => {
+    const outcome = await collidingRun([BE_PRIVATE_FILE], [BE_TEXT_FILE])
+
+    expect(outcome.improved).toBeNull()
   })
 })
