@@ -102,7 +102,6 @@ import {
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
   describeStep,
-  DRY_RUN_NOTE,
   DURATION_DISMISSED_REASON,
   DURATION_OPTIONS,
   DURATION_QUESTION,
@@ -220,7 +219,7 @@ import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
-import { renderPlan } from './plan/text'
+import { DRY_RUN_NOTE, renderPlan } from './plan/text'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,

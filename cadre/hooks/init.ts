@@ -131,7 +131,7 @@ import {
   isSafeRelativePath,
   launcherPath,
   MARKDOWN_EXTENSION,
-  memoryFolderOf,
+  memoryFoldersOf,
   pathFromDisplay,
   relativeTo,
   roleJsonPath,
@@ -140,9 +140,9 @@ import {
 } from './paths'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { planReadPaths, planWithManifest } from './plan/plan'
-import { planSummary, renderPlan } from './plan/text'
+import { DRY_RUN_NOTE, planSummary, renderPlan } from './plan/text'
 import { hunkQuestion, parseHunkAnswer } from './recommend'
-import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
+import { partRecord, TOP_OF_FILE, withPartRecords } from './records'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'
@@ -169,7 +169,7 @@ import {
   repoInstructionNames,
 } from './scan/instructions/read'
 import type { InstructionSources } from './scan/instructions/read'
-import { readRepoFile } from './scan/port-read'
+import { readPaths, readRepoFile } from './scan/port-read'
 import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN, pluginName } from './scope/lint'
 import { checkedCompletion } from './suggest/checked'
@@ -235,9 +235,6 @@ export const INIT_CANCELLED = 'init cancelled, nothing written'
 export function cancelledReply(reason: string): string {
   return `${INIT_CANCELLED}: ${reportText(reason)}`
 }
-
-/** The last line of the dry-run reply (PLAN-02). */
-export const DRY_RUN_NOTE = 'Dry run: nothing was written.'
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
 export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees"
@@ -1691,18 +1688,6 @@ async function noPartRead(
 }
 
 /**
- * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
- * project folder under `<user folder>/projects` (memoryFolderOf), for the root as resolved, then as given, once each;
- * none with no user folder.
- */
-function memoryFoldersOf(locations: InitLocations): string[] {
-  const userDir = userDirOf(locations)
-  if (userDir === null) return []
-
-  return Array.from(new Set([locations.root, locations.givenRoot].map(root => memoryFolderOf(userDir, root))))
-}
-
-/**
  * The parts flow after a yes (G-02-1f): it reads the instruction files and the memories (readInstructionFiles: the
  * setup scan's chain, the rule files and AGENTS.md init found by name, and the memory folders of this repo); a read
  * with no part and no memory goes to the whole-file questions (noPartRead); else the model groups the parts into
@@ -2063,14 +2048,6 @@ export type PlanResult = {
   readonly gitignore: string | null
 }
 
-/** Each repo-relative path read through readRepoFile, one at a time, keyed by the path. */
-async function readPaths(io: InitIo, root: string, paths: readonly string[]): Promise<ReadonlyMap<string, PortRead>> {
-  const disk = new Map<string, PortRead>()
-  for (const path of paths) disk.set(path, await readRepoFile(io, root, path, MAX_READ_BYTES))
-
-  return disk
-}
-
 /**
  * The parts each role was given that were read from the repo, by role id (G-02-1f Storage split): for a parts
  * hand-out, every part of every topic the role was given, with source `repo`, in read order; a role given only global
@@ -2090,28 +2067,6 @@ function repoPartsOf(handout: InstructionHandout): ReadonlyMap<string, readonly 
       return [roleId, scan.parts.filter(part => part.source === 'repo' && partIds.has(part.id))]
     }),
   )
-}
-
-/**
- * A role with these repo part records in place of any it had (G-02-1f Regen, AUTO-PICK #19 Q1): the parts it was
- * given, and the not-given list only when it holds one. A record whose file role.json may not name
- * (isRecordedPartFile) is left out, so init never writes a role.json that parseRoleJson refuses.
- */
-function withPartRecords(
-  role: RoleSpec,
-  given: readonly InstructionPartRecord[],
-  notGiven: readonly InstructionPartRecord[],
-): RoleSpec {
-  // Both old lists are taken off, so the role holds exactly the lists given here.
-  const { instructionParts: _given, instructionPartsNotGiven: _notGiven, ...rest } = role
-  const recordable = (records: readonly InstructionPartRecord[]): InstructionPartRecord[] =>
-    records.filter(record => isRecordedPartFile(record.file)).map(partRecord)
-  const instructionParts = recordable(given)
-  const instructionPartsNotGiven = recordable(notGiven)
-
-  return instructionPartsNotGiven.length === 0
-    ? { ...rest, instructionParts }
-    : { ...rest, instructionParts, instructionPartsNotGiven }
 }
 
 /**

@@ -4,7 +4,7 @@
  * and the name of the text above a file's first heading. It imports only core and the types,
  * so those modules can all import it with no cycle, and none of them reaches into another for a record.
  */
-import type { InstructionPart, InstructionPartRecord } from '../types'
+import type { InstructionPart, InstructionPartRecord, RoleSpec } from '../types'
 import { allOrNull, isObject } from './core/json'
 import { MAX_HEADING_CHARS, SHA256_HEX } from './core/names'
 import { isChangedByClean } from './core/text'
@@ -81,3 +81,25 @@ export function recordedParts(value: unknown): InstructionPartRecord[] | null {
  * markers name it the same way (generate.ts).
  */
 export const TOP_OF_FILE = '(top of file)'
+
+/**
+ * A role with these repo part records in place of any it had (G-02-1f Regen, AUTO-PICK #19 Q1): the parts it was
+ * given, and the not-given list only when it holds one. A record whose file role.json may not name
+ * (isRecordedPartFile) is left out, so init never writes a role.json that parseRoleJson refuses.
+ */
+export function withPartRecords(
+  role: RoleSpec,
+  given: readonly InstructionPartRecord[],
+  notGiven: readonly InstructionPartRecord[],
+): RoleSpec {
+  // Both old lists are taken off, so the role holds exactly the lists given here.
+  const { instructionParts: _given, instructionPartsNotGiven: _notGiven, ...rest } = role
+  const recordable = (records: readonly InstructionPartRecord[]): InstructionPartRecord[] =>
+    records.filter(record => isRecordedPartFile(record.file)).map(partRecord)
+  const instructionParts = recordable(given)
+  const instructionPartsNotGiven = recordable(notGiven)
+
+  return instructionPartsNotGiven.length === 0
+    ? { ...rest, instructionParts }
+    : { ...rest, instructionParts, instructionPartsNotGiven }
+}

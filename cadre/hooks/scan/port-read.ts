@@ -8,6 +8,7 @@ import type { InitIo, PortEntry, PortRead, PortStat } from '../../types'
 import { isObject } from '../core/json'
 import { utf8Bytes } from '../core/text'
 import { isFileInsideRoot, trimSlash } from '../paths'
+import { MAX_READ_BYTES } from './facts/normalize'
 
 /**
  * Whether a path the port could not stat or list is missing (`absent`) or there but out of reach (`unknown`). The
@@ -93,4 +94,16 @@ export function pluginVersionOf(text: string): string | null {
   if (typeof version !== 'string' || !PLUGIN_VERSION.test(version)) return null
 
   return version
+}
+
+/** Each repo-relative path read through readRepoFile, one at a time, keyed by the path. */
+export async function readPaths(
+  io: InitIo,
+  root: string,
+  paths: readonly string[],
+): Promise<ReadonlyMap<string, PortRead>> {
+  const disk = new Map<string, PortRead>()
+  for (const path of paths) disk.set(path, await readRepoFile(io, root, path, MAX_READ_BYTES))
+
+  return disk
 }

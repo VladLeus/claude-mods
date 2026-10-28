@@ -187,7 +187,6 @@ import {
   DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
-  DRY_RUN_NOTE,
   dryRunPrivateWarning,
   DURATION_DISMISSED_REASON,
   DURATION_OPTIONS,
@@ -320,7 +319,7 @@ import {
 import { MANIFEST_PATH } from './plan/classify'
 import { gitignoreLines, IGNORE_BEGIN, IGNORE_END, ignoreLines, SECURITY_REPORTS_LINE } from './plan/gitignore'
 import { HUNK_FILES } from './plan/plan'
-import { planSummary } from './plan/text'
+import { DRY_RUN_NOTE, planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe'
 import { hunkQuestion } from './recommend'
 import { TOP_OF_FILE } from './records'

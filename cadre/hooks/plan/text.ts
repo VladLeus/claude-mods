@@ -72,3 +72,6 @@ export function renderPlan(plan: Plan): string[] {
 
   return ['File plan:', ...rows, ...warnings, planSummary(plan)]
 }
+
+/** The last line of the dry-run reply (PLAN-02). */
+export const DRY_RUN_NOTE = 'Dry run: nothing was written.'

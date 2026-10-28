@@ -4,7 +4,7 @@
  * than one area uses. It imports only core and the types, so every area above it can import it with no cycle, and no
  * area reaches into another for a path.
  */
-import type { EntryKind, InitIo, PortEntry, RawFacts } from '../types'
+import type { EntryKind, InitIo, InitLocations, PortEntry, RawFacts } from '../types'
 import { isObject } from './core/json'
 import { clean } from './core/text'
 
@@ -472,4 +472,16 @@ export function foldersAbove(path: string): string[] {
   const segments = path.split('/')
 
   return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
+}
+
+/**
+ * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
+ * project folder under `<user folder>/projects` (memoryFolderOf), for the root as resolved, then as given, once each;
+ * none with no user folder.
+ */
+export function memoryFoldersOf(locations: InitLocations): string[] {
+  const userDir = userDirOf(locations)
+  if (userDir === null) return []
+
+  return Array.from(new Set([locations.root, locations.givenRoot].map(root => memoryFolderOf(userDir, root))))
 }
