@@ -120,10 +120,8 @@ import {
   instructionsEntry,
   memoryItems,
   parseContentConsent,
-  partChanges,
   topicItems,
 } from './instructions'
-import type { MemoryRecord, PartChanges, RegenItems } from './instructions'
 import { isPartsFlowRole, isSafeFileName } from './launch'
 import {
   GITIGNORE_FILE,
@@ -143,6 +141,8 @@ import { planReadPaths, planWithManifest } from './plan/plan'
 import { DRY_RUN_NOTE, planSummary, renderPlan } from './plan/text'
 import { hunkQuestion, parseHunkAnswer } from './recommend'
 import { partRecord, TOP_OF_FILE, withPartRecords } from './records'
+import { partChanges } from './regen/part-changes'
+import type { MemoryRecord, PartChanges, RegenItems } from './regen/part-changes'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'

@@ -50,7 +50,6 @@ import {
   unusableRecordWarning,
 } from '../init'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from '../instructions'
-import type { PartRecord } from '../instructions'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { parseRoleJson } from '../roles/rolejson'
@@ -82,6 +81,7 @@ import {
 } from '../testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
+import type { PartRecord } from './part-changes'
 import { runRegen } from './run'
 import type { RegenOptions } from './run'
 

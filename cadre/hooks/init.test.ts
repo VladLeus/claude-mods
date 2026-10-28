@@ -197,11 +197,11 @@ import {
   INSTRUCTIONS_ENTRY_QUESTION,
   parseContentConsent,
 } from './instructions'
-import type { PartRecord } from './instructions'
 import { isPartsFlowRole } from './launch'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from './plan/text'
+import type { PartRecord } from './regen/part-changes'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
 import {
