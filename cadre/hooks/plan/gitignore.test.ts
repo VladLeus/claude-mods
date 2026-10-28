@@ -16,7 +16,7 @@ import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_RENDERED, RUNTIME_STAMP_FILE } from '../paths'
-import { buildPlan, renderPlan } from '../plan'
+import { buildPlan } from '../plan'
 import type { PlanInput } from '../plan'
 import { BIDI_OVERRIDE } from '../testkit'
 import { MANIFEST_PATH } from './classify'
@@ -29,6 +29,7 @@ import {
   mergeIgnoreBlock,
   SECURITY_REPORTS_LINE,
 } from './gitignore'
+import { renderPlan } from './text'
 
 const VERSION = '0.2.0'
 const ROLE = '.cadre/be/role.json'
