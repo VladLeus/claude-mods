@@ -371,7 +371,7 @@ import {
   lineDiff,
   STATUS_LABEL,
 } from './render'
-import { CUSTOM_PURPOSE, EFFORTS, MODEL_ALIASES, PROPOSE_SYSTEM } from './roles'
+import { CUSTOM_PURPOSE, PROPOSE_SYSTEM } from './roles'
 import { proposeRoles } from './roles/propose'
 import {
   chainLines,
@@ -386,6 +386,7 @@ import {
   NO_TESTS_REASON,
   ROLE_TEMPLATE,
 } from './roles/template'
+import { EFFORTS, MODEL_ALIASES } from './roles/validate'
 import { SOURCE_ORDER } from './scan/facts/settings'
 import type { HistoryScan } from './scan/history'
 import {

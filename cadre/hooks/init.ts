@@ -219,9 +219,6 @@ import { isRecordedPartFile, partRecord, TOP_OF_FILE } from './records'
 import { choiceLine } from './render'
 import {
   applyAdjust,
-  EFFORTS,
-  isAutopilotDuration,
-  MODEL_ALIASES,
   parseAdjust,
   parseProposal,
   parseRoleJson,
@@ -231,6 +228,7 @@ import {
 } from './roles'
 import { proposeRoles } from './roles/propose'
 import { standsFor } from './roles/template'
+import { EFFORTS, isAutopilotDuration, MODEL_ALIASES } from './roles/validate'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'

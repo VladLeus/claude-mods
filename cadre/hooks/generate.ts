@@ -21,7 +21,7 @@ import {
   RUNTIME_STAMP_FILE,
 } from './paths'
 import { TOP_OF_FILE } from './records'
-import { MAX_PURPOSE_CHARS } from './roles'
+import { MAX_PURPOSE_CHARS } from './roles/validate'
 import { scopeCardLines } from './scope'
 
 /**
