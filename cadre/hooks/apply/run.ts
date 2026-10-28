@@ -6,8 +6,6 @@
  * regen run their writes here.
  */
 import type { HostIo, InitIo, InitLocations, PortEntry, RoleSpec, WriteStat } from '../../types'
-import { improveBuiltFiles, improverLine, restoreSteps } from '../apply'
-import type { BuiltFile, ImproverTally } from '../apply'
 import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
@@ -17,6 +15,8 @@ import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
+import { improveBuiltFiles, improverLine, restoreSteps } from './improver'
+import type { BuiltFile, ImproverTally } from './improver'
 import {
   installedLine,
   installFailureText,

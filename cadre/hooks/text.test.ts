@@ -18,6 +18,9 @@ import type {
   ScopeContext,
   SkillRef,
 } from '../types'
+import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+import { hunkFailureLine } from './apply/hunks'
+import type { HunkRun } from './apply/hunks'
 import {
   changedBeforeRunWarning,
   IMPROVER_OPTIONS,
@@ -35,10 +38,7 @@ import {
   otherFilesLines,
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
-} from './apply'
-import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
-import { hunkFailureLine } from './apply/hunks'
-import type { HunkRun } from './apply/hunks'
+} from './apply/improver'
 import {
   installedLine,
   installFailureText,

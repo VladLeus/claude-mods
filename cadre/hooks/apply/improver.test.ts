@@ -10,7 +10,18 @@ import type {
   Manifest,
   PortEntry,
   PortRead,
-} from '../types'
+} from '../../types'
+import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
+import { MANIFEST_PATH } from '../plan/classify'
+import { planWithManifest } from '../plan/plan'
+import type { PlanInput } from '../plan/plan'
+import { parseManifest } from '../state/cadre-files'
+import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld } from '../testkit'
+import type { HostRunRule, MemHost, MemRun } from '../testkit'
+import { withContext } from '../ui/ask'
+import { lineDiff } from '../ui/diff'
+import type { ConflictChoice } from './conflict'
 import {
   builtRoleFiles,
   changedBeforeRunWarning,
@@ -33,22 +44,11 @@ import {
   restoreSteps,
   uncheckedFilesWarning,
   UNGUARDED_RUN_REASON,
-} from './apply'
-import type { BuiltFile, BuiltFilter } from './apply'
-import type { ConflictChoice } from './apply/conflict'
-import { privateClaudeMdText } from './apply/private'
-import type { ApplyStep } from './apply/private'
-import { applySteps } from './apply/steps'
-import { sha256Hex } from './core/hash'
-import { stableJson } from './core/json'
-import { MANIFEST_PATH } from './plan/classify'
-import { planWithManifest } from './plan/plan'
-import type { PlanInput } from './plan/plan'
-import { parseManifest } from './state/cadre-files'
-import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld } from './testkit'
-import type { HostRunRule, MemHost, MemRun } from './testkit'
-import { withContext } from './ui/ask'
-import { lineDiff } from './ui/diff'
+} from './improver'
+import type { BuiltFile, BuiltFilter } from './improver'
+import { privateClaudeMdText } from './private'
+import type { ApplyStep } from './private'
+import { applySteps } from './steps'
 
 const VERSION = '0.2.0'
 

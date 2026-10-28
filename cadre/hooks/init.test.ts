@@ -38,10 +38,16 @@ import type {
   TemplateRoleId,
   UnsupportedId,
 } from '../types'
-import { improverArgv, improverGuardFlags, improverLine, improverNoChangeNote, otherChangesWarning } from './apply'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
 import { hunkFailureLine } from './apply/hunks'
 import type { HunkRun } from './apply/hunks'
+import {
+  improverArgv,
+  improverGuardFlags,
+  improverLine,
+  improverNoChangeNote,
+  otherChangesWarning,
+} from './apply/improver'
 import { installedLine, installFailureText, MARKETPLACE_ADD_ARGV } from './apply/installs'
 import {
   instructionsRecordPath,

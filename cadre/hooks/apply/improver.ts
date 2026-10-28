@@ -1,31 +1,25 @@
 /**
- * Apply plans the writes of a plan the person confirmed (D-105): the files the plan creates or changes in plan order,
- * a chmod right after each launcher, the root `.gitignore` block, then the private files of each role in its role
- * memory folder outside the repo (G-02-1f, D-140 q2-a), and the manifest last, so an apply that stops early never
- * leaves a manifest that claims a file it did not write (LNCH-01). A file the person edited is written only when they
- * answer Take new (D-67), no write or chmod may follow a link out of the repo, and no write outside the repo may go
- * anywhere but a private file of a confirmed role (T-02-72). The framework commands of the accepted hunks are
- * re-resolved from their adapter proposals, and a failed one makes its roles attended (D-106, D-120). It also gives
- * the argvs and the reply lines of the security plugin installs, with the Python check and the marketplace add, and
- * the setup the plan is made again from after them (decision #39). Init runs the steps through the host port. The
- * improver pass between the file writes and the manifest (G-02-1f, D-141) is the one part that runs here, through the
- * ports init gives it: each improver run goes through HostIo.run, while its reads and questions go through InitIo,
- * which can neither write nor run.
+ * The improver pass, a layer 9 module: between the file writes and the manifest, one `claude -p` run per built role
+ * file in its own folder, then its diff and the Accept or Keep original question, the files written back as built and
+ * the reply lines of the pass (G-02-1f, D-141, 02-GAPS-B3 M1). Each run goes through HostIo.run, while its reads and
+ * questions go through InitIo, which can neither write nor run. It imports core, generate/launcher, the launch rules,
+ * paths, scan, ui/ask, ui/diff, the private role files, the write safety checks and the types, so the apply runner and
+ * init read it here.
  */
-import type { HostIo, HostRun, InitIo, InitLocations, PortRead } from '../types'
-import { instructionsRecordPath, privateClaudeMdPath } from './apply/private'
-import type { ApplyStep } from './apply/private'
-import { parentOf, privateFolderOf } from './apply/safety'
-import { sha256Hex } from './core/hash'
-import { compareText, countedNoun, reportText, sortedUnique } from './core/text'
-import { builtClaudeMdPath } from './generate/launcher'
-import { editWriteRules } from './launch'
-import { displayPath, isFileInsideRoot, trimSlash } from './paths'
-import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { missingState } from './scan/port-read'
-import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from './ui/ask'
-import { diffLines, lineDiff } from './ui/diff'
-import type { LineDiff } from './ui/diff'
+import type { HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
+import { sha256Hex } from '../core/hash'
+import { compareText, countedNoun, reportText, sortedUnique } from '../core/text'
+import { builtClaudeMdPath } from '../generate/launcher'
+import { editWriteRules } from '../launch'
+import { displayPath, isFileInsideRoot, trimSlash } from '../paths'
+import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { missingState } from '../scan/port-read'
+import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from '../ui/ask'
+import { diffLines, lineDiff } from '../ui/diff'
+import type { LineDiff } from '../ui/diff'
+import { instructionsRecordPath, privateClaudeMdPath } from './private'
+import type { ApplyStep } from './private'
+import { parentOf, privateFolderOf } from './safety'
 
 /** How long one improver run may take before it is given up (G-02-1f, D-141, T-02-77): the file then stays as built. */
 export const IMPROVER_TIMEOUT_MS = 300_000
