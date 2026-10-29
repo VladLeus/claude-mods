@@ -4,6 +4,7 @@ import { EMPTY_FACTS } from '../../testkit'
 import {
   isGsdIdentitySource,
   isRuntimeCallAllowed,
+  isRuntimeIdentityArgv,
   parseGsdManifest,
   parseRuntimeIdentity,
   parseVersionText,
@@ -130,6 +131,19 @@ describe('runtimeIdentityArgv', () => {
   test('a present, unproven user install whose runtime is not built gets no runtime call (WR-01)', () => {
     expect(runtimeIdentityArgv(USER_TARGET, null, true, false)).toBeNull()
   })
+
+  test(
+    'isRuntimeIdentityArgv accepts only the argv runtimeIdentityArgv builds, with its GSD folder as cwd (E4)',
+    () => {
+      const argv = runtimeIdentityArgv(USER_TARGET, null, true, true) ?? []
+
+      expect(isRuntimeIdentityArgv(argv, USER_TARGET.dir)).toBe(true)
+      expect(isRuntimeIdentityArgv(argv, '/repo')).toBe(false)
+      expect(isRuntimeIdentityArgv([...argv, '--extra'], USER_TARGET.dir)).toBe(false)
+      expect(isRuntimeIdentityArgv(['sh', ...argv.slice(1)], USER_TARGET.dir)).toBe(false)
+      expect(isRuntimeIdentityArgv([], USER_TARGET.dir)).toBe(false)
+    },
+  )
 })
 
 describe('runtimeBuiltPath', () => {

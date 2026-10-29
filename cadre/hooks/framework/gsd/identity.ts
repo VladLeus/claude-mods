@@ -113,6 +113,11 @@ export function runtimeBuiltPath(target: GsdReadTarget): string {
   return `${target.dir}/bin/lib/cli-exit.cjs`
 }
 
+/** The runtime identity argv of a GSD folder: node runs its gsd-tools with `runtime-identity --raw`. */
+function identityArgvOf(dir: string): string[] {
+  return ['node', `${dir}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+}
+
 /**
  * The argv that asks a user-level GSD install for its runtime identity, or null. Only the user-level candidate is
  * ever run, and only when it is present, its compiled runtime is built (WR-01), and its identity module does not
@@ -127,7 +132,18 @@ export function runtimeIdentityArgv(
 ): string[] | null {
   if (!isRuntimeCallAllowed(target, identityText, isPresent) || !isBuilt) return null
 
-  return ['node', `${target.dir}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+  return identityArgvOf(target.dir)
+}
+
+/**
+ * Whether an argv is the one runtimeIdentityArgv builds for the GSD folder `cwd`: the same words, in the same order,
+ * and no more. register.tsx re-checks every identity argv against this one builder before it runs it, so a
+ * collector that asks for another command, or for this one in another folder, never reaches the host (E4).
+ */
+export function isRuntimeIdentityArgv(argv: readonly string[], cwd: string): boolean {
+  const expected = identityArgvOf(cwd)
+
+  return argv.length === expected.length && expected.every((word, at) => argv[at] === word)
 }
 
 /**

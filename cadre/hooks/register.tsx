@@ -7,6 +7,7 @@ import { helpText } from './command/usage'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
+import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
 import { runInit } from './init/run'
 import type { InitOptions } from './init/run'
@@ -41,6 +42,11 @@ let lastPlacement: 'dock' | 'inline' | null = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
+/**
+ * What runIdentity answers for an argv that is not the one runtimeIdentityArgv builds for its cwd: could-not-run, as
+ * for a call that threw, and the host is never asked (E4).
+ */
+const REFUSED_IDENTITY_RUN: IdentityRunResult = { stdout: null, problem: 'could-not-run' }
 /** The most tokens one model completion for init may answer with (D-83). */
 const COMPLETE_MAX_TOKENS = 2048
 /** How long one model completion for init may take before it is given up (D-83). */
@@ -179,9 +185,11 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
 
 /**
  * The read port the facts collector goes through (MUST 18): plain closures over `$`, built here because `$` cannot
- * cross into another file. Every member but runIdentity maps a host failure to null and never reads an error text;
- * runIdentity is identityRun, the one gated call. The env names are string literals, as the host reads only literal
- * names.
+ * cross into another file. Every member but runIdentity maps a host failure to null and never reads an error text.
+ * runIdentity is identityRun, the one gated call, and it runs only the exact argv runtimeIdentityArgv builds for its
+ * cwd (isRuntimeIdentityArgv); any other argv answers REFUSED_IDENTITY_RUN without asking the host (E4). The env
+ * names are string literals, as the host reads only literal names: one case per name FactsPort allows, and any other
+ * name throws (E5).
  */
 function factsPortOf($: EngineInterface): FactsPort {
   return {
@@ -189,9 +197,21 @@ function factsPortOf($: EngineInterface): FactsPort {
     list: path => $.fs.list(path).catch(() => null),
     read: path => $.fs.read(path).catch(() => null),
     stat: path => $.fs.stat(path, { resolve: true }).catch(() => null),
-    env: name => (name === 'HOME' ? $.env.get('HOME') : $.env.get('CLAUDE_CONFIG_DIR')).catch(() => null),
+    env: async name => {
+      switch (name) {
+        case 'HOME':
+          return $.env.get('HOME').catch(() => null)
+        case 'CLAUDE_CONFIG_DIR':
+          return $.env.get('CLAUDE_CONFIG_DIR').catch(() => null)
+      }
+      throw new Error(`factsPortOf: no env read for ${name satisfies never}`)
+    },
     settings: source => $.settings.read({ source }).catch(() => null),
-    runIdentity: (argv, cwd) => identityRun($, argv, cwd),
+    runIdentity: async (argv, cwd) => {
+      if (!isRuntimeIdentityArgv(argv, cwd)) return REFUSED_IDENTITY_RUN
+
+      return identityRun($, argv, cwd)
+    },
   }
 }
 
