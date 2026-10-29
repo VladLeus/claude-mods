@@ -1,14 +1,4 @@
-import type {
-  CompiledScope,
-  FrameworkId,
-  GitPolicy,
-  HostIo,
-  InitIo,
-  LaunchStart,
-  Plan,
-  RoleProposal,
-  RoleSpec,
-} from '../types'
+import type { CompiledScope, GitPolicy, HostIo, InitIo, LaunchStart, Plan, RoleSpec } from '../types'
 import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './apply/conflict'
 import type { ConflictChoice } from './apply/conflict'
 import { hunkRuns, hunksAfterRuns } from './apply/hunks'
@@ -29,30 +19,20 @@ import { trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
 import { initGuard } from './guards/repo'
 import { hasRunFailed } from './host/steps'
-import { mapped } from './init/draft'
-import type { Draft, DraftBase, PlanResult, Reviewed, Team } from './init/draft'
+import type { Draft, DraftBase, PlanResult, Reviewed } from './init/draft'
+import { goBack, historyHints, teamStep } from './init/flow'
+import type { ReviewItem } from './init/flow'
 import { planStep, privatesOf, repoPartsOf, withRepoRecords } from './init/initplan'
 import { cancelledReply, IGNORE_ALL_NOTE } from './init/replies'
-import { assignmentStep } from './init/stages/assign'
-import { carryStep } from './init/stages/carry'
 import { consentStep } from './init/stages/consent'
-import { durationStep, withDuration } from './init/stages/duration'
-import { frameworkStep } from './init/stages/frameworks'
 import { historyStep } from './init/stages/history'
-import { hunkStep } from './init/stages/hunks'
-import { improverInstallStep } from './init/stages/improver-install'
-import { instructionsAgain, instructionsStep } from './init/stages/instructions'
 import { launchLine, launchStartStep } from './init/stages/launch'
-import { modelStep } from './init/stages/model'
 import { gitPolicyStep, policyLine } from './init/stages/policy'
-import { installedFrameworks, rolesStep } from './init/stages/roles'
-import { securityInstallStep, withSecuritySkill } from './init/stages/security'
+import { installedFrameworks } from './init/stages/roles'
 import { DRY_RUN_NOTE, planSummary, renderPlan } from './plan/text'
-import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN } from './roles/infra'
+import { CLAUDE_MD_PLUGIN } from './roles/infra'
 import { proposeRoles } from './roles/propose'
-import { missingSecurityPlugins, recommend } from './roles/recommend'
 import { gatherScans, scanWarnings } from './scan/gather'
-import type { HistoryScan } from './scan/history'
 import { scopeCardLines } from './scope/card'
 import { MEMORY_PATTERN } from './scope/lint'
 import { attendedByConfig, compileAll, resolvedFramework, scopesFor } from './team'
@@ -69,7 +49,6 @@ import {
 } from './ui/ask'
 import type { StepResult } from './ui/ask'
 import { instructionReviewLines } from './ui/blocks/instructions'
-import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
 
 /** The scope card lines of every role in role order (scopeCardLines); a role with no scope has none (ROLE-06). */
@@ -140,23 +119,6 @@ export function reviewContextLine(plan: Plan, policy: GitPolicy, start: LaunchSt
   return `${planSummary(plan)}; ${policyLine(policy)}; ${launchLine(start)}`
 }
 
-/**
- * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
- * them every per-role step), the git policy, the launcher start, the duration, the model and effort, the MCP and skill
- * assignments, the instructions and memories, the carried env names, or the hunks.
- */
-export type ReviewItem =
-  | 'confirm'
-  | 'roles'
-  | 'policy'
-  | 'launch'
-  | 'duration'
-  | 'model'
-  | 'assignments'
-  | 'memory'
-  | 'env'
-  | 'hunks'
-
 /** Each review button with what it picks, in the order the dialog shows them (D-43, A2). */
 const REVIEW_CHOICES: readonly Labelled<ReviewItem>[] = Object.freeze([
   { label: 'Confirm', value: 'confirm' },
@@ -206,131 +168,6 @@ const REVIEW_ACCEPTS = `${quotedLabels(REVIEW_OPTIONS)}, or duration, model, ass
 /** Why init cancels once the review question was asked MAX_REVIEW_ROUNDS times without Confirm (A1). */
 export const REVIEW_ROUNDS_REASON =
   `The review question was asked ${MAX_REVIEW_ROUNDS} times without "Confirm": nothing was chosen.`
-
-/**
- * The per-role steps after the duration (D-52, D-53, D-60, G-02-1f, ROLE-04), in this order: model and effort
- * (modelStep), MCP servers and skills with the history hints (assignmentStep), instructions and memories
- * (instructionsStep), carried settings (carryStep), then the autonomy hunks of the frameworks the roles run on
- * (hunkStep). The first cancelled step ends it with its reason (A1).
- */
-async function perRoleSteps(
-  io: InitIo,
-  base: DraftBase,
-  roles: readonly RoleSpec[],
-  repoDefault: FrameworkId | null,
-): Promise<StepResult<Omit<Team, 'duration' | 'changes' | 'pluginInstalls'>>> {
-  const { gathered, locations } = base
-  const modelled = await modelStep(io, roles)
-  if (modelled.kind === 'cancelled') return modelled
-  const assigned = await assignmentStep(io, modelled.value, gathered.setup, base.hints)
-  if (assigned.kind === 'cancelled') return assigned
-  const instructed = await instructionsStep(io, assigned.value, gathered.setup, locations)
-  if (instructed.kind === 'cancelled') return instructed
-  const { instructions } = instructed.value
-  const carried = await carryStep(io, instructed.value.roles, gathered.setup)
-  if (carried.kind === 'cancelled') return carried
-  const team = carried.value
-  const hunks = await hunkStep(io, { roles: team, repoDefault, gathered, locations })
-
-  return mapped(hunks, answered => ({ roles: team, repoDefault, hunks: answered, instructions }))
-}
-
-/**
- * The role steps from the roles question to the hunks (ROLE-01 to ROLE-05, D-43): the roles (rolesStep from `start`,
- * shown with its scan changes), their frameworks (frameworkStep), the recommendations for that team (ROLE-03), the
- * security plugins question for the plugins a team with a Security role misses (missingSecurityPlugins,
- * securityInstallStep, decision #39), the duration, asked when `duration` is null and else kept for every role (D-51),
- * then perRoleSteps, and last the improver install question when the hand-out gave a role a built file and
- * claude-md-management is missing (improverInstallStep, D-141). When claude-security was asked about, every role that
- * stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill) before the
- * duration. Init runs it once from the proposal; Change roles runs it again from the current team with the scan
- * changes it was accepted with (A6) and the duration it has. The team keeps the scan changes of the roles accepted and
- * the plugins to install after Confirm, the security plugins first. The first cancelled step ends it with its reason
- * (A1).
- */
-async function teamStep(
-  io: InitIo,
-  base: DraftBase,
-  start: RoleProposal,
-  duration: string | null,
-): Promise<StepResult<Team>> {
-  const { gathered } = base
-  const chosen = await rolesStep(io, base.proposal, base.installed, start)
-  if (chosen.kind === 'cancelled') return chosen
-  const framed = await frameworkStep(io, base.choice, chosen.value.roles)
-  if (framed.kind === 'cancelled') return framed
-  const { roles, repoDefault } = framed.value
-  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-  await showBlock(io, 'recommendations', recommendationLines(recommendations, roles))
-  const missing = missingSecurityPlugins(roles, gathered.setup)
-  const installs = await securityInstallStep(io, missing)
-  if (installs.kind === 'cancelled') return installs
-  const pluginInstalls = installs.value
-  const isSkillAsked = missing.includes(CLAUDE_SECURITY_PLUGIN)
-  const team = isSkillAsked ? withSecuritySkill(roles, pluginInstalls.includes(CLAUDE_SECURITY_PLUGIN)) : roles
-  const asked = duration === null ? await durationStep(io, team) : accepted(duration)
-  if (asked.kind === 'cancelled') return asked
-  const kept = asked.value
-  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
-  if (steps.kind === 'cancelled') return steps
-  const improver = await improverInstallStep(io, steps.value.instructions, gathered.setup)
-  if (improver.kind === 'cancelled') return improver
-
-  return accepted({
-    duration: kept,
-    changes: chosen.value.changes,
-    pluginInstalls: [...pluginInstalls, ...improver.value],
-    ...steps.value,
-  })
-}
-
-/**
- * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
- * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
- * duration kept (teamStep). The duration, model, assignment, memory and env steps run again on the current roles and
- * decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
- * instruction hand-out it had (instructionsAgain). A cancelled step ends the review with its reason (A1).
- */
-async function goBack(io: InitIo, draft: Draft, item: Exclude<ReviewItem, 'confirm'>): Promise<StepResult<Draft>> {
-  const { gathered, locations, roles } = draft
-  switch (item) {
-    case 'roles': {
-      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration)
-
-      return mapped(team, decided => ({ ...draft, ...decided }))
-    }
-    case 'policy':
-      return mapped(await gitPolicyStep(io), policy => ({ ...draft, policy }))
-    case 'launch':
-      return mapped(await launchStartStep(io, locations.root, roles), launchStart => ({ ...draft, launchStart }))
-    case 'duration':
-      return mapped(await durationStep(io, roles), duration => ({
-        ...draft,
-        duration,
-        roles: withDuration(roles, duration),
-      }))
-    case 'model':
-      return mapped(await modelStep(io, roles), modelled => ({ ...draft, roles: modelled }))
-    case 'assignments':
-      return mapped(await assignmentStep(io, roles, gathered.setup, draft.hints), assigned => ({
-        ...draft,
-        roles: assigned,
-      }))
-    case 'memory':
-      return mapped(await instructionsAgain(io, roles, gathered.setup, draft.instructions), (instructed): Draft => ({
-        ...draft,
-        ...instructed,
-      }))
-    case 'env':
-      return mapped(await carryStep(io, roles, gathered.setup), carried => ({ ...draft, roles: carried }))
-    case 'hunks': {
-      const hunks = await hunkStep(io, { roles, repoDefault: draft.repoDefault, gathered, locations })
-
-      return mapped(hunks, answered => ({ ...draft, hunks: answered }))
-    }
-  }
-}
 
 /**
  * The review row under a role given at least one memory (G-02-1f, T-02-73): its memories are linked read-only, as far
@@ -487,13 +324,6 @@ export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<R
   }
 
   return cancelled(REVIEW_ROUNDS_REASON)
-}
-
-/** The history scan as hints for the skill questions: each name with its count; none when the scan was skipped. */
-function historyHints(history: HistoryScan | 'skipped'): ReadonlyMap<string, number> {
-  if (history === 'skipped') return new Map()
-
-  return new Map(history.counts.map((entry): [string, number] => [entry.name, entry.count]))
 }
 
 /**

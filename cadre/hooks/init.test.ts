@@ -83,7 +83,8 @@ import {
   reviewQuestion,
   runInit,
 } from './init'
-import type { InitOptions, ReviewItem } from './init'
+import type { InitOptions } from './init'
+import type { ReviewItem } from './init/flow'
 import { planStep } from './init/initplan'
 import {
   cancelledReply,
