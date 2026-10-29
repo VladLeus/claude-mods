@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { MIN_CLAUDE_VERSION_TEXT } from '../generate/launcher'
-import { MIN_CLAUDE_VERSION } from './claude-version'
+import { MIN_CLAUDE_VERSION, MIN_CLAUDE_VERSION_TEXT } from '../generate/launcher'
 
 describe('the claude version floor (SHOULD 3)', () => {
   test('MIN_CLAUDE_VERSION_TEXT is MIN_CLAUDE_VERSION written with dots, so the floor has one value', () => {

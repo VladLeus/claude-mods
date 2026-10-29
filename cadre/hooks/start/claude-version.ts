@@ -1,16 +1,13 @@
 /**
- * The claude check of /cadre start (D-107), a layer 10 module: the oldest claude cadre starts a role with
- * (MIN_CLAUDE_VERSION), the version a `claude --version` text gives by the launcher's own rule (parseClaudeVersion),
- * and claudeRefusal, which runs `claude --version` through the HostIo port and gives its refusal when claude cannot
- * run or gives an older or unreadable version, else null; /cadre epic runs the same check (D-165). It imports core,
- * generate/launcher and the types; the start command and epic read it.
+ * The claude check of /cadre start (D-107), a layer 10 module: the version a `claude --version` text gives by the
+ * launcher's own rule (parseClaudeVersion), whether it is MIN_CLAUDE_VERSION, the floor generate/launcher writes, or
+ * newer (isSupportedClaude), and claudeRefusal, which runs `claude --version` through the HostIo port and gives its
+ * refusal when claude cannot run or gives an older or unreadable version, else null; /cadre epic runs the same check
+ * (D-165). It imports core, generate/launcher and the types; the start command and epic read it.
  */
 import type { HostIo } from '../../types'
 import { clean } from '../core/text'
-import { MIN_CLAUDE_VERSION_TEXT } from '../generate/launcher'
-
-/** The oldest claude cadre starts a role with (D-107): the engine floor the launcher's flags need. */
-export const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 295]
+import { MIN_CLAUDE_VERSION, MIN_CLAUDE_VERSION_TEXT } from '../generate/launcher'
 
 /**
  * A line of `claude --version` that gives a version: it starts with three runs of digits joined by dots, whatever
@@ -49,15 +46,17 @@ export function isSupportedClaude(version: readonly [number, number, number]): b
 const CLAUDE_VERSION_TIMEOUT_MS = 10_000
 
 /** The refusal when `claude --version` cannot run or exits non-zero (D-107). */
-export const START_NO_CLAUDE =
-  `cadre start could not run claude --version, so it stopped: install Claude Code ${MIN_CLAUDE_VERSION_TEXT} or newer.`
+export const START_NO_CLAUDE = `cadre start could not run claude --version, so it stopped: install Claude Code ${
+  MIN_CLAUDE_VERSION_TEXT
+} or newer.` satisfies `${string}${typeof MIN_CLAUDE_VERSION_TEXT}${string}`
 
 /** The most characters of what `claude --version` gave that a refusal shows. */
 const VERSION_SHOWN_CHARS = 40
 
 /**
- * The refusal when the claude on PATH is older than 2.1.295, or gives no version cadre can read (D-107). The text
- * `claude --version` gave is shown cleaned, as reportText cleans a foreign value, and capped at 40 characters.
+ * The refusal when the claude on PATH is older than MIN_CLAUDE_VERSION, or gives no version cadre can read (D-107).
+ * The text `claude --version` gave is shown cleaned, as reportText cleans a foreign value, and capped at 40
+ * characters.
  */
 export function claudeTooOldReply(versionText: string): string {
   const shown = clean(versionText, VERSION_SHOWN_CHARS)

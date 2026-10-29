@@ -93,23 +93,33 @@ function runtimeMessage(id: string, problem: string): string {
 }
 
 /**
- * The oldest claude cadre starts a role with, as text (D-107): the one place the version floor is written out. The
- * launcher's version refusal and the claude refusals of /cadre start are built from it; start/claude-version holds
- * the same floor as the MIN_CLAUDE_VERSION tuple it compares by.
+ * The oldest claude cadre starts a role with (D-107): the one place the version floor is written. Its text, the
+ * launcher's shell check and the /cadre start refusals are built from it.
  */
-export const MIN_CLAUDE_VERSION_TEXT = '2.1.295'
+export const MIN_CLAUDE_VERSION: readonly [2, 1, 295] = [2, 1, 295]
+
+/** The three parts of MIN_CLAUDE_VERSION, which the launcher's shell check compares one by one. */
+const [MIN_MAJOR, MIN_MINOR, MIN_PATCH] = MIN_CLAUDE_VERSION
+
+/**
+ * The oldest claude cadre starts a role with, as text (D-107): MIN_CLAUDE_VERSION written with dots. The launcher's
+ * version refusal and the claude refusals of /cadre start are built from it.
+ */
+export const MIN_CLAUDE_VERSION_TEXT =
+  `${MIN_MAJOR}.${MIN_MINOR}.${MIN_PATCH}` satisfies `${number}.${number}.${number}`
 
 /**
  * The lines that define `cadre_claude_ok`, which launcherText puts right after `rt=`. The function reads
- * `claude --version` through a fixed sed program and passes for 2.1.295 or newer (D-107); it is a function, so its
- * `set --` leaves the launcher's own arguments alone.
+ * `claude --version` through a fixed sed program and passes for MIN_CLAUDE_VERSION or newer (D-107); it is a
+ * function, so its `set --` leaves the launcher's own arguments alone.
  */
 const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
   'cadre_claude_ok() {',
   "  set -- $(claude --version 2>/dev/null | sed -n " +
     "'s/^\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\)\\.\\([0-9][0-9]*\\).*/\\1 \\2 \\3/p')",
   '  [ $# -eq 3 ] || return 1',
-  '  [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && { [ "$2" -gt 1 ] || { [ "$2" -eq 1 ] && [ "$3" -ge 295 ]; }; }; }',
+  `  [ "$1" -gt ${MIN_MAJOR} ] || { [ "$1" -eq ${MIN_MAJOR} ] && { [ "$2" -gt ${MIN_MINOR} ] || ` +
+    `{ [ "$2" -eq ${MIN_MINOR} ] && [ "$3" -ge ${MIN_PATCH} ]; }; }; }`,
   '}',
 ])
 
@@ -219,7 +229,8 @@ export function hasRuntimeKickoff(text: string): boolean {
  * - `.cadre/<id>/role.json` is not under that repo, as for a launcher linked or copied into another repo (D-119);
  * - `.cadre/<id>/ROLE.md` or `kickoff.txt` is missing, since a failed `cat` inside the exec line would not stop it
  *   and claude would start with an empty kickoff;
- * - `claude --version` is missing, unreadable or older than 2.1.295, the engine floor cadre relies on (D-107);
+ * - `claude --version` is missing, unreadable or older than MIN_CLAUDE_VERSION, the engine floor cadre relies on
+ *   (D-107);
  * - the stamp `/cadre start` writes last into `.cadre/<id>/.runtime/` is missing; or `.cadre/cadre.json` or the
  *   role's role.json, settings.json or mcp.json is newer than it, so a render the role files changed after never
  *   starts; or the rendered settings.json, mcp.json or probe-expectations.json is newer than it, which means a render

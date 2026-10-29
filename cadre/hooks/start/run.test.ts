@@ -23,6 +23,7 @@ import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
+import { MIN_CLAUDE_VERSION } from '../generate/launcher'
 import { repoGuard } from '../guards/repo'
 import { unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
@@ -51,13 +52,7 @@ import {
   terminalPlan,
 } from '../ui/terminal'
 import type { TerminalPlan } from '../ui/terminal'
-import {
-  claudeTooOldReply,
-  isSupportedClaude,
-  MIN_CLAUDE_VERSION,
-  parseClaudeVersion,
-  START_NO_CLAUDE,
-} from './claude-version'
+import { claudeTooOldReply, isSupportedClaude, parseClaudeVersion, START_NO_CLAUDE } from './claude-version'
 import { gatherLaunchUser, privateFolderRefusal } from './gather-user'
 import type { LaunchUserRead } from './gather-user'
 import { launcherChangedReply, launcherMissingReply, renderFailedReply, START_NO_MANIFEST } from './launcher-check'
