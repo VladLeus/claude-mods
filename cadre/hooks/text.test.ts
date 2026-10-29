@@ -135,18 +135,9 @@ import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
-  ADJUST_DISMISSED_REASON,
-  ADJUST_OPTIONS,
-  ADJUST_QUESTION,
-  ADJUST_ROUNDS_NOTE,
-  adjustContextLine,
   cardLines,
   CONFLICT_CONTEXT,
   CONFLICT_DISMISSED_REASON,
-  DESCRIBE_CANCELLED_REASON,
-  DESCRIBE_CONTEXT,
-  DESCRIBE_OPTIONS,
-  DESCRIBE_QUESTION,
   improverRunLine,
   initReplyText,
   LAUNCH_DIR_CANCELLED_REASON,
@@ -162,7 +153,6 @@ import {
   LINKED_MEMORIES_ROW,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
-  proposalLines,
   REVIEW_DISMISSED_REASON,
   REVIEW_OPTIONS,
   REVIEW_QUESTION,
@@ -170,11 +160,6 @@ import {
   REVIEW_TYPE_HINT,
   reviewContextLine,
   reviewQuestion,
-  ROLE_ROUNDS_REASON,
-  ROLES_DISMISSED_REASON,
-  ROLES_OPTIONS,
-  ROLES_QUESTION,
-  rolesContextLine,
   runInit,
 } from './init'
 import {
@@ -275,6 +260,23 @@ import {
   GIT_POLICY_QUESTION,
   policyLine,
 } from './init/stages/policy'
+import {
+  ADJUST_DISMISSED_REASON,
+  ADJUST_OPTIONS,
+  ADJUST_QUESTION,
+  ADJUST_ROUNDS_NOTE,
+  adjustContextLine,
+  DESCRIBE_CANCELLED_REASON,
+  DESCRIBE_CONTEXT,
+  DESCRIBE_OPTIONS,
+  DESCRIBE_QUESTION,
+  proposalLines,
+  ROLE_ROUNDS_REASON,
+  ROLES_DISMISSED_REASON,
+  ROLES_OPTIONS,
+  ROLES_QUESTION,
+  rolesContextLine,
+} from './init/stages/roles'
 import {
   INSTALL_OPTIONS,
   SECURITY_INSTALL_CONTEXT,
