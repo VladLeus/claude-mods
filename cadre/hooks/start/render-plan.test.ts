@@ -10,7 +10,7 @@ import type { LaunchPlan } from '../launch/plan'
 import { RUNTIME_KICKOFF_FILE } from '../paths'
 import { ignoreLines } from '../plan/gitignore'
 import { compileScope } from '../scope/compile'
-import { BIDI_OVERRIDE, emptySetupScan, entry, link, templateRole } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, link, ROOT, templateRole } from '../testkit'
 import {
   NO_MEMORY_LINKS,
   privateLinkRefusal,
@@ -21,9 +21,6 @@ import {
   stampText,
 } from './render-plan'
 import type { RenderInput } from './render-plan'
-
-/** The repo root of the fixtures, a realpath. */
-const ROOT = '/repo'
 
 /** The folder of the BE role in the fixture repo. */
 const ROLE_DIR = '/repo/.cadre/be'

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan } from '../../../types'
 import { fallbackTopics } from '../../suggest/topics'
-import { MEMORIES, MEMORY, RECOMMENDED, templateRole, TOPICS } from '../../testkit'
+import { MEMORIES, MEMORY, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
 import { instructionLines, instructionReviewLines } from './instructions'
 
 /**
@@ -24,9 +24,6 @@ const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], me
 
 /** The read of GLOBAL_TEXT with the two MEMORIES. */
 const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
-
-/** The team of the cases: PM, Team Lead and Security, in that order. */
-const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]
 
 describe('instructionLines', () => {
   test('the heading, then each topic with its summary, its sources and the roles it is recommended for', () => {

@@ -1,14 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../../../types'
-import { ABSOLUTE_PATH_MARKERS, leaks, memIo, memWorld, SECRET_FIXTURES, secretWorld } from '../../testkit'
+import { ABSOLUTE_PATH_MARKERS, CTX, leaks, memWorld, runOf, SECRET_FIXTURES, secretWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
 import { projectHooks, projectSettings } from './settings'
-import { scanSetup } from './setup'
-
-/** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
-const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
 
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
@@ -24,20 +20,6 @@ function jsonWithoutPurposes(scan: SetupScan): string {
 /** A world whose three settings sources are the given ones. */
 function settingsWorld(user: unknown, project: unknown = {}, local: unknown = {}): MemWorld {
   return memWorld({ settings: { user, project, local } })
-}
-
-/** A scan and the paths it read through the port, in order. */
-type ScanRun = {
-  readonly scan: SetupScan
-  readonly reads: readonly string[]
-}
-
-/** A scan of `world` as the person at `ctx` gets it, with the paths it read. */
-async function runOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<ScanRun> {
-  const run = memIo(world, [])
-  const scan = await scanSetup(run.io, ctx, isClaudeJsonAllowed)
-
-  return { scan, reads: run.reads }
 }
 
 /** A scan of `world` as the person at `ctx` gets it. */

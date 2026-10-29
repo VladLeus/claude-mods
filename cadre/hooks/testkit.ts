@@ -9,6 +9,7 @@ import type {
   FrameworkId,
   GitPolicy,
   GsdFact,
+  HookScript,
   HostEnvName,
   HostIo,
   HostRun,
@@ -29,6 +30,8 @@ import type {
   RepoScan,
   RoleSpec,
   RunOptions,
+  ScanFinding,
+  ScanKind,
   ScopeCard,
   ScopeContext,
   SettingsSource,
@@ -73,6 +76,8 @@ import {
 import type { TemplateRole } from './roles/template'
 import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
+import type { SetupContext } from './scan/setup/read'
+import { scanSetup } from './scan/setup/setup'
 import { compileScope } from './scope/compile'
 import { infraViolations, roleOwnPaths } from './scope/lint'
 import { scopesFor } from './team'
@@ -1527,4 +1532,45 @@ export const SLUG_RULE = 'must be a lowercase slug: a letter, then letters, digi
 /** The message for an id that is not a slug, with the id as the message shows it. */
 export function slugMessage(label: string): string {
   return `role id "${label}" ${SLUG_RULE}`
+}
+
+/** The finding of a kind and label, or undefined. */
+export function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
+  return scan.findings.find(finding => finding.kind === kind && finding.label === label)
+}
+
+/** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
+export const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
+
+/** A scan and the paths it read through the port, in order. */
+export type ScanRun = {
+  readonly scan: SetupScan
+  readonly reads: readonly string[]
+}
+
+/** A scan of `world` as the person at `ctx` gets it, with the paths it read. */
+export async function runOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<ScanRun> {
+  const run = memIo(world, [])
+  const scan = await scanSetup(run.io, ctx, isClaudeJsonAllowed)
+
+  return { scan, reads: run.reads }
+}
+
+/** A hook script the settings of `source` register, the user settings unless named. */
+export function hook(script: string, source: SettingsSource = 'user'): HookScript {
+  return { script, event: 'PostToolUse', source }
+}
+
+/** The repo root of the fixtures, a realpath. */
+export const ROOT = '/repo'
+
+/** The team of the cases: PM, Team Lead and Security, in that order. */
+export const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]
+
+/** A reply parsed, or the errors of one that was not. */
+export type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly errors: readonly string[] }
+
+/** The errors of an invalid reply; [] for a reply that parsed. */
+export function errorsOf(result: Parsed): readonly string[] {
+  return result.kind === 'invalid' ? result.errors : []
 }

@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortEntry, RepoScan, ScanFinding, ScanKind } from '../../types'
+import type { PortEntry, RepoScan } from '../../types'
 import {
   BE_FILE,
   BIDI_OVERRIDE,
   entry,
+  findingOf,
   leaks,
   link,
   manifestText,
@@ -31,11 +32,6 @@ function walkedFolders(listed: readonly string[]): string[] {
 /** The files read: the zero-byte probe of a `/repo/.cadre` that cannot be listed reads nothing, so it is left out. */
 function fileReads(reads: readonly string[]): string[] {
   return reads.filter(path => path !== '/repo/.cadre')
-}
-
-/** The finding of a kind and label, or undefined. */
-function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
-  return scan.findings.find(finding => finding.kind === kind && finding.label === label)
 }
 
 /** A package.json text with these runtime dependencies. */

@@ -1,18 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { templateRole } from '../testkit'
+import { errorsOf, ROLES } from '../testkit'
+import type { Parsed } from '../testkit'
 import { parseRecommendation } from './instructions'
-
-/** The team of the cases: PM, Team Lead and Security, in that order. */
-const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]
-
-/** A reply parsed, or the errors of one that was not. */
-type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly errors: readonly string[] }
-
-/** The errors of an invalid reply; [] for a reply that parsed. */
-function errorsOf(result: Parsed): readonly string[] {
-  return result.kind === 'invalid' ? result.errors : []
-}
 
 /** The role ids of ROLES, in role order. */
 const ROLE_IDS = ROLES.map(role => role.id)

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan } from '../../types'
-import { BIDI_OVERRIDE, MEMORIES, MEMORY, templateRole, TOPICS } from '../testkit'
+import { BIDI_OVERRIDE, errorsOf, MEMORIES, MEMORY, ROLES, TOPICS } from '../testkit'
+import type { Parsed } from '../testkit'
 import { RECOMMEND_SYSTEM, recommendPrompt } from './instructions'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './topics'
 
@@ -18,17 +19,6 @@ const PARTS: readonly InstructionPart[] = [
   part('P1', 'Security', '# Security\nNever commit secrets.\n'),
   part('P2', 'Git', '## Git\nUse signed commits.\n'),
 ]
-
-/** The team of the cases: PM, Team Lead and Security, in that order. */
-const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]
-
-/** A reply parsed, or the errors of one that was not. */
-type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly errors: readonly string[] }
-
-/** The errors of an invalid reply; [] for a reply that parsed. */
-function errorsOf(result: Parsed): readonly string[] {
-  return result.kind === 'invalid' ? result.errors : []
-}
 
 /** The grouping reply that gives TOPICS. */
 const TOPICS_REPLY = JSON.stringify({

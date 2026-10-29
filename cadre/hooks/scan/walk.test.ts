@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortEntry, RepoScan, ScanFinding, ScanKind } from '../../types'
-import { entry, memIo, memWorld } from '../testkit'
+import type { PortEntry, RepoScan, ScanFinding } from '../../types'
+import { entry, findingOf, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { SOURCE_EXTENSIONS } from './markers'
 import { scanRepo, undecidedFacts } from './repo'
@@ -15,11 +15,6 @@ function plainFiles(count: number): PortEntry[] {
 /** The scan of the repo /repo whose folders, files and links are in memory. */
 async function scanOf(over: Partial<MemWorld>): Promise<RepoScan> {
   return scanRepo(memIo(memWorld(over), []).io, '/repo')
-}
-
-/** The finding of a kind and label, or undefined. */
-function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
-  return scan.findings.find(finding => finding.kind === kind && finding.label === label)
 }
 
 describe('scan tables', () => {

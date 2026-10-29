@@ -17,6 +17,7 @@ import {
   memHost,
   memIo,
   memWorld,
+  ROOT,
   SECRET_FIXTURES,
   secretUserSettings,
   secretWorld,
@@ -33,9 +34,6 @@ import {
 } from './gather-user'
 import type { LaunchUserRead } from './gather-user'
 import { NO_MEMORY_LINKS } from './render-plan'
-
-/** The repo root of the fixtures, a realpath. */
-const ROOT = '/repo'
 
 /** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry or link; `over` changes fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {

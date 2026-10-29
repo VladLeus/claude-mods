@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan, ScanFinding, ScanKind } from '../../types'
-import { entry, leaks, link, memIo, memWorld, SECRET_FIXTURES } from '../testkit'
+import { entry, findingOf, leaks, link, memIo, memWorld, SECRET_FIXTURES } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
 import { cargoDeps, composerDeps, gemfileGems, goModules, pyprojectDeps, requirementsDeps } from './manifests'
@@ -17,11 +17,6 @@ async function scanOf(over: Partial<MemWorld>): Promise<RepoScan> {
 /** The files read: the zero-byte probe of a `/repo/.cadre` that cannot be listed reads nothing, so it is left out. */
 function fileReads(reads: readonly string[]): string[] {
   return reads.filter(path => path !== '/repo/.cadre')
-}
-
-/** The finding of a kind and label, or undefined. */
-function findingOf(scan: RepoScan, kind: ScanKind, label: string): ScanFinding | undefined {
-  return scan.findings.find(finding => finding.kind === kind && finding.label === label)
 }
 
 /** A package.json text with these runtime dependencies. */

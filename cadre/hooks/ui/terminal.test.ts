@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BIDI_OVERRIDE } from '../testkit'
+import { BIDI_OVERRIDE, ROOT } from '../testkit'
 import { launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from './terminal'
 import type { TerminalPlan } from './terminal'
-
-/** The repo root of the fixtures, a realpath. */
-const ROOT = '/repo'
 
 /** TMUX as tmux sets it inside a session: `<socket>,<server pid>,<session id>`. */
 const TMUX = '/tmp/tmux-1/default,1,0'

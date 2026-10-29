@@ -3,24 +3,27 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   CompiledScope,
   FrameworkId,
-  HookScript,
   LaunchStart,
   McpRoute,
   ProbeCheck,
   RoleSpec,
   ScopeRule,
-  SettingsSource,
   SetupScan,
 } from '../../types'
 import { chainLines, EMPTY_CARRY, ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { BIDI_OVERRIDE, context, emptySetupScan, FRAMEWORKS, leaks, session, skillRef, templateRole } from '../testkit'
+import {
+  BIDI_OVERRIDE,
+  context,
+  emptySetupScan,
+  FRAMEWORKS,
+  hook,
+  leaks,
+  session,
+  skillRef,
+  templateRole,
+} from '../testkit'
 import { mcpToolName, scopeCardLines } from './card'
 import { compileScope } from './compile'
-
-/** A hook script the settings of `source` register, the user settings unless named. */
-function hook(script: string, source: SettingsSource = 'user'): HookScript {
-  return { script, event: 'PostToolUse', source }
-}
 
 /** The card rule with exactly this text, or undefined when the card has none. */
 function ruleOf(scope: CompiledScope, text: string): ScopeRule | undefined {

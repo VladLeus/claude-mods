@@ -4,10 +4,12 @@ import type { SetupScan } from '../../../types'
 import { claudeJsonPathOf, mangledProjectDir, userDirOf } from '../../paths'
 import {
   ABSOLUTE_PATH_MARKERS,
+  CTX,
   entry,
   leaks,
   memIo,
   memWorld,
+  runOf,
   SECRET_FIXTURES,
   secretUserSettings,
 } from '../../testkit'
@@ -20,9 +22,6 @@ import { hookScriptOf } from './settings'
 import { scanSetup } from './setup'
 import { projectCommands } from './skills'
 
-/** The session of the fixtures: the repo /repo of a user whose home is /home/u, with no CLAUDE_CONFIG_DIR. */
-const CTX: SetupContext = { root: '/repo', givenRoot: '/repo', home: '/home/u', configDir: null }
-
 /** The secret fixtures and the fixture home: nothing of these may survive into a scan. */
 const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
 
@@ -32,20 +31,6 @@ const SECRETS: readonly string[] = [...SECRET_FIXTURES, '/home/u']
  */
 function jsonWithoutPurposes(scan: SetupScan): string {
   return JSON.stringify({ ...scan, skills: scan.skills.map(skill => ({ name: skill.name, plugin: skill.plugin })) })
-}
-
-/** A scan and the paths it read through the port, in order. */
-type ScanRun = {
-  readonly scan: SetupScan
-  readonly reads: readonly string[]
-}
-
-/** A scan of `world` as the person at `ctx` gets it, with the paths it read. */
-async function runOf(world: MemWorld, isClaudeJsonAllowed = false, ctx: SetupContext = CTX): Promise<ScanRun> {
-  const run = memIo(world, [])
-  const scan = await scanSetup(run.io, ctx, isClaudeJsonAllowed)
-
-  return { scan, reads: run.reads }
 }
 
 /** A scan of `world` as the person at `ctx` gets it. */

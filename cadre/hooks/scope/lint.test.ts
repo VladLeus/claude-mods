@@ -1,15 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, FrameworkId, HookScript, RoleSpec, SettingsSource, SetupScan } from '../../types'
+import type { CompiledScope, FrameworkId, RoleSpec, SetupScan } from '../../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { context, emptySetupScan, FRAMEWORKS, session, skillRef, templateRole, withDeny } from '../testkit'
+import { context, emptySetupScan, FRAMEWORKS, hook, session, skillRef, templateRole, withDeny } from '../testkit'
 import { compileScope } from './compile'
 import { infraViolations, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
-
-/** A hook script the settings of `source` register, the user settings unless named. */
-function hook(script: string, source: SettingsSource = 'user'): HookScript {
-  return { script, event: 'PostToolUse', source }
-}
 
 /** The literal segments of a repo-relative deny entry such as `Read(./a/b/**)`, `*` and `**` dropped; [] for others. */
 function denySegments(entry: string): string[] {

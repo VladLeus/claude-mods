@@ -1,16 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  CompiledScope,
-  FrameworkId,
-  HookScript,
-  McpRoute,
-  PermissionMode,
-  ProbeCheck,
-  RoleSpec,
-  ScopeRule,
-  SettingsSource,
-} from '../../types'
+import type { CompiledScope, FrameworkId, McpRoute, PermissionMode, ProbeCheck, RoleSpec, ScopeRule } from '../../types'
 import { adapterOf } from '../framework/registry'
 import { CLAUDE_SECURITY_PLUGIN, INFRA_SKILLS, SECURITY_GUIDANCE_PLUGIN } from '../roles/infra'
 import { chainLines, EMPTY_CARRY } from '../roles/template'
@@ -20,6 +10,7 @@ import {
   BIDI_OVERRIDE,
   context,
   emptySetupScan,
+  hook,
   leaks,
   session,
   skillRef,
@@ -28,11 +19,6 @@ import {
 import { scopeCardLines } from './card'
 import { compileScope } from './compile'
 import { isContextMonitorScript, roleOwnPaths } from './lint'
-
-/** A hook script the settings of `source` register, the user settings unless named. */
-function hook(script: string, source: SettingsSource = 'user'): HookScript {
-  return { script, event: 'PostToolUse', source }
-}
 
 /** The card rule with exactly this text, or undefined when the card has none. */
 function ruleOf(scope: CompiledScope, text: string): ScopeRule | undefined {

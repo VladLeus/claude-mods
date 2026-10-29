@@ -1,19 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BIDI_OVERRIDE, templateRole } from '../testkit'
+import { BIDI_OVERRIDE, errorsOf, templateRole } from '../testkit'
+import type { Parsed } from '../testkit'
 import { parseRegenRecommendation, REGEN_RECOMMEND_SYSTEM, regenRecommendPrompt } from './regen'
 import type { RegenPromptItem } from './regen'
 
 /** The Git section of the root CLAUDE.md as init read it (G-02-1f Regen). */
 const GIT_SECTION = '## Git\nUse signed commits.\n'
-
-/** A reply parsed, or the errors of one that was not. */
-type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; readonly errors: readonly string[] }
-
-/** The errors of an invalid reply; [] for a reply that parsed. */
-function errorsOf(result: Parsed): readonly string[] {
-  return result.kind === 'invalid' ? result.errors : []
-}
 
 describe('regen recommendation (G-02-1f Regen)', () => {
   test('the prompt holds the role, then each item: a part with the start of its text, a memory its summary', () => {

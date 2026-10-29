@@ -38,6 +38,7 @@ import {
   memHost,
   memIo,
   memWorld,
+  ROOT,
   SECRET_FIXTURES,
   secretWorld,
   templateRole,
@@ -69,9 +70,6 @@ import {
 } from './memory-links'
 import { NO_MEMORY_LINKS } from './render-plan'
 import { runStart } from './run'
-
-/** The repo root of the fixtures, a realpath. */
-const ROOT = '/repo'
 
 /** The per-launch folder of the BE role (D-102). */
 const RUNTIME = '/repo/.cadre/be/.runtime'
