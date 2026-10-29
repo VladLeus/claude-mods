@@ -163,10 +163,6 @@ import {
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
   frameworkRoleQuestion,
-  GIT_POLICY_CONTEXT,
-  GIT_POLICY_DISMISSED_REASON,
-  GIT_POLICY_OPTIONS,
-  GIT_POLICY_QUESTION,
   HUNK_DISMISSED_REASON,
   IMPROVER_INSTALL_CONTEXT,
   IMPROVER_INSTALL_DISMISSED_REASON,
@@ -197,7 +193,6 @@ import {
   ownSkillQuestion,
   ownSkillsContextLine,
   ownSkillsQuestion,
-  policyLine,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
   proposalLines,
@@ -274,6 +269,13 @@ import {
   topicItems,
   topicQuestion,
 } from './init/stages/instructions'
+import {
+  GIT_POLICY_CONTEXT,
+  GIT_POLICY_DISMISSED_REASON,
+  GIT_POLICY_OPTIONS,
+  GIT_POLICY_QUESTION,
+  policyLine,
+} from './init/stages/policy'
 import {
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,

@@ -14,16 +14,13 @@ import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
   CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
-  GIT_POLICY_CONTEXT,
-  GIT_POLICY_DISMISSED_REASON,
-  GIT_POLICY_QUESTION,
-  policyLine,
   PRIVATE_FILES_HEADING,
   REVIEW_QUESTION,
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
 } from './init'
 import { cancelledReply, INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY } from './init/replies'
+import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
