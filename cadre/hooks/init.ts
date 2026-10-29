@@ -105,7 +105,7 @@ import {
   memoryItems,
   parseContentConsent,
   topicItems,
-} from './instructions'
+} from './init/stages/instructions'
 import { isPartsFlowRole } from './launch/links'
 import { GITIGNORE_FILE, isRepoFolder, isSafeRelativePath, memoryFoldersOf, roleJsonPath } from './paths'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'

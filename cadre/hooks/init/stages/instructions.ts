@@ -1,22 +1,21 @@
 /**
- * The instruction parts of G-02-1f: the content consent, reading the instruction files and splitting them into parts,
- * the prompts and reply parsers of the two model calls (grouping the parts into topics across files, and recommending
- * roles per topic), the side-pane block, the questions of the hand-out, the review rows and how regen tells kept,
- * changed, added and removed parts and memories apart by their hashes (partChanges). Pure: it reads only through the
- * InitIo port it is given, and it never imports init.ts, which imports it. The text is held in memory for this run; it
- * is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
- * `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited.
+ * The instruction questions of init (G-02-1f, D-134, D-136), a layer 10 module: the content consent, asked before any
+ * instruction or memory text is read, with its context line of what init found by name (contentContextLine); the
+ * entry question of the instruction hand-out (instructionsEntry); and each topic and memory as a hand-out item with
+ * its question, context line and chip (topicItems, memoryItems). Pure: it builds what init and init/handout ask
+ * through the InitIo port, imports core, init/handout, scan/instructions and ui, and never imports init.ts, which
+ * imports it, or init/run.
  */
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, SetupScan } from '../types'
-import { labelled } from './core/labelled'
-import type { Labelled } from './core/labelled'
-import { asSentence, countedNoun, idsOrNone, shown } from './core/text'
-import { ACCEPT_RECOMMENDATIONS } from './init/handout'
-import type { HandoutEntry, HandoutItem } from './init/handout'
-import { isMemoryIndexName } from './scan/instructions/memories'
-import type { InstructionSources } from './scan/instructions/read'
-import { ASK_HEADERS, countedChip } from './ui/ask'
-import { cappedList, sourceText, topicParts } from './ui/blocks/instructions'
+import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, SetupScan } from '../../../types'
+import { labelled } from '../../core/labelled'
+import type { Labelled } from '../../core/labelled'
+import { asSentence, countedNoun, idsOrNone, shown } from '../../core/text'
+import { isMemoryIndexName } from '../../scan/instructions/memories'
+import type { InstructionSources } from '../../scan/instructions/read'
+import { ASK_HEADERS, countedChip } from '../../ui/ask'
+import { cappedList, sourceText, topicParts } from '../../ui/blocks/instructions'
+import { ACCEPT_RECOMMENDATIONS } from '../handout'
+import type { HandoutEntry, HandoutItem } from '../handout'
 
 /**
  * The content consent question (G-02-1f "Consent first", D-134): no instruction or memory text is read before a yes,

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../types'
+import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../../../types'
+import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
+import { emptySetupScan } from '../../testkit'
+import { contextText } from '../../ui/ask'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -21,9 +24,6 @@ import {
   topicItems,
   topicQuestion,
 } from './instructions'
-import { NO_MEMORY_SUMMARY } from './scan/instructions/memories'
-import { emptySetupScan } from './testkit'
-import { contextText } from './ui/ask'
 
 /**
  * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes

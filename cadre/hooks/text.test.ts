@@ -270,7 +270,7 @@ import {
   topicHeader,
   topicItems,
   topicQuestion,
-} from './instructions'
+} from './init/stages/instructions'
 import {
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,

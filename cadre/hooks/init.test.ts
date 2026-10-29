@@ -196,7 +196,7 @@ import {
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
   parseContentConsent,
-} from './instructions'
+} from './init/stages/instructions'
 import { isPartsFlowRole } from './launch/links'
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { buildPlan, planReadPaths } from './plan/plan'
