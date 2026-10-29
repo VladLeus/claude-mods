@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../types'
+import type { RoleSpec } from '../../types'
+import { memIo, memWorld, templateRole } from '../testkit'
+import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
+import type { StepResult } from '../ui/ask'
 import { handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem, HandoutOutcome } from './handout'
-import { memIo, memWorld, templateRole } from './testkit'
-import { NO_USABLE_ANSWER_REASON, withContext } from './ui/ask'
-import type { StepResult } from './ui/ask'
 
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
 const ROLES: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('security')]

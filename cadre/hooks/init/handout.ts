@@ -3,11 +3,11 @@
  * model's recommendations, asks each item one by one, or keeps the whole-group questions, and gives each item the roles
  * the person chose. Pure: it asks through the InitIo port it is given, and it never imports init.ts, which imports it.
  */
-import type { InitIo, RoleSpec } from '../types'
-import { parseRoleList } from './assign'
-import { labelled } from './core/labelled'
-import { accepted, askChoice, choiceResult, quotedLabels, withContext } from './ui/ask'
-import type { StepResult } from './ui/ask'
+import type { InitIo, RoleSpec } from '../../types'
+import { parseRoleList } from '../assign'
+import { labelled } from '../core/labelled'
+import { accepted, askChoice, choiceResult, quotedLabels, withContext } from '../ui/ask'
+import type { StepResult } from '../ui/ask'
 
 /**
  * The entry answer that gives every item its recommended roles (G-02-1f Entry choices, G-02-1b), the same for the

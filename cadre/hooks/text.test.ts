@@ -150,7 +150,6 @@ import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/lau
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { ACCEPT_RECOMMENDATIONS } from './handout'
 import {
   HISTORY_DISMISSED_REASON,
   HISTORY_OPTIONS,
@@ -252,6 +251,7 @@ import {
   skillsContextLine,
   teamContextLine,
 } from './init'
+import { ACCEPT_RECOMMENDATIONS } from './init/handout'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

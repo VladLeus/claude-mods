@@ -94,10 +94,10 @@ import { trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
-import { ACCEPT_RECOMMENDATIONS, handoutStep } from './handout'
-import type { HandoutEntry, HandoutItem } from './handout'
 import { historyStep } from './history'
 import { hasRunFailed } from './host/steps'
+import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
+import type { HandoutEntry, HandoutItem } from './init/handout'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
