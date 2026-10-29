@@ -1,7 +1,9 @@
 /**
  * The framework registry, a layer 2 module: the adapters cadre drives in report order, the adapter of a framework id
- * and the detection of every adapter. It imports the contract and the adapter of each framework/<id>/ folder, so
- * adding a framework is one folder and one line here (D-244), and every module that reads an adapter goes through it.
+ * and the detection of every adapter. It imports the contract and the adapter of each framework/<id>/ folder, so a
+ * framework that needs no identity probe, facts, hunks or tool resolver is one folder and one line here (D-244), and
+ * every module that reads an adapter goes through it; GSD's seams outside framework/ are listed in the 3.2 re-plan
+ * todo (#113).
  */
 import type { Detection, Facts, FrameworkAdapter, FrameworkId } from '../../types'
 import { detectUnsupported } from './contract'
