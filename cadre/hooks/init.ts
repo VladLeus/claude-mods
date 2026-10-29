@@ -66,8 +66,7 @@ import { ADAPTERS, detectAll } from './framework/registry'
 import { desiredFiles } from './generate/files'
 import { trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
-import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
+import { initGuard } from './guards/repo'
 import { hasRunFailed } from './host/steps'
 import {
   ALL_ENV_OPTION,
@@ -94,6 +93,7 @@ import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './init
 import type { NameAssignment, SkillGroup } from './init/assign-rules'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
+import { cancelledReply, IGNORE_ALL_NOTE } from './init/replies'
 import { historyStep } from './init/stages/history'
 import { hunkQuestion, parseHunkAnswer } from './init/stages/hunks'
 import {
@@ -157,32 +157,6 @@ import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
 import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
-
-/** The reply when the session root cannot be read: init stops before it reads anything. */
-export const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')
-
-/** The home-folder refusal as init words it (D-36, Pitfall 10). */
-export const INIT_HOME_ROOT_REPLY = commandRefusal(HOME_ROOT_REPLY, 'init')
-
-/** The file-system-root refusal as init words it (D-36, Pitfall 10). */
-export const INIT_FILE_SYSTEM_ROOT_REPLY = commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init')
-
-/**
- * The start of the reply when a dialog is dismissed or never answered with a listed choice: nothing was written
- * (D-45); cancelledReply adds the reason.
- */
-export const INIT_CANCELLED = 'init cancelled, nothing written'
-
-/**
- * The reply of a cancelled init (D-45, batch-1 review S1): INIT_CANCELLED, a colon and the step's reason cleaned as a
- * report cell, so every surface shows why init stopped.
- */
-export function cancelledReply(reason: string): string {
-  return `${INIT_CANCELLED}: ${reportText(reason)}`
-}
-
-/** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
-export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees"
 
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo } from '../../types'
-import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init'
+import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init/replies'
 import { autopilotReply } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'

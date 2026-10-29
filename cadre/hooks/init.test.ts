@@ -86,7 +86,6 @@ import {
   adjustLoop,
   ASSIGNMENT_DISMISSED_REASON,
   assignmentStep,
-  cancelledReply,
   cardLines,
   carryStep,
   CLAUDE_JSON_CONTEXT,
@@ -121,14 +120,10 @@ import {
   gitPolicyStep,
   HUNK_DISMISSED_REASON,
   hunkStep,
-  IGNORE_ALL_NOTE,
   IMPROVER_INSTALL_CONTEXT,
   IMPROVER_INSTALL_DISMISSED_REASON,
   IMPROVER_INSTALL_QUESTION,
   improverRunLine,
-  INIT_CANCELLED,
-  INIT_FILE_SYSTEM_ROOT_REPLY,
-  INIT_HOME_ROOT_REPLY,
   INSTALL_OPTIONS,
   initReplyText,
   installedFrameworks,
@@ -189,6 +184,13 @@ import {
 } from './init'
 import type { AdjustOutcome, InitOptions, ReviewItem } from './init'
 import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './init/answers'
+import {
+  cancelledReply,
+  IGNORE_ALL_NOTE,
+  INIT_CANCELLED,
+  INIT_FILE_SYSTEM_ROOT_REPLY,
+  INIT_HOME_ROOT_REPLY,
+} from './init/replies'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './init/stages/history'
 import {
   CONTENT_DISMISSED_REASON,
@@ -4793,13 +4795,6 @@ describe('runInit cancel reasons (A1)', () => {
 })
 
 describe('cancel reply (S1)', () => {
-  test('cancelledReply is INIT_CANCELLED, a colon and the reason cleaned as a report cell', () => {
-    expect(cancelledReply(NO_USABLE_ANSWER_REASON)).toBe(
-      'init cancelled, nothing written: No usable answer after 3 tries.',
-    )
-    expect(cancelledReply('a\nb')).toBe('init cancelled, nothing written: ab')
-  })
-
   test('three unreadable git policy answers reply with the reason, which is still logged once', async () => {
     const refusal = refusalLine('whatever', 'definitions, all, ignore')
     const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' })
