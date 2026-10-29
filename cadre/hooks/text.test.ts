@@ -140,16 +140,6 @@ import {
   CONFLICT_DISMISSED_REASON,
   improverRunLine,
   initReplyText,
-  LAUNCH_DIR_CANCELLED_REASON,
-  LAUNCH_DIR_CONTEXT,
-  LAUNCH_DIR_OPTIONS,
-  LAUNCH_DIR_QUESTION,
-  LAUNCH_DIR_ROUNDS_REASON,
-  LAUNCH_START_DISMISSED_REASON,
-  LAUNCH_START_OPTIONS,
-  LAUNCH_START_QUESTION,
-  launchContextLine,
-  launchLine,
   LINKED_MEMORIES_ROW,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
@@ -241,6 +231,18 @@ import {
   topicItems,
   topicQuestion,
 } from './init/stages/instructions'
+import {
+  LAUNCH_DIR_CANCELLED_REASON,
+  LAUNCH_DIR_CONTEXT,
+  LAUNCH_DIR_OPTIONS,
+  LAUNCH_DIR_QUESTION,
+  LAUNCH_DIR_ROUNDS_REASON,
+  LAUNCH_START_DISMISSED_REASON,
+  LAUNCH_START_OPTIONS,
+  LAUNCH_START_QUESTION,
+  launchContextLine,
+  launchLine,
+} from './init/stages/launch'
 import { MEMORY_DISMISSED_REASON, memoryContextLine } from './init/stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, teamContextLine } from './init/stages/model'
 import {
