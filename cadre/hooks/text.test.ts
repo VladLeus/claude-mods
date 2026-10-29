@@ -134,24 +134,7 @@ import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/lau
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
-import {
-  cardLines,
-  CONFLICT_CONTEXT,
-  CONFLICT_DISMISSED_REASON,
-  improverRunLine,
-  initReplyText,
-  LINKED_MEMORIES_ROW,
-  PRIVATE_FILES_HEADING,
-  privateFilesRow,
-  REVIEW_DISMISSED_REASON,
-  REVIEW_OPTIONS,
-  REVIEW_QUESTION,
-  REVIEW_ROUNDS_REASON,
-  REVIEW_TYPE_HINT,
-  reviewContextLine,
-  reviewQuestion,
-  runInit,
-} from './init'
+import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, initReplyText, runInit } from './init'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -262,6 +245,20 @@ import {
   GIT_POLICY_QUESTION,
   policyLine,
 } from './init/stages/policy'
+import {
+  cardLines,
+  improverRunLine,
+  LINKED_MEMORIES_ROW,
+  PRIVATE_FILES_HEADING,
+  privateFilesRow,
+  REVIEW_DISMISSED_REASON,
+  REVIEW_OPTIONS,
+  REVIEW_QUESTION,
+  REVIEW_ROUNDS_REASON,
+  REVIEW_TYPE_HINT,
+  reviewContextLine,
+  reviewQuestion,
+} from './init/stages/review'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,

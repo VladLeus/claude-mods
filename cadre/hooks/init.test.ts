@@ -64,27 +64,8 @@ import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate/
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
-import {
-  cardLines,
-  CONFLICT_CONTEXT,
-  improverRunLine,
-  initReplyText,
-  LINKED_MEMORIES_ROW,
-  MAX_REVIEW_ROUNDS,
-  parseReviewItem,
-  PRIVATE_FILES_HEADING,
-  privateFilesRow,
-  REVIEW_DISMISSED_REASON,
-  REVIEW_OPTIONS,
-  REVIEW_QUESTION,
-  REVIEW_ROUNDS_REASON,
-  REVIEW_TYPE_HINT,
-  reviewContextLine,
-  reviewQuestion,
-  runInit,
-} from './init'
+import { CONFLICT_CONTEXT, initReplyText, runInit } from './init'
 import type { InitOptions } from './init'
-import type { ReviewItem } from './init/flow'
 import { planStep } from './init/initplan'
 import {
   cancelledReply,
@@ -142,6 +123,20 @@ import {
   parseGitPolicy,
   policyLine,
 } from './init/stages/policy'
+import {
+  cardLines,
+  improverRunLine,
+  LINKED_MEMORIES_ROW,
+  MAX_REVIEW_ROUNDS,
+  parseReviewItem,
+  PRIVATE_FILES_HEADING,
+  privateFilesRow,
+  REVIEW_DISMISSED_REASON,
+  REVIEW_OPTIONS,
+  REVIEW_QUESTION,
+  REVIEW_ROUNDS_REASON,
+  REVIEW_TYPE_HINT,
+} from './init/stages/review'
 import {
   ADJUST_QUESTION,
   DESCRIBE_QUESTION,
@@ -2703,20 +2698,6 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
 })
 
 describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
-  test('the private files row, its heading and the improver line are fixed', () => {
-    expect(privateFilesRow('be')).toBe(
-      '    private files: <config dir>/cadre/<repo>-<hash8>/be/instructions/CLAUDE.md and instructions.json ' +
-        '(outside the repo, never committed)',
-    )
-    expect(PRIVATE_FILES_HEADING).toBe('Private files per role (written after Confirm):')
-    expect([improverRunLine(1), improverRunLine(2)]).toEqual([
-      'After Confirm, claude-md-improver runs on up to 1 built file (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
-      'After Confirm, claude-md-improver runs on up to 2 built files (claude -p, acceptEdits, up to 5 minutes each); ' +
-        'you accept or keep each change.',
-    ])
-  })
-
   test('a whole-files review lists the heading, then the private files of each role in role order', async () => {
     const whole = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' }
     const run = memIo(builtWorld(), whole)
@@ -3324,18 +3305,6 @@ describe('question context lines (G-02-1)', () => {
     expect(scanContextLine(repoScan())).toBe('Scan: stack none; frontend none; backend none; tests none; E2E none.')
   })
 
-  test('reviewContextLine is the plan summary, the git policy line and the launcher line', () => {
-    const plan: Plan = { ops: [{ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null }], warnings: [] }
-    expect(reviewContextLine(plan, 'definitions', { kind: 'git-root' })).toBe(
-      'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks; ' +
-        'Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root',
-    )
-    expect(reviewContextLine(plan, 'ignore', { kind: 'dir', path: 'apps/web' })).toBe(
-      'Summary: 1 create, 0 change, 0 leave, 0 conflict, 0 hunks; ' +
-        'Git policy: ignore all of .cadre/; Launchers start in: apps/web/ under the git root',
-    )
-  })
-
   test('every question of every run but the hunks carries a context line on its second line', async () => {
     const runs = Object.values(await questionRuns())
     const isHunk = (question: string): boolean => question.startsWith('.planning/config.json: ')
@@ -3718,12 +3687,6 @@ describe('init plan', () => {
     expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
   })
 
-  test("cardLines gives the lines of every role's card in role order, and none for a role with no scope", () => {
-    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
-    expect(cardLines(roles, scopes)).toEqual(roles.flatMap(role => scopeCardLines(cardOf(scopes, role.id))))
-    expect(cardLines([...roles, templateRole('qa')], scopes)).toEqual(cardLines(roles, scopes))
-  })
-
   test('initReplyText ends a plain reply with the applied lines and a dry run with its note', async () => {
     const plan = await emptyDiskPlan([], 'ignore')
     const outcome = outcomeOf({ written: ['.cadre/bin/be', '.gitignore'], executable: ['.cadre/bin/be'] })
@@ -4020,43 +3983,6 @@ function everyStepWorld(): MemWorld {
 }
 
 describe('reviewStep', () => {
-  test('the review question, its four buttons and the round cap are fixed (D-43, A2)', () => {
-    expect(REVIEW_QUESTION).toBe(
-      'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
-    )
-    expect(REVIEW_OPTIONS).toEqual(['Confirm', 'Change roles', 'Change git policy', 'Change launcher start'])
-    expect(Object.isFrozen(REVIEW_OPTIONS)).toBe(true)
-    expect(MAX_REVIEW_ROUNDS).toBe(10)
-    expect(REVIEW_DISMISSED_REASON).toBe('The review question was dismissed or not answered.')
-    expect(REVIEW_ROUNDS_REASON).toBe('The review question was asked 10 times without "Confirm": nothing was chosen.')
-  })
-
-  test('parseReviewItem reads a button or a typed item, trimmed and in any case; anything else is null', () => {
-    const cases: readonly (readonly [string, ReviewItem | null])[] = [
-      ['Confirm', 'confirm'],
-      [' confirm ', 'confirm'],
-      ['Change roles', 'roles'],
-      ['roles', 'roles'],
-      ['Change git policy', 'policy'],
-      ['GIT POLICY', 'policy'],
-      ['Change launcher start', 'launch'],
-      ['launcher start', 'launch'],
-      ['duration', 'duration'],
-      ['Model', 'model'],
-      ['assignments', 'assignments'],
-      ['mcp', 'assignments'],
-      ['skills', 'assignments'],
-      ['memory', 'memory'],
-      ['env', 'env'],
-      [' hunks', 'hunks'],
-      ['', null],
-      ['yes', null],
-      ['policy', null],
-      ['change the model', null],
-    ]
-    for (const [answer, item] of cases) expect([answer, parseReviewItem(answer)]).toEqual([answer, item])
-  })
-
   test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const world = fullWorld({ locations })
@@ -4407,23 +4333,6 @@ describe('consent declines first (G-02-11)', () => {
 })
 
 describe('review question hint (G-02-7)', () => {
-  test('reviewQuestion(null) is the question, then the typed-item hint on its own last line', () => {
-    expect(REVIEW_TYPE_HINT).toBe(
-      'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
-    )
-    expect(reviewQuestion(null)).toBe(
-      'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\n' +
-        'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
-    )
-    expect(reviewQuestion(null)).toBe(`${REVIEW_QUESTION}\n${REVIEW_TYPE_HINT}`)
-  })
-
-  test('a context line sits on its own line between the question and the hint, which always ends the text', () => {
-    const context = 'Roles: PM, Team Lead, Security; 22 files planned.'
-    expect(reviewQuestion(context).split('\n')).toEqual([REVIEW_QUESTION, context, REVIEW_TYPE_HINT])
-    for (const given of [null, context]) expect(reviewQuestion(given).endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
-  })
-
   test('reviewStep asks it with the four buttons, once, right after it shows the review block', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
