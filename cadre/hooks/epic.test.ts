@@ -15,11 +15,8 @@ import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import {
   cleanStateOf,
-  EPIC_CANCELLED,
   EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
-  EPIC_NO_PM,
-  EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicCreatedText,
   epicDoneProblems,
@@ -31,17 +28,11 @@ import {
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
-  epicManyPmReply,
   epicNoRecordWarning,
   epicNotFoundReply,
-  epicNotMainReply,
-  epicOldLauncherReply,
-  epicParentOf,
   epicPathExistsReply,
-  epicPmOf,
   epicRemoveFailedReply,
   epicRemovedText,
-  epicRolesQuestion,
   epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
@@ -76,6 +67,17 @@ import {
   epicStepFailedReply,
   globalExcludesWarning,
 } from './epic/mirror-run'
+import {
+  EPIC_CANCELLED,
+  EPIC_NO_PM,
+  EPIC_UNKNOWN_CHECKOUT,
+  epicManyPmReply,
+  epicNotMainReply,
+  epicOldLauncherReply,
+  epicParentOf,
+  epicPmOf,
+  epicRolesQuestion,
+} from './epic/pick'
 import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './epic/record'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'

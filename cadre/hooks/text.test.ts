@@ -80,14 +80,10 @@ import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './detect/report'
 import {
-  EPIC_CANCELLED,
   EPIC_DONE_HEADER,
   EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
   EPIC_DONE_OPTIONS,
-  EPIC_NO_PM,
-  EPIC_ROLES_HEADER,
-  EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicCreatedText,
   epicDoneProblems,
@@ -98,15 +94,11 @@ import {
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
-  epicManyPmReply,
   epicNoRecordWarning,
   epicNotFoundReply,
-  epicNotMainReply,
-  epicOldLauncherReply,
   epicPathExistsReply,
   epicRemovedText,
   epicRemoveFailedReply,
-  epicRolesQuestion,
   epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
@@ -122,6 +114,16 @@ import {
   epicStepFailedReply,
   globalExcludesWarning,
 } from './epic/mirror-run'
+import {
+  EPIC_CANCELLED,
+  EPIC_NO_PM,
+  EPIC_ROLES_HEADER,
+  EPIC_UNKNOWN_CHECKOUT,
+  epicManyPmReply,
+  epicNotMainReply,
+  epicOldLauncherReply,
+  epicRolesQuestion,
+} from './epic/pick'
 import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordText } from './epic/record'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {
