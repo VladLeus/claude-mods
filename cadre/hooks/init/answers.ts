@@ -7,11 +7,11 @@
  * read it.
  */
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
-import type { NameAssignment, SkillGroup } from '../assign'
 import { clean, countedNoun, idsOrNone, moreLine, sortedUnique } from '../core/text'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
+import type { NameAssignment, SkillGroup } from './assign-rules'
 
 /** The dialog button that gives an item to no role. A typed answer of the same words counts the same, in any case. */
 export const NONE_OPTION = 'None'

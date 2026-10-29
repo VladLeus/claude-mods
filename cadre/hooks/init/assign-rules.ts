@@ -1,9 +1,16 @@
-import type { McpRef, RoleSpec, SkillRef } from '../types'
-import { asciiLower, compareText, sortedUnique } from './core/text'
-import { ADAPTERS } from './framework/registry'
-import { INFRA_MCP_SERVERS, INFRA_SKILLS, MCP_ROLE_ROWS, SKILL_ROLE_ROWS } from './roles/infra'
-import type { NameRow } from './roles/infra'
-import { standsFor } from './roles/template'
+/**
+ * The assignment rules of init (D-53, D-59, ISO-04), a layer 10 module: classifyMcp and classifySkills split the
+ * scanned MCP servers and skills into the ones the role table gives to the team's roles (NameAssignment) and the ones
+ * left to ask about, the skills in groups by the plugin that adds them (SkillGroup); groupUses and orderGroupsByUse
+ * order those groups by how often the history scan saw them. It is pure and imports core, framework/registry and roles;
+ * init.ts and init/answers read it.
+ */
+import type { McpRef, RoleSpec, SkillRef } from '../../types'
+import { asciiLower, compareText, sortedUnique } from '../core/text'
+import { ADAPTERS } from '../framework/registry'
+import { INFRA_MCP_SERVERS, INFRA_SKILLS, MCP_ROLE_ROWS, SKILL_ROLE_ROWS } from '../roles/infra'
+import type { NameRow } from '../roles/infra'
+import { standsFor } from '../roles/template'
 
 /** One scanned name given to the roles with these ids. */
 export type NameAssignment = {

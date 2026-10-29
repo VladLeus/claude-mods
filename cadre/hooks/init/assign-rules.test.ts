@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../types'
-import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './assign'
-import type { SkillGroup } from './assign'
-import { adapterOf, ADAPTERS } from './framework/registry'
-import { assignToRoles, mcpQuestion, parseRoleList, skillGroupQuestion } from './init/answers'
+import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../../types'
+import { adapterOf, ADAPTERS } from '../framework/registry'
 import {
   INFRA_MCP_SERVERS,
   INFRA_PLUGINS,
@@ -13,7 +10,7 @@ import {
   isSecurityReviewSkill,
   MCP_ROLE_ROWS,
   SKILL_ROLE_ROWS,
-} from './roles/infra'
+} from '../roles/infra'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -21,7 +18,10 @@ import {
   DEFAULT_MODEL,
   DEFAULT_PERMISSION_MODE,
   EMPTY_CARRY,
-} from './roles/template'
+} from '../roles/template'
+import { assignToRoles, mcpQuestion, parseRoleList, skillGroupQuestion } from './answers'
+import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './assign-rules'
+import type { SkillGroup } from './assign-rules'
 
 /** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
 function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {

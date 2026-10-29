@@ -40,8 +40,6 @@ import type { ApplyInput } from './apply/private'
 import { appliedLines, installPlugins, privatePlanOf, writeWithImprover } from './apply/run'
 import type { ApplyOutcome, OwedPrivate } from './apply/run'
 import { applySteps } from './apply/steps'
-import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './assign'
-import type { NameAssignment, SkillGroup } from './assign'
 import { SUPPORTED_IDS } from './core/framework-id'
 import { sha256Hex } from './core/hash'
 import { labelled } from './core/labelled'
@@ -93,6 +91,8 @@ import {
   skillGroupQuestion,
   skillUsesText,
 } from './init/answers'
+import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './init/assign-rules'
+import type { NameAssignment, SkillGroup } from './init/assign-rules'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
 import {

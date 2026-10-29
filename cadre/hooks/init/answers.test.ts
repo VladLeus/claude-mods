@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef, TemplateRoleId } from '../../types'
-import type { SkillGroup } from '../assign'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -35,6 +34,7 @@ import {
   skillGroupQuestion,
   skillUsesText,
 } from './answers'
+import type { SkillGroup } from './assign-rules'
 
 /** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
 function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
