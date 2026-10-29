@@ -147,11 +147,6 @@ import {
   DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
-  FRAMEWORK_ALL_QUESTION,
-  FRAMEWORK_DISMISSED_REASON,
-  FRAMEWORK_LABELS,
-  FRAMEWORK_QUESTION_PREFIX,
-  frameworkRoleQuestion,
   improverRunLine,
   initReplyText,
   LAUNCH_DIR_CANCELLED_REASON,
@@ -221,6 +216,13 @@ import {
   DURATION_QUESTION,
   durationContextLine,
 } from './init/stages/duration'
+import {
+  FRAMEWORK_ALL_QUESTION,
+  FRAMEWORK_DISMISSED_REASON,
+  FRAMEWORK_LABELS,
+  FRAMEWORK_QUESTION_PREFIX,
+  frameworkRoleQuestion,
+} from './init/stages/frameworks'
 import {
   HISTORY_DISMISSED_REASON,
   HISTORY_OPTIONS,
