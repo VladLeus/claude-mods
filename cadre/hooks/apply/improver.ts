@@ -11,7 +11,7 @@ import { sha256Hex } from '../core/hash'
 import { compareText, countedNoun, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { editWriteRules } from '../launch/deny'
-import { displayPath, isFileInsideRoot, trimSlash } from '../paths'
+import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
 import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from '../ui/ask'
@@ -19,7 +19,7 @@ import { diffLines, lineDiff } from '../ui/diff'
 import type { LineDiff } from '../ui/diff'
 import { instructionsRecordPath, privateClaudeMdPath } from './private'
 import type { ApplyStep } from './private'
-import { parentOf, privateFolderOf } from './safety'
+import { privateFolderOf } from './safety'
 
 /** How long one improver run may take before it is given up (G-02-1f, D-141, T-02-77): the file then stays as built. */
 export const IMPROVER_TIMEOUT_MS = 300_000

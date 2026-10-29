@@ -12,6 +12,7 @@ import {
   INSTRUCTIONS_RECORD_FILE,
   isDirInsideRoot,
   isFileInsideRoot,
+  parentOf,
   PRIVATE_INSTRUCTIONS_FOLDER,
   trimSlash,
 } from '../paths'
@@ -153,11 +154,6 @@ export function chmodProblem(path: string, written: ReadonlySet<string>): string
 /** The argv that makes a written launcher executable: `/bin/chmod 755` on its absolute path under the root. */
 export function chmodArgv(root: string, path: string): readonly string[] {
   return ['/bin/chmod', '755', `${trimSlash(root)}/${path}`]
-}
-
-/** The folder that holds an absolute path: everything before its last slash. */
-export function parentOf(path: string): string {
-  return path.slice(0, path.lastIndexOf('/'))
 }
 
 /** The private text file's subfolder of a role memory folder: `<folder>/instructions` (D-140). */

@@ -474,6 +474,11 @@ export function foldersAbove(path: string): string[] {
   return segments.slice(1).map((_, index) => segments.slice(0, index + 1).join('/'))
 }
 
+/** The folder that holds a path: everything before its last slash. */
+export function parentOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/'))
+}
+
 /**
  * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
  * project folder under `<user folder>/projects` (memoryFolderOf), for the root as resolved, then as given, once each;

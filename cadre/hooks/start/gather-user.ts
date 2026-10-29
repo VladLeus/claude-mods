@@ -22,7 +22,15 @@ import { sortedUnique } from '../core/text'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
 import { isPartsFlowRole } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
-import { displayPath, MARKDOWN_EXTENSION, markdownFileNames, memoryFolderOf, roleMemoryDir, userDirOf } from '../paths'
+import {
+  displayPath,
+  MARKDOWN_EXTENSION,
+  markdownFileNames,
+  memoryFolderOf,
+  parentOf,
+  roleMemoryDir,
+  userDirOf,
+} from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
@@ -30,7 +38,7 @@ import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
 import { hookScriptOf, positiveInteger } from '../scan/setup/settings'
 import { linkedMemoriesOf } from './memory-links'
-import { isPlainName, NO_MEMORY_LINKS, parentOf } from './render-plan'
+import { isPlainName, NO_MEMORY_LINKS } from './render-plan'
 import type { MemoryLinks } from './render-plan'
 
 /** The refusal when there is no HOME: the role files are rendered from the user's own folder (D-98). */

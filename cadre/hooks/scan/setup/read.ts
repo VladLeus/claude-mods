@@ -27,7 +27,7 @@ export function shownPath(ctx: SetupContext, path: string): string {
 }
 
 /** The warning for a path the scan could not read: its display form, never the path itself (D-57). */
-export function unreadableWarning(ctx: SetupContext, path: string): string {
+export function unreadablePathWarning(ctx: SetupContext, path: string): string {
   return `could not read ${shownPath(ctx, path)} (treated as unknown)`
 }
 
@@ -52,7 +52,7 @@ export async function readJsonFile(
   if (read.state === 'absent') return { state: 'absent' }
   const json = read.state === 'text' ? parseJsonValue(read.text) : null
   if (json === null) {
-    warnings.push(unreadableWarning(ctx, path))
+    warnings.push(unreadablePathWarning(ctx, path))
 
     return { state: 'unknown' }
   }
@@ -85,7 +85,7 @@ export async function listFolder(
 ): Promise<readonly PortEntry[]> {
   const listing = await listingState(io, path)
   if (listing.state === 'present') return listing.entries
-  if (listing.state === 'unknown') warnings.push(unreadableWarning(ctx, path))
+  if (listing.state === 'unknown') warnings.push(unreadablePathWarning(ctx, path))
 
   return []
 }
@@ -105,7 +105,7 @@ export async function isInsideRepo(
   const stat = await io.stat(path)
   const isAllowed = stat !== null && isInside(stat, ctx.root)
   if (isAllowed) return true
-  if (stat !== null || (await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
+  if (stat !== null || (await missingState(io, path)) === 'unknown') warnings.push(unreadablePathWarning(ctx, path))
 
   return false
 }

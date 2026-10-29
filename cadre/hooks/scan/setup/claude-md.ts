@@ -8,7 +8,7 @@ import type { InitIo } from '../../../types'
 import { isObject } from '../../core/json'
 import { displayPath, trimSlash } from '../../paths'
 import { missingState } from '../port-read'
-import { unreadableWarning } from './read'
+import { unreadablePathWarning } from './read'
 import type { SetupContext } from './read'
 
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
@@ -68,7 +68,7 @@ export async function isGlobalClaudeMdThere(
   const path = `${userDir}/CLAUDE.md`
   const stat = await io.stat(path)
   if (stat !== null) return stat.kind === 'file'
-  if ((await missingState(io, path)) === 'unknown') warnings.push(unreadableWarning(ctx, path))
+  if ((await missingState(io, path)) === 'unknown') warnings.push(unreadablePathWarning(ctx, path))
 
   return false
 }

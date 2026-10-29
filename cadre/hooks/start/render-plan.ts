@@ -18,6 +18,7 @@ import type { LaunchPlan } from '../launch/plan'
 import {
   INBOX_FILE,
   isDirInsideRoot,
+  parentOf,
   PRIVATE_INSTRUCTIONS_LINK,
   PROBE_EXPECTATIONS_FILE,
   RUNTIME_KICKOFF_FILE,
@@ -130,11 +131,6 @@ function roleFolder(root: string, id: string): string {
 /** The folder of a role's per-launch files: `<root>/.cadre/<id>/.runtime`, the folder its launcher reads. */
 export function runtimeFolder(root: string, id: string): string {
   return `${roleFolder(root, id)}/.runtime`
-}
-
-/** The folder that holds a path: everything before its last slash. */
-export function parentOf(path: string): string {
-  return path.slice(0, path.lastIndexOf('/'))
 }
 
 /**
