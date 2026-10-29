@@ -5,7 +5,7 @@ import type { FactsPort, HostIo, IdentityRunResult, InitIo, PortRead, ShownBlock
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
 import { detectText } from './detect/report'
-import { runEpic } from './epic'
+import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
 import { detectRefusal } from './guards/refusals'
 import { runInit } from './init'

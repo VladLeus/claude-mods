@@ -17,7 +17,7 @@ import type {
 import { sha256Hex } from '../core/hash'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
 import { sortedUnique } from '../core/text'
-import { runEpic } from '../epic'
+import { runEpic } from '../epic/create'
 import { GIT_DIR_ARGV } from '../epic/git'
 import { adapterOf } from '../framework/registry'
 import { cadreJsonText, roleJsonText } from '../generate/docs'

@@ -7,7 +7,7 @@
 import type { HostIo, InitIo, RawFacts, TerminalChoice } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { detectText } from '../detect/report'
-import { runEpic } from '../epic'
+import { runEpic } from '../epic/create'
 import { runEpicDone } from '../epic/done'
 import { desiredFiles } from '../generate/files'
 import type { GenerateInput } from '../generate/files'

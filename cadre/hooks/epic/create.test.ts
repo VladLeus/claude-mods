@@ -1,11 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, EpicRecord, HostIo, ManifestEntry, MemoryItem, RoleSpec, TerminalChoice } from '../types'
-import { instructionsRecordPath, instructionsRecordText } from './apply/private'
-import { sha256Hex } from './core/hash'
-import { isObject, parseJsonValue, stableJson } from './core/json'
-import { epicAddFailedReply, epicCreatedText, epicNoRecordWarning, epicPathExistsReply, runEpic } from './epic'
-import { EXCLUDES_FILE, excludesText } from './epic/excludes'
+import type { AskSpec, EpicRecord, HostIo, ManifestEntry, MemoryItem, RoleSpec, TerminalChoice } from '../../types'
+import { instructionsRecordPath, instructionsRecordText } from '../apply/private'
+import { sha256Hex } from '../core/hash'
+import { isObject, parseJsonValue, stableJson } from '../core/json'
+import { cadreJsonText, roleJsonText } from '../generate/docs'
+import { RUNTIME_KICKOFF_TEST } from '../generate/launcher'
+import { CHECKOUT_ARGV } from '../git/checkout'
+import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { claudeTooOldReply } from '../start/claude-version'
+import { START_NO_GIT_DIR } from '../start/gather-user'
+import { launcherChangedReply } from '../start/launcher-check'
+import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from '../start/memory-links'
+import { runStart } from '../start/run'
+import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from '../testkit'
+import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from '../testkit'
+import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from '../ui/terminal'
+import { epicAddFailedReply, epicCreatedText, epicNoRecordWarning, epicPathExistsReply, runEpic } from './create'
+import { EXCLUDES_FILE, excludesText } from './excludes'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
@@ -17,16 +30,11 @@ import {
   LS_OTHERS_ARGV,
   WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
-} from './epic/git'
-import { epicBadKeyReply } from './epic/key'
-import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './epic/launcher'
-import { EPIC_NO_WORKTREE_LIST } from './epic/lookup'
-import {
-  epicExcludesFailedReply,
-  epicListFailedReply,
-  epicStepFailedReply,
-  globalExcludesWarning,
-} from './epic/mirror-run'
+} from './git'
+import { epicBadKeyReply } from './key'
+import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './launcher'
+import { EPIC_NO_WORKTREE_LIST } from './lookup'
+import { epicExcludesFailedReply, epicListFailedReply, epicStepFailedReply, globalExcludesWarning } from './mirror-run'
 import {
   EPIC_CANCELLED,
   EPIC_NO_PM,
@@ -35,21 +43,8 @@ import {
   epicOldLauncherReply,
   epicPmOf,
   epicRolesQuestion,
-} from './epic/pick'
-import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './epic/record'
-import { cadreJsonText, roleJsonText } from './generate/docs'
-import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
-import { CHECKOUT_ARGV } from './git/checkout'
-import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
-import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { claudeTooOldReply } from './start/claude-version'
-import { START_NO_GIT_DIR } from './start/gather-user'
-import { launcherChangedReply } from './start/launcher-check'
-import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from './start/memory-links'
-import { runStart } from './start/run'
-import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
-import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'
-import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from './ui/terminal'
+} from './pick'
+import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './record'
 
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
 const WORKTREE = '/repo/.claude/worktrees/proj-1-add-retry'

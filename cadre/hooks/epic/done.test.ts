@@ -3,12 +3,12 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskSpec, EpicRecord, HostIo, HostRun, ManifestEntry, RoleSpec, TerminalChoice } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
-import { runEpic } from '../epic'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { RUNTIME_KICKOFF_TEST } from '../generate/launcher'
 import { CHECKOUT_ARGV } from '../git/checkout'
 import { entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from '../testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from '../testkit'
+import { runEpic } from './create'
 import {
   cleanStateOf,
   EPIC_DONE_NO_DIALOG,

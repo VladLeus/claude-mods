@@ -79,7 +79,7 @@ import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './detect/report'
-import { epicAddFailedReply, epicCreatedText, epicNoRecordWarning, epicPathExistsReply } from './epic'
+import { epicAddFailedReply, epicCreatedText, epicNoRecordWarning, epicPathExistsReply } from './epic/create'
 import {
   EPIC_DONE_HEADER,
   EPIC_DONE_NO_DIALOG,

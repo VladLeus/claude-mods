@@ -1,15 +1,38 @@
 /**
- * `/cadre epic <KEY> [title]` (D-143 to D-148, D-162 to D-164): the key and slug rules, the worktree path, the
- * `git worktree add` argv, the lookup of an epic by its key, the epic record, and the mirror of the main checkout's
- * untracked and ignored files with its excludes file as pure functions, and runEpic, the command itself, which checks
- * the repo, runs git and the mirror steps, and renders each role into the worktree with renderRole (D-157), through
- * the HostIo port only, as runStart does. An epic is a tracker epic that the PM role fetches (D-143): cadre takes the
- * key as typed and slugs it for names. The epic's worktree is `<root>/.claude/worktrees/<slug>` in the main checkout,
- * on the branch `epic/<slug>` made from the current HEAD (D-146). Tracked state such as `.planning/` comes with the
- * branch and is never linked (D-150).
+ * `/cadre epic <KEY> [title]` (D-143 to D-148, D-157, D-162 to D-167), a layer 11 module: runEpic, the command itself,
+ * checks the repo, the team, the launchers and claude, finds or adds the epic's worktree by its key (epic/lookup),
+ * mirrors the main checkout into it (epic/mirror-run), writes its record (epic/record), and renders each picked role
+ * into the worktree with renderRole (D-157) and opens it there, through the InitIo and HostIo ports only, as runStart
+ * does. An epic is a tracker epic that the PM role fetches (D-143): cadre takes the key as typed and slugs it for
+ * names. The epic's worktree is `<root>/.claude/worktrees/<slug>` in the main checkout, on the branch `epic/<slug>`
+ * made from the current HEAD (D-146). Tracked state such as `.planning/` comes with the branch and is never linked
+ * (D-150). It imports core, generate/launcher, git, guards/repo, host/steps, paths, roles/template, scan, start, team,
+ * ui and the epic modules; register and the goldens run it.
  */
-import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../types'
-import { reportText, sortedUnique } from './core/text'
+import type { CadreState, EpicRecord, HostIo, InitIo, InitLocations, RoleSpec, TerminalChoice } from '../../types'
+import { reportText, sortedUnique } from '../core/text'
+import { hasRuntimeKickoff, shQuote } from '../generate/launcher'
+import { GIT_TIMEOUT_MS } from '../git/argv'
+import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
+import { repoGuard } from '../guards/repo'
+import { hasRunFailed } from '../host/steps'
+import { launcherPath } from '../paths'
+import { standIn } from '../roles/template'
+import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { claudeRefusal } from '../start/claude-version'
+import { launcherRead } from '../start/launcher-check'
+import { renderRole } from '../start/render'
+import { compileTeam, readTeam, regenBadRole } from '../team'
+import { terminalHostOf } from '../ui/open'
+import {
+  clipboardRun,
+  COPIED_LINE,
+  launcherCommand,
+  NOT_COPIED_LINE,
+  TERMINAL_OPEN_TIMEOUT_MS,
+  terminalPlan,
+} from '../ui/terminal'
+import type { TerminalPlan } from '../ui/terminal'
 import {
   BASE_BRANCH_ARGV,
   BASE_COMMIT_ARGV,
@@ -19,13 +42,13 @@ import {
   WORKTREE_LIST_ARGV,
   worktreeAddArgv,
   worktreePathOf,
-} from './epic/git'
-import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './epic/key'
-import { epicKickoffText } from './epic/kickoff'
-import type { EpicWorktree } from './epic/kickoff'
-import { epicWorktreeLauncherCheck } from './epic/launcher'
-import { EPIC_NO_WORKTREE_LIST, epicLookup, parseWorktreeList } from './epic/lookup'
-import { epicExcludesFailedReply, mirrorSteps } from './epic/mirror-run'
+} from './git'
+import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './key'
+import { epicKickoffText } from './kickoff'
+import type { EpicWorktree } from './kickoff'
+import { epicWorktreeLauncherCheck } from './launcher'
+import { EPIC_NO_WORKTREE_LIST, epicLookup, parseWorktreeList } from './lookup'
+import { epicExcludesFailedReply, mirrorSteps } from './mirror-run'
 import {
   EPIC_CANCELLED,
   EPIC_UNKNOWN_CHECKOUT,
@@ -35,30 +58,8 @@ import {
   epicPickedRoles,
   epicPmOf,
   TL_ROLE,
-} from './epic/pick'
-import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, parseEpicRecord } from './epic/record'
-import { hasRuntimeKickoff, shQuote } from './generate/launcher'
-import { GIT_TIMEOUT_MS } from './git/argv'
-import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
-import { repoGuard } from './guards/repo'
-import { hasRunFailed } from './host/steps'
-import { launcherPath } from './paths'
-import { standIn } from './roles/template'
-import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { claudeRefusal } from './start/claude-version'
-import { launcherRead } from './start/launcher-check'
-import { renderRole } from './start/render'
-import { compileTeam, readTeam, regenBadRole } from './team'
-import { terminalHostOf } from './ui/open'
-import {
-  clipboardRun,
-  COPIED_LINE,
-  launcherCommand,
-  NOT_COPIED_LINE,
-  TERMINAL_OPEN_TIMEOUT_MS,
-  terminalPlan,
-} from './ui/terminal'
-import type { TerminalPlan } from './ui/terminal'
+} from './pick'
+import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, parseEpicRecord } from './record'
 
 /**
  * The reply when `git worktree add` fails or cannot run (RESEARCH Pitfall 3), naming the branch cleaned. With `-b`,
