@@ -79,13 +79,12 @@ import { cappedErrors, REPLY_ERRORS_INTRO } from './core/reply'
 import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './detect/report'
+import { epicAddFailedReply, epicCreatedText, epicNoRecordWarning, epicPathExistsReply } from './epic'
 import {
   EPIC_DONE_HEADER,
   EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
   EPIC_DONE_OPTIONS,
-  epicAddFailedReply,
-  epicCreatedText,
   epicDoneProblems,
   epicDoneQuestion,
   epicDoneRefusal,
@@ -93,13 +92,11 @@ import {
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
-  epicNoRecordWarning,
   epicNotFoundReply,
-  epicPathExistsReply,
   epicRemovedText,
   epicRemoveFailedReply,
   epicUnlockFailedReply,
-} from './epic'
+} from './epic/done'
 import { EXCLUDES_FILE, excludesText, RUNTIME_EXCLUDE_LINE } from './epic/excludes'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
