@@ -176,9 +176,6 @@ import {
   mcpContextLine,
   MEMORY_DISMISSED_REASON,
   memoryContextLine,
-  MODEL_DISMISSED_REASON,
-  MODEL_EFFORT_CONTEXT,
-  MODEL_MODE_QUESTION,
   OWN_SKILLS_ENTRY_OPTIONS,
   ownSkillContextLine,
   ownSkillHeader,
@@ -206,7 +203,6 @@ import {
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
   skillsContextLine,
-  teamContextLine,
 } from './init'
 import {
   ALL_ENV_OPTION,
@@ -273,6 +269,7 @@ import {
   topicItems,
   topicQuestion,
 } from './init/stages/instructions'
+import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, teamContextLine } from './init/stages/model'
 import {
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,

@@ -75,17 +75,12 @@ import {
   envQuestion,
   mcpQuestion,
   memoryQuestion,
-  MODEL_EFFORT_OPTIONS,
-  modelEffortRefusal,
   NO_SKILL_PURPOSE,
   NONE_OPTION,
   ownSkillIds,
   ownSkillLines,
   parseEnvNames,
-  parseModelEffort,
   parseRoleList,
-  PER_ROLE,
-  SAME_FOR_ALL,
   skillGroupQuestion,
   skillUsesText,
 } from './init/answers'
@@ -111,6 +106,7 @@ import {
   parseContentConsent,
   topicItems,
 } from './init/stages/instructions'
+import { ANSWER_MODE_OPTIONS, modelStep, parseAnswerMode, teamContextLine } from './init/stages/model'
 import { gitPolicyStep, policyLine } from './init/stages/policy'
 import { isPartsFlowRole } from './launch/links'
 import { GITIGNORE_FILE, isRepoFolder, isSafeRelativePath, memoryFoldersOf, roleJsonPath } from './paths'
@@ -124,7 +120,6 @@ import { proposeRoles } from './roles/propose'
 import { missingSecurityPlugins, recommend } from './roles/recommend'
 import { parseRoleJson } from './roles/rolejson'
 import { standsFor } from './roles/template'
-import { EFFORTS, MODEL_ALIASES } from './roles/validate'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
@@ -158,15 +153,10 @@ import {
   showBlock,
   withContext,
 } from './ui/ask'
-import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
+import type { ChoiceAsk, StepResult } from './ui/ask'
 import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
-
-/** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
-export function teamContextLine(roles: readonly RoleSpec[]): string {
-  return `Roles: ${idsOf(roles)}.`
-}
 
 /** The roles question init asks after it shows the proposal (D-46). */
 export const ROLES_QUESTION = 'Use these roles?'
@@ -591,23 +581,6 @@ export function frameworkReason(choice: Choice): string {
   }
 }
 
-/** How the framework or the model question is answered: once for every role, or role by role (D-86). */
-type AnswerMode = 'same' | 'each'
-
-/** The answers to the first framework or model question, `Same for all roles` first (D-86). */
-const ANSWER_MODES: readonly Labelled<AnswerMode>[] = Object.freeze([
-  { label: SAME_FOR_ALL, value: 'same' },
-  { label: PER_ROLE, value: 'each' },
-])
-
-/** The buttons of the first framework or model question. */
-const ANSWER_MODE_OPTIONS: readonly string[] = Object.freeze(ANSWER_MODES.map(entry => entry.label))
-
-/** The answer to the first framework or model question, or null when it names neither, so it is asked again. */
-function parseAnswerMode(answer: string): AnswerMode | null {
-  return labelled(ANSWER_MODES, answer)
-}
-
 /** The framework an answer names among `allowed`, by its label or its id, trimmed and in any case; else null. */
 function parseFramework(answer: string, allowed: readonly FrameworkId[]): FrameworkId | null {
   const wanted = answer.trim().toLowerCase()
@@ -852,83 +825,6 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
 
     return { ...role, skills: isWanted ? [...skills, CLAUDE_SECURITY_SKILL] : skills }
   })
-}
-
-/** The first model question: one answer for every role or one per role, `Same for all roles` first (D-52, D-86). */
-export const MODEL_MODE_QUESTION = 'Model and effort: same for all roles, or per role?'
-
-/** The one model question after `Same for all roles` (D-86). */
-const MODEL_ALL_QUESTION = 'Model and effort for all roles?'
-
-/** The context line of each model and effort question (D-136): every model family and effort a role may use. */
-export const MODEL_EFFORT_CONTEXT = `Models: ${MODEL_ALIASES.join(', ')}; efforts: ${EFFORTS.join(', ')}.`
-
-/**
- * The model question for one role after `Per role` (D-52): its title and its id, since the id tells apart roles with
- * the same title (A6).
- */
-function modelRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
-  return `Model and effort for ${role.title} (${role.id})?`
-}
-
-/** Why init cancels when a model and effort question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
-export const MODEL_DISMISSED_REASON = 'A model and effort question was dismissed or not answered.'
-
-/** The role with its model family alias and its effort set. */
-function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): RoleSpec {
-  return { ...role, model: choice.model, effort: choice.effort }
-}
-
-/**
- * Asks one model and effort question at most MAX_ASKS times (D-52, A4, D-136), with MODEL_EFFORT_CONTEXT on the line
- * after the question: askChoice with modelEffortRefusal, cleaned as a report cell, as its refusal. A dismissal gives
- * `dismissed` at once and an answer parseModelEffort reads is the choice; after MAX_ASKS refused answers it gives
- * `exhausted`, so a cap is never a choice (A1).
- */
-async function askModelEffort(io: InitIo, question: string): Promise<AskResult<Pick<RoleSpec, 'model' | 'effort'>>> {
-  return askChoice(io, {
-    question: withContext(question, MODEL_EFFORT_CONTEXT),
-    spec: { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model },
-    parse: parseModelEffort,
-    accepts: quotedLabels(MODEL_EFFORT_OPTIONS),
-    refuse: answer => reportText(modelEffortRefusal(answer)),
-  })
-}
-
-/**
- * The model and effort step (D-52, D-86): `Same for all roles` or `Per role`, then `opus + medium`, `sonnet + medium`
- * or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role order. The first
- * question carries the team's role ids (teamContextLine) and each model question MODEL_EFFORT_CONTEXT on its second
- * line (D-136). Each role stores opus, sonnet, haiku or fable, never a pinned model id, and an effort
- * (parseModelEffort, A4); a typed pair it cannot read puts modelEffortRefusal on top of the next ask (askModelEffort).
- * Only an answer to every question gives roles: a dismissal gives the cancel reason MODEL_DISMISSED_REASON, and
- * MAX_ASKS answers it cannot read at one question NO_USABLE_ANSWER_REASON, so no role keeps a model the person did not
- * finish choosing (A1). The roles it is given never change.
- */
-export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<readonly RoleSpec[]>> {
-  const modeAsk = {
-    question: withContext(MODEL_MODE_QUESTION, teamContextLine(roles)),
-    spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.model },
-    parse: parseAnswerMode,
-    accepts: quotedLabels(ANSWER_MODE_OPTIONS),
-  }
-  const mode = choiceResult(await askChoice(io, modeAsk), MODEL_DISMISSED_REASON)
-  if (mode.kind === 'cancelled') return mode
-  if (mode.value === 'same') {
-    const choice = choiceResult(await askModelEffort(io, MODEL_ALL_QUESTION), MODEL_DISMISSED_REASON)
-    if (choice.kind === 'cancelled') return choice
-
-    return accepted(roles.map(role => withModel(role, choice.value)))
-  }
-
-  const modelled: RoleSpec[] = []
-  for (const role of roles) {
-    const choice = choiceResult(await askModelEffort(io, modelRoleQuestion(role)), MODEL_DISMISSED_REASON)
-    if (choice.kind === 'cancelled') return choice
-    modelled.push(withModel(role, choice.value))
-  }
-
-  return accepted(modelled)
 }
 
 /** The buttons of every question on which roles get an item: no role or every role; a list is typed under "Other". */
