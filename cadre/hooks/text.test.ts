@@ -397,8 +397,8 @@ import {
   unreadableRecordWarning,
 } from './start/memory-links'
 import { privateLinkRefusal, STALE_LINK_FOLDERS, stampText } from './start/render-plan'
-import { statusReportText } from './status'
-import type { StatusReport } from './status'
+import { statusReportText } from './status/report'
+import type { StatusReport } from './status/report'
 import { RECOMMEND_SYSTEM } from './suggest/instructions'
 import { PROPOSE_SYSTEM } from './suggest/propose'
 import { REGEN_RECOMMEND_SYSTEM } from './suggest/regen'
