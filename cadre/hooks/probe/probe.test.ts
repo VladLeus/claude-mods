@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, Enforcement, ProbeCheckKind, ProbeExpectation, ScopeContext, ScopeRule } from '../types'
+import type { CompiledScope, Enforcement, ProbeCheckKind, ProbeExpectation, ScopeContext, ScopeRule } from '../../types'
+import { compileScope } from '../scope/compile'
+import { emptySetupScan, session, templateRole } from '../testkit'
 import {
   expectationsFor,
   isProbeToken,
@@ -11,8 +13,6 @@ import {
   probeVerdicts,
 } from './probe'
 import type { InitInventory, ProbeVerdict } from './probe'
-import { compileScope } from './scope/compile'
-import { emptySetupScan, session, templateRole } from './testkit'
 
 /**
  * A scope context for the GSD framework, the merged MCP route and a git-root start; `over` changes the fields it
