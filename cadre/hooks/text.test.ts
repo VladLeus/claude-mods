@@ -134,7 +134,7 @@ import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/lau
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, initReplyText, runInit } from './init'
+import { runInit } from './init'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -152,6 +152,7 @@ import {
   skillUsesText,
 } from './init/answers'
 import { ACCEPT_RECOMMENDATIONS } from './init/handout'
+import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, initReplyText } from './init/initapply'
 import {
   cancelledReply,
   IGNORE_ALL_NOTE,

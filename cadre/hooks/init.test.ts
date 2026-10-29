@@ -64,8 +64,9 @@ import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate/
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { CONFLICT_CONTEXT, initReplyText, runInit } from './init'
+import { runInit } from './init'
 import type { InitOptions } from './init'
+import { CONFLICT_CONTEXT } from './init/initapply'
 import { planStep } from './init/initplan'
 import {
   cancelledReply,
@@ -3685,27 +3686,6 @@ describe('init plan', () => {
     expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
     expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
     expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
-  })
-
-  test('initReplyText ends a plain reply with the applied lines and a dry run with its note', async () => {
-    const plan = await emptyDiskPlan([], 'ignore')
-    const outcome = outcomeOf({ written: ['.cadre/bin/be', '.gitignore'], executable: ['.cadre/bin/be'] })
-    expect(appliedLines(outcome)).toEqual(['Applied: wrote 2 files (1 executable).', NEXT_STEP_NOTE])
-    expect(initReplyText(plan, 'ignore', { kind: 'dir', path: 'apps/web' }, outcome).split('\n')).toEqual([
-      'cadre init',
-      ...renderPlan(plan),
-      policyLine('ignore'),
-      'Launchers start in: apps/web/ under the git root',
-      IGNORE_ALL_NOTE,
-      ...appliedLines(outcome),
-    ])
-    expect(initReplyText(plan, 'definitions', { kind: 'git-root' }, null).split('\n')).toEqual([
-      'cadre init --dry-run',
-      ...renderPlan(plan),
-      policyLine('definitions'),
-      'Launchers start in: the git root',
-      DRY_RUN_NOTE,
-    ])
   })
 
   test('init --dry-run replies with the plan of desiredFiles and buildPlan, the policy, start and note', async () => {
