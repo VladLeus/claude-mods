@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { errorsOf, ROLES } from '../testkit'
-import type { Parsed } from '../testkit'
 import { parseRecommendation } from './instructions'
 
 /** The role ids of ROLES, in role order. */

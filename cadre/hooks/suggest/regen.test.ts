@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { BIDI_OVERRIDE, errorsOf, templateRole } from '../testkit'
-import type { Parsed } from '../testkit'
 import { parseRegenRecommendation, REGEN_RECOMMEND_SYSTEM, regenRecommendPrompt } from './regen'
 import type { RegenPromptItem } from './regen'
 
