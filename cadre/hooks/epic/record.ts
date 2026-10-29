@@ -2,11 +2,15 @@
  * The epic record of /cadre epic (D-164, T-03.1-03), a layer 11 module: `cadre-epic.json` beside the worktree's git
  * files, which names the epic's key, slug, title, branch `epic/<slug>`, base and the links and copies its mirror made
  * (epicRecordText), and parseEpicRecord, which reads one back and gives null for any shape or path it cannot trust
- * (fail closed); with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It is pure and imports core; the
- * other epic modules read it.
+ * (fail closed); readEpicRecord reads it back from the git dir git names for a worktree, through the HostIo and
+ * InitIo ports; with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It imports core, git/argv, scan
+ * and epic/git; the other epic modules read it.
  */
-import type { EpicRecord } from '../../types'
+import type { EpicRecord, HostIo, InitIo } from '../../types'
 import { allOrNull, isObject, parseJsonValue, stableJson } from '../core/json'
+import { GIT_TIMEOUT_MS } from '../git/argv'
+import { MAX_READ_BYTES } from '../scan/facts/normalize'
+import { GIT_DIR_ARGV } from './git'
 
 /** The start of every epic branch name (D-146): `epic/<slug>`. */
 export const EPIC_BRANCH_PREFIX = 'epic/'
@@ -54,4 +58,17 @@ export function parseEpicRecord(text: string): EpicRecord | null {
   if (linked === null || copied === null) return null
 
   return { schema: 1, key, slug, title, branch, base, createdAt, links: linked, copies: copied }
+}
+
+/**
+ * The epic record of the worktree at `path` (D-164), read from the git dir GIT_DIR_ARGV names for it; null when git
+ * names no absolute git dir, or the record there is absent, unreadable or not valid (parseEpicRecord).
+ */
+export async function readEpicRecord(io: InitIo, host: HostIo, path: string): Promise<EpicRecord | null> {
+  const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
+  const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''
+  if (!gitDir.startsWith('/')) return null
+  const read = await io.read(epicRecordPath(gitDir), MAX_READ_BYTES)
+
+  return read.state === 'text' ? parseEpicRecord(read.text) : null
 }

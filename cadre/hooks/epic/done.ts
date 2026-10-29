@@ -6,19 +6,17 @@
  * through the InitIo and HostIo ports and imports core, git, guards/repo, host/steps, paths, scan, status, team,
  * ui/ask and the epic modules below it; register and the goldens run it.
  */
-import type { EpicRecord, HostIo, HostRun, InitIo, InitLocations, PortEntry } from '../../types'
+import type { HostIo, HostRun, InitIo, InitLocations, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
 import { foldersAbove } from '../paths'
-import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { roleRunState } from '../status/autopilot-files'
 import { readTeam } from '../team'
 import { askChoice, quotedLabels } from '../ui/ask'
 import {
-  GIT_DIR_ARGV,
   linkRemoveArgv,
   MERGED_ARGV,
   PS_ARGV,
@@ -34,7 +32,7 @@ import { epicManyWorktreesReply, isEpicBranchOf, parseWorktreeList } from './loo
 import { listedEntry, MIRROR_STEP_TIMEOUT_MS } from './mirror'
 import { listingsOf } from './mirror-run'
 import { EPIC_UNKNOWN_CHECKOUT, epicNotMainReply } from './pick'
-import { EPIC_RECORD_FILE, epicRecordPath, parseEpicRecord } from './record'
+import { EPIC_RECORD_FILE, readEpicRecord } from './record'
 
 /**
  * The recorded links /cadre epic done removes itself (D-170, 03.1-W5 M1), as absolute paths in sorted order, once each:
@@ -298,19 +296,6 @@ type DoneWorktree = {
   readonly locked: string | null
 }
 
-/**
- * The epic record of the worktree at `path` (D-164), read from the git dir GIT_DIR_ARGV names for it; null when git
- * names no absolute git dir, or the record there is absent, unreadable or not valid (parseEpicRecord).
- */
-async function doneRecordOf(io: InitIo, host: HostIo, path: string): Promise<EpicRecord | null> {
-  const named = await host.run(GIT_DIR_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS })
-  const gitDir = named !== null && named.exitCode === 0 ? named.stdout.trim() : ''
-  if (!gitDir.startsWith('/')) return null
-  const read = await io.read(epicRecordPath(gitDir), MAX_READ_BYTES)
-
-  return read.state === 'text' ? parseEpicRecord(read.text) : null
-}
-
 /** The merged check (D-169): `no-record` with no base to check against, else what a MERGED_ARGV run at `root` tells. */
 async function mergedOf(host: HostIo, root: string, branch: string, base: string | null): Promise<MergedState> {
   if (base === null) return 'no-record'
@@ -426,7 +411,7 @@ export async function runEpicDone(
   const [worktree] = found
   if (worktree === undefined) return epicNotFoundReply(key)
   const { path, branch } = worktree
-  const record = await doneRecordOf(io, host, path)
+  const record = await readEpicRecord(io, host, path)
   const base = record?.base ?? null
 
   const clean = cleanStateOf(await host.run(STATUS_ARGV(path), { timeoutMs: GIT_TIMEOUT_MS }))
