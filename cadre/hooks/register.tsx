@@ -15,7 +15,7 @@ import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collec
 import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
-import { runStatus } from './status'
+import { runStatus } from './status/run'
 import { panePlacement, paneRows, paneSpans, paneView } from './ui/pane'
 import { answersFromNotes, askedHeader, askRewrite, previewBlockFor } from './ui/preview'
 

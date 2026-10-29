@@ -1,23 +1,23 @@
 /**
- * `/cadre status <id>` (D-111, D-131, LNCH-06): whether a role's autopilot run is done, running, stopped, not started
- * or unknown, read only from files on disk, never from what a model says, so the end-to-end check has a done signal it
- * can trust (SC3).
- * The session id changes on every autopilot restart, so the role's session is found by its name `cadre-<id>`; then
- * that session's autopilot status file and log are read and reported, with the role's newest handoff and, for a role
- * on the built-in framework, whether its DONE.md marker is there (D-17).
+ * `/cadre status <id>` (D-111, D-131, LNCH-06), a layer 11 module: whether a role's autopilot run is done, running,
+ * stopped, not started or unknown, read only from files on disk, never from what a model says, so the end-to-end check
+ * has a done signal it can trust (SC3). The session id changes on every autopilot restart, so the role's session is
+ * found by its name `cadre-<id>` (status/session-find); then that session's autopilot status file and log are read
+ * (status/autopilot-files) and reported, with the role's newest handoff and, for a role on the built-in framework,
+ * whether its DONE.md marker is there (status/report, D-17).
  *
  * It reads autopilot's and agent-fleet's files by their on-disk format and never imports either mod. It runs in the
- * root session or in `claude -p`, asks nothing, writes nothing, and runs only the git checkout probe and
- * `/usr/bin/grep` over a transcript.
+ * root session or in `claude -p`, asks nothing, writes nothing (its host is `Pick<HostIo, 'run'>`), and runs only the
+ * git checkout probe and `/usr/bin/grep` over a transcript. register and the goldens run it.
  */
-import type { HostIo, InitIo } from '../types'
-import { GIT_TIMEOUT_MS } from './git/argv'
-import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
-import { repoGuard } from './guards/repo'
-import { NO_SESSION_RUN, runOf } from './status/autopilot-files'
-import { handoffOf, hasDoneMarker, statusReportText } from './status/report'
-import { sessionOf, startFolderOf } from './status/session-find'
-import { readTeam, regenBadRole, resolvedFramework } from './team'
+import type { HostIo, InitIo } from '../../types'
+import { GIT_TIMEOUT_MS } from '../git/argv'
+import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
+import { repoGuard } from '../guards/repo'
+import { readTeam, regenBadRole, resolvedFramework } from '../team'
+import { NO_SESSION_RUN, runOf } from './autopilot-files'
+import { handoffOf, hasDoneMarker, statusReportText } from './report'
+import { sessionOf, startFolderOf } from './session-find'
 
 /**
  * `/cadre status <id>` (D-111, D-131), in the root session or in `claude -p`. It refuses with the shared replies only:
