@@ -94,10 +94,8 @@ import {
   epicDoneProblems,
   epicDoneQuestion,
   epicDoneRefusal,
-  epicExcludesFailedReply,
   epicKeptReply,
   epicKickoffText,
-  epicListFailedReply,
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
@@ -112,16 +110,20 @@ import {
   epicRemovedText,
   epicRemoveFailedReply,
   epicRolesQuestion,
-  epicStepFailedReply,
   epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
-  globalExcludesWarning,
 } from './epic'
 import { EXCLUDES_FILE, excludesText, RUNTIME_EXCLUDE_LINE } from './epic/excludes'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
 import { mirrorLinkedParentWarning, mirrorUnhideableWarning } from './epic/mirror'
+import {
+  epicExcludesFailedReply,
+  epicListFailedReply,
+  epicStepFailedReply,
+  globalExcludesWarning,
+} from './epic/mirror-run'
 import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordText } from './epic/record'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {

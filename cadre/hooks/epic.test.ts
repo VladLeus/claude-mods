@@ -26,11 +26,9 @@ import {
   epicDoneProblems,
   epicDoneQuestion,
   epicDoneRefusal,
-  epicExcludesFailedReply,
   epicKeptReply,
   epicKickoffText,
   epicLinkRemovals,
-  epicListFailedReply,
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
@@ -48,11 +46,9 @@ import {
   epicRemoveFailedReply,
   epicRemovedText,
   epicRolesQuestion,
-  epicStepFailedReply,
   epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
-  globalExcludesWarning,
   lockPid,
   mergedStateOf,
   parseWorktreeList,
@@ -79,6 +75,12 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic/git'
 import { epicBadKeyReply } from './epic/key'
+import {
+  epicExcludesFailedReply,
+  epicListFailedReply,
+  epicStepFailedReply,
+  globalExcludesWarning,
+} from './epic/mirror-run'
 import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './epic/record'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'
