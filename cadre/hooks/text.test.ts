@@ -165,7 +165,6 @@ import {
   launchContextLine,
   launchLine,
   LINKED_MEMORIES_ROW,
-  mcpContextLine,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
   proposalLines,
@@ -208,6 +207,7 @@ import {
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
 } from './init/replies'
+import { mcpContextLine } from './init/stages/assign'
 import { ENV_DISMISSED_REASON, envContextLine } from './init/stages/carry'
 import {
   CLAUDE_JSON_CONTEXT,

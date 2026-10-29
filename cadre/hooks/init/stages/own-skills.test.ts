@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef } from '../../../types'
-import { assignmentStep } from '../../init'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, memIo, memWorld, repoScan, shownBlock, skillRef, withEvents } from '../../testkit'
 import type { MemRun } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
+import { assignmentStep } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, ownSkillContextLine, skillsContextLine } from './own-skills'
 
 /** A scan of a TypeScript repo with a React frontend and tests, so the template proposes all six roles. */
