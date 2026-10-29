@@ -32,25 +32,27 @@ import { launchPlan } from './launch/plan'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { compileScope } from './scope/compile'
 import {
-  claudeTooOldReply,
   gatherLaunchUser,
   hookSourcesFor,
-  isSupportedClaude,
   launcherChangedReply,
   launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
-  MIN_CLAUDE_VERSION,
-  parseClaudeVersion,
   privateFolderRefusal,
   renderFailedReply,
   runStart,
-  START_NO_CLAUDE,
   START_NO_GIT_DIR,
   START_NO_HOME,
   START_NO_MANIFEST,
 } from './start'
 import type { LaunchUserRead } from './start'
+import {
+  claudeTooOldReply,
+  isSupportedClaude,
+  MIN_CLAUDE_VERSION,
+  parseClaudeVersion,
+  START_NO_CLAUDE,
+} from './start/claude-version'
 import {
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,

@@ -381,7 +381,8 @@ import { SKIP_DIRS } from './scan/walk'
 import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { MEMORY_PATTERN, SECRET_READ_DENY } from './scope/lint'
-import { privateFolderRefusal, START_NO_CLAUDE, START_NO_GIT_DIR, START_NO_HOME, START_NO_MANIFEST } from './start'
+import { privateFolderRefusal, START_NO_GIT_DIR, START_NO_HOME, START_NO_MANIFEST } from './start'
+import { START_NO_CLAUDE } from './start/claude-version'
 import { runtimeMcpText } from './start/mcp-config'
 import {
   MEMORY_BLOCK_BEGIN,
