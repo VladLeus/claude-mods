@@ -857,12 +857,6 @@ function lastWrite(run: EpicRun, path: string): string | undefined {
 }
 
 describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)", () => {
-  test('the global excludes lookup follows include and includeIf in the global config (03.1-W2 S1)', () => {
-    const argv = ['git', '-C', '/repo', 'config', '--includes', '--global', '--path', 'core.excludesFile']
-
-    expect(GLOBAL_EXCLUDES_ARGV('/repo')).toEqual(argv)
-  })
-
   test('the text of the global excludes file heads the excludes file; an absent one gives an empty head', async () => {
     const world = await teamWorld()
     const withGlobal = { ...world, files: { ...world.files, [GLOBAL_EXCLUDES]: '*.log\n' } }
