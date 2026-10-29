@@ -1,30 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec, TemplateRoleId } from '../../types'
-import { BIDI_OVERRIDE } from '../testkit'
+import type { RoleSpec } from '../../types'
+import { BIDI_OVERRIDE, row, slugMessage, TEMPLATE_ORDER } from '../testkit'
 import { applyAdjust, CUSTOM_PURPOSE, parseAdjust } from './adjust'
 import type { AdjustOp } from './adjust'
 import { roleFromTemplate, ROLE_TEMPLATE } from './template'
-import type { TemplateRole } from './template'
-
-/** The template row with this id; a test that names a missing row fails here, loudly. */
-function row(id: TemplateRoleId): TemplateRole {
-  const found = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (found === undefined) throw new Error(`no template row ${id}`)
-
-  return found
-}
-
-/** The template ids in template order, which every proposal and its change list must keep. */
-const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']
-
-/** The rule every slug message ends with. */
-const SLUG_RULE = 'must be a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
-
-/** The message for an id that is not a slug, with the id as the message shows it. */
-function slugMessage(label: string): string {
-  return `role id "${label}" ${SLUG_RULE}`
-}
 
 /** The team init starts from: every template role. */
 const TEAM: readonly RoleSpec[] = ROLE_TEMPLATE.map(roleFromTemplate)

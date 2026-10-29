@@ -5,13 +5,12 @@ import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { parseManifest } from '../state/cadre-files'
-import { BIDI_OVERRIDE, file, input, text, VERSION } from '../testkit'
+import { BIDI_OVERRIDE, file, GSD_TOOLS, HUNK, input, ROLE, text, VERSION } from '../testkit'
 import { MANIFEST_PATH } from './classify'
 import { gitignoreLines, mergeIgnoreBlock } from './gitignore'
 import { buildPlan, HUNK_FILES, isSafeOpPath, planReadPaths, planWithManifest } from './plan'
 import { renderPlan } from './text'
 
-const ROLE = '.cadre/be/role.json'
 const INDEX = '.cadre/INDEX.md'
 
 /** The disk as buildPlan takes it: reads keyed by repo-relative path. */
@@ -58,21 +57,6 @@ function manifestTextOf(entries: readonly ManifestEntry[], cadreVersion = VERSIO
   const manifest: Manifest = { schema: 1, cadreVersion, files }
 
   return stableJson(manifest)
-}
-
-const GSD_TOOLS = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs'
-
-/** A required, accepted, runnable hunk, as 02-08 builds one for the GSD mode setting. */
-const HUNK: HunkOp = {
-  kind: 'hunk',
-  file: '.planning/config.json',
-  key: 'mode',
-  before: 'interactive',
-  after: 'yolo',
-  isRequired: true,
-  isAccepted: true,
-  isRunnable: true,
-  command: `${GSD_TOOLS} config-set mode yolo`,
 }
 
 /** The note under a manifest that could not be read: it is kept, so no role's entries are dropped (A6). */

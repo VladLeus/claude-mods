@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  CompiledScope,
-  FrameworkId,
-  HookScript,
-  RoleSpec,
-  ScopeContext,
-  SettingsTemplate,
-  SetupScan,
-  TemplateRoleId,
-} from '../../types'
+import type { CompiledScope, FrameworkId, HookScript, RoleSpec, SetupScan, TemplateRoleId } from '../../types'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
 import { sortedUnique } from '../core/text'
 import { GIT_DIR_ARGV } from '../epic/git'
@@ -20,22 +11,29 @@ import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
 import { INFRA_SKILLS } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { compileScope } from '../scope/compile'
-import { infraViolations, roleOwnPaths } from '../scope/lint'
 import {
   BARE_WORKTREE,
   BIDI_OVERRIDE,
+  CHAIN,
+  context,
+  coveredPrefixes,
+  denyOf,
   emptySetupScan,
   epic,
   FRAMEWORKS,
+  GSD_SKILLS,
+  HASH,
   launcherEntry,
   launcherOf,
-  leaks,
+  launchProblems,
   memWorld,
   rule,
   SECRET_FIXTURES,
   session,
   skillRef,
   templateRole,
+  USER_HOOKS,
+  withDeny,
 } from '../testkit'
 import type { HostRunRule, HostWrite, MemWorld } from '../testkit'
 import {
@@ -51,10 +49,7 @@ import { isPartsFlowRole } from './links'
 import type { LaunchUser } from './links'
 import { launchPlan } from './plan'
 import type { LaunchPlan } from './plan'
-import { renderRuntimeSettings, RUNTIME_SETTINGS_KEYS } from './settings'
-
-/** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
-const HASH = `1a2b3c4d${'0'.repeat(56)}`
+import { renderRuntimeSettings } from './settings'
 
 /** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry; `over` changes named fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -81,50 +76,6 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
     linkedMemories: [],
     ...over,
   }
-}
-
-/** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
-function context(over: Partial<ScopeContext> = {}): ScopeContext {
-  return {
-    framework: 'gsd',
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: ['pm', 'tl'],
-    ...over,
-  }
-}
-
-/** The user's secret guard hook and the context monitor, as the launch collects them from the user's settings. */
-const USER_HOOKS = [
-  {
-    event: 'PreToolUse',
-    script: 'gsd-secret-read-guard.js',
-    command: 'node /home/u/.claude/hooks/gsd-secret-read-guard.js',
-    matcher: null,
-    timeout: null,
-  },
-  {
-    event: 'PostToolUse',
-    script: 'gsd-context-monitor.js',
-    command: 'node /home/u/m.js',
-    matcher: null,
-    timeout: null,
-  },
-]
-
-/** The skills every role on GSD has in its overlay: the handoff skills and the start skills of GSD. */
-const GSD_SKILLS: readonly string[] = [...INFRA_SKILLS, ...adapterOf('gsd').startSkills]
-
-/** The absolute path prefixes (`/repo/cadre/`) that the exact Read and Edit denies cover. */
-function coveredPrefixes(deny: readonly string[]): string[] {
-  return deny.flatMap(entry => {
-    const path = /^(?:Read|Edit)\(\/(\/.+)\/\*\*\)$/.exec(entry)?.[1]
-
-    return path === undefined ? [] : [`${path}/`]
-  })
 }
 
 /**
@@ -158,9 +109,6 @@ function launchFileRules(root: string): string[] {
 
   return ['Edit', 'Write'].flatMap(tool => files.map(file => `${tool}(/${root}/${file})`))
 }
-
-/** The CLAUDE.md files the engine loads for the fixture repo: its own, the one in `.claude` and an ancestor's. */
-const CHAIN = ['/repo/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/home/u/work/CLAUDE.md']
 
 /** A hook script the user's settings register. */
 function hook(script: string): HookScript {
@@ -249,94 +197,6 @@ function matrixScope(role: RoleSpec, framework: FrameworkId): CompiledScope {
   return compileScope(role, context({ framework, setup: MATRIX_SETUP, codeDirs, roles: MATRIX_ROLES }))
 }
 
-/** Whether a value is a list of strings. */
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string')
-}
-
-/** The deny list of rendered settings; empty when they hold none. */
-function denyOf(settings: Readonly<Record<string, unknown>>): string[] {
-  const permissions = settings.permissions
-  if (!isObject(permissions)) return []
-  const deny = permissions.deny
-
-  return isStringList(deny) ? deny : []
-}
-
-/** The template keys of rendered settings, as the ISO-04 checker reads them; null when one has the wrong shape. */
-function templateOf(settings: Readonly<Record<string, unknown>>, scope: CompiledScope): SettingsTemplate | null {
-  const { enabledPlugins, permissions, sandbox } = settings
-  if (!isObject(enabledPlugins) || !isObject(permissions) || !isObject(sandbox)) return null
-  const deny = permissions.deny
-  const enabled = sandbox.enabled
-  if (!isStringList(deny) || typeof enabled !== 'boolean') return null
-  const entries = Object.entries(enabledPlugins)
-  const flags = entries.filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
-  if (flags.length !== entries.length) return null
-
-  return {
-    enabledPlugins: Object.fromEntries(flags),
-    permissions: { defaultMode: scope.settings.permissions.defaultMode, deny },
-    sandbox: { enabled },
-  }
-}
-
-/** The command of the context monitor among the user's hooks, which no plan may render (D-62). */
-const MONITOR_COMMAND = '/home/u/m.js'
-
-/** Whether the plan renders the context monitor hook, which no plan may (D-62). */
-function isMonitorRendered(plan: LaunchPlan): boolean {
-  return JSON.stringify(plan.settings.hooks ?? null).includes(MONITOR_COMMAND)
-}
-
-/** Whether a path has a `..` segment. */
-function hasDotDot(path: string): boolean {
-  return path.split('/').includes('..')
-}
-
-/**
- * Every problem one launch plan has, as messages (empty when none): a link outside `<root>/.cadre/<id>/.runtime/`, a
- * link with a `..` segment or a relative target, a link planned twice, a settings key outside RUNTIME_SETTINGS_KEYS, an
- * env name the role does not carry, a deny the runtime lint refuses, an exact deny that covers an own folder of the
- * role, a secret fixture anywhere in the plan, the context monitor hook (D-62), an infra violation in the template keys
- * of the runtime settings (D-77), and a warning (the user of the matrix has everything, so none is expected).
- */
-function launchProblems(plan: LaunchPlan, role: RoleSpec, scope: CompiledScope, framework: FrameworkId): string[] {
-  const runtime = `/repo/.cadre/${role.id}/.runtime/`
-  const deny = denyOf(plan.settings)
-  const covered = coveredPrefixes(deny).map(prefix => prefix.toLowerCase())
-  const own = roleOwnPaths(role.id).map(path => `/repo/${path}`)
-  const template = templateOf(plan.settings, scope)
-  const env = isObject(plan.settings.env) ? Object.keys(plan.settings.env) : []
-  const paths = plan.links.map(link => link.path)
-
-  return [
-    ...paths.filter(path => !path.startsWith(runtime)).map(path => `link ${path} is outside ${runtime}`),
-    ...plan.links
-      .filter(link => hasDotDot(link.path) || hasDotDot(link.target) || !link.target.startsWith('/'))
-      .map(link => `link ${link.path} has a .. segment or a relative target`),
-    ...paths.filter((path, index) => paths.indexOf(path) !== index).map(path => `link ${path} is planned twice`),
-    ...Object.keys(plan.settings)
-      .filter(key => !RUNTIME_SETTINGS_KEYS.includes(key))
-      .map(key => `settings key ${key} is not allowed`),
-    ...env.filter(name => !role.carry.env.includes(name)).map(name => `env ${name} is not carried by the role`),
-    ...deny.flatMap(entry => {
-      const message = lintRuntimeDenyPattern(entry)
-
-      return message === null ? [] : [`deny ${entry} fails the lint: ${message}`]
-    }),
-    ...own.flatMap(path =>
-      covered.filter(prefix => path.toLowerCase().startsWith(prefix)).map(prefix => `deny covers ${prefix} of ${path}`),
-    ),
-    ...leaks(JSON.stringify(plan), SECRET_FIXTURES).map(secret => `the plan holds the secret ${secret}`),
-    ...(isMonitorRendered(plan) ? ['the context monitor hook is rendered'] : []),
-    ...(template === null
-      ? ['the runtime settings do not hold the template keys']
-      : infraViolations({ ...scope, settings: template }, framework)),
-    ...plan.warnings.map(warning => `warning: ${warning}`),
-  ]
-}
-
 /** One combination of the matrix: its label, the role, its scope, the launching user and the launch plan. */
 type MatrixCase = {
   readonly label: string
@@ -359,13 +219,6 @@ function matrixCases(launcher: LaunchUser): MatrixCase[] {
       }),
     ),
   )
-}
-
-/** The scope with one more deny entry; the compiled value is never changed. */
-function withDeny(scope: CompiledScope, entry: string): CompiledScope {
-  const permissions = { ...scope.settings.permissions, deny: [...scope.settings.permissions.deny, entry] }
-
-  return { ...scope, settings: { ...scope.settings, permissions } }
 }
 
 /** The runtime deny list of the template BE at /repo: the ~/ denies, and the .env denies made absolute (D-123). */

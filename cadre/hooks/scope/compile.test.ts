@@ -8,7 +8,6 @@ import type {
   PermissionMode,
   ProbeCheck,
   RoleSpec,
-  ScopeContext,
   ScopeRule,
   SettingsSource,
 } from '../../types'
@@ -19,6 +18,7 @@ import type { ChainRole } from '../roles/template'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
+  context,
   emptySetupScan,
   leaks,
   session,
@@ -28,20 +28,6 @@ import {
 import { scopeCardLines } from './card'
 import { compileScope } from './compile'
 import { isContextMonitorScript, roleOwnPaths } from './lint'
-
-/** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
-function context(over: Partial<ScopeContext> = {}): ScopeContext {
-  return {
-    framework: 'gsd',
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: ['pm', 'tl'],
-    ...over,
-  }
-}
 
 /** A hook script the settings of `source` register, the user settings unless named. */
 function hook(script: string, source: SettingsSource = 'user'): HookScript {

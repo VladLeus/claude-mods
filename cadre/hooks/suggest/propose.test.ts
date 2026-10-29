@@ -1,19 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { TemplateRoleId } from '../../types'
-import { BIDI_OVERRIDE } from '../testkit'
+import { BIDI_OVERRIDE, slugMessage, TEMPLATE_ORDER } from '../testkit'
 import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './propose'
-
-/** The template ids in template order, which every proposal and its change list must keep. */
-const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']
-
-/** The rule every slug message ends with. */
-const SLUG_RULE = 'must be a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
-
-/** The message for an id that is not a slug, with the id as the message shows it. */
-function slugMessage(label: string): string {
-  return `role id "${label}" ${SLUG_RULE}`
-}
 
 /** `count` valid roles r0, r1, ... for the checks that only count them. */
 function manyRoles(count: number): { id: string; title: string }[] {

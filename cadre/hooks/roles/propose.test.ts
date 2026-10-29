@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RepoScan, ScanFinding, ScanKind, TemplateRoleId } from '../../types'
+import type { RepoScan, ScanFinding, ScanKind } from '../../types'
+import { TEMPLATE_ORDER } from '../testkit'
 import { proposeRoles } from './propose'
 import { NO_FRONTEND_REASON, NO_SOURCE_REASON, NO_TESTS_REASON, roleFromTemplate, ROLE_TEMPLATE } from './template'
 
@@ -31,9 +32,6 @@ const E2E = finding('e2e', 'Playwright config', 'playwright.config.ts')
 const TS_LANG = finding('lang', 'JavaScript/TypeScript (package.json)', 'package.json')
 const RUBY_LANG = finding('lang', 'Ruby (Gemfile)', 'Gemfile')
 const GO_LANG = finding('lang', 'Go (go.mod)', 'go.mod')
-
-/** The template ids in template order, which every proposal and its change list must keep. */
-const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']
 
 /** The ids of a proposal's roles. */
 function idsOf(over: Partial<RepoScan>): string[] {

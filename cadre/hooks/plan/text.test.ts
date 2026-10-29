@@ -1,26 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { FileOp, HunkOp, Op, Plan } from '../../types'
-import { BIDI_OVERRIDE, file, input } from '../testkit'
+import { BIDI_OVERRIDE, file, GSD_TOOLS, HUNK, input, ROLE } from '../testkit'
 import { buildPlan } from './plan'
 import { planSummary, renderPlan } from './text'
-
-const ROLE = '.cadre/be/role.json'
-
-const GSD_TOOLS = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs'
-
-/** A required, accepted, runnable hunk, as 02-08 builds one for the GSD mode setting. */
-const HUNK: HunkOp = {
-  kind: 'hunk',
-  file: '.planning/config.json',
-  key: 'mode',
-  before: 'interactive',
-  after: 'yolo',
-  isRequired: true,
-  isAccepted: true,
-  isRunnable: true,
-  command: `${GSD_TOOLS} config-set mode yolo`,
-}
 
 /** A file op built by hand, for the render tests. */
 function op(kind: FileOp['kind'], path: string, over: Partial<FileOp> = {}): FileOp {

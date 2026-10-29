@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileOp, GitPolicy, HunkOp, Manifest, ManifestEntry, Op, Plan, PortRead } from '../../types'
+import type { DesiredFile, FileOp, GitPolicy, Manifest, ManifestEntry, Op, Plan, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { INBOX_FILE, PROBE_EXPECTATIONS_FILE, RUNTIME_RENDERED, RUNTIME_STAMP_FILE } from '../paths'
-import { BIDI_OVERRIDE, file, input, text, VERSION } from '../testkit'
+import { BIDI_OVERRIDE, file, HUNK, input, ROLE, text, VERSION } from '../testkit'
 import { MANIFEST_PATH } from './classify'
 import {
   gitignoreLines,
@@ -20,7 +20,6 @@ import { buildPlan } from './plan'
 import type { PlanInput } from './plan'
 import { renderPlan } from './text'
 
-const ROLE = '.cadre/be/role.json'
 const INDEX = '.cadre/INDEX.md'
 
 /** The disk as buildPlan takes it: reads keyed by repo-relative path. */
@@ -77,21 +76,6 @@ function op(kind: FileOp['kind'], path: string, over: Partial<FileOp> = {}): Fil
 /** A plan built by hand, for the render tests. */
 function planOf(ops: readonly Op[], warnings: readonly string[] = []): Plan {
   return { ops, warnings }
-}
-
-const GSD_TOOLS = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs'
-
-/** A required, accepted, runnable hunk, as 02-08 builds one for the GSD mode setting. */
-const HUNK: HunkOp = {
-  kind: 'hunk',
-  file: '.planning/config.json',
-  key: 'mode',
-  before: 'interactive',
-  after: 'yolo',
-  isRequired: true,
-  isAccepted: true,
-  isRunnable: true,
-  command: `${GSD_TOOLS} config-set mode yolo`,
 }
 
 describe('ignore block', () => {

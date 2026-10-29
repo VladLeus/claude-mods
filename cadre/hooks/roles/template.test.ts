@@ -5,6 +5,7 @@ import { DECISION_TYPES } from '../framework/contract'
 import { GSD_GATES } from '../framework/gsd/adapter'
 import { BUILTIN_GATES } from '../framework/none/adapter'
 import { SUPERPOWERS_GATES } from '../framework/superpowers/adapter'
+import { row, TEMPLATE_ORDER } from '../testkit'
 import { applyAdjust } from './adjust'
 import {
   AUTOPILOT_THRESHOLD,
@@ -22,18 +23,6 @@ import {
   standIn,
   standsFor,
 } from './template'
-import type { TemplateRole } from './template'
-
-/** The template row with this id; a test that names a missing row fails here, loudly. */
-function row(id: TemplateRoleId): TemplateRole {
-  const found = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (found === undefined) throw new Error(`no template row ${id}`)
-
-  return found
-}
-
-/** The template ids in template order, which every proposal and its change list must keep. */
-const TEMPLATE_ORDER: readonly TemplateRoleId[] = ['pm', 'tl', 'be', 'fe', 'qa', 'security']
 
 /** The team init starts from: every template role. */
 const TEAM: readonly RoleSpec[] = ROLE_TEMPLATE.map(roleFromTemplate)

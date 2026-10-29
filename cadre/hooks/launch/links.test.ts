@@ -1,17 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { ScopeContext } from '../../types'
 import { sortedUnique } from '../core/text'
-import { adapterOf } from '../framework/registry'
-import { INFRA_SKILLS } from '../roles/infra'
 import { compileScope } from '../scope/compile'
-import { BIDI_OVERRIDE, emptySetupScan, templateRole } from '../testkit'
+import { BIDI_OVERRIDE, CHAIN, context, GSD_SKILLS, HASH, templateRole, USER_HOOKS } from '../testkit'
 import { instructionPlan } from './links'
 import type { LaunchUser } from './links'
 import { launchPlan } from './plan'
-
-/** The fixture hash: the 8 characters the memory slug shows, then 56 zeros. */
-const HASH = `1a2b3c4d${'0'.repeat(56)}`
 
 /** The launching user of the fixtures: repo /repo, home /home/u, nothing to carry; `over` changes named fields. */
 function user(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -40,20 +34,6 @@ function user(over: Partial<LaunchUser> = {}): LaunchUser {
   }
 }
 
-/** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
-function context(over: Partial<ScopeContext> = {}): ScopeContext {
-  return {
-    framework: 'gsd',
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: ['pm', 'tl'],
-    ...over,
-  }
-}
-
 /** What a role carries from the user's settings: the window, the status line, one env name and one hook script. */
 const CARRY_ALL = {
   autoCompactWindow: true,
@@ -61,27 +41,6 @@ const CARRY_ALL = {
   env: ['JIRA_URL'],
   hooks: ['gsd-secret-read-guard.js'],
 }
-
-/** The user's secret guard hook and the context monitor, as the launch collects them from the user's settings. */
-const USER_HOOKS = [
-  {
-    event: 'PreToolUse',
-    script: 'gsd-secret-read-guard.js',
-    command: 'node /home/u/.claude/hooks/gsd-secret-read-guard.js',
-    matcher: null,
-    timeout: null,
-  },
-  {
-    event: 'PostToolUse',
-    script: 'gsd-context-monitor.js',
-    command: 'node /home/u/m.js',
-    matcher: null,
-    timeout: null,
-  },
-]
-
-/** The skills every role on GSD has in its overlay: the handoff skills and the start skills of GSD. */
-const GSD_SKILLS: readonly string[] = [...INFRA_SKILLS, ...adapterOf('gsd').startSkills]
 
 /** A launching user that has something to carry, the skills of a GSD overlay, and one env value no role carries. */
 function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
@@ -95,9 +54,6 @@ function carrier(over: Partial<LaunchUser> = {}): LaunchUser {
     ...over,
   })
 }
-
-/** The CLAUDE.md files the engine loads for the fixture repo: its own, the one in `.claude` and an ancestor's. */
-const CHAIN = ['/repo/CLAUDE.md', '/repo/.claude/CLAUDE.md', '/home/u/work/CLAUDE.md']
 
 /** The folder the instruction links of the PM are created in, for the group `global` or `memory`. */
 function linkDir(group: 'global' | 'memory'): string {

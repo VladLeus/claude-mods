@@ -1,18 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec, TemplateRoleId } from '../../types'
-import { BIDI_OVERRIDE, ZERO_WIDTH_SPACE } from '../testkit'
+import type { RoleSpec } from '../../types'
+import { BIDI_OVERRIDE, row, ZERO_WIDTH_SPACE } from '../testkit'
 import { parseRoleJson } from './rolejson'
 import { roleFromTemplate, ROLE_TEMPLATE } from './template'
-import type { TemplateRole } from './template'
-
-/** The template row with this id; a test that names a missing row fails here, loudly. */
-function row(id: TemplateRoleId): TemplateRole {
-  const found = ROLE_TEMPLATE.find(candidate => candidate.id === id)
-  if (found === undefined) throw new Error(`no template row ${id}`)
-
-  return found
-}
 
 /** The role.json object of the BE template role, with its schema; a test overrides only the fields it checks. */
 const BE_JSON = { schema: 1, ...roleFromTemplate(row('be')) }

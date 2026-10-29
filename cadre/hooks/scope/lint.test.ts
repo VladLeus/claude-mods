@@ -1,32 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  CompiledScope,
-  FrameworkId,
-  HookScript,
-  RoleSpec,
-  ScopeContext,
-  SettingsSource,
-  SetupScan,
-} from '../../types'
+import type { CompiledScope, FrameworkId, HookScript, RoleSpec, SettingsSource, SetupScan } from '../../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { emptySetupScan, FRAMEWORKS, session, skillRef, templateRole } from '../testkit'
+import { context, emptySetupScan, FRAMEWORKS, session, skillRef, templateRole, withDeny } from '../testkit'
 import { compileScope } from './compile'
 import { infraViolations, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
-
-/** A scope context for the GSD framework and the merged MCP route; `over` changes the fields it names. */
-function context(over: Partial<ScopeContext> = {}): ScopeContext {
-  return {
-    framework: 'gsd',
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: ['pm', 'tl'],
-    ...over,
-  }
-}
 
 /** A hook script the settings of `source` register, the user settings unless named. */
 function hook(script: string, source: SettingsSource = 'user'): HookScript {
@@ -209,13 +187,6 @@ function matrixScope(role: RoleSpec, framework: FrameworkId): CompiledScope {
   const ctx = context({ framework, setup: MATRIX_SETUP, codeDirs: OVERLAPPING_DIRS, roles: MATRIX_ROLES })
 
   return compileScope(role, ctx)
-}
-
-/** The scope with one more deny entry; the compiled value is never changed. */
-function withDeny(scope: CompiledScope, entry: string): CompiledScope {
-  const permissions = { ...scope.settings.permissions, deny: [...scope.settings.permissions.deny, entry] }
-
-  return { ...scope, settings: { ...scope.settings, permissions } }
 }
 
 /** The scope with its deny entries in this order. */

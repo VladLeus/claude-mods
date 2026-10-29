@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec } from '../../types'
-import { BIDI_OVERRIDE, ZERO_WIDTH_SPACE } from '../testkit'
+import { BIDI_OVERRIDE, slugMessage, ZERO_WIDTH_SPACE } from '../testkit'
 import { applyAdjust } from './adjust'
 import type { AdjustOp } from './adjust'
 import { roleFromTemplate, ROLE_TEMPLATE } from './template'
@@ -17,14 +17,6 @@ import {
   validateRoleId,
   validateRoles,
 } from './validate'
-
-/** The rule every slug message ends with. */
-const SLUG_RULE = 'must be a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
-
-/** The message for an id that is not a slug, with the id as the message shows it. */
-function slugMessage(label: string): string {
-  return `role id "${label}" ${SLUG_RULE}`
-}
 
 /** `count` valid roles r0, r1, ... for the checks that only count them. */
 function manyRoles(count: number): { id: string; title: string }[] {
