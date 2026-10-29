@@ -90,7 +90,6 @@ import {
   epicDoneQuestion,
   epicDoneRefusal,
   epicKeptReply,
-  epicKickoffText,
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
@@ -106,6 +105,7 @@ import {
 import { EXCLUDES_FILE, excludesText, RUNTIME_EXCLUDE_LINE } from './epic/excludes'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
+import { epicKickoffText } from './epic/kickoff'
 import { EPIC_NO_WORKTREE_LIST, epicManyBranchesReply, epicManyWorktreesReply } from './epic/lookup'
 import { mirrorLinkedParentWarning, mirrorUnhideableWarning } from './epic/mirror'
 import {

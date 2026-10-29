@@ -23,7 +23,6 @@ import {
   epicDoneQuestion,
   epicDoneRefusal,
   epicKeptReply,
-  epicKickoffText,
   epicLinkRemovals,
   epicLockedReply,
   epicLockLiveReply,
@@ -74,13 +73,11 @@ import {
   epicManyPmReply,
   epicNotMainReply,
   epicOldLauncherReply,
-  epicParentOf,
   epicPmOf,
   epicRolesQuestion,
 } from './epic/pick'
 import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './epic/record'
 import { cadreJsonText, roleJsonText } from './generate/docs'
-import { ROLE_LINE_MAX } from './generate/kickoff'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
@@ -779,22 +776,7 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
   })
 })
 
-/** The quoted role line of a kickoff: what lies between its first and its last double quote. */
-function kickoffLine(kickoff: string): string {
-  return kickoff.slice(kickoff.indexOf('"') + 1, kickoff.lastIndexOf('"'))
-}
-
 describe('the epic kickoff of each role (D-158 to D-160)', () => {
-  test('TL waits for PM, every other role for TL, or for PM when the team has no TL (D-159)', () => {
-    const team = [templateRole('pm'), templateRole('tl'), templateRole('be'), templateRole('qa')]
-    const small = [templateRole('pm'), templateRole('be')]
-    const led = [templateRole('pm'), templateRole('tl', { id: 'lead' }), templateRole('be')]
-
-    expect(team.map(role => epicParentOf(role, team, 'pm'))).toEqual([null, 'pm', 'tl', 'tl'])
-    expect(small.map(role => epicParentOf(role, small, 'pm'))).toEqual([null, 'pm'])
-    expect(led.map(role => epicParentOf(role, led, 'pm'))).toEqual([null, 'pm', 'lead'])
-  })
-
   test('a worker starts by waiting for its parent and never asks the user; PM always does (D-159, D-160)', async () => {
     const pm = templateRole('pm')
     const be = templateRole('be')
@@ -811,30 +793,6 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     expect(kickoff('be')).not.toContain(' --ask-user')
     expect(kickoff('pm')).toContain('then feed cadre-tl ticket by ticket.')
     expect(kickoff('pm').endsWith(' --ask-user\n')).toBe(true)
-  })
-
-  test('a kickoff line is at most ROLE_LINE_MAX with the whole key, and keeps its end when it fits', () => {
-    const key = 'K'.repeat(32)
-    const title = 'T'.repeat(200)
-    const linesOf = (size: number) => {
-      const pm = templateRole('pm', { id: 'p'.repeat(size) })
-      const tl = templateRole('tl', { id: 't'.repeat(size), title })
-      const input = { key, title, tlId: tl.id }
-
-      return [
-        kickoffLine(epicKickoffText({ ...input, role: pm, isPm: true, parent: null })),
-        kickoffLine(epicKickoffText({ ...input, role: tl, isPm: false, parent: pm.id })),
-      ]
-    }
-    const [pmLine, tlLine] = linesOf(2)
-
-    for (const line of [...linesOf(2), ...linesOf(24)]) {
-      expect(line.length <= ROLE_LINE_MAX).toBe(true)
-      expect(line).toContain(key)
-    }
-    // With 2-character ids each line with no title fits, so the title is cut and the instruction stays whole.
-    expect(pmLine?.endsWith('ticket by ticket.')).toBe(true)
-    expect(tlLine?.endsWith('what it sends.')).toBe(true)
   })
 
   test('a role whose worktree launcher predates the epic kickoff is named, not copied; others go on', async () => {
