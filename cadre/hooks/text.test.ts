@@ -92,8 +92,6 @@ import {
   EPIC_ROLES_HEADER,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
-  epicBadKeyReply,
-  epicBadNameReply,
   epicCreatedText,
   epicDoneProblems,
   epicDoneQuestion,
@@ -130,6 +128,7 @@ import {
   WORKTREES_DIR,
   XDG_ARGV,
 } from './epic'
+import { epicBadKeyReply, epicBadNameReply } from './epic/key'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {
   GSD_ADAPTER,

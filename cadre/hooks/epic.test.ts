@@ -27,14 +27,12 @@ import {
   EPIC_RECORD_FILE,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
-  epicBadKeyReply,
   epicCreatedText,
   epicDoneProblems,
   epicDoneQuestion,
   epicDoneRefusal,
   epicExcludesFailedReply,
   epicKeptReply,
-  epicKeyOf,
   epicKickoffText,
   epicLinkRemovals,
   epicListFailedReply,
@@ -56,7 +54,6 @@ import {
   epicRemoveFailedReply,
   epicRemovedText,
   epicRolesQuestion,
-  epicSlug,
   epicStepArgv,
   epicStepFailedReply,
   epicUnlockFailedReply,
@@ -92,6 +89,7 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic'
 import type { EpicStep, WorktreeEntry } from './epic'
+import { epicBadKeyReply } from './epic/key'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
@@ -303,24 +301,6 @@ describe('runEpic', () => {
     expect(run.reply).toBe(epicAddFailedReply(BRANCH, true))
     expect(run.reply).toContain(BRANCH)
     expect(run.calls.filter(call => call.argv[3] === 'branch')).toEqual([])
-  })
-})
-
-describe('epic keys and slugs (D-162)', () => {
-  test('a key drops one leading #, then is 1-32 letters, digits, - or _ starting with a letter or digit', () => {
-    expect(epicKeyOf('#123')).toBe('123')
-    expect(epicKeyOf('PROJ-1')).toBe('PROJ-1')
-    expect(epicKeyOf('A'.repeat(33))).toBeNull()
-    expect(epicKeyOf('a/b')).toBeNull()
-    expect(epicKeyOf('-x')).toBeNull()
-  })
-
-  test('the slug is the key and title lowercased with one - per gap, cut at a - to at most 48 characters', () => {
-    expect(epicSlug('PROJ-1', 'Add retry')).toBe('proj-1-add-retry')
-    expect(epicSlug('PLATFORM-ENGINEERING', 'add retry to all outbound call')).toBe(
-      'platform-engineering-add-retry-to-all-outbound',
-    )
-    expect(epicSlug('PROJ-1', 'ÉÀÜ éàü')).toBe('proj-1')
   })
 })
 
