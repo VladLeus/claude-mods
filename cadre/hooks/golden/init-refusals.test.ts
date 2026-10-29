@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { runInit } from '../init'
+import { runInit } from '../init/run'
 import { DEFAULT_LOCATIONS, gitWorld, memIo, memWorld } from '../testkit'
 import { captureReply } from './capture'
 import { GOLDEN_INIT_REFUSALS } from './init-refusals'

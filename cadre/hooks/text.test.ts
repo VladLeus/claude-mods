@@ -134,7 +134,6 @@ import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/lau
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { runInit } from './init'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -161,6 +160,7 @@ import {
   INIT_HOME_ROOT_REPLY,
   INIT_ROOT_UNKNOWN_REPLY,
 } from './init/replies'
+import { runInit } from './init/run'
 import { mcpContextLine } from './init/stages/assign'
 import { ENV_DISMISSED_REASON, envContextLine } from './init/stages/carry'
 import {

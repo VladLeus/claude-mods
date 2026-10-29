@@ -1,30 +1,32 @@
-import type { HostIo, InitIo } from '../types'
-import { setupAfterInstalls } from './apply/installs'
-import { reportText } from './core/text'
-import { chooseFramework } from './framework/contract'
-import { detectAll } from './framework/registry'
-import { initGuard } from './guards/repo'
-import type { DraftBase } from './init/draft'
-import { historyHints, teamStep } from './init/flow'
-import { applyConfirmed, initReplyText } from './init/initapply'
-import { cancelledReply } from './init/replies'
-import { consentStep } from './init/stages/consent'
-import { historyStep } from './init/stages/history'
-import { launchStartStep } from './init/stages/launch'
-import { gitPolicyStep } from './init/stages/policy'
-import {
-  improverRunCount,
-  improverRunLine,
-  PRIVATE_FILES_HEADING,
-  privateFilesRow,
-  reviewStep,
-} from './init/stages/review'
-import { installedFrameworks } from './init/stages/roles'
-import { CLAUDE_MD_PLUGIN } from './roles/infra'
-import { proposeRoles } from './roles/propose'
-import { gatherScans, scanWarnings } from './scan/gather'
-import { showBlock } from './ui/ask'
-import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
+/**
+ * The runner of /cadre init (D-43, D-45, D-58, D-105, A1), a layer 11 module: runInit, which runs the guard, the
+ * ~/.claude.json consent, the scans, the history step, the role steps (teamStep), the git policy and the launcher
+ * start, then the final review (reviewStep), and on Confirm of a plain init applies the plan through the HostIo its
+ * InitOptions hold (applyConfirmed); a --dry-run holds no host, so it writes and runs nothing. cancelReply prints a
+ * cancel reason once. It is pure and imports the init stages and init/ modules below it; register.tsx and the tests
+ * import it, and no init module does.
+ */
+import type { HostIo, InitIo } from '../../types'
+import { setupAfterInstalls } from '../apply/installs'
+import { reportText } from '../core/text'
+import { chooseFramework } from '../framework/contract'
+import { detectAll } from '../framework/registry'
+import { initGuard } from '../guards/repo'
+import { CLAUDE_MD_PLUGIN } from '../roles/infra'
+import { proposeRoles } from '../roles/propose'
+import { gatherScans, scanWarnings } from '../scan/gather'
+import { showBlock } from '../ui/ask'
+import { scanContextLine, scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import type { DraftBase } from './draft'
+import { historyHints, teamStep } from './flow'
+import { applyConfirmed, initReplyText } from './initapply'
+import { cancelledReply } from './replies'
+import { consentStep } from './stages/consent'
+import { historyStep } from './stages/history'
+import { launchStartStep } from './stages/launch'
+import { gitPolicyStep } from './stages/policy'
+import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow, reviewStep } from './stages/review'
+import { installedFrameworks } from './stages/roles'
 
 /**
  * The reply of a cancelled step: its reason logged as its own line, the one place a cancel reason is printed (A1), and
