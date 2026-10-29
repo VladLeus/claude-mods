@@ -44,17 +44,27 @@ function roleSentence(role: RoleSpec, framework: FrameworkId, title: string): st
 }
 
 /**
+ * A role line whose title is budgeted (D-79): `sentence` puts a title into the line's fixed text, the role title gets
+ * what ROLE_LINE_MAX leaves once that text is in, so a long title never cuts off the instruction at the end, a title
+ * with no ASCII character left gives way to the role id, and the whole line is then capped. The kickoff of init and the
+ * epic kickoff of a worker build their lines with it (SHOULD 3).
+ */
+export function budgetedRoleLine(role: RoleSpec, sentence: (title: string) => string): string {
+  const room = ROLE_LINE_MAX - sentence('').length
+  const own = asciiLine(role.title, room)
+  const title = own === '' ? asciiLine(role.id, room) : own
+
+  return asciiLine(sentence(title), ROLE_LINE_MAX)
+}
+
+/**
  * The short ASCII role line of a kickoff (D-79): who the role is, where its ROLE.md is, and what to start with. The
  * title is cut to what is left of ROLE_LINE_MAX once the fixed text is in, so a long title never cuts off the
  * instruction at the end, and a title with no ASCII character left gives way to the role id. The line has no quote or
  * backtick character, so it sits inside the quotes of the autopilot command.
  */
 export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId): string {
-  const room = ROLE_LINE_MAX - roleSentence(role, framework, '').length
-  const own = asciiLine(role.title, room)
-  const title = own === '' ? asciiLine(role.id, room) : own
-
-  return asciiLine(roleSentence(role, framework, title), ROLE_LINE_MAX)
+  return budgetedRoleLine(role, title => roleSentence(role, framework, title))
 }
 
 /**

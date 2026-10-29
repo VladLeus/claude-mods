@@ -8,7 +8,7 @@ import { isAutopilotDuration } from '../roles/validate'
 import { compileScope } from '../scope/compile'
 import { emptySetupScan, FRAMEWORKS, templateRole } from '../testkit'
 import { mcpText, roleJsonText, settingsText } from './docs'
-import { asciiLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
+import { asciiLine, budgetedRoleLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
@@ -324,5 +324,14 @@ describe('kickoff', () => {
     expect(mcpText(scopeOf(templateRole('be'), 'gsd', [templateRole('be')]))).toBe(
       '{\n  "schema": 1,\n  "servers": []\n}\n',
     )
+  })
+})
+
+describe('budgetedRoleLine (SHOULD 3)', () => {
+  test('a title with no ASCII character left gives way to the role id in the line the sentence builds', () => {
+    const role = templateRole('be', { title: '\u00e9\u00e8\u2014' })
+    const sentence = (title: string) => `You are ${title}, read your ROLE.md.`
+
+    expect(budgetedRoleLine(role, sentence)).toBe('You are be, read your ROLE.md.')
   })
 })

@@ -5,7 +5,7 @@
  * hands it to its mirror stage. It is pure and imports generate/kickoff and the types; epic/create reads it.
  */
 import type { EpicRecord, RoleSpec } from '../../types'
-import { asciiLine, ROLE_LINE_MAX } from '../generate/kickoff'
+import { asciiLine, budgetedRoleLine, ROLE_LINE_MAX } from '../generate/kickoff'
 
 /** The epic worktree as runEpic hands it to its mirror stage once git has made or found it (D-147, D-164). */
 export type EpicWorktree = {
@@ -73,11 +73,7 @@ function pmEpicLine(id: string, key: string, title: string, target: string): str
  * line is then capped.
  */
 function workerEpicLine(role: RoleSpec, key: string, parent: string | null): string {
-  const room = ROLE_LINE_MAX - workerEpicSentence(role.id, key, '', parent).length
-  const own = asciiLine(role.title, room)
-  const title = own === '' ? asciiLine(role.id, room) : own
-
-  return asciiLine(workerEpicSentence(role.id, key, title, parent), ROLE_LINE_MAX)
+  return budgetedRoleLine(role, title => workerEpicSentence(role.id, key, title, parent))
 }
 
 /**
