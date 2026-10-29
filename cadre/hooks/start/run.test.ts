@@ -1074,11 +1074,6 @@ const TMUX_ARGV = [
   `/repo/.cadre/bin/be || ${TMUX_WAIT}`,
 ]
 
-/** The plan that refuses with this text. */
-function refusal(text: string): TerminalPlan {
-  return { kind: 'refuse', text }
-}
-
 /** The refusal of a bare --terminal when TMUX is unset and TERM_PROGRAM, shown as given here, names no terminal. */
 function unknownTerminal(shown: string): string {
   return (

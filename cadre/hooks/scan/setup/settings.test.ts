@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SettingsSource, SetupScan } from '../../../types'
-import { ABSOLUTE_PATH_MARKERS, entry, leaks, memIo, memWorld, SECRET_FIXTURES, secretWorld } from '../../testkit'
+import { ABSOLUTE_PATH_MARKERS, leaks, memIo, memWorld, SECRET_FIXTURES, secretWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import type { SetupContext } from './read'
 import { projectHooks, projectSettings } from './settings'

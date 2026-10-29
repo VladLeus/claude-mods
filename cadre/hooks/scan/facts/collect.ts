@@ -86,7 +86,7 @@ export async function locationsOf(port: FactsPort, sessionRoot: string): Promise
 }
 
 /** A path as the report shows it, for the warnings of this detect run (IN-03). */
-function shown(read: ReadContext, path: string): string {
+function warningPath(read: ReadContext, path: string): string {
   return displayPath(path, read.home, read.root, read.configDir)
 }
 
@@ -115,13 +115,13 @@ async function readText(
   const isThere = (await port.exists(path)) ?? true
   if (!isThere) return null
   if (isRepoFile && !(await isSafeRepoFile(port, read, path))) {
-    read.warnings.push(`skipped ${shown(read, path)}: not a regular file inside the repo (treated as unknown)`)
+    read.warnings.push(`skipped ${warningPath(read, path)}: not a regular file inside the repo (treated as unknown)`)
 
     return null
   }
   const text = await port.read(path)
   if (typeof text !== 'string' || utf8Bytes(text) > MAX_READ_BYTES) {
-    read.warnings.push(`could not read ${shown(read, path)} (treated as unknown)`)
+    read.warnings.push(`could not read ${warningPath(read, path)} (treated as unknown)`)
 
     return null
   }
@@ -139,7 +139,7 @@ async function readJson(port: FactsPort, read: ReadContext, path: string, isRepo
   try {
     return JSON.parse(text)
   } catch {
-    read.warnings.push(`could not parse ${shown(read, path)} as JSON (treated as unknown)`)
+    read.warnings.push(`could not parse ${warningPath(read, path)} as JSON (treated as unknown)`)
 
     return null
   }

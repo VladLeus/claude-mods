@@ -23,7 +23,7 @@ import { instructionsRecordPath, parseInstructionsRecord } from '../apply/privat
 import type { InstructionsRecord, RecordedMemory } from '../apply/private'
 import { privateFoldersUnknownWarning, roleFoldersOf } from '../apply/run'
 import { sha256Hex } from '../core/hash'
-import { clean, shown, utf8Bytes } from '../core/text'
+import { clean, utf8Bytes } from '../core/text'
 import { isSafeFileName } from '../launch/links'
 import { MARKDOWN_EXTENSION, memoryFoldersOf, pathFromDisplay, relativeTo, trimSlash, userDirOf } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'

@@ -429,9 +429,9 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
     ...failed.map(path => `could not write ${reportText(path)}`),
     ...outcome.chmodRefusals,
     ...outcome.notExecutable.map(path => {
-      const shownPath = reportText(path)
+      const pathText = reportText(path)
 
-      return `could not make ${shownPath} executable: run chmod 755 ${shownPath}`
+      return `could not make ${pathText} executable: run chmod 755 ${pathText}`
     }),
     ...outcome.hunkFailures.map(hunkFailureLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
