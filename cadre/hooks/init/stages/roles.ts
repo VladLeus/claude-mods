@@ -13,7 +13,7 @@ import type { Labelled } from '../../core/labelled'
 import { pad, reportText } from '../../core/text'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import { proposeFromText } from '../../suggest/propose'
-import type { Described } from '../../suggest/propose'
+import type { Proposed } from '../../suggest/propose'
 import {
   accepted,
   ASK_HEADERS,
@@ -172,6 +172,15 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
 
   return { kind: 'text', text }
 }
+
+/**
+ * What describeStep gives: the described roles, a return to the template, the fallback and why, or a cancel with
+ * its reason (A1, D-136).
+ */
+export type Described =
+  | Proposed
+  | { readonly kind: 'template' }
+  | { readonly kind: 'cancelled'; readonly reason: string }
 
 /**
  * The Describe path (ROLE-02, D-46, D-83): the person types their own structure in the text field of DESCRIBE_QUESTION,

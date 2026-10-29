@@ -141,15 +141,10 @@ const MAX_FALLBACK_ERROR_CHARS = 120
 /** The sentence that ends the fallback line. */
 const FALLBACK_NOTE = 'Using the template proposal; you can still adjust it.'
 
-/**
- * What describeStep gives: the described roles, a return to the template, the fallback and why, or a cancel with
- * its reason (A1, D-136).
- */
-export type Described =
+/** What proposeFromText gives: the described roles, or the fallback line and why the roles could not be used. */
+export type Proposed =
   | { readonly kind: 'roles'; readonly roles: readonly RoleSpec[] }
-  | { readonly kind: 'template' }
   | { readonly kind: 'fallback'; readonly message: string }
-  | { readonly kind: 'cancelled'; readonly reason: string }
 
 /** The line init prints when the described structure cannot be used: the last errors, cut so the line keeps its end. */
 function fallbackMessage(errors: readonly string[]): string {
@@ -164,15 +159,15 @@ function fallbackMessage(errors: readonly string[]): string {
  * sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it falls back with the
  * last errors.
  */
-export async function proposeFromText(io: InitIo, text: string): Promise<Described> {
-  const parse = (reply: string): Checked<Described> => {
+export async function proposeFromText(io: InitIo, text: string): Promise<Proposed> {
+  const parse = (reply: string): Checked<Proposed> => {
     const parsed = parseProposal(reply)
     if (parsed.kind === 'invalid') return parsed
 
     return { kind: 'ok', value: { kind: 'roles', roles: rolesFromProposal(parsed.roles) } }
   }
   const prompt = (errors: readonly string[]): string => proposePrompt(text, errors)
-  const fallback = (errors: readonly string[]): Described => ({ kind: 'fallback', message: fallbackMessage(errors) })
+  const fallback = (errors: readonly string[]): Proposed => ({ kind: 'fallback', message: fallbackMessage(errors) })
 
   return checkedCompletion(io, PROPOSE_SYSTEM, prompt, parse, fallback)
 }

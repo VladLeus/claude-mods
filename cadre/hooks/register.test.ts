@@ -10,8 +10,8 @@ import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
-import { NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { cancelledReply, INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY } from './init/replies'
+import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
+import { cancelledReply } from './init/replies'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
@@ -1335,7 +1335,7 @@ describe('cadre init with a faked host', () => {
     const log = newLog()
     fakeHost(on, initWorld({ root: '/home/u' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
+    expect(out.text).toBe(commandRefusal(HOME_ROOT_REPLY, 'init'))
     expect(out.text).toContain('cadre init needs a repo root other than your home folder')
     expect(out.text).toContain('run /cadre init again')
     expect(log.ops).toContain('fs.stat /home/u resolve=true')
@@ -1347,7 +1347,7 @@ describe('cadre init with a faked host', () => {
     const log = newLog()
     fakeHost(on, initWorld({ root: '/home' }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
+    expect(out.text).toBe(commandRefusal(HOME_ROOT_REPLY, 'init'))
     expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
     expect(log.asks).toEqual([])
   })
@@ -1357,7 +1357,7 @@ describe('cadre init with a faked host', () => {
     const linked = initWorld({ root: '/link/repo', realPaths: { '/link/repo': '/home/u', '/home/u': '/home/u' } })
     fakeHost(on, linked, log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    expect(out.text).toBe(INIT_HOME_ROOT_REPLY)
+    expect(out.text).toBe(commandRefusal(HOME_ROOT_REPLY, 'init'))
     expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])
     expect(log.asks).toEqual([])
   })
@@ -1366,7 +1366,7 @@ describe('cadre init with a faked host', () => {
     const log = newLog()
     fakeHost(on, initWorld({ root: '/', env: {}, realPaths: { '/': '/' } }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(out.text).toBe(INIT_FILE_SYSTEM_ROOT_REPLY)
+    expect(out.text).toBe(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init'))
     expect(out.text).toContain('cadre init needs a repo root other than the file system root (/)')
     expect(out.text).toContain('run /cadre init again')
     expect(log.ops.filter(op => !op.startsWith('fs.stat '))).toEqual([])

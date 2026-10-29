@@ -133,7 +133,7 @@ import { kickoffRoleLine, kickoffText } from './generate/kickoff'
 import { launcherText, PROBE_PROMPT, RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
-import { NOT_INTERACTIVE_REPLY } from './guards/repo'
+import { commandRefusal, NOT_INTERACTIVE_REPLY, rootUnknownReply } from './guards/repo'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -152,14 +152,7 @@ import {
 } from './init/answers'
 import { ACCEPT_RECOMMENDATIONS } from './init/handout'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, initReplyText } from './init/initapply'
-import {
-  cancelledReply,
-  IGNORE_ALL_NOTE,
-  INIT_CANCELLED,
-  INIT_FILE_SYSTEM_ROOT_REPLY,
-  INIT_HOME_ROOT_REPLY,
-  INIT_ROOT_UNKNOWN_REPLY,
-} from './init/replies'
+import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './init/replies'
 import { runInit } from './init/run'
 import { mcpContextLine } from './init/stages/assign'
 import { ENV_DISMISSED_REASON, envContextLine } from './init/stages/carry'
@@ -954,9 +947,9 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['history', 'historyQuestion', [12, 51].map(historyQuestion)],
   ['history', 'historyLines', historyLines(HISTORY)],
   ['init', 'NOT_INTERACTIVE_REPLY', NOT_INTERACTIVE_REPLY],
-  ['init', 'INIT_ROOT_UNKNOWN_REPLY', INIT_ROOT_UNKNOWN_REPLY],
-  ['init', 'INIT_HOME_ROOT_REPLY', INIT_HOME_ROOT_REPLY],
-  ['init', 'INIT_FILE_SYSTEM_ROOT_REPLY', INIT_FILE_SYSTEM_ROOT_REPLY],
+  ['init', 'INIT_ROOT_UNKNOWN_REPLY', rootUnknownReply('init')],
+  ['init', 'INIT_HOME_ROOT_REPLY', commandRefusal(HOME_ROOT_REPLY, 'init')],
+  ['init', 'INIT_FILE_SYSTEM_ROOT_REPLY', commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init')],
   ['init', 'INIT_CANCELLED', INIT_CANCELLED],
   ['init', 'cancelledReply', cancelledReply(NO_USABLE_ANSWER_REASON)],
   ['init', 'teamContextLine', teamContextLine(TEAM)],
