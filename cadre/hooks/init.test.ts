@@ -77,7 +77,6 @@ import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate/
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
-import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './history'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -190,6 +189,7 @@ import {
 } from './init'
 import type { AdjustOutcome, InitOptions, ReviewItem } from './init'
 import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './init/answers'
+import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './init/stages/history'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

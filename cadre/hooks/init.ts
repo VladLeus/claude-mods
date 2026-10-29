@@ -68,7 +68,6 @@ import { trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
-import { historyStep } from './history'
 import { hasRunFailed } from './host/steps'
 import {
   ALL_ENV_OPTION,
@@ -95,6 +94,7 @@ import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './init
 import type { NameAssignment, SkillGroup } from './init/assign-rules'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
+import { historyStep } from './init/stages/history'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

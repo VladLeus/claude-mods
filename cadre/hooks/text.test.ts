@@ -135,14 +135,6 @@ import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
-  HISTORY_DISMISSED_REASON,
-  HISTORY_OPTIONS,
-  historyLines,
-  historyQuestion,
-  NO_HISTORY_NOTE,
-  UNLISTED_HISTORY_NOTE,
-} from './history'
-import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
   ADJUST_QUESTION,
@@ -252,6 +244,14 @@ import {
   skillUsesText,
 } from './init/answers'
 import { ACCEPT_RECOMMENDATIONS } from './init/handout'
+import {
+  HISTORY_DISMISSED_REASON,
+  HISTORY_OPTIONS,
+  historyLines,
+  historyQuestion,
+  NO_HISTORY_NOTE,
+  UNLISTED_HISTORY_NOTE,
+} from './init/stages/history'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

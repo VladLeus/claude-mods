@@ -9,7 +9,7 @@ import {
   historyStep,
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
-} from '../history'
+} from '../init/stages/history'
 import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from '../ui/ask'

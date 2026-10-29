@@ -1,7 +1,15 @@
-import type { InitIo, InitLocations } from '../types'
-import { labelled } from './core/labelled'
-import type { Labelled } from './core/labelled'
-import { userDirOf } from './paths'
+/**
+ * The history step of init (SCAN-03, D-59, D-133), a layer 10 module: the consent question, asked before any session
+ * transcript is read, with how many sessions this repo has and that only the newest are read (historyQuestion), and
+ * historyStep, which lists this repo's session folder, asks, runs the history scan (scan/history) only after a yes and
+ * shows the names and counts it found as the side pane's Session history block (historyLines). Pure: it asks and reads
+ * through the InitIo port it is given, imports core, paths, scan/history and ui/ask, and never imports init.ts, which
+ * imports it, or init/run.
+ */
+import type { InitIo, InitLocations } from '../../../types'
+import { labelled } from '../../core/labelled'
+import type { Labelled } from '../../core/labelled'
+import { userDirOf } from '../../paths'
 import {
   busiestFirst,
   HISTORY_MAX_FILE_BYTES,
@@ -10,10 +18,10 @@ import {
   historyDir,
   listSessions,
   scanHistory,
-} from './scan/history'
-import type { HistoryScan } from './scan/history'
-import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from './ui/ask'
-import type { StepResult } from './ui/ask'
+} from '../../scan/history'
+import type { HistoryScan } from '../../scan/history'
+import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from '../../ui/ask'
+import type { StepResult } from '../../ui/ask'
 
 /** The line init prints when this repo has no session history: no session folder, or no transcript in it (SCAN-03). */
 export const NO_HISTORY_NOTE = 'No session history for this repo.'
