@@ -21,7 +21,6 @@ import type {
   TemplateRoleId,
   TerminalChoice,
 } from '../types'
-import { allOrNull, isObject, parseJsonValue, stableJson } from './core/json'
 import { reportText, sortedUnique } from './core/text'
 import {
   BASE_BRANCH_ARGV,
@@ -49,6 +48,7 @@ import {
   XDG_ARGV,
 } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './epic/key'
+import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, parseEpicRecord } from './epic/record'
 import { asciiLine, ROLE_LINE_MAX } from './generate/kickoff'
 import { hasRuntimeKickoff, shQuote } from './generate/launcher'
 import { GIT_TIMEOUT_MS } from './git/argv'
@@ -74,9 +74,6 @@ import {
   terminalPlan,
 } from './ui/terminal'
 import type { TerminalPlan } from './ui/terminal'
-
-/** The start of every epic branch name (D-146): `epic/<slug>`. */
-export const EPIC_BRANCH_PREFIX = 'epic/'
 
 /** The template role whose role fetches the epic with the tracker MCP (D-143, D-161). */
 const PM_ROLE: TemplateRoleId = 'pm'
@@ -347,51 +344,6 @@ export function epicLookup(input: {
   if (only === undefined) return { kind: 'new' }
 
   return { kind: 'readd', branch: only, name: only.slice(EPIC_BRANCH_PREFIX.length) }
-}
-
-/** The file name of the epic record in its worktree's git dir (D-164): per worktree, outside the tree, never shared. */
-export const EPIC_RECORD_FILE = 'cadre-epic.json'
-
-/**
- * Whether a recorded link or copy path is safe to act on inside the worktree (D-164, T-03.1-03): relative, so not
- * starting with `/`, and with no empty, `.` or `..` segment, so a later removal of it cannot leave the worktree.
- */
-export function isSafeRelPath(path: string): boolean {
-  if (path.startsWith('/')) return false
-
-  return path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..')
-}
-
-/** Where the epic record of the worktree whose git dir is `gitDir` lies (D-164): beside that worktree's git files. */
-export function epicRecordPath(gitDir: string): string {
-  return `${gitDir}/${EPIC_RECORD_FILE}`
-}
-
-/** The text of an epic record as cadre writes it (D-164): stable JSON, so one record always gives the same text. */
-export function epicRecordText(record: EpicRecord): string {
-  return stableJson(record)
-}
-
-/**
- * An epic record read back (D-164, T-03.1-03), as epicRecordText writes it: JSON with schema 1, a key, slug, title and
- * branch that are strings, the branch `epic/<slug>`, a base that is a string or null, a number createdAt, and links and
- * copies that are lists of paths isSafeRelPath accepts. Anything else gives null (fail closed); a field the record does
- * not name is dropped.
- */
-export function parseEpicRecord(text: string): EpicRecord | null {
-  const value = parseJsonValue(text)?.value
-  if (!isObject(value) || value.schema !== 1) return null
-  const { key, slug, title, branch, base, createdAt, links, copies } = value
-  if (typeof key !== 'string' || typeof slug !== 'string' || typeof title !== 'string') return null
-  if (typeof branch !== 'string' || branch !== `${EPIC_BRANCH_PREFIX}${slug}`) return null
-  if (base !== null && typeof base !== 'string') return null
-  if (typeof createdAt !== 'number' || !Array.isArray(links) || !Array.isArray(copies)) return null
-  const safePath = (path: unknown): string | null => (typeof path === 'string' && isSafeRelPath(path) ? path : null)
-  const linked = allOrNull(links, safePath)
-  const copied = allOrNull(copies, safePath)
-  if (linked === null || copied === null) return null
-
-  return { schema: 1, key, slug, title, branch, base, createdAt, links: linked, copies: copied }
 }
 
 /**

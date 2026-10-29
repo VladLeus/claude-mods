@@ -80,7 +80,6 @@ import { RESERVED_ROLE_IDS } from './core/role-id'
 import { countedNoun, idsOrNone } from './core/text'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './detect/report'
 import {
-  EPIC_BRANCH_PREFIX,
   EPIC_CANCELLED,
   EPIC_DONE_HEADER,
   EPIC_DONE_NO_DIALOG,
@@ -88,7 +87,6 @@ import {
   EPIC_DONE_OPTIONS,
   EPIC_NO_PM,
   EPIC_NO_WORKTREE_LIST,
-  EPIC_RECORD_FILE,
   EPIC_ROLES_HEADER,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
@@ -111,7 +109,6 @@ import {
   epicNotMainReply,
   epicOldLauncherReply,
   epicPathExistsReply,
-  epicRecordText,
   epicRemovedText,
   epicRemoveFailedReply,
   epicRolesQuestion,
@@ -128,6 +125,7 @@ import {
 } from './epic'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
+import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordText } from './epic/record'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {
   GSD_ADAPTER,

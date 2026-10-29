@@ -21,7 +21,6 @@ import {
   EPIC_DONE_NO_LIST,
   EPIC_NO_PM,
   EPIC_NO_WORKTREE_LIST,
-  EPIC_RECORD_FILE,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
   epicCreatedText,
@@ -47,7 +46,6 @@ import {
   epicParentOf,
   epicPathExistsReply,
   epicPmOf,
-  epicRecordText,
   epicRemoveFailedReply,
   epicRemovedText,
   epicRolesQuestion,
@@ -60,14 +58,12 @@ import {
   excludesText,
   globalExcludesPath,
   globalExcludesWarning,
-  isSafeRelPath,
   lockPid,
   mergedStateOf,
   mirrorLinkedParentWarning,
   mirrorPaths,
   mirrorPlan,
   mirrorUnhideableWarning,
-  parseEpicRecord,
   parseWorktreeList,
   runEpic,
   runEpicDone,
@@ -92,6 +88,7 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic/git'
 import { epicBadKeyReply } from './epic/key'
+import { EPIC_RECORD_FILE, epicRecordText, parseEpicRecord } from './epic/record'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
@@ -489,17 +486,6 @@ describe('the epic record (D-164)', () => {
       { path: `${GIT_DIR}/cadre-epic.json`, text: epicRecordText(RECORD), isWritten: true },
     ])
     expect(records(detached).map(write => parseEpicRecord(write.text)?.base)).toEqual(['abc123'])
-  })
-
-  test('parseEpicRecord reads back what epicRecordText wrote and refuses a bad shape or an unsafe path', () => {
-    const record: EpicRecord = { ...RECORD, links: ['node_modules', '.claude/settings.local.json'], copies: ['.envrc'] }
-    const bad = (over: Readonly<Record<string, unknown>>) => parseEpicRecord(JSON.stringify({ ...record, ...over }))
-
-    expect(parseEpicRecord(epicRecordText(record))).toEqual(record)
-    expect([bad({ title: undefined }), bad({ schema: 2 }), bad({ branch: 'epic/other' })]).toEqual([null, null, null])
-    for (const path of ['/etc/x', '', 'a/../b', '..', 'a//b', 'a/']) {
-      expect([path, bad({ links: [path] }), bad({ copies: [path] })]).toEqual([path, null, null])
-    }
   })
 })
 
@@ -1883,13 +1869,5 @@ describe('safety net: epic failure paths (A8)', () => {
     const run = await epicDone(await doneWorld(), [rule(list, null), ...DONE_RULES])
     expect(EPIC_DONE_NO_LIST).toBe('cadre epic done could not list the worktrees from git, so it removed nothing.')
     expect([run.reply, run.events]).toEqual([EPIC_DONE_NO_LIST, [CHECKOUT_ARGV('/repo').join(' '), list.join(' ')]])
-  })
-})
-
-describe('safety net: epic helpers (A8)', () => {
-  test('isSafeRelPath: a relative path with no empty, . or .. segment; any other path is refused', () => {
-    expect(['node_modules', '.cadre/bin/pm', 'a/.b/c..d'].map(isSafeRelPath)).toEqual([true, true, true])
-    const refused = ['', '/repo/x', '../x', 'a/../b', 'a/./b', 'a//b', 'a/', '.', '..']
-    expect(refused.map(isSafeRelPath)).toEqual(refused.map(() => false))
   })
 })
