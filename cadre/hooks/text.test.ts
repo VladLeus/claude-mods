@@ -156,9 +156,6 @@ import {
   FRAMEWORK_QUESTION_PREFIX,
   frameworkRoleQuestion,
   HUNK_DISMISSED_REASON,
-  IMPROVER_INSTALL_CONTEXT,
-  IMPROVER_INSTALL_DISMISSED_REASON,
-  IMPROVER_INSTALL_QUESTION,
   improverRunLine,
   initReplyText,
   LAUNCH_DIR_CANCELLED_REASON,
@@ -245,6 +242,11 @@ import {
   UNLISTED_HISTORY_NOTE,
 } from './init/stages/history'
 import { hunkQuestion } from './init/stages/hunks'
+import {
+  IMPROVER_INSTALL_CONTEXT,
+  IMPROVER_INSTALL_DISMISSED_REASON,
+  IMPROVER_INSTALL_QUESTION,
+} from './init/stages/improver-install'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,

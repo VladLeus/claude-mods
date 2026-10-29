@@ -104,9 +104,6 @@ import {
   frameworkStep,
   HUNK_DISMISSED_REASON,
   hunkStep,
-  IMPROVER_INSTALL_CONTEXT,
-  IMPROVER_INSTALL_DISMISSED_REASON,
-  IMPROVER_INSTALL_QUESTION,
   improverRunLine,
   initReplyText,
   installedFrameworks,
@@ -170,6 +167,11 @@ import {
 } from './init/stages/consent'
 import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStep } from './init/stages/duration'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './init/stages/history'
+import {
+  IMPROVER_INSTALL_CONTEXT,
+  IMPROVER_INSTALL_DISMISSED_REASON,
+  IMPROVER_INSTALL_QUESTION,
+} from './init/stages/improver-install'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -3637,18 +3639,6 @@ function lastReview(run: MemRun): readonly string[] {
 }
 
 describe('improver install offer (G-02-1f)', () => {
-  test('the question, its context, its cancel reason and the plugin key are fixed', () => {
-    expect(IMPROVER_INSTALL_QUESTION).toBe(
-      'Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver ' +
-        "tidies each role's built CLAUDE.md, and you accept or keep each change.",
-    )
-    expect(IMPROVER_INSTALL_CONTEXT).toBe(
-      'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
-    )
-    expect(IMPROVER_INSTALL_DISMISSED_REASON).toBe('The claude-md-management question was dismissed or not answered.')
-    expect(CLAUDE_MD_PLUGIN).toBe('claude-md-management@claude-plugins-official')
-  })
-
   test('asked after the security question when a role got a built part and the plugin is missing', async () => {
     const run = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
     await runInit(run.io, { dryRun: true })
