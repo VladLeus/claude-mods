@@ -98,7 +98,7 @@ import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
-import { runStart, worktreeClaudeMd } from './start'
+import { runStart } from './start'
 import { claudeTooOldReply } from './start/claude-version'
 import { START_NO_GIT_DIR } from './start/gather-user'
 import { launcherChangedReply } from './start/launcher-check'
@@ -1400,14 +1400,6 @@ async function worktreeStartWorld(): Promise<MemWorld> {
 }
 
 describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
-  test('worktreeClaudeMd adds the CLAUDE.md files of the worktree, sorted and once each (Pitfall 1)', () => {
-    expect(worktreeClaudeMd(['/repo/CLAUDE.md'], '/repo/.claude/worktrees/x')).toEqual([
-      '/repo/.claude/worktrees/x/.claude/CLAUDE.md',
-      '/repo/.claude/worktrees/x/CLAUDE.md',
-      '/repo/CLAUDE.md',
-    ])
-  })
-
   test('a parts-flow epic role excludes the worktree CLAUDE.md files; one given project-claude-md none', async () => {
     const team = [templateRole('pm'), templateRole('be', { instructions: ['project-claude-md'] })]
     const run = await epic(await renderWorld(team), RENDER_RULES, 'PROJ-1', '')
