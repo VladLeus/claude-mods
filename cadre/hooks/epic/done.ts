@@ -3,8 +3,8 @@
  * its key in the main checkout and removes it only when it is clean, merged into its recorded base and no role there
  * reads running (roleRunState), each failed check named and `--force` asking once; it clears a lock only when its
  * process has ended, removes the links the record names, then the worktree, and never deletes the branch. It runs
- * through the InitIo and HostIo ports and imports core, git, guards/repo, host/steps, paths, scan, status, team,
- * ui/ask and the epic modules below it; register and the goldens run it.
+ * through the InitIo and HostIo ports and imports core, git, guards/repo, host/steps, paths, status, team, ui/ask and
+ * the epic modules below it; register and the goldens run it.
  */
 import type { HostIo, HostRun, InitIo, InitLocations, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
