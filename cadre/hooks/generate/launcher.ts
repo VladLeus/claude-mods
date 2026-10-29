@@ -93,6 +93,13 @@ function runtimeMessage(id: string, problem: string): string {
 }
 
 /**
+ * The oldest claude cadre starts a role with, as text (D-107): the one place the version floor is written out. The
+ * launcher's version refusal and the claude refusals of /cadre start are built from it; start/claude-version holds
+ * the same floor as the MIN_CLAUDE_VERSION tuple it compares by.
+ */
+export const MIN_CLAUDE_VERSION_TEXT = '2.1.295'
+
+/**
  * The lines that define `cadre_claude_ok`, which launcherText puts right after `rt=`. The function reads
  * `claude --version` through a fixed sed program and passes for 2.1.295 or newer (D-107); it is a function, so its
  * `set --` leaves the launcher's own arguments alone.
@@ -288,7 +295,9 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     'probe=0',
     `case $# in 0) ;; 1) [ "$1" = --probe ] || { ${usage}; exit 2; }; probe=1 ;; *) ${usage}; exit 2 ;; esac`,
     ...VERSION_CHECK_LINES,
-    `cadre_claude_ok || ${refusal('cadre: needs claude 2.1.295 or newer on PATH (see claude --version)')}`,
+    `cadre_claude_ok || ${refusal(
+      `cadre: needs claude ${MIN_CLAUDE_VERSION_TEXT} or newer on PATH (see claude --version)`,
+    )}`,
     `[ -f ${stamp} ] || ${refusal(unrendered)}`,
     `for f in ${fresh}; do`,
     `  if [ "$f" -nt ${stamp} ]; then ${errorLine(runtimeMessage(id, ' is older than the role files'))}; exit 1; fi`,
