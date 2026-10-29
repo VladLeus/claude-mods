@@ -161,7 +161,6 @@ import {
   IMPROVER_INSTALL_QUESTION,
   improverRunLine,
   initReplyText,
-  INSTALL_OPTIONS,
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_CONTEXT,
   LAUNCH_DIR_OPTIONS,
@@ -198,10 +197,6 @@ import {
   ROLES_QUESTION,
   rolesContextLine,
   runInit,
-  SECURITY_INSTALL_CONTEXT,
-  SECURITY_INSTALL_DISMISSED_REASON,
-  SECURITY_INSTALL_PREFIX,
-  securityInstallQuestion,
   skillsContextLine,
 } from './init'
 import {
@@ -277,6 +272,13 @@ import {
   GIT_POLICY_QUESTION,
   policyLine,
 } from './init/stages/policy'
+import {
+  INSTALL_OPTIONS,
+  SECURITY_INSTALL_CONTEXT,
+  SECURITY_INSTALL_DISMISSED_REASON,
+  SECURITY_INSTALL_PREFIX,
+  securityInstallQuestion,
+} from './init/stages/security'
 import {
   UNDENIED_MEMORY_FOLDER_WARNING,
   UNDENIED_PRIVATE_WARNING,
