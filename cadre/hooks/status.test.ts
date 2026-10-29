@@ -4,8 +4,8 @@ import type { FrameworkId, HostRun, InitLocations, LaunchStart, PortEntry, RoleS
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { autopilotLogPath, autopilotStatusPath } from './scan/autopilot'
-import type { RunState } from './scan/autopilot'
-import { lastLogText, LOG_MAX_BYTES, newestHandoff, runOutcomeOf, runStatus, statusStateOf } from './status'
+import { newestHandoff, runStatus } from './status'
+import { LOG_MAX_BYTES, runOutcomeOf } from './status/autopilot-files'
 import { BEAT_MAX_BYTES, beatSessionOf, startFolderOf, titleGrepArgv } from './status/session-find'
 import { noStateReply, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entryAt, hostWorld, memHost, memIo, memWorld, templateRole } from './testkit'
@@ -297,34 +297,12 @@ function s9World(status: string | null, log: string | null, input: StatusInput =
   })
 }
 
-/** The state statusStateOf gives a run state and an outcome, with a status file and a log there unless told. */
-function stateOf(
-  runState: RunState,
-  outcome: 'done' | 'stopped' | 'none',
-  hasStatusFile = true,
-  hasLog = true,
-): string {
-  return statusStateOf({ runState, outcome, hasStatusFile, hasLog })
-}
-
 /** A status file of a run that is on, with its beat `ago` milliseconds before the fixture clock. */
 function onStatus(ago: number): string {
   return JSON.stringify({ isOn: true, phase: 'running', beat: NOW - ago })
 }
 
 describe('status states (D-111)', () => {
-  test('statusStateOf: an active run is running, an unknown one unknown, an off one told by its finished line', () => {
-    expect(stateOf('active', 'done')).toBe('running')
-    expect(stateOf('active', 'none', false, false)).toBe('running')
-    expect(stateOf('unknown', 'done')).toBe('unknown')
-    expect(stateOf('none', 'done')).toBe('done')
-    expect(stateOf('none', 'stopped')).toBe('stopped')
-    expect(stateOf('none', 'none', false, false)).toBe('not started')
-    expect(stateOf('none', 'none', true, false)).toBe('stopped')
-    expect(stateOf('none', 'none', false, true)).toBe('stopped')
-    expect(stateOf('none', 'none')).toBe('stopped')
-  })
-
   test('a status file on with a fresh beat is running, whatever the log says', async () => {
     const status = await statusBe(s9World(onStatus(10_000), DONE_LOG), [S9_TITLED])
     expect(status.lines[1]).toBe('state: running')
@@ -380,15 +358,6 @@ describe('status states (D-111)', () => {
     expect(runOutcomeOf(forged)).toBe('none')
     const status = await statusBe(s9World('{"isOn":false}', forged), [S9_TITLED])
     expect(status.lines[1]).toBe('state: stopped')
-  })
-
-  test('the last finished line decides, and a line is one record whatever separator its text holds', () => {
-    expect(runOutcomeOf(DONE_LOG)).toBe('done')
-    expect(runOutcomeOf(TIME_LOG)).toBe('stopped')
-    expect(runOutcomeOf(`${TIME_LOG}${DONE_LOG}`)).toBe('done')
-    expect(runOutcomeOf(RUNNING_LOG)).toBe('none')
-    expect(runOutcomeOf('')).toBe('none')
-    expect(runOutcomeOf('2026-10-20T01:00:00.000Z  finished (done): handed\u2029back\n')).toBe('done')
   })
 
   test('newestHandoff takes the newest regular .md file, which the report shows below the start folder', async () => {
@@ -449,18 +418,6 @@ describe('status states (D-111)', () => {
     for (const status of [gsdDefault, ownGsd]) {
       expect(status.lines.filter(line => line.startsWith('DONE.md'))).toEqual([])
     }
-  })
-
-  test('lastLogText shows the last line after its stamp, cleaned and at most 160 characters (T-03-35)', () => {
-    const long = `2026-10-20T01:00:00.000Z  the session reported its work complete: ${'x'.repeat(300)}\n`
-    const shown = lastLogText(`${DONE_LOG}${long}`) ?? ''
-    expect(Array.from(shown)).toHaveLength(160)
-    expect(shown.startsWith('the session reported its work complete: xxx')).toBe(true)
-    expect(shown.endsWith('\u2026')).toBe(true)
-    expect(lastLogText('2026-10-20T01:00:00.000Z  a\u0007b\u202Ec\u2028d\n')).toBe('abcd')
-    expect(lastLogText(DONE_LOG)).toBe('finished (done): handed back to the person')
-    expect(lastLogText('')).toBeNull()
-    expect(lastLogText('no stamp here\n')).toBeNull()
   })
 })
 
