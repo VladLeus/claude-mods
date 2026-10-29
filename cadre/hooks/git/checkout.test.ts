@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo } from '../../types'
+import type { HostRun, InitIo } from '../../types'
 import { memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
-import { findGitTop } from './checkout'
+import { checkoutOf, findGitTop } from './checkout'
 
 describe('findGitTop', () => {
   /** A port over the world that also records every path it is asked to stat. */
@@ -90,5 +90,17 @@ describe('findGitTop', () => {
     expect(await findGitTop(spy.io, 'repo/sub')).toEqual({ state: 'none' })
     expect(await findGitTop(spy.io, '')).toEqual({ state: 'none' })
     expect(spy.statted).toEqual([])
+  })
+})
+
+describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
+  test('checkoutOf reads the main checkout and a linked worktree from git; anything else is unknown', () => {
+    const run = (exitCode: number, stdout: string): HostRun => ({ exitCode, stdout, stderr: '' })
+
+    expect(checkoutOf(run(0, '/repo/.git\n/repo/.git\n'))).toEqual({ kind: 'main' })
+    expect(checkoutOf(run(0, '/repo/.git/worktrees/x\n/repo/.git\n'))).toEqual({ kind: 'linked', main: '/repo' })
+    expect(checkoutOf(null)).toEqual({ kind: 'unknown' })
+    expect(checkoutOf(run(128, '/repo/.git\n/repo/.git\n'))).toEqual({ kind: 'unknown' })
+    expect(checkoutOf(run(0, '/repo/.git\n'))).toEqual({ kind: 'unknown' })
   })
 })

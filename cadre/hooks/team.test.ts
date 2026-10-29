@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CadreState, LaunchStart, RoleSpec } from '../types'
+import type { CadreState, LaunchStart, ManifestEntry, RoleSpec } from '../types'
+import { sha256Hex } from './core/hash'
+import { stableJson } from './core/json'
+import { cadreJsonText, roleJsonText } from './generate/docs'
+import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import {
   compileTeam,
   noStateReply,
@@ -123,5 +127,62 @@ describe('repoGuard and readTeam', () => {
       // BE has Bash, so only the config decides; a GSD role without Bash, such as PM, is always attended.
       expect([text, cardOf(scopes, 'be').isAttended]).toEqual([text, isAttended])
     }
+  })
+})
+
+/** PM and BE, in the order cadre.json lists them in the epic worlds. */
+const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
+
+/**
+ * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
+ * /cadre epic also wants the line that picks the epic kickoff (D-158).
+ */
+function launcherOf(id: string): string {
+  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
+
+  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
+}
+
+/** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
+async function launcherEntry(id: string): Promise<ManifestEntry> {
+  return { path: `.cadre/bin/${id}`, sha256: await sha256Hex(launcherOf(id)), mode: 'exec' }
+}
+
+/**
+ * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in
+ * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default), each
+ * role.json is written from its role, and each launcher lies in `.cadre/bin/` with its sha256 in the manifest.
+ */
+async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+  const ids = roles.map(role => role.id)
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ids,
+    launchStart: { kind: 'git-root' },
+    readUserMcp,
+  })
+  const entries = await Promise.all(ids.map(launcherEntry))
+  const files: Record<string, string> = {
+    '/repo/.cadre/cadre.json': state,
+    '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: entries }),
+  }
+  for (const role of roles) {
+    files[`/repo/.cadre/${role.id}/role.json`] = roleJsonText(role)
+    files[`/repo/.cadre/bin/${role.id}`] = launcherOf(role.id)
+  }
+
+  return gitWorld({ files })
+}
+
+describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
+  test('readTeam with no id reads the whole team for cadre epic; with an id it refuses an unlisted one', async () => {
+    const io = memIo(await teamWorld(), {}).io
+    const read = await readTeam(io, '/repo', 'epic', null)
+
+    expect(read.kind === 'ok' ? read.value.roles.map(role => role.id) : read.text).toEqual(['pm', 'be'])
+    expect(await readTeam(io, '/repo', 'epic', 'qa')).toEqual({ kind: 'refuse', text: regenNoRole('qa', ['pm', 'be']) })
   })
 })

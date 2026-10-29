@@ -1,18 +1,28 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  AskSpec,
   CompiledScope,
   FrameworkId,
   HookScript,
+  HostIo,
+  ManifestEntry,
   RoleSpec,
   ScopeContext,
   SettingsTemplate,
   SetupScan,
   TemplateRoleId,
+  TerminalChoice,
 } from '../../types'
-import { isObject } from '../core/json'
+import { sha256Hex } from '../core/hash'
+import { isObject, parseJsonValue, stableJson } from '../core/json'
 import { sortedUnique } from '../core/text'
+import { GIT_DIR_ARGV, runEpic } from '../epic'
 import { adapterOf } from '../framework/registry'
+import { cadreJsonText, roleJsonText } from '../generate/docs'
+import { RUNTIME_KICKOFF_TEST } from '../generate/launcher'
+import { CHECKOUT_ARGV } from '../git/checkout'
+import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { INSTRUCTIONS_RECORD_FILE, roleMemoryDir } from '../paths'
 import { INFRA_SKILLS } from '../roles/infra'
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
@@ -22,12 +32,17 @@ import {
   BIDI_OVERRIDE,
   emptySetupScan,
   FRAMEWORKS,
+  hostWorld,
   leaks,
+  memHost,
+  memIo,
+  memWorld,
   SECRET_FIXTURES,
   session,
   skillRef,
   templateRole,
 } from '../testkit'
+import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from '../testkit'
 import {
   linkedMemoryDeny,
   lintRuntimeDenyPattern,
@@ -939,5 +954,204 @@ describe('the denies of an epic render (D-157, RESEARCH Pitfall 2)', () => {
     expect([...main, ...own].filter(entry => !epicDeny.includes(entry))).toEqual([])
     // Without mainRoot the list is the worktree's alone, as before.
     expect([...main, ...own].filter(entry => ownDeny.includes(entry))).toEqual(own)
+  })
+})
+
+/** A fake host rule that answers `argv` with this exit code and output; a null exit code is a run the host rejected. */
+function rule(argv: readonly string[], exitCode: number | null, stdout = ''): HostRunRule {
+  return { argv, result: exitCode === null ? null : { exitCode, stdout, stderr: '' } }
+}
+
+/** The probe of /repo answered as the main checkout: its git dir is the common dir (D-165). */
+const MAIN_CHECKOUT = rule(CHECKOUT_ARGV('/repo'), 0, '/repo/.git\n/repo/.git\n')
+
+/** `claude --version` of a claude new enough for cadre (D-107). */
+const CLAUDE_OK = rule(['claude', '--version'], 0, '2.1.304 (Claude Code)\n')
+
+/** The rules every epic run falls back to, after its own: the main checkout at /repo and a claude new enough. */
+const BASE_RULES: readonly HostRunRule[] = [MAIN_CHECKOUT, CLAUDE_OK]
+
+/** PM and BE, in the order cadre.json lists them in the epic worlds. */
+const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
+
+/**
+ * A git repo at /repo; `over` changes the fields it names. It has no dialog, as in `claude -p`, so /cadre epic opens
+ * every role without asking (D-166); the role picker specs set `interactive` to ask.
+ */
+function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return memWorld({ interactive: false, dirs: { '/repo/.git': [] }, ...over })
+}
+
+/**
+ * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
+ * /cadre epic also wants the line that picks the epic kickoff (D-158).
+ */
+function launcherOf(id: string): string {
+  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
+
+  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
+}
+
+/** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
+async function launcherEntry(id: string): Promise<ManifestEntry> {
+  return { path: `.cadre/bin/${id}`, sha256: await sha256Hex(launcherOf(id)), mode: 'exec' }
+}
+
+/**
+ * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in
+ * default, launched at the git root, recording `readUserMcp` (no consent to read ~/.claude.json by default), each
+ * role.json is written from its role, and each launcher lies in `.cadre/bin/` with its sha256 in the manifest.
+ */
+async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+  const ids = roles.map(role => role.id)
+  const state = cadreJsonText({
+    schema: 1,
+    cadreVersion: '0.2.0',
+    framework: 'none',
+    gitPolicy: 'definitions',
+    roles: ids,
+    launchStart: { kind: 'git-root' },
+    readUserMcp,
+  })
+  const entries = await Promise.all(ids.map(launcherEntry))
+  const files: Record<string, string> = {
+    '/repo/.cadre/cadre.json': state,
+    '/repo/.cadre/manifest.json': stableJson({ schema: 1, cadreVersion: '0.2.0', files: entries }),
+  }
+  for (const role of roles) {
+    files[`/repo/.cadre/${role.id}/role.json`] = roleJsonText(role)
+    files[`/repo/.cadre/bin/${role.id}`] = launcherOf(role.id)
+  }
+
+  return gitWorld({ files })
+}
+
+/** What runEpic replied, and every write and run the fake host was asked for, in call order. */
+type EpicRun = {
+  readonly reply: string
+  readonly writes: readonly HostWrite[]
+  readonly calls: readonly HostCall[]
+  /** Each write as `write <path>` and each run as its argv joined by spaces, in the order of their shared counter. */
+  readonly events: readonly string[]
+  /** Every question the run asked, and the dialog spec of each, in order. */
+  readonly asked: readonly string[]
+  readonly specs: readonly AskSpec[]
+}
+
+/** What else an epic run is given: the answers to its questions, the host's environment and the `--terminal` value. */
+type EpicExtra = {
+  readonly answers?: readonly string[] | Readonly<Record<string, string>>
+  readonly env?: HostWorld['env']
+  readonly terminal?: Exclude<TerminalChoice, 'none'>
+}
+
+/** The fake host of the epic specs and what it was asked: each write and run numbered by one counter they share. */
+type EpicHost = MemHost & {
+  /** The counter value of each write, by its index in `writes`. */
+  readonly writeAt: readonly number[]
+  /** The counter value of each run, by its index in `calls`. */
+  readonly callAt: readonly number[]
+}
+
+/**
+ * The fake host of the epic specs, on top of memHost: these run rules first, then BASE_RULES; any other argv exits 0
+ * with no output, and `env` holds the variables that are set. Each write and each run also takes the next value of one
+ * counter they share, so a spec can tell whether a file was written before a command ran.
+ */
+function epicHost(runs: readonly HostRunRule[], env: HostWorld['env'] = {}): EpicHost {
+  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES], env }))
+  const writeAt: number[] = []
+  const callAt: number[] = []
+  let counter = 0
+  const io: HostIo = {
+    write: async (path, text) => {
+      writeAt.push(counter)
+      counter += 1
+
+      return host.io.write(path, text)
+    },
+    run: async (argv, options) => {
+      callAt.push(counter)
+      counter += 1
+
+      return host.io.run(argv, options)
+    },
+    env: host.io.env,
+  }
+
+  return { ...host, io, writeAt, callAt }
+}
+
+/** The writes of `host` as `write <path>` and its runs as their argv joined by spaces, in shared-counter order. */
+function eventsOf(host: EpicHost): string[] {
+  const writes = host.writes.map((write, index) => ({ at: host.writeAt[index] ?? -1, label: `write ${write.path}` }))
+  const calls = host.calls.map((call, index) => ({ at: host.callAt[index] ?? -1, label: call.argv.join(' ') }))
+
+  return [...writes, ...calls].sort((a, b) => a.at - b.at).map(event => event.label)
+}
+
+/**
+ * runEpic of `key` and `title` (PROJ-1 and Add retry by default) over `world`, with these run rules first and then
+ * BASE_RULES; any other argv exits 0 with no output. `extra` gives the answers (none by default, so a question is
+ * dismissed), the host's environment and the `--terminal` value (`auto` by default).
+ */
+async function epic(
+  world: MemWorld,
+  runs: readonly HostRunRule[],
+  key = 'PROJ-1',
+  title = 'Add retry',
+  extra: EpicExtra = {},
+): Promise<EpicRun> {
+  const host = epicHost(runs, extra.env)
+  const io = memIo(world, extra.answers ?? {})
+  const reply = await runEpic(io.io, host.io, { key, title, terminal: extra.terminal ?? 'auto' })
+
+  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host), asked: io.asked, specs: io.specs }
+}
+
+/** The worktree `/cadre epic PROJ-1` makes with no title words (D-146), and its git dir (D-164). */
+const BARE_WORKTREE = '/repo/.claude/worktrees/proj-1'
+
+/** The git dir of BARE_WORKTREE, as git names it. */
+const BARE_GIT_DIR = '/repo/.git/worktrees/proj-1'
+
+/** git naming the repo's common dir, the same from the main checkout and from a worktree (WT-02, Pattern 1). */
+const COMMON_DIR = rule(GIT_COMMON_DIR_ARGV, 0, '/repo/.git\n')
+
+/** A new PROJ-1 worktree whose git dir git names, with the common dir named too, so each role renders there. */
+const RENDER_RULES: readonly HostRunRule[] = [rule(GIT_DIR_ARGV(BARE_WORKTREE), 0, `${BARE_GIT_DIR}\n`), COMMON_DIR]
+
+/**
+ * The team world of `roles` (PM and BE by default) and `readUserMcp` with each role folder a real folder in the main
+ * checkout and in BARE_WORKTREE, as the mirror makes them there (D-156), so a render in either finds its role folder.
+ */
+async function renderWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false): Promise<MemWorld> {
+  const world = await teamWorld(roles, readUserMcp)
+  const folders = roles.flatMap(role => [`/repo/.cadre/${role.id}`, `${BARE_WORKTREE}/.cadre/${role.id}`])
+
+  return { ...world, dirs: { ...world.dirs, ...Object.fromEntries(folders.map(folder => [folder, []])) } }
+}
+
+/** The settings.json the host was asked to write for role `id` under `root`, parsed; {} when none was written. */
+function settingsAt(writes: readonly HostWrite[], root: string, id: string): Readonly<Record<string, unknown>> {
+  const path = `${root}/.cadre/${id}/.runtime/settings.json`
+  const value = parseJsonValue(writes.filter(write => write.path === path).at(-1)?.text ?? '')?.value
+
+  return isObject(value) ? value : {}
+}
+
+describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
+  test('an epic role denies editing the launch files of the worktree and of main (03.1-SEC-S1)', async () => {
+    const world = await renderWorld([templateRole('pm', { hasBash: false }), templateRole('be')])
+    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
+    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'pm').permissions
+    const deny = isObject(permissions) ? permissions.deny : undefined
+
+    for (const root of ['/repo', BARE_WORKTREE]) {
+      expect(deny).toContain(`Edit(/${root}/.claude/settings.json)`)
+      expect(deny).toContain(`Write(/${root}/.claude/settings.local.json)`)
+      expect(deny).toContain(`Edit(/${root}/.cadre/bin/**)`)
+      expect(deny).toContain(`Write(/${root}/.cadre/manifest.json)`)
+    }
   })
 })

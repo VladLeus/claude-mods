@@ -95,15 +95,14 @@ import type { EpicStep, WorktreeEntry } from './epic'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
-import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
-import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
+import { CHECKOUT_ARGV } from './git/checkout'
+import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { claudeTooOldReply } from './start/claude-version'
 import { START_NO_GIT_DIR } from './start/gather-user'
 import { launcherChangedReply } from './start/launcher-check'
 import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from './start/memory-links'
 import { runStart } from './start/run'
-import { readTeam, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'
 import { COPIED_LINE, launcherCommand, TERMINAL_MAC_ONLY, terminalPlan } from './ui/terminal'
@@ -326,16 +325,6 @@ describe('epic keys and slugs (D-162)', () => {
 })
 
 describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
-  test('checkoutOf reads the main checkout and a linked worktree from git; anything else is unknown', () => {
-    const run = (exitCode: number, stdout: string): HostRun => ({ exitCode, stdout, stderr: '' })
-
-    expect(checkoutOf(run(0, '/repo/.git\n/repo/.git\n'))).toEqual({ kind: 'main' })
-    expect(checkoutOf(run(0, '/repo/.git/worktrees/x\n/repo/.git\n'))).toEqual({ kind: 'linked', main: '/repo' })
-    expect(checkoutOf(null)).toEqual({ kind: 'unknown' })
-    expect(checkoutOf(run(128, '/repo/.git\n/repo/.git\n'))).toEqual({ kind: 'unknown' })
-    expect(checkoutOf(run(0, '/repo/.git\n'))).toEqual({ kind: 'unknown' })
-  })
-
   test('in a linked worktree it refuses and names the main checkout, before anything is created', async () => {
     const linked = '/repo/.claude/worktrees/x'
     const world = memWorld({
@@ -346,14 +335,6 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
 
     expect(run.reply).toBe(epicNotMainReply('/repo'))
     expect(worktreeRuns(run)).toEqual([])
-  })
-
-  test('readTeam with no id reads the whole team for cadre epic; with an id it refuses an unlisted one', async () => {
-    const io = memIo(await teamWorld(), {}).io
-    const read = await readTeam(io, '/repo', 'epic', null)
-
-    expect(read.kind === 'ok' ? read.value.roles.map(role => role.id) : read.text).toEqual(['pm', 'be'])
-    expect(await readTeam(io, '/repo', 'epic', 'qa')).toEqual({ kind: 'refuse', text: regenNoRole('qa', ['pm', 'be']) })
   })
 
   test('the PM is the role with id pm, else the one role based on pm; none or several refuse', () => {
@@ -1450,28 +1431,6 @@ describe('the scope of an epic role (RESEARCH Pitfalls 1 and 2, WT-02)', () => {
     expect(deny).toContain('Edit(//repo/src/**)')
     expect(deny).toContain('Read(//repo/.claude/worktrees/proj-1/src/**)')
     expect(deny).toContain('Edit(//repo/.claude/worktrees/proj-1/src/**)')
-  })
-
-  test('an epic role denies editing the launch files of the worktree and of main (03.1-SEC-S1)', async () => {
-    const world = await renderWorld([templateRole('pm', { hasBash: false }), templateRole('be')])
-    const run = await epic(world, RENDER_RULES, 'PROJ-1', '')
-    const permissions = settingsAt(run.writes, BARE_WORKTREE, 'pm').permissions
-    const deny = isObject(permissions) ? permissions.deny : undefined
-
-    for (const root of ['/repo', BARE_WORKTREE]) {
-      expect(deny).toContain(`Edit(/${root}/.claude/settings.json)`)
-      expect(deny).toContain(`Write(/${root}/.claude/settings.local.json)`)
-      expect(deny).toContain(`Edit(/${root}/.cadre/bin/**)`)
-      expect(deny).toContain(`Write(/${root}/.cadre/manifest.json)`)
-    }
-  })
-
-  test('mainCheckoutOf names the main checkout of a worktree nested in it, else null (03.1-W3 M1)', () => {
-    expect(mainCheckoutOf('/repo/.git', '/repo')).toBeNull()
-    expect(mainCheckoutOf('/repo/.git', '/repo/.claude/worktrees/proj-1')).toBe('/repo')
-    expect(mainCheckoutOf('/data/repo/.git', '/repo')).toBeNull()
-    expect(mainCheckoutOf('/repo/.git/modules/sub', '/repo/sub')).toBeNull()
-    expect(mainCheckoutOf('/repo/.git', '/repo2/x')).toBeNull()
   })
 
   test('/cadre start then /cadre epic removes no memory link and denies main memory folder (03.1-W3 M1)', async () => {
