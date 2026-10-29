@@ -96,6 +96,7 @@ import type { Draft, DraftBase, PlanResult, Reviewed, Team } from './init/draft'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
 import { cancelledReply, IGNORE_ALL_NOTE } from './init/replies'
+import { consentStep } from './init/stages/consent'
 import { historyStep } from './init/stages/history'
 import { hunkQuestion, parseHunkAnswer } from './init/stages/hunks'
 import {
@@ -169,51 +170,6 @@ function idsOf(roles: readonly RoleSpec[]): string {
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
 export function teamContextLine(roles: readonly RoleSpec[]): string {
   return `Roles: ${idsOf(roles)}.`
-}
-
-/** The ~/.claude.json consent question (D-58): the file holds account data, so it is read only after a yes. */
-export const CLAUDE_JSON_QUESTION =
-  'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.'
-
-/** The context line of the ~/.claude.json question (D-136): where init still finds MCP servers without the file. */
-export const CLAUDE_JSON_CONTEXT =
-  'Without it, init still finds MCP servers in .mcp.json, your plugins and this session.'
-
-/** Each consent answer with what it allows, the declining one first: only the yes reads ~/.claude.json (D-58). */
-const CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'No, skip it', value: false },
-  { label: 'Yes, read names only', value: true },
-])
-
-/**
- * The answers to the consent question. The declining answer is first because the engine dialog starts with its first
- * option focused (pre-checked on desktop), so a quick Submit declines (D-58, D-59 as amended by D-134).
- */
-export const CLAUDE_JSON_OPTIONS: readonly string[] = Object.freeze(CONSENTS.map(entry => entry.label))
-
-/** Whether a consent answer allows reading ~/.claude.json; null when it names neither answer (D-58). */
-function parseConsent(answer: string): boolean | null {
-  return labelled(CONSENTS, answer)
-}
-
-/** Why init cancels when the ~/.claude.json question is dismissed or not answered (A1, D-45). */
-export const CONSENT_DISMISSED_REASON = 'The ~/.claude.json question was dismissed or not answered.'
-
-/**
- * The ~/.claude.json consent step (D-58): CLAUDE_JSON_QUESTION with CLAUDE_JSON_CONTEXT on its second line (D-136).
- * `Yes, read names only` is accepted as true and `No, skip it` as false, and any other answer is asked again with why
- * on top. A dismissal is cancelled with CONSENT_DISMISSED_REASON and MAX_ASKS answers that name neither with
- * NO_USABLE_ANSWER_REASON, so no answer the person did not give decides whether the file is read (A1, D-45).
- */
-export async function consentStep(io: InitIo): Promise<StepResult<boolean>> {
-  const ask = {
-    question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
-    spec: { options: CLAUDE_JSON_OPTIONS, header: ASK_HEADERS.claudeJson },
-    parse: parseConsent,
-    accepts: quotedLabels(CLAUDE_JSON_OPTIONS),
-  }
-
-  return choiceResult(await askChoice(io, ask), CONSENT_DISMISSED_REASON)
 }
 
 /** The roles question init asks after it shows the proposal (D-46). */

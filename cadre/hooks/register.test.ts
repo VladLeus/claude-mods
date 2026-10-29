@@ -12,7 +12,6 @@ import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { NOT_INTERACTIVE_REPLY } from './guards/repo'
 import {
-  CLAUDE_JSON_QUESTION,
   FRAMEWORK_QUESTION_PREFIX,
   PRIVATE_FILES_HEADING,
   REVIEW_QUESTION,
@@ -20,6 +19,7 @@ import {
   ROLES_QUESTION,
 } from './init'
 import { cancelledReply, INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY } from './init/replies'
+import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
