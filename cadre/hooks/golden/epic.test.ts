@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { epicRecordText, MERGED_ARGV, STATUS_ARGV } from '../epic'
+import { epicRecordText } from '../epic'
+import { MERGED_ARGV, STATUS_ARGV } from '../epic/git'
 import { entry, hostWorld } from '../testkit'
 import { captureEpic, captureEpicDone } from './capture'
 import { GOLDEN_EPIC } from './epic'

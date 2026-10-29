@@ -26,15 +26,8 @@ import type {
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
-import {
-  EPIC_RECORD_FILE,
-  epicRecordText,
-  GIT_DIR_ARGV,
-  LS_IGNORED_ARGV,
-  MERGED_ARGV,
-  STATUS_ARGV,
-  WORKTREE_LIST_ARGV,
-} from '../epic'
+import { EPIC_RECORD_FILE, epicRecordText } from '../epic'
+import { GIT_DIR_ARGV, LS_IGNORED_ARGV, MERGED_ARGV, STATUS_ARGV, WORKTREE_LIST_ARGV } from '../epic/git'
 import type { ProbedGsdCandidate } from '../framework/gsd/identity'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'

@@ -125,9 +125,8 @@ import {
   mirrorLinkedParentWarning,
   mirrorUnhideableWarning,
   RUNTIME_EXCLUDE_LINE,
-  WORKTREES_DIR,
-  XDG_ARGV,
 } from './epic'
+import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
 import { DECISION_TYPES, REQUIRED_FIELDS, UNSUPPORTED_MARKERS } from './framework/contract'
 import {

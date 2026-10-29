@@ -15,10 +15,7 @@ import { instructionsRecordPath, instructionsRecordText } from './apply/private'
 import { sha256Hex } from './core/hash'
 import { isObject, parseJsonValue, stableJson } from './core/json'
 import {
-  BASE_BRANCH_ARGV,
-  BASE_COMMIT_ARGV,
   cleanStateOf,
-  EPIC_BRANCHES_ARGV,
   EPIC_CANCELLED,
   EPIC_DONE_NO_DIALOG,
   EPIC_DONE_NO_LIST,
@@ -59,19 +56,12 @@ import {
   epicUnlockFailedReply,
   epicWorktreeLauncherChangedLine,
   epicWorktreeLauncherLine,
-  EXCLUDES_CONFIG_ARGV,
   EXCLUDES_FILE,
   excludesText,
-  GIT_DIR_ARGV,
-  GLOBAL_EXCLUDES_ARGV,
   globalExcludesPath,
   globalExcludesWarning,
   isSafeRelPath,
-  linkRemoveArgv,
   lockPid,
-  LS_IGNORED_ARGV,
-  LS_OTHERS_ARGV,
-  MERGED_ARGV,
   mergedStateOf,
   mirrorLinkedParentWarning,
   mirrorPaths,
@@ -79,16 +69,28 @@ import {
   mirrorUnhideableWarning,
   parseEpicRecord,
   parseWorktreeList,
-  REMOVE_ARGV,
   runEpic,
   runEpicDone,
-  STATUS_ARGV,
   untrackedEntries,
+} from './epic'
+import type { EpicStep, WorktreeEntry } from './epic'
+import {
+  BASE_BRANCH_ARGV,
+  BASE_COMMIT_ARGV,
+  EPIC_BRANCHES_ARGV,
+  EXCLUDES_CONFIG_ARGV,
+  GIT_DIR_ARGV,
+  GLOBAL_EXCLUDES_ARGV,
+  linkRemoveArgv,
+  LS_IGNORED_ARGV,
+  LS_OTHERS_ARGV,
+  MERGED_ARGV,
+  REMOVE_ARGV,
+  STATUS_ARGV,
   UNLOCK_ARGV,
   WORKTREE_CONFIG_ARGV,
   WORKTREE_LIST_ARGV,
-} from './epic'
-import type { EpicStep, WorktreeEntry } from './epic'
+} from './epic/git'
 import { epicBadKeyReply } from './epic/key'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { ROLE_LINE_MAX } from './generate/kickoff'

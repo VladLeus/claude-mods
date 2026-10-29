@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { epicRecordText, MERGED_ARGV, STATUS_ARGV } from '../epic'
+import { epicRecordText } from '../epic'
+import { MERGED_ARGV, STATUS_ARGV } from '../epic/git'
 import { DEFAULT_LOCATIONS, entry, hostWorld } from '../testkit'
 import { GOLDEN_CALLS } from './calls'
 import { captureEpicCalls, captureEpicDoneCalls, captureStartCalls, captureStatusCalls } from './capture'
