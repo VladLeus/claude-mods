@@ -1,16 +1,29 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, Manifest, ManifestEntry, Plan, PortRead } from '../../types'
+import type { DesiredFile, Manifest, ManifestEntry, Plan, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { MANIFEST_PATH } from '../plan/classify'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { isSafeOpPath, planReadPaths, planWithManifest } from '../plan/plan'
-import type { PlanInput, PlannedFiles } from '../plan/plan'
+import type { PlannedFiles } from '../plan/plan'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { readRepoFile } from '../scan/port-read'
 import { parseManifest } from '../state/cadre-files'
-import { BIDI_OVERRIDE, memIo, memWorld, withWrites } from '../testkit'
+import {
+  A,
+  BIDI_OVERRIDE,
+  file,
+  input,
+  LAUNCHER,
+  memIo,
+  memWorld,
+  NO_CHOICES,
+  stepLine,
+  text,
+  VERSION,
+  withWrites,
+} from '../testkit'
 import type { HostWrite, MemWorld } from '../testkit'
 import { CONFLICT_OPTIONS, conflictPaths, conflictQuestion, parseConflictAnswer } from './conflict'
 import type { ConflictChoice } from './conflict'
@@ -18,46 +31,8 @@ import type { ApplyStep } from './private'
 import { chmodArgv } from './safety'
 import { applySteps } from './steps'
 
-const VERSION = '0.2.0'
-
 /** The repo root of the fixtures, as memWorld has it. */
 const ROOT = '/repo'
-
-/** A plain generated file. */
-const A = '.cadre/a.md'
-
-/** No conflict was answered. */
-const NO_CHOICES: ReadonlyMap<string, ConflictChoice> = new Map()
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
-
-/** A file read through the port: its text. */
-function text(content: string): PortRead {
-  return { state: 'text', text: content }
-}
-
-/** A plan input with an empty disk, no manifest and no extras; `over` changes the fields it names. */
-function input(over: Partial<PlanInput> = {}): PlanInput {
-  return {
-    desired: [],
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: null,
-    hunks: [],
-    cadreVersion: VERSION,
-    ...over,
-  }
-}
-
-/** One `kind path` line per step: a compact way to compare the order and the kinds of the steps. */
-function stepLine(step: ApplyStep): string {
-  return `${step.kind} ${step.path}`
-}
 
 /** The manifest the last step writes, parsed; null when the last step is not the manifest. */
 function writtenManifest(steps: readonly ApplyStep[]): Manifest | null {
@@ -66,9 +41,6 @@ function writtenManifest(steps: readonly ApplyStep[]): Manifest | null {
 
   return parseManifest(last.text)
 }
-
-/** The launcher of the BE role, an executable file. */
-const LAUNCHER = '.cadre/bin/be'
 
 /** A path that is not there. */
 const ABSENT: PortRead = { state: 'absent' }

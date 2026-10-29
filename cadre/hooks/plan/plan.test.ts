@@ -1,59 +1,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  DesiredFile,
-  FileMode,
-  FileOp,
-  GitPolicy,
-  HunkOp,
-  Manifest,
-  ManifestEntry,
-  Plan,
-  PortRead,
-} from '../../types'
+import type { DesiredFile, FileOp, GitPolicy, HunkOp, Manifest, ManifestEntry, Plan, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { parseManifest } from '../state/cadre-files'
-import { BIDI_OVERRIDE } from '../testkit'
+import { BIDI_OVERRIDE, file, input, text, VERSION } from '../testkit'
 import { MANIFEST_PATH } from './classify'
 import { gitignoreLines, mergeIgnoreBlock } from './gitignore'
 import { buildPlan, HUNK_FILES, isSafeOpPath, planReadPaths, planWithManifest } from './plan'
-import type { PlanInput } from './plan'
 import { renderPlan } from './text'
 
-const VERSION = '0.2.0'
 const ROLE = '.cadre/be/role.json'
 const INDEX = '.cadre/INDEX.md'
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
-
-/** A file read through the port: its text. */
-function text(content: string): PortRead {
-  return { state: 'text', text: content }
-}
 
 /** The disk as buildPlan takes it: reads keyed by repo-relative path. */
 function diskOf(reads: Readonly<Record<string, PortRead>>): ReadonlyMap<string, PortRead> {
   return new Map(Object.entries(reads))
-}
-
-/** A plan input with an empty disk, no manifest and no extras; `over` changes the fields it names. */
-function input(over: Partial<PlanInput> = {}): PlanInput {
-  return {
-    desired: [],
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: null,
-    hunks: [],
-    cadreVersion: VERSION,
-    ...over,
-  }
 }
 
 /** The file ops of a plan, in plan order; the hunks are dropped. */

@@ -1,24 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, RepoEntry } from '../../../types'
+import type { Detection, RepoEntry } from '../../../types'
 import { gateProblems, missingFields } from '../contract'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './adapter'
 import { DONE_MARKER_LINE } from '../../core/kickoff-text'
-import { emptySetupScan } from '../../testkit'
-
-/** Facts with every list empty. A test sets only the list it reads. */
-function facts(over: Partial<Facts>): Facts {
-  return {
-    repoEntries: [],
-    docsEntries: [],
-    enabledPlugins: [],
-    hookScripts: [],
-    superpowersVersions: [],
-    gsd: [],
-    warnings: [],
-    ...over,
-  }
-}
+import { emptySetupScan, facts } from '../../testkit'
 
 /** The built-in fallback's detection: always installed, and built into cadre rather than found in the repo. */
 const BUILT_IN: Detection = {

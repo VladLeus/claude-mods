@@ -86,6 +86,7 @@ import {
   firstLines,
   FRAMEWORKS,
   gitWorld,
+  GUIDANCE_KEY,
   hostWorld,
   INIT_ANSWERS,
   leaks,
@@ -100,6 +101,7 @@ import {
   scansOf,
   SECRET_FIXTURES,
   secretWorld,
+  SECURITY_KEY,
   session,
   shownBlock,
   skillRef,
@@ -4594,12 +4596,6 @@ async function regenPartsWorld(fixture: RegenFixture = {}): Promise<MemWorld> {
     files: { ...base.files, ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files), ...root },
   }
 }
-
-/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
-const SECURITY_KEY = 'claude-security@claude-plugins-official'
-
-/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
-const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
 
 /** Both security plugin keys, in the order init asks about and installs them (decision #39). */
 const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]

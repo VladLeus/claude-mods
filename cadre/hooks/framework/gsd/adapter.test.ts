@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, GsdFact, RepoEntry, SetupScan } from '../../../types'
+import type { Detection, GsdFact, RepoEntry, SetupScan } from '../../../types'
 import { DONE_MARKER_LINE } from '../../core/kickoff-text'
 import { adaptersReportLines } from '../../detect/report'
-import { emptySetupScan } from '../../testkit'
+import { emptySetupScan, facts } from '../../testkit'
 import { gateProblems, missingFields } from '../contract'
 import {
   detectGsd,
@@ -16,20 +16,6 @@ import {
   gsdHookFacts,
   gsdKickoffText,
 } from './adapter'
-
-/** Facts with every list empty. A test sets only the list it reads. */
-function facts(over: Partial<Facts>): Facts {
-  return {
-    repoEntries: [],
-    docsEntries: [],
-    enabledPlugins: [],
-    hookScripts: [],
-    superpowersVersions: [],
-    gsd: [],
-    warnings: [],
-    ...over,
-  }
-}
 
 /** The `.planning/` folder at the repo root, as the host lists it. */
 const PLANNING_DIR: RepoEntry = { name: '.planning', kind: 'dir', isLink: false }

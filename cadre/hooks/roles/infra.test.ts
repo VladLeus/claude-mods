@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
@@ -15,12 +16,6 @@ describe('the improver plugin (G-02-1f, D-141)', () => {
     expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(CLAUDE_MD_PLUGIN)
   })
 })
-
-/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
-const SECURITY_KEY = 'claude-security@claude-plugins-official'
-
-/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
-const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
 
 /** Both security plugin keys, in the order init asks about and installs them (decision #39). */
 const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]

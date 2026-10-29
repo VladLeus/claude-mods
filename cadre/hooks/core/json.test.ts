@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { VERSION } from '../testkit'
 import { allOrNull, keysOf, stableJson } from './json'
-
-const VERSION = '0.2.0'
 
 describe('allOrNull (02-GAPS-B3 S6)', () => {
   test('gives each value parsed, in order, or null when any one does not parse', () => {

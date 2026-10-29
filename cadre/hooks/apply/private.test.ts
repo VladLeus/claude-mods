@@ -1,13 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, InstructionPart, MemoryItem, Plan, PortRead } from '../../types'
+import type { InstructionPart, MemoryItem, Plan } from '../../types'
 import { stableJson } from '../core/json'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
 import { planWithManifest } from '../plan/plan'
-import type { PlanInput } from '../plan/plan'
-import { BIDI_OVERRIDE } from '../testkit'
-import type { ConflictChoice } from './conflict'
+import {
+  A,
+  BIDI_OVERRIDE,
+  file,
+  input,
+  LAUNCHER,
+  NO_CHOICES,
+  SECURITY_DIR,
+  SECURITY_RECORD,
+  SECURITY_TEXT_FILE,
+  SLUG_DIR,
+  stepLine,
+  text,
+  TL_DIR,
+} from '../testkit'
 import {
   instructionsRecordPath,
   instructionsRecordText,
@@ -18,47 +30,6 @@ import {
 import type { ApplyStep, PrivateRole } from './private'
 import { applySteps } from './steps'
 
-const VERSION = '0.2.0'
-
-/** A plain generated file. */
-const A = '.cadre/a.md'
-
-/** The launcher of the BE role, an executable file. */
-const LAUNCHER = '.cadre/bin/be'
-
-/** No conflict was answered. */
-const NO_CHOICES: ReadonlyMap<string, ConflictChoice> = new Map()
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
-
-/** A file read through the port: its text. */
-function text(content: string): PortRead {
-  return { state: 'text', text: content }
-}
-
-/** A plan input with an empty disk, no manifest and no extras; `over` changes the fields it names. */
-function input(over: Partial<PlanInput> = {}): PlanInput {
-  return {
-    desired: [],
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: null,
-    hunks: [],
-    cadreVersion: VERSION,
-    ...over,
-  }
-}
-
-/** One `kind path` line per step: a compact way to compare the order and the kinds of the steps. */
-function stepLine(step: ApplyStep): string {
-  return `${step.kind} ${step.path}`
-}
-
 /** One `kind path` line per file op of a plan, in plan order; the hunks are dropped. */
 function summary(plan: Plan): string[] {
   const lines: string[] = []
@@ -68,21 +39,6 @@ function summary(plan: Plan): string[] {
 
   return lines
 }
-
-/** The folder of the fixture user's role memory folders in the fixture repo: `<userDir>/cadre/<repo>-<hash8>`. */
-const SLUG_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d'
-
-/** Security's role memory folder (D-140 q2-a). */
-const SECURITY_DIR = `${SLUG_DIR}/security`
-
-/** The Team Lead's role memory folder. */
-const TL_DIR = `${SLUG_DIR}/tl`
-
-/** Security's private text file, in its own instructions/ subfolder on every load path (D-140). */
-const SECURITY_TEXT_FILE = `${SECURITY_DIR}/instructions/CLAUDE.md`
-
-/** Security's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
-const SECURITY_RECORD = `${SECURITY_DIR}/instructions.json`
 
 /** A part of the fixture user's global CLAUDE.md as the read gives it; the hash only has to be a hash-like text. */
 function globalPart(id: string, heading: string, text: string): InstructionPart {

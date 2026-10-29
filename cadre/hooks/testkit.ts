@@ -3,7 +3,9 @@ import type {
   CadreState,
   CompiledScope,
   DesiredFile,
+  EpicRecord,
   Facts,
+  FileMode,
   FrameworkId,
   HostEnvName,
   HostIo,
@@ -11,6 +13,7 @@ import type {
   InitFacts,
   InitIo,
   InitLocations,
+  ManifestEntry,
   McpRef,
   PaneKey,
   PortEntry,
@@ -25,9 +28,18 @@ import type {
   ShownBlock,
   SkillRef,
   TemplateRoleId,
+  TerminalChoice,
 } from '../types'
+import type { ConflictChoice } from './apply/conflict'
+import type { ApplyStep } from './apply/private'
+import type { ApplyOutcome } from './apply/run'
+import { sha256Hex } from './core/hash'
 import { utf8Bytes } from './core/text'
+import { runEpic } from './epic/create'
 import { desiredFiles } from './generate/files'
+import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
+import { CHECKOUT_ARGV } from './git/checkout'
+import type { PlanInput } from './plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
@@ -692,3 +704,233 @@ export function stateText(over: Readonly<Record<string, unknown>> = {}): string 
 
 /** One backslash, built from its character code so the source holds none. */
 export const BACKSLASH = String.fromCharCode(92)
+
+/** A desired file; the mode is a plain file unless it says otherwise. */
+export function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
+  return { path, content, mode }
+}
+
+/** The cadre version the fixture plan inputs and manifests carry. */
+export const VERSION = '0.2.0'
+
+/** A plain generated file. */
+export const A = '.cadre/a.md'
+
+/** No conflict was answered. */
+export const NO_CHOICES: ReadonlyMap<string, ConflictChoice> = new Map()
+
+/** A file read through the port: its text. */
+export function text(content: string): PortRead {
+  return { state: 'text', text: content }
+}
+
+/** A plan input with an empty disk, no manifest and no extras; `over` changes the fields it names. */
+export function input(over: Partial<PlanInput> = {}): PlanInput {
+  return {
+    desired: [],
+    disk: new Map(),
+    manifest: null,
+    manifestState: 'absent',
+    carried: [],
+    gitignore: null,
+    hunks: [],
+    cadreVersion: VERSION,
+    ...over,
+  }
+}
+
+/** One `kind path` line per step: a compact way to compare the order and the kinds of the steps. */
+export function stepLine(step: ApplyStep): string {
+  return `${step.kind} ${step.path}`
+}
+
+/** The folder of the fixture user's role memory folders in the fixture repo: `<userDir>/cadre/<repo>-<hash8>`. */
+export const SLUG_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d'
+
+/** Security's role memory folder (D-140 q2-a). */
+export const SECURITY_DIR = `${SLUG_DIR}/security`
+
+/** The Team Lead's role memory folder. */
+export const TL_DIR = `${SLUG_DIR}/tl`
+
+/** Security's private text file, in its own instructions/ subfolder on every load path (D-140). */
+export const SECURITY_TEXT_FILE = `${SECURITY_DIR}/instructions/CLAUDE.md`
+
+/** Security's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
+export const SECURITY_RECORD = `${SECURITY_DIR}/instructions.json`
+
+/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
+export const SECURITY_KEY = 'claude-security@claude-plugins-official'
+
+/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
+export const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
+
+/** The launcher of the BE role, an executable file. */
+export const LAUNCHER = '.cadre/bin/be'
+
+/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
+export function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
+  return {
+    written: [],
+    executable: [],
+    failed: [],
+    refused: [],
+    notExecutable: [],
+    chmodRefusals: [],
+    hunkFailures: [],
+    attended: [],
+    installed: [],
+    installProblems: [],
+    untrackedParts: [],
+    privateProblems: [],
+    manifestSkipped: false,
+    improverWarnings: [],
+    improved: null,
+    ...over,
+  }
+}
+
+/** Facts with every list empty. A test sets only the list it reads. */
+export function facts(over: Partial<Facts>): Facts {
+  return {
+    repoEntries: [],
+    docsEntries: [],
+    enabledPlugins: [],
+    hookScripts: [],
+    superpowersVersions: [],
+    gsd: [],
+    warnings: [],
+    ...over,
+  }
+}
+
+/** The branch of that worktree (D-146). */
+export const BRANCH = 'epic/proj-1-add-retry'
+
+/** A fake host rule that answers `argv` with this exit code and output; a null exit code is a run the host rejected. */
+export function rule(argv: readonly string[], exitCode: number | null, stdout = ''): HostRunRule {
+  return { argv, result: exitCode === null ? null : { exitCode, stdout, stderr: '' } }
+}
+
+/** The probe of /repo answered as the main checkout: its git dir is the common dir (D-165). */
+export const MAIN_CHECKOUT = rule(CHECKOUT_ARGV('/repo'), 0, '/repo/.git\n/repo/.git\n')
+
+/** `claude --version` of a claude new enough for cadre (D-107). */
+export const CLAUDE_OK = rule(['claude', '--version'], 0, '2.1.304 (Claude Code)\n')
+
+/** The rules every epic run falls back to, after its own: the main checkout at /repo and a claude new enough. */
+export const BASE_RULES: readonly HostRunRule[] = [MAIN_CHECKOUT, CLAUDE_OK]
+
+/**
+ * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
+ * /cadre epic also wants the line that picks the epic kickoff (D-158).
+ */
+export function launcherOf(id: string): string {
+  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
+
+  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
+}
+
+/** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
+export async function launcherEntry(id: string): Promise<ManifestEntry> {
+  return { path: `.cadre/bin/${id}`, sha256: await sha256Hex(launcherOf(id)), mode: 'exec' }
+}
+
+/** What runEpic replied, and every write and run the fake host was asked for, in call order. */
+export type EpicRun = {
+  readonly reply: string
+  readonly writes: readonly HostWrite[]
+  readonly calls: readonly HostCall[]
+  /** Each write as `write <path>` and each run as its argv joined by spaces, in the order of their shared counter. */
+  readonly events: readonly string[]
+  /** Every question the run asked, and the dialog spec of each, in order. */
+  readonly asked: readonly string[]
+  readonly specs: readonly AskSpec[]
+}
+
+/** What else an epic run is given: the answers to its questions, the host's environment and the `--terminal` value. */
+export type EpicExtra = {
+  readonly answers?: readonly string[] | Readonly<Record<string, string>>
+  readonly env?: HostWorld['env']
+  readonly terminal?: Exclude<TerminalChoice, 'none'>
+}
+
+/** The fake host of the epic specs and what it was asked: each write and run numbered by one counter they share. */
+export type EpicHost = MemHost & {
+  /** The counter value of each write, by its index in `writes`. */
+  readonly writeAt: readonly number[]
+  /** The counter value of each run, by its index in `calls`. */
+  readonly callAt: readonly number[]
+}
+
+/**
+ * The fake host of the epic specs, on top of memHost: these run rules first, then BASE_RULES; any other argv exits 0
+ * with no output, and `env` holds the variables that are set. Each write and each run also takes the next value of one
+ * counter they share, so a spec can tell whether a file was written before a command ran.
+ */
+export function epicHost(runs: readonly HostRunRule[], env: HostWorld['env'] = {}): EpicHost {
+  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES], env }))
+  const writeAt: number[] = []
+  const callAt: number[] = []
+  let counter = 0
+  const io: HostIo = {
+    write: async (path, text) => {
+      writeAt.push(counter)
+      counter += 1
+
+      return host.io.write(path, text)
+    },
+    run: async (argv, options) => {
+      callAt.push(counter)
+      counter += 1
+
+      return host.io.run(argv, options)
+    },
+    env: host.io.env,
+  }
+
+  return { ...host, io, writeAt, callAt }
+}
+
+/** The writes of `host` as `write <path>` and its runs as their argv joined by spaces, in shared-counter order. */
+export function eventsOf(host: EpicHost): string[] {
+  const writes = host.writes.map((write, index) => ({ at: host.writeAt[index] ?? -1, label: `write ${write.path}` }))
+  const calls = host.calls.map((call, index) => ({ at: host.callAt[index] ?? -1, label: call.argv.join(' ') }))
+
+  return [...writes, ...calls].sort((a, b) => a.at - b.at).map(event => event.label)
+}
+
+/**
+ * runEpic of `key` and `title` (PROJ-1 and Add retry by default) over `world`, with these run rules first and then
+ * BASE_RULES; any other argv exits 0 with no output. `extra` gives the answers (none by default, so a question is
+ * dismissed), the host's environment and the `--terminal` value (`auto` by default).
+ */
+export async function epic(
+  world: MemWorld,
+  runs: readonly HostRunRule[],
+  key = 'PROJ-1',
+  title = 'Add retry',
+  extra: EpicExtra = {},
+): Promise<EpicRun> {
+  const host = epicHost(runs, extra.env)
+  const io = memIo(world, extra.answers ?? {})
+  const reply = await runEpic(io.io, host.io, { key, title, terminal: extra.terminal ?? 'auto' })
+
+  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host), asked: io.asked, specs: io.specs }
+}
+
+/** The epic record of PROJ-1 Add retry as a new worktree on a branch of `main` writes it. */
+export const RECORD: EpicRecord = {
+  schema: 1,
+  key: 'PROJ-1',
+  slug: 'proj-1-add-retry',
+  title: 'Add retry',
+  branch: BRANCH,
+  base: 'main',
+  createdAt: 1_000_000,
+  links: [],
+  copies: [],
+}
+
+/** The worktree `/cadre epic PROJ-1` makes with no title words (D-146), and its git dir (D-164). */
+export const BARE_WORKTREE = '/repo/.claude/worktrees/proj-1'

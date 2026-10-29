@@ -6,6 +6,7 @@ import { GSD_GATES } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { ADAPTERS, detectAll } from '../framework/registry'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
+import { facts } from '../testkit'
 import { adaptersReportLines, choiceLine, detectReportLines, detectText } from './report'
 
 /** The superpowers plugin key this repo enables. */
@@ -13,20 +14,6 @@ const SUPERPOWERS_KEY = 'superpowers@claude-plugins-official'
 
 /** A control, format, or line or paragraph separator character. A newline is the one a report may keep. */
 const CONTROL_OR_FORMAT = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
-
-/** Facts with every list empty. A test sets only the list it reads. */
-function facts(over: Partial<Facts>): Facts {
-  return {
-    repoEntries: [],
-    docsEntries: [],
-    enabledPlugins: [],
-    hookScripts: [],
-    superpowersVersions: [],
-    gsd: [],
-    warnings: [],
-    ...over,
-  }
-}
 
 /** A repo-root or docs entry as the host lists it. */
 function entry(name: string, kind: RepoEntry['kind'] = 'dir', isLink = false): RepoEntry {

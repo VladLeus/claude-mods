@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CadreState, FrameworkId, HunkOp, LaunchStart, ManifestEntry, RoleSpec, ScopeContext } from '../types'
-import { sha256Hex } from './core/hash'
+import type { CadreState, FrameworkId, HunkOp, LaunchStart, RoleSpec, ScopeContext } from '../types'
 import { stableJson } from './core/json'
 import { NOT_SET_TEXT } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
-import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import type { Gathered } from './scan/gather'
 import { scopeCardLines } from './scope/card'
@@ -28,6 +26,8 @@ import {
   EMPTY_FACTS,
   emptySetupScan,
   gitWorld,
+  launcherEntry,
+  launcherOf,
   memIo,
   onDisk,
   plannedFiles,
@@ -143,21 +143,6 @@ describe('repoGuard and readTeam', () => {
 
 /** PM and BE, in the order cadre.json lists them in the epic worlds. */
 const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
-
-/**
- * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
- * /cadre epic also wants the line that picks the epic kickoff (D-158).
- */
-function launcherOf(id: string): string {
-  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
-
-  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
-}
-
-/** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
-async function launcherEntry(id: string): Promise<ManifestEntry> {
-  return { path: `.cadre/bin/${id}`, sha256: await sha256Hex(launcherOf(id)), mode: 'exec' }
-}
 
 /**
  * A git repo at /repo after a plain init of `roles` (PM and BE by default): cadre.json lists them on the built-in

@@ -1,14 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, EpicRecord, HostIo, HostRun, ManifestEntry, RoleSpec, TerminalChoice } from '../../types'
-import { sha256Hex } from '../core/hash'
+import type { HostRun, RoleSpec } from '../../types'
 import { stableJson } from '../core/json'
 import { cadreJsonText, roleJsonText } from '../generate/docs'
-import { RUNTIME_KICKOFF_TEST } from '../generate/launcher'
 import { CHECKOUT_ARGV } from '../git/checkout'
-import { entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from '../testkit'
-import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from '../testkit'
-import { runEpic } from './create'
+import {
+  BRANCH,
+  entry,
+  epic,
+  epicHost,
+  eventsOf,
+  launcherEntry,
+  launcherOf,
+  link,
+  memIo,
+  memWorld,
+  RECORD,
+  rule,
+  templateRole,
+} from '../testkit'
+import type { EpicRun, HostRunRule, MemWorld } from '../testkit'
 import {
   cleanStateOf,
   EPIC_DONE_NO_DIALOG,
@@ -44,25 +55,8 @@ import { EPIC_RECORD_FILE, epicRecordText } from './record'
 /** The worktree `/cadre epic PROJ-1 Add retry` makes in the fixture repo /repo (D-146). */
 const WORKTREE = '/repo/.claude/worktrees/proj-1-add-retry'
 
-/** The branch of that worktree (D-146). */
-const BRANCH = 'epic/proj-1-add-retry'
-
 /** The git dir of that worktree, where its epic record and its excludes file lie (D-147, D-164). */
 const GIT_DIR = '/repo/.git/worktrees/proj-1-add-retry'
-
-/** A fake host rule that answers `argv` with this exit code and output; a null exit code is a run the host rejected. */
-function rule(argv: readonly string[], exitCode: number | null, stdout = ''): HostRunRule {
-  return { argv, result: exitCode === null ? null : { exitCode, stdout, stderr: '' } }
-}
-
-/** The probe of /repo answered as the main checkout: its git dir is the common dir (D-165). */
-const MAIN_CHECKOUT = rule(CHECKOUT_ARGV('/repo'), 0, '/repo/.git\n/repo/.git\n')
-
-/** `claude --version` of a claude new enough for cadre (D-107). */
-const CLAUDE_OK = rule(['claude', '--version'], 0, '2.1.304 (Claude Code)\n')
-
-/** The rules every epic run falls back to, after its own: the main checkout at /repo and a claude new enough. */
-const BASE_RULES: readonly HostRunRule[] = [MAIN_CHECKOUT, CLAUDE_OK]
 
 /** PM and BE, in the order cadre.json lists them in the epic worlds. */
 const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
@@ -73,21 +67,6 @@ const TEAM: readonly RoleSpec[] = [templateRole('pm'), templateRole('be')]
  */
 function gitWorld(over: Partial<MemWorld> = {}): MemWorld {
   return memWorld({ interactive: false, dirs: { '/repo/.git': [] }, ...over })
-}
-
-/**
- * The text of a role's launcher in the epic worlds: launcherRead compares only its sha256 with the manifest, and
- * /cadre epic also wants the line that picks the epic kickoff (D-158).
- */
-function launcherOf(id: string): string {
-  const pick = `${RUNTIME_KICKOFF_TEST}"$root"/.cadre/${id}/kickoff.txt; fi`
-
-  return `#!/bin/sh\n# the launcher of role ${id}\n${pick}\nexit 0\n`
-}
-
-/** The manifest entry of a role's launcher, holding the sha256 of launcherOf. */
-async function launcherEntry(id: string): Promise<ManifestEntry> {
-  return { path: `.cadre/bin/${id}`, sha256: await sha256Hex(launcherOf(id)), mode: 'exec' }
 }
 
 /**
@@ -117,102 +96,6 @@ async function teamWorld(roles: readonly RoleSpec[] = TEAM, readUserMcp = false)
   }
 
   return gitWorld({ files })
-}
-
-/** What runEpic replied, and every write and run the fake host was asked for, in call order. */
-type EpicRun = {
-  readonly reply: string
-  readonly writes: readonly HostWrite[]
-  readonly calls: readonly HostCall[]
-  /** Each write as `write <path>` and each run as its argv joined by spaces, in the order of their shared counter. */
-  readonly events: readonly string[]
-  /** Every question the run asked, and the dialog spec of each, in order. */
-  readonly asked: readonly string[]
-  readonly specs: readonly AskSpec[]
-}
-
-/** What else an epic run is given: the answers to its questions, the host's environment and the `--terminal` value. */
-type EpicExtra = {
-  readonly answers?: readonly string[] | Readonly<Record<string, string>>
-  readonly env?: HostWorld['env']
-  readonly terminal?: Exclude<TerminalChoice, 'none'>
-}
-
-/** The fake host of the epic specs and what it was asked: each write and run numbered by one counter they share. */
-type EpicHost = MemHost & {
-  /** The counter value of each write, by its index in `writes`. */
-  readonly writeAt: readonly number[]
-  /** The counter value of each run, by its index in `calls`. */
-  readonly callAt: readonly number[]
-}
-
-/**
- * The fake host of the epic specs, on top of memHost: these run rules first, then BASE_RULES; any other argv exits 0
- * with no output, and `env` holds the variables that are set. Each write and each run also takes the next value of one
- * counter they share, so a spec can tell whether a file was written before a command ran.
- */
-function epicHost(runs: readonly HostRunRule[], env: HostWorld['env'] = {}): EpicHost {
-  const host = memHost(hostWorld({ runs: [...runs, ...BASE_RULES], env }))
-  const writeAt: number[] = []
-  const callAt: number[] = []
-  let counter = 0
-  const io: HostIo = {
-    write: async (path, text) => {
-      writeAt.push(counter)
-      counter += 1
-
-      return host.io.write(path, text)
-    },
-    run: async (argv, options) => {
-      callAt.push(counter)
-      counter += 1
-
-      return host.io.run(argv, options)
-    },
-    env: host.io.env,
-  }
-
-  return { ...host, io, writeAt, callAt }
-}
-
-/** The writes of `host` as `write <path>` and its runs as their argv joined by spaces, in shared-counter order. */
-function eventsOf(host: EpicHost): string[] {
-  const writes = host.writes.map((write, index) => ({ at: host.writeAt[index] ?? -1, label: `write ${write.path}` }))
-  const calls = host.calls.map((call, index) => ({ at: host.callAt[index] ?? -1, label: call.argv.join(' ') }))
-
-  return [...writes, ...calls].sort((a, b) => a.at - b.at).map(event => event.label)
-}
-
-/**
- * runEpic of `key` and `title` (PROJ-1 and Add retry by default) over `world`, with these run rules first and then
- * BASE_RULES; any other argv exits 0 with no output. `extra` gives the answers (none by default, so a question is
- * dismissed), the host's environment and the `--terminal` value (`auto` by default).
- */
-async function epic(
-  world: MemWorld,
-  runs: readonly HostRunRule[],
-  key = 'PROJ-1',
-  title = 'Add retry',
-  extra: EpicExtra = {},
-): Promise<EpicRun> {
-  const host = epicHost(runs, extra.env)
-  const io = memIo(world, extra.answers ?? {})
-  const reply = await runEpic(io.io, host.io, { key, title, terminal: extra.terminal ?? 'auto' })
-
-  return { reply, writes: host.writes, calls: host.calls, events: eventsOf(host), asked: io.asked, specs: io.specs }
-}
-
-/** The epic record of PROJ-1 Add retry as a new worktree on a branch of `main` writes it. */
-const RECORD: EpicRecord = {
-  schema: 1,
-  key: 'PROJ-1',
-  slug: 'proj-1-add-retry',
-  title: 'Add retry',
-  branch: BRANCH,
-  base: 'main',
-  createdAt: 1_000_000,
-  links: [],
-  copies: [],
 }
 
 /** The epic record of WORKTREE with the links /cadre epic made there, as /cadre epic done reads it (D-164, D-170). */

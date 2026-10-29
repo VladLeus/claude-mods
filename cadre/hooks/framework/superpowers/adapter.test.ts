@@ -1,24 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Detection, Facts, RepoEntry } from '../../../types'
+import type { Detection, RepoEntry } from '../../../types'
 import { DONE_MARKER_LINE } from '../../core/kickoff-text'
-import { emptySetupScan } from '../../testkit'
+import { emptySetupScan, facts } from '../../testkit'
 import { gateProblems, missingFields } from '../contract'
 import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './adapter'
-
-/** Facts with every list empty. A test sets only the list it reads. */
-function facts(over: Partial<Facts>): Facts {
-  return {
-    repoEntries: [],
-    docsEntries: [],
-    enabledPlugins: [],
-    hookScripts: [],
-    superpowersVersions: [],
-    gsd: [],
-    warnings: [],
-    ...over,
-  }
-}
 
 /** The superpowers key the official marketplace ships, as the settings files spell it. */
 const OFFICIAL_KEY = 'superpowers@claude-plugins-official'

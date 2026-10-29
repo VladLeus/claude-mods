@@ -4,7 +4,7 @@ import type { DesiredFile } from '../../types'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
 import { planWithManifest } from '../plan/plan'
-import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, USER_DIR_LISTED } from '../testkit'
+import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, outcomeOf, USER_DIR_LISTED } from '../testkit'
 import { hunkFailureLine } from './hunks'
 import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
@@ -153,28 +153,6 @@ describe('written set by absolute path and kind (D-242)', () => {
     expect(outcome.improved).toBeNull()
   })
 })
-
-/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
-function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
-  return {
-    written: [],
-    executable: [],
-    failed: [],
-    refused: [],
-    notExecutable: [],
-    chmodRefusals: [],
-    hunkFailures: [],
-    attended: [],
-    installed: [],
-    installProblems: [],
-    untrackedParts: [],
-    privateProblems: [],
-    manifestSkipped: false,
-    improverWarnings: [],
-    improved: null,
-    ...over,
-  }
-}
 
 /** The refusal writeProblem gives for the launcher of BE. */
 const BE_REFUSED = 'refused to write .cadre/bin/be: it or a folder above it is a link, or not inside the repo'

@@ -1,12 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../../types'
-import { entry, link } from '../testkit'
+import { BARE_WORKTREE, entry, link } from '../testkit'
 import { epicStepArgv, mirrorLinkedParentWarning, mirrorPaths, mirrorPlan, mirrorUnhideableWarning } from './mirror'
 import type { EpicStep } from './mirror'
-
-/** The worktree `/cadre epic PROJ-1` makes with no title words (D-146), and its git dir (D-164). */
-const BARE_WORKTREE = '/repo/.claude/worktrees/proj-1'
 
 describe('mirroring the main checkout into the epic worktree (D-147, D-148)', () => {
   test('each mirror step runs as one absolute argv with no shell, and a link never replaces what is there', () => {

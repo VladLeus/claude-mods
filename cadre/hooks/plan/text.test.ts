@@ -1,33 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, FileOp, HunkOp, Op, Plan } from '../../types'
-import { BIDI_OVERRIDE } from '../testkit'
+import type { FileOp, HunkOp, Op, Plan } from '../../types'
+import { BIDI_OVERRIDE, file, input } from '../testkit'
 import { buildPlan } from './plan'
-import type { PlanInput } from './plan'
 import { planSummary, renderPlan } from './text'
 
-const VERSION = '0.2.0'
 const ROLE = '.cadre/be/role.json'
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
-
-/** A plan input with an empty disk, no manifest and no extras; `over` changes the fields it names. */
-function input(over: Partial<PlanInput> = {}): PlanInput {
-  return {
-    desired: [],
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: null,
-    hunks: [],
-    cadreVersion: VERSION,
-    ...over,
-  }
-}
 
 const GSD_TOOLS = 'node ~/.claude/gsd-core/bin/gsd-tools.cjs'
 

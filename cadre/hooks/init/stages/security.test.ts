@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { PLUGIN_RUN_TIMEOUT_MS } from '../../apply/run'
-import { BIDI_OVERRIDE, memIo, memWorld, templateRole } from '../../testkit'
+import { BIDI_OVERRIDE, GUIDANCE_KEY, memIo, memWorld, SECURITY_KEY, templateRole } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import {
   INSTALL_OPTIONS,
@@ -12,12 +12,6 @@ import {
   securityInstallStep,
   withSecuritySkill,
 } from './security'
-
-/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
-const SECURITY_KEY = 'claude-security@claude-plugins-official'
-
-/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
-const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
 
 /** Both security plugin keys, in the order init asks about and installs them (decision #39). */
 const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]

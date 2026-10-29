@@ -11,7 +11,18 @@ import type {
 } from '../../types'
 import { pluginInstallArgv } from '../apply/installs'
 import { scanRepo } from '../scan/repo'
-import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef, templateRole } from '../testkit'
+import {
+  BIDI_OVERRIDE,
+  emptySetupScan,
+  entry,
+  GUIDANCE_KEY,
+  memIo,
+  memWorld,
+  SECURITY_KEY,
+  session,
+  skillRef,
+  templateRole,
+} from '../testkit'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './infra'
 import { INSTALL_COMMANDS, missingSecurityPlugins, recommend } from './recommend'
@@ -457,12 +468,6 @@ describe('security recommendations (decision #39)', () => {
     }
   })
 })
-
-/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
-const SECURITY_KEY = 'claude-security@claude-plugins-official'
-
-/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
-const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
 
 /** Both security plugin keys, in the order init asks about and installs them (decision #39). */
 const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]

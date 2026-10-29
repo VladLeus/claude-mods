@@ -1,17 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, HunkOp } from '../../types'
+import type { HunkOp } from '../../types'
 import { GSD_AUTONOMY } from '../framework/gsd/adapter'
 import { isUnmetHunk } from '../framework/gsd/hunks'
 import type { GsdToolContext } from '../framework/gsd/tools'
-import { BIDI_OVERRIDE, emptySetupScan } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, file } from '../testkit'
 import { hunkFailureLine, hunkProposal, hunkRuns, hunksAfterRuns } from './hunks'
 import type { HunkRun } from './hunks'
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
 
 /** A user-level GSD in the fixture home, as hunkStep builds the tool context from proven facts (D-71). */
 const USER_GSD: GsdToolContext = {

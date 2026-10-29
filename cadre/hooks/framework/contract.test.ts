@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import type {
   Detection,
   DetectStatus,
-  Facts,
   FrameworkAdapter,
   FrameworkId,
   Gate,
@@ -11,6 +10,7 @@ import type {
   SettingProposal,
 } from '../../types'
 import { isFrameworkId, SUPPORTED_IDS } from '../core/framework-id'
+import { facts } from '../testkit'
 import {
   chooseFramework,
   DECISION_TYPES,
@@ -22,20 +22,6 @@ import {
   REQUIRED_FIELDS,
   UNSUPPORTED_MARKERS,
 } from './contract'
-
-/** Facts with every list empty. A test sets only the list it reads. */
-function facts(over: Partial<Facts>): Facts {
-  return {
-    repoEntries: [],
-    docsEntries: [],
-    enabledPlugins: [],
-    hookScripts: [],
-    superpowersVersions: [],
-    gsd: [],
-    warnings: [],
-    ...over,
-  }
-}
 
 /** A repo-root entry as the host lists it. */
 function entry(name: string, kind: RepoEntry['kind'], isLink: boolean): RepoEntry {

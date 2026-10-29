@@ -1,9 +1,21 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileMode, PortEntry, PortRead, PortStat, WriteStat } from '../../types'
+import type { PortEntry, PortStat, WriteStat } from '../../types'
 import { privateModeArgv } from '../host/steps'
 import { MANIFEST_PATH } from '../plan/classify'
-import { BIDI_OVERRIDE, entry, link } from '../testkit'
+import {
+  BIDI_OVERRIDE,
+  entry,
+  file,
+  LAUNCHER,
+  link,
+  SECURITY_DIR,
+  SECURITY_RECORD,
+  SECURITY_TEXT_FILE,
+  SLUG_DIR,
+  text,
+  TL_DIR,
+} from '../testkit'
 import type { ApplyStep, PrivateFile } from './private'
 import {
   applyListPaths,
@@ -19,36 +31,8 @@ import {
 } from './safety'
 import type { PrivateWriteCheck } from './safety'
 
-/** The launcher of the BE role, an executable file. */
-const LAUNCHER = '.cadre/bin/be'
-
-/** A desired file; the mode is a plain file unless it says otherwise. */
-function file(path: string, content: string, mode: FileMode = 'file'): DesiredFile {
-  return { path, content, mode }
-}
-
-/** A file read through the port: its text. */
-function text(content: string): PortRead {
-  return { state: 'text', text: content }
-}
-
 /** The role file of the BE role. */
 const ROLE_MD = '.cadre/be/ROLE.md'
-
-/** The folder of the fixture user's role memory folders in the fixture repo: `<userDir>/cadre/<repo>-<hash8>`. */
-const SLUG_DIR = '/home/u/.claude/cadre/repo-1a2b3c4d'
-
-/** Security's role memory folder (D-140 q2-a). */
-const SECURITY_DIR = `${SLUG_DIR}/security`
-
-/** The Team Lead's role memory folder. */
-const TL_DIR = `${SLUG_DIR}/tl`
-
-/** Security's private text file, in its own instructions/ subfolder on every load path (D-140). */
-const SECURITY_TEXT_FILE = `${SECURITY_DIR}/instructions/CLAUDE.md`
-
-/** Security's hand-out record, beside the memories in its role memory folder (D-140 q2-a). */
-const SECURITY_RECORD = `${SECURITY_DIR}/instructions.json`
 
 /** A stat as the host answers it with resolve: a file or a folder at its real path, a link when told so. */
 function statAt(kind: PortStat['kind'], realPath: string, isLink = false): PortStat {

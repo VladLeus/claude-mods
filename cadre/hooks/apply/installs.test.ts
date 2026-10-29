@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HostRun } from '../../types'
-import { BIDI_OVERRIDE, emptySetupScan } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
 import {
   installedLine,
   installFailureText,
@@ -12,12 +12,6 @@ import {
   pythonProblem,
   setupAfterInstalls,
 } from './installs'
-
-/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
-const SECURITY_KEY = 'claude-security@claude-plugins-official'
-
-/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
-const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
 
 /** The text of a Python problem: claude-security was not installed, and why (decision #39). */
 function pythonNeeds(why: string): string {

@@ -1,25 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { EpicRecord, HostIo } from '../../types'
-import { hostWorld, memHost, memIo, memWorld } from '../testkit'
+import { hostWorld, memHost, memIo, memWorld, RECORD } from '../testkit'
 import { GIT_DIR_ARGV } from './git'
 import { epicRecordPath, epicRecordText, isSafeRelPath, parseEpicRecord, readEpicRecord } from './record'
-
-/** The branch of that worktree (D-146). */
-const BRANCH = 'epic/proj-1-add-retry'
-
-/** The epic record of PROJ-1 Add retry as a new worktree on a branch of `main` writes it. */
-const RECORD: EpicRecord = {
-  schema: 1,
-  key: 'PROJ-1',
-  slug: 'proj-1-add-retry',
-  title: 'Add retry',
-  branch: BRANCH,
-  base: 'main',
-  createdAt: 1_000_000,
-  links: [],
-  copies: [],
-}
 
 describe('the epic record (D-164)', () => {
   test('parseEpicRecord reads back what epicRecordText wrote and refuses a bad shape or an unsafe path', () => {

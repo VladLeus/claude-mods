@@ -2,10 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile, GitPolicy, HunkOp, Plan } from '../../types'
 import { appliedLines, NEXT_STEP_NOTE } from '../apply/run'
-import type { ApplyOutcome } from '../apply/run'
 import { gitignoreLines } from '../plan/gitignore'
 import { buildPlan } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
+import { outcomeOf } from '../testkit'
 import { initReplyText } from './initapply'
 import { IGNORE_ALL_NOTE } from './replies'
 import { policyLine } from './stages/policy'
@@ -31,28 +31,6 @@ async function emptyDiskPlan(
     hunks,
     cadreVersion: '0.2.0',
   })
-}
-
-/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
-function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
-  return {
-    written: [],
-    executable: [],
-    failed: [],
-    refused: [],
-    notExecutable: [],
-    chmodRefusals: [],
-    hunkFailures: [],
-    attended: [],
-    installed: [],
-    installProblems: [],
-    untrackedParts: [],
-    privateProblems: [],
-    manifestSkipped: false,
-    improverWarnings: [],
-    improved: null,
-    ...over,
-  }
 }
 
 describe('init plan', () => {
