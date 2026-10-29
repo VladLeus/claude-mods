@@ -22,13 +22,13 @@ import { readJson } from './read'
 import type { SetupContext } from './read'
 
 /** One settings source and the value the host read from it, unvalidated. */
-type SettingsEntry = {
+export type SettingsEntry = {
   readonly source: SettingsSource
   readonly value: unknown
 }
 
 /** What the settings sources keep: key names, hook basenames, the carry facts and the enabled plugin keys. */
-type ProjectedSettings = {
+export type ProjectedSettings = {
   readonly settingsKeys: SetupScan['settingsKeys']
   readonly hooks: readonly HookScript[]
   readonly carry: CarryFacts

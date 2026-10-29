@@ -32,7 +32,7 @@ export function unreadablePathWarning(ctx: SetupContext, path: string): string {
 }
 
 /** A JSON file as the port read it: not there, unknown (unreadable, over the cap or not JSON), or its parsed value. */
-type JsonRead =
+export type JsonRead =
   | { readonly state: 'absent' }
   | { readonly state: 'unknown' }
   | { readonly state: 'parsed'; readonly value: unknown }

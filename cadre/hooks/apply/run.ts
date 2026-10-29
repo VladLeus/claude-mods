@@ -166,7 +166,7 @@ async function isPrivateFolderMade(host: HostIo, folder: string, files: readonly
 }
 
 /** One file an apply wrote (D-242): a repo file or a private file, by its absolute path. */
-type WrittenFile = { readonly kind: 'repo' | 'private'; readonly path: string }
+export type WrittenFile = { readonly kind: 'repo' | 'private'; readonly path: string }
 
 /** The key of a written file in a written set: its kind and absolute path, never its display text (D-242). */
 function writtenKey(file: WrittenFile): string {
@@ -184,7 +184,7 @@ function shownPath(locations: InitLocations, file: WrittenFile): string {
 }
 
 /** What writePrivate did: the private files written, and the warning of each one not. */
-type PrivateOutcome = {
+export type PrivateOutcome = {
   readonly written: readonly WrittenFile[]
   readonly problems: readonly string[]
 }
@@ -512,7 +512,7 @@ export async function installPlugins(
 }
 
 /** Where the private files of an apply go: the roles that have one, the paths apply may write, and why none is. */
-type PrivatePlan = {
+export type PrivatePlan = {
   readonly privates: readonly PrivateRole[]
   readonly allowed: ReadonlySet<string>
   readonly problems: readonly string[]

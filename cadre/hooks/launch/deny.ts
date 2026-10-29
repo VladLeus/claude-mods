@@ -12,7 +12,7 @@ import { isPartsFlowRole } from './links'
 import type { LaunchUser } from './links'
 
 /** The deny list of a role at launch, and what to tell the person about it. */
-type DenyResult = {
+export type DenyResult = {
   readonly deny: readonly string[]
   readonly warnings: readonly string[]
 }

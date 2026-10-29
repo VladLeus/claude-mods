@@ -66,7 +66,7 @@ function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
 }
 
 /** What the framework step decided: the roles, each with its framework when it was asked, and the repo default. */
-type Framed = {
+export type Framed = {
   readonly roles: readonly RoleSpec[]
   readonly repoDefault: FrameworkId | null
 }

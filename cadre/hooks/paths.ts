@@ -150,7 +150,7 @@ function isKindInsideRoot(stat: unknown, root: string, kind: EntryKind): boolean
 }
 
 /** One path after the host's realpath answer: the path to use, and the warning when it was used as given. */
-type ResolvedPath = { readonly path: string; readonly warning: string | null }
+export type ResolvedPath = { readonly path: string; readonly warning: string | null }
 
 /**
  * One path after the host's realpath answer (D-39): where it lands when the host gave a realPath, else the path as

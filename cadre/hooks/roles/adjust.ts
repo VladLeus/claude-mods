@@ -92,7 +92,7 @@ export function parseAdjust(text: string): AdjustOp | null {
 }
 
 /** What applyAdjust returns: the new roles, or why the adjustment was refused. */
-type AdjustResult =
+export type AdjustResult =
   | { readonly kind: 'ok'; readonly roles: readonly RoleSpec[] }
   | { readonly kind: 'error'; readonly message: string }
 

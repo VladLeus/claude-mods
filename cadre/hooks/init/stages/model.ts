@@ -22,7 +22,7 @@ export function teamContextLine(roles: readonly RoleSpec[]): string {
 }
 
 /** How the framework or the model question is answered: once for every role, or role by role (D-86). */
-type AnswerMode = 'same' | 'each'
+export type AnswerMode = 'same' | 'each'
 
 /** The answers to the first framework or model question, `Same for all roles` first (D-86). */
 const ANSWER_MODES: readonly Labelled<AnswerMode>[] = Object.freeze([

@@ -82,7 +82,7 @@ function desktopConnectorWarnings(count: number): string[] {
 }
 
 /** The MCP servers a scan kept from one source, and whether it could not see every server there (A4). */
-type McpScan = {
+export type McpScan = {
   readonly refs: readonly McpRef[]
   readonly isPartial: boolean
 }

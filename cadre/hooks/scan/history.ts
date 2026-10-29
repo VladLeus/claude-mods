@@ -47,7 +47,7 @@ export type HistoryScan = {
 }
 
 /** One name and how often the sessions used it. */
-type NameCount = HistoryScan['counts'][number]
+export type NameCount = HistoryScan['counts'][number]
 
 /** The extension of a session transcript file. */
 const SESSION_EXTENSION = '.jsonl'

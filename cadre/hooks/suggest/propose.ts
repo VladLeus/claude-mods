@@ -55,7 +55,7 @@ export function proposePrompt(description: string, errors: readonly string[]): s
 }
 
 /** What parseProposal returns: the validated roles, or every error found. */
-type ProposalReply =
+export type ProposalReply =
   | { readonly kind: 'ok'; readonly roles: readonly ProposedRole[] }
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
 

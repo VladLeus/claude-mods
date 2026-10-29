@@ -65,7 +65,7 @@ function carriedEntries(manifest: Manifest, desired: readonly DesiredFile[], id:
  * scan warnings of the run, A4, then the hand-out's), the reply lines of what the hand-out dropped, and what apply
  * writes the plan from: the desired files and the manifest the plan records.
  */
-type RegenPlanned = {
+export type RegenPlanned = {
   readonly plan: Plan
   readonly warnings: readonly string[]
   readonly dropped: readonly string[]

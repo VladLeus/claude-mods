@@ -138,7 +138,7 @@ export type RegenSide = {
  * A side regen read again, or why it is left as it is (AUTO-PICK #19 Q8, Q9), with the warnings of the files it could
  * not read or of the record it cannot use.
  */
-type SideRead =
+export type SideRead =
   | { readonly kind: 'read'; readonly side: RegenSide }
   | { readonly kind: 'kept'; readonly warnings: readonly string[] }
 
@@ -174,7 +174,7 @@ export async function repoSideRead(io: InitIo, root: string, role: RoleSpec): Pr
  * are read back with, the config folder when it is outside the repo, the CLAUDE.md files of the chain above the repo,
  * and the memory folders of this repo.
  */
-type RecordPlaces = {
+export type RecordPlaces = {
   readonly sources: Pick<InstructionSources, 'root' | 'home' | 'configDir'>
   readonly userDir: string | null
   readonly chain: readonly string[]
@@ -241,7 +241,7 @@ function memoryPathOf(memory: Pick<RecordedMemory, 'file' | 'folder'>, places: R
  * A role's private hand-out record found, or why there is none to compare (AUTO-PICK #19 Q5, Q9); with its role memory
  * folder when it is known (02-GAPS-B3 M1).
  */
-type PrivateFound =
+export type PrivateFound =
   | { readonly kind: 'none'; readonly folder: string }
   | { readonly kind: 'kept'; readonly warnings: readonly string[] }
   | { readonly kind: 'found'; readonly folder: string; readonly record: InstructionsRecord }

@@ -41,7 +41,7 @@ export function skillsContextLine(roles: readonly RoleSpec[]): string {
 }
 
 /** One question on which roles get an item, and the names its answer gives them. */
-type AssignItem = {
+export type AssignItem = {
   readonly question: string
   /** The chip of its dialog: ASK_HEADERS.mcp for a server, ASK_HEADERS.skills for a skill group (G-02-3c). */
   readonly header: string

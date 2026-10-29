@@ -19,7 +19,7 @@ export const UNKNOWN_CONFIG_TEXT = `unknown (could not read ${GSD_CONFIG_FILE})`
 const MAX_VALUE_CHARS = 80
 
 /** A config key's value as the text a hunk shows: set, with its text, or not set. */
-type ConfigValue = { readonly state: 'set'; readonly text: string } | { readonly state: 'not-set' }
+export type ConfigValue = { readonly state: 'set'; readonly text: string } | { readonly state: 'not-set' }
 
 /** A config key's raw parsed value: set, with the value, or not set. */
 type RawValue = { readonly state: 'set'; readonly value: unknown } | { readonly state: 'not-set' }

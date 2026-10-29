@@ -73,7 +73,7 @@ export type Seen = {
  * What the walk saw in breadth-first order, the names it skipped, its warnings, the deeper folders it listed only in
  * part (sorted), and whether it stopped at the overall safety cap (D-137).
  */
-type Walk = {
+export type Walk = {
   readonly seen: readonly Seen[]
   readonly hidden: readonly string[]
   readonly warnings: readonly string[]

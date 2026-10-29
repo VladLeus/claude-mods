@@ -311,7 +311,7 @@ function isSameRead(before: PortRead, after: PortRead): boolean {
 }
 
 /** Where the improver pass shows a path from: the repo and the home folder of the run, and CLAUDE_CONFIG_DIR. */
-type ShownFrom = Pick<InitLocations, 'home' | 'root' | 'configDir'>
+export type ShownFrom = Pick<InitLocations, 'home' | 'root' | 'configDir'>
 
 /** A path as the improver pass shows it: one under the repo as a repo-relative path, else as displayPath shows it. */
 function shownPathOf(path: string, from: ShownFrom): string {

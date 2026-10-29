@@ -69,7 +69,7 @@ export function epicStepFailedReply(path: string): string {
 }
 
 /** What the mirror stage of runEpic did: the reply it stopped with (else null), what it made, and its warnings. */
-type Mirrored = {
+export type Mirrored = {
   readonly failure: string | null
   /** The repo-relative paths of the links whose step ran. */
   readonly links: readonly string[]

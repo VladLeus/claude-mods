@@ -243,7 +243,7 @@ async function beatValues(io: InitIo, home: string): Promise<unknown[]> {
 }
 
 /** The session the search found: its id, how it was found, and the folder it started in (null when not known). */
-type FoundSession = {
+export type FoundSession = {
   readonly sessionId: string
   readonly foundBy: 'title' | 'beat'
   readonly folder: string | null

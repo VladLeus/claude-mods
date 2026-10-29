@@ -108,7 +108,7 @@ export function statusStateOf(input: {
 }
 
 /** What status read of a found session's run: its state and autopilot's last log line. */
-type RunRead = {
+export type RunRead = {
   readonly state: StatusState
   readonly lastLog: string | null
 }

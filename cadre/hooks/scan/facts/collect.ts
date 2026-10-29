@@ -208,7 +208,7 @@ async function gsdCandidateOf(
 }
 
 /** What one collect run gave: the raw facts and the user-level GSD folder from the plan the reads followed. */
-type Collected = {
+export type Collected = {
   readonly raw: RawFacts
   readonly gsdUserDir: string | null
 }
