@@ -1,9 +1,29 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../../../types'
+import type {
+  InstructionGroup,
+  InstructionHandout,
+  InstructionPart,
+  InstructionScan,
+  InstructionTopic,
+  MemoryItem,
+} from '../../../types'
+import { sha256Hex } from '../../core/hash'
+import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
-import { emptySetupScan } from '../../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  emptySetupScan,
+  entry,
+  gitWorld,
+  INIT_ANSWERS,
+  memIo,
+  repoScan,
+  USER_DIR_LISTED,
+} from '../../testkit'
+import type { MemWorld } from '../../testkit'
 import { contextText } from '../../ui/ask'
+import type { StepResult } from '../../ui/ask'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -14,6 +34,7 @@ import {
   INSTRUCTIONS_ENTRY_OPTIONS,
   INSTRUCTIONS_ENTRY_QUESTION,
   instructionsEntry,
+  instructionsStep,
   memoryItemContextLine,
   memoryItemHeader,
   memoryItemQuestion,
@@ -244,6 +265,202 @@ describe('instruction questions (G-02-1f)', () => {
     expect(items.map(item => item.context)).toEqual([
       'Unsigned commits on per-phase branches. Recommended: tl.',
       'No summary in MEMORY.md. Recommended: none.',
+    ])
+  })
+})
+
+/** The value of an accepted step result; a cancelled one stops the test with its reason. */
+function valueOf<T>(result: StepResult<T>): T {
+  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
+
+  return result.value
+}
+
+/** The global CLAUDE.md of the fixture user, which the parts flow reads after a yes (G-02-1f). */
+const GLOBAL_CLAUDE_MD = '/home/u/.claude/CLAUDE.md'
+
+/** The global CLAUDE.md of the parts flow: a Security section and a Git section, as the plan's dry run has it. */
+const PARTS_GLOBAL = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
+
+/** The model's grouping of PARTS_GLOBAL: P1 in T1 'Security rules' and P2 in T2 'Git and commits'. */
+const PARTS_TOPICS_REPLY = JSON.stringify({
+  topics: [
+    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
+    { title: 'Git and commits', summary: 'How commits are made.', parts: ['P2'] },
+  ],
+})
+
+/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl, and no memory. */
+const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'
+
+/**
+ * A git repo whose user has PARTS_GLOBAL as the global CLAUDE.md, with the grouping and the recommendation replies in
+ * that order; `over` changes the fields it names.
+ */
+function partsWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const replies = [PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY]
+
+  return gitWorld({ files: { [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL }, replies, ...over })
+}
+
+/** The start of the improver install question, which a parts hand-out with a built part asks (G-02-1f, D-141). */
+const IMPROVER_INSTALL_PREFIX = 'Install claude-md-management'
+
+/**
+ * INIT_ANSWERS with the content consent answered Yes, the entry question Accept recommendations, and the improver
+ * install question Not now, so a run whose user lacks claude-md-management runs no improver (D-141).
+ */
+const PARTS_ANSWERS: Readonly<Record<string, string>> = {
+  ...INIT_ANSWERS,
+  [CONTENT_QUESTION]: 'Yes, read them',
+  [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
+  [IMPROVER_INSTALL_PREFIX]: 'Not now',
+}
+
+/** The topics and hand-out of a parts outcome; any other outcome stops the test with its kind. */
+function partsOf(handout: InstructionHandout): Extract<InstructionHandout, { readonly kind: 'parts' }> {
+  if (handout.kind !== 'parts') throw new Error(`not the parts flow: ${handout.kind}`)
+
+  return handout
+}
+
+describe('instruction parts (G-02-1f)', () => {
+  test('the parts flow gives every role no instruction group and keeps the hand-out in memory only', async () => {
+    const run = memIo(partsWorld(), PARTS_ANSWERS)
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const groups: readonly InstructionGroup[] = ['auto-memory']
+    const roles = proposeRoles(repoScan()).roles.map(role => ({ ...role, instructions: groups }))
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
+    expect(value.roles.map(role => role.instructions)).toEqual([[], [], []])
+    const handout = partsOf(value.instructions)
+    expect(handout.topics.map(topic => topic.title)).toEqual(['Security rules', 'Git and commits'])
+    expect([...handout.given.entries()]).toEqual([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+    ])
+    expect([...handout.recommended.entries()]).toEqual([...handout.given.entries()])
+    expect(handout.scan.files).toEqual(['~/.claude/CLAUDE.md'])
+    expect(handout.scan.parts.map(part => [part.id, part.file, part.heading, part.source])).toEqual([
+      ['P1', '~/.claude/CLAUDE.md', 'Security', 'global'],
+      ['P2', '~/.claude/CLAUDE.md', 'Git', 'global'],
+    ])
+  })
+})
+
+/** The rules folder of the fixture repo, which init lists by name before the content consent (G-02-1f Sources). */
+const RULES_DIR = '/repo/.claude/rules'
+
+/** A sentence of a rule file that must never be shown, asked or logged (T-02-61). */
+const RULE_SENTENCE = 'LEAKY-RULE-SENTENCE stays with the model'
+
+/**
+ * A git repo whose only instruction file is the rule file `.claude/rules/security.md` with a Secrets section, as the
+ * plan's dry run has it; the model groups it into one topic recommended to Security. `over` changes the fields it
+ * names.
+ */
+function rulesWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return gitWorld({
+    dirs: { '/repo/.git': [], [RULES_DIR]: [entry('security.md')] },
+    files: { [`${RULES_DIR}/security.md`]: `# Secrets\n${RULE_SENTENCE}.\n` },
+    replies: [
+      '{"topics":[{"title":"Secrets","summary":"How secrets are kept.","parts":["P1"]}]}',
+      '{"topics":{"T1":["security"]},"memories":{}}',
+    ],
+    ...over,
+  })
+}
+
+describe('rules and AGENTS.md in init (G-02-1f)', () => {
+  test('the rule file is a repo part of the hand-out, with its file, heading and source', async () => {
+    const roles = proposeRoles(repoScan()).roles
+    const run = memIo(rulesWorld(), PARTS_ANSWERS)
+    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS))
+    expect(value.instructions.kind).toBe('parts')
+    const handout = partsOf(value.instructions)
+    expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
+      ['.claude/rules/security.md', 'Secrets', 'repo'],
+    ])
+    expect([...handout.given.entries()]).toEqual([['T1', ['security']]])
+  })
+})
+
+/** The auto-memory folder of the fixture repo for the fixture user (G-02-1f Memories). */
+const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
+
+/** A sentence of a memory, and of MEMORY.md off its index lines, that is never shown or sent anywhere (T-02-64). */
+const MEMORY_SENTENCE = 'LEAKY-MEMORY-SENTENCE stays on disk'
+
+/** The MEMORY.md of memoriesWorld: an index line for squad.md only, then a line that is no index line. */
+const MEMORY_INDEX =
+  `# Memory index\n- [Squad commits](squad.md) \u2014 Unsigned commits on per-phase branches.\n${MEMORY_SENTENCE}\n`
+
+/**
+ * partsWorld with the auto-memories squad.md, which MEMORY.md sums up, and workflow.md, which it does not; the
+ * recommendation gives squad.md to the Team Lead and workflow.md to no role. `over` changes the fields it names.
+ */
+function memoriesWorld(over: Partial<MemWorld> = {}): MemWorld {
+  return partsWorld({
+    dirs: {
+      '/repo/.git': [],
+      ...USER_DIR_LISTED,
+      [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')],
+    },
+    files: {
+      [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
+      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
+      [`${MEMORY_DIR}/workflow.md`]: `${MEMORY_SENTENCE} (workflow)`,
+    },
+    replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["tl"],"M2":[]}}'],
+    ...over,
+  })
+}
+
+describe('memories one by one (G-02-1f)', () => {
+  test('the hand-out keeps each memory by its M id with its folder, summary and hash', async () => {
+    const roles = proposeRoles(repoScan()).roles
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['MEMORY.md', 'squad.md', 'workflow.md'] })
+    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
+    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
+    expect(value.instructions.kind).toBe('parts')
+    const handout = partsOf(value.instructions)
+    expect(Object.keys(handout.scan)).toContain('memories')
+    expect(handout.scan.memories.map(found => [found.id, found.file, found.folder, found.summary])).toEqual([
+      ['M1', 'squad.md', MEMORY_DIR, 'Unsigned commits on per-phase branches.'],
+      ['M2', 'workflow.md', MEMORY_DIR, 'No summary in MEMORY.md.'],
+    ])
+    const hashes = [await sha256Hex(`${MEMORY_SENTENCE} (squad)`), await sha256Hex(`${MEMORY_SENTENCE} (workflow)`)]
+    expect(handout.scan.memories.map(found => found.hash)).toEqual(hashes)
+    expect([...handout.given.entries()]).toEqual([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+      ['M1', ['tl']],
+      ['M2', []],
+    ])
+  })
+
+  test('the memories of the root as given are read too, after those of the root as resolved', async () => {
+    const given = '/home/u/.claude/projects/-link-repo/memory'
+    const world = memoriesWorld({
+      dirs: { '/repo/.git': [], [MEMORY_DIR]: [entry('squad.md')], [given]: [entry('squad.md'), entry('extra.md')] },
+      files: {
+        [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
+        [`${MEMORY_DIR}/squad.md`]: 'squad',
+        [`${given}/squad.md`]: 'another squad',
+        [`${given}/extra.md`]: 'extra',
+      },
+      replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":[],"T2":[]},"memories":{"M1":[],"M2":[]}}'],
+    })
+    const roles = proposeRoles(repoScan()).roles
+    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations))
+    expect(value.instructions.kind).toBe('parts')
+    const { scan } = partsOf(value.instructions)
+    expect(Object.keys(scan)).toContain('memories')
+    expect(scan.memories.map(found => [found.id, found.file, found.folder])).toEqual([
+      ['M1', 'extra.md', given],
+      ['M2', 'squad.md', MEMORY_DIR],
     ])
   })
 })

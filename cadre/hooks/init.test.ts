@@ -19,7 +19,6 @@ import type {
   InitFacts,
   InitIo,
   InstructionGroup,
-  InstructionHandout,
   InstructionPart,
   LaunchStart,
   ManifestEntry,
@@ -101,7 +100,6 @@ import {
   improverRunLine,
   initReplyText,
   installedFrameworks,
-  instructionsStep,
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_CONTEXT,
   LAUNCH_DIR_OPTIONS,
@@ -169,6 +167,7 @@ import {
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
+  instructionsStep,
   parseContentConsent,
 } from './init/stages/instructions'
 import { MEMORY_DISMISSED_REASON, memoryStep } from './init/stages/memory'
@@ -2097,13 +2096,6 @@ const GLOBAL_ONLY_FOUND =
   'Found: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 0 memories. ' +
   'No keeps the whole-file questions.'
 
-/** The topics and hand-out of a parts outcome; any other outcome stops the test with its kind. */
-function partsOf(handout: InstructionHandout): Extract<InstructionHandout, { readonly kind: 'parts' }> {
-  if (handout.kind !== 'parts') throw new Error(`not the parts flow: ${handout.kind}`)
-
-  return handout
-}
-
 /** The port of withEvents that also records each read, as `read <path>`, in the same list in call order. */
 function withReadEvents(run: MemRun): { readonly io: InitIo; readonly events: string[] } {
   const traced = withEvents(run)
@@ -2236,27 +2228,6 @@ describe('instruction parts (G-02-1f)', () => {
       kind: 'accepted',
       value: { roles: [templateRole('pm')], instructions: { kind: 'none' } },
     })
-  })
-
-  test('the parts flow gives every role no instruction group and keeps the hand-out in memory only', async () => {
-    const run = memIo(partsWorld(), PARTS_ANSWERS)
-    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
-    const groups: readonly InstructionGroup[] = ['auto-memory']
-    const roles = proposeRoles(repoScan()).roles.map(role => ({ ...role, instructions: groups }))
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
-    expect(value.roles.map(role => role.instructions)).toEqual([[], [], []])
-    const handout = partsOf(value.instructions)
-    expect(handout.topics.map(topic => topic.title)).toEqual(['Security rules', 'Git and commits'])
-    expect([...handout.given.entries()]).toEqual([
-      ['T1', ['security']],
-      ['T2', ['tl']],
-    ])
-    expect([...handout.recommended.entries()]).toEqual([...handout.given.entries()])
-    expect(handout.scan.files).toEqual(['~/.claude/CLAUDE.md'])
-    expect(handout.scan.parts.map(part => [part.id, part.file, part.heading, part.source])).toEqual([
-      ['P1', '~/.claude/CLAUDE.md', 'Security', 'global'],
-      ['P2', '~/.claude/CLAUDE.md', 'Git', 'global'],
-    ])
   })
 
   test('a dismissed content consent cancels init with its reason, having read nothing (A1)', async () => {
@@ -2509,18 +2480,6 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     ])
   })
 
-  test('the rule file is a repo part of the hand-out, with its file, heading and source', async () => {
-    const roles = proposeRoles(repoScan()).roles
-    const run = memIo(rulesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS))
-    expect(value.instructions.kind).toBe('parts')
-    const handout = partsOf(value.instructions)
-    expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
-      ['.claude/rules/security.md', 'Secrets', 'repo'],
-    ])
-    expect([...handout.given.entries()]).toEqual([['T1', ['security']]])
-  })
-
   test('init lists .claude/rules by name before the consent and reads the rule file only after a yes', async () => {
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
     const traced = withReadEvents(run)
@@ -2758,28 +2717,6 @@ describe('memories one by one (G-02-1f)', () => {
     ])
   })
 
-  test('the hand-out keeps each memory by its M id with its folder, summary and hash', async () => {
-    const roles = proposeRoles(repoScan()).roles
-    const setup = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['MEMORY.md', 'squad.md', 'workflow.md'] })
-    const run = memIo(memoriesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
-    expect(value.instructions.kind).toBe('parts')
-    const handout = partsOf(value.instructions)
-    expect(Object.keys(handout.scan)).toContain('memories')
-    expect(handout.scan.memories.map(found => [found.id, found.file, found.folder, found.summary])).toEqual([
-      ['M1', 'squad.md', MEMORY_DIR, 'Unsigned commits on per-phase branches.'],
-      ['M2', 'workflow.md', MEMORY_DIR, 'No summary in MEMORY.md.'],
-    ])
-    const hashes = [await sha256Hex(`${MEMORY_SENTENCE} (squad)`), await sha256Hex(`${MEMORY_SENTENCE} (workflow)`)]
-    expect(handout.scan.memories.map(found => found.hash)).toEqual(hashes)
-    expect([...handout.given.entries()]).toEqual([
-      ['T1', ['security']],
-      ['T2', ['tl']],
-      ['M1', ['tl']],
-      ['M2', []],
-    ])
-  })
-
   test('the recommendation prompt lists each memory by id, file and summary', async () => {
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
@@ -2810,31 +2747,6 @@ describe('memories one by one (G-02-1f)', () => {
       ...run.prompts,
     ].join('\n')
     expect(leaks(shown, [MEMORY_SENTENCE])).toEqual([])
-  })
-
-  test('the memories of the root as given are read too, after those of the root as resolved', async () => {
-    const given = '/home/u/.claude/projects/-link-repo/memory'
-    const world = memoriesWorld({
-      dirs: { '/repo/.git': [], [MEMORY_DIR]: [entry('squad.md')], [given]: [entry('squad.md'), entry('extra.md')] },
-      files: {
-        [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
-        [`${MEMORY_DIR}/squad.md`]: 'squad',
-        [`${given}/squad.md`]: 'another squad',
-        [`${given}/extra.md`]: 'extra',
-      },
-      replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":[],"T2":[]},"memories":{"M1":[],"M2":[]}}'],
-    })
-    const roles = proposeRoles(repoScan()).roles
-    const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
-    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
-    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations))
-    expect(value.instructions.kind).toBe('parts')
-    const { scan } = partsOf(value.instructions)
-    expect(Object.keys(scan)).toContain('memories')
-    expect(scan.memories.map(found => [found.id, found.file, found.folder])).toEqual([
-      ['M1', 'extra.md', given],
-      ['M2', 'squad.md', MEMORY_DIR],
-    ])
   })
 })
 
