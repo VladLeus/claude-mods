@@ -12,49 +12,21 @@ import type {
   PortStat,
   RoleSpec,
   TerminalChoice,
-} from '../types'
+} from '../../types'
 import {
   instructionsRecordPath,
   instructionsRecordText,
   privateClaudeMdPath,
   privateClaudeMdText,
-} from './apply/private'
-import { sha256Hex } from './core/hash'
-import { stableJson } from './core/json'
-import { cadreJsonText, roleJsonText } from './generate/docs'
-import { desiredFiles } from './generate/files'
-import { repoGuard } from './guards/repo'
-import { unsafeMemoryNameWarning } from './launch/links'
-import type { LaunchUser } from './launch/links'
-import { runStart } from './start'
-import {
-  claudeTooOldReply,
-  isSupportedClaude,
-  MIN_CLAUDE_VERSION,
-  parseClaudeVersion,
-  START_NO_CLAUDE,
-} from './start/claude-version'
-import { gatherLaunchUser, privateFolderRefusal } from './start/gather-user'
-import type { LaunchUserRead } from './start/gather-user'
-import {
-  launcherChangedReply,
-  launcherMissingReply,
-  renderFailedReply,
-  START_NO_MANIFEST,
-} from './start/launcher-check'
-import {
-  MEMORY_BLOCK_BEGIN,
-  MEMORY_BLOCK_END,
-  memoryBlockText,
-  memoryChangedWarning,
-  memoryGoneWarning,
-  memoryIndexLinkWarning,
-  openMemoryBlockWarning,
-  unreadableMemoryIndexWarning,
-  unreadableRecordWarning,
-} from './start/memory-links'
-import { NO_MEMORY_LINKS } from './start/render-plan'
-import { compileTeam, readTeam } from './team'
+} from '../apply/private'
+import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
+import { cadreJsonText, roleJsonText } from '../generate/docs'
+import { desiredFiles } from '../generate/files'
+import { repoGuard } from '../guards/repo'
+import { unsafeMemoryNameWarning } from '../launch/links'
+import type { LaunchUser } from '../launch/links'
+import { compileTeam, readTeam } from '../team'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
@@ -68,8 +40,8 @@ import {
   SECRET_FIXTURES,
   secretWorld,
   templateRole,
-} from './testkit'
-import type { HostCall, HostRunRule, HostWorld, HostWrite, MemWorld } from './testkit'
+} from '../testkit'
+import type { HostCall, HostRunRule, HostWorld, HostWrite, MemWorld } from '../testkit'
 import {
   clipboardRun,
   COPIED_LINE,
@@ -77,8 +49,31 @@ import {
   NOT_COPIED_LINE,
   TERMINAL_MAC_ONLY,
   terminalPlan,
-} from './ui/terminal'
-import type { TerminalPlan } from './ui/terminal'
+} from '../ui/terminal'
+import type { TerminalPlan } from '../ui/terminal'
+import {
+  claudeTooOldReply,
+  isSupportedClaude,
+  MIN_CLAUDE_VERSION,
+  parseClaudeVersion,
+  START_NO_CLAUDE,
+} from './claude-version'
+import { gatherLaunchUser, privateFolderRefusal } from './gather-user'
+import type { LaunchUserRead } from './gather-user'
+import { launcherChangedReply, launcherMissingReply, renderFailedReply, START_NO_MANIFEST } from './launcher-check'
+import {
+  MEMORY_BLOCK_BEGIN,
+  MEMORY_BLOCK_END,
+  memoryBlockText,
+  memoryChangedWarning,
+  memoryGoneWarning,
+  memoryIndexLinkWarning,
+  openMemoryBlockWarning,
+  unreadableMemoryIndexWarning,
+  unreadableRecordWarning,
+} from './memory-links'
+import { NO_MEMORY_LINKS } from './render-plan'
+import { runStart } from './run'
 
 /** The repo root of the fixtures, a realpath. */
 const ROOT = '/repo'

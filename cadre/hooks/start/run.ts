@@ -1,30 +1,16 @@
 /**
- * The gather and render halves of /cadre start (D-102); renderRole, which gathers and renders one role for the root it
- * is given, the session's for /cadre start and an epic worktree for /cadre epic (D-157); and runStart, the command
- * itself, which checks the repo and the team, runs renderRole through the HostIo port and hands over the launcher
- * command: printed, copied to the clipboard and, with `--terminal`, opened in a new terminal on macOS (LNCH-04, D-110,
- * D-109).
- *
- * The gather half reads, through the InitIo and HostIo ports only, and never writes: the facts about the launching
- * user that a role launch needs (gatherLaunchUser, D-98), and the user's `~/.claude.json` under the stored consent
- * (readClaudeJson, D-58), from which runtimeMcpText renders a role's MCP config (D-93).
- *
- * The render half gives the ordered steps that write a role's per-launch files into `.cadre/<id>/.runtime/`, and the
- * role's private instructions folder under the config folder (privateFolderSteps), from its LaunchPlan (D-98) and the
- * texts of its MCP config and probe expectations. It reads and writes nothing: /cadre start stats and lists the paths
- * renderPaths names, then runs the steps renderSteps gives, in order, through the host. The stamp is always the last
- * step, and the launcher trusts it: it refuses to start when the stamp is missing or older than the role files or a
- * rendered file, so a render that stops part way never starts a session (LNCH-03).
+ * `/cadre start <id>` in the repo's root session (D-102, LNCH-04), a layer 11 module: runStart checks the repo, the
+ * team, the launcher and claude, in that order, compiles the team, renders the role through renderRole, and hands over
+ * the launcher command: printed, copied to the clipboard and, with `--terminal`, opened in a new terminal on macOS
+ * (D-110, D-109). It runs through the InitIo and HostIo ports only, and never runs the launcher (D-108). It imports
+ * generate/files, guards/repo, scan/gather, team, ui and the start modules; register and the goldens run it.
  */
-import type { HostIo, InitIo, TerminalChoice } from '../types'
-import { desiredFiles } from './generate/files'
-import { repoGuard } from './guards/repo'
-import { scanWarnings } from './scan/gather'
-import { claudeRefusal } from './start/claude-version'
-import { launcherDrift, launcherRead } from './start/launcher-check'
-import { renderRole } from './start/render'
-import { compileTeam, readTeam, regenBadRole } from './team'
-import { terminalHostOf } from './ui/open'
+import type { HostIo, InitIo, TerminalChoice } from '../../types'
+import { desiredFiles } from '../generate/files'
+import { repoGuard } from '../guards/repo'
+import { scanWarnings } from '../scan/gather'
+import { compileTeam, readTeam, regenBadRole } from '../team'
+import { terminalHostOf } from '../ui/open'
 import {
   clipboardRun,
   COPIED_LINE,
@@ -32,7 +18,10 @@ import {
   NOT_COPIED_LINE,
   TERMINAL_OPEN_TIMEOUT_MS,
   terminalPlan,
-} from './ui/terminal'
+} from '../ui/terminal'
+import { claudeRefusal } from './claude-version'
+import { launcherDrift, launcherRead } from './launcher-check'
+import { renderRole } from './render'
 
 /**
  * The `--terminal` line below the copy line (D-109, D-126, D-132). The host is macOS when `/usr/bin/uname -s` exits 0
