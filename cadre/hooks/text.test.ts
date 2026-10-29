@@ -390,10 +390,7 @@ import {
   memoryIndexLinkWarning,
   openMemoryBlockWarning,
   privateFolderRefusal,
-  privateLinkRefusal,
   runtimeMcpText,
-  STALE_LINK_FOLDERS,
-  stampText,
   START_NO_CLAUDE,
   START_NO_GIT_DIR,
   START_NO_HOME,
@@ -401,6 +398,7 @@ import {
   unreadableMemoryIndexWarning,
   unreadableRecordWarning,
 } from './start'
+import { privateLinkRefusal, STALE_LINK_FOLDERS, stampText } from './start/render-plan'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'
 import { RECOMMEND_SYSTEM } from './suggest/instructions'
