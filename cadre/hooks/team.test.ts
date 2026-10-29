@@ -1,28 +1,39 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CadreState, LaunchStart, ManifestEntry, RoleSpec } from '../types'
+import type { CadreState, FrameworkId, HunkOp, LaunchStart, ManifestEntry, RoleSpec, ScopeContext } from '../types'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
+import { NOT_SET_TEXT } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
+import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
+import type { Gathered } from './scan/gather'
+import { scopeCardLines } from './scope/card'
+import { compileScope } from './scope/compile'
 import {
   compileTeam,
+  MCP_ROUTE,
   noStateReply,
   readTeam,
   REGEN_NO_STATE,
   regenBadRole,
   regenNeedsFramework,
   regenNoRole,
+  resolvedFramework,
   scopesFor,
 } from './team'
 import {
   cardOf,
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
   gitWorld,
   memIo,
   onDisk,
   plannedFiles,
+  repoScan,
   scansOf,
+  session,
   stateOf,
   templateRole,
 } from './testkit'
@@ -184,5 +195,85 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
 
     expect(read.kind === 'ok' ? read.value.roles.map(role => role.id) : read.text).toEqual(['pm', 'be'])
     expect(await readTeam(io, '/repo', 'epic', 'qa')).toEqual({ kind: 'refuse', text: regenNoRole('qa', ['pm', 'be']) })
+  })
+})
+
+/** A role with its framework set, as the framework step or an Adjust override sets it. */
+function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
+  return { ...role, framework }
+}
+
+/** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */
+function gsdHunk(over: Partial<HunkOp> = {}): HunkOp {
+  return {
+    kind: 'hunk',
+    file: '.planning/config.json',
+    key: 'mode',
+    before: NOT_SET_TEXT,
+    after: '"yolo"',
+    isRequired: true,
+    isAccepted: true,
+    isRunnable: true,
+    command: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
+    ...over,
+  }
+}
+
+describe('init plan', () => {
+  /** The scans of a session with nothing detected, a framework-free team on the built-in default. */
+  const gathered: Gathered = {
+    facts: { facts: EMPTY_FACTS, gsdUserDir: null },
+    repo: repoScan({ codeDirs: ['src'] }),
+    setup: emptySetupScan({ mcp: [session('jira')] }),
+  }
+  /** PM on the repo default, Team Lead on superpowers by its own framework, BE on the repo default. */
+  const roles = [templateRole('pm'), withFramework(templateRole('tl'), 'superpowers'), templateRole('be')]
+
+  test('the MCP route is merged for every role, and every card says what merged holds (D-104, D-124)', () => {
+    expect(MCP_ROUTE).toBe('merged')
+    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
+    for (const role of roles) {
+      const card = cardOf(scopes, role.id)
+      expect(card.mcpRoute).toBe('merged')
+      expect(scopeCardLines(card)).toContain(
+        '    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)',
+      )
+    }
+    const team = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
+    const all = [...scopesFor(team, 'gsd', gathered, [], { kind: 'git-root' }).values()]
+    expect(all).toHaveLength(6)
+    expect(all.filter(scope => scope.flags.includes('--strict-mcp-config'))).toEqual([])
+  })
+
+  test('scopesFor compiles each role with its framework, the setup, the code dirs and the whole team', () => {
+    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
+    expect([...scopes.keys()]).toEqual(['pm', 'tl', 'be'])
+    for (const role of roles) {
+      const context: ScopeContext = {
+        framework: resolvedFramework(role, 'gsd'),
+        setup: gathered.setup,
+        codeDirs: ['src'],
+        isAttended: false,
+        mcpRoute: MCP_ROUTE,
+        launchStart: { kind: 'git-root' },
+        roles,
+      }
+      expect(scopes.get(role.id)).toEqual(compileScope(role, context))
+    }
+  })
+
+  test("a role is attended when an unmet hunk is on its own framework's config file (ROLE-04, A5)", () => {
+    const team = [templateRole('be'), withFramework(templateRole('qa'), 'superpowers')]
+    const attended = (hunks: readonly HunkOp[]): boolean[] => {
+      const scopes = scopesFor(team, 'gsd', gathered, hunks, { kind: 'git-root' })
+
+      return team.map(role => cardOf(scopes, role.id).isAttended)
+    }
+    expect(attended([])).toEqual([false, false])
+    expect(attended([gsdHunk()])).toEqual([false, false])
+    expect(attended([gsdHunk({ isAccepted: false })])).toEqual([true, false])
+    expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
+    expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
+    expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
   })
 })

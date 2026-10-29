@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { GIT_POLICY_OPTIONS, parseGitPolicy } from '../init/stages/policy'
 import { memIo, memWorld } from '../testkit'
 import { askChoice, MAX_ASKS, refusalLine } from './ask'
 
@@ -58,5 +59,14 @@ describe('askChoice refuse (N5)', () => {
     const run = memIo(memWorld({}), ['bad', 'ok'])
     expect(await askChoice(run.io, OK_ASK)).toEqual({ kind: 'answered', value: 'ok' })
     expect(run.asked).toEqual([QUESTION, `${refusalLine('bad', ACCEPTS)}\n${QUESTION}`])
+  })
+})
+
+describe('init helpers', () => {
+  test('askChoice gives dismissed after exactly two asks for an invalid answer followed by a dismissal', async () => {
+    const run = memIo(memWorld({}), ['nonsense'])
+    const ask = { question: 'Git policy?', spec: { options: GIT_POLICY_OPTIONS }, parse: parseGitPolicy, accepts: 'x' }
+    expect(await askChoice(run.io, ask)).toEqual({ kind: 'dismissed' })
+    expect(run.asked).toEqual(['Git policy?', "'nonsense' isn't one of: x.\nGit policy?"])
   })
 })

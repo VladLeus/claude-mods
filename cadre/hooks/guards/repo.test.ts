@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo } from '../../types'
-import { INIT_FILE_SYSTEM_ROOT_REPLY, INIT_HOME_ROOT_REPLY, INIT_ROOT_UNKNOWN_REPLY } from '../init/replies'
+import {
+  INIT_CANCELLED,
+  INIT_FILE_SYSTEM_ROOT_REPLY,
+  INIT_HOME_ROOT_REPLY,
+  INIT_ROOT_UNKNOWN_REPLY,
+} from '../init/replies'
 import { autopilotReply } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
-import { HOME_ROOT_REPLY } from './refusals'
+import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './refusals'
 import { commandRefusal, gitRootRefusal, initGuard, NOT_INTERACTIVE_REPLY, notGitRepoReply, repoGuard } from './repo'
 
 describe('initGuard', () => {
@@ -206,5 +211,27 @@ describe('gitRootRefusal and notGitRepoReply', () => {
   test('no git repo above the root is refused with the locked wording', () => {
     expect(notGitRepoReply('init')).toBe('cadre init needs a git repo: run git init first')
     expect(notGitRepoReply('regen')).toBe('cadre regen needs a git repo: run git init first')
+  })
+})
+
+describe('init helpers', () => {
+  test('commandRefusal names the given command wherever a detect refusal names detect', () => {
+    expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
+      'cadre init needs a repo root other than your home folder. ' +
+        'Open the session in a repo and run /cadre init again.',
+    )
+    expect(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'regen')).toBe(
+      'cadre regen needs a repo root other than the file system root (/). ' +
+        'Open the session in a repo and run /cadre regen again.',
+    )
+    expect(commandRefusal('no command is named here', 'init')).toBe('no command is named here')
+  })
+
+  test('the non-interactive and cancelled replies state what happened and that nothing was written', () => {
+    expect(NOT_INTERACTIVE_REPLY).toBe(
+      'cadre init needs an interactive session to ask its questions. ' +
+        'Run /cadre init in a terminal session, not with claude -p.',
+    )
+    expect(INIT_CANCELLED).toBe('init cancelled, nothing written')
   })
 })

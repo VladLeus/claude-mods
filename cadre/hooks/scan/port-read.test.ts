@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo } from '../../types'
+import type { InitIo, PortStat } from '../../types'
 import { entry, memIo, memWorld } from '../testkit'
 import { MAX_READ_BYTES } from './facts/normalize'
-import { listingState, missingState, readRepoFile } from './port-read'
+import { listingState, missingState, pluginVersionOf, portProbeOf, portTextOf, readRepoFile } from './port-read'
 
 describe('readRepoFile', () => {
   test('reads a regular file whose real path is inside the root', async () => {
@@ -161,5 +161,68 @@ describe('safety net: scan helpers (A8)', () => {
     }
     expect(states).toEqual(['absent', 'unknown', 'unknown', 'unknown', 'unknown'])
     expect(caps).toEqual([0, 0, 0, 0, 0])
+  })
+})
+
+describe('init helpers', () => {
+  test('pluginVersionOf reads a plain x.y.z version from plugin.json', () => {
+    expect(pluginVersionOf('{"name":"cadre","version":"0.1.18"}')).toBe('0.1.18')
+    expect(pluginVersionOf('{"version":"10.20.30"}')).toBe('10.20.30')
+  })
+
+  test('pluginVersionOf gives null for text that is not JSON, not an object, or has no plain version', () => {
+    const bad = [
+      '',
+      'not json',
+      '[]',
+      'null',
+      '"0.1.18"',
+      '{}',
+      '{"version":18}',
+      '{"version":"1.2"}',
+      '{"version":"v1.2.3"}',
+      '{"version":"1.2.3-beta"}',
+      '{"version":"1.2.3\\n"}',
+    ]
+    for (const text of bad) {
+      expect(pluginVersionOf(text)).toBeNull()
+    }
+  })
+
+  describe('the init port read decisions', () => {
+    const MAX = 10
+    const file = (size: number): PortStat => ({ kind: 'file', size, isLink: false, realPath: '/repo/a' })
+
+    test('portProbeOf is absent only when the probe says the path is not there', () => {
+      expect(portProbeOf(false, null, MAX)).toEqual({ state: 'absent' })
+      expect(portProbeOf(false, file(1), MAX)).toEqual({ state: 'absent' })
+    })
+
+    test('portProbeOf is unknown when the probe failed', () => {
+      expect(portProbeOf(null, null, MAX)).toEqual({ state: 'unknown' })
+    })
+
+    test('portProbeOf is unknown for a null stat and for a stat that is not a file', () => {
+      expect(portProbeOf(true, null, MAX)).toEqual({ state: 'unknown' })
+      expect(portProbeOf(true, { kind: 'dir', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
+      expect(portProbeOf(true, { kind: 'other', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
+    })
+
+    test('portProbeOf reads a link to a regular file', () => {
+      expect(portProbeOf(true, { kind: 'file', size: 1, isLink: true, realPath: '/repo/real' }, MAX)).toBeNull()
+    })
+
+    test('portProbeOf is too-large by the stat size and null (go on and read) at the limit', () => {
+      expect(portProbeOf(true, file(MAX + 1), MAX)).toEqual({ state: 'too-large', bytes: MAX + 1 })
+      expect(portProbeOf(true, file(MAX), MAX)).toBeNull()
+    })
+
+    test('portTextOf is unknown for a non-string, too-large by the UTF-8 bytes, else the text', () => {
+      expect(portTextOf(null, MAX)).toEqual({ state: 'unknown' })
+      expect(portTextOf(42, MAX)).toEqual({ state: 'unknown' })
+      expect(portTextOf('€€€€', MAX)).toEqual({ state: 'too-large', bytes: 12 })
+      expect(portTextOf('€€€', MAX)).toEqual({ state: 'text', text: '€€€' })
+      expect(portTextOf('abcdefghij', MAX)).toEqual({ state: 'text', text: 'abcdefghij' })
+    })
   })
 })

@@ -22,9 +22,7 @@ import type {
   PaneKey,
   Plan,
   PortEntry,
-  PortStat,
   RoleSpec,
-  ScopeContext,
   SetupScan,
   TemplateRoleId,
 } from '../types'
@@ -57,24 +55,16 @@ import type { ApplyOutcome } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText } from './core/text'
-import { attendedNote, NOT_SET_TEXT } from './framework/gsd/hunks'
+import { attendedNote } from './framework/gsd/hunks'
 import { roleClaudeMdText } from './generate/docs'
 import { desiredFiles } from './generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
-import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { runInit } from './init'
 import type { InitOptions } from './init'
 import { CONFLICT_CONTEXT } from './init/initapply'
 import { planStep } from './init/initplan'
-import {
-  cancelledReply,
-  IGNORE_ALL_NOTE,
-  INIT_CANCELLED,
-  INIT_FILE_SYSTEM_ROOT_REPLY,
-  INIT_HOME_ROOT_REPLY,
-} from './init/replies'
+import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED, INIT_HOME_ROOT_REPLY } from './init/replies'
 import { assignmentStep } from './init/stages/assign'
 import { carryStep, ENV_DISMISSED_REASON } from './init/stages/carry'
 import {
@@ -166,22 +156,18 @@ import {
 import { proposeRoles } from './roles/propose'
 import { missingSecurityPlugins, recommend } from './roles/recommend'
 import { parseRoleJson } from './roles/rolejson'
-import { AUTOPILOT_THRESHOLD, ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
+import { AUTOPILOT_THRESHOLD } from './roles/template'
 import { gatherScans, scanWarnings } from './scan/gather'
-import type { Gathered } from './scan/gather'
-import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { scanRepo } from './scan/repo'
 import { scanSetup } from './scan/setup/setup'
 import { scopeCardLines } from './scope/card'
-import { compileScope } from './scope/compile'
 import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
 import { RECOMMEND_SYSTEM } from './suggest/instructions'
 import { TOPICS_SYSTEM } from './suggest/topics'
-import { MCP_ROUTE, resolvedFramework, scopesFor } from './team'
+import { scopesFor } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
-  cardOf,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
   emptySetupScan,
@@ -3411,111 +3397,6 @@ describe('question context lines (G-02-1)', () => {
   })
 })
 
-describe('init helpers', () => {
-  test('commandRefusal names the given command wherever a detect refusal names detect', () => {
-    expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
-      'cadre init needs a repo root other than your home folder. ' +
-        'Open the session in a repo and run /cadre init again.',
-    )
-    expect(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'regen')).toBe(
-      'cadre regen needs a repo root other than the file system root (/). ' +
-        'Open the session in a repo and run /cadre regen again.',
-    )
-    expect(commandRefusal('no command is named here', 'init')).toBe('no command is named here')
-  })
-
-  test('the init refusals use the init wording and the detect refusals keep their own, byte for byte', () => {
-    expect(INIT_HOME_ROOT_REPLY).toBe(commandRefusal(HOME_ROOT_REPLY, 'init'))
-    expect(INIT_FILE_SYSTEM_ROOT_REPLY).toBe(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init'))
-    expect(INIT_HOME_ROOT_REPLY).not.toContain('detect')
-    expect(INIT_FILE_SYSTEM_ROOT_REPLY).not.toContain('detect')
-    expect(HOME_ROOT_REPLY).toBe(
-      'cadre detect needs a repo root other than your home folder. ' +
-        'Open the session in a repo and run /cadre detect again.',
-    )
-    expect(FILE_SYSTEM_ROOT_REPLY).toBe(
-      'cadre detect needs a repo root other than the file system root (/). ' +
-        'Open the session in a repo and run /cadre detect again.',
-    )
-  })
-
-  test('the non-interactive and cancelled replies state what happened and that nothing was written', () => {
-    expect(NOT_INTERACTIVE_REPLY).toBe(
-      'cadre init needs an interactive session to ask its questions. ' +
-        'Run /cadre init in a terminal session, not with claude -p.',
-    )
-    expect(INIT_CANCELLED).toBe('init cancelled, nothing written')
-  })
-
-  test('pluginVersionOf reads a plain x.y.z version from plugin.json', () => {
-    expect(pluginVersionOf('{"name":"cadre","version":"0.1.18"}')).toBe('0.1.18')
-    expect(pluginVersionOf('{"version":"10.20.30"}')).toBe('10.20.30')
-  })
-
-  test('pluginVersionOf gives null for text that is not JSON, not an object, or has no plain version', () => {
-    const bad = [
-      '',
-      'not json',
-      '[]',
-      'null',
-      '"0.1.18"',
-      '{}',
-      '{"version":18}',
-      '{"version":"1.2"}',
-      '{"version":"v1.2.3"}',
-      '{"version":"1.2.3-beta"}',
-      '{"version":"1.2.3\\n"}',
-    ]
-    for (const text of bad) {
-      expect(pluginVersionOf(text)).toBeNull()
-    }
-  })
-
-  test('askChoice gives dismissed after exactly two asks for an invalid answer followed by a dismissal', async () => {
-    const run = memIo(memWorld({}), ['nonsense'])
-    const ask = { question: 'Git policy?', spec: { options: GIT_POLICY_OPTIONS }, parse: parseGitPolicy, accepts: 'x' }
-    expect(await askChoice(run.io, ask)).toEqual({ kind: 'dismissed' })
-    expect(run.asked).toEqual(['Git policy?', "'nonsense' isn't one of: x.\nGit policy?"])
-  })
-
-  describe('the init port read decisions', () => {
-    const MAX = 10
-    const file = (size: number): PortStat => ({ kind: 'file', size, isLink: false, realPath: '/repo/a' })
-
-    test('portProbeOf is absent only when the probe says the path is not there', () => {
-      expect(portProbeOf(false, null, MAX)).toEqual({ state: 'absent' })
-      expect(portProbeOf(false, file(1), MAX)).toEqual({ state: 'absent' })
-    })
-
-    test('portProbeOf is unknown when the probe failed', () => {
-      expect(portProbeOf(null, null, MAX)).toEqual({ state: 'unknown' })
-    })
-
-    test('portProbeOf is unknown for a null stat and for a stat that is not a file', () => {
-      expect(portProbeOf(true, null, MAX)).toEqual({ state: 'unknown' })
-      expect(portProbeOf(true, { kind: 'dir', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
-      expect(portProbeOf(true, { kind: 'other', size: 1, isLink: false }, MAX)).toEqual({ state: 'unknown' })
-    })
-
-    test('portProbeOf reads a link to a regular file', () => {
-      expect(portProbeOf(true, { kind: 'file', size: 1, isLink: true, realPath: '/repo/real' }, MAX)).toBeNull()
-    })
-
-    test('portProbeOf is too-large by the stat size and null (go on and read) at the limit', () => {
-      expect(portProbeOf(true, file(MAX + 1), MAX)).toEqual({ state: 'too-large', bytes: MAX + 1 })
-      expect(portProbeOf(true, file(MAX), MAX)).toBeNull()
-    })
-
-    test('portTextOf is unknown for a non-string, too-large by the UTF-8 bytes, else the text', () => {
-      expect(portTextOf(null, MAX)).toEqual({ state: 'unknown' })
-      expect(portTextOf(42, MAX)).toEqual({ state: 'unknown' })
-      expect(portTextOf('€€€€', MAX)).toEqual({ state: 'too-large', bytes: 12 })
-      expect(portTextOf('€€€', MAX)).toEqual({ state: 'text', text: '€€€' })
-      expect(portTextOf('abcdefghij', MAX)).toEqual({ state: 'text', text: 'abcdefghij' })
-    })
-  })
-})
-
 /** The folders and files of a repo whose scan proposes all six template roles: React and TypeScript with tests. */
 const FULL_DIRS = {
   '/repo': [entry('package.json'), entry('src', 'dir')],
@@ -3592,22 +3473,6 @@ function opKinds(reply: string): Map<string, string> {
   return kinds
 }
 
-/** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */
-function gsdHunk(over: Partial<HunkOp> = {}): HunkOp {
-  return {
-    kind: 'hunk',
-    file: '.planning/config.json',
-    key: 'mode',
-    before: NOT_SET_TEXT,
-    after: '"yolo"',
-    isRequired: true,
-    isAccepted: true,
-    isRunnable: true,
-    command: 'node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo',
-    ...over,
-  }
-}
-
 /** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
 function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
   return {
@@ -3631,62 +3496,8 @@ function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
 }
 
 describe('init plan', () => {
-  /** The scans of a session with nothing detected, a framework-free team on the built-in default. */
-  const gathered: Gathered = {
-    facts: { facts: EMPTY_FACTS, gsdUserDir: null },
-    repo: repoScan({ codeDirs: ['src'] }),
-    setup: emptySetupScan({ mcp: [session('jira')] }),
-  }
   /** PM on the repo default, Team Lead on superpowers by its own framework, BE on the repo default. */
   const roles = [templateRole('pm'), withFramework(templateRole('tl'), 'superpowers'), templateRole('be')]
-
-  test('the MCP route is merged for every role, and every card says what merged holds (D-104, D-124)', () => {
-    expect(MCP_ROUTE).toBe('merged')
-    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
-    for (const role of roles) {
-      const card = cardOf(scopes, role.id)
-      expect(card.mcpRoute).toBe('merged')
-      expect(scopeCardLines(card)).toContain(
-        '    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)',
-      )
-    }
-    const team = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
-    const all = [...scopesFor(team, 'gsd', gathered, [], { kind: 'git-root' }).values()]
-    expect(all).toHaveLength(6)
-    expect(all.filter(scope => scope.flags.includes('--strict-mcp-config'))).toEqual([])
-  })
-
-  test('scopesFor compiles each role with its framework, the setup, the code dirs and the whole team', () => {
-    const scopes = scopesFor(roles, 'gsd', gathered, [], { kind: 'git-root' })
-    expect([...scopes.keys()]).toEqual(['pm', 'tl', 'be'])
-    for (const role of roles) {
-      const context: ScopeContext = {
-        framework: resolvedFramework(role, 'gsd'),
-        setup: gathered.setup,
-        codeDirs: ['src'],
-        isAttended: false,
-        mcpRoute: MCP_ROUTE,
-        launchStart: { kind: 'git-root' },
-        roles,
-      }
-      expect(scopes.get(role.id)).toEqual(compileScope(role, context))
-    }
-  })
-
-  test("a role is attended when an unmet hunk is on its own framework's config file (ROLE-04, A5)", () => {
-    const team = [templateRole('be'), withFramework(templateRole('qa'), 'superpowers')]
-    const attended = (hunks: readonly HunkOp[]): boolean[] => {
-      const scopes = scopesFor(team, 'gsd', gathered, hunks, { kind: 'git-root' })
-
-      return team.map(role => cardOf(scopes, role.id).isAttended)
-    }
-    expect(attended([])).toEqual([false, false])
-    expect(attended([gsdHunk()])).toEqual([false, false])
-    expect(attended([gsdHunk({ isAccepted: false })])).toEqual([true, false])
-    expect(attended([gsdHunk({ isRunnable: false })])).toEqual([true, false])
-    expect(attended([gsdHunk({ isRequired: false, isAccepted: false })])).toEqual([false, false])
-    expect(attended([gsdHunk({ isAccepted: false, file: 'other/config.json' })])).toEqual([false, false])
-  })
 
   test('init --dry-run replies with the plan of desiredFiles and buildPlan, the policy, start and note', async () => {
     const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
