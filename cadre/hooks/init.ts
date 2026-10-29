@@ -95,6 +95,7 @@ import type { NameAssignment, SkillGroup } from './init/assign-rules'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
 import { historyStep } from './init/stages/history'
+import { hunkQuestion, parseHunkAnswer } from './init/stages/hunks'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -111,7 +112,6 @@ import { GITIGNORE_FILE, isRepoFolder, isSafeRelativePath, memoryFoldersOf, role
 import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
 import { planReadPaths, planWithManifest } from './plan/plan'
 import { DRY_RUN_NOTE, planSummary, renderPlan } from './plan/text'
-import { hunkQuestion, parseHunkAnswer } from './recommend'
 import { partRecord, withPartRecords } from './records'
 import { applyAdjust, parseAdjust } from './roles/adjust'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'

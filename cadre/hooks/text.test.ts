@@ -252,6 +252,7 @@ import {
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from './init/stages/history'
+import { hunkQuestion } from './init/stages/hunks'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -294,7 +295,6 @@ import { gitignoreLines, IGNORE_BEGIN, IGNORE_END, ignoreLines, SECURITY_REPORTS
 import { HUNK_FILES } from './plan/plan'
 import { DRY_RUN_NOTE, planSummary } from './plan/text'
 import { PROBE_CHECK_KINDS, probeExpectationsText } from './probe/probe'
-import { hunkQuestion } from './recommend'
 import { TOP_OF_FILE } from './records'
 import { improverNotOfferedWarning } from './regen/plan'
 import {

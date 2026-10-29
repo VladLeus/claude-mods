@@ -1,9 +1,16 @@
-import type { AskSpec } from '../types'
-import { labelled } from './core/labelled'
-import type { Labelled } from './core/labelled'
-import { reportText } from './core/text'
-import { targetText } from './framework/gsd/hunks'
-import type { HunkCandidate } from './framework/gsd/hunks'
+/**
+ * The hunk questions of init (ROLE-04), a layer 10 module: the dialog for one hunk, a config change an adapter proposes
+ * (hunkQuestion: the file and key, the before and after values, why, and whether autonomy requires it, with the
+ * buttons Accept and Decline), and parseHunkAnswer, which reads the answer; the proposals and their ops are
+ * framework/gsd/hunks'. Pure: it builds what init asks through the InitIo port, imports core and framework/gsd/hunks,
+ * and never imports init.ts, which imports it, or init/run.
+ */
+import type { AskSpec } from '../../../types'
+import { labelled } from '../../core/labelled'
+import type { Labelled } from '../../core/labelled'
+import { reportText } from '../../core/text'
+import { targetText } from '../../framework/gsd/hunks'
+import type { HunkCandidate } from '../../framework/gsd/hunks'
 
 /** The dialog button that accepts a hunk; a typed answer of the same word counts the same, in any case. */
 const ACCEPT_OPTION = 'Accept'

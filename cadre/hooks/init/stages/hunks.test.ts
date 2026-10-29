@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PortRead, SettingProposal } from '../types'
-import { GSD_AUTONOMY } from './framework/gsd/adapter'
-import { hunkCandidates, hunkOp, NOT_SET_TEXT } from './framework/gsd/hunks'
-import type { HunkCandidate } from './framework/gsd/hunks'
-import { hunkQuestion, parseHunkAnswer } from './recommend'
-import { BIDI_OVERRIDE } from './testkit'
+import type { PortRead, SettingProposal } from '../../../types'
+import { GSD_AUTONOMY } from '../../framework/gsd/adapter'
+import { hunkCandidates, hunkOp, NOT_SET_TEXT } from '../../framework/gsd/hunks'
+import type { HunkCandidate } from '../../framework/gsd/hunks'
+import { BIDI_OVERRIDE } from '../../testkit'
+import { hunkQuestion, parseHunkAnswer } from './hunks'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
 function row(key: string): SettingProposal {
