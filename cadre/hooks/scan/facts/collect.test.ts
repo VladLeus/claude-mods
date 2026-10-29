@@ -59,6 +59,25 @@ describe('collectFacts', () => {
     expect(unbuilt).toEqual([])
   })
 
+  test('a probe the port cannot answer counts as present, so the read is tried and warns (fail open)', async () => {
+    const exists = async (path: string): Promise<boolean | null> =>
+      path === `${USER_GSD}/VERSION` ? null : path === USER_GSD
+    const { raw } = await collectFacts(fakePort([], [], { exists }), DEFAULT_LOCATIONS)
+
+    expect(raw.warnings).toContain('could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
+  })
+
+  test('a GSD folder whose probe the port cannot answer counts as present', async () => {
+    const built = `${USER_GSD}/bin/lib/cli-exit.cjs`
+    const exists = async (path: string): Promise<boolean | null> => (path === USER_GSD ? null : path === built)
+    const calls: IdentityCall[] = []
+
+    await collectFacts(fakePort([], calls, { exists }), DEFAULT_LOCATIONS)
+
+    const argv = ['node', `${USER_GSD}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+    expect(calls).toEqual([{ argv, cwd: USER_GSD }])
+  })
+
   test('a settings source that throws is skipped with a warning', async () => {
     // The port maps a host throw to null, so a null is what the collector sees of a source that threw.
     const settings = async (source: SettingsSource): Promise<unknown> => (source === 'project' ? null : {})

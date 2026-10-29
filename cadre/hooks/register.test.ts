@@ -700,6 +700,16 @@ describe('register with a faked host', () => {
     expect(out.text).not.toContain('/home/u')
   })
 
+  test(
+    'a VERSION exists probe the host refuses counts as present, so the read is tried and warns (fail open)',
+    async ($, on) => {
+      const versionPath = '/home/u/.claude/gsd-core/VERSION'
+      fakeHost(on, { ...ambiguousWorld(), denyExists: [versionPath], denyPaths: [versionPath] }, newLog())
+      const out = await $.command.run({ command: 'cadre', args: 'detect' })
+      expect(out.text).toContain('Warning: could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
+    },
+  )
+
   test('a runtime identity answer for another package never makes the GSD row installed', async ($, on) => {
     const log = newLog()
     const decoy = {
