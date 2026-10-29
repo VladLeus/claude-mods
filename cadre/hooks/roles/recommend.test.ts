@@ -1,9 +1,17 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, Recommendation, RepoScan, RoleSpec, ScanFinding, TemplateRoleId } from '../../types'
+import type {
+  FrameworkId,
+  Recommendation,
+  RepoScan,
+  RoleSpec,
+  ScanFinding,
+  SetupScan,
+  TemplateRoleId,
+} from '../../types'
 import { pluginInstallArgv } from '../apply/installs'
 import { scanRepo } from '../scan/repo'
-import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef } from '../testkit'
+import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, session, skillRef, templateRole } from '../testkit'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN } from './infra'
 import { INSTALL_COMMANDS, missingSecurityPlugins, recommend } from './recommend'
@@ -447,5 +455,33 @@ describe('security recommendations (decision #39)', () => {
         expect(security.map(line => line.tool)).toEqual(names)
       }
     }
+  })
+})
+
+/** The plugin key of claude-security in Anthropic's official marketplace (decision #39). */
+const SECURITY_KEY = 'claude-security@claude-plugins-official'
+
+/** The plugin key of security-guidance in Anthropic's official marketplace (decision #39). */
+const GUIDANCE_KEY = 'security-guidance@claude-plugins-official'
+
+/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
+const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
+
+describe('security plugin installs (decision #39)', () => {
+  test('only a team with a role standing for Security misses a plugin; only an installed exact key counts', () => {
+    const team = [templateRole('pm'), templateRole('security')]
+    const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security' })
+    const installed = (keys: readonly string[]): SetupScan => emptySetupScan({ installedPlugins: keys })
+    expect(missingSecurityPlugins([templateRole('pm'), templateRole('tl')], emptySetupScan())).toEqual([])
+    expect(missingSecurityPlugins(team, emptySetupScan())).toEqual(SECURITY_KEYS)
+    expect(missingSecurityPlugins([appsec], emptySetupScan())).toEqual(SECURITY_KEYS)
+    expect(missingSecurityPlugins(team, installed([SECURITY_KEY]))).toEqual([GUIDANCE_KEY])
+    expect(missingSecurityPlugins(team, installed([GUIDANCE_KEY]))).toEqual([SECURITY_KEY])
+    expect(missingSecurityPlugins(team, installed(SECURITY_KEYS))).toEqual([])
+    // A lookalike key of another marketplace is not the plugin cadre installs (T-03-46).
+    const lookalikes = ['claude-security@other-market', 'security-guidance@other-market', 'claude-security']
+    expect(missingSecurityPlugins(team, installed(lookalikes))).toEqual(SECURITY_KEYS)
+    // A key that only a settings file enables, the repo's own included, is not installed (#69 A1).
+    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual(SECURITY_KEYS)
   })
 })

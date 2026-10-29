@@ -1,12 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile } from '../../types'
+import { attendedNote } from '../framework/gsd/hunks'
+import { untrackedPartsWarning } from '../generate/gittrack'
 import { planWithManifest } from '../plan/plan'
 import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, USER_DIR_LISTED } from '../testkit'
+import { hunkFailureLine } from './hunks'
+import type { HunkRun } from './hunks'
 import { improverArgv } from './improver'
 import type { BuiltFile } from './improver'
 import type { ApplyInput, ApplyStep } from './private'
-import { writeImproved, writeSteps, writeWithImprover } from './run'
+import {
+  APPLIED_NONE_NOTE,
+  appliedLines,
+  MANIFEST_SKIPPED_NOTE,
+  NEXT_STEP_NOTE,
+  writeImproved,
+  writeSteps,
+  writeWithImprover,
+} from './run'
 import type { ApplyOutcome } from './run'
 import { applySteps } from './steps'
 
@@ -139,5 +151,82 @@ describe('written set by absolute path and kind (D-242)', () => {
     const outcome = await collidingRun([BE_PRIVATE_FILE], [BE_TEXT_FILE])
 
     expect(outcome.improved).toBeNull()
+  })
+})
+
+/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
+function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
+  return {
+    written: [],
+    executable: [],
+    failed: [],
+    refused: [],
+    notExecutable: [],
+    chmodRefusals: [],
+    hunkFailures: [],
+    attended: [],
+    installed: [],
+    installProblems: [],
+    untrackedParts: [],
+    privateProblems: [],
+    manifestSkipped: false,
+    improverWarnings: [],
+    improved: null,
+    ...over,
+  }
+}
+
+/** The refusal writeProblem gives for the launcher of BE. */
+const BE_REFUSED = 'refused to write .cadre/bin/be: it or a folder above it is a link, or not inside the repo'
+
+/** The line for the launcher of BE when its write was refused or failed, so no chmod ran (RESEARCH 3.2). */
+const BE_NOT_EXECUTABLE = 'warning: .cadre/bin/be was not made executable: its write was refused or failed'
+
+describe('init apply (D-105)', () => {
+  test('the apply notes are fixed', () => {
+    const skipped = '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.'
+    expect(APPLIED_NONE_NOTE).toBe('Applied: nothing to write; every file is up to date.')
+    expect(NEXT_STEP_NOTE).toBe('Next: run /cadre start <id> to launch a role.')
+    expect(MANIFEST_SKIPPED_NOTE).toBe(skipped)
+  })
+
+  test('appliedLines: the count, one warning line per problem in a fixed order, the next step last', () => {
+    const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
+    const outcome = outcomeOf({
+      written: ['.cadre/pm/ROLE.md'],
+      failed: ['.cadre/be/ROLE.md'],
+      refused: [BE_REFUSED],
+      notExecutable: ['.cadre/bin/pm'],
+      chmodRefusals: ['.cadre/bin/be was not made executable: its write was refused or failed'],
+      hunkFailures: [run],
+      attended: ['mode'],
+      manifestSkipped: true,
+    })
+    expect(appliedLines(outcome)).toEqual([
+      'Applied: wrote 1 file (0 executable).',
+      `warning: ${BE_REFUSED}`,
+      'warning: could not write .cadre/be/ROLE.md',
+      BE_NOT_EXECUTABLE,
+      'warning: could not make .cadre/bin/pm executable: run chmod 755 .cadre/bin/pm',
+      `warning: ${hunkFailureLine(run)}`,
+      `warning: ${attendedNote(['mode'])}`,
+      `warning: ${MANIFEST_SKIPPED_NOTE}`,
+      NEXT_STEP_NOTE,
+    ])
+    expect(appliedLines(outcomeOf())).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
+    expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
+  })
+
+  test('appliedLines: the untracked-parts warnings come right after the install problems (02-GAPS-B2 M3)', () => {
+    const untracked = untrackedPartsWarning('notes/local.md')
+    const problems = { installProblems: ['install it by hand'], untrackedParts: [untracked] }
+    const outcome = outcomeOf({ ...problems, manifestSkipped: true })
+    expect(appliedLines(outcome)).toEqual([
+      APPLIED_NONE_NOTE,
+      'warning: install it by hand',
+      `warning: ${untracked}`,
+      `warning: ${MANIFEST_SKIPPED_NOTE}`,
+      NEXT_STEP_NOTE,
+    ])
   })
 })

@@ -4,7 +4,7 @@ import type { RepoScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { scanRepo } from '../../scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, repoScan } from '../../testkit'
-import { scanSummaryLines, truncatedLine } from './scan'
+import { scanContextLine, scanSummaryLines, truncatedLine } from './scan'
 
 /** The middle of the partial line for deeper folders listed only in part (D-137). */
 const IN_PART = 'listed only in part (the first 200 entries each)'
@@ -223,5 +223,25 @@ describe('truncatedLine (G-02-1e)', () => {
     const files = Array.from({ length: 20_001 }, (_, at) => entry(`f${String(at).padStart(5, '0')}.txt`))
     const repo = await scanRepo(memIo(memWorld({ dirs: { '/repo': files } }), []).io, '/repo')
     expect(truncatedLine(repo)).toBe(`  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`)
+  })
+})
+
+describe('question context lines (G-02-1)', () => {
+  test('scanContextLine names the stack and each kind of finding, or none', () => {
+    const repo = repoScan({
+      languages: ['JavaScript', 'TypeScript'],
+      findings: [
+        { kind: 'be', label: 'express', evidence: 'package.json' },
+        { kind: 'e2e', label: 'Playwright config', evidence: 'playwright.config.ts' },
+        { kind: 'fe', label: 'next', evidence: 'package.json' },
+        { kind: 'fe', label: 'react', evidence: 'package.json' },
+        { kind: 'test', label: 'vitest', evidence: 'package.json' },
+      ],
+      hasSource: true,
+    })
+    expect(scanContextLine(repo)).toBe(
+      'Scan: stack JavaScript, TypeScript; frontend next, react; backend express; tests vitest; E2E Playwright config.',
+    )
+    expect(scanContextLine(repoScan())).toBe('Scan: stack none; frontend none; backend none; tests none; E2E none.')
   })
 })

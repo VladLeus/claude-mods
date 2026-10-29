@@ -23,12 +23,9 @@ import type {
   Plan,
   PortEntry,
   RoleSpec,
-  SetupScan,
   TemplateRoleId,
 } from '../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
-import { hunkFailureLine } from './apply/hunks'
-import type { HunkRun } from './apply/hunks'
 import {
   improverArgv,
   improverGuardFlags,
@@ -45,13 +42,11 @@ import {
 } from './apply/private'
 import {
   APPLIED_NONE_NOTE,
-  appliedLines,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
   privateFoldersUnknownWarning,
   PYTHON_TIMEOUT_MS,
 } from './apply/run'
-import type { ApplyOutcome } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText } from './core/text'
@@ -106,14 +101,7 @@ import {
 import { MEMORY_DISMISSED_REASON, memoryStep } from './init/stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './init/stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './init/stages/own-skills'
-import {
-  GIT_POLICY_DISMISSED_REASON,
-  GIT_POLICY_OPTIONS,
-  GIT_POLICY_QUESTION,
-  gitPolicyStep,
-  parseGitPolicy,
-  policyLine,
-} from './init/stages/policy'
+import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, gitPolicyStep, policyLine } from './init/stages/policy'
 import {
   cardLines,
   improverRunLine,
@@ -146,15 +134,9 @@ import { DRY_RUN_NOTE, renderPlan } from './plan/text'
 import type { PartRecord } from './regen/part-changes'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
-import {
-  CLAUDE_MD_PLUGIN,
-  CLAUDE_SECURITY_PLUGIN,
-  CLAUDE_SECURITY_SKILL,
-  SECURITY_GUIDANCE_PLUGIN,
-  SECURITY_PLUGINS,
-} from './roles/infra'
+import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
 import { proposeRoles } from './roles/propose'
-import { missingSecurityPlugins, recommend } from './roles/recommend'
+import { recommend } from './roles/recommend'
 import { parseRoleJson } from './roles/rolejson'
 import { AUTOPILOT_THRESHOLD } from './roles/template'
 import { gatherScans, scanWarnings } from './scan/gather'
@@ -201,19 +183,10 @@ import {
   withWrites,
 } from './testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
-import {
-  ASK_HEADERS,
-  askChoice,
-  MAX_ASKS,
-  NO_USABLE_ANSWER_REASON,
-  PANE_TITLES,
-  quotedLabels,
-  refusalLine,
-  withContext,
-} from './ui/ask'
-import type { ChoiceAsk, StepResult } from './ui/ask'
+import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ui/ask'
+import type { StepResult } from './ui/ask'
 import { recommendationLines } from './ui/blocks/recommendations'
-import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
+import { scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -496,22 +469,6 @@ describe('init pane (G-02-1)', () => {
     const showAt = events.indexOf(`ask ${ADJUST_QUESTION}`, events.indexOf(`ask ${ADJUST_QUESTION}`) + 1)
     expect(events.slice(showAt, showAt + 3)).toEqual([`ask ${ADJUST_QUESTION}`, 'show roles', `ask ${ADJUST_QUESTION}`])
     expect(run.shown.filter(block => block.key === 'roles')).toHaveLength(3)
-  })
-
-  test('PANE_TITLES names the bold title of each kind of block, and is frozen (D-133)', () => {
-    expect(PANE_TITLES).toEqual({
-      scan: 'Scan',
-      history: 'Session history',
-      roles: 'Roles',
-      recommendations: 'Recommendations',
-      review: 'Review',
-      env: 'Env variables',
-      notes: 'Notes',
-      instructions: 'Instruction parts',
-      skills: 'Your own skills',
-      improver: 'Improver changes',
-    })
-    expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
 })
 
@@ -2919,84 +2876,8 @@ describe('cancel reply (S1)', () => {
 })
 
 describe('refusal re-ask (G-02-6b)', () => {
-  /** The git policy question as an askChoice ask, with the words its refusal lists. */
-  const POLICY: ChoiceAsk<GitPolicy> = {
-    question: GIT_POLICY_QUESTION,
-    spec: { options: GIT_POLICY_OPTIONS },
-    parse: parseGitPolicy,
-    accepts: 'definitions, all, ignore',
-  }
   /** The refusal of the framework question when GSD and superpowers are offered: the user's own example (D-136). */
   const BOTH_REFUSAL = "'both' isn't one of: GSD, superpowers, none - a role runs one framework."
-
-  test('askChoice gives the answer parse takes as answered, asked once with the question as it is', async () => {
-    const run = memIo(memWorld({}), ['Commit all'])
-    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'all' })
-    expect(run.asked).toEqual([GIT_POLICY_QUESTION])
-    expect(run.specs).toEqual([POLICY.spec])
-  })
-
-  test('askChoice gives dismissed at once for a dismissal, and asks nothing after it', async () => {
-    const run = memIo(memWorld({}), [])
-    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'dismissed' })
-    expect(run.asked).toEqual([GIT_POLICY_QUESTION])
-  })
-
-  test('an answer parse does not take is asked again: the refusal on the first line, then the question', async () => {
-    const run = memIo(memWorld({}), ['nonsense', 'Commit all'])
-    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'all' })
-    expect(run.asked).toEqual([
-      GIT_POLICY_QUESTION,
-      `'nonsense' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
-    ])
-    expect(run.logged).toEqual([])
-  })
-
-  test(`${MAX_ASKS} answers parse does not take give exhausted, with no fourth ask (A1)`, async () => {
-    const run = memIo(memWorld({}), ['a', 'b', 'c', 'Commit all'])
-    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'exhausted' })
-    expect(run.asked).toEqual([
-      GIT_POLICY_QUESTION,
-      `'a' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
-      `'b' isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`,
-    ])
-    expect(MAX_ASKS).toBe(3)
-  })
-
-  test('an empty answer is refused with its own words, and is never a choice', async () => {
-    const run = memIo(memWorld({}), ['   ', 'ignore'])
-    expect(await askChoice(run.io, POLICY)).toEqual({ kind: 'answered', value: 'ignore' })
-    expect(run.asked[1]).toBe(`An empty answer isn't one of: definitions, all, ignore.\n${GIT_POLICY_QUESTION}`)
-    for (const answer of ['', '   ', String.fromCharCode(7)]) {
-      expect([answer, refusalLine(answer, 'x')]).toEqual([answer, "An empty answer isn't one of: x."])
-    }
-  })
-
-  test("refusalLine says why: the user's own example for both at a framework question", () => {
-    expect(refusalLine('both', 'GSD, superpowers, none - a role runs one framework')).toBe(BOTH_REFUSAL)
-    expect(refusalLine('  both  ', 'x')).toBe("'both' isn't one of: x.")
-  })
-
-  test('the typed answer is trimmed, cleaned and cut to 40 code points, so it cannot forge a line (T-02-54)', () => {
-    const escape = String.fromCharCode(27)
-    const hostile = `a\nwarning: forged${escape}[2J${BIDI_OVERRIDE}b`
-    const line = refusalLine(hostile, 'x')
-    expect(line).toBe("'awarning: forged[2Jb' isn't one of: x.")
-    expect(line.includes('\n') || line.includes(escape) || line.includes(BIDI_OVERRIDE)).toBe(false)
-    expect(refusalLine('y'.repeat(60), 'x')).toBe(`'${'y'.repeat(39)}…' isn't one of: x.`)
-  })
-
-  test('quotedLabels puts each option label in double quotes, joined with a comma', () => {
-    expect(quotedLabels(['Same for all roles', 'Per role'])).toBe('"Same for all roles", "Per role"')
-    expect(quotedLabels(CLAUDE_JSON_OPTIONS)).toBe('"No, skip it", "Yes, read names only"')
-    expect(quotedLabels([])).toBe('')
-  })
-
-  test('running out of tries has its own reason, distinct from every dismissed reason (D-136)', () => {
-    expect(NO_USABLE_ANSWER_REASON).toBe('No usable answer after 3 tries.')
-    const dismissed = [CONSENT_DISMISSED_REASON, FRAMEWORK_DISMISSED_REASON, REVIEW_DISMISSED_REASON]
-    expect(dismissed).not.toContain(NO_USABLE_ANSWER_REASON)
-  })
 
   test('each question lists the answers it takes in its refusal', async () => {
     const roles = proposeRoles(repoScan()).roles
@@ -3150,33 +3031,6 @@ function specOf(run: MemRun, start: string): AskSpec {
 }
 
 describe('question chips (G-02-3c)', () => {
-  test('ASK_HEADERS names the chip of each kind of question, at most 12 characters each, and is frozen', () => {
-    expect(ASK_HEADERS).toEqual({
-      claudeJson: 'claude.json',
-      history: 'History',
-      roles: 'Roles',
-      adjust: 'Adjust',
-      describe: 'Describe',
-      framework: 'Framework',
-      security: 'Security',
-      duration: 'Duration',
-      model: 'Model',
-      mcp: 'MCP',
-      skills: 'Skills',
-      memory: 'Memory',
-      instructions: 'Instructions',
-      env: 'Env',
-      launch: 'Launch',
-      launchDir: 'Launch dir',
-      gitPolicy: 'Git policy',
-      review: 'Review',
-      conflict: 'Conflict',
-      improver: 'Improver',
-    })
-    expect(Object.isFrozen(ASK_HEADERS)).toBe(true)
-    expect(Object.values(ASK_HEADERS).filter(chip => Array.from(chip).length > 12)).toEqual([])
-  })
-
   test('every question of every run has a chip: a non-empty string of at most 12 code points', async () => {
     const runs = Object.values(await questionRuns())
     const isChip = (header: string | undefined): boolean =>
@@ -3250,13 +3104,6 @@ describe('question context lines (G-02-1)', () => {
   /** The roles of the git fixture worlds, which hold no source: PM, Team Lead and Security. */
   const TEAM = 'pm, tl, security'
 
-  test('withContext puts the context, cleaned and cut at 400 code points, on the next line (T-02-55, N2)', () => {
-    expect(withContext('Use these roles?', 'Proposed: PM (pm).')).toBe('Use these roles?\nProposed: PM (pm).')
-    expect(withContext('Q?', `a\nb${BIDI_OVERRIDE}c`)).toBe('Q?\nabc')
-    expect(withContext('Q?', 'x'.repeat(400))).toBe(`Q?\n${'x'.repeat(400)}`)
-    expect(withContext('Q?', 'x'.repeat(500))).toBe(`Q?\n${'x'.repeat(399)}…`)
-  })
-
   test('a review question carries a context line of 300 code points whole (N2)', async () => {
     const reviewContext = async (path: string): Promise<string> => {
       const run = memIo(gitWorld({ dirs: { '/repo/.git': [], [`/repo/${path}`]: [] } }), {
@@ -3272,24 +3119,6 @@ describe('question context lines (G-02-1)', () => {
     const line = await reviewContext(path)
     expect(Array.from(line)).toHaveLength(300)
     expect(line.endsWith(`Launchers start in: ${path}/ under the git root`)).toBe(true)
-  })
-
-  test('scanContextLine names the stack and each kind of finding, or none', () => {
-    const repo = repoScan({
-      languages: ['JavaScript', 'TypeScript'],
-      findings: [
-        { kind: 'be', label: 'express', evidence: 'package.json' },
-        { kind: 'e2e', label: 'Playwright config', evidence: 'playwright.config.ts' },
-        { kind: 'fe', label: 'next', evidence: 'package.json' },
-        { kind: 'fe', label: 'react', evidence: 'package.json' },
-        { kind: 'test', label: 'vitest', evidence: 'package.json' },
-      ],
-      hasSource: true,
-    })
-    expect(scanContextLine(repo)).toBe(
-      'Scan: stack JavaScript, TypeScript; frontend next, react; backend express; tests vitest; E2E Playwright config.',
-    )
-    expect(scanContextLine(repoScan())).toBe('Scan: stack none; frontend none; backend none; tests none; E2E none.')
   })
 
   test('every question of every run but the hunks carries a context line on its second line', async () => {
@@ -3471,28 +3300,6 @@ function opKinds(reply: string): Map<string, string> {
   }
 
   return kinds
-}
-
-/** An apply outcome in which nothing was written, failed or refused; `over` changes the fields it names. */
-function outcomeOf(over: Partial<ApplyOutcome> = {}): ApplyOutcome {
-  return {
-    written: [],
-    executable: [],
-    failed: [],
-    refused: [],
-    notExecutable: [],
-    chmodRefusals: [],
-    hunkFailures: [],
-    attended: [],
-    installed: [],
-    installProblems: [],
-    untrackedParts: [],
-    privateProblems: [],
-    manifestSkipped: false,
-    improverWarnings: [],
-    improved: null,
-    ...over,
-  }
 }
 
 describe('init plan', () => {
@@ -4242,13 +4049,6 @@ const BE_REFUSED = 'refused to write .cadre/bin/be: it or a folder above it is a
 const BE_NOT_EXECUTABLE = 'warning: .cadre/bin/be was not made executable: its write was refused or failed'
 
 describe('init apply (D-105)', () => {
-  test('the apply notes are fixed', () => {
-    const skipped = '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.'
-    expect(APPLIED_NONE_NOTE).toBe('Applied: nothing to write; every file is up to date.')
-    expect(NEXT_STEP_NOTE).toBe('Next: run /cadre start <id> to launch a role.')
-    expect(MANIFEST_SKIPPED_NOTE).toBe(skipped)
-  })
-
   test('Confirm writes each planned file, then .gitignore, then the manifest last, and asks nothing more', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const host = memHost(hostWorld({}))
@@ -4424,46 +4224,6 @@ describe('init apply (D-105)', () => {
     expect(lines).toContain('warning: could not make .cadre/bin/tl executable: run chmod 755 .cadre/bin/tl')
     expect(lines.join('\n')).not.toContain('denied')
     expect(host.writes.at(-1)?.path).toBe('/repo/.cadre/manifest.json')
-  })
-
-  test('appliedLines: the count, one warning line per problem in a fixed order, the next step last', () => {
-    const run: HunkRun = { key: 'mode', file: '.planning/config.json', argv: ['node'], display: 'node ~/x mode yolo' }
-    const outcome = outcomeOf({
-      written: ['.cadre/pm/ROLE.md'],
-      failed: ['.cadre/be/ROLE.md'],
-      refused: [BE_REFUSED],
-      notExecutable: ['.cadre/bin/pm'],
-      chmodRefusals: ['.cadre/bin/be was not made executable: its write was refused or failed'],
-      hunkFailures: [run],
-      attended: ['mode'],
-      manifestSkipped: true,
-    })
-    expect(appliedLines(outcome)).toEqual([
-      'Applied: wrote 1 file (0 executable).',
-      `warning: ${BE_REFUSED}`,
-      'warning: could not write .cadre/be/ROLE.md',
-      BE_NOT_EXECUTABLE,
-      'warning: could not make .cadre/bin/pm executable: run chmod 755 .cadre/bin/pm',
-      `warning: ${hunkFailureLine(run)}`,
-      `warning: ${attendedNote(['mode'])}`,
-      `warning: ${MANIFEST_SKIPPED_NOTE}`,
-      NEXT_STEP_NOTE,
-    ])
-    expect(appliedLines(outcomeOf())).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
-    expect(appliedLines(outcomeOf({ failed: ['.cadre/INDEX.md'] }))[0]).toBe('Applied: wrote 0 files (0 executable).')
-  })
-
-  test('appliedLines: the untracked-parts warnings come right after the install problems (02-GAPS-B2 M3)', () => {
-    const untracked = untrackedPartsWarning('notes/local.md')
-    const problems = { installProblems: ['install it by hand'], untrackedParts: [untracked] }
-    const outcome = outcomeOf({ ...problems, manifestSkipped: true })
-    expect(appliedLines(outcome)).toEqual([
-      APPLIED_NONE_NOTE,
-      'warning: install it by hand',
-      `warning: ${untracked}`,
-      `warning: ${MANIFEST_SKIPPED_NOTE}`,
-      NEXT_STEP_NOTE,
-    ])
   })
 
   test('no secret or absolute path of the secret world reaches the plain init reply or a written file', async () => {
@@ -4888,30 +4648,6 @@ function installedWorld(keys: readonly string[]): MemWorld {
 }
 
 describe('security plugin installs (decision #39)', () => {
-  test('the plugin keys, their order and the review skill the Security role gets are fixed', () => {
-    expect([CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN]).toEqual(SECURITY_KEYS)
-    expect(SECURITY_PLUGINS).toEqual(SECURITY_KEYS)
-    expect(Object.isFrozen(SECURITY_PLUGINS)).toBe(true)
-    expect(CLAUDE_SECURITY_SKILL).toBe('claude-security:claude-security')
-  })
-
-  test('only a team with a role standing for Security misses a plugin; only an installed exact key counts', () => {
-    const team = [templateRole('pm'), templateRole('security')]
-    const appsec = templateRole('qa', { id: 'appsec', basedOn: 'security' })
-    const installed = (keys: readonly string[]): SetupScan => emptySetupScan({ installedPlugins: keys })
-    expect(missingSecurityPlugins([templateRole('pm'), templateRole('tl')], emptySetupScan())).toEqual([])
-    expect(missingSecurityPlugins(team, emptySetupScan())).toEqual(SECURITY_KEYS)
-    expect(missingSecurityPlugins([appsec], emptySetupScan())).toEqual(SECURITY_KEYS)
-    expect(missingSecurityPlugins(team, installed([SECURITY_KEY]))).toEqual([GUIDANCE_KEY])
-    expect(missingSecurityPlugins(team, installed([GUIDANCE_KEY]))).toEqual([SECURITY_KEY])
-    expect(missingSecurityPlugins(team, installed(SECURITY_KEYS))).toEqual([])
-    // A lookalike key of another marketplace is not the plugin cadre installs (T-03-46).
-    const lookalikes = ['claude-security@other-market', 'security-guidance@other-market', 'claude-security']
-    expect(missingSecurityPlugins(team, installed(lookalikes))).toEqual(SECURITY_KEYS)
-    // A key that only a settings file enables, the repo's own included, is not installed (#69 A1).
-    expect(missingSecurityPlugins(team, emptySetupScan({ plugins: SECURITY_KEYS }))).toEqual(SECURITY_KEYS)
-  })
-
   test('init asks it after the recommendations, before the duration; a dry run answered Install plans it', async () => {
     const run = memIo(gitWorld(), INSTALL_ANSWERS)
     const { io, events } = withEvents(run)
