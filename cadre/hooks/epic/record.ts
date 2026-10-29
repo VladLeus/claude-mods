@@ -1,9 +1,9 @@
 /**
  * The epic record of /cadre epic (D-164, T-03.1-03), a layer 11 module: `cadre-epic.json` beside the worktree's git
  * files, which names the epic's key, slug, title, branch `epic/<slug>`, base and the links and copies its mirror made
- * (epicRecordText), and parseEpicRecord, which reads one back and gives null for any shape or path it cannot trust (fail
- * closed); with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It is pure and imports core; the other
- * epic modules read it.
+ * (epicRecordText), and parseEpicRecord, which reads one back and gives null for any shape or path it cannot trust
+ * (fail closed); with EPIC_BRANCH_PREFIX, the start of every epic branch name (D-146). It is pure and imports core; the
+ * other epic modules read it.
  */
 import type { EpicRecord } from '../../types'
 import { allOrNull, isObject, parseJsonValue, stableJson } from '../core/json'
