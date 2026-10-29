@@ -153,7 +153,6 @@ import {
   FRAMEWORK_LABELS,
   FRAMEWORK_QUESTION_PREFIX,
   frameworkRoleQuestion,
-  HUNK_DISMISSED_REASON,
   improverRunLine,
   initReplyText,
   LAUNCH_DIR_CANCELLED_REASON,
@@ -240,7 +239,7 @@ import {
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from './init/stages/history'
-import { hunkQuestion } from './init/stages/hunks'
+import { HUNK_DISMISSED_REASON, hunkQuestion } from './init/stages/hunks'
 import {
   IMPROVER_INSTALL_CONTEXT,
   IMPROVER_INSTALL_DISMISSED_REASON,

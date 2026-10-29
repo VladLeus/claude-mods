@@ -46,11 +46,8 @@ import type { Labelled } from './core/labelled'
 import { asSentence, clean, compareText, countedNoun, idsOrNone, pad, reportText, shown } from './core/text'
 import { choiceLine } from './detect/report'
 import { chooseFramework } from './framework/contract'
-import { attendedNote, hunkCandidates, hunkOp, isUnmetHunk } from './framework/gsd/hunks'
-import type { HunkCandidate } from './framework/gsd/hunks'
 import { provenUserDir } from './framework/gsd/identity'
-import { resolveToolCommand } from './framework/gsd/tools'
-import { ADAPTERS, detectAll } from './framework/registry'
+import { detectAll } from './framework/registry'
 import { desiredFiles } from './generate/files'
 import { trackedParts } from './generate/gittrack'
 import { builtClaudeMdPath } from './generate/launcher'
@@ -80,7 +77,7 @@ import { carryStep } from './init/stages/carry'
 import { consentStep } from './init/stages/consent'
 import { durationStep, idsOf, withDuration } from './init/stages/duration'
 import { historyStep } from './init/stages/history'
-import { hunkQuestion, parseHunkAnswer } from './init/stages/hunks'
+import { hunkStep } from './init/stages/hunks'
 import { improverInstallStep } from './init/stages/improver-install'
 import {
   CONTENT_DISMISSED_REASON,
@@ -110,7 +107,6 @@ import { parseRoleJson } from './roles/rolejson'
 import { standsFor } from './roles/template'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
-import type { Gathered } from './scan/gather'
 import type { HistoryScan } from './scan/history'
 import { readInstructionFiles, repoInstructionNames } from './scan/instructions/read'
 import type { InstructionSources } from './scan/instructions/read'
@@ -1235,64 +1231,6 @@ async function instructionsAgain(
   if (handout.kind === 'parts') return handOutParts(io, roles, setup, handout)
 
   return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: handout }))
-}
-
-/** Why init cancels when a hunk question is dismissed (A1, ROLE-04); unread answers give NO_USABLE_ANSWER_REASON. */
-export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answered.'
-
-/**
- * The autonomy hunk step (ROLE-04, D-70, D-71, D-72). The framework adapters decide the file and the proposals (A5):
- * for each adapter in ADAPTERS order whose framework a role runs on (resolvedFramework), autonomyHunks(setup) gives
- * the config file its hunks change and the proposals to offer, or null when the framework has no config file to
- * change. Each such file is read through readRepoFile, so a file that links out of the repo is unknown and never read.
- * When no adapter offers a hunk, nothing is asked and there are no hunks. Otherwise each hunk hunkCandidates offers is
- * asked one by one, in that order under `Hunk <i> of <n>`, as its before and after with Accept or Decline
- * (hunkQuestion, parseHunkAnswer). Each op records the answer, the exact command and whether cadre can run it, which
- * only a proven user-level GSD allows (provenUserDir, resolveToolCommand); nothing runs here. When a required hunk is
- * declined or cannot run (isUnmetHunk), the roles stay attended and the attended note names those keys. An answer that
- * is neither Accept nor Decline is asked again with why on top (D-136). A dismissal gives the cancel reason
- * HUNK_DISMISSED_REASON, and MAX_ASKS answers that are neither NO_USABLE_ANSWER_REASON, so no hunk counts as accepted
- * (A1).
- */
-export async function hunkStep(
-  io: InitIo,
-  input: {
-    readonly roles: readonly RoleSpec[]
-    readonly repoDefault: FrameworkId | null
-    readonly gathered: Gathered
-    readonly locations: InitLocations
-  },
-): Promise<StepResult<readonly HunkOp[]>> {
-  const { roles, repoDefault, gathered, locations } = input
-  const inUse = roles.map(role => resolvedFramework(role, repoDefault))
-  const candidates: HunkCandidate[] = []
-  for (const adapter of ADAPTERS) {
-    if (!inUse.includes(adapter.id)) continue
-    const offered = adapter.autonomyHunks(gathered.setup)
-    if (offered === null) continue
-    const config = await readRepoFile(io, locations.root, offered.file, MAX_READ_BYTES)
-    candidates.push(...hunkCandidates(offered.proposals, config))
-  }
-  if (candidates.length === 0) return accepted([])
-
-  const gsd = {
-    userDir: provenUserDir(gathered.facts),
-    home: locations.home,
-    root: locations.root,
-    configDir: locations.configDir,
-  }
-  const hunks: HunkOp[] = []
-  for (const [index, candidate] of candidates.entries()) {
-    const { question, spec } = hunkQuestion(candidate, index + 1, candidates.length)
-    const ask = { question, spec, parse: parseHunkAnswer, accepts: quotedLabels(spec.options) }
-    const isAccepted = choiceResult(await askChoice(io, ask), HUNK_DISMISSED_REASON)
-    if (isAccepted.kind === 'cancelled') return isAccepted
-    hunks.push(hunkOp(candidate, isAccepted.value, resolveToolCommand(candidate.proposal.write, gsd)))
-  }
-  const unmet = hunks.filter(isUnmetHunk).map(hunk => hunk.key)
-  if (unmet.length > 0) await noteLine(io, attendedNote(unmet))
-
-  return accepted(hunks)
 }
 
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
