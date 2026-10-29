@@ -51,6 +51,7 @@ export const GOLDEN_CALLS: Readonly<Record<string, readonly string[]>> = {
     "[[\"git\",\"-C\",\"/repo\",\"worktree\",\"list\",\"--porcelain\"],{\"timeoutMs\":30000}]",
     "[[\"git\",\"-C\",\"/repo\",\"for-each-ref\",\"--format=%(refname:short)\",\"refs/heads/epic/\"],{\"timeoutMs\":30000}]",
     "[[\"git\",\"-C\",\"/repo/.claude/worktrees/proj-1-x\",\"rev-parse\",\"--absolute-git-dir\"],{\"timeoutMs\":30000}]",
+    "[[\"git\",\"-C\",\"/repo/.claude/worktrees/proj-1-x\",\"rev-parse\",\"--absolute-git-dir\"],{\"timeoutMs\":30000}]",
     "[[\"git\",\"-C\",\"/repo\",\"ls-files\",\"-z\",\"--others\",\"--directory\",\"--exclude-standard\"],{\"timeoutMs\":30000}]",
     "[[\"git\",\"-C\",\"/repo\",\"ls-files\",\"-z\",\"--others\",\"--ignored\",\"--directory\",\"--exclude-standard\"],{\"timeoutMs\":30000}]",
     "[[\"git\",\"-C\",\"/repo\",\"config\",\"--includes\",\"--global\",\"--path\",\"core.excludesFile\"],{\"timeoutMs\":30000}]",

@@ -59,7 +59,7 @@ import {
   epicPmOf,
   TL_ROLE,
 } from './pick'
-import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, parseEpicRecord } from './record'
+import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, readEpicRecord } from './record'
 
 /**
  * The reply when `git worktree add` fails or cannot run (RESEARCH Pitfall 3), naming the branch cleaned. With `-b`,
@@ -404,10 +404,9 @@ export async function runEpic(
   }
 
   if (lookup.kind === 'reuse') {
+    const parsed = await readEpicRecord(io, host, lookup.path)
     const asked = await host.run(GIT_DIR_ARGV(lookup.path), { timeoutMs: GIT_TIMEOUT_MS })
     const recordDir = asked !== null && asked.exitCode === 0 ? asked.stdout.trim() : ''
-    const read = recordDir.startsWith('/') ? await io.read(epicRecordPath(recordDir), MAX_READ_BYTES) : null
-    const parsed = read !== null && read.state === 'text' ? parseEpicRecord(read.text) : null
     // An unreadable record is written anew with what this run can name; its base is not known any more.
     const record: EpicRecord = parsed ?? {
       schema: 1,

@@ -159,6 +159,7 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "git -C /repo worktree list --porcelain @ -",
       "git -C /repo for-each-ref --format=%(refname:short) refs/heads/epic/ @ -",
       "git -C /repo/.claude/worktrees/proj-1-x rev-parse --absolute-git-dir @ -",
+      "git -C /repo/.claude/worktrees/proj-1-x rev-parse --absolute-git-dir @ -",
       "git -C /repo ls-files -z --others --directory --exclude-standard @ -",
       "git -C /repo ls-files -z --others --ignored --directory --exclude-standard @ -",
       "git -C /repo config --includes --global --path core.excludesFile @ -",
