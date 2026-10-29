@@ -19,134 +19,61 @@ import type {
   InstructionPart,
   ManifestEntry,
   MemoryItem,
-  PaneKey,
   Plan,
   PortEntry,
   RoleSpec,
   TemplateRoleId,
-} from '../types'
-import { CONFLICT_OPTIONS, conflictQuestion } from './apply/conflict'
+} from '../../types'
+import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
 import {
   improverArgv,
   improverGuardFlags,
   improverLine,
   improverNoChangeNote,
   otherChangesWarning,
-} from './apply/improver'
-import { installedLine, installFailureText, MARKETPLACE_ADD_ARGV } from './apply/installs'
+} from '../apply/improver'
+import { installedLine, installFailureText, MARKETPLACE_ADD_ARGV } from '../apply/installs'
 import {
   instructionsRecordPath,
   instructionsRecordText,
   privateClaudeMdPath,
   privateClaudeMdText,
-} from './apply/private'
+} from '../apply/private'
 import {
   APPLIED_NONE_NOTE,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
   privateFoldersUnknownWarning,
   PYTHON_TIMEOUT_MS,
-} from './apply/run'
-import { sha256Hex } from './core/hash'
-import { stableJson } from './core/json'
-import { compareText } from './core/text'
-import { attendedNote } from './framework/gsd/hunks'
-import { roleClaudeMdText } from './generate/docs'
-import { desiredFiles } from './generate/files'
-import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from './generate/gittrack'
-import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
-import { CONFLICT_CONTEXT } from './init/initapply'
-import { planStep } from './init/initplan'
-import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED, INIT_HOME_ROOT_REPLY } from './init/replies'
-import { runInit } from './init/run'
-import type { InitOptions } from './init/run'
-import { assignmentStep } from './init/stages/assign'
-import { carryStep, ENV_DISMISSED_REASON } from './init/stages/carry'
-import {
-  CLAUDE_JSON_CONTEXT,
-  CLAUDE_JSON_OPTIONS,
-  CLAUDE_JSON_QUESTION,
-  CONSENT_DISMISSED_REASON,
-  consentStep,
-} from './init/stages/consent'
-import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStep } from './init/stages/duration'
-import {
-  FRAMEWORK_ALL_QUESTION,
-  FRAMEWORK_DISMISSED_REASON,
-  FRAMEWORK_QUESTION_PREFIX,
-  frameworkStep,
-} from './init/stages/frameworks'
-import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './init/stages/history'
-import { HUNK_DISMISSED_REASON } from './init/stages/hunks'
-import {
-  IMPROVER_INSTALL_CONTEXT,
-  IMPROVER_INSTALL_DISMISSED_REASON,
-  IMPROVER_INSTALL_QUESTION,
-} from './init/stages/improver-install'
-import {
-  CONTENT_DISMISSED_REASON,
-  CONTENT_OPTIONS,
-  CONTENT_QUESTION,
-  INSTRUCTIONS_ENTRY_QUESTION,
-  instructionsStep,
-  parseContentConsent,
-} from './init/stages/instructions'
-import {
-  LAUNCH_DIR_QUESTION,
-  LAUNCH_START_DISMISSED_REASON,
-  LAUNCH_START_QUESTION,
-  launchLine,
-  launchStartStep,
-} from './init/stages/launch'
-import { MEMORY_DISMISSED_REASON, memoryStep } from './init/stages/memory'
-import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './init/stages/model'
-import { ASSIGNMENT_DISMISSED_REASON } from './init/stages/own-skills'
-import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, gitPolicyStep, policyLine } from './init/stages/policy'
-import {
-  cardLines,
-  improverRunLine,
-  LINKED_MEMORIES_ROW,
-  MAX_REVIEW_ROUNDS,
-  parseReviewItem,
-  PRIVATE_FILES_HEADING,
-  privateFilesRow,
-  REVIEW_DISMISSED_REASON,
-  REVIEW_OPTIONS,
-  REVIEW_QUESTION,
-  REVIEW_ROUNDS_REASON,
-  REVIEW_TYPE_HINT,
-} from './init/stages/review'
-import {
-  ADJUST_QUESTION,
-  DESCRIBE_QUESTION,
-  MAX_ROLE_ROUNDS,
-  proposalLines,
-  ROLE_ROUNDS_REASON,
-  ROLES_DISMISSED_REASON,
-  ROLES_QUESTION,
-  rolesStep,
-} from './init/stages/roles'
-import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityInstallStep } from './init/stages/security'
-import { isPartsFlowRole } from './launch/links'
-import { gitignoreLines, mergeIgnoreBlock } from './plan/gitignore'
-import { buildPlan } from './plan/plan'
-import { DRY_RUN_NOTE, renderPlan } from './plan/text'
-import type { PartRecord } from './regen/part-changes'
-import { runRegen } from './regen/run'
-import type { RegenOptions } from './regen/run'
-import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from './roles/infra'
-import { proposeRoles } from './roles/propose'
-import { recommend } from './roles/recommend'
-import { parseRoleJson } from './roles/rolejson'
-import { AUTOPILOT_THRESHOLD } from './roles/template'
-import { gatherScans, scanWarnings } from './scan/gather'
-import { scanRepo } from './scan/repo'
-import { scanSetup } from './scan/setup/setup'
-import { scopeCardLines } from './scope/card'
-import { MAX_PROPOSE_ATTEMPTS } from './suggest/checked'
-import { RECOMMEND_SYSTEM } from './suggest/instructions'
-import { TOPICS_SYSTEM } from './suggest/topics'
-import { scopesFor } from './team'
+} from '../apply/run'
+import { sha256Hex } from '../core/hash'
+import { stableJson } from '../core/json'
+import { compareText } from '../core/text'
+import { attendedNote } from '../framework/gsd/hunks'
+import { roleClaudeMdText } from '../generate/docs'
+import { desiredFiles } from '../generate/files'
+import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
+import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { isPartsFlowRole } from '../launch/links'
+import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
+import { buildPlan } from '../plan/plan'
+import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
+import type { PartRecord } from '../regen/part-changes'
+import { runRegen } from '../regen/run'
+import type { RegenOptions } from '../regen/run'
+import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from '../roles/infra'
+import { proposeRoles } from '../roles/propose'
+import { recommend } from '../roles/recommend'
+import { parseRoleJson } from '../roles/rolejson'
+import { AUTOPILOT_THRESHOLD } from '../roles/template'
+import { gatherScans, scanWarnings } from '../scan/gather'
+import { scanRepo } from '../scan/repo'
+import { scanSetup } from '../scan/setup/setup'
+import { scopeCardLines } from '../scope/card'
+import { MAX_PROPOSE_ATTEMPTS } from '../suggest/checked'
+import { RECOMMEND_SYSTEM } from '../suggest/instructions'
+import { TOPICS_SYSTEM } from '../suggest/topics'
+import { scopesFor } from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
   BIDI_OVERRIDE,
@@ -181,12 +108,84 @@ import {
   withEvents,
   withStats,
   withWrites,
-} from './testkit'
-import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from './testkit'
-import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from './ui/ask'
-import type { StepResult } from './ui/ask'
-import { recommendationLines } from './ui/blocks/recommendations'
-import { scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
+} from '../testkit'
+import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
+import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from '../ui/ask'
+import type { StepResult } from '../ui/ask'
+import { recommendationLines } from '../ui/blocks/recommendations'
+import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import { CONFLICT_CONTEXT } from './initapply'
+import { planStep } from './initplan'
+import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED, INIT_HOME_ROOT_REPLY } from './replies'
+import { runInit } from './run'
+import type { InitOptions } from './run'
+import { assignmentStep } from './stages/assign'
+import { carryStep, ENV_DISMISSED_REASON } from './stages/carry'
+import {
+  CLAUDE_JSON_CONTEXT,
+  CLAUDE_JSON_OPTIONS,
+  CLAUDE_JSON_QUESTION,
+  CONSENT_DISMISSED_REASON,
+  consentStep,
+} from './stages/consent'
+import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStep } from './stages/duration'
+import {
+  FRAMEWORK_ALL_QUESTION,
+  FRAMEWORK_DISMISSED_REASON,
+  FRAMEWORK_QUESTION_PREFIX,
+  frameworkStep,
+} from './stages/frameworks'
+import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './stages/history'
+import { HUNK_DISMISSED_REASON } from './stages/hunks'
+import {
+  IMPROVER_INSTALL_CONTEXT,
+  IMPROVER_INSTALL_DISMISSED_REASON,
+  IMPROVER_INSTALL_QUESTION,
+} from './stages/improver-install'
+import {
+  CONTENT_DISMISSED_REASON,
+  CONTENT_OPTIONS,
+  CONTENT_QUESTION,
+  INSTRUCTIONS_ENTRY_QUESTION,
+  instructionsStep,
+  parseContentConsent,
+} from './stages/instructions'
+import {
+  LAUNCH_DIR_QUESTION,
+  LAUNCH_START_DISMISSED_REASON,
+  LAUNCH_START_QUESTION,
+  launchLine,
+  launchStartStep,
+} from './stages/launch'
+import { MEMORY_DISMISSED_REASON, memoryStep } from './stages/memory'
+import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './stages/model'
+import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
+import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, gitPolicyStep, policyLine } from './stages/policy'
+import {
+  cardLines,
+  improverRunLine,
+  LINKED_MEMORIES_ROW,
+  MAX_REVIEW_ROUNDS,
+  parseReviewItem,
+  PRIVATE_FILES_HEADING,
+  privateFilesRow,
+  REVIEW_DISMISSED_REASON,
+  REVIEW_OPTIONS,
+  REVIEW_QUESTION,
+  REVIEW_ROUNDS_REASON,
+  REVIEW_TYPE_HINT,
+} from './stages/review'
+import {
+  ADJUST_QUESTION,
+  DESCRIBE_QUESTION,
+  MAX_ROLE_ROUNDS,
+  proposalLines,
+  ROLE_ROUNDS_REASON,
+  ROLES_DISMISSED_REASON,
+  ROLES_QUESTION,
+  rolesStep,
+} from './stages/roles'
+import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityInstallStep } from './stages/security'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
