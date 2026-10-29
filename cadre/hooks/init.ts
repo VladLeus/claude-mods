@@ -97,6 +97,7 @@ import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
 import { cancelledReply, IGNORE_ALL_NOTE } from './init/replies'
 import { consentStep } from './init/stages/consent'
+import { durationStep, idsOf, withDuration } from './init/stages/duration'
 import { historyStep } from './init/stages/history'
 import { hunkQuestion, parseHunkAnswer } from './init/stages/hunks'
 import {
@@ -123,7 +124,7 @@ import { proposeRoles } from './roles/propose'
 import { missingSecurityPlugins, recommend } from './roles/recommend'
 import { parseRoleJson } from './roles/rolejson'
 import { standsFor } from './roles/template'
-import { EFFORTS, isAutopilotDuration, MODEL_ALIASES } from './roles/validate'
+import { EFFORTS, MODEL_ALIASES } from './roles/validate'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { gatherScans, scanWarnings } from './scan/gather'
 import type { Gathered } from './scan/gather'
@@ -161,11 +162,6 @@ import type { AskResult, ChoiceAsk, StepResult } from './ui/ask'
 import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines } from './ui/blocks/scan'
-
-/** The role ids of a team in role order, joined with `, `, as a question's refusal or context line names them. */
-function idsOf(roles: readonly RoleSpec[]): string {
-  return roles.map(role => role.id).join(', ')
-}
 
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
 export function teamContextLine(roles: readonly RoleSpec[]): string {
@@ -856,54 +852,6 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
 
     return { ...role, skills: isWanted ? [...skills, CLAUDE_SECURITY_SKILL] : skills }
   })
-}
-
-/** The question init asks once for every role: how long each autopilot run lasts (D-51). */
-export const DURATION_QUESTION = 'Autopilot duration for roles?'
-
-/** The context line of the duration question (D-136): the answer applies to every role, named by its id. */
-export function durationContextLine(roles: readonly RoleSpec[]): string {
-  return `Applies to every role: ${idsOf(roles)}.`
-}
-
-/** The duration buttons, 4h first; any other duration is typed under "Other" (D-51). */
-export const DURATION_OPTIONS: readonly string[] = Object.freeze(['4h', '2h', '8h'])
-
-/** Why init cancels when the duration question is dismissed (A1, D-45); unread answers give NO_USABLE_ANSWER_REASON. */
-export const DURATION_DISMISSED_REASON = 'The autopilot duration question was dismissed or not answered.'
-
-/** A duration answer, trimmed and lowercased, when it is in autopilot's grammar (isAutopilotDuration); else null. */
-function parseDuration(answer: string): string | null {
-  const duration = answer.trim().toLowerCase()
-
-  return isAutopilotDuration(duration) ? duration : null
-}
-
-/** What the duration question takes, as its refusal lists it (D-51, D-136). */
-const DURATION_ACCEPTS = 'a duration such as 4h, 90m or 1h30m, at most 168h'
-
-/**
- * The duration question (D-51), asked once for every role, with the ids of `roles` on its second line
- * (durationContextLine, D-136): 4h, 2h or 8h, or any duration typed under "Other". Only an answer in autopilot's
- * grammar, above zero and at most 168 hours, is a duration; any other is asked again with why on top, MAX_ASKS asks in
- * all. A dismissal gives the cancel reason DURATION_DISMISSED_REASON and MAX_ASKS answers that are no duration
- * NO_USABLE_ANSWER_REASON, so nothing is taken (A1). The context threshold is never asked: every role keeps
- * AUTOPILOT_THRESHOLD (D-87).
- */
-export async function durationStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<string>> {
-  const ask = {
-    question: withContext(DURATION_QUESTION, durationContextLine(roles)),
-    spec: { options: DURATION_OPTIONS, header: ASK_HEADERS.duration },
-    parse: parseDuration,
-    accepts: DURATION_ACCEPTS,
-  }
-
-  return choiceResult(await askChoice(io, ask), DURATION_DISMISSED_REASON)
-}
-
-/** The roles with this autopilot duration; every other autopilot value, the threshold included, stays as it was. */
-function withDuration(roles: readonly RoleSpec[], duration: string): RoleSpec[] {
-  return roles.map(role => ({ ...role, autopilot: { ...role.autopilot, duration } }))
 }
 
 /** The first model question: one answer for every role or one per role, `Same for all roles` first (D-52, D-86). */
