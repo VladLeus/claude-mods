@@ -67,6 +67,14 @@ describe('adapter contract (DET-04)', () => {
     }
   })
 
+  test('the eight D-244 fields are required, so an adapter built without one is refused (E1)', () => {
+    expect(REQUIRED_FIELDS.slice(-8)).toEqual([
+      'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
+    ])
+    const fields = Object.entries(GSD_ADAPTER).filter(([field]) => field !== 'startSkills')
+    expect(missingFields(Object.fromEntries(fields))).toEqual(['startSkills'])
+  })
+
   test('every gate table passes the gate contract', () => {
     for (const adapter of ADAPTERS) {
       expect(gateProblems(adapter.humanGates)).toEqual([])

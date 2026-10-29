@@ -109,6 +109,7 @@ const SETTING: SettingProposal = {
 const ALL_FIELDS = [
   'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
   'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
+  'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
 ]
 
 describe('DECISION_TYPES and UNSUPPORTED_MARKERS', () => {
@@ -399,9 +400,12 @@ describe('missingFields', () => {
     expect(missingFields({ ...adapter({}), autonomyHunks: { file: 'f', proposals: [] } })).toEqual(['autonomyHunks'])
   })
 
-  test('REQUIRED_FIELDS ends with autonomyHunks, so a new field is reported after the earlier ones (A5)', () => {
-    expect(REQUIRED_FIELDS.at(-1)).toBe('autonomyHunks')
-  })
+  test(
+    'REQUIRED_FIELDS has the D-244 fields after autonomyHunks, so a new field is reported after the earlier ones (A5)',
+    () => {
+      expect(REQUIRED_FIELDS.at(-9)).toBe('autonomyHunks')
+    },
+  )
 })
 
 describe('isDecisionType', () => {

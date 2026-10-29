@@ -117,13 +117,15 @@ function onlyInUse(id: FrameworkId): Choice {
 }
 
 /**
- * The fields every adapter must declare, in the order missingFields reports them. `claude plugin validate` does not
+ * The fields every adapter must declare, in the order missingFields reports them: the DET-04 fields, then the eight
+ * fields D-244 moved behind the adapter (startSkills to factsHeading, E1). `claude plugin validate` does not
  * type-check, and an adapter may be untrusted at runtime, so this list and missingFields are the runtime contract
  * (DET-04).
  */
 export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = [
   'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
   'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
+  'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
 ]
 
 /** The adapter ids a framework may declare: the supported ones and the built-in fallback. */
@@ -173,6 +175,16 @@ const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<strin
   autonomy: hasAutonomy,
   kickoffText: adapter => typeof adapter.kickoffText === 'function',
   autonomyHunks: adapter => typeof adapter.autonomyHunks === 'function',
+  startSkills: adapter =>
+    Array.isArray(adapter.startSkills) && adapter.startSkills.every(entry => typeof entry === 'string'),
+  ownsSkill: adapter => typeof adapter.ownsSkill === 'function',
+  pluginsToEnable: adapter =>
+    Array.isArray(adapter.pluginsToEnable) && adapter.pluginsToEnable.every(entry => typeof entry === 'string'),
+  agentPrefix: adapter => typeof adapter.agentPrefix === 'string' || adapter.agentPrefix === null,
+  needsBash: adapter => typeof adapter.needsBash === 'boolean',
+  roleStart: adapter => typeof adapter.roleStart === 'function',
+  install: adapter => typeof adapter.install === 'string' || adapter.install === null,
+  factsHeading: adapter => typeof adapter.factsHeading === 'string' || adapter.factsHeading === null,
 }
 
 /**
