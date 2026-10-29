@@ -16,7 +16,6 @@ import type {
   InitIo,
   InitLocations,
   PortEntry,
-  PortRead,
   RoleSpec,
   TerminalChoice,
 } from '../types'
@@ -42,6 +41,7 @@ import {
 import { epicBadKeyReply, epicBadNameReply, epicKeyOf, epicSlug, isEpicSlug } from './epic/key'
 import { epicKickoffText } from './epic/kickoff'
 import type { EpicWorktree } from './epic/kickoff'
+import { epicWorktreeLauncherCheck } from './epic/launcher'
 import {
   EPIC_NO_WORKTREE_LIST,
   epicLookup,
@@ -152,47 +152,6 @@ export function epicCreatedText(input: {
     `Linked ${input.linked}, copied ${input.copied}.`,
     ...input.warnings.map(warning => `warning: ${warning}`),
   ].join('\n')
-}
-
-/**
- * The role line of a role whose launcher in the epic worktree predates the epic kickoff (D-158): the epic branch holds
- * an older `.cadre/bin/<id>`, which would start the role without its epic kickoff, so the role is not opened. The
- * advice names `.cadre/manifest.json` too, else /cadre start in the worktree refuses the launcher as changed
- * (03.1-W6 S2). The id is shown cleaned.
- */
-export function epicWorktreeLauncherLine(id: string): string {
-  const role = reportText(id)
-
-  return (
-    `not opened: the epic branch holds a launcher .cadre/bin/${role} older than the epic kickoff. ` +
-    `Commit the regenerated .cadre/bin/${role} and .cadre/manifest.json to the branch and run /cadre epic with the ` +
-    'same key again.'
-  )
-}
-
-/**
- * The role line of a role whose launcher in the epic worktree is not the text cadre checked in the main checkout
- * (03.1-W4 S1, LNCH-04): it differs from it, or it could not be read in full, so cadre does not open it or copy its
- * command. The id is shown cleaned.
- */
-export function epicWorktreeLauncherChangedLine(id: string): string {
-  const role = reportText(id)
-
-  return `not opened: the worktree's .cadre/bin/${role} is not the launcher cadre checked in the main checkout.`
-}
-
-/**
- * Whether a picked role may open its launcher in the epic worktree (D-158, 03.1-W4 S1): null when the worktree has
- * none, as nothing runs then, or when it is the very text runEpic checked in the main checkout with launcherRead
- * (`verified`); epicWorktreeLauncherLine when it is a text without the epic kickoff line; else
- * epicWorktreeLauncherChangedLine, so cadre never opens a launcher it did not check (LNCH-04, T-03-28).
- */
-export function epicWorktreeLauncherCheck(id: string, read: PortRead, verified: string | undefined): string | null {
-  if (read.state === 'absent') return null
-  if (read.state === 'text' && !hasRuntimeKickoff(read.text)) return epicWorktreeLauncherLine(id)
-  if (read.state === 'text' && read.text === verified) return null
-
-  return epicWorktreeLauncherChangedLine(id)
 }
 
 /** A picked role once the render stage ran: why it cannot open, as its reply line says, or null when it can. */

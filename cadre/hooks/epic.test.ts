@@ -33,8 +33,6 @@ import {
   epicRemoveFailedReply,
   epicRemovedText,
   epicUnlockFailedReply,
-  epicWorktreeLauncherChangedLine,
-  epicWorktreeLauncherLine,
   lockPid,
   mergedStateOf,
   runEpic,
@@ -59,6 +57,7 @@ import {
   WORKTREE_LIST_ARGV,
 } from './epic/git'
 import { epicBadKeyReply } from './epic/key'
+import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './epic/launcher'
 import { EPIC_NO_WORKTREE_LIST } from './epic/lookup'
 import {
   epicExcludesFailedReply,

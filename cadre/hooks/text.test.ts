@@ -99,13 +99,12 @@ import {
   epicRemovedText,
   epicRemoveFailedReply,
   epicUnlockFailedReply,
-  epicWorktreeLauncherChangedLine,
-  epicWorktreeLauncherLine,
 } from './epic'
 import { EXCLUDES_FILE, excludesText, RUNTIME_EXCLUDE_LINE } from './epic/excludes'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
 import { epicKickoffText } from './epic/kickoff'
+import { epicWorktreeLauncherChangedLine, epicWorktreeLauncherLine } from './epic/launcher'
 import { EPIC_NO_WORKTREE_LIST, epicManyBranchesReply, epicManyWorktreesReply } from './epic/lookup'
 import { mirrorLinkedParentWarning, mirrorUnhideableWarning } from './epic/mirror'
 import {
