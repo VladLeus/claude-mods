@@ -68,6 +68,16 @@ export function kickoffRoleLine(role: RoleSpec, framework: FrameworkId): string 
 }
 
 /**
+ * The positional autopilot command of a kickoff (D-79): `/autopilot <duration> <threshold> "<line>"`, then `flag`
+ * (` --ask-user` or '') outside the quotes, and a newline. `line` is already one line of printable ASCII with no quote
+ * or backtick (asciiLine), so it is the only quoted text. The kickoff of init and the epic kickoff build their text
+ * with it (SHOULD 3).
+ */
+export function autopilotCommand(duration: string, threshold: number, line: string, flag: string): string {
+  return `/autopilot ${duration} ${threshold} "${line}"${flag}\n`
+}
+
+/**
  * The text of `.cadre/<id>/kickoff.txt` (D-79): the positional autopilot command `/autopilot <duration> <threshold>
  * "<role line>"`, with ` --ask-user` for a role that asks the person, and a newline. The role line is the only quoted
  * text, so autopilot reads the switch outside it.
@@ -76,5 +86,5 @@ export function kickoffText(role: RoleSpec, framework: FrameworkId): string {
   const { duration, threshold, askUser } = role.autopilot
   const flag = askUser ? ' --ask-user' : ''
 
-  return `/autopilot ${duration} ${threshold} "${kickoffRoleLine(role, framework)}"${flag}\n`
+  return autopilotCommand(duration, threshold, kickoffRoleLine(role, framework), flag)
 }

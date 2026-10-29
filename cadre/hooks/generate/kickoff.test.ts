@@ -8,7 +8,7 @@ import { isAutopilotDuration } from '../roles/validate'
 import { compileScope } from '../scope/compile'
 import { emptySetupScan, FRAMEWORKS, templateRole } from '../testkit'
 import { mcpText, roleJsonText, settingsText } from './docs'
-import { asciiLine, budgetedRoleLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
+import { asciiLine, autopilotCommand, budgetedRoleLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
 
 /** The six template roles, as init builds them with nothing assigned. */
 const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
@@ -333,5 +333,12 @@ describe('budgetedRoleLine (SHOULD 3)', () => {
     const sentence = (title: string) => `You are ${title}, read your ROLE.md.`
 
     expect(budgetedRoleLine(role, sentence)).toBe('You are be, read your ROLE.md.')
+  })
+})
+
+describe('autopilotCommand (SHOULD 3)', () => {
+  test('the line is the one quoted text and the flag follows it outside the quotes, then a newline', () => {
+    expect(autopilotCommand('4h', 65, 'You are be.', ' --ask-user')).toBe('/autopilot 4h 65 "You are be." --ask-user\n')
+    expect(autopilotCommand('90m', 70, 'You are qa.', '')).toBe('/autopilot 90m 70 "You are qa."\n')
   })
 })

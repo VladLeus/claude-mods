@@ -5,7 +5,7 @@
  * hands it to its mirror stage. It is pure and imports generate/kickoff and the types; epic/create reads it.
  */
 import type { EpicRecord, RoleSpec } from '../../types'
-import { asciiLine, budgetedRoleLine, ROLE_LINE_MAX } from '../generate/kickoff'
+import { asciiLine, autopilotCommand, budgetedRoleLine, ROLE_LINE_MAX } from '../generate/kickoff'
 
 /** The epic worktree as runEpic hands it to its mirror stage once git has made or found it (D-147, D-164). */
 export type EpicWorktree = {
@@ -98,7 +98,7 @@ export function epicKickoffText(input: {
 }): string {
   const { role, key, title, parent, tlId } = input
   const { duration, threshold } = role.autopilot
-  if (!input.isPm) return `/autopilot ${duration} ${threshold} "${workerEpicLine(role, key, parent)}"\n`
+  if (!input.isPm) return autopilotCommand(duration, threshold, workerEpicLine(role, key, parent), '')
 
-  return `/autopilot ${duration} ${threshold} "${pmEpicLine(role.id, key, title, feedTarget(tlId))}" --ask-user\n`
+  return autopilotCommand(duration, threshold, pmEpicLine(role.id, key, title, feedTarget(tlId)), ' --ask-user')
 }
