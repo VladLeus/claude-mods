@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart } from '../../types'
-import { BIDI_OVERRIDE } from '../testkit'
+import { BIDI_OVERRIDE, GLOBAL_ONLY_SENTENCE, NUL } from '../testkit'
 import {
   GIT_TRACKING_UNKNOWN_WARNING,
   gitTrackedArgv,
@@ -28,14 +28,8 @@ const RULES_PART = part('P2', 'CLAUDE.md', 'Rules', '# Rules\nRun the tests befo
 /** The Secrets section of a rule file. */
 const SECRETS_PART = part('P3', '.claude/rules/security.md', 'Secrets', '## Secrets\nKeep keys out of the repo.\n')
 
-/** A sentence of the global CLAUDE.md that no file in the repo may hold (T-02-69). */
-const GLOBAL_ONLY_SENTENCE = 'GLOBAL-ONLY-SENTENCE stays out of the repo'
-
 /** A part of the global CLAUDE.md, which never goes into a built role file (T-02-69). */
 const GLOBAL_PART = part('P1', '~/.claude/CLAUDE.md', 'Private', `# Private\n${GLOBAL_ONLY_SENTENCE}.\n`, 'global')
-
-/** The NUL character `git ls-files -z` ends each name with, built at run time. */
-const NUL = String.fromCharCode(0)
 
 /** A part of a rule file git does not track in the M3 cases. */
 const LOCAL_PART = part('P4', 'notes/local.md', 'Local', '# Local\nMy own notes.\n')

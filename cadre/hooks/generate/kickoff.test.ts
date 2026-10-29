@@ -1,41 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CompiledScope, FrameworkId, RoleSpec, ScopeContext } from '../../types'
+import type { FrameworkId, RoleSpec } from '../../types'
 import { stableJson } from '../core/json'
 import { parseRoleJson } from '../roles/rolejson'
-import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { isAutopilotDuration } from '../roles/validate'
-import { compileScope } from '../scope/compile'
-import { emptySetupScan, FRAMEWORKS, templateRole } from '../testkit'
+import { FRAMEWORKS, scopeOf, TEMPLATE_ROLES, templateRole } from '../testkit'
 import { mcpText, roleJsonText, settingsText } from './docs'
 import { asciiLine, autopilotCommand, budgetedRoleLine, kickoffRoleLine, kickoffText, ROLE_LINE_MAX } from './kickoff'
-
-/** The six template roles, as init builds them with nothing assigned. */
-const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
-
-/**
- * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
- * context fields it names.
- */
-function scopeOf(
-  role: RoleSpec,
-  framework: FrameworkId,
-  team: readonly RoleSpec[],
-  over: Partial<ScopeContext> = {},
-): CompiledScope {
-  const ctx: ScopeContext = {
-    framework,
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: team,
-    ...over,
-  }
-
-  return compileScope(role, ctx)
-}
 
 /**
  * The start grammar of autopilot/hooks/autopilot.ts (parseStart, line 544), copied character for character and never

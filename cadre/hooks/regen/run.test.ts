@@ -50,6 +50,7 @@ import {
   leaks,
   memHost,
   memIo,
+  NUL,
   onDisk,
   plannedFiles,
   scansOf,
@@ -163,9 +164,6 @@ function builtWorld(over: Partial<MemWorld> = {}): MemWorld {
     ...over,
   })
 }
-
-/** The NUL character `git ls-files -z` ends each name with, built at run time. */
-const NUL = String.fromCharCode(0)
 
 /** A git ls-files run that exits 0 and names these files, each ended by NUL. */
 function trackedRun(files: readonly string[]): HostRun {

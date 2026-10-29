@@ -1,47 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  CadreState,
-  CompiledScope,
-  DesiredFile,
-  FrameworkId,
-  LaunchStart,
-  RoleSpec,
-  ScopeContext,
-} from '../../types'
-import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
-import { compileScope } from '../scope/compile'
-import { ABSOLUTE_PATH_MARKERS, emptySetupScan, FRAMEWORKS, leaks, templateRole } from '../testkit'
+import type { CadreState, CompiledScope, FrameworkId, LaunchStart, RoleSpec } from '../../types'
+import { ABSOLUTE_PATH_MARKERS, contentOf, FRAMEWORKS, leaks, scopeOf, TEMPLATE_ROLES, templateRole } from '../testkit'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { hasRuntimeKickoff, launcherText, RUNTIME_KICKOFF_TEST, shQuote } from './launcher'
-
-/** The six template roles, as init builds them with nothing assigned. */
-const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
-
-/**
- * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
- * context fields it names.
- */
-function scopeOf(
-  role: RoleSpec,
-  framework: FrameworkId,
-  team: readonly RoleSpec[],
-  over: Partial<ScopeContext> = {},
-): CompiledScope {
-  const ctx: ScopeContext = {
-    framework,
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: team,
-    ...over,
-  }
-
-  return compileScope(role, ctx)
-}
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
@@ -65,11 +28,6 @@ function inputOf(team: readonly RoleSpec[], framework: FrameworkId, over: Partia
     only: null,
     ...over,
   }
-}
-
-/** The text of one desired file; undefined when the path is not desired. */
-function contentOf(files: readonly DesiredFile[], path: string): string | undefined {
-  return files.find(file => file.path === path)?.content
 }
 
 /** The characters a shell reads as part of a bare word: what shQuote leaves unquoted. */

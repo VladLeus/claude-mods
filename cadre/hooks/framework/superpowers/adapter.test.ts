@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, RepoEntry } from '../../../types'
-import { DONE_MARKER_LINE } from '../../core/kickoff-text'
-import { emptySetupScan, facts } from '../../testkit'
+import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { gateProblems, missingFields } from '../contract'
 import { detectSuperpowers, SUPERPOWERS_ADAPTER, SUPERPOWERS_GATES, superpowersKickoffText } from './adapter'
 
@@ -41,11 +40,6 @@ function approvedLine(specPath: string): string | undefined {
   return superpowersKickoffText({ title: 'BE', roleId: 'be', specPath })
     .split('\n')
     .find(line => line.startsWith('Approved spec'))
-}
-
-/** Whether any of the lines would read to autopilot as its done marker. */
-function hasDoneLine(lines: string[]): boolean {
-  return DONE_MARKER_LINE.test(lines.join('\n'))
 }
 
 describe('detectSuperpowers', () => {

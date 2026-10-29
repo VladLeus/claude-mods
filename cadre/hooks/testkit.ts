@@ -7,6 +7,7 @@ import type {
   Facts,
   FileMode,
   FrameworkId,
+  GsdFact,
   HostEnvName,
   HostIo,
   HostRun,
@@ -23,6 +24,7 @@ import type {
   RoleSpec,
   RunOptions,
   ScopeCard,
+  ScopeContext,
   SettingsSource,
   SetupScan,
   ShownBlock,
@@ -34,6 +36,7 @@ import type { ConflictChoice } from './apply/conflict'
 import type { ApplyStep } from './apply/private'
 import type { ApplyOutcome } from './apply/run'
 import { sha256Hex } from './core/hash'
+import { DONE_MARKER_LINE } from './core/kickoff-text'
 import { utf8Bytes } from './core/text'
 import { runEpic } from './epic/create'
 import { desiredFiles } from './generate/files'
@@ -43,6 +46,7 @@ import type { PlanInput } from './plan/plan'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { gatherScans } from './scan/gather'
 import type { Gathered } from './scan/gather'
+import { compileScope } from './scope/compile'
 import { scopesFor } from './team'
 
 /**
@@ -934,3 +938,61 @@ export const RECORD: EpicRecord = {
 
 /** The worktree `/cadre epic PROJ-1` makes with no title words (D-146), and its git dir (D-164). */
 export const BARE_WORKTREE = '/repo/.claude/worktrees/proj-1'
+
+/** Whether any of the lines would read to autopilot as its done marker. */
+export function hasDoneLine(lines: string[]): boolean {
+  return DONE_MARKER_LINE.test(lines.join('\n'))
+}
+
+/** A user-level GSD at ~/.claude/gsd-core whose identity is proven, as detection reports it. */
+export const PROVEN_USER_GSD: GsdFact = {
+  location: 'user',
+  dir: '~/.claude/gsd-core',
+  version: '1.16.0',
+  identity: 'proven',
+  runtimeIdentityTried: false,
+}
+
+/** The detect facts of a user whose GSD at ~/.claude/gsd-core is proven, with its raw dir. */
+export const PROVEN_FACTS: InitFacts = {
+  facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
+  gsdUserDir: '/home/u/.claude/gsd-core',
+}
+
+/** The six template roles, as init builds them with nothing assigned. */
+export const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
+
+/**
+ * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
+ * context fields it names.
+ */
+export function scopeOf(
+  role: RoleSpec,
+  framework: FrameworkId,
+  team: readonly RoleSpec[],
+  over: Partial<ScopeContext> = {},
+): CompiledScope {
+  const ctx: ScopeContext = {
+    framework,
+    setup: emptySetupScan(),
+    codeDirs: [],
+    isAttended: false,
+    mcpRoute: 'merged',
+    launchStart: { kind: 'git-root' },
+    roles: team,
+    ...over,
+  }
+
+  return compileScope(role, ctx)
+}
+
+/** The text of one desired file; undefined when the path is not desired. */
+export function contentOf(files: readonly DesiredFile[], path: string): string | undefined {
+  return files.find(file => file.path === path)?.content
+}
+
+/** A sentence of the global CLAUDE.md that no file in the repo may hold (T-02-69). */
+export const GLOBAL_ONLY_SENTENCE = 'GLOBAL-ONLY-SENTENCE stays out of the repo'
+
+/** The NUL character `git ls-files -z` ends each name with, built at run time. */
+export const NUL = String.fromCharCode(0)

@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, GsdFact, RepoEntry, SetupScan } from '../../../types'
-import { DONE_MARKER_LINE } from '../../core/kickoff-text'
 import { adaptersReportLines } from '../../detect/report'
-import { emptySetupScan, facts } from '../../testkit'
+import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 import { gateProblems, missingFields } from '../contract'
 import {
   detectGsd,
@@ -471,11 +470,6 @@ function firstLineOf(role: string): string {
 /** The Approved spec line of the kickoff for one spec path, which is the line after the role line. */
 function specLineOf(specPath: string): string {
   return gsdKickoffText({ title: 'BE', roleId: 'be', specPath }).split('\n')[1] ?? ''
-}
-
-/** Whether any of the lines would read to autopilot as its done marker. */
-function hasDoneLine(lines: string[]): boolean {
-  return DONE_MARKER_LINE.test(lines.join('\n'))
 }
 
 describe('gsdKickoffText', () => {

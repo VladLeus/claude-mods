@@ -8,49 +8,28 @@ import type {
   FrameworkId,
   InstructionPart,
   RoleSpec,
-  ScopeContext,
 } from '../../types'
 import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { GSD_ADAPTER } from '../framework/gsd/adapter'
 import { BUILTIN_ADAPTER } from '../framework/none/adapter'
 import { SUPERPOWERS_ADAPTER } from '../framework/superpowers/adapter'
-import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { scopeCardLines } from '../scope/card'
-import { compileScope } from '../scope/compile'
 import { parseCadreState } from '../state/cadre-files'
-import { BIDI_OVERRIDE, emptySetupScan, FRAMEWORKS, leaks, templateRole } from '../testkit'
+import {
+  BIDI_OVERRIDE,
+  contentOf,
+  FRAMEWORKS,
+  GLOBAL_ONLY_SENTENCE,
+  leaks,
+  scopeOf,
+  TEMPLATE_ROLES,
+  templateRole,
+} from '../testkit'
 import { cadreJsonText, indexMdText, partsBody, roleClaudeMdText, roleMdText } from './docs'
 import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { builtClaudeMdPath } from './launcher'
-
-/** The six template roles, as init builds them with nothing assigned. */
-const TEMPLATE_ROLES: readonly RoleSpec[] = ROLE_TEMPLATE.map(row => roleFromTemplate(row))
-
-/**
- * The compiled scope of a role on the merged MCP route, with the whole team for the decision chain; `over` changes the
- * context fields it names.
- */
-function scopeOf(
-  role: RoleSpec,
-  framework: FrameworkId,
-  team: readonly RoleSpec[],
-  over: Partial<ScopeContext> = {},
-): CompiledScope {
-  const ctx: ScopeContext = {
-    framework,
-    setup: emptySetupScan(),
-    codeDirs: [],
-    isAttended: false,
-    mcpRoute: 'merged',
-    launchStart: { kind: 'git-root' },
-    roles: team,
-    ...over,
-  }
-
-  return compileScope(role, ctx)
-}
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
@@ -76,11 +55,6 @@ function inputOf(team: readonly RoleSpec[], framework: FrameworkId, over: Partia
   }
 }
 
-/** The text of one desired file; undefined when the path is not desired. */
-function contentOf(files: readonly DesiredFile[], path: string): string | undefined {
-  return files.find(file => file.path === path)?.content
-}
-
 /** An instruction part as the reader gives it, from the repo unless told otherwise; the hash is a fixed stand-in. */
 function part(
   id: string,
@@ -97,9 +71,6 @@ const RULES_PART = part('P2', 'CLAUDE.md', 'Rules', '# Rules\nRun the tests befo
 
 /** The Secrets section of a rule file. */
 const SECRETS_PART = part('P3', '.claude/rules/security.md', 'Secrets', '## Secrets\nKeep keys out of the repo.\n')
-
-/** A sentence of the global CLAUDE.md that no file in the repo may hold (T-02-69). */
-const GLOBAL_ONLY_SENTENCE = 'GLOBAL-ONLY-SENTENCE stays out of the repo'
 
 /** A part of the global CLAUDE.md, which never goes into a built role file (T-02-69). */
 const GLOBAL_PART = part('P1', '~/.claude/CLAUDE.md', 'Private', `# Private\n${GLOBAL_ONLY_SENTENCE}.\n`, 'global')

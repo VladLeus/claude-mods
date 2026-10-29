@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { GsdFact, GsdReadTarget, InitFacts } from '../../../types'
-import { EMPTY_FACTS } from '../../testkit'
+import type { GsdFact, GsdReadTarget } from '../../../types'
+import { EMPTY_FACTS, PROVEN_FACTS, PROVEN_USER_GSD } from '../../testkit'
 import {
   isGsdIdentitySource,
   isRuntimeCallAllowed,
@@ -173,21 +173,6 @@ describe('runtimeSkipProblem', () => {
     expect(runtimeSkipProblem(USER_TARGET, null, false, false)).toBeNull()
   })
 })
-
-/** A user-level GSD at ~/.claude/gsd-core whose identity is proven, as detection reports it. */
-const PROVEN_USER_GSD: GsdFact = {
-  location: 'user',
-  dir: '~/.claude/gsd-core',
-  version: '1.16.0',
-  identity: 'proven',
-  runtimeIdentityTried: false,
-}
-
-/** The detect facts of a user whose GSD at ~/.claude/gsd-core is proven, with its raw dir. */
-const PROVEN_FACTS: InitFacts = {
-  facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
-  gsdUserDir: '/home/u/.claude/gsd-core',
-}
 
 describe('provenUserDir', () => {
   test('the raw user-level GSD dir when the facts prove the user GSD', () => {

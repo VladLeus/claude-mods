@@ -94,9 +94,12 @@ import {
   memHost,
   memIo,
   memWorld,
+  NUL,
   onDisk,
   paneText,
   plannedFiles,
+  PROVEN_FACTS,
+  PROVEN_USER_GSD,
   repoScan,
   scansOf,
   SECRET_FIXTURES,
@@ -1818,9 +1821,6 @@ function repoWrites(host: MemHost): HostWrite[] {
 /** A sentence of a local note the root CLAUDE.md imports, which git does not track in the M3 cases. */
 const LOCAL_NOTE = 'LOCAL-NOTE-SENTENCE stays out of the repo'
 
-/** The NUL character `git ls-files -z` ends each name with, built at run time. */
-const NUL = String.fromCharCode(0)
-
 /** The git run of the M3 cases: which of CLAUDE.md and notes/local.md git tracks (02-GAPS-B2 M3). */
 const LOCAL_GIT_ARGV: readonly string[] = [
   'git',
@@ -2718,21 +2718,6 @@ describe('carryStep', () => {
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })
-
-/** A user-level GSD at ~/.claude/gsd-core whose identity is proven, as detection reports it. */
-const PROVEN_USER_GSD: GsdFact = {
-  location: 'user',
-  dir: '~/.claude/gsd-core',
-  version: '1.16.0',
-  identity: 'proven',
-  runtimeIdentityTried: false,
-}
-
-/** The detect facts of a user whose GSD at ~/.claude/gsd-core is proven, with its raw dir. */
-const PROVEN_FACTS: InitFacts = {
-  facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
-  gsdUserDir: '/home/u/.claude/gsd-core',
-}
 
 describe('hunkStep', () => {
   test('init asks the hunks of GSD roles after the carried settings, right before the git policy', async () => {

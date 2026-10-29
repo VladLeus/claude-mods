@@ -3,8 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Detection, RepoEntry } from '../../../types'
 import { gateProblems, missingFields } from '../contract'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './adapter'
-import { DONE_MARKER_LINE } from '../../core/kickoff-text'
-import { emptySetupScan, facts } from '../../testkit'
+import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 
 /** The built-in fallback's detection: always installed, and built into cadre rather than found in the repo. */
 const BUILT_IN: Detection = {
@@ -59,11 +58,6 @@ function pathLines(roleId: string): string[] {
 /** The Spec line for a spec path, or undefined when the kickoff has none. */
 function specLine(specPath: string): string | undefined {
   return kickoffLines('BE', 'be', specPath).find(line => line.startsWith('Spec:'))
-}
-
-/** Whether any of the lines would read to autopilot as its done marker. */
-function hasDoneLine(lines: string[]): boolean {
-  return DONE_MARKER_LINE.test(lines.join('\n'))
 }
 
 describe('detectBuiltin', () => {

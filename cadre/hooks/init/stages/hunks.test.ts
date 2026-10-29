@@ -1,12 +1,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, GsdFact, InitFacts, PortRead, RoleSpec, SettingProposal } from '../../../types'
+import type { FrameworkId, InitFacts, PortRead, RoleSpec, SettingProposal } from '../../../types'
 import { GSD_AUTONOMY } from '../../framework/gsd/adapter'
 import { attendedNote, hunkCandidates, hunkOp, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT } from '../../framework/gsd/hunks'
 import type { HunkCandidate } from '../../framework/gsd/hunks'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
-import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, EMPTY_FACTS, emptySetupScan, memIo, memWorld, repoScan } from '../../testkit'
+import {
+  BIDI_OVERRIDE,
+  DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
+  memIo,
+  memWorld,
+  PROVEN_FACTS,
+  PROVEN_USER_GSD,
+  repoScan,
+} from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
@@ -144,21 +154,6 @@ function valueOf<T>(result: StepResult<T>): T {
 /** A role with its framework set, as the framework step or an Adjust override sets it. */
 function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
   return { ...role, framework }
-}
-
-/** A user-level GSD at ~/.claude/gsd-core whose identity is proven, as detection reports it. */
-const PROVEN_USER_GSD: GsdFact = {
-  location: 'user',
-  dir: '~/.claude/gsd-core',
-  version: '1.16.0',
-  identity: 'proven',
-  runtimeIdentityTried: false,
-}
-
-/** The detect facts of a user whose GSD at ~/.claude/gsd-core is proven, with its raw dir. */
-const PROVEN_FACTS: InitFacts = {
-  facts: { ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] },
-  gsdUserDir: '/home/u/.claude/gsd-core',
 }
 
 describe('hunkStep', () => {
