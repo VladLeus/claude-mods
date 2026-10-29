@@ -19,6 +19,7 @@ import {
   memIo,
   memWorld,
   SECURITY_KEY,
+  SECURITY_KEYS,
   session,
   skillRef,
   templateRole,
@@ -468,9 +469,6 @@ describe('security recommendations (decision #39)', () => {
     }
   })
 })
-
-/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
-const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
 
 describe('security plugin installs (decision #39)', () => {
   test('only a team with a role standing for Security misses a plugin; only an installed exact key counts', () => {

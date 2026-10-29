@@ -3,33 +3,23 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { HookScript } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
-import { DEFAULT_LOCATIONS, emptySetupScan, gitWorld, memIo, memWorld, repoScan, withEvents } from '../../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  emptySetupScan,
+  FULL_SCAN,
+  gitWorld,
+  memIo,
+  memWorld,
+  valueOf,
+  withEvents,
+} from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import { envQuestion } from '../answers'
 import { carryStep, ENV_DISMISSED_REASON, envContextLine } from './carry'
 
 /** Settings with one PreToolUse hook that runs the GSD secret read guard. */
 const GUARD_SETTINGS = {
   hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node /x/hooks/gsd-secret-read-guard.js' }] }] },
-}
-
-/** A scan of a TypeScript repo with a React frontend and tests, so the template proposes all six roles. */
-const FULL_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'fe', label: 'react', evidence: 'package.json' },
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
 }
 
 describe('carryStep', () => {

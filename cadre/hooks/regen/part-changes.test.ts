@@ -3,11 +3,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionPart, MemoryItem } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { NO_MEMORY_SUMMARY } from '../scan/instructions/memories'
+import { MEMORY } from '../testkit'
 import { partChanges } from './part-changes'
 import type { MemoryRecord, PartRecord } from './part-changes'
-
-/** The auto-memory folder of the fixture repo for the fixture user. */
-const MEMORY = '/home/u/.claude/projects/-repo/memory'
 
 /** The Git section of the root CLAUDE.md as init read it (G-02-1f Regen). */
 const GIT_SECTION = '## Git\nUse signed commits.\n'

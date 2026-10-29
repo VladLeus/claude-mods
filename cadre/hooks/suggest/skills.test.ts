@@ -1,39 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec, SkillRef, TemplateRoleId } from '../../types'
+import type { RoleSpec, SkillRef } from '../../types'
 import { ownSkillIds } from '../init/answers'
-import {
-  AUTOPILOT_THRESHOLD,
-  DEFAULT_DURATION,
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
-  DEFAULT_PERMISSION_MODE,
-  EMPTY_CARRY,
-} from '../roles/template'
+import { PM, role, TL } from '../testkit'
 import { parseSkillRecommendation, skillCount, SKILLS_SYSTEM, skillsPrompt } from './skills'
 
-/** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
-function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
-  return {
-    id,
-    title: id.toUpperCase(),
-    purpose: 'p',
-    basedOn,
-    model: DEFAULT_MODEL,
-    effort: DEFAULT_EFFORT,
-    permissionMode: DEFAULT_PERMISSION_MODE,
-    autopilot: { duration: DEFAULT_DURATION, threshold: AUTOPILOT_THRESHOLD, askUser: false },
-    hasBash: true,
-    mcp: [],
-    skills: [],
-    instructions: [],
-    carry: EMPTY_CARRY,
-    ...over,
-  }
-}
-
-const PM = role('pm', 'pm')
-const TL = role('tl', 'tl', { title: 'Team Lead' })
 const BE = role('be', 'be')
 
 /** A recommendation reply parsed, or the errors of one that was not. */

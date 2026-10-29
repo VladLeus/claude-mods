@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { FrameworkId, Plan, RoleSpec } from '../../../types'
+import type { Plan } from '../../../types'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { scopesFor } from '../../team'
-import { cardOf, EMPTY_FACTS, emptySetupScan, repoScan, session, templateRole } from '../../testkit'
+import { cardOf, EMPTY_FACTS, emptySetupScan, repoScan, session, templateRole, withFramework } from '../../testkit'
 import type { ReviewItem } from '../flow'
 import {
   cardLines,
@@ -21,11 +21,6 @@ import {
   reviewContextLine,
   reviewQuestion,
 } from './review'
-
-/** A role with its framework set, as the framework step or an Adjust override sets it. */
-function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
-  return { ...role, framework }
-}
 
 describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
   test('the private files row, its heading and the improver line are fixed', () => {

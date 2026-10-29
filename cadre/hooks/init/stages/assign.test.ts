@@ -1,38 +1,21 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
-import { emptySetupScan, firstLines, memIo, memWorld, repoScan, session, skillRef } from '../../testkit'
+import {
+  emptySetupScan,
+  firstLines,
+  FULL_SCAN,
+  memIo,
+  memWorld,
+  OWN_SKILLS_ENTRY_PREFIX,
+  roleIn,
+  session,
+  skillRef,
+  valueOf,
+} from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import { assignmentStep, mcpContextLine } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, skillsContextLine } from './own-skills'
-
-/** A scan of a TypeScript repo with a React frontend and tests, so the template proposes all six roles. */
-const FULL_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'fe', label: 'react', evidence: 'package.json' },
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
-
-/** The role with this id in what a step gave; a missing role stops the test with a clear message. */
-function roleIn(roles: readonly RoleSpec[] | null, id: string): RoleSpec {
-  const found = roles?.find(role => role.id === id)
-  if (found === undefined) throw new Error(`no role ${id}`)
-
-  return found
-}
 
 /** The buttons of every question on which roles get an item. */
 const ROLE_LIST_OPTIONS = ['None', 'All roles']
@@ -152,9 +135,6 @@ describe('assignmentStep', () => {
     expect(roleIn(again, 'tl').mcp).toEqual(['jira'])
   })
 })
-
-/** The start of the entry question of the user's own skills (G-02-1b), as an answer key matches it. */
-const OWN_SKILLS_ENTRY_PREFIX = 'How do you want to hand out your own skills'
 
 /** The entry question of the user's own skills when there is one (G-02-1b), as its first line reads. */
 const OWN_SKILLS_ENTRY_ONE = `${OWN_SKILLS_ENTRY_PREFIX} (1)?`

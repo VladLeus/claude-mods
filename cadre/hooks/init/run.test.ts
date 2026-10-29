@@ -8,18 +8,14 @@ import type {
   Effort,
   Facts,
   FrameworkId,
-  GitPolicy,
   GsdFact,
   HostIo,
   HostRun,
-  HunkOp,
   InitFacts,
   InitIo,
   InstructionGroup,
   InstructionPart,
-  ManifestEntry,
   MemoryItem,
-  Plan,
   PortEntry,
   RoleSpec,
   TemplateRoleId,
@@ -47,20 +43,16 @@ import {
   PYTHON_TIMEOUT_MS,
 } from '../apply/run'
 import { sha256Hex } from '../core/hash'
-import { stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { roleClaudeMdText } from '../generate/docs'
-import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { HOME_ROOT_REPLY } from '../guards/refusals'
 import { commandRefusal } from '../guards/repo'
 import { isPartsFlowRole } from '../launch/links'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
-import { buildPlan } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
-import type { PartRecord } from '../regen/part-changes'
 import { runRegen } from '../regen/run'
 import type { RegenOptions } from '../regen/run'
 import { CLAUDE_MD_PLUGIN, CLAUDE_SECURITY_SKILL } from '../roles/infra'
@@ -78,47 +70,72 @@ import { TOPICS_SYSTEM } from '../suggest/topics'
 import { scopesFor } from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
+  ancestor,
   BIDI_OVERRIDE,
+  BUILT_RULE,
+  builtWorld,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
+  emptyDiskPlan,
   emptySetupScan,
   entry,
   firstLines,
   FRAMEWORKS,
+  FULL_DIRS,
+  FULL_FILES,
   gitWorld,
+  GLOBAL_CLAUDE_MD,
+  GLOBAL_SENTENCE,
   GUIDANCE_KEY,
   hostWorld,
+  IMPROVER_INSTALL_PREFIX,
   INIT_ANSWERS,
   leaks,
   link,
+  manifestOf,
   memHost,
   memIo,
+  memoriesWorld,
+  MEMORY_DIR,
+  MEMORY_INDEX,
+  MEMORY_SENTENCE,
   memWorld,
   NUL,
   onDisk,
+  OWN_SKILLS_ENTRY_PREFIX,
   paneText,
+  PARTS_ANSWERS,
+  PARTS_GLOBAL,
+  PARTS_RECOMMEND_REPLY,
+  PARTS_TOPICS_REPLY,
+  partsWorld,
   plannedFiles,
   PROVEN_FACTS,
   PROVEN_USER_GSD,
+  regenPartsWorld,
+  REPO_SENTENCE,
   repoScan,
+  RULES_SECTION,
   scansOf,
   SECRET_FIXTURES,
   secretWorld,
   SECURITY_KEY,
+  SECURITY_KEYS,
   session,
   shownBlock,
   skillRef,
-  stateOf,
+  SOURCE_SCAN,
   STATUS_PATH,
   templateRole,
   USER_DIR_LISTED,
+  valueOf,
   withEvents,
+  withFramework,
   withStats,
   withWrites,
 } from '../testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from '../ui/ask'
-import type { StepResult } from '../ui/ask'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { CONFLICT_CONTEXT } from './initapply'
@@ -478,16 +495,6 @@ describe('init pane (G-02-1)', () => {
   })
 })
 
-/** A scan of a TypeScript repo with tests and no frontend: BE is kept with its reason and FE is dropped. */
-const SOURCE_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
-
 /** A model reply that describes a BE role and a docs role with no template base. */
 const DESCRIBED_REPLY =
   '{"roles":[{"id":"be","title":"BE","purpose":"API","basedOn":"be"},' +
@@ -495,18 +502,6 @@ const DESCRIBED_REPLY =
 
 /** The person's description the describe tests type. */
 const DESCRIPTION = 'we have a BE and a docs writer'
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
-
-/** A role with its framework set, as the framework step or an Adjust override sets it. */
-function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
-  return { ...role, framework }
-}
 
 /** Facts where GSD (.planning/) and superpowers (docs/superpowers/) are both in use, so the choice is ambiguous. */
 const AMBIGUOUS_FACTS: Facts = {
@@ -642,9 +637,6 @@ describe('modelStep', () => {
     expect(dismissed.logged.at(-1)).toBe(MODEL_DISMISSED_REASON)
   })
 })
-
-/** The start of the entry question of the user's own skills (G-02-1b), as an answer key matches it. */
-const OWN_SKILLS_ENTRY_PREFIX = 'How do you want to hand out your own skills'
 
 /** The entry question of the user's own skills when there is one (G-02-1b), as its first line reads. */
 const OWN_SKILLS_ENTRY_ONE = `${OWN_SKILLS_ENTRY_PREFIX} (1)?`
@@ -912,47 +904,6 @@ describe('own skills hand-out (G-02-1b)', () => {
   })
 })
 
-/** The global CLAUDE.md of the fixture user, which the parts flow reads after a yes (G-02-1f). */
-const GLOBAL_CLAUDE_MD = '/home/u/.claude/CLAUDE.md'
-
-/** The global CLAUDE.md of the parts flow: a Security section and a Git section, as the plan's dry run has it. */
-const PARTS_GLOBAL = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
-
-/** The model's grouping of PARTS_GLOBAL: P1 in T1 'Security rules' and P2 in T2 'Git and commits'. */
-const PARTS_TOPICS_REPLY = JSON.stringify({
-  topics: [
-    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
-    { title: 'Git and commits', summary: 'How commits are made.', parts: ['P2'] },
-  ],
-})
-
-/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl, and no memory. */
-const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'
-
-/**
- * A git repo whose user has PARTS_GLOBAL as the global CLAUDE.md, with the grouping and the recommendation replies in
- * that order; `over` changes the fields it names.
- */
-function partsWorld(over: Partial<MemWorld> = {}): MemWorld {
-  const replies = [PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY]
-
-  return gitWorld({ files: { [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL }, replies, ...over })
-}
-
-/** The start of the improver install question, which a parts hand-out with a built part asks (G-02-1f, D-141). */
-const IMPROVER_INSTALL_PREFIX = 'Install claude-md-management'
-
-/**
- * INIT_ANSWERS with the content consent answered Yes, the entry question Accept recommendations, and the improver
- * install question Not now, so a run whose user lacks claude-md-management runs no improver (D-141).
- */
-const PARTS_ANSWERS: Readonly<Record<string, string>> = {
-  ...INIT_ANSWERS,
-  [CONTENT_QUESTION]: 'Yes, read them',
-  [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
-  [IMPROVER_INSTALL_PREFIX]: 'Not now',
-}
-
 /** The whole-file question of the global CLAUDE.md (D-63), as memoryStep asks it. */
 const GLOBAL_GROUP_QUESTION =
   'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
@@ -997,17 +948,6 @@ const PART_BY_PART_ANSWERS: Readonly<Record<string, string>> = {
   'Which roles get "Security rules"': 'Yes',
   'Which roles get "Git and commits"': 'No',
   'Which roles get "Release notes"': 'be, qa',
-}
-
-/** A sentence of the global CLAUDE.md that must never be shown, asked or logged (T-02-61). */
-const GLOBAL_SENTENCE = 'LEAKY-GLOBAL-SENTENCE stays with the model'
-
-/** A sentence of the repo CLAUDE.md that must never be shown, asked or logged (T-02-61). */
-const REPO_SENTENCE = 'LEAKY-REPO-SENTENCE stays with the model'
-
-/** One CLAUDE.md of the chain as `$.fs.ancestors` gives it: its folder, its name and its text, which the scan drops. */
-function ancestor(dir: string): Readonly<Record<string, unknown>> {
-  return { dir, name: 'CLAUDE.md', content: REPO_SENTENCE, parts: [] }
 }
 
 /**
@@ -1537,38 +1477,6 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
   })
 })
 
-/** The auto-memory folder of the fixture repo for the fixture user (G-02-1f Memories). */
-const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
-
-/** A sentence of a memory, and of MEMORY.md off its index lines, that is never shown or sent anywhere (T-02-64). */
-const MEMORY_SENTENCE = 'LEAKY-MEMORY-SENTENCE stays on disk'
-
-/** The MEMORY.md of memoriesWorld: an index line for squad.md only, then a line that is no index line. */
-const MEMORY_INDEX =
-  `# Memory index\n- [Squad commits](squad.md) \u2014 Unsigned commits on per-phase branches.\n${MEMORY_SENTENCE}\n`
-
-/**
- * partsWorld with the auto-memories squad.md, which MEMORY.md sums up, and workflow.md, which it does not; the
- * recommendation gives squad.md to the Team Lead and workflow.md to no role. `over` changes the fields it names.
- */
-function memoriesWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return partsWorld({
-    dirs: {
-      '/repo/.git': [],
-      ...USER_DIR_LISTED,
-      [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')],
-    },
-    files: {
-      [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
-      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
-      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
-      [`${MEMORY_DIR}/workflow.md`]: `${MEMORY_SENTENCE} (workflow)`,
-    },
-    replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["tl"],"M2":[]}}'],
-    ...over,
-  })
-}
-
 /** The instructions block of memoriesWorld: the topics of the plan's dry run, then the two memories. */
 const MEMORIES_BLOCK = [
   ...PARTS_BLOCK,
@@ -1758,33 +1666,6 @@ describe('the read order over every instruction source (T-02-60, 02-GAPS-B2 N5)'
     }
   })
 })
-
-/** The sentence of the root CLAUDE.md's Rules section, which init writes into the built file of the role given it. */
-const BUILT_RULE = 'Run the tests before a commit.'
-
-/**
- * The six-role repo of fullWorld whose user has a global Security section and whose root CLAUDE.md, in the chain, has a
- * Rules section; the model groups them into T1 'Security rules' (global) and T2 'Repo rules' (repo) and recommends T1
- * to security and T2 to be (G-02-1f Storage split). `over` changes the fields it names.
- */
-function builtWorld(over: Partial<MemWorld> = {}): MemWorld {
-  const topics = [
-    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
-    { title: 'Repo rules', summary: 'The rules of this repo.', parts: ['P2'] },
-  ]
-
-  return gitWorld({
-    dirs: { '/repo/.git': [], ...USER_DIR_LISTED, ...FULL_DIRS },
-    files: {
-      ...FULL_FILES,
-      [GLOBAL_CLAUDE_MD]: `# Security\n${GLOBAL_SENTENCE}.\n`,
-      '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n`,
-    },
-    ancestors: [ancestor('/repo')],
-    replies: [JSON.stringify({ topics }), '{"topics":{"T1":["security"],"T2":["be"]},"memories":{}}'],
-    ...over,
-  })
-}
 
 /** BE's built CLAUDE.md in builtWorld: the header line, then the Rules part of the root CLAUDE.md (D-140). */
 const BUILT_BE = [
@@ -3214,15 +3095,6 @@ describe('question context lines (G-02-1)', () => {
   })
 })
 
-/** The folders and files of a repo whose scan proposes all six template roles: React and TypeScript with tests. */
-const FULL_DIRS = {
-  '/repo': [entry('package.json'), entry('src', 'dir')],
-  '/repo/src': [entry('a.ts'), entry('a.test.ts')],
-}
-
-/** The package.json of FULL_DIRS: React is a dependency, so FE is kept. */
-const FULL_FILES = { '/repo/package.json': '{"dependencies":{"react":"18.0.0"}}' }
-
 /** The roles init keeps for `world` with the INIT_ANSWERS defaults: the template proposal of its scan, unchanged. */
 async function defaultRoles(world: MemWorld): Promise<readonly RoleSpec[]> {
   return proposeRoles((await scansOf(world)).repo).roles
@@ -3245,39 +3117,8 @@ async function initFiles(
   return plannedFiles(world, initRecorded(roles), over)
 }
 
-/**
- * The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy` and, for a
- * team with a Security role, the security reports line, as init plans the block (decision #39). The `.gitignore` op
- * shows the block lines (PLAN-03), so a block planned without that line would differ.
- */
-async function emptyDiskPlan(
-  desired: readonly DesiredFile[],
-  policy: GitPolicy,
-  hunks: readonly HunkOp[] = [],
-  hasSecurityRole = false,
-): Promise<Plan> {
-  return buildPlan({
-    desired,
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: { disk: { state: 'absent' }, lines: gitignoreLines(policy, null, hasSecurityRole) },
-    hunks,
-    cadreVersion: '0.2.0',
-  })
-}
-
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
 const GIT_TEAM_HAS_SECURITY = true
-
-/** The manifest text a run that generated these files records: their hashes and modes in path order. */
-async function manifestOf(files: readonly DesiredFile[], cadreVersion = '0.2.0'): Promise<string> {
-  const entries: ManifestEntry[] = []
-  for (const file of files) entries.push({ path: file.path, sha256: await sha256Hex(file.content), mode: file.mode })
-
-  return stableJson({ schema: 1, cadreVersion, files: entries.sort((a, b) => compareText(a.path, b.path)) })
-}
 
 /** The kind of the op of each path in the file plan of a reply. */
 function opKinds(reply: string): Map<string, string> {
@@ -4524,66 +4365,11 @@ describe('init apply hunks (D-120)', () => {
   })
 })
 
-/** The Rules section of the root CLAUDE.md in the regen cases (G-02-1f Regen). */
-const RULES_SECTION = '# Rules\nRun the tests.\n'
-
-/** The Git section of the root CLAUDE.md, the one part BE was given (G-02-1f Regen). */
-const GIT_SECTION = '## Git\nUse signed commits.\n'
-
 /** The Git section after an edit. */
 const GIT_EDITED = '## Git\nUse signed commits, always.\n'
 
 /** The start of a regen question about a part or a memory for BE (G-02-1f Regen, D-142). */
 const REGEN_PART_PREFIX = 'Should be get'
-
-/** A repo part of the root CLAUDE.md with this id, heading and text, hashed as the read hashes it. */
-async function rootPart(id: string, heading: string, text: string): Promise<InstructionPart> {
-  return { id, file: 'CLAUDE.md', heading, source: 'repo', text, hash: await sha256Hex(text) }
-}
-
-/** What a role's records keep of a part: its file, heading and hash (G-02-1f Regen). */
-function recorded(part: Pick<InstructionPart, 'file' | 'heading' | 'hash'>): PartRecord {
-  return { file: part.file, heading: part.heading, hash: part.hash }
-}
-
-/** The regen fixture: the root CLAUDE.md now, the world fields to change, and BE's given and not-given parts. */
-type RegenFixture = {
-  readonly claudeMd?: string | null
-  readonly over?: Partial<MemWorld>
-  readonly given?: readonly InstructionPart[]
-  readonly notGiven?: readonly InstructionPart[]
-}
-
-/**
- * The repo after an init that gave BE the parts `given` of the root CLAUDE.md, the Git section unless told otherwise,
- * and recorded `notGiven`, the Rules section, as not given (AUTO-PICK #19 Q1); PM was given no part. Every file init
- * wrote is on the disk with its manifest, BE's built CLAUDE.md holding its parts, and `claudeMd` is the root CLAUDE.md
- * now (none for null). The repo root lists, so the scans warn about nothing. `over` changes the fields it names; its
- * files and folders are kept beside these.
- */
-async function regenPartsWorld(fixture: RegenFixture = {}): Promise<MemWorld> {
-  const over = fixture.over ?? {}
-  const given = fixture.given ?? [await rootPart('P2', 'Git', GIT_SECTION)]
-  const notGiven = fixture.notGiven ?? [await rootPart('P1', 'Rules', RULES_SECTION)]
-  const records = { instructionParts: given.map(recorded), instructionPartsNotGiven: notGiven.map(recorded) }
-  const be = templateRole('be', records)
-  const roles = [be, templateRole('pm', { instructionParts: [] })]
-  const dirs = { '/repo/.git': [], ...USER_DIR_LISTED, '/repo': [], '/repo/.cadre': [], ...over.dirs }
-  const base = gitWorld({ ...over, dirs })
-  const state = stateOf(roles)
-  const scopes = scopesFor(roles, state.framework, await scansOf(base), [], state.launchStart)
-  const files = desiredFiles({ roles, scopes, state, only: null, repoParts: new Map([['be', given]]) })
-  const claudeMd = fixture.claudeMd === undefined ? `${RULES_SECTION}${GIT_SECTION}` : fixture.claudeMd
-  const root = claudeMd === null ? {} : { '/repo/CLAUDE.md': claudeMd }
-
-  return {
-    ...base,
-    files: { ...base.files, ...onDisk(files), '/repo/.cadre/manifest.json': await manifestOf(files), ...root },
-  }
-}
-
-/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
-const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
 
 /** The argv that installs claude-security (decision #39). */
 const SECURITY_INSTALL = ['claude', 'plugin', 'install', SECURITY_KEY]

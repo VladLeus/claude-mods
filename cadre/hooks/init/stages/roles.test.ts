@@ -20,12 +20,13 @@ import {
   EMPTY_FACTS,
   firstLines,
   FRAMEWORKS,
+  FULL_SCAN,
   gitWorld,
   leaks,
   memIo,
   memWorld,
-  repoScan,
   shownBlock,
+  SOURCE_SCAN,
   templateRole,
   withEvents,
 } from '../../testkit'
@@ -55,27 +56,6 @@ import {
   rolesStep,
 } from './roles'
 import type { AdjustOutcome } from './roles'
-
-/** A scan of a TypeScript repo with tests and no frontend: BE is kept with its reason and FE is dropped. */
-const SOURCE_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
-
-/** A scan of a TypeScript repo with a React frontend and tests, so the template proposes all six roles. */
-const FULL_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'fe', label: 'react', evidence: 'package.json' },
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
 
 /** A model reply that describes a BE role and a docs role with no template base. */
 const DESCRIBED_REPLY =

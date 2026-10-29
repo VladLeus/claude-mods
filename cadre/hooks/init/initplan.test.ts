@@ -1,17 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { DesiredFile, FileOp, GitPolicy, HunkOp, ManifestEntry, Plan, RoleSpec } from '../../types'
-import { sha256Hex } from '../core/hash'
-import { stableJson } from '../core/json'
+import type { FileOp, HunkOp, Plan, RoleSpec } from '../../types'
 import { compareText } from '../core/text'
 import { NOT_SET_TEXT } from '../framework/gsd/hunks'
 import { desiredFiles } from '../generate/files'
-import { gitignoreLines } from '../plan/gitignore'
-import { buildPlan, planReadPaths } from '../plan/plan'
+import { planReadPaths } from '../plan/plan'
 import { proposeRoles } from '../roles/propose'
 import { parseCadreState } from '../state/cadre-files'
 import { scopesFor } from '../team'
-import { DEFAULT_LOCATIONS, gitWorld, memIo, scansOf, stateOf } from '../testkit'
+import { DEFAULT_LOCATIONS, emptyDiskPlan, gitWorld, manifestOf, memIo, scansOf, stateOf } from '../testkit'
 import type { MemWorld } from '../testkit'
 import { planStep } from './initplan'
 
@@ -20,39 +17,8 @@ async function defaultRoles(world: MemWorld): Promise<readonly RoleSpec[]> {
   return proposeRoles((await scansOf(world)).repo).roles
 }
 
-/**
- * The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy` and, for a
- * team with a Security role, the security reports line, as init plans the block (decision #39). The `.gitignore` op
- * shows the block lines (PLAN-03), so a block planned without that line would differ.
- */
-async function emptyDiskPlan(
-  desired: readonly DesiredFile[],
-  policy: GitPolicy,
-  hunks: readonly HunkOp[] = [],
-  hasSecurityRole = false,
-): Promise<Plan> {
-  return buildPlan({
-    desired,
-    disk: new Map(),
-    manifest: null,
-    manifestState: 'absent',
-    carried: [],
-    gitignore: { disk: { state: 'absent' }, lines: gitignoreLines(policy, null, hasSecurityRole) },
-    hunks,
-    cadreVersion: '0.2.0',
-  })
-}
-
 /** The default team of the git fixture world has a Security role, so its ignore block holds the reports line. */
 const GIT_TEAM_HAS_SECURITY = true
-
-/** The manifest text a run that generated these files records: their hashes and modes in path order. */
-async function manifestOf(files: readonly DesiredFile[], cadreVersion = '0.2.0'): Promise<string> {
-  const entries: ManifestEntry[] = []
-  for (const file of files) entries.push({ path: file.path, sha256: await sha256Hex(file.content), mode: file.mode })
-
-  return stableJson({ schema: 1, cadreVersion, files: entries.sort((a, b) => compareText(a.path, b.path)) })
-}
 
 /** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */
 function gsdHunk(over: Partial<HunkOp> = {}): HunkOp {

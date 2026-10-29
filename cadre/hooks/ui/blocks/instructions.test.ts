@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../../../types'
+import type { InstructionPart, InstructionScan } from '../../../types'
 import { fallbackTopics } from '../../suggest/topics'
-import { templateRole } from '../../testkit'
+import { MEMORIES, MEMORY, RECOMMENDED, templateRole, TOPICS } from '../../testkit'
 import { instructionLines, instructionReviewLines } from './instructions'
 
 /**
@@ -22,47 +22,8 @@ const PARTS: readonly InstructionPart[] = [
 /** The read of GLOBAL_TEXT: its two parts, the one file they came from, no memory and no warning. */
 const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], memories: [], warnings: [] }
 
-/** The auto-memory folder of the fixture repo for the fixture user. */
-const MEMORY = '/home/u/.claude/projects/-repo/memory'
-
-/** A memory with this id, file and summary, from the memory folder of the repo. */
-function memory(id: string, file: string, summary: string): MemoryItem {
-  return { id, file, folder: MEMORY, summary, hash: `hash of ${file}` }
-}
-
-/** Two memories: squad.md with its index summary, and workflow.md with none. */
-const MEMORIES: readonly MemoryItem[] = [
-  memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.'),
-  memory('M2', 'workflow.md', 'No summary in MEMORY.md.'),
-]
-
 /** The read of GLOBAL_TEXT with the two MEMORIES. */
 const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
-
-/** The first topic of the plan's dry run: the Security part. */
-const SECURITY_TOPIC: InstructionTopic = {
-  id: 'T1',
-  title: 'Security rules',
-  summary: 'How secrets stay out of the repo.',
-  partIds: ['P1'],
-}
-
-/** The second topic of the plan's dry run: the Git part. */
-const GIT_TOPIC: InstructionTopic = {
-  id: 'T2',
-  title: 'Git and commits',
-  summary: 'How commits are made.',
-  partIds: ['P2'],
-}
-
-/** The two topics of the plan's dry run, one per part. */
-const TOPICS: readonly InstructionTopic[] = [SECURITY_TOPIC, GIT_TOPIC]
-
-/** T1 recommended to Security and T2 to the Team Lead, as the plan's dry run has it. */
-const RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
-  ['T1', ['security']],
-  ['T2', ['tl']],
-])
 
 /** The team of the cases: PM, Team Lead and Security, in that order. */
 const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]

@@ -1,16 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec, SkillRef, TemplateRoleId } from '../../types'
-import {
-  AUTOPILOT_THRESHOLD,
-  DEFAULT_DURATION,
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
-  DEFAULT_PERMISSION_MODE,
-  EMPTY_CARRY,
-} from '../roles/template'
+import type { RoleSpec, SkillRef } from '../../types'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
-import { BIDI_OVERRIDE } from '../testkit'
+import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -35,30 +27,6 @@ import {
   skillUsesText,
 } from './answers'
 import type { SkillGroup } from './assign-rules'
-
-/** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
-function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
-  return {
-    id,
-    title: id.toUpperCase(),
-    purpose: 'p',
-    basedOn,
-    model: DEFAULT_MODEL,
-    effort: DEFAULT_EFFORT,
-    permissionMode: DEFAULT_PERMISSION_MODE,
-    autopilot: { duration: DEFAULT_DURATION, threshold: AUTOPILOT_THRESHOLD, askUser: false },
-    hasBash: true,
-    mcp: [],
-    skills: [],
-    instructions: [],
-    carry: EMPTY_CARRY,
-    ...over,
-  }
-}
-
-const PM = role('pm', 'pm')
-
-const TL = role('tl', 'tl', { title: 'Team Lead' })
 
 const BE = role('be', 'be')
 

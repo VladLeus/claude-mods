@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem } from '../../types'
-import { BIDI_OVERRIDE, templateRole } from '../testkit'
+import type { InstructionPart, InstructionScan } from '../../types'
+import { BIDI_OVERRIDE, MEMORIES, MEMORY, templateRole, TOPICS } from '../testkit'
 import { RECOMMEND_SYSTEM, recommendPrompt } from './instructions'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from './topics'
 
@@ -18,39 +18,6 @@ const PARTS: readonly InstructionPart[] = [
   part('P1', 'Security', '# Security\nNever commit secrets.\n'),
   part('P2', 'Git', '## Git\nUse signed commits.\n'),
 ]
-
-/** The auto-memory folder of the fixture repo for the fixture user. */
-const MEMORY = '/home/u/.claude/projects/-repo/memory'
-
-/** A memory with this id, file and summary, from the memory folder of the repo. */
-function memory(id: string, file: string, summary: string): MemoryItem {
-  return { id, file, folder: MEMORY, summary, hash: `hash of ${file}` }
-}
-
-/** Two memories: squad.md with its index summary, and workflow.md with none. */
-const MEMORIES: readonly MemoryItem[] = [
-  memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.'),
-  memory('M2', 'workflow.md', 'No summary in MEMORY.md.'),
-]
-
-/** The first topic of the plan's dry run: the Security part. */
-const SECURITY_TOPIC: InstructionTopic = {
-  id: 'T1',
-  title: 'Security rules',
-  summary: 'How secrets stay out of the repo.',
-  partIds: ['P1'],
-}
-
-/** The second topic of the plan's dry run: the Git part. */
-const GIT_TOPIC: InstructionTopic = {
-  id: 'T2',
-  title: 'Git and commits',
-  summary: 'How commits are made.',
-  partIds: ['P2'],
-}
-
-/** The two topics of the plan's dry run, one per part. */
-const TOPICS: readonly InstructionTopic[] = [SECURITY_TOPIC, GIT_TOPIC]
 
 /** The team of the cases: PM, Team Lead and Security, in that order. */
 const ROLES = [templateRole('pm'), templateRole('tl'), templateRole('security')]

@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, FrameworkId, RoleSpec } from '../../../types'
+import type { Choice } from '../../../types'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
-import { firstLines, memIo, memWorld, repoScan } from '../../testkit'
+import { firstLines, memIo, memWorld, repoScan, valueOf, withFramework } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import {
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
@@ -17,18 +16,6 @@ import {
   frameworkStep,
 } from './frameworks'
 import { teamContextLine } from './model'
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
-
-/** A role with its framework set, as the framework step or an Adjust override sets it. */
-function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
-  return { ...role, framework }
-}
 
 /** The framework options when GSD and superpowers are offered: SUPPORTED_IDS order, then the built-in fallback. */
 const BOTH_OPTIONS = ['GSD', 'superpowers', 'none (built-in)']

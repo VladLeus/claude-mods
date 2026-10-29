@@ -16,10 +16,11 @@ import {
   PROVEN_FACTS,
   PROVEN_USER_GSD,
   repoScan,
+  valueOf,
+  withFramework,
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import { HUNK_DISMISSED_REASON, hunkQuestion, hunkStep, parseHunkAnswer } from './hunks'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
@@ -143,18 +144,6 @@ describe('autonomy hunks', () => {
     ])
   })
 })
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
-
-/** A role with its framework set, as the framework step or an Adjust override sets it. */
-function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
-  return { ...role, framework }
-}
 
 describe('hunkStep', () => {
   /** PM, Team Lead and Security on the repo default framework: a repo with no source keeps them. */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { McpRef, RoleSpec, SkillRef, TemplateRoleId } from '../../types'
+import type { McpRef, RoleSpec, SkillRef } from '../../types'
 import { adapterOf, ADAPTERS } from '../framework/registry'
 import {
   INFRA_MCP_SERVERS,
@@ -11,40 +11,11 @@ import {
   MCP_ROLE_ROWS,
   SKILL_ROLE_ROWS,
 } from '../roles/infra'
-import {
-  AUTOPILOT_THRESHOLD,
-  DEFAULT_DURATION,
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
-  DEFAULT_PERMISSION_MODE,
-  EMPTY_CARRY,
-} from '../roles/template'
+import { PM, role, TL } from '../testkit'
 import { assignToRoles, mcpQuestion, parseRoleList, skillGroupQuestion } from './answers'
 import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './assign-rules'
 import type { SkillGroup } from './assign-rules'
 
-/** A role as init builds it: nothing assigned, every other field a default. `over` changes the fields it names. */
-function role(id: string, basedOn: TemplateRoleId | null, over: Partial<RoleSpec> = {}): RoleSpec {
-  return {
-    id,
-    title: id.toUpperCase(),
-    purpose: 'p',
-    basedOn,
-    model: DEFAULT_MODEL,
-    effort: DEFAULT_EFFORT,
-    permissionMode: DEFAULT_PERMISSION_MODE,
-    autopilot: { duration: DEFAULT_DURATION, threshold: AUTOPILOT_THRESHOLD, askUser: false },
-    hasBash: true,
-    mcp: [],
-    skills: [],
-    instructions: [],
-    carry: EMPTY_CARRY,
-    ...over,
-  }
-}
-
-const PM = role('pm', 'pm')
-const TL = role('tl', 'tl', { title: 'Team Lead' })
 const BE = role('be', 'be')
 const FE = role('fe', 'fe')
 const QA = role('qa', 'qa')

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { CadreState, FrameworkId, HunkOp, LaunchStart, RoleSpec, ScopeContext } from '../types'
+import type { CadreState, HunkOp, LaunchStart, RoleSpec, ScopeContext } from '../types'
 import { stableJson } from './core/json'
 import { NOT_SET_TEXT } from './framework/gsd/hunks'
 import { cadreJsonText, roleJsonText } from './generate/docs'
@@ -36,6 +36,7 @@ import {
   session,
   stateOf,
   templateRole,
+  withFramework,
 } from './testkit'
 import type { MemWorld } from './testkit'
 
@@ -182,11 +183,6 @@ describe('where /cadre epic runs and what it needs (D-161, D-165)', () => {
     expect(await readTeam(io, '/repo', 'epic', 'qa')).toEqual({ kind: 'refuse', text: regenNoRole('qa', ['pm', 'be']) })
   })
 })
-
-/** A role with its framework set, as the framework step or an Adjust override sets it. */
-function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
-  return { ...role, framework }
-}
 
 /** A GSD config hunk as hunkStep records it: required, accepted and runnable unless `over` says otherwise. */
 function gsdHunk(over: Partial<HunkOp> = {}): HunkOp {

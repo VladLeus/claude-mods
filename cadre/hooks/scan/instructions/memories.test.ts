@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { sha256Hex } from '../../core/hash'
-import { BIDI_OVERRIDE, entry, link, memIo, memWorld } from '../../testkit'
+import { BIDI_OVERRIDE, entry, link, memIo, MEMORY, memWorld } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import {
   isMemoryIndexName,
@@ -13,9 +13,6 @@ import {
 } from './memories'
 import { readInstructionFiles } from './read'
 import type { InstructionSources } from './read'
-
-/** The auto-memory folder of the fixture repo for the fixture user. */
-const MEMORY = '/home/u/.claude/projects/-repo/memory'
 
 /** The auto-memory folder of the fixture repo as given through a link, /link/repo. */
 const GIVEN_MEMORY = '/home/u/.claude/projects/-link-repo/memory'

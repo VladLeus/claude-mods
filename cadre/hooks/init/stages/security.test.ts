@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { PLUGIN_RUN_TIMEOUT_MS } from '../../apply/run'
-import { BIDI_OVERRIDE, GUIDANCE_KEY, memIo, memWorld, SECURITY_KEY, templateRole } from '../../testkit'
+import { BIDI_OVERRIDE, GUIDANCE_KEY, memIo, memWorld, SECURITY_KEY, SECURITY_KEYS, templateRole } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import {
   INSTALL_OPTIONS,
@@ -12,9 +12,6 @@ import {
   securityInstallStep,
   withSecuritySkill,
 } from './security'
-
-/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
-const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
 
 describe('security plugin installs (decision #39)', () => {
   test('the question start, its two answers, its cancel reason and the install timeout are fixed', () => {

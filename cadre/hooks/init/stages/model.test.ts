@@ -1,30 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
-import { memIo, memWorld, repoScan, templateRole } from '../../testkit'
+import { memIo, memWorld, roleIn, SOURCE_SCAN, templateRole, valueOf } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from '../answers'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './model'
-
-/** A scan of a TypeScript repo with tests and no frontend: BE is kept with its reason and FE is dropped. */
-const SOURCE_SCAN = repoScan({
-  languages: ['TypeScript'],
-  hasSource: true,
-  findings: [
-    { kind: 'lang', label: 'JavaScript/TypeScript (package.json)', evidence: 'package.json' },
-    { kind: 'test', label: 'JS/TS test files', evidence: 'src/a.test.ts' },
-  ],
-})
-
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
 
 describe('modelStep', () => {
   /** PM, Team Lead, BE, QA and Security, each with the 90m run the duration step gave them. */
@@ -147,14 +128,6 @@ describe('modelStep', () => {
     expect(MODEL_DISMISSED_REASON).toBe('A model and effort question was dismissed or not answered.')
   })
 })
-
-/** The role with this id in what a step gave; a missing role stops the test with a clear message. */
-function roleIn(roles: readonly RoleSpec[] | null, id: string): RoleSpec {
-  const found = roles?.find(role => role.id === id)
-  if (found === undefined) throw new Error(`no role ${id}`)
-
-  return found
-}
 
 describe('refusal re-ask (G-02-6b)', () => {
   test('the model loop puts its refusal on top of the next ask; three refused answers cancel (A4)', async () => {

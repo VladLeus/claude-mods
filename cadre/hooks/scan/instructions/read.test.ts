@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionScan, InstructionTopic } from '../../../types'
+import type { InstructionScan } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { contentContextLine, topicContextLine } from '../../init/stages/instructions'
 import { fallbackTopics, topicsPrompt } from '../../suggest/topics'
-import { emptySetupScan, entry, link, memIo, memWorld } from '../../testkit'
+import { emptySetupScan, entry, link, memIo, memWorld, RECOMMENDED, TOPICS } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { instructionLines } from '../../ui/blocks/instructions'
 import { unreadableWarning } from './memories'
@@ -27,31 +27,6 @@ import type { InstructionSources } from './read'
 
 /** The global CLAUDE.md of the cases: a Security section and a Git section, as the plan's dry run has it. */
 const GLOBAL_TEXT = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
-
-/** The first topic of the plan's dry run: the Security part. */
-const SECURITY_TOPIC: InstructionTopic = {
-  id: 'T1',
-  title: 'Security rules',
-  summary: 'How secrets stay out of the repo.',
-  partIds: ['P1'],
-}
-
-/** The second topic of the plan's dry run: the Git part. */
-const GIT_TOPIC: InstructionTopic = {
-  id: 'T2',
-  title: 'Git and commits',
-  summary: 'How commits are made.',
-  partIds: ['P2'],
-}
-
-/** The two topics of the plan's dry run, one per part. */
-const TOPICS: readonly InstructionTopic[] = [SECURITY_TOPIC, GIT_TOPIC]
-
-/** T1 recommended to Security and T2 to the Team Lead, as the plan's dry run has it. */
-const RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
-  ['T1', ['security']],
-  ['T2', ['tl']],
-])
 
 /** The config folder of the fixture user, where the global CLAUDE.md lives. */
 const CONFIG = '/home/u/.claude'

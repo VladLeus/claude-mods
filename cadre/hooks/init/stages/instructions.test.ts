@@ -1,13 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  InstructionGroup,
-  InstructionHandout,
-  InstructionPart,
-  InstructionScan,
-  InstructionTopic,
-  MemoryItem,
-} from '../../../types'
+import type { InstructionGroup, InstructionHandout, InstructionPart, InstructionScan } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
@@ -15,15 +8,27 @@ import {
   DEFAULT_LOCATIONS,
   emptySetupScan,
   entry,
+  GIT_TOPIC,
   gitWorld,
-  INIT_ANSWERS,
+  GLOBAL_CLAUDE_MD,
   memIo,
+  MEMORIES,
+  memoriesWorld,
+  memory,
+  MEMORY_DIR,
+  MEMORY_SENTENCE,
+  PARTS_ANSWERS,
+  PARTS_GLOBAL,
+  PARTS_TOPICS_REPLY,
+  partsWorld,
+  RECOMMENDED,
   repoScan,
-  USER_DIR_LISTED,
+  SECURITY_TOPIC,
+  TOPICS,
+  valueOf,
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { contextText } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -63,47 +68,8 @@ const PARTS: readonly InstructionPart[] = [
 /** The read of GLOBAL_TEXT: its two parts, the one file they came from, no memory and no warning. */
 const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], memories: [], warnings: [] }
 
-/** The auto-memory folder of the fixture repo for the fixture user. */
-const MEMORY = '/home/u/.claude/projects/-repo/memory'
-
-/** A memory with this id, file and summary, from the memory folder of the repo. */
-function memory(id: string, file: string, summary: string): MemoryItem {
-  return { id, file, folder: MEMORY, summary, hash: `hash of ${file}` }
-}
-
-/** Two memories: squad.md with its index summary, and workflow.md with none. */
-const MEMORIES: readonly MemoryItem[] = [
-  memory('M1', 'squad.md', 'Unsigned commits on per-phase branches.'),
-  memory('M2', 'workflow.md', 'No summary in MEMORY.md.'),
-]
-
 /** The read of GLOBAL_TEXT with the two MEMORIES. */
 const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
-
-/** The first topic of the plan's dry run: the Security part. */
-const SECURITY_TOPIC: InstructionTopic = {
-  id: 'T1',
-  title: 'Security rules',
-  summary: 'How secrets stay out of the repo.',
-  partIds: ['P1'],
-}
-
-/** The second topic of the plan's dry run: the Git part. */
-const GIT_TOPIC: InstructionTopic = {
-  id: 'T2',
-  title: 'Git and commits',
-  summary: 'How commits are made.',
-  partIds: ['P2'],
-}
-
-/** The two topics of the plan's dry run, one per part. */
-const TOPICS: readonly InstructionTopic[] = [SECURITY_TOPIC, GIT_TOPIC]
-
-/** T1 recommended to Security and T2 to the Team Lead, as the plan's dry run has it. */
-const RECOMMENDED: ReadonlyMap<string, readonly string[]> = new Map([
-  ['T1', ['security']],
-  ['T2', ['tl']],
-])
 
 describe('instruction questions (G-02-1f)', () => {
   test('the content consent asks before anything is read, No, skip it first (D-134)', () => {
@@ -269,54 +235,6 @@ describe('instruction questions (G-02-1f)', () => {
   })
 })
 
-/** The value of an accepted step result; a cancelled one stops the test with its reason. */
-function valueOf<T>(result: StepResult<T>): T {
-  if (result.kind === 'cancelled') throw new Error(`the step was cancelled: ${result.reason}`)
-
-  return result.value
-}
-
-/** The global CLAUDE.md of the fixture user, which the parts flow reads after a yes (G-02-1f). */
-const GLOBAL_CLAUDE_MD = '/home/u/.claude/CLAUDE.md'
-
-/** The global CLAUDE.md of the parts flow: a Security section and a Git section, as the plan's dry run has it. */
-const PARTS_GLOBAL = '# Security\nNever commit secrets.\n## Git\nUse signed commits.\n'
-
-/** The model's grouping of PARTS_GLOBAL: P1 in T1 'Security rules' and P2 in T2 'Git and commits'. */
-const PARTS_TOPICS_REPLY = JSON.stringify({
-  topics: [
-    { title: 'Security rules', summary: 'How secrets stay out of the repo.', parts: ['P1'] },
-    { title: 'Git and commits', summary: 'How commits are made.', parts: ['P2'] },
-  ],
-})
-
-/** The model's recommendation of the plan's dry run: T1 to security and T2 to tl, and no memory. */
-const PARTS_RECOMMEND_REPLY = '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{}}'
-
-/**
- * A git repo whose user has PARTS_GLOBAL as the global CLAUDE.md, with the grouping and the recommendation replies in
- * that order; `over` changes the fields it names.
- */
-function partsWorld(over: Partial<MemWorld> = {}): MemWorld {
-  const replies = [PARTS_TOPICS_REPLY, PARTS_RECOMMEND_REPLY]
-
-  return gitWorld({ files: { [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL }, replies, ...over })
-}
-
-/** The start of the improver install question, which a parts hand-out with a built part asks (G-02-1f, D-141). */
-const IMPROVER_INSTALL_PREFIX = 'Install claude-md-management'
-
-/**
- * INIT_ANSWERS with the content consent answered Yes, the entry question Accept recommendations, and the improver
- * install question Not now, so a run whose user lacks claude-md-management runs no improver (D-141).
- */
-const PARTS_ANSWERS: Readonly<Record<string, string>> = {
-  ...INIT_ANSWERS,
-  [CONTENT_QUESTION]: 'Yes, read them',
-  [INSTRUCTIONS_ENTRY_QUESTION]: 'Accept recommendations',
-  [IMPROVER_INSTALL_PREFIX]: 'Not now',
-}
-
 /** The topics and hand-out of a parts outcome; any other outcome stops the test with its kind. */
 function partsOf(handout: InstructionHandout): Extract<InstructionHandout, { readonly kind: 'parts' }> {
   if (handout.kind !== 'parts') throw new Error(`not the parts flow: ${handout.kind}`)
@@ -383,38 +301,6 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     expect([...handout.given.entries()]).toEqual([['T1', ['security']]])
   })
 })
-
-/** The auto-memory folder of the fixture repo for the fixture user (G-02-1f Memories). */
-const MEMORY_DIR = '/home/u/.claude/projects/-repo/memory'
-
-/** A sentence of a memory, and of MEMORY.md off its index lines, that is never shown or sent anywhere (T-02-64). */
-const MEMORY_SENTENCE = 'LEAKY-MEMORY-SENTENCE stays on disk'
-
-/** The MEMORY.md of memoriesWorld: an index line for squad.md only, then a line that is no index line. */
-const MEMORY_INDEX =
-  `# Memory index\n- [Squad commits](squad.md) \u2014 Unsigned commits on per-phase branches.\n${MEMORY_SENTENCE}\n`
-
-/**
- * partsWorld with the auto-memories squad.md, which MEMORY.md sums up, and workflow.md, which it does not; the
- * recommendation gives squad.md to the Team Lead and workflow.md to no role. `over` changes the fields it names.
- */
-function memoriesWorld(over: Partial<MemWorld> = {}): MemWorld {
-  return partsWorld({
-    dirs: {
-      '/repo/.git': [],
-      ...USER_DIR_LISTED,
-      [MEMORY_DIR]: [entry('MEMORY.md'), entry('squad.md'), entry('workflow.md')],
-    },
-    files: {
-      [GLOBAL_CLAUDE_MD]: PARTS_GLOBAL,
-      [`${MEMORY_DIR}/MEMORY.md`]: MEMORY_INDEX,
-      [`${MEMORY_DIR}/squad.md`]: `${MEMORY_SENTENCE} (squad)`,
-      [`${MEMORY_DIR}/workflow.md`]: `${MEMORY_SENTENCE} (workflow)`,
-    },
-    replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":["security"],"T2":["tl"]},"memories":{"M1":["tl"],"M2":[]}}'],
-    ...over,
-  })
-}
 
 describe('memories one by one (G-02-1f)', () => {
   test('the hand-out keeps each memory by its M id with its folder, summary and hash', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { GUIDANCE_KEY, SECURITY_KEY } from '../testkit'
+import { SECURITY_KEYS } from '../testkit'
 import {
   CLAUDE_MD_PLUGIN,
   CLAUDE_SECURITY_PLUGIN,
@@ -16,9 +16,6 @@ describe('the improver plugin (G-02-1f, D-141)', () => {
     expect([...SECURITY_PLUGINS, ...INFRA_PLUGINS]).not.toContain(CLAUDE_MD_PLUGIN)
   })
 })
-
-/** Both security plugin keys, in the order init asks about and installs them (decision #39). */
-const SECURITY_KEYS = [SECURITY_KEY, GUIDANCE_KEY]
 
 describe('security plugin installs (decision #39)', () => {
   test('the plugin keys, their order and the review skill the Security role gets are fixed', () => {
