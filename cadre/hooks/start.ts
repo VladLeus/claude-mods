@@ -19,7 +19,6 @@
 import type {
   CadreState,
   CompiledScope,
-  DesiredFile,
   HostIo,
   InitIo,
   InitLocations,
@@ -31,9 +30,8 @@ import type {
   TerminalChoice,
 } from '../types'
 import { privateLevelsProblem, roleFolderLevels } from './apply/safety'
-import { sha256Hex } from './core/hash'
 import { isObject } from './core/json'
-import { compareText, reportText, sortedUnique } from './core/text'
+import { compareText, sortedUnique } from './core/text'
 import { desiredFiles } from './generate/files'
 import { gitCommonDirOf, mainCheckoutOf } from './git/common-dir'
 import { repoGuard } from './guards/repo'
@@ -44,7 +42,6 @@ import { launchPlan } from './launch/plan'
 import type { LaunchPlan } from './launch/plan'
 import {
   displayPath,
-  launcherPath,
   MARKDOWN_EXTENSION,
   markdownFileNames,
   memoryFolderOf,
@@ -53,17 +50,16 @@ import {
   roleMemoryDir,
   userDirOf,
 } from './paths'
-import { MANIFEST_PATH } from './plan/classify'
 import { expectationsFor, probeExpectationsText } from './probe'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
 import { SOURCE_ORDER } from './scan/facts/settings'
 import { scanWarnings } from './scan/gather'
 import { claudeMdImports } from './scan/instructions/imports'
-import { readRepoFile } from './scan/port-read'
 import { ruleFiles, RULES_FOLDER } from './scan/rules'
 import { claudeMdPathsOf } from './scan/setup/claude-md'
 import { hookScriptOf } from './scan/setup/settings'
 import { claudeRefusal } from './start/claude-version'
+import { launcherDrift, launcherRead, renderFailedReply } from './start/launcher-check'
 import { readClaudeJson, runtimeMcpText } from './start/mcp-config'
 import { linkedMemoriesOf } from './start/memory-links'
 import {
@@ -77,9 +73,7 @@ import {
   stampText,
 } from './start/render-plan'
 import type { MemoryLinks, RenderInput } from './start/render-plan'
-import { parseManifest } from './state/cadre-files'
 import { compileTeam, readTeam, regenBadRole } from './team'
-import type { RegenRead } from './team'
 import { terminalHostOf } from './ui/open'
 import {
   clipboardRun,
@@ -395,98 +389,6 @@ export async function gatherLaunchUser(
   const linkedMemories = memories.links.map(link => link.path)
 
   return { kind: 'ok', user: { ...user, linkedMemories }, warnings, memories }
-}
-
-/**
- * The refusal when `.cadre/manifest.json` is missing, cannot be read or is not a valid manifest: without it the
- * launcher cannot be checked (LNCH-04).
- */
-export const START_NO_MANIFEST =
-  '.cadre/manifest.json is missing or not valid, so cadre cannot check the launcher: run /cadre init again.'
-
-/** The refusal when a role's launcher is missing, or the manifest holds no entry for it (LNCH-04). */
-export function launcherMissingReply(id: string): string {
-  const role = reportText(id)
-
-  return `.cadre/bin/${role} is missing or not in .cadre/manifest.json: run /cadre regen ${role}.`
-}
-
-/**
- * The refusal when a role's launcher is not the file cadre wrote (LNCH-04, T-03-28): its sha256 differs from its
- * manifest entry, or it cannot be read as a regular file inside the repo. It names the three ways that work (#72 A3):
- * restore the file; `/cadre init`, whose Take new answer writes the new launcher and its manifest entry; or plain
- * regen, which keeps the changed file and its old manifest entry and writes the new version beside it as
- * `.cadre-new`, so that copy is moved over the launcher, made executable again, and a second regen records it.
- */
-export function launcherChangedReply(id: string): string {
-  const role = reportText(id)
-  const launcher = launcherPath(role)
-
-  return (
-    `${launcher} was changed outside cadre: restore it, or run /cadre init and answer Take new for it, ` +
-    `or run /cadre regen ${role}, move ${launcher}.cadre-new over it, chmod 755 it ` +
-    `and run /cadre regen ${role} again.`
-  )
-}
-
-/**
- * The reply when a step of the render fails (LNCH-03): the render stops at that step, so no stamp is written and the
- * launcher refuses to start. `path` is the step's path below the repo root, shown cleaned.
- */
-export function renderFailedReply(id: string, path: string): string {
-  const role = reportText(id)
-
-  return (
-    `cadre start could not render .cadre/${role}/.runtime/ (${reportText(path)} failed), ` +
-    `so the launcher will refuse to start: fix it and run /cadre start ${role} again.`
-  )
-}
-
-/**
- * The text of the role's launcher on disk once it can be trusted (LNCH-04, T-03-28), or the refusal. It refuses, in
- * this order: a `.cadre/manifest.json` that is missing, cannot be read or is not a valid manifest (START_NO_MANIFEST);
- * a launcher `.cadre/bin/<id>` the manifest holds no entry for, or that is not there (launcherMissingReply); one that
- * cannot be read as a regular file inside the repo, or whose sha256 differs from its entry (launcherChangedReply). Both
- * are read through readRepoFile, so a link out of the repo is never read. /cadre epic reuses it for each role (D-165).
- */
-export async function launcherRead(io: InitIo, root: string, id: string): Promise<RegenRead<string>> {
-  const manifestRead = await readRepoFile(io, root, MANIFEST_PATH, MAX_READ_BYTES)
-  const manifest = manifestRead.state === 'text' ? parseManifest(manifestRead.text) : null
-  if (manifest === null) return { kind: 'refuse', text: START_NO_MANIFEST }
-  const path = launcherPath(id)
-  const entry = manifest.files.find(file => file.path === path)
-  if (entry === undefined) return { kind: 'refuse', text: launcherMissingReply(id) }
-  const launcher = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (launcher.state === 'absent') return { kind: 'refuse', text: launcherMissingReply(id) }
-  if (launcher.state !== 'text') return { kind: 'refuse', text: launcherChangedReply(id) }
-  if ((await sha256Hex(launcher.text)) !== entry.sha256) return { kind: 'refuse', text: launcherChangedReply(id) }
-
-  return { kind: 'ok', value: launcher.text }
-}
-
-/**
- * The warning when the role's launcher on disk, which matches its manifest entry, is not the text this cadre writes
- * for it today (LNCH-04, #54 A3): an older cadre wrote it, or the setup changed since. It warns and never refuses,
- * since the launcher is still the one cadre wrote. The name is shown cleaned.
- */
-function launcherOutdatedWarning(id: string): string {
-  const role = reportText(id)
-
-  return (
-    `.cadre/bin/${role} is not the launcher this cadre writes today (written by an older cadre or for another ` +
-    `setup): run /cadre regen ${role} to update it`
-  )
-}
-
-/**
- * The launcher warnings of /cadre start (#54 A3): launcherOutdatedWarning when `desired`, the files desiredFiles gives
- * for the role today, holds a launcher `.cadre/bin/<id>` whose text differs from `onDisk`; none otherwise.
- */
-function launcherDrift(id: string, onDisk: string, desired: readonly DesiredFile[]): string[] {
-  const today = desired.find(file => file.path === launcherPath(id))
-  if (today === undefined || today.content === onDisk) return []
-
-  return [launcherOutdatedWarning(id)]
 }
 
 /**

@@ -34,16 +34,12 @@ import { compileScope } from './scope/compile'
 import {
   gatherLaunchUser,
   hookSourcesFor,
-  launcherChangedReply,
-  launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
   privateFolderRefusal,
-  renderFailedReply,
   runStart,
   START_NO_GIT_DIR,
   START_NO_HOME,
-  START_NO_MANIFEST,
 } from './start'
 import type { LaunchUserRead } from './start'
 import {
@@ -53,6 +49,12 @@ import {
   parseClaudeVersion,
   START_NO_CLAUDE,
 } from './start/claude-version'
+import {
+  launcherChangedReply,
+  launcherMissingReply,
+  renderFailedReply,
+  START_NO_MANIFEST,
+} from './start/launcher-check'
 import {
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
