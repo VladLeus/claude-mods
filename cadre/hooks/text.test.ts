@@ -86,7 +86,6 @@ import {
   EPIC_DONE_NO_LIST,
   EPIC_DONE_OPTIONS,
   EPIC_NO_PM,
-  EPIC_NO_WORKTREE_LIST,
   EPIC_ROLES_HEADER,
   EPIC_UNKNOWN_CHECKOUT,
   epicAddFailedReply,
@@ -99,9 +98,7 @@ import {
   epicLockedReply,
   epicLockLiveReply,
   epicLockUnknownReply,
-  epicManyBranchesReply,
   epicManyPmReply,
-  epicManyWorktreesReply,
   epicNoRecordWarning,
   epicNotFoundReply,
   epicNotMainReply,
@@ -117,6 +114,7 @@ import {
 import { EXCLUDES_FILE, excludesText, RUNTIME_EXCLUDE_LINE } from './epic/excludes'
 import { WORKTREES_DIR, XDG_ARGV } from './epic/git'
 import { epicBadKeyReply, epicBadNameReply } from './epic/key'
+import { EPIC_NO_WORKTREE_LIST, epicManyBranchesReply, epicManyWorktreesReply } from './epic/lookup'
 import { mirrorLinkedParentWarning, mirrorUnhideableWarning } from './epic/mirror'
 import {
   epicExcludesFailedReply,
