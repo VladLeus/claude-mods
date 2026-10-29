@@ -140,7 +140,6 @@ import {
   ADJUST_QUESTION,
   ADJUST_ROUNDS_NOTE,
   adjustContextLine,
-  ASSIGNMENT_DISMISSED_REASON,
   cardLines,
   CONFLICT_CONTEXT,
   CONFLICT_DISMISSED_REASON,
@@ -167,12 +166,6 @@ import {
   launchLine,
   LINKED_MEMORIES_ROW,
   mcpContextLine,
-  OWN_SKILLS_ENTRY_OPTIONS,
-  ownSkillContextLine,
-  ownSkillHeader,
-  ownSkillQuestion,
-  ownSkillsContextLine,
-  ownSkillsQuestion,
   PRIVATE_FILES_HEADING,
   privateFilesRow,
   proposalLines,
@@ -189,7 +182,6 @@ import {
   ROLES_QUESTION,
   rolesContextLine,
   runInit,
-  skillsContextLine,
 } from './init'
 import {
   ALL_ENV_OPTION,
@@ -264,6 +256,16 @@ import {
 } from './init/stages/instructions'
 import { MEMORY_DISMISSED_REASON, memoryContextLine } from './init/stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, teamContextLine } from './init/stages/model'
+import {
+  ASSIGNMENT_DISMISSED_REASON,
+  OWN_SKILLS_ENTRY_OPTIONS,
+  ownSkillContextLine,
+  ownSkillHeader,
+  ownSkillQuestion,
+  ownSkillsContextLine,
+  ownSkillsQuestion,
+  skillsContextLine,
+} from './init/stages/own-skills'
 import {
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
