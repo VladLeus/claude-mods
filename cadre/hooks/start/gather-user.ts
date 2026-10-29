@@ -28,7 +28,7 @@ import { SOURCE_ORDER } from '../scan/facts/settings'
 import { claudeMdImports } from '../scan/instructions/imports'
 import { ruleFiles, RULES_FOLDER } from '../scan/rules'
 import { claudeMdPathsOf } from '../scan/setup/claude-md'
-import { hookScriptOf } from '../scan/setup/settings'
+import { hookScriptOf, positiveInteger } from '../scan/setup/settings'
 import { linkedMemoriesOf } from './memory-links'
 import { isPlainName, NO_MEMORY_LINKS, parentOf } from './render-plan'
 import type { MemoryLinks } from './render-plan'
@@ -82,11 +82,6 @@ const ROOT_HOOK_SOURCES: readonly SettingsSource[] = Object.freeze(['user', 'loc
 /** One hook of the user's settings as a launch carries it. */
 type LaunchHook = LaunchUser['hooks'][number]
 
-/** The compact window when it is a positive safe integer, else null, as the setup scan keeps it (D-60). */
-function compactWindowOf(value: unknown): number | null {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
-}
-
 /**
  * The values a role may carry from the user settings (D-60, D-84): `autoCompactWindow` when it is a positive safe
  * integer, the `statusLine` object as read, and each `env` entry whose value is a string; null, null and {} for a value
@@ -98,7 +93,7 @@ export function launchSettingsOf(user: unknown): Pick<LaunchUser, 'autoCompactWi
   const env = isObject(user.env) ? Object.entries(user.env) : []
 
   return {
-    autoCompactWindow: compactWindowOf(user.autoCompactWindow),
+    autoCompactWindow: positiveInteger(user.autoCompactWindow),
     statusLine: isObject(user.statusLine) ? user.statusLine : null,
     env: Object.fromEntries(env.filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
   }

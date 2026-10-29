@@ -76,7 +76,7 @@ export function hookScriptOf(command: string): string | null {
 }
 
 /** The value when it is a positive safe integer, else null. */
-function positiveInteger(value: unknown): number | null {
+export function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
 }
 
