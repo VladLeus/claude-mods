@@ -56,22 +56,6 @@ import {
 } from './apply/run'
 import type { ApplyOutcome } from './apply/run'
 import { privateWriteProblem } from './apply/safety'
-import {
-  ALL_ENV_OPTION,
-  ALL_OPTION,
-  envQuestion,
-  INSTRUCTION_LABELS,
-  mcpQuestion,
-  memoryQuestion,
-  MODEL_EFFORT_OPTIONS,
-  NO_SKILL_PURPOSE,
-  NONE_OPTION,
-  ownSkillLines,
-  PER_ROLE,
-  SAME_FOR_ALL,
-  skillGroupQuestion,
-  skillUsesText,
-} from './assign'
 import { helpText, USAGE_LINES } from './command/usage'
 import { FRAMEWORK_IDS, SUPPORTED_IDS } from './core/framework-id'
 import { UNNAMED_ROLE } from './core/kickoff-text'
@@ -251,6 +235,22 @@ import {
   skillsContextLine,
   teamContextLine,
 } from './init'
+import {
+  ALL_ENV_OPTION,
+  ALL_OPTION,
+  envQuestion,
+  INSTRUCTION_LABELS,
+  mcpQuestion,
+  memoryQuestion,
+  MODEL_EFFORT_OPTIONS,
+  NO_SKILL_PURPOSE,
+  NONE_OPTION,
+  ownSkillLines,
+  PER_ROLE,
+  SAME_FOR_ALL,
+  skillGroupQuestion,
+  skillUsesText,
+} from './init/answers'
 import { ACCEPT_RECOMMENDATIONS } from './init/handout'
 import {
   CONTENT_DISMISSED_REASON,

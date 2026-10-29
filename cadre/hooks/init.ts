@@ -40,31 +40,7 @@ import type { ApplyInput } from './apply/private'
 import { appliedLines, installPlugins, privatePlanOf, writeWithImprover } from './apply/run'
 import type { ApplyOutcome, OwedPrivate } from './apply/run'
 import { applySteps } from './apply/steps'
-import {
-  ALL_ENV_OPTION,
-  ALL_OPTION,
-  assignToRoles,
-  classifyMcp,
-  classifySkills,
-  envQuestion,
-  groupUses,
-  mcpQuestion,
-  memoryQuestion,
-  MODEL_EFFORT_OPTIONS,
-  modelEffortRefusal,
-  NO_SKILL_PURPOSE,
-  NONE_OPTION,
-  orderGroupsByUse,
-  ownSkillIds,
-  ownSkillLines,
-  parseEnvNames,
-  parseModelEffort,
-  parseRoleList,
-  PER_ROLE,
-  SAME_FOR_ALL,
-  skillGroupQuestion,
-  skillUsesText,
-} from './assign'
+import { classifyMcp, classifySkills, groupUses, orderGroupsByUse } from './assign'
 import type { NameAssignment, SkillGroup } from './assign'
 import { SUPPORTED_IDS } from './core/framework-id'
 import { sha256Hex } from './core/hash'
@@ -96,6 +72,27 @@ import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, initGuard, rootUnknownReply } from './guards/repo'
 import { historyStep } from './history'
 import { hasRunFailed } from './host/steps'
+import {
+  ALL_ENV_OPTION,
+  ALL_OPTION,
+  assignToRoles,
+  envQuestion,
+  mcpQuestion,
+  memoryQuestion,
+  MODEL_EFFORT_OPTIONS,
+  modelEffortRefusal,
+  NO_SKILL_PURPOSE,
+  NONE_OPTION,
+  ownSkillIds,
+  ownSkillLines,
+  parseEnvNames,
+  parseModelEffort,
+  parseRoleList,
+  PER_ROLE,
+  SAME_FOR_ALL,
+  skillGroupQuestion,
+  skillUsesText,
+} from './init/answers'
 import { ACCEPT_RECOMMENDATIONS, handoutStep } from './init/handout'
 import type { HandoutEntry, HandoutItem } from './init/handout'
 import {

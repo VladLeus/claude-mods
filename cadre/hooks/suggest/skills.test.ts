@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef, TemplateRoleId } from '../../types'
-import { ownSkillIds } from '../assign'
+import { ownSkillIds } from '../init/answers'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,

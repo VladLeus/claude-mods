@@ -65,7 +65,6 @@ import {
   PYTHON_TIMEOUT_MS,
 } from './apply/run'
 import type { ApplyOutcome } from './apply/run'
-import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './assign'
 import { sha256Hex } from './core/hash'
 import { stableJson } from './core/json'
 import { compareText } from './core/text'
@@ -190,6 +189,7 @@ import {
   withSecuritySkill,
 } from './init'
 import type { AdjustOutcome, InitOptions, ReviewItem } from './init'
+import { envQuestion, MODEL_EFFORT_OPTIONS, modelEffortRefusal } from './init/answers'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
