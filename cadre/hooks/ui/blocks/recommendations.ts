@@ -24,8 +24,9 @@ function roleTitle(roleId: string, roles: readonly RoleSpec[]): string {
 
 /**
  * The lines init prints for the recommendations: `Recommendations: none`, or a heading and then two lines for each,
- * `- <tool> for <role title or all roles>: <why>` and `    run: <command>`. Every cell is cleaned and capped as a
- * report cell is, so none can add a line or hide text.
+ * `- <tool> for <role title or all roles>: <why>` and `    run: <command>`; a recommendation with no install command
+ * (null) gets its first line only, with no run line (E3). Every cell is cleaned and capped as a report cell is, so
+ * none can add a line or hide text.
  */
 export function recommendationLines(
   recommendations: readonly Recommendation[],
@@ -36,6 +37,7 @@ export function recommendationLines(
   for (const recommendation of recommendations) {
     const who = recommendation.roleId === null ? ALL_ROLES : roleTitle(recommendation.roleId, roles)
     lines.push(`- ${reportText(recommendation.tool)} for ${reportText(who)}: ${reportText(recommendation.why)}`)
+    if (recommendation.install === null) continue
     lines.push(`    run: ${reportText(recommendation.install)}`)
   }
 

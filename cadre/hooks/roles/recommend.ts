@@ -16,15 +16,15 @@ import { standsFor } from './template'
  * the argv of pluginInstallArgv for its key, joined with spaces.
  */
 export const INSTALL_COMMANDS: Readonly<{
-  gsd: string
-  superpowers: string
+  gsd: string | null
+  superpowers: string | null
   playwright: string
   devtools: string
   claudeSecurity: string
   securityGuidance: string
 }> = Object.freeze({
-  gsd: adapterOf('gsd').install ?? '',
-  superpowers: adapterOf('superpowers').install ?? '',
+  gsd: adapterOf('gsd').install,
+  superpowers: adapterOf('superpowers').install,
   playwright: 'claude mcp add playwright -- npx @playwright/mcp@latest',
   devtools: 'claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest',
   claudeSecurity: 'claude plugin install claude-security@claude-plugins-official',

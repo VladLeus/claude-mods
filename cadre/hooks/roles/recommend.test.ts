@@ -424,6 +424,18 @@ describe('recommend', () => {
     expect(lines[1]).toBe(`- T for all roles: ${'w'.repeat(239)}…`)
   })
 
+  test('a recommendation with no install command keeps its line and prints no run line (E3)', () => {
+    const plain: Recommendation = { tool: 'T', roleId: null, why: 'w', install: null }
+    const lines = recommendationLines([plain, playwrightFor('web')], [role('web', 'fe', 'Web UI')])
+
+    expect(lines).toEqual([
+      'Recommendations (print-only; init asks before it installs any):',
+      '- T for all roles: w',
+      `- Playwright MCP for Web UI: ${PLAYWRIGHT_WHY}`,
+      `    run: ${INSTALL_COMMANDS.playwright}`,
+    ])
+  })
+
   test('tracer for the whole path: a team with no framework gives lines that name the commands and run none', () => {
     const roles = [PM, FE]
     const lines = recommendationLines(

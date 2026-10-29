@@ -1133,6 +1133,6 @@ export type Recommendation = {
   /** The role that benefits; null when every role does. */
   readonly roleId: string | null
   readonly why: string
-  /** The exact command for the person to run. */
-  readonly install: string
+  /** The exact command for the person to run; null when there is nothing to run, so no run line is printed (E3). */
+  readonly install: string | null
 }
