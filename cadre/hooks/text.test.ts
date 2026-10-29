@@ -167,8 +167,6 @@ import {
   launchLine,
   LINKED_MEMORIES_ROW,
   mcpContextLine,
-  MEMORY_DISMISSED_REASON,
-  memoryContextLine,
   OWN_SKILLS_ENTRY_OPTIONS,
   ownSkillContextLine,
   ownSkillHeader,
@@ -264,6 +262,7 @@ import {
   topicItems,
   topicQuestion,
 } from './init/stages/instructions'
+import { MEMORY_DISMISSED_REASON, memoryContextLine } from './init/stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, teamContextLine } from './init/stages/model'
 import {
   GIT_POLICY_CONTEXT,
