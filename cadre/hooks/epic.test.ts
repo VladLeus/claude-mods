@@ -98,15 +98,8 @@ import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { CHECKOUT_ARGV, checkoutOf } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV, mainCheckoutOf } from './git/common-dir'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
-import {
-  claudeTooOldReply,
-  launcherChangedReply,
-  MEMORY_BLOCK_BEGIN,
-  MEMORY_BLOCK_END,
-  runStart,
-  START_NO_GIT_DIR,
-  worktreeClaudeMd,
-} from './start'
+import { claudeTooOldReply, launcherChangedReply, runStart, START_NO_GIT_DIR, worktreeClaudeMd } from './start'
+import { MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END } from './start/memory-links'
 import { readTeam, regenNoRole } from './team'
 import { DEFAULT_LOCATIONS, entry, hostWorld, link, memHost, memIo, memWorld, templateRole } from './testkit'
 import type { HostCall, HostRunRule, HostWorld, HostWrite, MemHost, MemWorld } from './testkit'

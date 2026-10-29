@@ -382,6 +382,14 @@ import { scopeCardLines } from './scope/card'
 import { compileScope } from './scope/compile'
 import { MEMORY_PATTERN, SECRET_READ_DENY } from './scope/lint'
 import {
+  privateFolderRefusal,
+  runtimeMcpText,
+  START_NO_CLAUDE,
+  START_NO_GIT_DIR,
+  START_NO_HOME,
+  START_NO_MANIFEST,
+} from './start'
+import {
   MEMORY_BLOCK_BEGIN,
   MEMORY_BLOCK_END,
   memoryBlockText,
@@ -389,15 +397,9 @@ import {
   memoryGoneWarning,
   memoryIndexLinkWarning,
   openMemoryBlockWarning,
-  privateFolderRefusal,
-  runtimeMcpText,
-  START_NO_CLAUDE,
-  START_NO_GIT_DIR,
-  START_NO_HOME,
-  START_NO_MANIFEST,
   unreadableMemoryIndexWarning,
   unreadableRecordWarning,
-} from './start'
+} from './start/memory-links'
 import { privateLinkRefusal, STALE_LINK_FOLDERS, stampText } from './start/render-plan'
 import { statusReportText } from './status'
 import type { StatusReport } from './status'

@@ -41,14 +41,7 @@ import {
   launcherMissingReply,
   launchHooksOf,
   launchSettingsOf,
-  MEMORY_BLOCK_BEGIN,
-  MEMORY_BLOCK_END,
-  memoryBlockText,
-  memoryChangedWarning,
-  memoryGoneWarning,
-  memoryIndexLinkWarning,
   MIN_CLAUDE_VERSION,
-  openMemoryBlockWarning,
   parseClaudeVersion,
   privateFolderRefusal,
   readClaudeJson,
@@ -59,10 +52,19 @@ import {
   START_NO_GIT_DIR,
   START_NO_HOME,
   START_NO_MANIFEST,
-  unreadableMemoryIndexWarning,
-  unreadableRecordWarning,
 } from './start'
 import type { LaunchUserRead } from './start'
+import {
+  MEMORY_BLOCK_BEGIN,
+  MEMORY_BLOCK_END,
+  memoryBlockText,
+  memoryChangedWarning,
+  memoryGoneWarning,
+  memoryIndexLinkWarning,
+  openMemoryBlockWarning,
+  unreadableMemoryIndexWarning,
+  unreadableRecordWarning,
+} from './start/memory-links'
 import { NO_MEMORY_LINKS } from './start/render-plan'
 import { compileTeam, readTeam } from './team'
 import {
