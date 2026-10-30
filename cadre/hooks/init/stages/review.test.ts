@@ -18,7 +18,7 @@ import {
   templateRole,
   withFramework,
 } from '../../testkit'
-import { contextText } from '../../ui/ask'
+import { contextText, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
@@ -26,6 +26,8 @@ import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
 import { planStep } from '../run'
 import type { Answer, InitState, ReviewItem } from '../state'
+import { LAUNCH_START_OPTIONS } from './launch'
+import { GIT_POLICY_CONTEXT, GIT_POLICY_QUESTION } from './policy'
 import {
   cardLines,
   improverRunLine,
@@ -181,6 +183,9 @@ async function plannedFor(state: InitState): Promise<PlanResult> {
   return planStep(memIo(gitWorld(), {}).io, effect.call.input)
 }
 
+/** The git policy question as the git policy stage asks it (D-136). */
+const GIT_POLICY_ASK_TEXT = withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)
+
 /** The answer to the plan io effect: the plan made. */
 function planAnswer(planned: PlanResult): Answer {
   return { kind: 'io', result: { id: 'plan', result: planned } }
@@ -221,13 +226,36 @@ describe('the review stage (D-230)', () => {
   test('a go-back goes through the legacy go-back, and its new draft is planned again the next round', async () => {
     const state = reviewAt()
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const going = nextStage(asking, { kind: 'answer', text: 'Change git policy' })
-    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'go-back', draft: REVIEW_DRAFT, item: 'policy' } })
+    const going = nextStage(asking, { kind: 'answer', text: 'duration' })
+    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'go-back', draft: REVIEW_DRAFT, item: 'duration' } })
     const changed = { ...REVIEW_DRAFT, policy: 'all' } satisfies Draft
     const result = { kind: 'accepted', value: changed } satisfies StepResult<Draft>
     const back = nextStage(going, { kind: 'legacy', result: { id: 'go-back', result } })
     expect([back.stage, back.rounds, back.draft.policy]).toEqual(['review', 1, 'all'])
     expect((await plannedFor(back)).state.gitPolicy).toBe('all')
+  })
+
+  test('Change git policy goes back to the git policy stage, then the review again, counting a round', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'Change git policy' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['policy', 'review', 'policy'])
+    expect(going.openQuestion?.question).toBe(GIT_POLICY_ASK_TEXT)
+    const back = nextStage(going, { kind: 'answer', text: 'Commit all' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.policy).toBe('all')
+    expect((await plannedFor(back)).state.gitPolicy).toBe('all')
+  })
+
+  test('Change launcher start goes back to the launcher start stage, then the review, counting a round', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'Change launcher start' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['launch', 'review', 'launch'])
+    expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
+    const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.launchStart).toEqual({ kind: 'here' })
   })
 
   test('a go-back picked at the last round cancels with REVIEW_ROUNDS_REASON and asks nothing more (A3)', async () => {

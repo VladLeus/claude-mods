@@ -2,9 +2,10 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, LaunchStart, PortStat } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
-import { BIDI_OVERRIDE, memIo, memWorld, repoScan } from '../../testkit'
+import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, memIo, memWorld, repoScan, stateAt } from '../../testkit'
 import type { MemRun } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { nextStage } from '../machine'
 import {
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_CONTEXT,
@@ -16,6 +17,7 @@ import {
   LAUNCH_START_QUESTION,
   launchContextLine,
   launchLine,
+  launchStage,
   launchStartStep,
 } from './launch'
 
@@ -211,5 +213,37 @@ describe('refusal re-ask (G-02-6b)', () => {
     const capped = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b'])
     const rounds = { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
     expect(await launchStartStep(capped.io, '/repo', LAUNCH_TEAM)).toEqual(rounds)
+  })
+})
+
+describe('the launch stage (D-230)', () => {
+  /** The launch stage entered for LAUNCH_TEAM in the fixture repo: the launcher start question out. */
+  const entered = launchStage.enter(stateAt('launch', { locations: DEFAULT_LOCATIONS, roles: LAUNCH_TEAM }))
+
+  test('launchStage asks the launcher start question with the role ids; the open question is that ask', () => {
+    const ask = { question: LAUNCH_ASKED, spec: { options: LAUNCH_START_OPTIONS, header: 'Launch' } }
+    expect(entered.effect).toEqual({ kind: 'ask', ...ask })
+    expect(entered.openQuestion).toEqual(ask)
+  })
+
+  test('another folder asks for it; the folder check is an io effect, and a repo folder ends the stage', () => {
+    const asked = nextStage(entered, { kind: 'answer', text: 'Another folder in this repo' })
+    const spec = { options: ['Cancel init'], header: 'Launch dir' }
+    expect(asked.openQuestion).toEqual({ question: DIR_ASKED, spec })
+    const checking = nextStage(asked, { kind: 'answer', text: 'apps/web/' })
+    const call = { id: 'launch-dir-check', root: '/repo', path: 'apps/web' }
+    expect([checking.effect, checking.openQuestion]).toEqual([{ kind: 'io', call }, null])
+    const done = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: true } })
+    expect(done.draft.launchStart).toEqual({ kind: 'dir', path: 'apps/web' })
+  })
+
+  test('a folder the check refuses is asked again with why on top, and an unsafe one is never checked', () => {
+    const asked = nextStage(entered, { kind: 'answer', text: 'other' })
+    const checking = nextStage(asked, { kind: 'answer', text: 'missing' })
+    const refused = nextStage(checking, { kind: 'io', result: { id: 'launch-dir-check', result: false } })
+    expect(refused.openQuestion?.question).toBe(`${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`)
+    const unsafe = nextStage(refused, { kind: 'answer', text: '../a' })
+    expect(unsafe.effect.kind).toBe('ask')
+    expect(unsafe.openQuestion?.question).toBe(`${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`)
   })
 })
