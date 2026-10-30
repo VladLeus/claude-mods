@@ -38,7 +38,7 @@ import type { MemRun } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
-import type { InitState } from '../state'
+import type { Answer, InitState } from '../state'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -631,5 +631,25 @@ describe('kept model results on Change roles (D-235, ASKED #14)', () => {
     const changed = driven(rolesStage.enter({ ...start, ...again }), answers).state
     expect(changed.draft.roles?.map(role => role.id)).not.toEqual(roleIds)
     expect(changed.kept).toBeNull()
+  })
+
+  test('a go-back that keeps every id but changes a title or a purpose clears them as well (ASKED #137)', () => {
+    const roleIds = PROPOSAL.roles.map(role => role.id)
+    const kept = { roleIds, ownSkills: new Map([['S1', ['pm']]]), topics: null, parts: null }
+    const again = { returnTo: 'review', returnAfter: 'improver-install', kept } satisfies Partial<InitState>
+    const start = { ...rolesAt(PROPOSAL, FRAMEWORKS, PROPOSAL), ...again }
+    const renamed = ['Adjust them', 'rename tl tl "Lead"', 'Done adjusting', 'Use these roles']
+    const titled = driven(rolesStage.enter(start), renamed).state
+    expect(titled.draft.roles?.map(role => `${role.id}: ${role.title}`)).toContain('tl: Lead')
+    expect(titled.draft.roles?.map(role => role.id)).toEqual(roleIds)
+    expect(titled.kept).toBeNull()
+    const roles = PROPOSAL.roles.map(role => (role.id === 'tl' ? { ...role, purpose: 'Leads another team.' } : role))
+    const described = { kind: 'roles', roles } satisfies Proposed
+    const result = { kind: 'model', result: { id: 'describe-roles', result: described } } satisfies Answer
+    const answers = ['Describe my own structure', DESCRIPTION, 'Use these roles']
+    const purposed = driven(rolesStage.enter(start), answers, [result]).state
+    expect(purposed.draft.roles?.map(role => `${role.id}: ${role.purpose}`)).toContain('tl: Leads another team.')
+    expect(purposed.draft.roles?.map(role => role.id)).toEqual(roleIds)
+    expect(purposed.kept).toBeNull()
   })
 })
