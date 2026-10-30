@@ -57,6 +57,24 @@ export function questionPaneBlocks(open: OpenQuestion | null, blocks: readonly S
   return newest === undefined ? [] : [newest]
 }
 
+/** What `$.ui.scroll` is given to bring the start of a pane into view, its top row at the top of the window (D-209). */
+export type PaneScroll = {
+  readonly to: 'start'
+  readonly in: string
+  readonly block: 'start'
+}
+
+/**
+ * Where the cadre init pane `pane` scrolls when cadre opens a question (D-209): back to its start, so the open
+ * question's own context shows from its first row wherever the pane is drawn, since a person cannot scroll the pane
+ * while a dialog is open; null when the question is cleared or this run has not opened the pane, so nothing is asked.
+ */
+export function questionScroll(pane: string, open: OpenQuestion | null, isPaneOpen: boolean): PaneScroll | null {
+  if (open === null || !isPaneOpen) return null
+
+  return { to: 'start', in: pane, block: 'start' }
+}
+
 /**
  * No cap on a row's cleaned text: the pane and the option preview wrap a line to their width instead of cutting it
  * (D-231), and the data from disk in a line was capped where the line was built.

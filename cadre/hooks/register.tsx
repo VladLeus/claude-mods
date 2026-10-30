@@ -19,7 +19,15 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
-import { paneColumns, panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './ui/pane'
+import {
+  paneColumns,
+  panePlacement,
+  paneRows,
+  paneSpans,
+  paneView,
+  questionPaneBlocks,
+  questionScroll,
+} from './ui/pane'
 import { answersFromNotes, askRewrite, previewColumns } from './ui/preview'
 
 /** The id of the cadre init side pane (D-133). */
@@ -119,11 +127,12 @@ type PaneRun = {
  * file, so the pure modules never see it. Every member except `ask` turns a host failure into null or unknown, never
  * into absent (statForWrite answers absent only when the host says the path is not there), and none reads an error
  * message. `ask` rejects when the person dismisses the dialog (D-45); it puts the question with its header, context and
- * typed-answer flag into the openQuestion state before the dialog and clears it after, and gives the dialog only its
- * options, header and multi-select (D-203, D-229). `show` puts a block into the side pane's state and opens the pane on
- * the first block of the run, which also replaces whatever an earlier run left; a pane the host cannot open or a state
- * write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show records the open in the
- * run's pane handle, and the command handler closes the pane once the run settles (D2).
+ * typed-answer flag into the openQuestion state before the dialog and clears it after, scrolls a pane the run opened
+ * back to its start for each question (questionScroll, D-209; a scroll the host refuses is swallowed), and gives the
+ * dialog only its options, header and multi-select (D-203, D-229). `show` puts a block into the side pane's state and
+ * opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
+ * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show
+ * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -136,6 +145,9 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         acceptsTyped: acceptsTyped === true,
       }
       await update($, openQuestion, () => open).catch(() => undefined)
+      // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
+      const scroll = questionScroll(PANE, open, pane.isOpened)
+      if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
       try {
         const dialog = {
           options,
