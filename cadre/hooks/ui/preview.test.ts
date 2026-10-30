@@ -7,10 +7,12 @@ import { wrapLine } from './pane'
 import {
   answersFromNotes,
   askRewrite,
+  fitPreview,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
   previewMarkdown,
+  PREVIEW_ROWS,
   withDescribeOwn,
   withPreviews,
 } from './preview'
@@ -417,6 +419,46 @@ describe('askRewrite (A1, A2, D-203)', () => {
       const lines = typeof previews[0] === 'string' ? previews[0].split('\n') : []
       expect([lines, new Set(previews).size]).toEqual([[`**${context.title}**`, '```', ...context.lines, '```'], 1])
     }
+  })
+})
+
+describe('fitPreview (D-228)', () => {
+  /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
+  function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
+    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind }
+  }
+
+  test('the preview fits the rows the spike measured on the main screen at 48 terminal rows', () => {
+    expect(PREVIEW_ROWS).toBe(22)
+  })
+
+  test('a context that fits the rows keeps every line, and nothing overflows', () => {
+    for (const count of [0, 1, PREVIEW_ROWS]) {
+      const context = linesContext(count)
+      expect(fitPreview(context, PREVIEW_ROWS)).toEqual({ lines: context.lines, isOverflow: false })
+    }
+  })
+
+  test('a longer context keeps its first rows less one, then +N more above, and overflows', () => {
+    const fitted = fitPreview(linesContext(30), 5)
+    expect(fitted).toEqual({ lines: ['line 1', 'line 2', 'line 3', 'line 4', '+26 more above'], isOverflow: true })
+    expect(fitPreview(linesContext(PREVIEW_ROWS + 1), PREVIEW_ROWS).lines.at(-1)).toBe('+2 more above')
+  })
+
+  test('the Review is kept whole, since it is paged instead (D-233)', () => {
+    const review = linesContext(40, 'review')
+    expect(fitPreview(review, 5)).toEqual({ lines: review.lines, isOverflow: false })
+  })
+
+  test('on the TUI default each option previews the fitted context (askRewrite with rows)', () => {
+    const context = linesContext(30)
+    const fitted = { ...context, lines: fitPreview(context, 5).lines }
+    const preview = previewMarkdown([fitted])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, null, 5)?.questions)).toEqual([
+      [preview, preview, preview],
+    ])
+    const whole = previewMarkdown([context])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context)?.questions)).toEqual([[whole, whole, whole]])
   })
 })
 

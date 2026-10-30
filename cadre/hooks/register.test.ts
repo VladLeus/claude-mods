@@ -25,6 +25,7 @@ import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
   ABSOLUTE_PATH_MARKERS,
   answerFor,
+  BIDI_OVERRIDE,
   entry,
   INIT_ANSWERS,
   leaks,
@@ -35,7 +36,7 @@ import {
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
 import { paneRows } from './ui/pane'
-import { OWN_ANSWER_HINT } from './ui/preview'
+import { OWN_ANSWER_HINT, PREVIEW_ROWS } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -2343,6 +2344,48 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, skillWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.statuses).toEqual([])
+  })
+
+  /**
+   * initWorld with 25 skills of the user's own, the third one's description holding a control character built at run
+   * time, so the own-skills question's context is longer than the preview (D-228); `onAsk` runs at each dialog.
+   */
+  function manySkillsWorld(onAsk?: () => Promise<void>): World {
+    const commands = Array.from({ length: 25 }, (_, at) => ({
+      name: `skill-${at + 1}`,
+      source: 'user',
+      description: at === 2 ? `Has ${BIDI_OVERRIDE} a control.` : `Skill ${at + 1}.`,
+    }))
+    const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations' }
+
+    return initWorld(onAsk === undefined ? { commands, answers } : { commands, answers, onAsk })
+  }
+
+  test('a context too long for the preview is printed right above its dialog, title first (D-228)', async ($, on) => {
+    const log = newLog()
+    const seen: { readonly logs: readonly string[]; readonly open: unknown }[] = []
+    const atSkills = async (): Promise<void> => {
+      if (!(log.asks.at(-1) ?? '').startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`)) return
+      seen.push({ logs: [...log.logs], open: log.questionWrites.at(-1) })
+    }
+    fakeHost(on, manySkillsWorld(atSkills), log)
+    await $.command.run(TUI_RUN)
+    const [{ logs, open } = { logs: [], open: null }] = seen
+    const context = isObject(open) && isObject(open.context) ? open.context : {}
+    const rows = [context.title, ...(Array.isArray(context.lines) ? context.lines : [])]
+    expect([rows[0], rows.length > PREVIEW_ROWS + 1]).toEqual(['Your own skills', true])
+    expect(logs.slice(-rows.length)).toEqual(rows)
+    expect(log.logs.some(line => line.includes(BIDI_OVERRIDE))).toBe(false)
+    const [preview] = log.askPreviews[log.asks.findIndex(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))] ?? []
+    const marker = typeof preview === 'string' ? preview.split('\n').at(-2) : null
+    expect(marker).toBe(`+${rows.length - PREVIEW_ROWS} more above`)
+  })
+
+  test('a pane surface prints no context as transcript rows, however long (D-228)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, manySkillsWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.logs.includes('Your own skills')).toBe(false)
   })
 
   test('golden: the TUI-default init dry run: panes, statuses, logs, reply (D-208, D-219)', async ($, on) => {
