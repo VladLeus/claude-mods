@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { HookScript } from '../../../types'
+import type { HookScript, SetupScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
 import {
@@ -10,12 +10,15 @@ import {
   gitWorld,
   memIo,
   memWorld,
+  stateAt,
   valueOf,
+  wholeDraft,
   withEvents,
 } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { envQuestion } from '../answers'
-import { carryStep, ENV_DISMISSED_REASON, envContextLine } from './carry'
+import type { InitState } from '../state'
+import { carryStage, carryStep, ENV_DISMISSED_REASON, envContextLine } from './carry'
 
 /** Settings with one PreToolUse hook that runs the GSD secret read guard. */
 const GUARD_SETTINGS = {
@@ -141,5 +144,35 @@ describe('carryStep', () => {
     const before = JSON.stringify(roles)
     await carryStep(memIo(memWorld({}), ['All of them']).io, roles, twoNames)
     expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+describe('the carry stage (D-230)', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** The carry facts of user settings with nothing set. */
+  const noCarry = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] }
+
+  /** The carry stage entered for `roles` with the setup scan `setup`. */
+  function carryAt(setup: SetupScan): InitState {
+    const draft = wholeDraft({ roles, gathered: { ...wholeDraft().gathered, setup } })
+
+    return carryStage.enter(stateAt('carry', draft))
+  }
+
+  test('carryStage lists every scanned env name, then asks the env question; the open question is that ask', () => {
+    const state = carryAt(emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
+    const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
+    const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
+    expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])
+  })
+
+  test('with no env name it shows and asks nothing, and every role carries the settings the user sets', () => {
+    const state = carryAt(emptySetupScan({ carry: { ...noCarry, autoCompactWindow: 800000 } }))
+    expect([state.sub, state.openQuestion, state.outputs]).toEqual([{ kind: 'done' }, null, []])
+    const carry = { autoCompactWindow: true, statusLine: false, env: [], hooks: [] }
+    expect(state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
   })
 })

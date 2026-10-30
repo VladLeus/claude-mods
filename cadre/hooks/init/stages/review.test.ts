@@ -285,6 +285,18 @@ describe('the review stage (D-230)', () => {
     expect(back.draft.roles?.map(role => [role.model, role.effort])).toEqual(modelled)
   })
 
+  test('a typed env goes back to the carry stage, then the review again, counting a round', async () => {
+    const carry = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
+    const state = reviewAt({ gathered: { ...REVIEW_DRAFT.gathered, setup: emptySetupScan({ carry }) } })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'env' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['carry', 'review', 'carry'])
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All of them'], header: 'Env' })
+    const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.roles?.map(role => role.carry.env)).toEqual(REVIEW_DRAFT.roles.map(() => ['API_KEY']))
+  })
+
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
     const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
     const state = reviewAt({ changes })
