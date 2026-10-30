@@ -227,21 +227,24 @@ export function initialState(dryRun: boolean): InitState {
 }
 
 /**
- * The kept model results after `answer` (D-235): an own-skills, topics or parts answer is kept with the ids of the
- * roles it was made for, so a review go-back can reuse it; any other answer leaves them as they are.
+ * The kept model results after `answer` (D-235): an own-skills answer is kept, and a parts answer together with the
+ * topics its call named, so the kept topics and recommendation always come from one read (ASKED #137); each with the
+ * ids of the roles it was made for, so a review go-back can reuse it. Any other answer leaves them as they are.
  */
 function keptAfter(state: InitState, answer: Answer): Kept | null {
   if (answer.kind !== 'model') return state.kept
   const roleIds = (state.draft.roles ?? []).map(role => role.id)
   const kept: Kept = state.kept ?? { roleIds, ownSkills: null, topics: null, parts: null }
   const { result } = answer
+  const { effect } = state
   switch (result.id) {
     case 'skills':
       return { ...kept, roleIds, ownSkills: result.result }
-    case 'topics':
-      return { ...kept, roleIds, topics: result.result }
-    case 'parts':
-      return { ...kept, roleIds, parts: result.result }
+    case 'parts': {
+      const topics = effect.kind === 'model' && effect.call.id === 'parts' ? effect.call.topics : null
+
+      return { ...kept, roleIds, topics, parts: result.result }
+    }
     default:
       return state.kept
   }

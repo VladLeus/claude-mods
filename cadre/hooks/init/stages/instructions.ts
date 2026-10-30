@@ -29,7 +29,7 @@ import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/b
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, RepoNames, StageDef } from '../state'
+import type { Answer, InitState, Kept, RepoNames, StageDef } from '../state'
 import { memoryAnswer, memoryEnter } from './memory'
 import type { MemoryNext } from './memory'
 
@@ -365,9 +365,23 @@ function handOutParts(state: InitState, input: InstructionInput, found: PartsFou
 }
 
 /**
+ * The kept results a review go-back reuses for the read `scan` (reusable, D-235): only those of a read with the same
+ * part ids (ASKED #137). The kept topics name each part of their read once, and none when it had no part, so their part
+ * ids are that read's; for another read there are none, and the model is called again, as on a first pass.
+ */
+function keptFor(state: InitState, scan: InstructionScan): Kept | null {
+  const kept = reusable(state)
+  if (kept === null || kept.topics === null) return null
+  const ids = new Set(kept.topics.flatMap(topic => topic.partIds))
+  const isSameRead = ids.size === scan.parts.length && scan.parts.every(part => ids.has(part.id))
+
+  return isSameRead ? kept : null
+}
+
+/**
  * The roles recommended for the topics and the memories (G-02-1f Recommendation, Memories): the parts model effect,
  * which reads each role's work, the topics and the memories by file and summary; a review go-back hands them out with
- * the recommendation of the first pass, kept for the same role ids (reusable, D-235).
+ * the recommendation of the first pass, kept for the same role ids and part ids (keptFor, D-235).
  */
 function recommending(
   state: InitState,
@@ -375,7 +389,7 @@ function recommending(
   scan: InstructionScan,
   topics: readonly InstructionTopic[],
 ): InitState {
-  const kept = reusable(state)?.parts ?? null
+  const kept = keptFor(state, scan)?.parts ?? null
   if (kept !== null) return handOutParts(state, input, { scan, topics, recommended: kept })
   const calling: InitState = { ...state, sub: { kind: 'parts', scan, topics } }
   const { roles } = input
@@ -387,7 +401,7 @@ function recommending(
  * After the read (G-02-1f): a read with no part and no memory shows its read warnings, if any, in the instructions
  * block, then asks the whole-file questions; else the model groups the parts into topics across files (no call without
  * a part, the topics model effect), and a second call recommends roles for the topics and the memories. A review
- * go-back uses the topics of the first pass instead, kept for the same role ids (reusable, D-235).
+ * go-back uses the topics of the first pass instead, kept for the same role ids and part ids (keptFor, D-235).
  */
 function afterRead(state: InitState, input: InstructionInput, scan: InstructionScan): InitState {
   const isEmpty = scan.parts.length === 0 && scan.memories.length === 0
@@ -398,7 +412,7 @@ function afterRead(state: InitState, input: InstructionInput, scan: InstructionS
     return wholeFiles(withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }]), input, WHOLE)
   }
   if (scan.parts.length === 0) return recommending(state, input, scan, [])
-  const kept = reusable(state)?.topics ?? null
+  const kept = keptFor(state, scan)?.topics ?? null
   if (kept !== null) return recommending(state, input, scan, kept)
 
   return withEffect({ ...state, sub: { kind: 'topics', scan } }, { kind: 'model', call: { id: 'topics', scan } })
