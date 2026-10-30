@@ -1,20 +1,26 @@
 /**
- * The security plugins stage of init (decision #39, D-136), a layer 10 module: the question that names each missing
- * security plugin with one note for each (securityInstallQuestion), its context line that nothing is installed before
- * Confirm, the Install and Not now answers both install offers use (INSTALL_CHOICES, INSTALL_OPTIONS),
- * securityInstallStep, which asks it, and withSecuritySkill, which gives the claude-security review skill or takes it
- * away. Pure: it asks through the InitIo port it is given, imports core, roles, scope and ui/ask, and never imports
- * init.ts, which imports it, or init/run.
+ * The security plugins stage of init (decision #39, ROLE-03, D-136, D-230), a layer 10 module: the question that names
+ * each missing security plugin with one note for each (securityInstallQuestion), its context line that nothing is
+ * installed before Confirm, the Install and Not now answers both install offers use (INSTALL_CHOICES,
+ * INSTALL_OPTIONS), withSecuritySkill, which gives the claude-security review skill or takes it away, and
+ * securityStage, the pure stage that shows the recommendations for the team and asks it. Pure: it gives states and
+ * never performs an effect, imports core, roles, scope, team, ui and init/state, and never imports init/machine or
+ * init/run.
  */
-import type { InitIo, RoleSpec } from '../../../types'
+import type { RoleSpec, SetupScan } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText } from '../../core/text'
-import { CLAUDE_SECURITY_SKILL } from '../../roles/infra'
+import { CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from '../../roles/infra'
+import { missingSecurityPlugins, recommend } from '../../roles/recommend'
 import { standsFor } from '../../roles/template'
 import { pluginName } from '../../scope/lint'
-import { accepted, ASK_HEADERS, askChoice, choiceResult, quotedLabels, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { resolvedFramework } from '../../team'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
+import { recommendationLines } from '../../ui/blocks/recommendations'
+import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 
 /** The start of the security plugins question, which init asks right after the recommendations (decision #39). */
 export const SECURITY_INSTALL_PREFIX = 'Install from claude-plugins-official after you confirm the plan:'
@@ -65,31 +71,6 @@ export const INSTALL_OPTIONS: readonly string[] = Object.freeze(INSTALL_CHOICES.
 export const SECURITY_INSTALL_DISMISSED_REASON = 'The security plugins question was dismissed or not answered.'
 
 /**
- * The security plugins step (decision #39, LNCH-01). With no key it asks nothing and is accepted with none. Else it
- * asks securityInstallQuestion, with SECURITY_INSTALL_CONTEXT on its second line (D-136), and the buttons
- * INSTALL_OPTIONS: Install, trimmed and in any case, is accepted with every key, and Not now with none; any other
- * answer is asked again with why on top. A dismissal is cancelled with SECURITY_INSTALL_DISMISSED_REASON and
- * MAX_ASKS answers that are neither with NO_USABLE_ANSWER_REASON (A1, D-45). It installs nothing itself: the keys are
- * installed only after Confirm, never in --dry-run (applyConfirmed).
- */
-export async function securityInstallStep(
-  io: InitIo,
-  keys: readonly string[],
-): Promise<StepResult<readonly string[]>> {
-  if (keys.length === 0) return accepted([])
-  const ask = {
-    question: withContext(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT),
-    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security },
-    parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
-    accepts: quotedLabels(INSTALL_OPTIONS),
-  }
-  const isWanted = choiceResult(await askChoice(io, ask), SECURITY_INSTALL_DISMISSED_REASON)
-  if (isWanted.kind === 'cancelled') return isWanted
-
-  return accepted(isWanted.value ? keys : [])
-}
-
-/**
  * The roles with the claude-security review skill given or taken away (decision #39): each role that stands for
  * Security, by its id or its `basedOn`, has CLAUDE_SECURITY_SKILL once, last in its skills, when `isWanted`, and not at
  * all when not; every other role is kept as it is. The roles given are not changed.
@@ -102,3 +83,73 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
     return { ...role, skills: isWanted ? [...skills, CLAUDE_SECURITY_SKILL] : skills }
   })
 }
+
+/**
+ * The security plugins question as the stage asks it (decision #39, D-136): securityInstallQuestion for `keys`, with
+ * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip, Install or Not now
+ * trimmed and in any case, what its refusal lists, and the reason a dismissal cancels with.
+ */
+function securityAsk(keys: readonly string[]): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  return {
+    question: withContext(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT),
+    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security },
+    parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
+    accepts: quotedLabels(INSTALL_OPTIONS),
+    dismissedReason: SECURITY_INSTALL_DISMISSED_REASON,
+  }
+}
+
+/**
+ * The stage done with `installs`, the plugins to install after Confirm: when claude-security was asked about, every
+ * role that stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill).
+ */
+function installsDone(
+  state: InitState,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  installs: readonly string[],
+): InitState {
+  const isSkillAsked = missingSecurityPlugins(roles, setup).includes(CLAUDE_SECURITY_PLUGIN)
+  const team = isSkillAsked ? withSecuritySkill(roles, installs.includes(CLAUDE_SECURITY_PLUGIN)) : roles
+
+  return stageDone({ ...state, draft: { ...state.draft, roles: team, pluginInstalls: installs } })
+}
+
+/** The answer to the security plugins question (choiceAnswer): Install gives every missing key, Not now none. */
+function securityAnswer(state: InitState, answer: Answer): InitState {
+  const { roles, gathered } = state.draft
+  const isOpen = answer.kind === 'answer' && state.sub.kind === 'ask'
+  if (!isOpen || roles === undefined || gathered === undefined) return stageFailed(state)
+  const keys = missingSecurityPlugins(roles, gathered.setup)
+  const ask = securityAsk(keys)
+  const next = choiceAnswer(ask, state.sub, answer.text)
+  if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+
+  return installsDone(state, roles, gathered.setup, next.value ? keys : [])
+}
+
+/**
+ * The security plugins stage (decision #39, ROLE-03, LNCH-01, D-230): the recommendations block for the team in the
+ * side pane first, then, for the plugins a team with a Security role misses (missingSecurityPlugins), the security
+ * plugins question (securityAsk): Install gives every missing key and Not now none; any other answer is asked again
+ * with why on top. With no key it asks nothing and installs nothing. A dismissal is cancelled with
+ * SECURITY_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with NO_USABLE_ANSWER_REASON (A1, D-45). It
+ * installs nothing itself: the keys are installed only after Confirm, never in --dry-run (applyConfirmed).
+ */
+export const securityStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, repoDefault, gathered } = state.draft
+    if (roles === undefined || repoDefault === undefined || gathered === undefined) return stageFailed(state)
+    const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
+    const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+    const lines = recommendationLines(recommendations, roles)
+    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'recommendations', lines } }])
+    const keys = missingSecurityPlugins(roles, gathered.setup)
+    if (keys.length === 0) return installsDone(shown, roles, gathered.setup, [])
+    const ask = securityAsk(keys)
+
+    return asking(shown, ask.question, ask.spec, 1)
+  },
+  answer: securityAnswer,
+})

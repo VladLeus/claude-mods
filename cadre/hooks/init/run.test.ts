@@ -139,6 +139,7 @@ import {
   USER_DIR_LISTED,
   valueOf,
   withEvents,
+  wholeDraft,
   withFramework,
   withStats,
   withWrites,
@@ -217,7 +218,7 @@ import {
   ROLES_QUESTION,
   rolesStep,
 } from './stages/roles'
-import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityInstallStep } from './stages/security'
+import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -2770,7 +2771,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
         '"Use these roles", "Adjust them", "Describe my own structure"',
       ],
-      ['security', io => securityInstallStep(io, SECURITY_KEYS), '"Install", "Not now"'],
       ['duration', io => durationStep(io, roles), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
       ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
@@ -2802,6 +2802,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         'framework mode',
         () => driven(frameworksStage.enter(stateAt('frameworks', { choice, roles })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
+      ],
+      [
+        'security',
+        () => driven(securityStage.enter(stateAt('security', wholeDraft())), ['zzz']).asked,
+        '"Install", "Not now"',
       ],
       ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],

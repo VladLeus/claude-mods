@@ -11,12 +11,8 @@
 import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
-import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
-import { missingSecurityPlugins, recommend } from '../roles/recommend'
 import { scanWarnings } from '../scan/gather'
-import { resolvedFramework } from '../team'
-import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import {
@@ -37,7 +33,7 @@ import { launchStage } from './stages/launch'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
 import { installedFrameworks } from './stages/roles'
-import { withSecuritySkill } from './stages/security'
+import { securityStage } from './stages/security'
 
 /**
  * The guard (D-42, SCAN-04), an io effect before anything is read or asked: it refuses with its text, which is the
@@ -105,37 +101,6 @@ const rolesStage: StageDef = Object.freeze({
     const { roles, changes } = chosen.value
 
     return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
-  },
-})
-
-/**
- * The recommendations block for the team (ROLE-03), then the security plugins question for the plugins a team with a
- * Security role misses (securityInstallStep, legacy, decision #39); when claude-security was asked about, every role
- * that stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill).
- */
-const securityStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, repoDefault, gathered } = state.draft
-    if (roles === undefined || repoDefault === undefined || gathered === undefined) return stageFailed(state)
-    const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-    const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-    const lines = recommendationLines(recommendations, roles)
-    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'recommendations', lines } }])
-    const keys = missingSecurityPlugins(roles, gathered.setup)
-
-    return withEffect(shown, { kind: 'legacy', step: { id: 'security', keys } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    const { roles, gathered } = state.draft
-    const isAnswer = answer.kind === 'legacy' && answer.result.id === 'security'
-    if (!isAnswer || roles === undefined || gathered === undefined) return stageFailed(state)
-    const installs = answer.result.result
-    if (installs.kind === 'cancelled') return stageCancelled(state, installs.reason)
-    const pluginInstalls = installs.value
-    const isSkillAsked = missingSecurityPlugins(roles, gathered.setup).includes(CLAUDE_SECURITY_PLUGIN)
-    const team = isSkillAsked ? withSecuritySkill(roles, pluginInstalls.includes(CLAUDE_SECURITY_PLUGIN)) : roles
-
-    return stageDone({ ...state, draft: { ...state.draft, roles: team, pluginInstalls } })
   },
 })
 

@@ -137,7 +137,6 @@ export type LegacyStep =
       readonly installed: readonly FrameworkId[]
       readonly start: RoleProposal
     }
-  | { readonly id: 'security'; readonly keys: readonly string[] }
   | { readonly id: 'duration'; readonly roles: readonly RoleSpec[] }
   | { readonly id: 'model'; readonly roles: readonly RoleSpec[] }
   | {
@@ -192,7 +191,6 @@ export type Applied = {
  */
 export type LegacyResult =
   | { readonly id: 'roles'; readonly result: StepResult<RoleProposal> }
-  | { readonly id: 'security'; readonly result: StepResult<readonly string[]> }
   | { readonly id: 'duration'; readonly result: StepResult<string> }
   | { readonly id: 'model'; readonly result: StepResult<readonly RoleSpec[]> }
   | { readonly id: 'assign'; readonly result: StepResult<readonly RoleSpec[]> }

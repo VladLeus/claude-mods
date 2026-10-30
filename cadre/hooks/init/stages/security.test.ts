@@ -8,8 +8,6 @@ import {
   driven,
   emptySetupScan,
   GUIDANCE_KEY,
-  memIo,
-  memWorld,
   SECURITY_KEY,
   SECURITY_KEYS,
   stateAt,
@@ -19,16 +17,34 @@ import {
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import type { Draft } from '../draft'
+import { cancelledReply } from '../replies'
+import type { InitState } from '../state'
 import {
   INSTALL_OPTIONS,
   SECURITY_INSTALL_CONTEXT,
   SECURITY_INSTALL_DISMISSED_REASON,
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
-  securityInstallStep,
   securityStage,
   withSecuritySkill,
 } from './security'
+
+/** PM, Team Lead and Security on the built-in default, with no security plugin installed. */
+const DRAFT = wholeDraft()
+
+/** The security stage entered with `draft`. */
+function securityAt(draft: Draft = DRAFT): InitState {
+  return securityStage.enter(stateAt('security', draft))
+}
+
+/** The recommendations block of `draft`'s team, as the stage shows it before the question (ROLE-03). */
+function recommendationsOf(draft: Draft): unknown {
+  const { roles, gathered } = draft
+  const frameworks = roles.map(role => resolvedFramework(role, draft.repoDefault))
+  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+
+  return { kind: 'show', block: { key: 'recommendations', lines: recommendationLines(recommendations, roles) } }
+}
 
 describe('security plugin installs (decision #39)', () => {
   test('the question start, its two answers, its cancel reason and the install timeout are fixed', () => {
@@ -52,10 +68,10 @@ describe('security plugin installs (decision #39)', () => {
     expect(securityInstallQuestion([GUIDANCE_KEY])).toBe(`${start} security-guidance? ${guidanceNote}`)
   })
 
-  test('the step asks nothing with no plugin missing; Install gives the keys, Not now none, in any case', async () => {
-    const quiet = memIo(memWorld({}), [])
-    expect(await securityInstallStep(quiet.io, [])).toEqual({ kind: 'accepted', value: [] })
-    expect(quiet.asked).toEqual([])
+  test('the step asks nothing with no plugin missing; Install gives the keys, Not now none, in any case', () => {
+    const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
+    const quiet = driven(securityAt(wholeDraft({ gathered: { ...DRAFT.gathered, setup } })), [])
+    expect([quiet.asked, quiet.state.draft.pluginInstalls]).toEqual([[], []])
     const cases: readonly (readonly [string, readonly string[]])[] = [
       ['Install', SECURITY_KEYS],
       [' install ', SECURITY_KEYS],
@@ -63,27 +79,25 @@ describe('security plugin installs (decision #39)', () => {
       ['NOT NOW', []],
     ]
     for (const [answer, value] of cases) {
-      const run = memIo(memWorld({}), [answer])
-      const result = await securityInstallStep(run.io, SECURITY_KEYS)
-      expect([answer, result]).toEqual([answer, { kind: 'accepted', value }])
+      const run = driven(securityAt(), [answer])
+      expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, value])
       expect(run.asked).toEqual([withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)])
       expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security' }])
     }
   })
 
-  test('a dismissal, or three answers that are neither, cancels the step with its reason (A1, D-45)', async () => {
+  test('a dismissal, or three answers that are neither, cancels the step with its reason (A1, D-45)', () => {
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], 'The security plugins question was dismissed or not answered.'],
       [['yes', 'later', 'Install them'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of cases) {
-      const run = memIo(memWorld({}), answers)
-      expect(await securityInstallStep(run.io, SECURITY_KEYS)).toEqual({ kind: 'cancelled', reason })
+      const run = driven(securityAt(), answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(run.asked).toHaveLength(answers.length === 0 ? 1 : MAX_ASKS)
-      expect(run.logged).toEqual([])
+      expect(run.outputs).toEqual([recommendationsOf(DRAFT), { kind: 'log', text: reason }])
     }
-    const refused = memIo(memWorld({}), ['yes', 'Install'])
-    await securityInstallStep(refused.io, SECURITY_KEYS)
+    const refused = driven(securityAt(), ['yes', 'Install'])
     const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
     expect(refused.asked).toEqual([question, `'yes' isn't one of: "Install", "Not now".\n${question}`])
   })
@@ -117,31 +131,19 @@ describe('security plugin review fixes (#69)', () => {
 })
 
 describe('the security stage (D-230)', () => {
-  /** PM, Team Lead and Security on the built-in default, with no security plugin installed. */
-  const draft = wholeDraft()
-
-  /** The recommendations block of `draft`'s team, as the stage shows it before the question (ROLE-03). */
-  function recommendationsOf(given: Draft): unknown {
-    const { roles, gathered } = given
-    const frameworks = roles.map(role => resolvedFramework(role, given.repoDefault))
-    const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-
-    return { kind: 'show', block: { key: 'recommendations', lines: recommendationLines(recommendations, roles) } }
-  }
-
   test('securityStage shows the recommendations, then asks the plugins question; the open question is that ask', () => {
-    const state = securityStage.enter(stateAt('security', draft))
+    const state = securityAt()
     const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
     const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security' } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
-    expect(state.outputs).toEqual([recommendationsOf(draft)])
+    expect(state.outputs).toEqual([recommendationsOf(DRAFT)])
   })
 
   test('with no plugin missing it shows the recommendations, asks nothing and installs nothing', () => {
     const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
-    const installed = wholeDraft({ gathered: { ...draft.gathered, setup }, pluginInstalls: [GUIDANCE_KEY] })
-    const state = securityStage.enter(stateAt('security', installed))
+    const installed = wholeDraft({ gathered: { ...DRAFT.gathered, setup }, pluginInstalls: [GUIDANCE_KEY] })
+    const state = securityAt(installed)
     expect([state.sub, state.openQuestion, state.draft.pluginInstalls]).toEqual([{ kind: 'done' }, null, []])
     expect(state.draft.roles).toEqual(installed.roles)
     expect(state.outputs).toEqual([recommendationsOf(installed)])
@@ -154,7 +156,7 @@ describe('the security stage (D-230)', () => {
       ['Not now', [], []],
     ]
     for (const [answer, installs, skills] of cases) {
-      const run = driven(securityStage.enter(stateAt('security', draft)), [answer])
+      const run = driven(securityAt(), [answer])
       expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, installs])
       const security = run.state.draft.roles?.find(role => role.id === 'security')
       expect([answer, security?.skills.filter(name => name === skill)]).toEqual([answer, skills])

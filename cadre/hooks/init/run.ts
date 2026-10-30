@@ -72,7 +72,6 @@ import { improverInstallStep } from './stages/improver-install'
 import { instructionsStep } from './stages/instructions'
 import { modelStep } from './stages/model'
 import { rolesStep } from './stages/roles'
-import { securityInstallStep } from './stages/security'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -354,8 +353,6 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
   switch (step.id) {
     case 'roles':
       return { id: 'roles', result: await rolesStep(io, step.proposal, step.installed, step.start) }
-    case 'security':
-      return { id: 'security', result: await securityInstallStep(io, step.keys) }
     case 'duration':
       return { id: 'duration', result: await durationStep(io, step.roles) }
     case 'model':
