@@ -251,18 +251,19 @@ export const NOTE_WORDING = 'as a note (press n)'
 const MAX_DIALOG_OPTIONS = 4
 
 /**
- * A previewed single-select question with a way to give an answer of one's own (A2, R3, R4), since the engine draws
- * no Other row beside a preview: its text has every OTHER_WORDING replaced by NOTE_WORDING and ends with the line
- * OWN_ANSWER_HINT, added unless the replaced text already ends with it. With fewer than MAX_DIALOG_OPTIONS options and
- * none labelled DESCRIBE_OWN_LABEL, it also gets one last option, DESCRIBE_OWN_LABEL with DESCRIBE_OWN_DESCRIPTION
- * and the given preview; otherwise its options are kept. The result is a new object; the question it is given is
- * never changed.
+ * A previewed single-select question (A2, R3, R4, D-234), since the engine draws no Other row beside a preview: its
+ * text has every OTHER_WORDING replaced by NOTE_WORDING. Only a question whose spec takes a typed answer
+ * (`acceptsTyped`, D-234) also ends with the line OWN_ANSWER_HINT, added unless the replaced text already ends with
+ * it, and with fewer than MAX_DIALOG_OPTIONS options gets one last option, DESCRIBE_OWN_LABEL with
+ * DESCRIBE_OWN_DESCRIPTION and the given preview; a question that takes none, such as Roles with its own describe
+ * option or a yes/no consent, keeps its options and gets no hint. The result is a new object; the question it is
+ * given is never changed.
  */
-export function withDescribeOwn(question: CheckedQuestion, preview: string): CheckedQuestion {
+export function withDescribeOwn(question: CheckedQuestion, preview: string, acceptsTyped: boolean): CheckedQuestion {
   const replaced = question.question.replaceAll(OTHER_WORDING, NOTE_WORDING)
+  if (!acceptsTyped) return { ...question, question: replaced }
   const text = replaced.endsWith(OWN_ANSWER_HINT) ? replaced : `${replaced}\n${OWN_ANSWER_HINT}`
-  const hasOwn = question.options.some(option => option.label === DESCRIBE_OWN_LABEL)
-  if (hasOwn || question.options.length >= MAX_DIALOG_OPTIONS) return { ...question, question: text }
+  if (question.options.length >= MAX_DIALOG_OPTIONS) return { ...question, question: text }
   const own = { label: DESCRIBE_OWN_LABEL, description: DESCRIBE_OWN_DESCRIPTION, preview }
 
   return { ...question, question: text, options: [...question.options, own] }
@@ -289,14 +290,16 @@ export type AskRewrite = {
  * has no context of its own (D-203) or withPreviews does not rewrite the questions. Each option of each single-select
  * question gets the preview of the open question's own context, its lines wrapped to `columns` (previewMarkdown,
  * D-203, D-231), whatever its header, and each such question then gets NOTE_WORDING for every OTHER_WORDING in its
- * text (R4), the hint line as its last line (R3) and, when it has room, the Describe your own option with that preview
- * (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3); a
- * multi-select question is copied unchanged, OTHER_WORDING included, and has none. Given `rows`, as on the TUI default,
- * the preview shows the context fitted to them (fitPreview, D-228); with none it shows every line.
+ * text (R4) and, when the open question takes a typed answer (`acceptsTyped`, D-234), the hint line as its last line
+ * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
+ * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged,
+ * OTHER_WORDING included, and has none. Given `rows`, as on the TUI default, the preview shows the context fitted to
+ * them (fitPreview, D-228); with none it shows every line.
  */
 export function askRewrite(
   questions: unknown,
   context: AskContext | null,
+  acceptsTyped: boolean,
   columns: number | null = null,
   rows: number | null = null,
 ): AskRewrite | null {
@@ -306,7 +309,7 @@ export function askRewrite(
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null
   const pairs = previewed.map(question => {
-    const shown = question.multiSelect === true ? null : withDescribeOwn(question, preview)
+    const shown = question.multiSelect === true ? null : withDescribeOwn(question, preview, acceptsTyped)
 
     return { question, shown }
   })

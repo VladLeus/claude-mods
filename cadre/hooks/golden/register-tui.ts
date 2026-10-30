@@ -63,11 +63,9 @@ export const GOLDEN_TUI: {
       "options": [
         "Use these roles",
         "Adjust them",
-        "Describe my own structure",
-        "Describe your own"
+        "Describe my own structure"
       ],
       "previews": [
-        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
@@ -77,11 +75,9 @@ export const GOLDEN_TUI: {
       "header": "Framework",
       "options": [
         "Same for all roles",
-        "Per role",
-        "Describe your own"
+        "Per role"
       ],
       "previews": [
-        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
         "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
         "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
       ]
@@ -105,11 +101,9 @@ export const GOLDEN_TUI: {
       "header": "Security",
       "options": [
         "Install",
-        "Not now",
-        "Describe your own"
+        "Not now"
       ],
       "previews": [
-        "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```",
         "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```",
         "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```"
       ]
@@ -133,11 +127,9 @@ export const GOLDEN_TUI: {
       "header": "Model",
       "options": [
         "Same for all roles",
-        "Per role",
-        "Describe your own"
+        "Per role"
       ],
       "previews": [
-        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
         "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
       ]
@@ -162,11 +154,9 @@ export const GOLDEN_TUI: {
       "options": [
         "Accept recommendations",
         "Go one by one",
-        "Whole group",
-        "Describe your own"
+        "Whole group"
       ],
       "previews": [
-        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
         "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
         "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
         "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```"
@@ -199,11 +189,9 @@ export const GOLDEN_TUI: {
       "options": [
         "Commit definitions (default)",
         "Commit all",
-        "Ignore all of .cadre/",
-        "Describe your own"
+        "Ignore all of .cadre/"
       ],
       "previews": [
-        "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
         "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
         "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
         "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```"
@@ -214,11 +202,9 @@ export const GOLDEN_TUI: {
       "options": [
         "Git root of this repo",
         "The folder I run it from",
-        "Another folder in this repo",
-        "Describe your own"
+        "Another folder in this repo"
       ],
       "previews": [
-        "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
         "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
         "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
         "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```"

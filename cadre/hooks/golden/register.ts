@@ -11,10 +11,10 @@
  * question's own context (D-203). The run is given no presentation, as the test kit stamps none, so no preview line
  * is wrapped (previewColumns, D-231); a register spec pins the wrap at 80 columns. The spec seats the pane inline again
  * at each ask, as a terminal main screen keeps it drawn. The claude.json consent and the hunk questions have no
- * context of their own, so they have no preview and no Describe your own option. "Use these roles?" has none either,
- * and that is a test-kit artifact: the kit draws the pane only on a mount, the first block of a run clears its seat
- * (D3), and the re-seat at that ask lands after its options were rewritten, while a terminal draws the pane as soon as
- * it opens.
+ * context of their own, so they have no preview and no Describe your own option; of the others, only a question that
+ * takes a typed answer gets Describe your own (D-234). "Use these roles?" has no preview either, and that is a
+ * test-kit artifact: the kit draws the pane only on a mount, the first block of a run clears its seat (D3), and the
+ * re-seat at that ask lands after its options were rewritten, while a terminal draws the pane as soon as it opens.
  */
 export const GOLDEN_PREVIEWS: readonly {
   readonly header: string | null
@@ -49,11 +49,9 @@ export const GOLDEN_PREVIEWS: readonly {
     "header": "Framework",
     "options": [
       "Same for all roles",
-      "Per role",
-      "Describe your own"
+      "Per role"
     ],
     "previews": [
-      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
       "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
       "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
     ]
@@ -77,11 +75,9 @@ export const GOLDEN_PREVIEWS: readonly {
     "header": "Security",
     "options": [
       "Install",
-      "Not now",
-      "Describe your own"
+      "Not now"
     ],
     "previews": [
-      "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
       "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
       "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```"
     ]
@@ -105,11 +101,9 @@ export const GOLDEN_PREVIEWS: readonly {
     "header": "Model",
     "options": [
       "Same for all roles",
-      "Per role",
-      "Describe your own"
+      "Per role"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
       "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
       "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
     ]
@@ -156,11 +150,9 @@ export const GOLDEN_PREVIEWS: readonly {
     "options": [
       "Commit definitions (default)",
       "Commit all",
-      "Ignore all of .cadre/",
-      "Describe your own"
+      "Ignore all of .cadre/"
     ],
     "previews": [
-      "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
       "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
       "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
       "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```"
@@ -171,11 +163,9 @@ export const GOLDEN_PREVIEWS: readonly {
     "options": [
       "Git root of this repo",
       "The folder I run it from",
-      "Another folder in this repo",
-      "Describe your own"
+      "Another folder in this repo"
     ],
     "previews": [
-      "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
       "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
       "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
       "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```"
