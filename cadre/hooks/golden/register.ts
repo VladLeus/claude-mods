@@ -7,10 +7,11 @@
 
 /**
  * Each question the init dry run of the D3/R1 world (initWorld) asked on the main screen, in order: its header chip
- * (null when none), its options as the dialog drew them and the option preview of each (null where none). The spec
- * seats the pane inline again at each ask, as a terminal main screen keeps it drawn. The first question comes before
- * any block, so it has no preview. "Use these roles?" has none either, and that is a test-kit artifact: the kit draws
- * the pane only on a mount, the first block of a run clears its seat (D3), and the re-seat at that ask lands after its
+ * (null when none), its options as the dialog drew them and the option preview of each (null where none), the
+ * question's own context (D-203). The spec seats the pane inline again at each ask, as a terminal main screen keeps it
+ * drawn. The claude.json consent and the hunk questions have no context of their own, so they have no preview and no
+ * Describe your own option. "Use these roles?" has none either, and that is a test-kit artifact: the kit draws the
+ * pane only on a mount, the first block of a run clears its seat (D3), and the re-seat at that ask lands after its
  * options were rewritten, while a terminal draws the pane as soon as it opens.
  */
 export const GOLDEN_PREVIEWS: readonly {
@@ -50,9 +51,9 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
     ]
   },
   {
@@ -64,10 +65,10 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+      "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/; enabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
     ]
   },
   {
@@ -78,9 +79,9 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```"
+      "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
+      "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```",
+      "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits.\n```"
     ]
   },
   {
@@ -130,26 +131,22 @@ export const GOLDEN_PREVIEWS: readonly {
     "header": "Hunk 1 of 2",
     "options": [
       "Accept",
-      "Decline",
-      "Describe your own"
+      "Decline"
     ],
     "previews": [
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```"
+      null,
+      null
     ]
   },
   {
     "header": "Hunk 2 of 2",
     "options": [
       "Accept",
-      "Decline",
-      "Describe your own"
+      "Decline"
     ],
     "previews": [
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```"
+      null,
+      null
     ]
   },
   {
@@ -161,10 +158,10 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```",
-      "**Recommendations**\n```\nRecommendations (print-only; init asks before it installs any):\n- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)\n    run: claude plugin install claude-security@claude-plugins-official\n- security-guidance for Security: no hooks warn the Security role about risky edits\n    run: claude plugin install security-guidance@claude-plugins-official\n```"
+      "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+      "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+      "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+      "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```"
     ]
   },
   {
@@ -176,10 +173,10 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe your own"
     ],
     "previews": [
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
-      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+      "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+      "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+      "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```"
     ]
   },
   {

@@ -1,10 +1,10 @@
 /**
- * The option preview, a layer 8 module: the pane blocks as the markdown preview of a dialog option on the terminal
- * main screen (D3), the block each question's preview shows (B1), the rewrite of an AskUserQuestion call with its
- * previews and the Describe your own option (A1, A2, R3, R4), and the answers typed as notes (A3). It imports core and
- * the types, so register's AskUserQuestion hook reads it here.
+ * The option preview, a layer 8 module: the open question's own context as the markdown preview of a dialog option on
+ * the terminal main screen (D3, D-203), the rewrite of an AskUserQuestion call with its previews and the Describe your
+ * own option (A1, A2, R3, R4), and the answers typed as notes (A3). It imports core and the types, so register's
+ * AskUserQuestion hook reads it here.
  */
-import type { PaneKey, ShownBlock } from '../../types'
+import type { AskContext, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { reportText } from '../core/text'
 
@@ -19,6 +19,9 @@ const CUT_LINE = '…'
 
 /** The characters a preview title escapes with a backslash, so the title draws as its own text (D3). */
 const TITLE_MARKUP = /[*_`[\]<>#\\~|]/g
+
+/** What a preview draws of one block or context (D3, D-203): its title and its lines. */
+type Previewed = Pick<ShownBlock, 'title' | 'lines'>
 
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */
 type PreviewBlock = {
@@ -42,7 +45,7 @@ function longestBacktickRun(lines: readonly string[]): number {
  * in bold; each line cleaned as a report cell; a fence one backtick longer than the longest run in the lines, and at
  * least three.
  */
-function previewBlock(block: ShownBlock): PreviewBlock {
+function previewBlock(block: Previewed): PreviewBlock {
   const lines = block.lines.map(reportText)
   const title = `**${reportText(block.title).replace(TITLE_MARKUP, '\\$&')}**`
 
@@ -88,15 +91,16 @@ function cutPreview(parts: readonly PreviewBlock[]): string {
 }
 
 /**
- * The cadre init side pane as the markdown preview of a dialog option (D3), for the terminal main screen, where the
- * engine hides the pane while a dialog is open. Per block, in the order given (the pane's: newest first), its title in
- * bold, cleaned as a report cell (reportText) with its markdown characters escaped, then its lines, each cleaned as a
- * report cell with its indent kept, in a fence one backtick longer than any backtick run in them and at least three:
- * the fence keeps every scanned or typed value literal, so none can format the preview or end the fence. A blank line
- * parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed, and ends with
- * a `…` line (cutPreview); lengths are String lengths, never fewer than the code points. No blocks give ''.
+ * Blocks, such as the open question's own context (D-203), as the markdown preview of a dialog option (D3), for the
+ * terminal main screen, where the engine hides the pane while a dialog is open. Per block, in the order given, its
+ * title in bold, cleaned as a report cell (reportText) with its markdown characters escaped, then its lines, each
+ * cleaned as a report cell with its indent kept, in a fence one backtick longer than any backtick run in them and at
+ * least three: the fence keeps every scanned or typed value literal, so none can format the preview or end the fence.
+ * A blank line parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed,
+ * and ends with a `…` line (cutPreview); lengths are String lengths, never fewer than the code points. No blocks give
+ * ''.
  */
-export function previewMarkdown(blocks: readonly ShownBlock[]): string {
+export function previewMarkdown(blocks: readonly Previewed[]): string {
   const parts = blocks.map(previewBlock)
   const whole = parts.flatMap((part, at) => [
     ...(at === 0 ? [] : ['']),
@@ -109,84 +113,6 @@ export function previewMarkdown(blocks: readonly ShownBlock[]): string {
   if (text.length <= MAX_PREVIEW_CHARS) return text
 
   return cutPreview(parts)
-}
-
-/**
- * A counted suffix at the very end of a header chip (B1): ` <i>/<n>` (ask.ts countedChip) or ` <i> of <n>` (the hunk
- * chip).
- */
-const COUNTED_SUFFIX = / (?:\d+\/\d+|\d+ of \d+)$/
-
-/**
- * The topic of a header chip (B1): the chip without one counted suffix at its very end, ` <i>/<n>` as ask.ts
- * countedChip counts a chip, or ` <i> of <n>` as the hunk chip does; any other header is kept as it is.
- */
-export function headerTopic(header: string): string {
-  return header.replace(COUNTED_SUFFIX, '')
-}
-
-/**
- * The pane blocks the preview of a question may show, by the topic of its header chip (B1, headerTopic): the blocks
- * the question is asked after, and the first of them the pane holds wins. A header with no key here, or none of whose
- * blocks the pane holds, gets the newest block (previewBlockFor); claude.json, Git policy and the hunk chips have no
- * block of their own, so no key. The keys mirror ask.ts ASK_HEADERS and its counted chips by their text, because
- * render.ts cannot import ask.ts (ask.ts imports render.ts); a render.test.ts test keeps the two in step.
- */
-export const PREVIEW_BLOCKS = Object.freeze<Record<string, readonly PaneKey[]>>({
-  History: Object.freeze(['scan']),
-  Roles: Object.freeze(['roles']),
-  Adjust: Object.freeze(['roles']),
-  Describe: Object.freeze(['roles']),
-  Framework: Object.freeze(['roles']),
-  Duration: Object.freeze(['roles']),
-  Model: Object.freeze(['roles']),
-  Launch: Object.freeze(['roles']),
-  'Launch dir': Object.freeze(['roles']),
-  Security: Object.freeze(['recommendations']),
-  MCP: Object.freeze(['recommendations']),
-  Skills: Object.freeze(['recommendations']),
-  Skill: Object.freeze(['skills']),
-  Instructions: Object.freeze(['instructions']),
-  Topic: Object.freeze(['instructions']),
-  Memory: Object.freeze(['instructions']),
-  Regen: Object.freeze(['instructions']),
-  Env: Object.freeze(['env']),
-  Review: Object.freeze(['review']),
-  Conflict: Object.freeze(['review']),
-  Improver: Object.freeze(['improver', 'instructions']),
-})
-
-/**
- * The pane block the preview of a question shows (B1), as a list of one: of the blocks PREVIEW_BLOCKS lists for the
- * topic of its header (headerTopic), read as an own key only, the first one the pane holds; the newest block when the
- * header is not text, its topic has no key, or the pane holds none of its blocks; no block when the pane is empty.
- */
-export function previewBlockFor(header: unknown, blocks: readonly ShownBlock[]): ShownBlock[] {
-  const [newest] = blocks
-  if (newest === undefined) return []
-  if (typeof header !== 'string') return [newest]
-  const topic = headerTopic(header)
-  if (!Object.hasOwn(PREVIEW_BLOCKS, topic)) return [newest]
-  for (const key of PREVIEW_BLOCKS[topic] ?? []) {
-    const block = blocks.find(shown => shown.key === key)
-    if (block !== undefined) return [block]
-  }
-
-  return [newest]
-}
-
-/**
- * The header chip of the question an AskUserQuestion call asks first (R1): the `header` of the call's first question
- * when that question is an object with a string header; null for anything else. A tool call's args are untrusted
- * input, so their shape is checked before the header is read. The cadre init pane now takes the header of the question
- * cadre has open from the openQuestion state (D-203), so nothing calls this until 02.1-29 removes it.
- */
-export function askedHeader(questions: unknown): string | null {
-  if (!Array.isArray(questions)) return null
-  const first: unknown = questions[0]
-  if (!isObject(first) || typeof first.header !== 'string') return null
-
-  return first.header
 }
 
 /**
@@ -304,20 +230,21 @@ export type AskRewrite = {
 
 /**
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
- * D3, R3, R4); null, so the call passes through unchanged, when the pane has no blocks or withPreviews does not
- * rewrite the questions. Each option of each single-select question gets the preview of the one pane block its header
- * needs (previewBlockFor, B1), and each such question then gets NOTE_WORDING for every OTHER_WORDING in its text (R4),
- * the hint line as its last line (R3) and, when it has room, the Describe your own option with that preview
- * (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3); a
- * multi-select question is copied unchanged, OTHER_WORDING included, and has none.
+ * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
+ * has no context of its own (D-203) or withPreviews does not rewrite the questions. Each option of each single-select
+ * question gets the preview of the open question's own context (previewMarkdown, D-203), whatever its header, and
+ * each such question then gets NOTE_WORDING for every OTHER_WORDING in its text (R4), the hint line as its last line
+ * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
+ * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged,
+ * OTHER_WORDING included, and has none.
  */
-export function askRewrite(questions: unknown, blocks: readonly ShownBlock[]): AskRewrite | null {
-  if (blocks.length === 0) return null
-  const previewOf = (header: unknown): string => previewMarkdown(previewBlockFor(header, blocks))
-  const previewed = withPreviews(questions, previewOf)
+export function askRewrite(questions: unknown, context: AskContext | null): AskRewrite | null {
+  if (context === null) return null
+  const preview = previewMarkdown([context])
+  const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null
   const pairs = previewed.map(question => {
-    const shown = question.multiSelect === true ? null : withDescribeOwn(question, previewOf(question.header))
+    const shown = question.multiSelect === true ? null : withDescribeOwn(question, preview)
 
     return { question, shown }
   })

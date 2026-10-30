@@ -382,15 +382,17 @@ export const register: Register = on => {
     )
   })
 
-  // The pane draws the block of the question cadre has open, which the init port's ask writes (R1, D-203); this hook
-  // writes no state. It acts only on the question cadre has open, the call's first question by its exact text: any
-  // other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through untouched,
-  // and so does its result (D-239). Only while the terminal main screen seats the pane inline, where the engine hides
-  // it behind a dialog: each single-select question gets its preview of the pane on every option (D3, B1) and a
-  // Describe your own option or the hint line (A2), and notes typed in the dialog become the answer under the
-  // question's text as asked (A3). Any other call, a deny, an error and a result of another shape pass through
-  // unchanged. Apart from the reads of the open question and of the pane's blocks, the hook has no .catch on purpose:
-  // a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
+  // The pane draws the own context of the question cadre has open, which the init port's ask writes (R1, D-203);
+  // this hook writes no state. It acts only on the question cadre has open, the call's first question by its exact
+  // text: any other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through
+  // untouched, and so does its result (D-239). Only while the terminal main screen seats the pane inline, where the
+  // engine hides it behind a dialog, and only for an open question with a context of its own: each single-select
+  // question gets that context as the preview of every option (D3, D-203) and a Describe your own option or the hint
+  // line (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with
+  // no context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. Any other call, a deny,
+  // an error and a result of another shape pass through unchanged. Apart from the read of the open question, the hook
+  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
+  // (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
@@ -398,9 +400,7 @@ export const register: Register = on => {
     const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
     if (open === null || asked !== open.question) return await next(e)
     if (lastPlacement !== 'inline') return await next(e)
-    const blocks = await read($, initPane).catch(() => NO_BLOCKS)
-    if (blocks.length === 0) return await next(e)
-    const rewrite = askRewrite(raw, blocks)
+    const rewrite = askRewrite(raw, open.context)
     if (rewrite === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no

@@ -3,16 +3,11 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskContext, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
-import { ASK_HEADERS, countedChip, PANE_TITLES } from './ask'
 import {
   answersFromNotes,
-  askedHeader,
   askRewrite,
-  headerTopic,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
-  PREVIEW_BLOCKS,
-  previewBlockFor,
   previewMarkdown,
   withDescribeOwn,
   withPreviews,
@@ -121,127 +116,6 @@ describe('previewMarkdown (D3)', () => {
     expect(rows.at(-1)).toBe('…')
     const kept = rows.filter(row => !isFence(row) && row !== '' && row !== '…' && !row.startsWith('**'))
     expect(kept).toEqual(blocks.flatMap(block => block.lines).slice(0, kept.length))
-  })
-})
-
-describe('headerTopic (B1)', () => {
-  test('one counted suffix at the very end is stripped: i/n, or i of n as the hunk chip counts', () => {
-    expect(headerTopic('Skill 3/7')).toBe('Skill')
-    expect(headerTopic('Hunk 2 of 5')).toBe('Hunk')
-    expect(headerTopic('Topic 10/12')).toBe('Topic')
-  })
-
-  test('a header with no counted suffix at its very end is kept as it is', () => {
-    expect(headerTopic('Launch dir')).toBe('Launch dir')
-    expect(headerTopic('Roles')).toBe('Roles')
-    expect(headerTopic('v 2/3x')).toBe('v 2/3x')
-  })
-
-  test('a counted chip gives its word, and a chip too long to count is its bare word (countedChip)', () => {
-    expect(headerTopic(countedChip('Memory', 2, 4))).toBe('Memory')
-    expect(countedChip('Instructions', 1, 2)).toBe('Instructions')
-    expect(headerTopic(countedChip('Instructions', 1, 2))).toBe('Instructions')
-  })
-})
-
-describe('PREVIEW_BLOCKS (B1)', () => {
-  test('the table and each of its lists are frozen, and each list holds one pane key or more', () => {
-    const paneKeys: readonly string[] = Object.keys(PANE_TITLES)
-    expect(Object.isFrozen(PREVIEW_BLOCKS)).toBe(true)
-    for (const [topic, keys] of Object.entries(PREVIEW_BLOCKS)) {
-      const isPaneKeys = keys.length > 0 && keys.every(key => paneKeys.includes(key))
-      expect([topic, Object.isFrozen(keys), isPaneKeys]).toEqual([topic, true, true])
-    }
-  })
-
-  test('every ASK_HEADERS chip is a topic but claude.json and Git policy; Skill, Topic, Regen are, Hunk is not', () => {
-    const unmapped = Object.values(ASK_HEADERS).filter(header => !Object.hasOwn(PREVIEW_BLOCKS, header))
-    expect(unmapped).toEqual(['claude.json', 'Git policy'])
-    for (const topic of ['Skill', 'Topic', 'Regen']) expect(Object.hasOwn(PREVIEW_BLOCKS, topic)).toBe(true)
-    expect(Object.hasOwn(PREVIEW_BLOCKS, 'Hunk')).toBe(false)
-  })
-
-  test('each topic lists the blocks its question is asked after, as the user locked them (B1)', () => {
-    expect(PREVIEW_BLOCKS).toEqual({
-      History: ['scan'],
-      Roles: ['roles'],
-      Adjust: ['roles'],
-      Describe: ['roles'],
-      Framework: ['roles'],
-      Duration: ['roles'],
-      Model: ['roles'],
-      Launch: ['roles'],
-      'Launch dir': ['roles'],
-      Security: ['recommendations'],
-      MCP: ['recommendations'],
-      Skills: ['recommendations'],
-      Skill: ['skills'],
-      Instructions: ['instructions'],
-      Topic: ['instructions'],
-      Memory: ['instructions'],
-      Regen: ['instructions'],
-      Env: ['env'],
-      Review: ['review'],
-      Conflict: ['review'],
-      Improver: ['improver', 'instructions'],
-    })
-  })
-})
-
-describe('previewBlockFor (B1)', () => {
-  /** A pane of blocks with these keys, newest first, each titled by its key. */
-  function paneOf(...keys: readonly PaneKey[]): ShownBlock[] {
-    return keys.map(key => shownBlock(key, key, [`${key} line`]))
-  }
-
-  test('no blocks give none', () => {
-    expect(previewBlockFor('Roles', [])).toEqual([])
-  })
-
-  test('a mapped header gives its block, wherever the pane holds it', () => {
-    const pane = paneOf('review', 'roles', 'scan')
-    expect(previewBlockFor('Roles', pane)).toEqual([pane[1]])
-    const skills = paneOf('review', 'skills')
-    expect(previewBlockFor('Skill 2/5', skills)).toEqual([skills[1]])
-  })
-
-  test('the improver question gives the improver block, else the instruction parts', () => {
-    for (const pane of [paneOf('improver', 'instructions'), paneOf('instructions', 'improver')]) {
-      expect(previewBlockFor('Improver', pane)).toEqual(pane.filter(block => block.key === 'improver'))
-    }
-    const parts = paneOf('review', 'instructions')
-    expect(previewBlockFor('Improver', parts)).toEqual([parts[1]])
-  })
-
-  test('the newest block stands in for a header with no block in the pane, no key of its own, or no text', () => {
-    const pane = paneOf('review', 'roles')
-    for (const header of ['Env', 'Git policy', 3, undefined, '__proto__', 'constructor']) {
-      expect(previewBlockFor(header, pane)).toEqual([pane[0]])
-    }
-  })
-})
-
-describe('askedHeader (R1)', () => {
-  test('the header of the first question of the call', () => {
-    expect(askedHeader([{ question: 'Q?', header: 'Roles', options: [] }])).toBe('Roles')
-    const two = [
-      { question: 'Q?', header: 'Roles', options: [] },
-      { question: 'Next?', header: 'Env', options: [] },
-    ]
-    expect(askedHeader(two)).toBe('Roles')
-  })
-
-  test('no string header on the first question, or no list of questions, gives null', () => {
-    const none: unknown[] = [
-      [{ question: 'Q?', options: [] }],
-      [{ question: 'Q?', header: 3, options: [] }],
-      [null, { question: 'Next?', header: 'Env', options: [] }],
-      [],
-      'x',
-      null,
-      undefined,
-    ]
-    for (const questions of none) expect(askedHeader(questions)).toBe(null)
   })
 })
 
