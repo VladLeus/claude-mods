@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PaneKey, ShownBlock } from '../../types'
+import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { reportText } from '../core/text'
 import { BIDI_OVERRIDE } from '../testkit'
-import { panePlacement, paneRows, paneSpans, paneView } from './pane'
+import { panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './pane'
 import type { PaneRow, PaneSpan } from './pane'
 
 /** A control, format, or line or paragraph separator character. A newline is the one a report may keep. */
@@ -276,6 +276,46 @@ describe('paneSpans (D1)', () => {
         expect(spans.filter(span => span.dim === true && span.text === text)).toEqual([])
       }
     }
+  })
+})
+
+/** The question cadre has open, asked with `context` (null for none), as register keeps it (D-203). */
+function openWith(context: AskContext | null): OpenQuestion {
+  return { question: 'Which roles get the sentry MCP server?', header: 'MCP', context, acceptsTyped: true }
+}
+
+describe('questionPaneBlocks (D-203)', () => {
+  const blocks = [paneBlock('recommendations'), paneBlock('roles'), paneBlock('scan')]
+
+  test('while a question with its own context is open, the pane holds that context only, as one block', () => {
+    const lines = ['Source: session', 'Tools: none listed']
+    const context: AskContext = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+    expect(questionPaneBlocks(openWith(context), blocks)).toEqual([
+      { key: 'notes', title: 'MCP: sentry', lines: ['Source: session', 'Tools: none listed'] },
+    ])
+  })
+
+  test('between questions, or while a question with no context is open (a hunk), the newest block shows', () => {
+    expect(questionPaneBlocks(null, blocks)).toEqual([blocks[0]])
+    expect(questionPaneBlocks(openWith(null), blocks)).toEqual([blocks[0]])
+    expect(questionPaneBlocks(null, [])).toEqual([])
+  })
+
+  test('a context of a kind a pane block has keeps that key; every other kind draws as notes', () => {
+    const kinds: readonly ContextKind[] = [
+      'scan',
+      'roles',
+      'review',
+      'env',
+      'instructions',
+      'skills',
+      'git-policy',
+      'topic',
+    ]
+    const keys = kinds.map(kind => questionPaneBlocks(openWith({ title: 'T', lines: [], kind }), blocks)[0]?.key)
+    expect(keys).toEqual(['scan', 'roles', 'review', 'env', 'instructions', 'skills', 'notes', 'notes'])
+    expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'history' }), [])[0]?.key).toBe('history')
+    expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'improver' }), [])[0]?.key).toBe('improver')
   })
 })
 

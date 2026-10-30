@@ -17,6 +17,7 @@ import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
+import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -2114,12 +2115,20 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(await drawPane($, DOCK_PANE)).toEqual(blockDrawn(log, 'review'))
   })
 
-  test('a header with no block of its own, as Git policy, draws the newest block while open', async ($, on) => {
+  test('the Git policy question draws its own context while open, not the newest block (D-203)', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, GIT_POLICY_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: blockDrawn(log, 'recommendations'), header: 'Git policy' }])
+    expect(open).toEqual([{ drawn: { first: 'Git policy', rows: 4 }, header: 'Git policy' }])
+  })
+
+  test('the security question draws its own context, the missing plugins, not a block (D-203)', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, SECURITY_INSTALL_PREFIX) }), log)
+    await $.command.run(DRY_RUN)
+    expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([['Security plugins', 'Security']])
   })
 
   test('a dismissed dialog still clears the header, so the pane draws the newest block after it', async ($, on) => {
