@@ -396,7 +396,7 @@ describe('the history stage (D-230)', () => {
     ]
     for (const [sessions, note] of cases) {
       const next = nextStage(state, listed(sessions))
-      expect([next.stage, next.outputs, next.draft.hints]).toEqual(['roles', [{ kind: 'log', text: note }], new Map()])
+      expect([next.stage, next.outputs[0], next.draft.hints]).toEqual(['roles', { kind: 'log', text: note }, new Map()])
     }
   })
 
@@ -406,7 +406,7 @@ describe('the history stage (D-230)', () => {
     expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
     expect(done.stage).toBe('roles')
-    expect(done.outputs).toEqual([{ kind: 'show', block: { key: 'history', lines: historyLines(EXAMPLE_SCAN) } }])
+    expect(done.outputs[0]).toEqual({ kind: 'show', block: { key: 'history', lines: historyLines(EXAMPLE_SCAN) } })
     expect(done.draft.hints).toEqual(historyHints(EXAMPLE_SCAN))
   })
 })

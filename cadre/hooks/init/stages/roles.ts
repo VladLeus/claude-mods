@@ -1,33 +1,22 @@
 /**
- * The roles stage of init (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83, A1, A6), a layer 10 module: the roles question
- * with the proposal and its scan changes (proposalLines, rolesContextLine), the Adjust loop over the frameworks
- * installed for the repo (adjustLoop, installedFrameworks), the Describe question that has the model propose roles
- * (describeStep), and rolesStep, which runs the states of RolesState until the person answers Use these roles. Pure:
- * it asks and calls the model through the InitIo port it is given, imports core, roles, suggest, ui/ask and the
- * duration and frameworks stages, and never imports init.ts, which imports it, or init/run.
+ * The roles stage of init (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83, D-230, A1, A6), a layer 10 module: the roles
+ * question with the proposal and its scan changes (proposalLines, rolesContextLine), the Adjust loop over the
+ * frameworks installed for the repo (installedFrameworks), the Describe question whose text the model turns into roles
+ * (a describe-roles model effect), and rolesStage, the pure stage whose cursor is the proposal, Adjust or Describe
+ * until the person answers Use these roles. Pure: it gives states and never performs an effect, imports core, roles,
+ * suggest types, ui/ask, init/state and the duration and frameworks stages, and never imports init/machine or init/run.
  */
-import type { Detection, FrameworkId, InitIo, RoleChange, RoleProposal, RoleSpec } from '../../../types'
+import type { Detection, FrameworkId, RoleChange, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { pad, reportText } from '../../core/text'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
-import { proposeFromText } from '../../suggest/propose'
 import type { Proposed } from '../../suggest/propose'
-import {
-  accepted,
-  ASK_HEADERS,
-  askChoice,
-  askedText,
-  askOnce,
-  cancelled,
-  choiceResult,
-  noteLine,
-  quotedLabels,
-  showBlock,
-  withContext,
-} from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
+import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 import { FRAMEWORK_LABELS } from './frameworks'
 
@@ -173,37 +162,6 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
   return { kind: 'text', text }
 }
 
-/**
- * What describeStep gives: the described roles, a return to the template, the fallback and why, or a cancel with
- * its reason (A1, D-136).
- */
-export type Described =
-  | Proposed
-  | { readonly kind: 'template' }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
-/**
- * The Describe path (ROLE-02, D-46, D-83): the person types their own structure in the text field of DESCRIBE_QUESTION,
- * which carries DESCRIBE_CONTEXT on its second line (D-136). A blank answer is asked again with why on top and never
- * sent to the model; `Use the template instead` goes back with no model call; `Cancel init` or a dismissed dialog is
- * cancelled with DESCRIBE_CANCELLED_REASON, and MAX_ASKS blank answers with NO_USABLE_ANSWER_REASON (A1). Only the
- * typed text reaches the model, and its roles decide nothing until the person answers the roles question again.
- */
-export async function describeStep(io: InitIo): Promise<Described> {
-  const ask = {
-    question: withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT),
-    spec: { options: DESCRIBE_OPTIONS, header: ASK_HEADERS.describe },
-    parse: parseDescribeAnswer,
-    accepts: DESCRIBE_ACCEPTS,
-  }
-  const answer = choiceResult(await askChoice(io, ask), DESCRIBE_CANCELLED_REASON)
-  if (answer.kind === 'cancelled') return answer
-  if (answer.value.kind === 'cancel') return { kind: 'cancelled', reason: DESCRIBE_CANCELLED_REASON }
-  if (answer.value.kind === 'template') return { kind: 'template' }
-
-  return proposeFromText(io, answer.value.text)
-}
-
 /** The message for a typed line that is none of the four changes (D-47). */
 function unreadChange(answer: string): string {
   return `Could not read that change: ${answer.trim()}. Use add, drop, rename or framework.`
@@ -248,177 +206,225 @@ function adjusted(
   return applyAdjust(roles, op)
 }
 
-/**
- * What the Adjust loop gives (A1): the roles as adjusted, which are no choice yet, since the roles question still has
- * to confirm them, or why the loop was cancelled.
- */
-export type AdjustOutcome =
-  | { readonly kind: 'adjusted'; readonly roles: readonly RoleSpec[] }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
-/**
- * The Adjust loop (D-47): one typed change per answer, add, drop, rename or framework, until `Done adjusting`, which
- * gives the roles as adjusted. A line it cannot read, a change applyAdjust refuses, or a framework outside
- * `installed` (A5) puts its exact message, cleaned as a report cell, on top of the next Adjust ask and the loop goes
- * on (D-136); every ask carries the ids of the roles as they are now (adjustContextLine) on the line after the
- * question; `Show the roles` shows the roles as they are now in the side pane. A dismissed dialog cancels with
- * ADJUST_DISMISSED_REASON. After MAX_ADJUST_ROUNDS answers it prints ADJUST_ROUNDS_NOTE and gives the roles adjusted
- * so far, so the roles question asks about them again: a cap is never an acceptance (A1). The roles it is given are
- * never changed. It keeps its own loop, not askChoice: it runs MAX_ADJUST_ROUNDS rounds, a refused change does not end
- * it, and a taken change asks again with the new roles.
- */
-export async function adjustLoop(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  installed: readonly FrameworkId[],
-): Promise<AdjustOutcome> {
-  const spec = { options: ADJUST_OPTIONS, header: ASK_HEADERS.adjust }
-  let current = roles
-  let refusal: string | null = null
-  for (let round = 0; round < MAX_ADJUST_ROUNDS; round += 1) {
-    const question = withContext(ADJUST_QUESTION, adjustContextLine(current))
-    const answer = await askOnce(io, askedText(question, refusal), spec)
-    if (answer === null) return { kind: 'cancelled', reason: ADJUST_DISMISSED_REASON }
-    refusal = null
-    const choice = labelled(ADJUST_CHOICES, answer)
-    if (choice === 'done') return { kind: 'adjusted', roles: current }
-    if (choice === 'show') {
-      await showBlock(io, 'roles', roleLines(current))
-      continue
-    }
-    const result = adjusted(current, answer, installed)
-    if (result.kind === 'error') {
-      refusal = reportText(result.message)
-      continue
-    }
-    current = result.roles
-  }
-  await noteLine(io, ADJUST_ROUNDS_NOTE)
-
-  return { kind: 'adjusted', roles: current }
-}
-
 /** The answer to the roles question, or null when it names none of the three, so it is asked again. */
 function parseRolesChoice(answer: string): RolesChoice | null {
   return labelled(ROLES_CHOICES, answer)
 }
 
-/**
- * The state of the roles step (A1, D-40, D-83):
- * - `proposed`: the roles, with the scan changes behind them (none for a described structure), are shown and the
- *   roles question is asked.
- * - `adjusting`: the Adjust loop runs on those roles.
- * - `describing`: the person describes a structure of their own.
- * - `accepted`: the person answered `Use these roles` for the roles shown, with the scan changes shown with them (A6);
- *   the only state that holds a choice.
- * - `cancelled`: the step ended with nothing chosen, and `reason` says why.
- */
-export type RolesState =
-  | { readonly kind: 'proposed'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
-  | { readonly kind: 'adjusting'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
-  | { readonly kind: 'describing' }
-  | { readonly kind: 'accepted'; readonly roles: readonly RoleSpec[]; readonly changes: readonly RoleChange[] }
-  | { readonly kind: 'cancelled'; readonly reason: string }
-
-/** The roles step cancelled with a reason. */
-function rolesCancelled(reason: string): RolesState {
-  return { kind: 'cancelled', reason }
-}
+/** A question of the roles stage as it asks it: a ChoiceAsk with the reason a dismissal cancels with. */
+type RolesAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
- * After `proposed`: the roles are shown and asked about, with rolesContextLine on the line after the question
- * (D-136); only `Use these roles` accepts them. A dismissal cancels with ROLES_DISMISSED_REASON and MAX_ASKS answers
- * that name no choice with NO_USABLE_ANSWER_REASON (A1).
+ * The roles question (D-46, D-136): ROLES_QUESTION with rolesContextLine for `roles` and `changes` on its second line,
+ * its three answers with the Roles chip, and ROLES_DISMISSED_REASON for a dismissal.
  */
-async function afterProposed(
-  io: InitIo,
-  state: Extract<RolesState, { readonly kind: 'proposed' }>,
-): Promise<RolesState> {
-  await showBlock(io, 'roles', proposalLines(state.roles, state.changes))
-  const ask = {
-    question: withContext(ROLES_QUESTION, rolesContextLine(state.roles, state.changes)),
+function rolesAsk(roles: readonly RoleSpec[], changes: readonly RoleChange[]): RolesAsk<RolesChoice> {
+  return {
+    question: withContext(ROLES_QUESTION, rolesContextLine(roles, changes)),
     spec: { options: ROLES_OPTIONS, header: ASK_HEADERS.roles },
     parse: parseRolesChoice,
     accepts: quotedLabels(ROLES_OPTIONS),
-  }
-  const picked = choiceResult(await askChoice(io, ask), ROLES_DISMISSED_REASON)
-  if (picked.kind === 'cancelled') return rolesCancelled(picked.reason)
-  if (picked.value === 'use') return { kind: 'accepted', roles: state.roles, changes: state.changes }
-  if (picked.value === 'adjust') return { kind: 'adjusting', roles: state.roles, changes: state.changes }
-
-  return { kind: 'describing' }
-}
-
-/** After `adjusting`: the adjusted roles are proposed again with the same scan changes, or the step is cancelled. */
-async function afterAdjusting(
-  io: InitIo,
-  state: Extract<RolesState, { readonly kind: 'adjusting' }>,
-  installed: readonly FrameworkId[],
-): Promise<RolesState> {
-  const outcome = await adjustLoop(io, state.roles, installed)
-  if (outcome.kind === 'cancelled') return rolesCancelled(outcome.reason)
-
-  return { kind: 'proposed', roles: outcome.roles, changes: state.changes }
-}
-
-/**
- * After `describing`: the described roles are proposed with no scan changes; going back to the template, or roles the
- * model could not give (its reason printed first), proposes the template again; a dismissal, `Cancel init` or
- * MAX_ASKS blank answers cancel with the reason describeStep gives.
- */
-async function afterDescribing(io: InitIo, proposal: RoleProposal): Promise<RolesState> {
-  const described = await describeStep(io)
-  if (described.kind === 'cancelled') return rolesCancelled(described.reason)
-  if (described.kind === 'roles') return { kind: 'proposed', roles: described.roles, changes: [] }
-  if (described.kind === 'fallback') await noteLine(io, described.message)
-
-  return { kind: 'proposed', roles: proposal.roles, changes: proposal.changes }
-}
-
-/** The state after one step of the roles step; an end state stays as it is. */
-async function nextState(
-  io: InitIo,
-  state: RolesState,
-  proposal: RoleProposal,
-  installed: readonly FrameworkId[],
-): Promise<RolesState> {
-  switch (state.kind) {
-    case 'proposed':
-      return afterProposed(io, state)
-    case 'adjusting':
-      return afterAdjusting(io, state, installed)
-    case 'describing':
-      return afterDescribing(io, proposal)
-    case 'accepted':
-    case 'cancelled':
-      return state
+    dismissedReason: ROLES_DISMISSED_REASON,
   }
 }
 
 /**
- * The roles step (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83), as the states of RolesState. It starts at `proposed`
- * with `start`, the proposal itself unless the final review passes the current team with the scan changes it was
- * accepted with (A6), and shows those roles and changes under `Use these roles?`. `Adjust them` runs adjustLoop with
- * the frameworks `installed` for the repo and `Describe my own structure` runs describeStep, whose template answer goes
- * back to the proposal itself; either goes back to `proposed`. Only the answer `Use these roles` gives roles, as an
- * accepted StepResult with the scan changes shown with them (none for a described structure, A6): a dismissal anywhere
- * is cancelled with the reason of that question, and the round after MAX_ROLE_ROUNDS proposals with
- * ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used (A1).
+ * The describe question (ROLE-02, D-136): DESCRIBE_QUESTION with DESCRIBE_CONTEXT on its second line, its two buttons
+ * with the Describe chip, a typed description that is not blank (parseDescribeAnswer), and DESCRIBE_CANCELLED_REASON
+ * for a dismissal.
  */
-export async function rolesStep(
-  io: InitIo,
-  proposal: RoleProposal,
+const DESCRIBE_ASK = Object.freeze({
+  question: withContext(DESCRIBE_QUESTION, DESCRIBE_CONTEXT),
+  spec: Object.freeze({ options: DESCRIBE_OPTIONS, header: ASK_HEADERS.describe }),
+  parse: parseDescribeAnswer,
+  accepts: DESCRIBE_ACCEPTS,
+  dismissedReason: DESCRIBE_CANCELLED_REASON,
+})
+
+/** The dialog of the Adjust question: its two buttons with the Adjust chip; a change is typed in the text field. */
+const ADJUST_SPEC = Object.freeze({ options: ADJUST_OPTIONS, header: ASK_HEADERS.adjust })
+
+/** The Adjust cursor: the proposal it came from, how many Adjust answers so far, and the roles as adjusted so far. */
+type AdjustCursor = {
+  readonly rounds: number
+  readonly round: number
+  readonly roles: readonly RoleSpec[]
+  readonly changes: readonly RoleChange[]
+}
+
+/**
+ * The roles proposed (A1, A6): the proposal block in the side pane (proposalLines), then the roles question about
+ * `roles` with their scan `changes`, the `rounds + 1`-th proposal; once MAX_ROLE_ROUNDS proposals were asked, the next
+ * one cancels with ROLE_ROUNDS_REASON instead, so no cap ever accepts roles.
+ */
+function proposed(
+  state: InitState,
+  roles: readonly RoleSpec[],
+  changes: readonly RoleChange[],
+  rounds: number,
+): InitState {
+  if (rounds >= MAX_ROLE_ROUNDS) return stageCancelled(state, ROLE_ROUNDS_REASON)
+  const shown = withOutputs(state, [{ kind: 'show', block: { key: 'roles', lines: proposalLines(roles, changes) } }])
+  const ask = rolesAsk(roles, changes)
+  const sub: InitState['sub'] = { kind: 'roles', tries: 1, rounds: rounds + 1, roles, changes }
+
+  return withEffect({ ...shown, sub }, { kind: 'ask', question: ask.question, spec: ask.spec })
+}
+
+/** The Adjust question for the roles of `cursor` (D-47, D-136), with `refusal` on top. */
+function adjustAsked(state: InitState, cursor: AdjustCursor, refusal: string | null): InitState {
+  const question = askedText(withContext(ADJUST_QUESTION, adjustContextLine(cursor.roles)), refusal)
+
+  return withEffect({ ...state, sub: { kind: 'adjust', ...cursor } }, { kind: 'ask', question, spec: ADJUST_SPEC })
+}
+
+/**
+ * The next Adjust ask with `roles` and `refusal` on top; after MAX_ADJUST_ROUNDS answers, ADJUST_ROUNDS_NOTE and the
+ * roles so far proposed again, so a cap is never an acceptance (A1).
+ */
+function adjustAgain(
+  state: InitState,
+  cursor: AdjustCursor,
+  roles: readonly RoleSpec[],
+  refusal: string | null,
+): InitState {
+  const round = cursor.round + 1
+  if (round <= MAX_ADJUST_ROUNDS) return adjustAsked(state, { ...cursor, round, roles }, refusal)
+  const noted = withOutputs(state, [{ kind: 'note', line: ADJUST_ROUNDS_NOTE }])
+
+  return proposed(noted, roles, cursor.changes, cursor.rounds)
+}
+
+/**
+ * The answer to the Adjust question (D-47): `Done adjusting` proposes the roles as adjusted, with the same scan
+ * changes; `Show the roles` shows them in the side pane (roleLines) and asks again; a typed change, add, drop, rename
+ * or framework, is applied, or its exact message, cleaned as a report cell, goes on top of the next ask (D-136). A
+ * framework outside the ones installed for the repo is refused (A5). A dismissal cancels with ADJUST_DISMISSED_REASON.
+ */
+function afterAdjust(
+  state: InitState,
+  cursor: AdjustCursor,
   installed: readonly FrameworkId[],
-  start: RoleProposal = proposal,
-): Promise<StepResult<RoleProposal>> {
-  let state: RolesState = { kind: 'proposed', roles: start.roles, changes: start.changes }
-  let rounds = 0
-  for (;;) {
-    if (state.kind === 'accepted') return accepted({ roles: state.roles, changes: state.changes })
-    if (state.kind === 'cancelled') return state
-    const isPastCap = state.kind === 'proposed' && rounds === MAX_ROLE_ROUNDS
-    if (isPastCap) return cancelled(ROLE_ROUNDS_REASON)
-    if (state.kind === 'proposed') rounds += 1
-    state = await nextState(io, state, proposal, installed)
+  answer: string | null,
+): InitState {
+  if (answer === null) return stageCancelled(state, ADJUST_DISMISSED_REASON)
+  const choice = labelled(ADJUST_CHOICES, answer)
+  if (choice === 'done') return proposed(state, cursor.roles, cursor.changes, cursor.rounds)
+  if (choice === 'show') {
+    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'roles', lines: roleLines(cursor.roles) } }])
+
+    return adjustAgain(shown, cursor, cursor.roles, null)
+  }
+  const result = adjusted(cursor.roles, answer, installed)
+  if (result.kind === 'error') return adjustAgain(state, cursor, cursor.roles, reportText(result.message))
+
+  return adjustAgain(state, cursor, result.roles, null)
+}
+
+/** The describe question after proposal `rounds`, asked `tries` times so far; `question` is its text once refused. */
+function describeAsked(state: InitState, rounds: number, tries: number, question: string | null): InitState {
+  const sub: InitState['sub'] = { kind: 'describe', rounds, tries }
+  const { spec } = DESCRIBE_ASK
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? DESCRIBE_ASK.question, spec })
+}
+
+/**
+ * The answer to the describe question (ROLE-02, D-83): a blank answer is asked again with why on top and never sent to
+ * the model; `Use the template instead` proposes the template again with no model call; `Cancel init`, a dismissal or
+ * MAX_ASKS blank answers cancel (A1). A typed description is the describe-roles model effect, and only its text reaches
+ * the model.
+ */
+function afterDescribe(state: InitState, rounds: number, tries: number, answer: string | null): InitState {
+  const { proposal } = state.draft
+  if (proposal === undefined) return stageFailed(state)
+  const next = choiceAnswer(DESCRIBE_ASK, { tries }, answer)
+  if (next.kind === 'again') return describeAsked(state, rounds, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  const described = next.value
+  if (described.kind === 'cancel') return stageCancelled(state, DESCRIBE_CANCELLED_REASON)
+  if (described.kind === 'template') return proposed(state, proposal.roles, proposal.changes, rounds)
+  const calling: InitState = { ...state, sub: { kind: 'describe-model', rounds } }
+
+  return withEffect(calling, { kind: 'model', call: { id: 'describe-roles', text: described.text } })
+}
+
+/**
+ * The model's answer for a described structure: its roles are proposed with no scan changes (A6) and decide nothing
+ * until the person answers Use these roles; roles it could not give put the fallback line in the notes, and the
+ * template is proposed again.
+ */
+function afterDescribed(state: InitState, rounds: number, described: Proposed): InitState {
+  const { proposal } = state.draft
+  if (proposal === undefined) return stageFailed(state)
+  if (described.kind === 'roles') return proposed(state, described.roles, [], rounds)
+  const noted = withOutputs(state, [{ kind: 'note', line: described.message }])
+
+  return proposed(noted, proposal.roles, proposal.changes, rounds)
+}
+
+/**
+ * The answer to the roles question (choiceAnswer): only `Use these roles` accepts the roles shown, with the scan
+ * changes shown with them (A6); `Adjust them` asks the Adjust question and `Describe my own structure` the describe
+ * question. Any other answer is asked again with why on top; a dismissal cancels with ROLES_DISMISSED_REASON and
+ * MAX_ASKS answers that name no choice with NO_USABLE_ANSWER_REASON (A1).
+ */
+function afterRoles(
+  state: InitState,
+  sub: Extract<InitState['sub'], { readonly kind: 'roles' }>,
+  answer: string | null,
+): InitState {
+  const { roles, changes, rounds } = sub
+  const ask = rolesAsk(roles, changes)
+  const next = choiceAnswer(ask, sub, answer)
+  if (next.kind === 'again') {
+    const again: InitState = { ...state, sub: { ...sub, tries: next.sub.tries } }
+
+    return withEffect(again, { kind: 'ask', question: next.question, spec: ask.spec })
+  }
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (next.value === 'use') return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
+  if (next.value === 'adjust') return adjustAsked(state, { rounds, round: 1, roles, changes }, null)
+
+  return describeAsked(state, rounds, 1, null)
+}
+
+/** The answer to the effect the roles stage has out: the roles, Adjust or describe question, or the model call. */
+function rolesAnswer(state: InitState, answer: Answer): InitState {
+  const { installed } = state.draft
+  const { sub } = state
+  const isDescribed = answer.kind === 'model' && sub.kind === 'describe-model'
+  if (isDescribed) return afterDescribed(state, sub.rounds, answer.result.result)
+  if (answer.kind !== 'answer' || installed === undefined) return stageFailed(state)
+  switch (sub.kind) {
+    case 'roles':
+      return afterRoles(state, sub, answer.text)
+    case 'adjust':
+      return afterAdjust(state, sub, installed, answer.text)
+    case 'describe':
+      return afterDescribe(state, sub.rounds, sub.tries, answer.text)
+    default:
+      return stageFailed(state)
   }
 }
+
+/**
+ * The roles stage (ROLE-01, ROLE-02, D-40, D-46, D-47, D-83, D-230). It proposes the template proposal, or the current
+ * team with the scan changes it was accepted with when the roles are asked again from the review (A6), and asks
+ * `Use these roles?` about them (proposed). `Adjust them` runs the Adjust loop on them with the frameworks installed
+ * for the repo and `Describe my own structure` the describe question, whose template answer goes back to the proposal
+ * itself; either proposes again. Only `Use these roles` ends the stage with roles, with the scan changes shown with
+ * them (none for a described structure, A6): a dismissal anywhere cancels with the reason of that question, and the
+ * proposal after MAX_ROLE_ROUNDS with ROLE_ROUNDS_REASON, so roles nobody confirmed, such as a model's, are never used
+ * (A1).
+ */
+export const rolesStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { proposal, installed, roles, changes } = state.draft
+    if (proposal === undefined || installed === undefined) return stageFailed(state)
+    if (roles === undefined) return proposed(state, proposal.roles, proposal.changes, 0)
+
+    return proposed(state, roles, changes ?? [], 0)
+  },
+  answer: rolesAnswer,
+})

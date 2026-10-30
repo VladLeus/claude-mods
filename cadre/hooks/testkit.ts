@@ -55,9 +55,10 @@ import { desiredFiles } from './generate/files'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { CHECKOUT_ARGV } from './git/checkout'
 import type { Draft } from './init/draft'
-import { nextStage } from './init/machine'
+import { nextStage, STAGES } from './init/machine'
+import { perform, showOutput } from './init/run'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from './init/stages/instructions'
-import type { Answer, InitStage, InitState, IoCall, IoResult, Output } from './init/state'
+import type { Answer, InitStage, InitState, IoCall, IoResult, Output, StageDef } from './init/state'
 import { lintRuntimeDenyPattern } from './launch/deny'
 import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
@@ -1642,10 +1643,23 @@ export type Driven = {
 }
 
 /**
+ * The state after `answer`, as nextStage gives it, with the outputs init/run shows for the stage that took it: once the
+ * run moved on to another stage, only that stage's own outputs, not the ones the next stage set on entering (D-230).
+ */
+function answered(state: InitState, answer: Answer): { readonly next: InitState; readonly shown: readonly Output[] } {
+  const asking: InitState = { ...state, outputs: [] }
+  const next = nextStage(asking, answer)
+  const isMovedOn = next.stage !== state.stage && next.effect.kind !== 'end'
+
+  return { next, shown: isMovedOn ? STAGES[state.stage].answer(asking, answer).outputs : next.outputs }
+}
+
+/**
  * Drives the init machine through nextStage from `state`, a stage already entered, as init/run would (D-230), until
  * the run leaves that stage, ends, or has an effect with no scripted answer left: each ask gets the next of `answers`
  * (null, or none left, is a dismissal, as memIo rejects), and any other effect the next of `results`. It records each
- * question and spec asked, every output and every host operation, in order.
+ * question and spec asked, the outputs shown while the run is in that stage (answered), and every host operation, in
+ * order.
  */
 export function driven(
   state: InitState,
@@ -1654,14 +1668,13 @@ export function driven(
 ): Driven {
   const asked: string[] = []
   const specs: AskSpec[] = []
-  const outputs: Output[] = []
+  const outputs: Output[] = [...state.outputs]
   const calls: IoCall[] = []
   const stops = ['done', 'cancelled', 'end', 'failed']
   let current = state
   let nextAnswer = 0
   let nextResult = 0
   for (;;) {
-    outputs.push(...current.outputs)
     const { effect } = current
     const isStopped = current.stage !== state.stage || effect.kind === 'end' || stops.includes(current.sub.kind)
     if (isStopped) return { state: current, asked, specs, outputs, calls }
@@ -1670,21 +1683,25 @@ export function driven(
       specs.push(effect.spec)
       const text = answers[nextAnswer] ?? null
       nextAnswer += 1
-      current = nextStage({ ...current, outputs: [] }, { kind: 'answer', text })
+      const step = answered(current, { kind: 'answer', text })
+      outputs.push(...step.shown)
+      current = step.next
       continue
     }
     if (effect.kind === 'io') calls.push(effect.call)
     const result = results[nextResult]
     if (result === undefined) return { state: current, asked, specs, outputs, calls }
     nextResult += 1
-    current = nextStage({ ...current, outputs: [] }, result)
+    const step = answered(current, result)
+    outputs.push(...step.shown)
+    current = step.next
   }
 }
 
 /**
  * driven, with each host operation performed by `perform` (the helper init/run runs for it, over a scripted port), so
- * a spec of a pure stage can read what the port was asked (D-230). It stops where driven stops, and also at a legacy
- * step.
+ * a spec of a pure stage can read what the port was asked (D-230). It stops where driven stops, and also at a model
+ * call or a legacy step.
  */
 export async function drivenWith(
   state: InitState,
@@ -1693,25 +1710,49 @@ export async function drivenWith(
 ): Promise<Driven> {
   const asked: string[] = []
   const specs: AskSpec[] = []
-  const outputs: Output[] = []
+  const outputs: Output[] = [...state.outputs]
   const calls: IoCall[] = []
   const stops = ['done', 'cancelled', 'end', 'failed']
   let current = state
   let nextAnswer = 0
   for (;;) {
-    outputs.push(...current.outputs)
     const { effect } = current
     const isStopped = current.stage !== state.stage || effect.kind === 'end' || stops.includes(current.sub.kind)
-    if (isStopped || effect.kind === 'legacy') return { state: current, asked, specs, outputs, calls }
+    const isOwn = effect.kind === 'ask' || effect.kind === 'io'
+    if (isStopped || !isOwn) return { state: current, asked, specs, outputs, calls }
     if (effect.kind === 'ask') {
       asked.push(effect.question)
       specs.push(effect.spec)
       const text = answers[nextAnswer] ?? null
       nextAnswer += 1
-      current = nextStage({ ...current, outputs: [] }, { kind: 'answer', text })
+      const step = answered(current, { kind: 'answer', text })
+      outputs.push(...step.shown)
+      current = step.next
       continue
     }
     calls.push(effect.call)
-    current = nextStage({ ...current, outputs: [] }, { kind: 'io', result: await perform(effect.call) })
+    const step = answered(current, { kind: 'io', result: await perform(effect.call) })
+    outputs.push(...step.shown)
+    current = step.next
+  }
+}
+
+/** The cursors a stage ends on (D-230): done, cancelled, ended, failed, or a go-back to another stage. */
+const STAGE_ENDS: readonly string[] = Object.freeze(['done', 'cancelled', 'end', 'failed', 'back'])
+
+/**
+ * Runs one stage of init over the port `io` as init/run performs it (D-230): `def` enters `state`, then each state's
+ * outputs are shown and its effect performed with init/run's own showOutput and perform, as a dry run, until the stage
+ * ends (done, cancelled, ended, failed or going back); no other stage is entered. So a spec of a stage sees what the
+ * stage asked, showed, logged and called as its async step did, and reads its result from the state's draft or its
+ * cancel reason.
+ */
+export async function stageRun(io: InitIo, def: StageDef, state: InitState): Promise<InitState> {
+  let current = def.enter(state)
+  for (;;) {
+    for (const output of current.outputs) await showOutput(io, output)
+    const { effect } = current
+    if (STAGE_ENDS.includes(current.sub.kind) || effect.kind === 'end') return { ...current, outputs: [] }
+    current = def.answer({ ...current, outputs: [] }, await perform(io, { dryRun: true }, effect))
   }
 }

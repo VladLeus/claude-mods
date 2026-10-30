@@ -36,7 +36,7 @@ import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
-import { installedFrameworks } from './stages/roles'
+import { installedFrameworks, rolesStage } from './stages/roles'
 import { securityStage } from './stages/security'
 
 /**
@@ -83,28 +83,6 @@ const scanStage: StageDef = Object.freeze({
     const scanned = { ...state, draft }
 
     return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
-  },
-})
-
-/**
- * The roles (rolesStep, legacy): from the template proposal, or from the current team with the scan changes it was
- * accepted with when the roles are asked again (A6).
- */
-const rolesStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { proposal, installed, roles, changes } = state.draft
-    if (proposal === undefined || installed === undefined) return stageFailed(state)
-    const start = roles === undefined ? proposal : { roles, changes: changes ?? [] }
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'roles', proposal, installed, start } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'roles') return stageFailed(state)
-    const chosen = answer.result.result
-    if (chosen.kind === 'cancelled') return stageCancelled(state, chosen.reason)
-    const { roles, changes } = chosen.value
-
-    return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
   },
 })
 
@@ -252,8 +230,8 @@ function settled(state: InitState): InitState {
 }
 
 /**
- * Whether `answer` answers `effect`: an answer to an ask, the result of the same host operation or legacy step; nothing
- * answers the end of a run.
+ * Whether `answer` answers `effect`: an answer to an ask, the result of the same host operation, model call or legacy
+ * step; nothing answers the end of a run.
  */
 function isAnswerTo(effect: Effect, answer: Answer): boolean {
   switch (effect.kind) {
@@ -261,6 +239,8 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
       return answer.kind === 'answer'
     case 'io':
       return answer.kind === 'io' && answer.result.id === effect.call.id
+    case 'model':
+      return answer.kind === 'model' && answer.result.id === effect.call.id
     case 'legacy':
       return answer.kind === 'legacy' && answer.result.id === effect.step.id
     case 'end':

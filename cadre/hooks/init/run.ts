@@ -44,6 +44,7 @@ import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { gatherScans } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { readPaths, readRepoFile } from '../scan/port-read'
+import { proposeFromText } from '../suggest/propose'
 import { attendedByConfig, compileAll, resolvedFramework } from '../team'
 import {
   accepted,
@@ -63,10 +64,19 @@ import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
-import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
+import type {
+  Answer,
+  Effect,
+  IoCall,
+  IoResult,
+  LegacyResult,
+  LegacyStep,
+  ModelCall,
+  ModelResult,
+  Output,
+} from './state'
 import { assignmentStep } from './stages/assign'
 import { instructionsStep } from './stages/instructions'
-import { rolesStep } from './stages/roles'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -295,8 +305,11 @@ async function applyConfirmed(
   return accepted({ planned, outcome })
 }
 
-/** Shows one output of a state (D-133): a side-pane block (showBlock), a note (noteLine), or one line logged as is. */
-async function showOutput(io: InitIo, output: Output): Promise<void> {
+/**
+ * Shows one output of a state (D-133): a side-pane block (showBlock), a note (noteLine), or one line logged as is. The
+ * testkit's stageRun shows a stage's outputs through it too.
+ */
+export async function showOutput(io: InitIo, output: Output): Promise<void> {
   switch (output.kind) {
     case 'show':
       return showBlock(io, output.block.key, output.block.lines)
@@ -348,8 +361,6 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
  */
 async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
-    case 'roles':
-      return { id: 'roles', result: await rolesStep(io, step.proposal, step.installed, step.start) }
     case 'assign':
       return { id: 'assign', result: await assignmentStep(io, step.roles, step.setup, step.hints) }
     case 'instructions':
@@ -363,8 +374,26 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
   }
 }
 
-/** Performs a state's effect (D-230): an ask through askOnce (null when dismissed), a host operation, a legacy step. */
-async function perform(
+/**
+ * Runs one model call of a stage (D-230) through the suggest/ function today's step called, which retries through
+ * checkedCompletion and falls back as it always did: the roles of a described structure (proposeFromText).
+ */
+async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
+  switch (call.id) {
+    case 'describe-roles':
+      return { id: 'describe-roles', result: await proposeFromText(io, call.text) }
+    default: {
+      const unreachable: never = call.id
+      return unreachable
+    }
+  }
+}
+
+/**
+ * Performs a state's effect (D-230): an ask through askOnce (null when dismissed), a host operation, a model call
+ * (performModel), a legacy step. The testkit's stageRun performs a stage's effects through it too.
+ */
+export async function perform(
   io: InitIo,
   options: InitOptions,
   effect: Exclude<Effect, { readonly kind: 'end' }>,
@@ -374,6 +403,8 @@ async function perform(
       return { kind: 'answer', text: await askOnce(io, effect.question, effect.spec) }
     case 'io':
       return { kind: 'io', result: await performIo(io, options, effect.call) }
+    case 'model':
+      return { kind: 'model', result: await performModel(io, effect.call) }
     case 'legacy':
       return { kind: 'legacy', result: await performLegacy(io, effect.step) }
     default: {

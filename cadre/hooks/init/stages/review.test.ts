@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionHandout, Plan, RoleChange, RoleProposal } from '../../../types'
+import type { InstructionHandout, Plan, RoleChange } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
@@ -30,6 +30,7 @@ import type { Answer, InitState, ReviewItem } from '../state'
 import { DURATION_OPTIONS } from './duration'
 import { LAUNCH_START_OPTIONS } from './launch'
 import { MODEL_MODE_QUESTION } from './model'
+import { ROLES_QUESTION, rolesContextLine } from './roles'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_QUESTION } from './policy'
 import {
   cardLines,
@@ -318,11 +319,9 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'Change roles' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['roles', 'review', 'improver-install'])
-    const start = { roles: REVIEW_DRAFT.roles, changes }
-    const { proposal, installed } = REVIEW_DRAFT
-    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'roles', proposal, installed, start } })
-    const result = { kind: 'accepted', value: start } satisfies StepResult<RoleProposal>
-    const chosen = nextStage({ ...going, outputs: [] }, { kind: 'legacy', result: { id: 'roles', result } })
+    const asked = withContext(ROLES_QUESTION, rolesContextLine(REVIEW_DRAFT.roles, changes))
+    expect(going.openQuestion?.question).toBe(asked)
+    const chosen = nextStage({ ...going, outputs: [] }, { kind: 'answer', text: 'Use these roles' })
     expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
     const keys = chosen.outputs.flatMap(output => (output.kind === 'show' ? [output.block.key] : []))
     expect(keys).toEqual(['recommendations'])

@@ -216,7 +216,7 @@ import {
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
-  rolesStep,
+  rolesStage,
 } from './stages/roles'
 import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
 
@@ -2758,7 +2758,8 @@ describe('refusal re-ask (G-02-6b)', () => {
   const BOTH_REFUSAL = "'both' isn't one of: GSD, superpowers, none - a role runs one framework."
 
   test('each question lists the answers it takes in its refusal', async () => {
-    const roles = proposeRoles(repoScan()).roles
+    const proposal = proposeRoles(repoScan())
+    const { roles } = proposal
     const choice: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
     const roleList = '"None", "All roles", or role ids from: pm, tl, security'
     const launch =
@@ -2767,11 +2768,6 @@ describe('refusal re-ask (G-02-6b)', () => {
     const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
     const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ carry: envNames }) }
     const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
-      [
-        'roles',
-        io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
-        '"Use these roles", "Adjust them", "Describe my own structure"',
-      ],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
       ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
       [
@@ -2787,6 +2783,11 @@ describe('refusal re-ask (G-02-6b)', () => {
       expect([name, run.asked[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
     }
     const stages: readonly (readonly [string, () => readonly string[], string])[] = [
+      [
+        'roles',
+        () => driven(rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS })), ['zzz']).asked,
+        '"Use these roles", "Adjust them", "Describe my own structure"',
+      ],
       [
         'consent',
         () => driven(consentStage.enter(stateAt('consent')), ['zzz']).asked,
