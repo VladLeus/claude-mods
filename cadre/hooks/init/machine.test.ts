@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_LOCATIONS, stateAt, TEMPLATE_ROLES } from '../testkit'
-import { initialState, nextStage } from './machine'
+import type { GuardResult } from '../guards/repo'
+import { scanWarnings } from '../scan/gather'
+import { DEFAULT_LOCATIONS, gitWorld, scansOf, stateAt, TEMPLATE_ROLES } from '../testkit'
+import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import { initialState, nextStage, STAGES } from './machine'
 import { INIT_CANCELLED } from './replies'
-import type { InitState } from './state'
+import type { Answer, InitState } from './state'
 import { policyStage } from './stages/policy'
 
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
@@ -59,5 +62,35 @@ describe('init stage machine (D-230)', () => {
     expect(state.draft.policy).toBeUndefined()
     expect(state.effect.kind).toBe('ask')
     expect(next.draft.policy).toBe('all')
+  })
+})
+
+describe('the guard and scan stages (D-230)', () => {
+  test('the guard is an io effect: a refusal is the whole reply and logs nothing, else consent is next', () => {
+    const state = initialState(true)
+    expect(state.effect).toEqual({ kind: 'io', call: { id: 'guard' } })
+    const refusal = { kind: 'io', result: { id: 'guard', result: { kind: 'refuse', text: 'no' } } } satisfies Answer
+    const refused = nextStage(state, refusal)
+    expect(refused.stage).toBe('done')
+    expect(refused.effect).toEqual({ kind: 'end', reply: 'no' })
+    expect(refused.outputs).toEqual([])
+    const ok = { kind: 'ok', locations: DEFAULT_LOCATIONS } satisfies GuardResult
+    const passed = nextStage(state, { kind: 'io', result: { id: 'guard', result: ok } })
+    expect(passed.stage).toBe('consent')
+    expect(passed.draft.locations).toBe(DEFAULT_LOCATIONS)
+  })
+
+  test('the scans are an io effect with the consent answer; the scan block shows before the history ask', async () => {
+    const draft = { locations: DEFAULT_LOCATIONS, readUserMcp: false }
+    const state = STAGES.scan.enter(stateAt('scan', draft))
+    const call = { id: 'scan', locations: DEFAULT_LOCATIONS, readUserMcp: false }
+    expect(state.effect).toEqual({ kind: 'io', call })
+    const gathered = await scansOf(gitWorld())
+    const next = nextStage(state, { kind: 'io', result: { id: 'scan', result: gathered } })
+    const warnings = scanWarningLines(scanWarnings(DEFAULT_LOCATIONS, gathered))
+    const lines = [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings]
+    expect(next.stage).toBe('history')
+    expect(next.draft.gathered).toBe(gathered)
+    expect(next.outputs).toEqual([{ kind: 'show', block: { key: 'scan', lines } }])
   })
 })
