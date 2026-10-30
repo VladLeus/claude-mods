@@ -12,7 +12,7 @@ const ROLES: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), temp
 /** The entry question of the cases, with the three labels of the instruction parts flow (G-02-1f). */
 const ENTRY: HandoutEntry = {
   question: 'How do you want to hand out the instruction parts?',
-  context: '2 topics from 1 file; the pane shows each with the roles it is recommended for.',
+  contextLine: '2 topics from 1 file; the pane shows each with the roles it is recommended for.',
   header: 'Instructions',
   accept: 'Accept recommendations',
   oneByOne: 'Go part by part',
@@ -24,14 +24,14 @@ const ITEMS: readonly HandoutItem[] = [
   {
     id: 'T1',
     question: 'Which roles get "Security rules"?',
-    context: 'How secrets stay out of the repo.',
+    contextLine: 'How secrets stay out of the repo.',
     header: 'Topic 1/2',
     recommended: ['security'],
   },
   {
     id: 'T2',
     question: 'Which roles get "Git and commits"?',
-    context: 'How commits are made.',
+    contextLine: 'How commits are made.',
     header: 'Topic 2/2',
     recommended: [],
   },
@@ -41,7 +41,7 @@ const ITEMS: readonly HandoutItem[] = [
 const DISMISSED = 'A question on which roles get instruction parts was dismissed or not answered.'
 
 /** The entry question as it is asked: the question, then its context line (D-136). */
-const ENTRY_ASKED = withContext(ENTRY.question, ENTRY.context)
+const ENTRY_ASKED = withContext(ENTRY.question, ENTRY.contextLine)
 
 /** A hand-out as the cursor asked it: every question and spec, in order, and how it ended. */
 type HandedOut = {
@@ -132,7 +132,7 @@ describe('handoutStep', () => {
 
 /** A topic item with this id, title, chip and recommended roles; its context line names the title. */
 function topicItem(id: string, title: string, header: string, recommended: readonly string[]): HandoutItem {
-  return { id, question: `Which roles get "${title}"?`, context: `About ${title}.`, header, recommended }
+  return { id, question: `Which roles get "${title}"?`, contextLine: `About ${title}.`, header, recommended }
 }
 
 /** Three items: the first recommended to Security, the second to the Team Lead, the third to no role. */
@@ -144,7 +144,7 @@ const THREE_ITEMS: readonly HandoutItem[] = [
 
 /** An item question as it is asked: the question, then its context line (D-136). */
 function itemAsked(item: HandoutItem | undefined): string {
-  return item === undefined ? 'missing item' : withContext(item.question, item.context)
+  return item === undefined ? 'missing item' : withContext(item.question, item.contextLine)
 }
 
 /** The refusal on top of an item question asked again after the answer `cto` (D-136). */

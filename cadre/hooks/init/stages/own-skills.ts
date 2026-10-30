@@ -131,7 +131,7 @@ export function ownSkillsOf(
 export function ownSkillsEntry(count: number): HandoutEntry {
   return {
     question: ownSkillsQuestion(count),
-    context: ownSkillsContextLine(count),
+    contextLine: ownSkillsContextLine(count),
     header: ASK_HEADERS.skills,
     accept: ACCEPT_RECOMMENDATIONS,
     oneByOne: ONE_BY_ONE_LABEL,
@@ -154,9 +154,9 @@ export function ownSkillItems(
     const id = ids[index]
     if (id === undefined) return []
     const roleIds = recommended.get(id) ?? []
-    const context = ownSkillContextLine(skill, skillCount(skill.name, counts), roleIds)
+    const contextLine = ownSkillContextLine(skill, skillCount(skill.name, counts), roleIds)
     const header = ownSkillHeader(index + 1, skills.length)
 
-    return [{ id: skill.name, question: ownSkillQuestion(skill.name), context, header, recommended: roleIds }]
+    return [{ id: skill.name, question: ownSkillQuestion(skill.name), contextLine, header, recommended: roleIds }]
   })
 }

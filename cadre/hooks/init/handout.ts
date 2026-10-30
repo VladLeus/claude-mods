@@ -24,7 +24,7 @@ export const ACCEPT_RECOMMENDATIONS = 'Accept recommendations'
 export type HandoutItem = {
   readonly id: string
   readonly question: string
-  readonly context: string
+  readonly contextLine: string
   readonly header: string
   readonly recommended: readonly string[]
 }
@@ -35,7 +35,7 @@ export type HandoutItem = {
  */
 export type HandoutEntry = {
   readonly question: string
-  readonly context: string
+  readonly contextLine: string
   readonly header: string
   readonly accept: string
   readonly oneByOne: string
@@ -139,7 +139,7 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
   const options = labels.map(label => label.label)
 
   return {
-    question: withContext(cursor.entry.question, cursor.entry.context),
+    question: withContext(cursor.entry.question, cursor.entry.contextLine),
     spec: { options, header: cursor.entry.header },
     parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
     accepts: quotedLabels(options),
@@ -153,7 +153,7 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
  */
 function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
   return {
-    question: withContext(item.question, item.context),
+    question: withContext(item.question, item.contextLine),
     spec: { options: ITEM_OPTIONS, header: item.header },
     parse: (answer: string): readonly string[] | null => itemRoles(answer, item, cursor.roles),
     accepts: itemAccepts(cursor.roles),

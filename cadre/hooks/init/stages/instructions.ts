@@ -128,7 +128,7 @@ export function entryContextLine(scan: InstructionScan, topics: readonly Instruc
 export function instructionsEntry(scan: InstructionScan, topics: readonly InstructionTopic[]): HandoutEntry {
   return {
     question: INSTRUCTIONS_ENTRY_QUESTION,
-    context: entryContextLine(scan, topics),
+    contextLine: entryContextLine(scan, topics),
     header: ASK_HEADERS.instructions,
     accept: ACCEPT_RECOMMENDATIONS,
     oneByOne: PART_BY_PART_LABEL,
@@ -187,7 +187,7 @@ export function topicItems(
     return {
       id: topic.id,
       question: topicQuestion(topic),
-      context: topicContextLine(topic, scan.parts, ids),
+      contextLine: topicContextLine(topic, scan.parts, ids),
       header: topicHeader(index + 1, topics.length),
       recommended: ids,
     }
@@ -229,7 +229,7 @@ export function memoryItems(
     return {
       id: memory.id,
       question: memoryItemQuestion(memory),
-      context: memoryItemContextLine(memory, ids),
+      contextLine: memoryItemContextLine(memory, ids),
       header: memoryItemHeader(index + 1, memories.length),
       recommended: ids,
     }

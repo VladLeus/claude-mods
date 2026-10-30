@@ -177,7 +177,7 @@ describe('instruction questions (G-02-1f)', () => {
     )
     expect(instructionsEntry(SCAN, TOPICS)).toEqual({
       question: INSTRUCTIONS_ENTRY_QUESTION,
-      context: entryContextLine(SCAN, TOPICS),
+      contextLine: entryContextLine(SCAN, TOPICS),
       header: 'Instructions',
       accept: 'Accept recommendations',
       oneByOne: 'Go part by part',
@@ -232,7 +232,7 @@ describe('instruction questions (G-02-1f)', () => {
       ['T1', 'Which roles get "Security rules"?', 'Topic 1/2', ['security']],
       ['T2', 'Which roles get "Git and commits"?', 'Topic 2/2', ['tl']],
     ])
-    expect(items[0]?.context).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security']))
+    expect(items[0]?.contextLine).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security']))
     expect(topicItems(SCAN, TOPICS, new Map()).map(item => item.recommended)).toEqual([[], []])
   })
 
@@ -261,7 +261,7 @@ describe('instruction questions (G-02-1f)', () => {
       ['M1', 'Which roles get the memory "squad.md"?', 'Memory 1/2', ['tl']],
       ['M2', 'Which roles get the memory "workflow.md"?', 'Memory 2/2', []],
     ])
-    expect(items.map(item => item.context)).toEqual([
+    expect(items.map(item => item.contextLine)).toEqual([
       'Unsigned commits on per-phase branches. Recommended: tl.',
       'No summary in MEMORY.md. Recommended: none.',
     ])
