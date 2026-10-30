@@ -19,8 +19,9 @@ import {
   templateRole,
   withFramework,
 } from '../../testkit'
-import { contextText, withContext } from '../../ui/ask'
+import { contextText, MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { proposalLines } from '../../ui/blocks/context'
+import { PREVIEW_ROWS } from '../../ui/preview'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
 import { nextStage, STAGES } from '../machine'
@@ -386,3 +387,87 @@ describe('the review stage (D-230)', () => {
     expect(ended.outputs).toEqual([{ kind: 'log', text: REVIEW_ROUNDS_REASON }])
   })
 })
+
+describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
+  /** The review asked on the TUI default over REVIEW_DRAFT: the state with its first page out, and the review lines. */
+  async function tuiReview(state: Partial<InitState> = {}): Promise<{ readonly asking: InitState; lines: string[] }> {
+    const entered = reviewAt({}, { surface: 'tui-default', ...state })
+    const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
+    const lines = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+
+    return { asking, lines }
+  }
+
+  /** The review lines in pages of PREVIEW_ROWS - 1 lines (D-233). */
+  function pagesOf(lines: readonly string[]): string[][] {
+    const size = PREVIEW_ROWS - 1
+
+    return Array.from({ length: Math.ceil(lines.length / size) }, (_, at) => lines.slice(at * size, (at + 1) * size))
+  }
+
+  test('a page offers Next page but last, Previous page but first, Confirm and Change something…', async () => {
+    const { asking, lines } = await tuiReview()
+    const pages = pagesOf(lines)
+    expect(pages.length).toBeGreaterThan(2)
+    expect(asking.openQuestion?.spec.options).toEqual(['Next page', 'Confirm', 'Change something…'])
+    const second = nextStage(asking, { kind: 'answer', text: 'Next page' })
+    expect(second.openQuestion?.spec.options).toEqual(['Next page', 'Previous page', 'Confirm', 'Change something…'])
+    let last = second
+    for (let page = 2; page < pages.length; page += 1) last = nextStage(last, { kind: 'answer', text: 'Next page' })
+    expect(last.openQuestion?.spec.options).toEqual(['Previous page', 'Confirm', 'Change something…'])
+  })
+
+  test('each page is asked with that page as its context, titled with its place; no typed answer', async () => {
+    const { asking, lines } = await tuiReview()
+    const pages = pagesOf(lines)
+    const titled = (at: number): string => `Review (page ${at + 1} of ${pages.length})`
+    expect(asking.openQuestion?.spec.context).toEqual({ title: titled(0), lines: pages[0], kind: 'review' })
+    expect(asking.openQuestion?.spec.acceptsTyped).toBeUndefined()
+    const second = nextStage(asking, { kind: 'answer', text: 'Next page' })
+    expect(second.openQuestion?.spec.context).toEqual({ title: titled(1), lines: pages[1], kind: 'review' })
+    expect(second.openQuestion?.question).toBe(asking.openQuestion?.question)
+    const back = nextStage(second, { kind: 'answer', text: 'Previous page' })
+    expect(back.openQuestion?.spec.context).toEqual(asking.openQuestion?.spec.context)
+  })
+
+  test('paging never counts a round, and the page asks stay answerable past MAX_ASKS', async () => {
+    const { asking } = await tuiReview({ rounds: MAX_REVIEW_ROUNDS - 1 })
+    let state = asking
+    for (let move = 0; move < MAX_ASKS + 1; move += 1) {
+      state = nextStage(state, { kind: 'answer', text: move % 2 === 0 ? 'Next page' : 'Previous page' })
+    }
+    expect([state.stage, state.rounds, state.effect.kind]).toEqual(['review', MAX_REVIEW_ROUNDS - 1, 'ask'])
+    const done = nextStage(state, { kind: 'answer', text: 'Confirm' })
+    expect(done.stage).toBe('done')
+  })
+
+  test('Change something… with no item is asked again with the item words; a typed item goes back to it', async () => {
+    const { asking } = await tuiReview()
+    const again = nextStage(asking, { kind: 'answer', text: 'Change something…' })
+    const [refusal] = (again.openQuestion?.question ?? '').split('\n')
+    const words = ['roles', 'git policy', 'launcher start', 'duration', 'model', 'assignments', 'memory', 'env']
+    expect(words.every(word => refusal?.includes(word))).toBe(true)
+    expect(again.openQuestion?.spec.context).toEqual(asking.openQuestion?.spec.context)
+    const going = nextStage(again, { kind: 'answer', text: 'roles' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['roles', 'review', 'improver-install'])
+    const policy = nextStage(asking, { kind: 'answer', text: 'git policy' })
+    expect([policy.stage, policy.returnAfter]).toEqual(['policy', 'policy'])
+  })
+
+  test('a typed confirm is asked again: only the Confirm option confirms (T-02.1-78)', async () => {
+    const { asking } = await tuiReview()
+    for (const text of ['confirm', ' Confirm ', 'CONFIRM']) {
+      const again = nextStage(asking, { kind: 'answer', text })
+      expect([text, again.stage, again.effect.kind]).toEqual([text, 'review', 'ask'])
+    }
+    expect(nextStage(asking, { kind: 'answer', text: 'Confirm' }).stage).toBe('done')
+  })
+
+  test('the buttons of the paged review are its own: an unusable answer still cancels after MAX_ASKS', async () => {
+    const { asking } = await tuiReview()
+    let state = asking
+    for (let tries = 0; tries < MAX_ASKS; tries += 1) state = nextStage(state, { kind: 'answer', text: 'maybe' })
+    expect(state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
+  })
+})
+
