@@ -1598,6 +1598,7 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     returnTo: null,
     returnAfter: null,
     rounds: 0,
+    kept: null,
     dryRun: true,
     ...over,
   }

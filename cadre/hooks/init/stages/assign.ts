@@ -15,7 +15,7 @@ import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
 import { handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutNext } from '../handout'
-import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { ROLE_LIST_OPTIONS, roleListAccepts } from './memory'
 import { teamContextLine } from './model'
@@ -121,11 +121,14 @@ function assigned(
 
 /**
  * After the server and group questions, the user's own skills (G-02-1b, D-139): with none it is done; else the model
- * recommends roles for each, busiest first and then by name (the skills model effect).
+ * recommends roles for each, busiest first and then by name (the skills model effect). A review go-back asks them with
+ * the recommendation of the first pass, kept for the same role ids, and calls the model no more (reusable, D-235).
  */
 function ownSkillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssignment[]): InitState {
   const { ownGroup, roles, counts } = plan
   if (ownGroup === undefined) return assigned(state, plan, done, [])
+  const kept = reusable(state)?.ownSkills ?? null
+  if (kept !== null) return afterSkillsModel(state, plan, done, kept)
   const skills = ownSkillsOf(plan.setup.skills, ownGroup, counts)
   const calling: InitState = { ...state, sub: { kind: 'skills-model', done } }
 

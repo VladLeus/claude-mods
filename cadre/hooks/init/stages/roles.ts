@@ -16,7 +16,7 @@ import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, StageDef } from '../state'
+import type { Answer, InitState, Kept, StageDef } from '../state'
 import { idsOf } from './duration'
 import { FRAMEWORK_LABELS } from './frameworks'
 
@@ -364,10 +364,23 @@ function afterDescribed(state: InitState, rounds: number, described: Proposed): 
 }
 
 /**
+ * Whether the kept model results were made for `roles` (ASKED #14): the same role ids, in any order. A Change roles
+ * go-back that adds, drops or renames a role drops them, so the own skills and the instruction parts are recommended
+ * again; unchanged ids keep them (D-235).
+ */
+function isKeptTeam(kept: Kept | null, roles: readonly RoleSpec[]): boolean {
+  if (kept === null) return false
+  const ids = new Set(kept.roleIds)
+
+  return roles.length === ids.size && roles.every(role => ids.has(role.id))
+}
+
+/**
  * The answer to the roles question (choiceAnswer): only `Use these roles` accepts the roles shown, with the scan
- * changes shown with them (A6); `Adjust them` asks the Adjust question and `Describe my own structure` the describe
- * question. Any other answer is asked again with why on top; a dismissal cancels with ROLES_DISMISSED_REASON and
- * MAX_ASKS answers that name no choice with NO_USABLE_ANSWER_REASON (A1).
+ * changes shown with them (A6), keeping the kept model results only for the same role ids (isKeptTeam); `Adjust them`
+ * asks the Adjust question and `Describe my own structure` the describe question. Any other answer is asked again with
+ * why on top; a dismissal cancels with ROLES_DISMISSED_REASON and MAX_ASKS answers that name no choice with
+ * NO_USABLE_ANSWER_REASON (A1).
  */
 function afterRoles(
   state: InitState,
@@ -383,7 +396,11 @@ function afterRoles(
     return withEffect(again, { kind: 'ask', question: next.question, spec: ask.spec })
   }
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
-  if (next.value === 'use') return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
+  if (next.value === 'use') {
+    const kept = isKeptTeam(state.kept, roles) ? state.kept : null
+
+    return stageDone({ ...state, draft: { ...state.draft, roles, changes }, kept })
+  }
   if (next.value === 'adjust') return adjustAsked(state, { rounds, round: 1, roles, changes }, null)
 
   return describeAsked(state, rounds, 1, null)

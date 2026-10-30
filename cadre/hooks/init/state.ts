@@ -210,6 +210,19 @@ export type Answer =
   | { readonly kind: 'io'; readonly result: IoResult }
   | { readonly kind: 'model'; readonly result: ModelResult }
 
+/**
+ * The model results a review go-back reuses instead of calling the model again (D-235, ASKED #14): the roles
+ * recommended for the own skills, the topics of the instruction read and the roles recommended for the topics and
+ * memories, each null until its model call answered, and the ids of the roles they were made for. The roles stage drops
+ * them when a go-back changes the role ids.
+ */
+export type Kept = {
+  readonly roleIds: readonly string[]
+  readonly ownSkills: ReadonlyMap<string, readonly string[]> | null
+  readonly topics: readonly InstructionTopic[] | null
+  readonly parts: ReadonlyMap<string, readonly string[]> | null
+}
+
 /** What init finds of the repo's own instruction files before the content consent, by name only (G-02-1f Sources). */
 export type RepoNames = Pick<InstructionSources, 'rules' | 'hasAgentsMd'>
 
@@ -340,6 +353,8 @@ export type InitState = {
   readonly returnAfter: InitStage | null
   /** How many review rounds ended in a go-back so far. */
   readonly rounds: number
+  /** The own-skills, topics and parts model results a review go-back reuses (D-235); null until the first one. */
+  readonly kept: Kept | null
   /** --dry-run: Confirm replies with the plan and nothing is written or installed (D-82, D-105). */
   readonly dryRun: boolean
 }
@@ -396,6 +411,11 @@ export function stageEnded(state: InitState, reply: string): InitState {
 /** The stage got an answer it cannot take, or lacks a draft field it needs: nextStage cancels init (fail closed). */
 export function stageFailed(state: InitState): InitState {
   return { ...state, sub: { kind: 'failed' } }
+}
+
+/** The kept model results a stage may reuse (D-235): only on a re-entry from a review go-back, else none. */
+export function reusable(state: InitState): Kept | null {
+  return state.returnTo === 'review' ? state.kept : null
 }
 
 /** The DraftBase of a draft, or null while a field of it is not set. */

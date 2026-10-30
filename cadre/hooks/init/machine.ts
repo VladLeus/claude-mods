@@ -15,7 +15,7 @@ import { scanWarnings } from '../scan/gather'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
-import type { Answer, Effect, InitStage, InitState, StageDef } from './state'
+import type { Answer, Effect, InitStage, InitState, Kept, StageDef } from './state'
 import { assignStage } from './stages/assign'
 import { carryStage } from './stages/carry'
 import { consentStage } from './stages/consent'
@@ -219,6 +219,7 @@ export function initialState(dryRun: boolean): InitState {
     returnTo: null,
     returnAfter: null,
     rounds: 0,
+    kept: null,
     dryRun,
   }
 
@@ -226,13 +227,35 @@ export function initialState(dryRun: boolean): InitState {
 }
 
 /**
+ * The kept model results after `answer` (D-235): an own-skills, topics or parts answer is kept with the ids of the
+ * roles it was made for, so a review go-back can reuse it; any other answer leaves them as they are.
+ */
+function keptAfter(state: InitState, answer: Answer): Kept | null {
+  if (answer.kind !== 'model') return state.kept
+  const roleIds = (state.draft.roles ?? []).map(role => role.id)
+  const kept: Kept = state.kept ?? { roleIds, ownSkills: null, topics: null, parts: null }
+  const { result } = answer
+  switch (result.id) {
+    case 'skills':
+      return { ...kept, roleIds, ownSkills: result.result }
+    case 'topics':
+      return { ...kept, roleIds, topics: result.result }
+    case 'parts':
+      return { ...kept, roleIds, parts: result.result }
+    default:
+      return state.kept
+  }
+}
+
+/**
  * The one transition of init (D-230): the open stage takes `answer`, and the state is settled (a done stage enters the
- * next, a cancel or an end ends the run). An answer that does not fit the effect that is out, or any answer once the
- * run ended, ends it with INIT_CANCELLED (fail closed, T-02.1-103). The state given is never changed.
+ * next, a cancel or an end ends the run). A model answer the review go-backs reuse is kept first (keptAfter, D-235).
+ * An answer that does not fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED
+ * (fail closed, T-02.1-103). The state given is never changed.
  */
 export function nextStage(state: InitState, answer: Answer): InitState {
   const isOver = state.stage === 'cancelled' || state.stage === 'done'
   if (isOver || !isAnswerTo(state.effect, answer)) return failed(state)
 
-  return settled(STAGES[state.stage].answer(state, answer))
+  return settled(STAGES[state.stage].answer({ ...state, kept: keptAfter(state, answer) }, answer))
 }

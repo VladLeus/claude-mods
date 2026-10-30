@@ -28,7 +28,7 @@ import type { ChoiceAsk } from '../../ui/ask'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
-import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, RepoNames, StageDef } from '../state'
 import { memoryAnswer, memoryEnter } from './memory'
 import type { MemoryNext } from './memory'
@@ -366,7 +366,8 @@ function handOutParts(state: InitState, input: InstructionInput, found: PartsFou
 
 /**
  * The roles recommended for the topics and the memories (G-02-1f Recommendation, Memories): the parts model effect,
- * which reads each role's work, the topics and the memories by file and summary.
+ * which reads each role's work, the topics and the memories by file and summary; a review go-back hands them out with
+ * the recommendation of the first pass, kept for the same role ids (reusable, D-235).
  */
 function recommending(
   state: InitState,
@@ -374,6 +375,8 @@ function recommending(
   scan: InstructionScan,
   topics: readonly InstructionTopic[],
 ): InitState {
+  const kept = reusable(state)?.parts ?? null
+  if (kept !== null) return handOutParts(state, input, { scan, topics, recommended: kept })
   const calling: InitState = { ...state, sub: { kind: 'parts', scan, topics } }
   const { roles } = input
 
@@ -383,7 +386,8 @@ function recommending(
 /**
  * After the read (G-02-1f): a read with no part and no memory shows its read warnings, if any, in the instructions
  * block, then asks the whole-file questions; else the model groups the parts into topics across files (no call without
- * a part, the topics model effect), and a second call recommends roles for the topics and the memories.
+ * a part, the topics model effect), and a second call recommends roles for the topics and the memories. A review
+ * go-back uses the topics of the first pass instead, kept for the same role ids (reusable, D-235).
  */
 function afterRead(state: InitState, input: InstructionInput, scan: InstructionScan): InitState {
   const isEmpty = scan.parts.length === 0 && scan.memories.length === 0
@@ -394,6 +398,8 @@ function afterRead(state: InitState, input: InstructionInput, scan: InstructionS
     return wholeFiles(withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }]), input, WHOLE)
   }
   if (scan.parts.length === 0) return recommending(state, input, scan, [])
+  const kept = reusable(state)?.topics ?? null
+  if (kept !== null) return recommending(state, input, scan, kept)
 
   return withEffect({ ...state, sub: { kind: 'topics', scan } }, { kind: 'model', call: { id: 'topics', scan } })
 }
