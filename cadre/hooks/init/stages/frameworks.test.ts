@@ -4,8 +4,9 @@ import type { Choice } from '../../../types'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
-import { firstLines, memIo, memWorld, repoScan, valueOf, withFramework } from '../../testkit'
+import { firstLines, memIo, memWorld, repoScan, stateAt, valueOf, wholeDraft, withFramework } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { nextStage } from '../machine'
 import {
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
@@ -13,6 +14,7 @@ import {
   FRAMEWORK_QUESTION_PREFIX,
   frameworkReason,
   frameworkRoleQuestion,
+  frameworksStage,
   frameworkStep,
 } from './frameworks'
 import { teamContextLine } from './model'
@@ -169,5 +171,41 @@ describe('question context lines (G-02-1)', () => {
     const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
     await frameworkStep(run.io, { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }, proposeRoles(repoScan()).roles)
     expect(run.asked[1]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
+  })
+})
+
+describe('the frameworks stage (D-230)', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+
+  test('frameworksStage asks nothing for one framework in use, an unsupported one or none', () => {
+    const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
+    const unsupported: Choice = { kind: 'unsupported', ids: ['aidlc'] }
+    const cases: readonly (readonly [Choice, string, readonly unknown[]])[] = [
+      [chosen, 'gsd', []],
+      [unsupported, 'none', [{ kind: 'note', line: choiceLine(unsupported) }]],
+      [{ kind: 'none' }, 'none', []],
+    ]
+    for (const [choice, repoDefault, notes] of cases) {
+      const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles, repoDefault: null })))
+      expect([state.sub, state.draft.repoDefault, state.draft.roles, state.outputs]).toEqual([
+        { kind: 'done' },
+        repoDefault,
+        roles,
+        notes,
+      ])
+    }
+  })
+
+  test('an ambiguous choice asks Same for all roles or Per role with the team ids as the open question', () => {
+    const choice: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+    const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
+    const prefix = `${FRAMEWORK_QUESTION_PREFIX} (asked because more than one framework is in use)`
+    const question = withContext(prefix, 'Roles: pm, tl, security.')
+    const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Framework' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    const all = nextStage(state, { kind: 'answer', text: 'Same for all roles' })
+    expect(all.openQuestion?.question).toBe(withContext(FRAMEWORK_ALL_QUESTION, 'Roles: pm, tl, security.'))
   })
 })
