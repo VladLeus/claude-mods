@@ -124,7 +124,7 @@ export type IoResult =
  * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
  * the others, Change roles among them, go back as stage transitions.
  */
-export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'roles' | 'policy' | 'launch'>
+export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'roles' | 'policy' | 'launch' | 'duration'>
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
@@ -137,7 +137,6 @@ export type LegacyStep =
       readonly installed: readonly FrameworkId[]
       readonly start: RoleProposal
     }
-  | { readonly id: 'duration'; readonly roles: readonly RoleSpec[] }
   | { readonly id: 'model'; readonly roles: readonly RoleSpec[] }
   | {
       readonly id: 'assign'
@@ -191,7 +190,6 @@ export type Applied = {
  */
 export type LegacyResult =
   | { readonly id: 'roles'; readonly result: StepResult<RoleProposal> }
-  | { readonly id: 'duration'; readonly result: StepResult<string> }
   | { readonly id: 'model'; readonly result: StepResult<readonly RoleSpec[]> }
   | { readonly id: 'assign'; readonly result: StepResult<readonly RoleSpec[]> }
   | {

@@ -12,27 +12,20 @@ import type { Draft } from './draft'
 import type { LegacyGoBack } from './state'
 import { assignmentStep } from './stages/assign'
 import { carryStep } from './stages/carry'
-import { durationStep, withDuration } from './stages/duration'
 import { hunkStep } from './stages/hunks'
 import { instructionsAgain } from './stages/instructions'
 import { modelStep } from './stages/model'
 
 /**
  * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
- * answer: it re-asks that item's step. The duration, model, assignment, memory and env steps run again on the current
- * roles and decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
- * instruction hand-out it had (instructionsAgain). Change roles, the git policy and the launcher start go back as stage
- * transitions instead (D-204). A cancelled step ends the review with its reason (A1).
+ * answer: it re-asks that item's step. The model, assignment, memory and env steps run again on the current roles and
+ * decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
+ * instruction hand-out it had (instructionsAgain). Change roles, the git policy, the launcher start and the duration go
+ * back as stage transitions instead (D-204). A cancelled step ends the review with its reason (A1).
  */
 export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
-    case 'duration':
-      return mapped(await durationStep(io, roles), duration => ({
-        ...draft,
-        duration,
-        roles: withDuration(roles, duration),
-      }))
     case 'model':
       return mapped(await modelStep(io, roles), modelled => ({ ...draft, roles: modelled }))
     case 'assignments':

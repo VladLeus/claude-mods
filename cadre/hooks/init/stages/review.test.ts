@@ -227,8 +227,8 @@ describe('the review stage (D-230)', () => {
   test('a go-back goes through the legacy go-back, and its new draft is planned again the next round', async () => {
     const state = reviewAt()
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const going = nextStage(asking, { kind: 'answer', text: 'duration' })
-    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'go-back', draft: REVIEW_DRAFT, item: 'duration' } })
+    const going = nextStage(asking, { kind: 'answer', text: 'assignments' })
+    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'go-back', draft: REVIEW_DRAFT, item: 'assignments' } })
     const changed = { ...REVIEW_DRAFT, policy: 'all' } satisfies Draft
     const result = { kind: 'accepted', value: changed } satisfies StepResult<Draft>
     const back = nextStage(going, { kind: 'legacy', result: { id: 'go-back', result } })

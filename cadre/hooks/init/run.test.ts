@@ -161,7 +161,7 @@ import {
   CONSENT_DISMISSED_REASON,
   consentStage,
 } from './stages/consent'
-import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStep } from './stages/duration'
+import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStage } from './stages/duration'
 import {
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
@@ -2771,7 +2771,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
         '"Use these roles", "Adjust them", "Describe my own structure"',
       ],
-      ['duration', io => durationStep(io, roles), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
       ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
       ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
@@ -2807,6 +2806,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         'security',
         () => driven(securityStage.enter(stateAt('security', wholeDraft())), ['zzz']).asked,
         '"Install", "Not now"',
+      ],
+      [
+        'duration',
+        () => driven(durationStage.enter(stateAt('duration', { roles })), ['zzz']).asked,
+        'a duration such as 4h, 90m or 1h30m, at most 168h',
       ],
       ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],

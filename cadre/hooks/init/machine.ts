@@ -26,7 +26,7 @@ import {
 } from './state'
 import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
 import { consentStage } from './stages/consent'
-import { withDuration } from './stages/duration'
+import { durationStage } from './stages/duration'
 import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
 import { launchStage } from './stages/launch'
@@ -101,31 +101,6 @@ const rolesStage: StageDef = Object.freeze({
     const { roles, changes } = chosen.value
 
     return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
-  },
-})
-
-/**
- * The autopilot duration (durationStep, legacy), once for every role; when the roles are asked again from the review,
- * the duration the team has is kept (D-51).
- */
-const durationStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, duration } = state.draft
-    if (roles === undefined) return stageFailed(state)
-    if (duration !== undefined) {
-      return stageDone({ ...state, draft: { ...state.draft, roles: withDuration(roles, duration) } })
-    }
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'duration', roles } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    const { roles } = state.draft
-    if (answer.kind !== 'legacy' || answer.result.id !== 'duration' || roles === undefined) return stageFailed(state)
-    const asked = answer.result.result
-    if (asked.kind === 'cancelled') return stageCancelled(state, asked.reason)
-    const duration = asked.value
-
-    return stageDone({ ...state, draft: { ...state.draft, duration, roles: withDuration(roles, duration) } })
   },
 })
 
