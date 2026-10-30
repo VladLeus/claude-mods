@@ -9,8 +9,10 @@
 import type { Choice, FrameworkId, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { choiceLine } from '../../detect/report'
+import { detectAll } from '../../framework/registry'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { detectionContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { ANSWER_MODE_OPTIONS, parseAnswerMode, teamContextLine } from './model'
@@ -117,9 +119,16 @@ function frameworkAsk(choice: AskedChoice, question: string, roles: readonly Rol
   }
 }
 
-/** The state asking `ask` with the cursor `sub`; `question` is the ask's text after a refusal. */
+/**
+ * The state asking `ask` with the cursor `sub`, the detection evidence of the scan as the question's own context
+ * (detectionContext, D-236); `question` is the ask's text after a refusal.
+ */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: FrameworkAsk<T>, question: string | null): InitState {
-  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+  const { gathered } = state.draft
+  if (gathered === undefined) return stageFailed(state)
+  const spec = { ...ask.spec, context: detectionContext(detectAll(gathered.facts.facts)) }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec })
 }
 
 /** The stage done with the roles framed and the repo default. */

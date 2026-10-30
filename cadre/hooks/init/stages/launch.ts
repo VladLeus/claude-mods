@@ -13,6 +13,7 @@ import { reportText, shown } from '../../core/text'
 import { isSafeRelativePath } from '../../paths'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { launchContext, launchDirContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -106,25 +107,30 @@ const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK
 
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
- * second line (launchContextLine), the three starts with the Launch chip, parseLaunchChoice, what its refusal lists,
- * and the reason a dismissal cancels with.
+ * second line (launchContextLine), the three starts with the Launch chip and what the git root and the run folder
+ * mean as its own context (launchContext, D-236), parseLaunchChoice, what its refusal lists, and the reason a dismissal
+ * cancels with.
  */
 function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
   return {
     question: withContext(LAUNCH_START_QUESTION, launchContextLine(roles)),
-    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch },
+    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch, context: launchContext(roles) },
     parse: parseLaunchChoice,
     accepts: LAUNCH_START_ACCEPTS,
     dismissedReason: LAUNCH_START_DISMISSED_REASON,
   }
 }
 
-/** The folder question asked (A2), with LAUNCH_DIR_CONTEXT on its second line and `refusal` on top, `tries` so far. */
+/**
+ * The folder question asked (A2), with LAUNCH_DIR_CONTEXT on its second line, `refusal` on top and the folders the
+ * repo scan found code in as its own context (launchDirContext, D-236), `tries` so far.
+ */
 function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
   const question = askedText(withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT), refusal)
   const sub: InitState['sub'] = { kind: 'launch-dir', tries }
+  const spec = { ...LAUNCH_DIR_SPEC, context: launchDirContext(state.draft.gathered?.repo.codeDirs ?? []) }
 
-  return withEffect({ ...state, sub }, { kind: 'ask', question, spec: LAUNCH_DIR_SPEC })
+  return withEffect({ ...state, sub }, { kind: 'ask', question, spec })
 }
 
 /**

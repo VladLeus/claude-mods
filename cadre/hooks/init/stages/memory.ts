@@ -10,6 +10,7 @@
 import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { memoryGroupContext } from '../../ui/blocks/context'
 import { ALL_OPTION, memoryQuestion, NONE_OPTION, parseRoleList } from '../answers'
 import type { MemoryCursor } from '../state'
 import { idsOf } from './duration'
@@ -63,8 +64,9 @@ export type MemoryNext =
 
 /**
  * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
- * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip, a typed list of role
- * ids or titles (parseRoleList), and MEMORY_DISMISSED_REASON for a dismissal.
+ * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
+ * files as its own context (memoryGroupContext, D-236), a typed list of role ids or titles (parseRoleList), and
+ * MEMORY_DISMISSED_REASON for a dismissal.
  */
 function groupAsk(
   group: InstructionGroup,
@@ -73,7 +75,7 @@ function groupAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   return {
     question: withContext(memoryQuestion(group, names), memoryContextLine(roles)),
-    spec: { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory },
+    spec: { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory, context: memoryGroupContext(group, names) },
     parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),
     accepts: roleListAccepts(roles),
     dismissedReason: MEMORY_DISMISSED_REASON,

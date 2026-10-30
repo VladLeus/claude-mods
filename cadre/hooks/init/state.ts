@@ -254,7 +254,8 @@ export type MemoryCursor = {
  *   `rounds`-th proposal of the roles stage.
  * - `adjust`: the Adjust question is out for the `round`-th time, with the roles as adjusted so far, in proposal
  *   `rounds`.
- * - `describe`: the describe question is out, asked `tries` times so far, after proposal `rounds`.
+ * - `describe`: the describe question is out, asked `tries` times so far, after proposal `rounds` of `roles` with
+ *   their scan `changes`, which its context shows (D-236).
  * - `describe-model`: the model call for the described structure is out, after proposal `rounds`.
  * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
  *   far, with the names the questions before it gave (`done`).
@@ -300,7 +301,13 @@ export type StageSub =
       readonly roles: readonly RoleSpec[]
       readonly changes: readonly RoleChange[]
     }
-  | { readonly kind: 'describe'; readonly rounds: number; readonly tries: number }
+  | {
+      readonly kind: 'describe'
+      readonly rounds: number
+      readonly tries: number
+      readonly roles: readonly RoleSpec[]
+      readonly changes: readonly RoleChange[]
+    }
   | { readonly kind: 'describe-model'; readonly rounds: number }
   | {
       readonly kind: 'assign'

@@ -6,10 +6,11 @@
  * read. Pure: it gives states and never performs an effect, imports roles, ui/ask and init/state, and never imports
  * init/machine or init/run.
  */
-import type { RoleSpec } from '../../../types'
+import type { RoleChange, RoleSpec } from '../../../types'
 import { isAutopilotDuration } from '../../roles/validate'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { rolesContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 
@@ -44,13 +45,17 @@ const DURATION_ACCEPTS = 'a duration such as 4h, 90m or 1h30m, at most 168h'
 
 /**
  * The duration question as the stage asks it (D-51, D-136): DURATION_QUESTION with the ids of `roles` on its second
- * line (durationContextLine), the buttons with the Duration chip, parseDuration, what its refusal lists, and the reason
- * a dismissal cancels with.
+ * line (durationContextLine), the buttons with the Duration chip and the roles with their purposes and scan `changes`
+ * as its own context (rolesContext, D-236), parseDuration, what its refusal lists, and the reason a dismissal cancels
+ * with.
  */
-function durationAsk(roles: readonly RoleSpec[]): ChoiceAsk<string> & { readonly dismissedReason: string } {
+function durationAsk(
+  roles: readonly RoleSpec[],
+  changes: readonly RoleChange[],
+): ChoiceAsk<string> & { readonly dismissedReason: string } {
   return {
     question: withContext(DURATION_QUESTION, durationContextLine(roles)),
-    spec: { options: DURATION_OPTIONS, header: ASK_HEADERS.duration },
+    spec: { options: DURATION_OPTIONS, header: ASK_HEADERS.duration, context: rolesContext(roles, changes) },
     parse: parseDuration,
     accepts: DURATION_ACCEPTS,
     dismissedReason: DURATION_DISMISSED_REASON,
@@ -69,9 +74,9 @@ function durationDone(state: InitState, roles: readonly RoleSpec[], duration: st
 
 /** The answer to the duration question (choiceAnswer): a duration ends the stage with it. */
 function durationAnswer(state: InitState, answer: Answer): InitState {
-  const { roles } = state.draft
+  const { roles, changes } = state.draft
   if (answer.kind !== 'answer' || state.sub.kind !== 'ask' || roles === undefined) return stageFailed(state)
-  const ask = durationAsk(roles)
+  const ask = durationAsk(roles, changes ?? [])
   const next = choiceAnswer(ask, state.sub, answer.text)
   if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
@@ -90,11 +95,11 @@ function durationAnswer(state: InitState, answer: Answer): InitState {
  */
 export const durationStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
-    const { roles, duration } = state.draft
+    const { roles, changes, duration } = state.draft
     if (roles === undefined) return stageFailed(state)
     const isKept = duration !== undefined && state.returnAfter !== 'duration'
     if (isKept) return durationDone(state, roles, duration)
-    const ask = durationAsk(roles)
+    const ask = durationAsk(roles, changes ?? [])
 
     return asking(state, ask.question, ask.spec, 1)
   },

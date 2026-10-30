@@ -6,10 +6,11 @@
  * it gives states and never performs an effect, imports core, roles, ui/ask, init/state and init/stages/security, and
  * never imports init/machine or init/run.
  */
-import type { InstructionHandout } from '../../../types'
+import type { AskSpec, InstructionHandout } from '../../../types'
 import { labelled } from '../../core/labelled'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { improverInstallContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { INSTALL_CHOICES, INSTALL_OPTIONS } from './security'
@@ -57,6 +58,30 @@ const IMPROVER_ASK = Object.freeze({
   dismissedReason: IMPROVER_INSTALL_DISMISSED_REASON,
 })
 
+/**
+ * The ids of the roles a hand-out gives a built file with a part (hasBuiltPart), in the order of `roleIds`: each role
+ * given a topic that holds a part.
+ */
+function builtRoleIds(handout: InstructionHandout, roleIds: readonly string[]): string[] {
+  if (handout.kind !== 'parts') return []
+  const { topics, given } = handout
+  const built = topics.filter(topic => topic.partIds.length > 0).flatMap(topic => given.get(topic.id) ?? [])
+
+  return roleIds.filter(id => built.includes(id))
+}
+
+/**
+ * The dialog spec of the improver install question: IMPROVER_ASK's, with the roles the hand-out gives a built file as
+ * its own context (improverInstallContext, D-236).
+ */
+function improverSpec(state: InitState): AskSpec {
+  const { instructions, roles } = state.draft
+  const roleIds = (roles ?? []).map(role => role.id)
+  const built = instructions === undefined ? [] : builtRoleIds(instructions, roleIds)
+
+  return { ...IMPROVER_ASK.spec, context: improverInstallContext(built) }
+}
+
 /** The stage done with `installs` after the plugins answered Install before it, the security plugins first. */
 function improverDone(state: InitState, installs: readonly string[]): InitState {
   const { pluginInstalls } = state.draft
@@ -69,7 +94,7 @@ function improverDone(state: InitState, installs: readonly string[]): InitState 
 function improverAnswer(state: InitState, answer: Answer): InitState {
   if (answer.kind !== 'answer' || state.sub.kind !== 'ask') return stageFailed(state)
   const next = choiceAnswer(IMPROVER_ASK, state.sub, answer.text)
-  if (next.kind === 'again') return asking(state, next.question, IMPROVER_ASK.spec, next.sub.tries)
+  if (next.kind === 'again') return asking(state, next.question, improverSpec(state), next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
 
   return improverDone(state, next.value ? [CLAUDE_MD_PLUGIN] : [])
@@ -91,7 +116,7 @@ export const improverInstallStage: StageDef = Object.freeze({
     const isMissing = !gathered.setup.installedPlugins.includes(CLAUDE_MD_PLUGIN)
     if (!hasBuiltPart(instructions) || !isMissing) return improverDone(state, [])
 
-    return asking(state, IMPROVER_ASK.question, IMPROVER_ASK.spec, 1)
+    return asking(state, IMPROVER_ASK.question, improverSpec(state), 1)
   },
   answer: improverAnswer,
 })

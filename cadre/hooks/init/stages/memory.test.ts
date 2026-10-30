@@ -131,7 +131,11 @@ describe('the whole-file question cursor (D-230)', () => {
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       withContext(question, memoryContextLine(roles)),
-      { options: ROLE_LIST_OPTIONS, header: 'Memory' },
+      {
+        options: ROLE_LIST_OPTIONS,
+        header: 'Memory',
+        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group' },
+      },
     ])
     const none = memoryEnter(roles, emptySetupScan())
     expect(none.kind === 'done' ? none.roles.map(role => role.instructions) : none).toEqual(roles.map(() => []))

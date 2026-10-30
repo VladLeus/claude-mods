@@ -4,9 +4,10 @@
  * (historyQuestion), and historyStage, the pure stage that has this repo's session folder listed, asks, has the
  * history scan (scan/history) run only after a yes and shows the names and counts it found as the side pane's Session
  * history block (historyLines); and historyHints, the scan as hints for the skill questions. Pure: it gives states and
- * never performs an effect, imports core, paths, scan/history, ui and init/state, and never imports init/machine or
- * init/run.
+ * never performs an effect, imports core, paths, scan/gather, scan/history, ui and init/state, and never imports
+ * init/machine or init/run.
  */
+import type { InitLocations } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { userDirOf } from '../../paths'
@@ -17,9 +18,11 @@ import {
   HISTORY_MAX_TOTAL_BYTES,
   historyDir,
 } from '../../scan/history'
+import type { Gathered } from '../../scan/gather'
 import type { HistoryScan } from '../../scan/history'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { scanContext } from '../../ui/blocks/context'
 import { scanContextLine } from '../../ui/blocks/scan'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, SessionListing, StageDef } from '../state'
@@ -119,14 +122,19 @@ function historyDirOf(state: InitState): string | null {
 }
 
 /**
- * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and `context`,
- * the line of what the repo scan found, on its second line; the two answers with the History chip, the answers its
- * refusal lists, and the reason a dismissal cancels with.
+ * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and the line of
+ * what the repo scan found on its second line (scanContextLine); the two answers with the History chip and the scan
+ * block as its own context (scanContext, D-236), the answers its refusal lists, and the reason a dismissal cancels
+ * with.
  */
-function historyAsk(total: number, context: string): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+function historyAsk(
+  total: number,
+  locations: InitLocations,
+  gathered: Gathered,
+): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   return {
-    question: withContext(historyQuestion(total), context),
-    spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history },
+    question: withContext(historyQuestion(total), scanContextLine(gathered.repo)),
+    spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history, context: scanContext(locations, gathered) },
     parse: parseHistoryConsent,
     accepts: quotedLabels(HISTORY_OPTIONS),
     dismissedReason: HISTORY_DISMISSED_REASON,
@@ -152,9 +160,9 @@ function skippedWith(state: InitState, note: string): InitState {
 
 /** The history question asked with the session count and the scan's context line, asked `tries` times so far. */
 function historyAsked(state: InitState, listing: SessionListing, question: string | null, tries: number): InitState {
-  const { gathered } = state.draft
-  if (gathered === undefined) return stageFailed(state)
-  const ask = historyAsk(listing.total, scanContextLine(gathered.repo))
+  const { gathered, locations } = state.draft
+  if (gathered === undefined || locations === undefined) return stageFailed(state)
+  const ask = historyAsk(listing.total, locations, gathered)
   const sub: InitState['sub'] = { kind: 'history', tries, listing }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -178,11 +186,13 @@ function afterListing(state: InitState, listing: SessionListing | null): InitSta
  * NO_USABLE_ANSWER_REASON (A1, D-45).
  */
 function afterConsent(state: InitState, answer: string | null): InitState {
-  const { gathered } = state.draft
+  const { gathered, locations } = state.draft
   const dir = historyDirOf(state)
-  if (state.sub.kind !== 'history' || gathered === undefined || dir === null) return stageFailed(state)
+  if (state.sub.kind !== 'history' || gathered === undefined || locations === undefined || dir === null) {
+    return stageFailed(state)
+  }
   const { listing } = state.sub
-  const next = choiceAnswer(historyAsk(listing.total, scanContextLine(gathered.repo)), state.sub, answer)
+  const next = choiceAnswer(historyAsk(listing.total, locations, gathered), state.sub, answer)
   if (next.kind === 'again') return historyAsked(state, listing, next.question, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return withHints(state, 'skipped')

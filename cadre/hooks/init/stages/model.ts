@@ -13,6 +13,7 @@ import { reportText } from '../../core/text'
 import { EFFORTS, MODEL_ALIASES } from '../../roles/validate'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { rolesContext } from '../../ui/blocks/context'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from '../answers'
 import { stageCancelled, stageDone, stageFailed, withEffect } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -100,7 +101,11 @@ function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'ef
 
 /** The state asking `ask` with the cursor `sub`; `question` is the ask's text after a refusal. */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: ModelAsk<T>, question: string | null): InitState {
-  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+  const { roles, changes } = state.draft
+  if (roles === undefined) return stageFailed(state)
+  const spec = { ...ask.spec, context: rolesContext(roles, changes ?? []) }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec })
 }
 
 /** The stage done with the roles modelled. */

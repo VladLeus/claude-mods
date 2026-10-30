@@ -18,7 +18,7 @@ import { pluginName } from '../../scope/lint'
 import { resolvedFramework } from '../../team'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { SECURITY_PLUGIN_NOTES } from '../../ui/blocks/context'
+import { SECURITY_PLUGIN_NOTES, securityContext } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -77,13 +77,14 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
 
 /**
  * The security plugins question as the stage asks it (decision #39, D-136): securityInstallQuestion for `keys`, with
- * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip, Install or Not now
- * trimmed and in any case, what its refusal lists, and the reason a dismissal cancels with.
+ * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip and the missing
+ * plugins as its own context (securityContext, D-236), Install or Not now trimmed and in any case, what its refusal
+ * lists, and the reason a dismissal cancels with.
  */
 function securityAsk(keys: readonly string[]): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   return {
     question: withContext(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT),
-    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security },
+    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security, context: securityContext(keys) },
     parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
     accepts: quotedLabels(INSTALL_OPTIONS),
     dismissedReason: SECURITY_INSTALL_DISMISSED_REASON,

@@ -25,6 +25,7 @@ import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
 import { ASK_HEADERS, choiceAnswer, countedChip, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { instructionPartsContext, instructionsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
@@ -173,8 +174,8 @@ export function topicHeader(position: number, count: number): string {
 }
 
 /**
- * Each topic as a hand-out item (G-02-1f Part by part): its question, context line, chip and the roles recommended for
- * it, none when the recommendation gave it none.
+ * Each topic as a hand-out item (G-02-1f Part by part): its question, context line, chip, the roles recommended for
+ * it, none when the recommendation gave it none, and its own context, that topic only (topicContext, D-236).
  */
 export function topicItems(
   scan: InstructionScan,
@@ -190,6 +191,7 @@ export function topicItems(
       contextLine: topicContextLine(topic, scan.parts, ids),
       header: topicHeader(index + 1, topics.length),
       recommended: ids,
+      context: topicContext(topic, scan.parts, ids, index + 1, topics.length),
     }
   })
 }
@@ -216,8 +218,9 @@ export function memoryItemHeader(position: number, count: number): string {
 }
 
 /**
- * Each memory as a hand-out item (G-02-1f Memories), asked after the topics: its question, context line, chip and the
- * roles recommended for it, none when the recommendation gave it none.
+ * Each memory as a hand-out item (G-02-1f Memories), asked after the topics: its question, context line, chip, the
+ * roles recommended for it, none when the recommendation gave it none, and its own context, that memory only
+ * (memoryContext, D-236).
  */
 export function memoryItems(
   memories: readonly MemoryItem[],
@@ -232,6 +235,7 @@ export function memoryItems(
       contextLine: memoryItemContextLine(memory, ids),
       header: memoryItemHeader(index + 1, memories.length),
       recommended: ids,
+      context: memoryContext(memory, ids, index + 1, memories.length),
     }
   })
 }
@@ -290,12 +294,13 @@ function instructedDone(state: InitState, instructed: Instructed): InitState {
 /**
  * The content consent (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on its second line
  * (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first, the Instructions
- * chip, and CONTENT_DISMISSED_REASON for a dismissal.
+ * chip, the files and memories found by name as its own context (instructionsContext, D-236), and
+ * CONTENT_DISMISSED_REASON for a dismissal.
  */
 function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   return {
     question: withContext(CONTENT_QUESTION, contentContextLine(setup, repo)),
-    spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions },
+    spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions, context: instructionsContext(setup, repo) },
     parse: parseContentConsent,
     accepts: quotedLabels(CONTENT_OPTIONS),
     dismissedReason: CONTENT_DISMISSED_REASON,
@@ -352,14 +357,16 @@ function partsHandedOut(state: InitState, input: InstructionInput, found: PartsF
 
 /**
  * The hand-out of what the parts flow found (G-02-1f Entry choices, Memories): the instructions block in the side pane
- * first (instructionLines), then the entry question with the topics and then the memories as items.
+ * first (instructionLines), then the entry question, with that block as its own context (instructionPartsContext,
+ * D-236), with the topics and then the memories as items.
  */
 function handOutParts(state: InitState, input: InstructionInput, found: PartsFound): InitState {
   const { scan, topics, recommended } = found
   const lines = instructionLines(scan, topics, recommended)
   const shownBlock = withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }])
   const items = [...topicItems(scan, topics, recommended), ...memoryItems(scan.memories, recommended)]
-  const next = handoutEnter(instructionsEntry(scan, topics), items, input.roles, HANDOUT_DISMISSED_REASON)
+  const entry = { ...instructionsEntry(scan, topics), context: instructionPartsContext(scan, topics, recommended) }
+  const next = handoutEnter(entry, items, input.roles, HANDOUT_DISMISSED_REASON)
 
   return partsHandedOut(shownBlock, input, found, next)
 }

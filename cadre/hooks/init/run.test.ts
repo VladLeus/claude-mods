@@ -2819,7 +2819,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       ],
       [
         'framework mode',
-        () => driven(frameworksStage.enter(stateAt('frameworks', { choice, roles })), ['zzz']).asked,
+        () => driven(frameworksStage.enter(stateAt('frameworks', { choice, roles, gathered })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
       ],
       [

@@ -15,7 +15,7 @@ import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { proposalLines, roleLines } from '../../ui/blocks/context'
+import { proposalLines, roleLines, rolesContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -189,12 +189,13 @@ type RolesAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
  * The roles question (D-46, D-136): ROLES_QUESTION with rolesContextLine for `roles` and `changes` on its second line,
- * its three answers with the Roles chip, and ROLES_DISMISSED_REASON for a dismissal.
+ * its three answers with the Roles chip and the roles as its own context (rolesContext, D-236), and
+ * ROLES_DISMISSED_REASON for a dismissal.
  */
 function rolesAsk(roles: readonly RoleSpec[], changes: readonly RoleChange[]): RolesAsk<RolesChoice> {
   return {
     question: withContext(ROLES_QUESTION, rolesContextLine(roles, changes)),
-    spec: { options: ROLES_OPTIONS, header: ASK_HEADERS.roles },
+    spec: { options: ROLES_OPTIONS, header: ASK_HEADERS.roles, context: rolesContext(roles, changes) },
     parse: parseRolesChoice,
     accepts: quotedLabels(ROLES_OPTIONS),
     dismissedReason: ROLES_DISMISSED_REASON,
@@ -244,11 +245,15 @@ function proposed(
   return withEffect({ ...shown, sub }, { kind: 'ask', question: ask.question, spec: ask.spec })
 }
 
-/** The Adjust question for the roles of `cursor` (D-47, D-136), with `refusal` on top. */
+/**
+ * The Adjust question for the roles of `cursor` (D-47, D-136), with `refusal` on top and the roles as they are now as
+ * its own context (rolesContext, D-236).
+ */
 function adjustAsked(state: InitState, cursor: AdjustCursor, refusal: string | null): InitState {
   const question = askedText(withContext(ADJUST_QUESTION, adjustContextLine(cursor.roles)), refusal)
+  const spec = { ...ADJUST_SPEC, context: rolesContext(cursor.roles, cursor.changes) }
 
-  return withEffect({ ...state, sub: { kind: 'adjust', ...cursor } }, { kind: 'ask', question, spec: ADJUST_SPEC })
+  return withEffect({ ...state, sub: { kind: 'adjust', ...cursor } }, { kind: 'ask', question, spec })
 }
 
 /**
@@ -294,10 +299,16 @@ function afterAdjust(
   return adjustAgain(state, cursor, result.roles, null)
 }
 
-/** The describe question after proposal `rounds`, asked `tries` times so far; `question` is its text once refused. */
-function describeAsked(state: InitState, rounds: number, tries: number, question: string | null): InitState {
-  const sub: InitState['sub'] = { kind: 'describe', rounds, tries }
-  const { spec } = DESCRIBE_ASK
+/** Where the describe question is: the proposal it came after, with its roles and their scan changes, and its tries. */
+type DescribeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'describe' }>, 'kind'>
+
+/**
+ * The describe question at `cursor`, with the roles it was asked from as its own context (rolesContext, D-236);
+ * `question` is its text once refused.
+ */
+function describeAsked(state: InitState, cursor: DescribeCursor, question: string | null): InitState {
+  const sub: InitState['sub'] = { kind: 'describe', ...cursor }
+  const spec = { ...DESCRIBE_ASK.spec, context: rolesContext(cursor.roles, cursor.changes) }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? DESCRIBE_ASK.question, spec })
 }
@@ -308,11 +319,12 @@ function describeAsked(state: InitState, rounds: number, tries: number, question
  * MAX_ASKS blank answers cancel (A1). A typed description is the describe-roles model effect, and only its text reaches
  * the model.
  */
-function afterDescribe(state: InitState, rounds: number, tries: number, answer: string | null): InitState {
+function afterDescribe(state: InitState, cursor: DescribeCursor, answer: string | null): InitState {
   const { proposal } = state.draft
   if (proposal === undefined) return stageFailed(state)
-  const next = choiceAnswer(DESCRIBE_ASK, { tries }, answer)
-  if (next.kind === 'again') return describeAsked(state, rounds, next.sub.tries, next.question)
+  const { rounds } = cursor
+  const next = choiceAnswer(DESCRIBE_ASK, cursor, answer)
+  if (next.kind === 'again') return describeAsked(state, { ...cursor, tries: next.sub.tries }, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   const described = next.value
   if (described.kind === 'cancel') return stageCancelled(state, DESCRIBE_CANCELLED_REASON)
@@ -381,7 +393,7 @@ function afterRoles(
   }
   if (next.value === 'adjust') return adjustAsked(state, { rounds, round: 1, roles, changes }, null)
 
-  return describeAsked(state, rounds, 1, null)
+  return describeAsked(state, { rounds, tries: 1, roles, changes }, null)
 }
 
 /** The answer to the effect the roles stage has out: the roles, Adjust or describe question, or the model call. */
@@ -397,7 +409,7 @@ function rolesAnswer(state: InitState, answer: Answer): InitState {
     case 'adjust':
       return afterAdjust(state, sub, installed, answer.text)
     case 'describe':
-      return afterDescribe(state, sub.rounds, sub.tries, answer.text)
+      return afterDescribe(state, sub, answer.text)
     default:
       return stageFailed(state)
   }

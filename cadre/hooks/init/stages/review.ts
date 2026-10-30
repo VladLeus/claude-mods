@@ -22,6 +22,7 @@ import { MEMORY_PATTERN } from '../../scope/lint'
 import { scopesFor } from '../../team'
 import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
+import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { scanWarningLines } from '../../ui/blocks/scan'
 import type { Draft, PlanResult, Reviewed } from '../draft'
@@ -261,13 +262,16 @@ function reviewPlanOf(draft: Draft): {
 
 /**
  * The review question as the stage asks it (D-43, D-136): reviewQuestion with the context line of the plan just shown,
- * cleaned as a report cell (reviewContextLine), the four buttons with the Review chip, parseReviewItem, what its
- * refusal lists, and the reason a dismissal cancels with.
+ * cleaned as a report cell (reviewContextLine), the four buttons with the Review chip and the review block it is asked
+ * about as its own context (reviewLines, reviewContext, D-236), parseReviewItem, what its refusal lists, and the
+ * reason a dismissal cancels with.
  */
 function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly dismissedReason: string } {
+  const context = reviewContext(reviewLines(draft, reviewPlanOf(draft).scopes, plan))
+
   return {
     question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
-    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review },
+    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review, context },
     parse: parseReviewItem,
     accepts: REVIEW_ACCEPTS,
     dismissedReason: REVIEW_DISMISSED_REASON,
