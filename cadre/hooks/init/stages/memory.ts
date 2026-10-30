@@ -65,8 +65,8 @@ export type MemoryNext =
 /**
  * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
  * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
- * files as its own context (memoryGroupContext, D-236), a typed list of role ids or titles (parseRoleList), and
- * MEMORY_DISMISSED_REASON for a dismissal.
+ * files as its own context (memoryGroupContext, D-236), a typed list of role ids or titles (parseRoleList), so it
+ * takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal.
  */
 function groupAsk(
   group: InstructionGroup,
@@ -75,7 +75,12 @@ function groupAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   return {
     question: withContext(memoryQuestion(group, names), memoryContextLine(roles)),
-    spec: { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory, context: memoryGroupContext(group, names) },
+    spec: {
+      options: ROLE_LIST_OPTIONS,
+      header: ASK_HEADERS.memory,
+      context: memoryGroupContext(group, names),
+      acceptsTyped: true,
+    },
     parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),
     accepts: roleListAccepts(roles),
     dismissedReason: MEMORY_DISMISSED_REASON,

@@ -80,15 +80,15 @@ function assignPlan(state: InitState): AssignPlan | null {
 
 /**
  * The question on which roles get an item (D-53, D-136): its question, None or All roles with its chip and its own
- * context (D-203), a typed list of role ids or titles (parseRoleList), what its refusal lists, and
- * ASSIGNMENT_DISMISSED_REASON for a dismissal.
+ * context (D-203), a typed list of role ids or titles (parseRoleList), so it takes a typed answer (D-234), what its
+ * refusal lists, and ASSIGNMENT_DISMISSED_REASON for a dismissal.
  */
 function itemAsk(item: AssignItem, roles: readonly RoleSpec[]): ChoiceAsk<readonly string[]> & {
   readonly dismissedReason: string
 } {
   return {
     question: item.question,
-    spec: { options: ROLE_LIST_OPTIONS, header: item.header, context: item.context },
+    spec: { options: ROLE_LIST_OPTIONS, header: item.header, context: item.context, acceptsTyped: true },
     parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),
     accepts: roleListAccepts(roles),
     dismissedReason: ASSIGNMENT_DISMISSED_REASON,

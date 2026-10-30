@@ -34,8 +34,8 @@ export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or
 /**
  * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids
  * on its second line (envContextLine), the buttons None and All of them with the Env chip and the names as its own
- * context (envContext, D-236), typed names that were scanned (parseEnvNames), what its refusal lists, and the reason a
- * dismissal cancels with.
+ * context (envContext, D-236), typed names that were scanned (parseEnvNames), so it takes a typed answer (D-234), what
+ * its refusal lists, and the reason a dismissal cancels with.
  */
 function envAsk(
   names: readonly string[],
@@ -43,7 +43,7 @@ function envAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   return {
     question: withContext(envQuestion(names), envContextLine(roles)),
-    spec: { options: ENV_OPTIONS, header: ASK_HEADERS.env, context: envContext(names) },
+    spec: { options: ENV_OPTIONS, header: ASK_HEADERS.env, context: envContext(names), acceptsTyped: true },
     parse: (answer: string): readonly string[] | null => parseEnvNames(answer, names),
     accepts: ENV_ACCEPTS,
     dismissedReason: ENV_DISMISSED_REASON,

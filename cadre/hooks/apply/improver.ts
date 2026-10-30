@@ -6,7 +6,7 @@
  * paths, scan, ui/ask, ui/diff, the private role files, the write safety checks and the types, so the apply runner and
  * init read it here.
  */
-import type { HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
+import type { AskContext, HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { compareText, countedNoun, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
@@ -170,6 +170,11 @@ export function improverContextLine(diff: LineDiff): string {
  */
 export function improverBlockLines(path: string, diff: LineDiff): string[] {
   return [`${path}: ${diffCounts(diff)}`, ...diffLines(diff)]
+}
+
+/** The context of the per-file improver question (D-236): its diff, as the improver block shows it. */
+export function improverContext(path: string, diff: LineDiff): AskContext {
+  return { title: `Improver: ${reportText(path)}`, lines: improverBlockLines(path, diff), kind: 'improver' }
 }
 
 /** The note for a built file the improver ran on and did not change (D-141). */
@@ -521,7 +526,7 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
   await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
   const answer = await askChoice(io, {
     question: withContext(improverQuestion(shownPath), improverContextLine(state.diff)),
-    spec: { options: IMPROVER_OPTIONS, header: ASK_HEADERS.improver },
+    spec: { options: IMPROVER_OPTIONS, header: ASK_HEADERS.improver, context: improverContext(shownPath, state.diff) },
     parse: parseImproverAnswer,
     accepts: quotedLabels(IMPROVER_OPTIONS),
   })

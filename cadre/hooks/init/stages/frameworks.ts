@@ -104,15 +104,16 @@ function modeAsk(choice: AskedChoice, roles: readonly RoleSpec[]): FrameworkAsk<
 
 /**
  * A framework question (D-07, D-86, D-136): `question` with the team's role ids on its second line; the options are the
- * frameworks of the choice in SUPPORTED_IDS order, then `none (built-in)`, none marked as a default; an answer that
- * names no offered framework is asked again with the words of the offered frameworks and that a role runs one.
+ * frameworks of the choice in SUPPORTED_IDS order, then `none (built-in)`, none marked as a default; a framework is
+ * also taken typed by its id, so it takes a typed answer (D-234, ASKED #141); an answer that names no offered framework
+ * is asked again with the words of the offered frameworks and that a role runs one.
  */
 function frameworkAsk(choice: AskedChoice, question: string, roles: readonly RoleSpec[]): FrameworkAsk<FrameworkId> {
   const allowed: readonly FrameworkId[] = [...SUPPORTED_IDS.filter(id => choice.ids.includes(id)), 'none']
 
   return {
     question: withContext(question, teamContextLine(roles)),
-    spec: { options: allowed.map(id => FRAMEWORK_LABELS[id]), header: ASK_HEADERS.framework },
+    spec: { options: allowed.map(id => FRAMEWORK_LABELS[id]), header: ASK_HEADERS.framework, acceptsTyped: true },
     parse: (answer: string): FrameworkId | null => parseFramework(answer, allowed),
     accepts: `${allowed.map(id => FRAMEWORK_WORDS[id]).join(', ')} - a role runs one framework`,
     dismissedReason: FRAMEWORK_DISMISSED_REASON,

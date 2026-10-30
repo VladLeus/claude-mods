@@ -159,12 +159,13 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 
 /**
  * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip, its own
- * context when it has one, and the buttons Yes and No, a role list typed under "Other" (itemRoles).
+ * context when it has one, and the buttons Yes and No, a role list typed under "Other" (itemRoles), so it takes a
+ * typed answer (D-234).
  */
 function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
   return {
     question: withContext(item.question, item.contextLine),
-    spec: specWith({ options: ITEM_OPTIONS, header: item.header }, item.context),
+    spec: specWith({ options: ITEM_OPTIONS, header: item.header, acceptsTyped: true }, item.context),
     parse: (answer: string): readonly string[] | null => itemRoles(answer, item, cursor.roles),
     accepts: itemAccepts(cursor.roles),
     dismissedReason: cursor.dismissedReason,

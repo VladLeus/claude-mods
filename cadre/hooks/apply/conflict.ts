@@ -1,12 +1,15 @@
 /**
  * The conflict questions, a layer 9 module: the Keep mine or Take new question init asks after Confirm for each file
- * the person edited outside cadre, its options, its answer parser and the conflicted paths of a plan (D-67, D-105).
- * It imports core, paths, the manifest path of plan/classify and the types, so init and the apply steps read it here.
+ * the person edited outside cadre, its options, its answer parser, its own context, the file's diff (D-236), and the
+ * conflicted paths of a plan (D-67, D-105). It imports core, paths, the manifest path of plan/classify, the line diff
+ * of ui/diff and the types, so init and the apply steps read it here.
  */
-import type { Plan } from '../../types'
-import { reportText } from '../core/text'
+import type { AskContext, Plan } from '../../types'
+import { countedNoun, reportText } from '../core/text'
 import { BESIDE_SUFFIX } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
+import { diffLines } from '../ui/diff'
+import type { LineDiff } from '../ui/diff'
 
 /** Which version of a conflicted file the person keeps: their own (Keep mine) or cadre's new one (Take new, D-67). */
 export type ConflictChoice = 'mine' | 'new'
@@ -26,6 +29,22 @@ export function conflictQuestion(path: string): string {
   const shown = reportText(path)
 
   return `${shown} was changed outside cadre. Keep your version, or take the new one (yours is then overwritten)?`
+}
+
+/** The one line of a conflict question's context when the person's version could not be read (D-236). */
+const UNREAD_CONFLICT_LINE = 'Your version could not be read, so no diff is shown.'
+
+/**
+ * The context of a conflict question (D-236): the file's diff from the person's version to cadre's new one, which Take
+ * new writes: how many lines Take new adds and removes, then the changed lines (diffLines); with no diff, because the
+ * person's version could not be read, UNREAD_CONFLICT_LINE.
+ */
+export function conflictContext(path: string, diff: LineDiff | null): AskContext {
+  const title = `Conflict: ${reportText(path)}`
+  if (diff === null) return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff' }
+  const counts = `Take new: ${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+
+  return { title, lines: [counts, ...diffLines(diff)], kind: 'conflict-diff' }
 }
 
 /**

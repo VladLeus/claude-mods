@@ -85,13 +85,13 @@ function modeAsk(roles: readonly RoleSpec[]): ModelAsk<AnswerMode> {
 
 /**
  * One model and effort question (D-52, A4, D-136), with MODEL_EFFORT_CONTEXT on the line after `question`: an answer
- * parseModelEffort reads is the choice, and one it cannot read puts modelEffortRefusal, cleaned as a report cell, on
- * top of the next ask.
+ * parseModelEffort reads is the choice, a typed pair included, so it takes a typed answer (D-234), and one it cannot
+ * read puts modelEffortRefusal, cleaned as a report cell, on top of the next ask.
  */
 function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'effort'>> {
   return {
     question: withContext(question, MODEL_EFFORT_CONTEXT),
-    spec: { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model },
+    spec: { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model, acceptsTyped: true },
     parse: parseModelEffort,
     accepts: quotedLabels(MODEL_EFFORT_OPTIONS),
     refuse: answer => reportText(modelEffortRefusal(answer)),

@@ -263,15 +263,15 @@ function reviewPlanOf(draft: Draft): {
 /**
  * The review question as the stage asks it (D-43, D-136): reviewQuestion with the context line of the plan just shown,
  * cleaned as a report cell (reviewContextLine), the four buttons with the Review chip and the review block it is asked
- * about as its own context (reviewLines, reviewContext, D-236), parseReviewItem, what its refusal lists, and the
- * reason a dismissal cancels with.
+ * about as its own context (reviewLines, reviewContext, D-236), parseReviewItem, which takes a typed item word, so it
+ * takes a typed answer (D-234), what its refusal lists, and the reason a dismissal cancels with.
  */
 function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly dismissedReason: string } {
   const context = reviewContext(reviewLines(draft, reviewPlanOf(draft).scopes, plan))
 
   return {
     question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
-    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review, context },
+    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review, context, acceptsTyped: true },
     parse: parseReviewItem,
     accepts: REVIEW_ACCEPTS,
     dismissedReason: REVIEW_DISMISSED_REASON,
