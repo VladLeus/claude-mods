@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, RoleSpec } from '../../../types'
+import type { Choice, RepoEntry, RoleSpec } from '../../../types'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
-import { driven, firstLines, repoScan, stateAt, wholeDraft, withFramework } from '../../testkit'
+import { driven, emptySetupScan, facts, firstLines, repoScan, stateAt, wholeDraft, withFramework } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
@@ -22,6 +22,14 @@ import { teamContextLine } from './model'
 
 /** The framework options when GSD and superpowers are offered: SUPPORTED_IDS order, then the built-in fallback. */
 const BOTH_OPTIONS = ['GSD', 'superpowers', 'none (built-in)']
+
+/** The detection evidence of a repo where nothing was found, as each framework question carries it (D-236). */
+const GSD_LINE = 'GSD: not found (no .planning/; no gsd-core install proven)'
+const DETECTED = {
+  title: 'Frameworks',
+  lines: [GSD_LINE, 'superpowers: not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)'],
+  kind: 'detection',
+}
 
 /** The frameworks stage entered for `choice` and `roles`, the rest of a whole draft set. */
 function frameworksAt(choice: Choice, roles: readonly RoleSpec[]): InitState {
@@ -73,8 +81,8 @@ describe('frameworkStep', () => {
     expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs).toEqual([
-      { options: ['Same for all roles', 'Per role'], header: 'Framework' },
-      { options: BOTH_OPTIONS, header: 'Framework' },
+      { options: ['Same for all roles', 'Per role'], header: 'Framework', context: DETECTED },
+      { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED },
     ])
   })
 
@@ -88,7 +96,7 @@ describe('frameworkStep', () => {
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
-    const each = { options: BOTH_OPTIONS, header: 'Framework' }
+    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED }
     expect(run.specs.slice(1)).toEqual([each, each, each])
   })
 
@@ -96,7 +104,22 @@ describe('frameworkStep', () => {
     const run = driven(frameworksAt(installedOnly, roles), ['Same for all roles', 'GSD'])
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
     expect(firstLines(run.asked)).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
-    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework' })
+    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework', context: DETECTED })
+  })
+
+  test('every framework question carries the detection evidence: each framework, a marker only found (D-236)', () => {
+    const repoEntries: readonly RepoEntry[] = [{ name: 'aidlc', kind: 'dir', isLink: false }]
+    const setup = emptySetupScan()
+    const gathered = { facts: { facts: facts({ repoEntries }), gsdUserDir: null }, repo: repoScan(), setup }
+    const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice: ambiguous, roles, gathered })))
+    const context = state.openQuestion?.spec.context
+    expect([context?.title, context?.kind, context?.lines.length, context?.lines[0]]).toEqual([
+      'Frameworks',
+      'detection',
+      3,
+      GSD_LINE,
+    ])
+    expect(context?.lines[2]?.startsWith('AI-DLC: unsupported (aidlc/ present; detected but unsupported: ')).toBe(true)
   })
 
   test('a typed framework that is not offered is asked again with why on top; an offered id counts', () => {
@@ -136,7 +159,7 @@ describe('frameworkStep', () => {
   test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
     const run = driven(frameworksAt(reversed, roles), ['Per role', 'GSD', 'GSD', 'GSD'])
-    const each = { options: BOTH_OPTIONS, header: 'Framework' }
+    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED }
     expect(run.specs.slice(1)).toEqual([each, each, each])
     for (const spec of run.specs) {
       expect(spec.options.length).toBeGreaterThanOrEqual(2)
@@ -193,7 +216,8 @@ describe('the frameworks stage (D-230)', () => {
     const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
     const prefix = `${FRAMEWORK_QUESTION_PREFIX} (asked because more than one framework is in use)`
     const question = withContext(prefix, 'Roles: pm, tl, security.')
-    const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Framework' } }
+    const spec = { options: ['Same for all roles', 'Per role'], header: 'Framework', context: DETECTED }
+    const ask = { question, spec }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
     const all = nextStage(state, { kind: 'answer', text: 'Same for all roles' })

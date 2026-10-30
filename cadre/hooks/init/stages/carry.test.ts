@@ -55,7 +55,8 @@ describe('carryStep', () => {
   test('the env question is asked once, and every role carries the picked names only', () => {
     const run = driven(carryAt(roles, twoNames), ['JIRA_URL'])
     expect(run.asked).toEqual([ENV_ASKED])
-    expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env' }])
+    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env' }
+    expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
     expect(run.outputs).toEqual([TWO_NAMES_BLOCK])
@@ -156,11 +157,21 @@ describe('the carry stage (D-230)', () => {
   test('carryStage lists every scanned env name, then asks the env question; the open question is that ask', () => {
     const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
-    const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env' } }
+    const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
+    const context = { title: 'Env variables', lines, kind: 'env' }
+    const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
-    const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
     expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])
+  })
+
+  test('the env question carries the env names as its own context, each cleaned (D-236, T-02.1-71)', () => {
+    const bidi = String.fromCodePoint(0x202e)
+    const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: [`API${bidi}_KEY`] } }))
+    expect(state.openQuestion?.spec.context?.lines).toEqual([
+      'Env variable names in your settings (values are never read):',
+      '  API_KEY',
+    ])
   })
 
   test('with no env name it shows and asks nothing, and every role carries the settings the user sets', () => {

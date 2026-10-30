@@ -41,6 +41,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { contextText, withContext } from '../../ui/ask'
+import { instructionLines } from '../../ui/blocks/instructions'
 import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
 import {
@@ -410,6 +411,54 @@ describe('the instructions stage (D-230)', () => {
     expect(recommending.effect).toEqual({ kind: 'model', call })
     const entry = nextStage(recommending, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(INSTRUCTIONS_ENTRY_QUESTION)
+  })
+
+  test('the content consent carries the files and memories found by name as its own context (D-236)', () => {
+    const state = instructionsStage.enter(stateAt('instructions', { roles, gathered, locations: DEFAULT_LOCATIONS }))
+    const asking = nextStage(state, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
+    expect(asking.openQuestion?.spec.context).toEqual({
+      title: 'Instruction files',
+      lines: ['Files found by name (nothing is read before a yes):', '  ~/.claude/CLAUDE.md', 'Memories:', '  none'],
+      kind: 'instructions',
+    })
+  })
+
+  test('the hand-out entry carries the instructions block; each topic and memory only itself (D-236)', () => {
+    const state = instructionsStage.enter(stateAt('instructions', { roles, gathered, locations: DEFAULT_LOCATIONS }))
+    const asking = nextStage(state, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
+    const reading = nextStage(asking, { kind: 'answer', text: 'Yes, read them' })
+    const read = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: MEMORY_SCAN } })
+    const recommending = nextStage(read, { kind: 'model', result: { id: 'topics', result: TOPICS } })
+    const entry = nextStage(recommending, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
+    expect(entry.openQuestion?.spec.context).toEqual({
+      title: 'Instruction parts',
+      lines: instructionLines(MEMORY_SCAN, TOPICS, RECOMMENDED),
+      kind: 'instructions',
+    })
+    const first = nextStage(entry, { kind: 'answer', text: 'Go part by part' })
+    const second = nextStage(first, { kind: 'answer', text: 'Yes' })
+    const third = nextStage(second, { kind: 'answer', text: 'Yes' })
+    expect([first, second, third].map(at => at.openQuestion?.spec.context)).toEqual([
+      {
+        title: 'Topic 1 of 2',
+        lines: [
+          'Security rules: How secrets stay out of the repo.',
+          '  from: ~/.claude/CLAUDE.md > Security',
+          '  recommended: security',
+        ],
+        kind: 'topic',
+      },
+      {
+        title: 'Topic 2 of 2',
+        lines: ['Git and commits: How commits are made.', '  from: ~/.claude/CLAUDE.md > Git', '  recommended: tl'],
+        kind: 'topic',
+      },
+      {
+        title: 'Memory 1 of 2',
+        lines: ['squad.md: Unsigned commits on per-phase branches.', '  recommended: none'],
+        kind: 'memory',
+      },
+    ])
   })
 })
 

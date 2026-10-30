@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../../../types'
+import type { RoleChange, RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
 import { driven, roleIn, SOURCE_SCAN, stateAt, templateRole } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { proposalLines } from '../../ui/blocks/context'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from '../answers'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
@@ -27,12 +28,14 @@ describe('modelStep', () => {
   const MODEL_ALL = withContext(MODEL_ALL_LINE, MODEL_EFFORT_CONTEXT)
   /** The first model question as asked for these five roles: their ids under it (D-136). */
   const MODE_ASKED = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
+  /** Every model question's own context: the roles with their purposes (D-236). */
+  const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
 
   test('the first model question offers Same for all roles first, then Per role', () => {
     const run = driven(modelAt(roles), ['Same for all roles', 'opus + medium'])
     expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
     expect(run.asked[0]).toBe(MODE_ASKED)
-    expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model' })
+    expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model', context })
   })
 
   test('Same for all roles asks once more and gives every role that model family and effort', () => {
@@ -41,7 +44,8 @@ describe('modelStep', () => {
       roles.map(role => [role.id, 'sonnet', 'high']),
     )
     expect(run.asked).toEqual([MODE_ASKED, MODEL_ALL])
-    expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'], header: 'Model' })
+    const options = ['opus + medium', 'sonnet + medium', 'sonnet + high']
+    expect(run.specs[1]).toEqual({ options, header: 'Model', context })
     expect(run.outputs).toEqual([])
   })
 
@@ -58,7 +62,7 @@ describe('modelStep', () => {
         'Model and effort for Security (security)?',
       ].map(question => withContext(question, MODEL_EFFORT_CONTEXT)),
     ])
-    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model' }
+    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model', context }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
     expect(run.state.draft.roles?.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
       'pm: opus medium',
@@ -159,11 +163,19 @@ describe('the model stage (D-230)', () => {
   test('modelStage asks Same for all roles or Per role with the team ids; the open question is that ask', () => {
     const state = modelStage.enter(stateAt('model', { roles }))
     const question = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
-    const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model' } }
+    const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+    const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
     const all = nextStage(state, { kind: 'answer', text: 'Same for all roles' })
     expect(all.openQuestion?.question).toBe(withContext('Model and effort for all roles?', MODEL_EFFORT_CONTEXT))
+  })
+
+  test('every model question carries the roles with their purposes and the scan changes (D-236)', () => {
+    const changes = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }] satisfies RoleChange[]
+    const run = driven(modelStage.enter(stateAt('model', { roles, changes })), ['Per role'])
+    const context = { title: 'Roles', lines: proposalLines(roles, changes), kind: 'roles' }
+    expect(run.specs.map(spec => spec.context)).toEqual([context, context])
   })
 
   test('Same for all roles, then a pair, ends the stage with every role on that model and effort', () => {

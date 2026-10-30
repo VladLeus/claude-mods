@@ -82,6 +82,24 @@ const LAUNCH_ASKED = withContext(LAUNCH_START_QUESTION, launchContextLine(LAUNCH
 /** The launcher folder question as asked: that the folder must stay inside the repo, under it (D-136). */
 const DIR_ASKED = withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT)
 
+/** The launcher start question's own context for LAUNCH_TEAM: what each start means and the launchers (D-236). */
+const LAUNCH_CONTEXT = {
+  title: 'Launch',
+  lines: [
+    'Git root: the top of this repo, the same for every launcher.',
+    'Run folder: wherever you run a launcher from.',
+    'Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security',
+  ],
+  kind: 'launch',
+}
+
+/** The launcher folder question's own context in a repo with no folder of code (D-236). */
+const NO_DIRS_CONTEXT = {
+  title: 'Launch folder',
+  lines: ['No folder with code was found in this repo.'],
+  kind: 'launch-dir',
+}
+
 describe('launchStartStep', () => {
   test('the launcher start question is asked once for the repo with three options in a fixed order', () => {
     expect(LAUNCH_START_QUESTION).toBe(
@@ -111,7 +129,7 @@ describe('launchStartStep', () => {
       const run = driven(launchAt(), [answer])
       expect(run.state.draft.launchStart).toEqual(start)
       expect(run.asked).toEqual([LAUNCH_ASKED])
-      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
+      expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context: LAUNCH_CONTEXT })
     }
   })
 
@@ -121,7 +139,7 @@ describe('launchStartStep', () => {
         const run = await drivenWith(launchAt(), [first, folder], launchCalls(memIo(FOLDER_WORLD, []).io))
         expect(run.state.draft.launchStart).toEqual(APPS_WEB)
         expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
-        expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir' })
+        expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir', context: NO_DIRS_CONTEXT })
         expect(run.outputs).toEqual([])
       }
     }
@@ -248,14 +266,27 @@ describe('the launch stage (D-230)', () => {
   const entered = launchStage.enter(stateAt('launch', { locations: DEFAULT_LOCATIONS, roles: LAUNCH_TEAM }))
 
   test('launchStage asks the launcher start question with the role ids; the open question is that ask', () => {
-    const ask = { question: LAUNCH_ASKED, spec: { options: LAUNCH_START_OPTIONS, header: 'Launch' } }
+    const spec = { options: LAUNCH_START_OPTIONS, header: 'Launch', context: LAUNCH_CONTEXT }
+    const ask = { question: LAUNCH_ASKED, spec }
     expect(entered.effect).toEqual({ kind: 'ask', ...ask })
     expect(entered.openQuestion).toEqual(ask)
   })
 
+  test('the folder question lists the folders with code of the repo scan as its own context (D-236)', () => {
+    const repo = repoScan({ codeDirs: ['apps', 'packages'] })
+    const gathered = { ...wholeDraft().gathered, repo }
+    const state = launchStage.enter(stateAt('launch', wholeDraft({ roles: LAUNCH_TEAM, gathered })))
+    const asked = nextStage(state, { kind: 'answer', text: 'other' })
+    expect(asked.openQuestion?.spec.context).toEqual({
+      title: 'Launch folder',
+      lines: ['Folders with code in this repo:', '  apps/', '  packages/'],
+      kind: 'launch-dir',
+    })
+  })
+
   test('another folder asks for it; the folder check is an io effect, and a repo folder ends the stage', () => {
     const asked = nextStage(entered, { kind: 'answer', text: 'Another folder in this repo' })
-    const spec = { options: ['Cancel init'], header: 'Launch dir' }
+    const spec = { options: ['Cancel init'], header: 'Launch dir', context: NO_DIRS_CONTEXT }
     expect(asked.openQuestion).toEqual({ question: DIR_ASKED, spec })
     const checking = nextStage(asked, { kind: 'answer', text: 'apps/web/' })
     const call = { id: 'launch-dir-check', root: '/repo', path: 'apps/web' }

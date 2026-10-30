@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../../../types'
+import type { RoleChange, RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { driven, repoScan, stateAt, templateRole } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { proposalLines } from '../../ui/blocks/context'
 import { cancelledReply } from '../replies'
 import type { InitState } from '../state'
 import {
@@ -43,7 +44,8 @@ describe('durationStep', () => {
       const run = driven(durationAt(roles), [answer])
       expect([answer, run.state.draft.duration]).toEqual([answer, duration])
       expect(run.asked).toEqual([ASKED])
-      expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration' }])
+      const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+      expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration', context }])
       expect(run.outputs).toEqual([])
     }
   })
@@ -90,10 +92,18 @@ describe('the duration stage (D-230)', () => {
   /** PM, Team Lead and Security: the team the duration is asked for. */
   const roles = proposeRoles(repoScan()).roles
 
+  test('the duration question carries the roles with their purposes and the scan changes (D-236)', () => {
+    const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
+    const state = durationStage.enter(stateAt('duration', { roles, changes }))
+    const lines = proposalLines(roles, changes)
+    expect(state.openQuestion?.spec.context).toEqual({ title: 'Roles', lines, kind: 'roles' })
+  })
+
   test('durationStage asks the duration question with the role ids; the open question is that ask', () => {
     const state = durationStage.enter(stateAt('duration', { roles }))
     const question = withContext(DURATION_QUESTION, durationContextLine(roles))
-    const ask = { question, spec: { options: ['4h', '2h', '8h'], header: 'Duration' } }
+    const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+    const ask = { question, spec: { options: ['4h', '2h', '8h'], header: 'Duration', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
     const run = driven(state, ['90m'])

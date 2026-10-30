@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, RoleSpec, SetupScan } from '../../../types'
+import type { AskSpec, InitIo, RoleSpec, SetupScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, FULL_SCAN, memIo, memWorld, roleIn, valueOf } from '../../testkit'
 import { askOnce, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
@@ -42,8 +42,16 @@ describe('memoryStep', () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await groupsOver(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
-    const spec = { options: ROLE_LIST_OPTIONS, header: 'Memory' }
-    expect(run.specs).toEqual([spec, spec, spec])
+    const spec = (title: string, lines: readonly string[]): AskSpec => ({
+      options: ROLE_LIST_OPTIONS,
+      header: 'Memory',
+      context: { title, lines, kind: 'memory-group' },
+    })
+    expect(run.specs).toEqual([
+      spec('Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
+      spec('Auto-memories', ['a.md']),
+      spec('Project CLAUDE.md', ['<repo>/CLAUDE.md']),
+    ])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
       ['pm', ['global-claude-md', 'project-claude-md']],
       ['tl', ['global-claude-md', 'project-claude-md']],
@@ -53,6 +61,13 @@ describe('memoryStep', () => {
       ['security', ['project-claude-md']],
     ])
     expect(run.logged).toEqual([])
+  })
+
+  test('each whole-file question carries the files of its own group only (D-236)', async () => {
+    const memories = emptySetupScan({ memoryFiles: ['a.md', 'b.md'], claudeMd: ['<repo>/CLAUDE.md'] })
+    const run = memIo(memWorld({}), ['None', 'None'])
+    valueOf(await groupsOver(run.io, roles, memories))
+    expect(run.specs.map(spec => spec.context?.lines)).toEqual([['a.md', 'b.md'], ['<repo>/CLAUDE.md']])
   })
 
   test('a role keeps the groups it was given in the order global, auto-memory, project', async () => {

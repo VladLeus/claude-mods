@@ -47,9 +47,28 @@ describe('the improver install stage (D-230)', () => {
   test('improverInstallStage asks when a role got a built file and the plugin is missing; the open question', () => {
     const state = improverAt(BUILT)
     const question = withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT)
-    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Improver' } }
+    const lines = ['Built CLAUDE.md files it would tidy:', '  pm: .cadre/pm/CLAUDE.md']
+    const context = { title: 'Improver install', lines, kind: 'improver-install' }
+    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Improver', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
+  })
+
+  test('the improver install question carries each role given a built file, in role order (D-236)', () => {
+    const topics = [
+      { id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] },
+      { id: 'T2', title: 'Empty', summary: 'No part.', partIds: [] },
+    ]
+    const given = new Map([
+      ['T1', ['security', 'pm']],
+      ['T2', ['tl']],
+    ])
+    const state = improverAt({ ...BUILT, topics, given })
+    expect(state.openQuestion?.spec.context?.lines).toEqual([
+      'Built CLAUDE.md files it would tidy:',
+      '  pm: .cadre/pm/CLAUDE.md',
+      '  security: .cadre/security/CLAUDE.md',
+    ])
   })
 
   test('Install adds the plugin after the plugins answered before it, and Not now adds none', () => {

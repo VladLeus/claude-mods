@@ -1068,12 +1068,17 @@ describe('instruction parts (G-02-1f)', () => {
     const consentAt = firstLines(run.asked).indexOf(CONTENT_QUESTION)
     const entryAt = firstLines(run.asked).indexOf(INSTRUCTIONS_ENTRY_QUESTION)
     expect(run.asked[consentAt]).toBe(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
-    expect(run.specs[consentAt]).toEqual({ options: ['No, skip it', 'Yes, read them'], header: 'Instructions' })
+    const heading = 'Files found by name (nothing is read before a yes):'
+    const found = [heading, '  ~/.claude/CLAUDE.md', 'Memories:', '  none']
+    const consent = { title: 'Instruction files', lines: found, kind: 'instructions' }
+    const consentOptions = ['No, skip it', 'Yes, read them']
+    expect(run.specs[consentAt]).toEqual({ options: consentOptions, header: 'Instructions', context: consent })
     const entryContext =
       '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.'
     expect(run.asked[entryAt]).toBe(withContext(INSTRUCTIONS_ENTRY_QUESTION, entryContext))
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
-    expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions' })
+    const entry = { title: 'Instruction parts', lines: shownBlock(run, 'instructions'), kind: 'instructions' }
+    expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', context: entry })
   })
 
   test('no instruction file is read before the content consent answer; the global file once (T-02-60)', async () => {
@@ -1253,7 +1258,7 @@ describe('instruction parts (G-02-1f)', () => {
       ),
     ])
     const at = run.asked.indexOf(topics[0] ?? 'missing')
-    expect(run.specs.slice(at, at + 3)).toEqual(
+    expect(run.specs.slice(at, at + 3).map(spec => ({ options: spec.options, header: spec.header }))).toEqual(
       ['Topic 1/3', 'Topic 2/3', 'Topic 3/3'].map(header => ({ options: ['Yes', 'No'], header })),
     )
   })
@@ -1572,7 +1577,7 @@ describe('memories one by one (G-02-1f)', () => {
     ])
     const at = run.asked.indexOf(items[2] ?? 'missing')
     const chips = ['Memory 1/2', 'Memory 2/2'].map(header => ({ options: ['Yes', 'No'], header }))
-    expect(run.specs.slice(at, at + 2)).toEqual(chips)
+    expect(run.specs.slice(at, at + 2).map(spec => ({ options: spec.options, header: spec.header }))).toEqual(chips)
   })
 
   test('the review counts the memories each role gets and the ones kept with the root session', async () => {
@@ -2332,7 +2337,9 @@ describe('improver install offer (G-02-1f)', () => {
     expect(at).toBeGreaterThan(asked.findIndex(question => question.startsWith(SECURITY_INSTALL_PREFIX)))
     expect(asked.findIndex(question => question.startsWith(SECURITY_INSTALL_PREFIX))).toBeGreaterThan(0)
     expect(run.asked[at]).toBe(withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT))
-    expect(run.specs[at]).toEqual({ options: ['Install', 'Not now'], header: 'Improver' })
+    const spec = run.specs[at]
+    const shape = [spec?.options, spec?.header, spec?.context?.kind]
+    expect(shape).toEqual([['Install', 'Not now'], 'Improver', 'improver-install'])
     expect(asked.filter(question => question === IMPROVER_INSTALL_QUESTION)).toHaveLength(1)
   })
 
@@ -3513,7 +3520,8 @@ describe('reviewStep', () => {
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
+    const context = { title: 'Review', lines: expected, kind: 'review' }
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context })
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3834,7 +3842,8 @@ describe('review question hint (G-02-7)', () => {
     expect(asked[0]?.endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review' })
+    const context = { title: 'Review', lines: shownBlock(run, 'review'), kind: 'review' }
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context })
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {

@@ -138,7 +138,8 @@ describe('describeStep', () => {
     const { run, end } = await rolesRun([DESCRIBE, DESCRIPTION, USE], [DESCRIBED_REPLY])
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: { roles: DESCRIBED_ROLES, changes: [] } })
     expect(run.asked[1]).toBe(DESCRIBE_ASKED)
-    expect(run.specs[1]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe' })
+    const context = { title: 'Roles', lines: proposalLines(PROPOSAL.roles, PROPOSAL.changes), kind: 'roles' }
+    expect(run.specs[1]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe', context })
   })
 
   test('the prompt is the propose system text and the description as a JSON string', async () => {
@@ -236,7 +237,17 @@ describe('adjustLoop', () => {
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(firstLines(adjusts)).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
-    expect(run.specs[1]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust' })
+    const context = { title: 'Roles', lines: proposalLines(roles, full.changes), kind: 'roles' }
+    expect(run.specs[1]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust', context })
+  })
+
+  test('each Adjust question carries the roles as they are now, with the scan changes (D-236)', async () => {
+    const { run } = await adjustRun(['drop fe', 'Done adjusting'])
+    const kept = roles.filter(role => role.id !== 'fe')
+    expect(run.specs.slice(1, 3).map(spec => spec.context)).toEqual([
+      { title: 'Roles', lines: proposalLines(roles, full.changes), kind: 'roles' },
+      { title: 'Roles', lines: proposalLines(kept, full.changes), kind: 'roles' },
+    ])
   })
 
   test('rename and framework change one role and keep the others', async () => {
@@ -363,7 +374,7 @@ describe('rolesStep', () => {
     expect(run.logged).toEqual([])
     expect(run.asked).toEqual([withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))])
     const options = ['Use these roles', 'Adjust them', 'Describe my own structure']
-    expect(run.specs[0]).toEqual({ options, header: 'Roles' })
+    expect(run.specs[0]).toEqual({ options, header: 'Roles', context: { title: 'Roles', lines, kind: 'roles' } })
     expect(ROLES_QUESTION).toBe('Use these roles?')
     expect(ROLES_OPTIONS).toEqual(['Use these roles', 'Adjust them', 'Describe my own structure'])
     expect(Object.isFrozen(ROLES_OPTIONS)).toBe(true)
@@ -564,11 +575,21 @@ describe('the roles stage (D-230)', () => {
   test('rolesStage shows the proposal, then asks the roles question; the open question is that ask', () => {
     const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
     const question = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
-    const ask = { question, spec: { options: [...ROLES_OPTIONS], header: 'Roles' } }
+    const lines = proposalLines(proposal.roles, proposal.changes)
+    const context = { title: 'Roles', lines, kind: 'roles' }
+    const ask = { question, spec: { options: [...ROLES_OPTIONS], header: 'Roles', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
-    const lines = proposalLines(proposal.roles, proposal.changes)
     expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
+  })
+
+  test('the describe question carries the proposal it was asked from as its context (D-236)', () => {
+    const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
+    const describing = nextStage(state, { kind: 'answer', text: 'Describe my own structure' })
+    const context = { title: 'Roles', lines: proposalLines(proposal.roles, proposal.changes), kind: 'roles' }
+    expect(describing.openQuestion?.spec.context).toEqual(context)
+    const again = nextStage(describing, { kind: 'answer', text: '  ' })
+    expect(again.openQuestion?.spec.context).toEqual(context)
   })
 
   test('Describe asks for the text, then calls the model as an effect; the described roles are asked about', () => {

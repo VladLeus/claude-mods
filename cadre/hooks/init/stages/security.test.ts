@@ -82,7 +82,7 @@ describe('security plugin installs (decision #39)', () => {
       const run = driven(securityAt(), [answer])
       expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, value])
       expect(run.asked).toEqual([withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)])
-      expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security' }])
+      expect(run.specs).toEqual([{ options: ['Install', 'Not now'], header: 'Security', context: PLUGINS_CONTEXT }])
     }
   })
 
@@ -124,6 +124,17 @@ describe('security plugin installs (decision #39)', () => {
   })
 })
 
+/** The security plugins question's own context when both plugins are missing (D-236). */
+const PLUGINS_CONTEXT = {
+  title: 'Security plugins',
+  lines: [
+    `${SECURITY_KEY}: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 ` +
+      'or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+    `${GUIDANCE_KEY}: security-guidance adds hooks that warn about risky edits.`,
+  ],
+  kind: 'security',
+}
+
 describe('security plugin review fixes (#69)', () => {
   test('the question shows each plugin name cleaned, as every printed key is (B7)', () => {
     expect(securityInstallQuestion([`x${BIDI_OVERRIDE}\ny@m`])).toBe(`${SECURITY_INSTALL_PREFIX} xy? `)
@@ -134,10 +145,16 @@ describe('the security stage (D-230)', () => {
   test('securityStage shows the recommendations, then asks the plugins question; the open question is that ask', () => {
     const state = securityAt()
     const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
-    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security' } }
+    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security', context: PLUGINS_CONTEXT } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
     expect(state.outputs).toEqual([recommendationsOf(DRAFT)])
+  })
+
+  test('the plugins question carries only the missing plugins with what each does (D-236)', () => {
+    const setup = emptySetupScan({ installedPlugins: [SECURITY_KEY] })
+    const state = securityAt(wholeDraft({ ...DRAFT, gathered: { ...DRAFT.gathered, setup } }))
+    expect(state.openQuestion?.spec.context).toEqual({ ...PLUGINS_CONTEXT, lines: PLUGINS_CONTEXT.lines.slice(1) })
   })
 
   test('with no plugin missing it shows the recommendations, asks nothing and installs nothing', () => {

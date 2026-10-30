@@ -20,6 +20,7 @@ import {
   withFramework,
 } from '../../testkit'
 import { contextText, withContext } from '../../ui/ask'
+import { proposalLines } from '../../ui/blocks/context'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
 import { nextStage, STAGES } from '../machine'
@@ -201,11 +202,21 @@ describe('the review stage (D-230)', () => {
     const planned = await plannedFor(state)
     const asking = nextStage(state, planAnswer(planned))
     const context = contextText(reviewContextLine(planned.plan, 'definitions', { kind: 'git-root' }))
-    const ask = { question: reviewQuestion(context), spec: { options: REVIEW_OPTIONS, header: 'Review' } }
+    const blocks = asking.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
+    const own = { title: 'Review', lines: blocks[0]?.lines ?? [], kind: 'review' }
+    const ask = { question: reviewQuestion(context), spec: { options: REVIEW_OPTIONS, header: 'Review', context: own } }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
-    const blocks = asking.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
     expect(blocks.map(block => [block.key, block.lines[0]])).toEqual([['review', 'Roles:']])
+  })
+
+  test('the review question carries the review block it was asked about as its own context (D-236)', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review' })
+    const again = nextStage(asking, { kind: 'answer', text: 'maybe' })
+    expect(again.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review' })
   })
 
   test('Confirm on a --dry-run replies with the plan and the private files of each role; nothing written', async () => {
@@ -243,7 +254,13 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'Change launcher start' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['launch', 'review', 'launch'])
-    expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
+    const lines = [
+      'Git root: the top of this repo, the same for every launcher.',
+      'Run folder: wherever you run a launcher from.',
+      'Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security',
+    ]
+    const context = { title: 'Launch', lines, kind: 'launch' }
+    expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context })
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.launchStart).toEqual({ kind: 'here' })
@@ -254,7 +271,8 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'duration' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['duration', 'review', 'duration'])
-    expect(going.openQuestion?.spec).toEqual({ options: DURATION_OPTIONS, header: 'Duration' })
+    const context = { title: 'Roles', lines: proposalLines(REVIEW_DRAFT.roles, []), kind: 'roles' }
+    expect(going.openQuestion?.spec).toEqual({ options: DURATION_OPTIONS, header: 'Duration', context })
     const back = nextStage(going, { kind: 'answer', text: '2h' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.duration).toBe('2h')
@@ -279,7 +297,9 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'env' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['carry', 'review', 'carry'])
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All of them'], header: 'Env' })
+    const env = ['Env variable names in your settings (values are never read):', '  API_KEY']
+    const context = { title: 'Env variables', lines: env, kind: 'env' }
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All of them'], header: 'Env', context })
     const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.carry.env)).toEqual(REVIEW_DRAFT.roles.map(() => ['API_KEY']))
@@ -320,7 +340,9 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'memory' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['instructions', 'review', 'instructions'])
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'Memory' })
+    const lines = ['~/.claude/CLAUDE.md and the files it imports']
+    const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group' }
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'Memory', context })
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.instructions)).toEqual(REVIEW_DRAFT.roles.map(() => ['global-claude-md']))

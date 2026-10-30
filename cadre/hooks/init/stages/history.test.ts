@@ -18,6 +18,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from '../../ui/ask'
+import { scanSummaryLines } from '../../ui/blocks/scan'
 import type { Draft } from '../draft'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
@@ -108,6 +109,9 @@ const HISTORY_DRAFT: Partial<Draft> = {
 function historyAt(locations: InitLocations = DEFAULT_LOCATIONS): InitState {
   return historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, locations }))
 }
+
+/** The history question's own context (D-236): the scan block of an empty repo and setup, with no warning. */
+const SCAN_ASK_CONTEXT = { title: 'Scan', lines: scanSummaryLines(repoScan(), emptySetupScan()), kind: 'scan' }
 
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
@@ -240,7 +244,7 @@ describe('history scan', () => {
     const drive = await drivenWith(historyAt(), ['No, skip it'], historyCalls(run.io))
     expect(drive.state.draft.hints).toEqual(new Map())
     expect(drive.asked).toEqual([historyAsked(2)])
-    expect(drive.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History' }])
+    expect(drive.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History', context: SCAN_ASK_CONTEXT }])
     expect(run.reads).toEqual([])
     expect(drive.outputs).toEqual([])
   })
@@ -377,9 +381,19 @@ describe('the history stage (D-230)', () => {
     expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR } })
     expect(state.openQuestion).toBeNull()
     const asking = nextStage(state, listed(ONE_SESSION))
-    const ask = { question: historyAsked(1), spec: { options: HISTORY_OPTIONS, header: 'History' } }
+    const spec = { options: HISTORY_OPTIONS, header: 'History', context: SCAN_ASK_CONTEXT }
+    const ask = { question: historyAsked(1), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
+  })
+
+  test('the history question carries the scan summary with the scan warnings as its own context (D-236)', () => {
+    const repo = repoScan({ warnings: ['could not list src'] })
+    const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
+    const state = historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, gathered }))
+    const lines = [...scanSummaryLines(repo, emptySetupScan()), 'warning: could not list src']
+    const asking = nextStage(state, listed(ONE_SESSION))
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan' })
   })
 
   test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {
