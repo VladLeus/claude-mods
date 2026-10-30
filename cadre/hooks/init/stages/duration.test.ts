@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { proposeRoles } from '../../roles/propose'
-import { memIo, memWorld, repoScan, templateRole } from '../../testkit'
+import { driven, memIo, memWorld, repoScan, stateAt, templateRole } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import type { InitState } from '../state'
 import {
   DURATION_DISMISSED_REASON,
   DURATION_OPTIONS,
   DURATION_QUESTION,
   durationContextLine,
+  durationStage,
   durationStep,
 } from './duration'
 
@@ -77,5 +79,32 @@ describe('question context lines (G-02-1)', () => {
     const asked = `${DURATION_QUESTION}\nApplies to every role: pm, qa.`
     const refusal = "'soon' isn't one of: a duration such as 4h, 90m or 1h30m, at most 168h."
     expect(run.asked).toEqual([asked, `${refusal}\n${asked}`])
+  })
+})
+
+describe('the duration stage (D-230)', () => {
+  /** PM, Team Lead and Security: the team the duration is asked for. */
+  const roles = proposeRoles(repoScan()).roles
+
+  test('durationStage asks the duration question with the role ids; the open question is that ask', () => {
+    const state = durationStage.enter(stateAt('duration', { roles }))
+    const question = withContext(DURATION_QUESTION, durationContextLine(roles))
+    const ask = { question, spec: { options: ['4h', '2h', '8h'], header: 'Duration' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    const run = driven(state, ['90m'])
+    expect(run.state.draft.duration).toBe('90m')
+    expect(run.state.draft.roles?.map(role => role.autopilot.duration)).toEqual(['90m', '90m', '90m'])
+  })
+
+  test('a duration the draft has is kept for every role with nothing asked, except in its own go-back', () => {
+    const draft = { roles, duration: '8h' }
+    const kept = durationStage.enter(stateAt('duration', draft))
+    expect([kept.sub, kept.openQuestion]).toEqual([{ kind: 'done' }, null])
+    expect(kept.draft.roles?.map(role => role.autopilot.duration)).toEqual(['8h', '8h', '8h'])
+    const roleSteps = { returnTo: 'review', returnAfter: 'improver-install' } satisfies Partial<InitState>
+    expect(durationStage.enter(stateAt('duration', draft, roleSteps)).sub).toEqual({ kind: 'done' })
+    const again = durationStage.enter(stateAt('duration', draft, { returnTo: 'review', returnAfter: 'duration' }))
+    expect(again.openQuestion?.question).toBe(withContext(DURATION_QUESTION, durationContextLine(roles)))
   })
 })

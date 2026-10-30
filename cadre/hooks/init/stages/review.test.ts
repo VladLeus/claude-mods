@@ -26,6 +26,7 @@ import { nextStage, STAGES } from '../machine'
 import { cancelledReply } from '../replies'
 import { planStep } from '../run'
 import type { Answer, InitState, ReviewItem } from '../state'
+import { DURATION_OPTIONS } from './duration'
 import { LAUNCH_START_OPTIONS } from './launch'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_QUESTION } from './policy'
 import {
@@ -256,6 +257,18 @@ describe('the review stage (D-230)', () => {
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.launchStart).toEqual({ kind: 'here' })
+  })
+
+  test('a typed duration goes back to the duration stage, asked though it is set, then the review again', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'duration' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['duration', 'review', 'duration'])
+    expect(going.openQuestion?.spec).toEqual({ options: DURATION_OPTIONS, header: 'Duration' })
+    const back = nextStage(going, { kind: 'answer', text: '2h' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.duration).toBe('2h')
+    expect(back.draft.roles?.map(role => role.autopilot.duration)).toEqual(REVIEW_DRAFT.roles.map(() => '2h'))
   })
 
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
