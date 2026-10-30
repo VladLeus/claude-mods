@@ -325,6 +325,18 @@ describe('the review stage (D-230)', () => {
     expect(back.draft.roles?.map(role => role.mcp)).toEqual(REVIEW_DRAFT.roles.map(() => ['sentry']))
   })
 
+  test('a typed memory goes back to the instructions stage, asks its questions again, then the review', async () => {
+    const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+    const state = reviewAt({ gathered: { ...REVIEW_DRAFT.gathered, setup } })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'memory' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['instructions', 'review', 'instructions'])
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'Memory' })
+    const back = nextStage(going, { kind: 'answer', text: 'All roles' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.roles?.map(role => role.instructions)).toEqual(REVIEW_DRAFT.roles.map(() => ['global-claude-md']))
+  })
+
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
     const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
     const state = reviewAt({ changes })

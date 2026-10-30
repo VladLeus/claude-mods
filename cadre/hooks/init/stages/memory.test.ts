@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, FULL_SCAN, memIo, memWorld, roleIn, valueOf } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { MEMORY_DISMISSED_REASON, memoryContextLine, memoryStep } from './memory'
+import { MEMORY_DISMISSED_REASON, memoryContextLine, memoryEnter, memoryStep } from './memory'
 
 /** The buttons of every question on which roles get an item. */
 const ROLE_LIST_OPTIONS = ['None', 'All roles']
@@ -86,5 +86,20 @@ describe('memoryStep', () => {
     expect(run.reads).toEqual([])
     expect(run.listed).toEqual([])
     expect(JSON.stringify(roles)).toBe(before)
+  })
+})
+
+describe('the whole-file question cursor (D-230)', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+
+  test('memoryEnter asks the first group the scan found, and with none found the roles get no group', () => {
+    const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }))
+    const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
+    expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
+      withContext(question, memoryContextLine(roles)),
+      { options: ROLE_LIST_OPTIONS, header: 'Memory' },
+    ])
+    const none = memoryEnter(roles, emptySetupScan())
+    expect(none.kind === 'done' ? none.roles.map(role => role.instructions) : none).toEqual(roles.map(() => []))
   })
 })

@@ -6,6 +6,7 @@ import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
 import {
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
   emptySetupScan,
   entry,
   GIT_TOPIC,
@@ -24,11 +25,13 @@ import {
   RECOMMENDED,
   repoScan,
   SECURITY_TOPIC,
+  stateAt,
   TOPICS,
   valueOf,
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
-import { contextText } from '../../ui/ask'
+import { contextText, withContext } from '../../ui/ask'
+import { nextStage } from '../machine'
 import {
   CONTENT_DISMISSED_REASON,
   CONTENT_OPTIONS,
@@ -39,6 +42,7 @@ import {
   INSTRUCTIONS_ENTRY_OPTIONS,
   INSTRUCTIONS_ENTRY_QUESTION,
   instructionsEntry,
+  instructionsStage,
   instructionsStep,
   memoryItemContextLine,
   memoryItemHeader,
@@ -348,5 +352,34 @@ describe('memories one by one (G-02-1f)', () => {
       ['M1', 'extra.md', given],
       ['M2', 'squad.md', MEMORY_DIR],
     ])
+  })
+})
+
+describe('the instructions stage (D-230)', () => {
+  const roles = proposeRoles(repoScan()).roles
+  const setup = emptySetupScan({ hasGlobalClaudeMd: true })
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+  /** What init finds of the repo's own instruction files by name: no rule file and no AGENTS.md. */
+  const repo = { rules: [], hasAgentsMd: false }
+
+  test('instructionsStage lists the instruction names as an io effect, then asks the content consent', () => {
+    const state = instructionsStage.enter(stateAt('instructions', { roles, gathered, locations: DEFAULT_LOCATIONS }))
+    expect(state.effect).toEqual({ kind: 'io', call: { id: 'repo-instruction-names', root: DEFAULT_LOCATIONS.root } })
+    const asking = nextStage(state, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
+    expect(asking.openQuestion?.question).toBe(withContext(CONTENT_QUESTION, contentContextLine(setup, repo)))
+  })
+
+  test('Yes reads the files as an io effect; the topics and their recommendation are model effects', () => {
+    const state = instructionsStage.enter(stateAt('instructions', { roles, gathered, locations: DEFAULT_LOCATIONS }))
+    const asking = nextStage(state, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
+    const reading = nextStage(asking, { kind: 'answer', text: 'Yes, read them' })
+    expect(reading.effect.kind === 'io' ? reading.effect.call.id : reading.effect).toBe('read-instruction-files')
+    const grouping = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: SCAN } })
+    expect(grouping.effect).toEqual({ kind: 'model', call: { id: 'topics', scan: SCAN } })
+    const recommending = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
+    const call = { id: 'parts', roles, topics: TOPICS, memories: [] }
+    expect(recommending.effect).toEqual({ kind: 'model', call })
+    const entry = nextStage(recommending, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
+    expect(entry.openQuestion?.question.split('\n')[0]).toBe(INSTRUCTIONS_ENTRY_QUESTION)
   })
 })
