@@ -402,8 +402,8 @@ async function perform(
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
  * (consentStage), runs the scans and shows them with their warnings, then runs the history stage (historyStage), which
- * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
- * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
+ * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role stages
+ * (init/machine): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the
  * MCP servers and skills, the instructions and memories (instructionsStep: the content consent, then the instruction
  * parts or the whole-file questions; G-02-1f), the carried env names, the autonomy hunks of the frameworks in use, and

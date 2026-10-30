@@ -122,9 +122,9 @@ export type IoResult =
 
 /**
  * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
- * the others go back as stage transitions.
+ * the others, Change roles among them, go back as stage transitions.
  */
-export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'policy' | 'launch'>
+export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'roles' | 'policy' | 'launch'>
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with

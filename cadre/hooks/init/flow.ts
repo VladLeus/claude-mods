@@ -1,126 +1,32 @@
 /**
- * The order of the init questions (ROLE-01 to ROLE-05, D-43, A3, A6), a layer 10 module: teamStep, the role steps from
- * the roles question to the improver install question, with perRoleSteps, the steps after the duration; goBack,
- * which re-asks one review item (ReviewItem, in init/state) and gives the draft with the new answer; and historyHints,
- * the history scan as hints for the skill questions. Pure: it asks through the InitIo port it is given, imports roles,
- * scan, team, ui, init/draft, init/state and the init/stages steps, and never imports init/machine or init/run.
+ * The legacy go-backs of the review (D-43, D-204, A3), a layer 10 module: goBack, which re-asks one review item whose
+ * stage is not pure yet (LegacyGoBack, in init/state) and gives the draft with the new answer; and historyHints, the
+ * history scan as hints for the skill questions. Pure: it asks through the InitIo port it is given, imports scan, ui,
+ * init/draft, init/state and the init/stages steps, and never imports init/machine or init/run.
  */
-import type { FrameworkId, InitIo, RoleProposal, RoleSpec } from '../../types'
-import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
-import { missingSecurityPlugins, recommend } from '../roles/recommend'
+import type { InitIo } from '../../types'
 import type { HistoryScan } from '../scan/history'
-import { resolvedFramework } from '../team'
-import { accepted, showBlock } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
-import { recommendationLines } from '../ui/blocks/recommendations'
 import { mapped } from './draft'
-import type { Draft, DraftBase, Team } from './draft'
+import type { Draft } from './draft'
 import type { LegacyGoBack } from './state'
 import { assignmentStep } from './stages/assign'
 import { carryStep } from './stages/carry'
 import { durationStep, withDuration } from './stages/duration'
-import { frameworkStep } from './stages/frameworks'
 import { hunkStep } from './stages/hunks'
-import { improverInstallStep } from './stages/improver-install'
-import { instructionsAgain, instructionsStep } from './stages/instructions'
+import { instructionsAgain } from './stages/instructions'
 import { modelStep } from './stages/model'
-import { rolesStep } from './stages/roles'
-import { securityInstallStep, withSecuritySkill } from './stages/security'
-
-/**
- * The per-role steps after the duration (D-52, D-53, D-60, G-02-1f, ROLE-04), in this order: model and effort
- * (modelStep), MCP servers and skills with the history hints (assignmentStep), instructions and memories
- * (instructionsStep), carried settings (carryStep), then the autonomy hunks of the frameworks the roles run on
- * (hunkStep). The first cancelled step ends it with its reason (A1).
- */
-async function perRoleSteps(
-  io: InitIo,
-  base: DraftBase,
-  roles: readonly RoleSpec[],
-  repoDefault: FrameworkId | null,
-): Promise<StepResult<Omit<Team, 'duration' | 'changes' | 'pluginInstalls'>>> {
-  const { gathered, locations } = base
-  const modelled = await modelStep(io, roles)
-  if (modelled.kind === 'cancelled') return modelled
-  const assigned = await assignmentStep(io, modelled.value, gathered.setup, base.hints)
-  if (assigned.kind === 'cancelled') return assigned
-  const instructed = await instructionsStep(io, assigned.value, gathered.setup, locations)
-  if (instructed.kind === 'cancelled') return instructed
-  const { instructions } = instructed.value
-  const carried = await carryStep(io, instructed.value.roles, gathered.setup)
-  if (carried.kind === 'cancelled') return carried
-  const team = carried.value
-  const hunks = await hunkStep(io, { roles: team, repoDefault, gathered, locations })
-
-  return mapped(hunks, answered => ({ roles: team, repoDefault, hunks: answered, instructions }))
-}
-
-/**
- * The role steps from the roles question to the hunks (ROLE-01 to ROLE-05, D-43): the roles (rolesStep from `start`,
- * shown with its scan changes), their frameworks (frameworkStep), the recommendations for that team (ROLE-03), the
- * security plugins question for the plugins a team with a Security role misses (missingSecurityPlugins,
- * securityInstallStep, decision #39), the duration, asked when `duration` is null and else kept for every role (D-51),
- * then perRoleSteps, and last the improver install question when the hand-out gave a role a built file and
- * claude-md-management is missing (improverInstallStep, D-141). When claude-security was asked about, every role that
- * stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill) before the
- * duration. Init runs it once from the proposal; Change roles runs it again from the current team with the scan
- * changes it was accepted with (A6) and the duration it has. The team keeps the scan changes of the roles accepted and
- * the plugins to install after Confirm, the security plugins first. The first cancelled step ends it with its reason
- * (A1).
- */
-export async function teamStep(
-  io: InitIo,
-  base: DraftBase,
-  start: RoleProposal,
-  duration: string | null,
-): Promise<StepResult<Team>> {
-  const { gathered } = base
-  const chosen = await rolesStep(io, base.proposal, base.installed, start)
-  if (chosen.kind === 'cancelled') return chosen
-  const framed = await frameworkStep(io, base.choice, chosen.value.roles)
-  if (framed.kind === 'cancelled') return framed
-  const { roles, repoDefault } = framed.value
-  const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
-  const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
-  await showBlock(io, 'recommendations', recommendationLines(recommendations, roles))
-  const missing = missingSecurityPlugins(roles, gathered.setup)
-  const installs = await securityInstallStep(io, missing)
-  if (installs.kind === 'cancelled') return installs
-  const pluginInstalls = installs.value
-  const isSkillAsked = missing.includes(CLAUDE_SECURITY_PLUGIN)
-  const team = isSkillAsked ? withSecuritySkill(roles, pluginInstalls.includes(CLAUDE_SECURITY_PLUGIN)) : roles
-  const asked = duration === null ? await durationStep(io, team) : accepted(duration)
-  if (asked.kind === 'cancelled') return asked
-  const kept = asked.value
-  const steps = await perRoleSteps(io, base, withDuration(team, kept), repoDefault)
-  if (steps.kind === 'cancelled') return steps
-  const improver = await improverInstallStep(io, steps.value.instructions, gathered.setup)
-  if (improver.kind === 'cancelled') return improver
-
-  return accepted({
-    duration: kept,
-    changes: chosen.value.changes,
-    pluginInstalls: [...pluginInstalls, ...improver.value],
-    ...steps.value,
-  })
-}
 
 /**
  * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
- * answer: it re-asks that item's step, and for Change roles every role step from the current team, shown with the scan
- * changes it was accepted with (A6), with the duration kept (teamStep). The duration, model, assignment, memory and
- * env steps run again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a
- * name away; memory goes back to the instruction hand-out it had (instructionsAgain). The git policy and the launcher
- * start go back as stage transitions instead (D-204). A cancelled step ends the review with its reason (A1).
+ * answer: it re-asks that item's step. The duration, model, assignment, memory and env steps run again on the current
+ * roles and decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
+ * instruction hand-out it had (instructionsAgain). Change roles, the git policy and the launcher start go back as stage
+ * transitions instead (D-204). A cancelled step ends the review with its reason (A1).
  */
 export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
-    case 'roles': {
-      const team = await teamStep(io, draft, { roles, changes: draft.changes }, draft.duration)
-
-      return mapped(team, decided => ({ ...draft, ...decided }))
-    }
     case 'duration':
       return mapped(await durationStep(io, roles), duration => ({
         ...draft,
