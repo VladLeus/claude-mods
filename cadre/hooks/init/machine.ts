@@ -25,6 +25,7 @@ import {
   withOutputs,
 } from './state'
 import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
+import { assignStage } from './stages/assign'
 import { carryStage } from './stages/carry'
 import { consentStage } from './stages/consent'
 import { durationStage } from './stages/duration'
@@ -83,23 +84,6 @@ const scanStage: StageDef = Object.freeze({
     const scanned = { ...state, draft }
 
     return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
-  },
-})
-
-/** The MCP servers and skills, with the history hints (assignmentStep, legacy). */
-const assignStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, gathered, hints } = state.draft
-    if (roles === undefined || gathered === undefined || hints === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'assign', roles, setup: gathered.setup, hints } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'assign') return stageFailed(state)
-    const assigned = answer.result.result
-    if (assigned.kind === 'cancelled') return stageCancelled(state, assigned.reason)
-
-    return stageDone({ ...state, draft: { ...state.draft, roles: assigned.value } })
   },
 })
 

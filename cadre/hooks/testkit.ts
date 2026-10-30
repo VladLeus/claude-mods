@@ -1756,3 +1756,21 @@ export async function stageRun(io: InitIo, def: StageDef, state: InitState): Pro
     current = def.answer({ ...current, outputs: [] }, await perform(io, { dryRun: true }, effect))
   }
 }
+
+/**
+ * stageRun as the stage's async step gave its result (D-230): accepted with what `pick` reads from the draft of a done
+ * stage, or cancelled with the stage's reason; a stage that stops anywhere else fails the spec.
+ */
+export async function stageStep<T>(
+  io: InitIo,
+  def: StageDef,
+  state: InitState,
+  pick: (draft: Partial<Draft>) => T | undefined,
+): Promise<StepResult<T>> {
+  const end = await stageRun(io, def, state)
+  if (end.sub.kind === 'cancelled') return { kind: 'cancelled', reason: end.sub.reason }
+  const value = end.sub.kind === 'done' ? pick(end.draft) : undefined
+  if (value === undefined) throw new Error(`the ${state.stage} stage stopped at ${end.sub.kind}`)
+
+  return { kind: 'accepted', value }
+}

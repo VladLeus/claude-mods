@@ -393,7 +393,7 @@ function afterRoles(
 function rolesAnswer(state: InitState, answer: Answer): InitState {
   const { installed } = state.draft
   const { sub } = state
-  const isDescribed = answer.kind === 'model' && sub.kind === 'describe-model'
+  const isDescribed = answer.kind === 'model' && answer.result.id === 'describe-roles' && sub.kind === 'describe-model'
   if (isDescribed) return afterDescribed(state, sub.rounds, answer.result.result)
   if (answer.kind !== 'answer' || installed === undefined) return stageFailed(state)
   switch (sub.kind) {

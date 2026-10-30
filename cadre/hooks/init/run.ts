@@ -44,7 +44,10 @@ import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { gatherScans } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { readPaths, readRepoFile } from '../scan/port-read'
+import { checkedCompletion } from '../suggest/checked'
+import type { Checked } from '../suggest/checked'
 import { proposeFromText } from '../suggest/propose'
+import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
 import { attendedByConfig, compileAll, resolvedFramework } from '../team'
 import {
   accepted,
@@ -58,6 +61,7 @@ import {
   withContext,
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
+import { ownSkillIds } from './answers'
 import type { PlanResult, Reviewed } from './draft'
 import { goBack } from './flow'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
@@ -75,7 +79,6 @@ import type {
   ModelResult,
   Output,
 } from './state'
-import { assignmentStep } from './stages/assign'
 import { instructionsStep } from './stages/instructions'
 
 /**
@@ -361,8 +364,6 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
  */
 async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
-    case 'assign':
-      return { id: 'assign', result: await assignmentStep(io, step.roles, step.setup, step.hints) }
     case 'instructions':
       return { id: 'instructions', result: await instructionsStep(io, step.roles, step.setup, step.locations) }
     case 'go-back':
@@ -375,15 +376,43 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
 }
 
 /**
- * Runs one model call of a stage (D-230) through the suggest/ function today's step called, which retries through
- * checkedCompletion and falls back as it always did: the roles of a described structure (proposeFromText).
+ * The roles recommended for each of the user's own skills (G-02-1b): one model call reads each role's work and each
+ * skill's name, purpose and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take
+ * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no skill is
+ * recommended to any role: the map is empty. The model has no tools (D-83), and only its checked skill and role ids
+ * are kept.
+ */
+async function recommendedSkillRoles(
+  io: InitIo,
+  call: Extract<ModelCall, { readonly id: 'skills' }>,
+): Promise<ReadonlyMap<string, readonly string[]>> {
+  const { roles, skills, counts } = call
+  const skillIds = ownSkillIds(skills)
+  const roleIds = roles.map(role => role.id)
+  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
+    const parsed = parseSkillRecommendation(reply, skillIds, roleIds)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => skillsPrompt(roles, skills, counts, errors)
+
+  return checkedCompletion(io, SKILLS_SYSTEM, prompt, parse, () => new Map())
+}
+
+/**
+ * Runs one model call of a stage (D-230) as today's step did, retrying through checkedCompletion and falling back as
+ * it always did: the roles of a described structure (proposeFromText), or the roles recommended for each own skill
+ * (recommendedSkillRoles).
  */
 async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
   switch (call.id) {
     case 'describe-roles':
       return { id: 'describe-roles', result: await proposeFromText(io, call.text) }
+    case 'skills':
+      return { id: 'skills', result: await recommendedSkillRoles(io, call) }
     default: {
-      const unreachable: never = call.id
+      const unreachable: never = call
       return unreachable
     }
   }

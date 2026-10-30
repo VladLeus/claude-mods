@@ -10,24 +10,17 @@ import type { StepResult } from '../ui/ask'
 import { mapped } from './draft'
 import type { Draft } from './draft'
 import type { LegacyGoBack } from './state'
-import { assignmentStep } from './stages/assign'
 import { instructionsAgain } from './stages/instructions'
 
 /**
  * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
- * answer: it re-asks that item's step. The assignment and memory steps run again on the current roles and decide the
- * whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the instruction hand-out
- * it had (instructionsAgain). Every other item goes back as a stage transition instead (D-204). A cancelled step ends
- * the review with its reason (A1).
+ * answer: memory runs again on the current roles and decides the whole list it asks about (A3), so a narrower answer
+ * takes a name away, and goes back to the instruction hand-out it had (instructionsAgain). Every other item goes back
+ * as a stage transition instead (D-204). A cancelled step ends the review with its reason (A1).
  */
 export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
   const { gathered, roles } = draft
   switch (item) {
-    case 'assignments':
-      return mapped(await assignmentStep(io, roles, gathered.setup, draft.hints), assigned => ({
-        ...draft,
-        roles: assigned,
-      }))
     case 'memory':
       return mapped(await instructionsAgain(io, roles, gathered.setup, draft.instructions), (instructed): Draft => ({
         ...draft,

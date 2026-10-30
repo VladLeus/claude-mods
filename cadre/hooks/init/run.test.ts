@@ -21,6 +21,7 @@ import type {
   Plan,
   PortEntry,
   RoleSpec,
+  SetupScan,
   TemplateRoleId,
 } from '../../types'
 import { CONFLICT_OPTIONS, conflictQuestion } from '../apply/conflict'
@@ -152,7 +153,7 @@ import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import { planStep, runInit } from './run'
 import type { InitOptions } from './run'
-import { assignmentStep } from './stages/assign'
+import { assignStage } from './stages/assign'
 import { carryStage, ENV_DISMISSED_REASON } from './stages/carry'
 import {
   CLAUDE_JSON_CONTEXT,
@@ -219,6 +220,7 @@ import {
   rolesStage,
 } from './stages/roles'
 import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
+import type { Answer, InitState } from './state'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -2767,14 +2769,13 @@ describe('refusal re-ask (G-02-6b)', () => {
       '(or type git root, in here or other)'
     const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
     const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ carry: envNames }) }
+    const assignAt = (setup: Partial<SetupScan>): InitState => {
+      const scans = { ...wholeDraft().gathered, setup: emptySetupScan(setup) }
+
+      return assignStage.enter(stateAt('assign', { roles, gathered: scans, hints: new Map() }))
+    }
+    const recommendedNone: Answer = { kind: 'model', result: { id: 'skills', result: new Map() } }
     const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
-      ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
-      ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
-      [
-        'own skills',
-        io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('mine')] })),
-        '"Accept recommendations", "Go one by one", "Whole group"',
-      ],
       ['memory', io => memoryStep(io, roles, emptySetupScan({ hasGlobalClaudeMd: true })), roleList],
     ]
     for (const [name, step, accepts] of steps) {
@@ -2812,6 +2813,13 @@ describe('refusal re-ask (G-02-6b)', () => {
         'model mode',
         () => driven(modelStage.enter(stateAt('model', { roles })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
+      ],
+      ['mcp', () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz']).asked, roleList],
+      ['skills', () => driven(assignAt({ skills: [skillRef('x:y', 'x')] }), ['zzz']).asked, roleList],
+      [
+        'own skills',
+        () => driven(assignAt({ skills: [skillRef('mine')] }), ['zzz'], [recommendedNone]).asked,
+        '"Accept recommendations", "Go one by one", "Whole group"',
       ],
       [
         'env',

@@ -19,6 +19,7 @@ import type {
   RoleChange,
   RoleSpec,
   SetupScan,
+  SkillRef,
 } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
@@ -26,7 +27,9 @@ import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
+import type { NameAssignment } from './assign-rules'
 import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
+import type { HandoutCursor } from './handout'
 import type { PlanStepInput } from './initplan'
 
 /**
@@ -128,19 +131,13 @@ export type IoResult =
  * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
  * the others, Change roles among them, go back as stage transitions.
  */
-export type LegacyGoBack = Extract<ReviewItem, 'assignments' | 'memory'>
+export type LegacyGoBack = Extract<ReviewItem, 'memory'>
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
  * the draft fields it needs. init/run performs it and gives back its LegacyResult.
  */
 export type LegacyStep =
-  | {
-      readonly id: 'assign'
-      readonly roles: readonly RoleSpec[]
-      readonly setup: SetupScan
-      readonly hints: ReadonlyMap<string, number>
-    }
   | {
       readonly id: 'instructions'
       readonly roles: readonly RoleSpec[]
@@ -174,7 +171,6 @@ export type Applied = {
 
 /** What a LegacyStep gave, under the same id: the result of the step it names. */
 export type LegacyResult =
-  | { readonly id: 'assign'; readonly result: StepResult<readonly RoleSpec[]> }
   | {
       readonly id: 'instructions'
       readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly instructions: InstructionHandout }>
@@ -183,13 +179,22 @@ export type LegacyResult =
 
 /**
  * One model call a stage needs (D-230), named after what it asks the model, with plain data only; init/run runs it
- * through the suggest/ function today's step called (checkedCompletion): the roles of a structure the person described
- * (proposeFromText).
+ * through checkedCompletion as today's step did: the roles of a structure the person described (proposeFromText), and
+ * the roles recommended for each of the user's own skills, with their use counts.
  */
-export type ModelCall = { readonly id: 'describe-roles'; readonly text: string }
+export type ModelCall =
+  | { readonly id: 'describe-roles'; readonly text: string }
+  | {
+      readonly id: 'skills'
+      readonly roles: readonly RoleSpec[]
+      readonly skills: readonly SkillRef[]
+      readonly counts: ReadonlyMap<string, number>
+    }
 
-/** What a ModelCall gave, under the same id: the suggest/ function's result, unchanged. */
-export type ModelResult = { readonly id: 'describe-roles'; readonly result: Proposed }
+/** What a ModelCall gave, under the same id, unchanged; the recommendations are keyed S1, S2, ... by place. */
+export type ModelResult =
+  | { readonly id: 'describe-roles'; readonly result: Proposed }
+  | { readonly id: 'skills'; readonly result: ReadonlyMap<string, readonly string[]> }
 
 /**
  * The one thing a state asks the runner to do next (D-230): ask the person `question` with its dialog spec, perform a
@@ -229,6 +234,10 @@ export type Answer =
  *   `rounds`.
  * - `describe`: the describe question is out, asked `tries` times so far, after proposal `rounds`.
  * - `describe-model`: the model call for the described structure is out, after proposal `rounds`.
+ * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
+ *   far, with the names the questions before it gave (`done`).
+ * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
+ *   recommends roles for them, their hand-out at `cursor`, or the question for the whole group, asked `tries` times.
  * - `hunk-read`: the read of the next config file the hunks change is out, with what the configs read before it gave.
  * - `hunk`: the question of the next hunk is out, asked `tries` times so far, with the configs read and the hunks
  *   answered before it.
@@ -265,6 +274,15 @@ export type StageSub =
     }
   | { readonly kind: 'describe'; readonly rounds: number; readonly tries: number }
   | { readonly kind: 'describe-model'; readonly rounds: number }
+  | {
+      readonly kind: 'assign'
+      readonly tries: number
+      readonly index: number
+      readonly done: readonly NameAssignment[]
+    }
+  | { readonly kind: 'skills-model'; readonly done: readonly NameAssignment[] }
+  | { readonly kind: 'skills-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }
+  | { readonly kind: 'skills-whole'; readonly tries: number; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'hunk-read'; readonly reads: readonly PortRead[] }
   | {
       readonly kind: 'hunk'

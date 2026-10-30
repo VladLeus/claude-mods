@@ -1,22 +1,27 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec, SkillRef } from '../../../types'
+import type { InitIo, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import {
+  EMPTY_FACTS,
   emptySetupScan,
   FULL_SCAN,
   memIo,
   memWorld,
   OWN_SKILLS_ENTRY_PREFIX,
+  repoScan,
   roleIn,
   shownBlock,
   skillRef,
+  stageStep,
+  stateAt,
   valueOf,
   withEvents,
 } from '../../testkit'
 import type { MemRun } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { assignmentStep } from './assign'
+import type { StepResult } from '../../ui/ask'
+import { assignStage } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, ownSkillContextLine, skillsContextLine } from './own-skills'
 
 /** The first row of the own-skills block (G-02-1b). */
@@ -37,6 +42,18 @@ function ownEntry(count: number): string {
 
 /** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
 const OWN_ENTRY_OPTIONS = ['Accept recommendations', 'Go one by one', 'Whole group']
+
+/** The assign stage run over `io` for `roles`, the setup scan `setup` and the history `hints`, as a step result. */
+function assignedBy(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  hints: ReadonlyMap<string, number> = new Map(),
+): Promise<StepResult<readonly RoleSpec[]>> {
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+
+  return stageStep(io, assignStage, stateAt('assign', { roles, gathered, hints }), draft => draft.roles)
+}
 
 describe('own skills hand-out (G-02-1b)', () => {
   /** PM, Team Lead, BE, FE, QA and Security. */
@@ -84,7 +101,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     given: readonly RoleSpec[] = roles,
   ): Promise<{ readonly run: MemRun; readonly assigned: readonly RoleSpec[] }> {
     const run = memIo(memWorld({ replies }), answers)
-    const result = await assignmentStep(run.io, given, setup, hints)
+    const result = await assignedBy(run.io, given, setup, hints)
     expect(result.kind).toBe('accepted')
 
     return { run, assigned: result.kind === 'accepted' ? result.value : [] }
@@ -105,7 +122,7 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('one own skill is counted in the singular in the entry question and its context line', async () => {
     const one = emptySetupScan({ skills: [{ name: 'alpha', plugin: null }] })
     const run = memIo(memWorld({}), ['Accept recommendations'])
-    expect((await assignmentStep(run.io, roles, one)).kind).toBe('accepted')
+    expect((await assignedBy(run.io, roles, one)).kind).toBe('accepted')
     const context = '1 skill with no plugin; the pane shows what each does and the roles it is recommended for.'
     expect(run.asked).toEqual([withContext(ownEntry(1), context)])
   })
@@ -113,7 +130,7 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('after the plugin groups the model recommends, and the pane shows the skills busiest first', async () => {
     const run = memIo(memWorld({ replies: [REPLY] }), ['None', 'Accept recommendations'])
     const { io, events } = withEvents(run)
-    await assignmentStep(io, roles, setup, hints)
+    await assignedBy(io, roles, setup, hints)
     expect(events).toEqual([`ask ${CODEX_QUESTION}`, 'show skills', `ask ${ownEntry(3)}`])
     expect(completionAt(run, 0).prompt.split('\n').slice(-3)).toEqual([
       'S1 | mid | Draft the weekly report. | used 4 times',
@@ -192,7 +209,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     ]
     for (const [answers, reason, question] of cases) {
       const run = memIo(memWorld({ replies: [REPLY] }), answers)
-      expect(await assignmentStep(run.io, roles, setup, hints)).toEqual({ kind: 'cancelled', reason })
+      expect(await assignedBy(run.io, roles, setup, hints)).toEqual({ kind: 'cancelled', reason })
       expect([answers, run.asked.at(-1)?.includes(question)]).toEqual([answers, true])
     }
   })
@@ -207,7 +224,7 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('a team with no own skill is asked no hand-out question, and the model is not called', async () => {
     const run = memIo(memWorld({ replies: [REPLY] }), ['All roles'])
     const plugins = emptySetupScan({ skills: [skillRef('codex:rescue', 'codex')] })
-    valueOf(await assignmentStep(run.io, roles, plugins, hints))
+    valueOf(await assignedBy(run.io, roles, plugins, hints))
     expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles))])
     expect(run.prompts).toEqual([])
   })
@@ -217,7 +234,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     const long = skillRef('n'.repeat(100))
     const many = emptySetupScan({ skills: [long, ...names.map(name => skillRef(name))] })
     const run = memIo(memWorld({}), ['Go one by one', ...Array.from({ length: 101 }, () => 'No')])
-    expect((await assignmentStep(run.io, roles, many)).kind).toBe('accepted')
+    expect((await assignedBy(run.io, roles, many)).kind).toBe('accepted')
     expect(run.asked[1]?.split('\n')[0]).toBe(`Which roles get the skill ${'n'.repeat(59)}…?`)
     expect([run.specs[99]?.header, run.specs[100]?.header, run.specs[101]?.header]).toEqual([
       'Skill 99/101',
