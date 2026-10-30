@@ -1,8 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { PLUGIN_RUN_TIMEOUT_MS } from '../../apply/run'
-import { BIDI_OVERRIDE, GUIDANCE_KEY, memIo, memWorld, SECURITY_KEY, SECURITY_KEYS, templateRole } from '../../testkit'
+import { recommend } from '../../roles/recommend'
+import { resolvedFramework } from '../../team'
+import {
+  BIDI_OVERRIDE,
+  driven,
+  emptySetupScan,
+  GUIDANCE_KEY,
+  memIo,
+  memWorld,
+  SECURITY_KEY,
+  SECURITY_KEYS,
+  stateAt,
+  templateRole,
+  wholeDraft,
+} from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { recommendationLines } from '../../ui/blocks/recommendations'
+import type { Draft } from '../draft'
 import {
   INSTALL_OPTIONS,
   SECURITY_INSTALL_CONTEXT,
@@ -10,6 +26,7 @@ import {
   SECURITY_INSTALL_PREFIX,
   securityInstallQuestion,
   securityInstallStep,
+  securityStage,
   withSecuritySkill,
 } from './security'
 
@@ -96,5 +113,51 @@ describe('security plugin installs (decision #39)', () => {
 describe('security plugin review fixes (#69)', () => {
   test('the question shows each plugin name cleaned, as every printed key is (B7)', () => {
     expect(securityInstallQuestion([`x${BIDI_OVERRIDE}\ny@m`])).toBe(`${SECURITY_INSTALL_PREFIX} xy? `)
+  })
+})
+
+describe('the security stage (D-230)', () => {
+  /** PM, Team Lead and Security on the built-in default, with no security plugin installed. */
+  const draft = wholeDraft()
+
+  /** The recommendations block of `draft`'s team, as the stage shows it before the question (ROLE-03). */
+  function recommendationsOf(given: Draft): unknown {
+    const { roles, gathered } = given
+    const frameworks = roles.map(role => resolvedFramework(role, given.repoDefault))
+    const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+
+    return { kind: 'show', block: { key: 'recommendations', lines: recommendationLines(recommendations, roles) } }
+  }
+
+  test('securityStage shows the recommendations, then asks the plugins question; the open question is that ask', () => {
+    const state = securityStage.enter(stateAt('security', draft))
+    const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
+    const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    expect(state.outputs).toEqual([recommendationsOf(draft)])
+  })
+
+  test('with no plugin missing it shows the recommendations, asks nothing and installs nothing', () => {
+    const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
+    const installed = wholeDraft({ gathered: { ...draft.gathered, setup }, pluginInstalls: [GUIDANCE_KEY] })
+    const state = securityStage.enter(stateAt('security', installed))
+    expect([state.sub, state.openQuestion, state.draft.pluginInstalls]).toEqual([{ kind: 'done' }, null, []])
+    expect(state.draft.roles).toEqual(installed.roles)
+    expect(state.outputs).toEqual([recommendationsOf(installed)])
+  })
+
+  test('Install gives the keys and the Security role its review skill; Not now none, and takes the skill away', () => {
+    const skill = 'claude-security:claude-security'
+    const cases: readonly (readonly [string, readonly string[], readonly string[]])[] = [
+      ['Install', SECURITY_KEYS, [skill]],
+      ['Not now', [], []],
+    ]
+    for (const [answer, installs, skills] of cases) {
+      const run = driven(securityStage.enter(stateAt('security', draft)), [answer])
+      expect([answer, run.state.draft.pluginInstalls]).toEqual([answer, installs])
+      const security = run.state.draft.roles?.find(role => role.id === 'security')
+      expect([answer, security?.skills.filter(name => name === skill)]).toEqual([answer, skills])
+    }
   })
 })
