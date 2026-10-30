@@ -31,6 +31,7 @@ import { durationStage } from './stages/duration'
 import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
 import { hunksStage } from './stages/hunks'
+import { improverInstallStage } from './stages/improver-install'
 import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
 import { policyStage } from './stages/policy'
@@ -140,29 +141,6 @@ const instructionsStage: StageDef = Object.freeze({
     const { roles, instructions } = instructed.value
 
     return stageDone({ ...state, draft: { ...state.draft, roles, instructions } })
-  },
-})
-
-/**
- * The claude-md-management install question when the hand-out gave a role a built file and it is missing
- * (improverInstallStep, legacy, D-141): its plugin goes after the security plugins to install after Confirm.
- */
-const improverInstallStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { instructions, gathered } = state.draft
-    if (instructions === undefined || gathered === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'improver', instructions, setup: gathered.setup } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    const { pluginInstalls } = state.draft
-    const isAnswer = answer.kind === 'legacy' && answer.result.id === 'improver'
-    if (!isAnswer || pluginInstalls === undefined) return stageFailed(state)
-    const improver = answer.result.result
-    if (improver.kind === 'cancelled') return stageCancelled(state, improver.reason)
-    const installs = [...pluginInstalls, ...improver.value]
-
-    return stageDone({ ...state, draft: { ...state.draft, pluginInstalls: installs } })
   },
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Plan, RoleChange, RoleProposal } from '../../../types'
+import type { InstructionHandout, Plan, RoleChange, RoleProposal } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
@@ -326,9 +326,16 @@ describe('the review stage (D-230)', () => {
     expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
     const keys = chosen.outputs.flatMap(output => (output.kind === 'show' ? [output.block.key] : []))
     expect(keys).toEqual(['recommendations'])
-    const improving = STAGES['improver-install'].enter({ ...chosen, stage: 'improver-install', sub: { kind: 'start' } })
-    const improved = { kind: 'accepted', value: [] } satisfies StepResult<readonly string[]>
-    const back = nextStage(improving, { kind: 'legacy', result: { id: 'improver', result: improved } })
+    const built: InstructionHandout = {
+      kind: 'parts',
+      scan: { parts: [], files: [], memories: [], warnings: [] },
+      topics: [{ id: 'T1', title: 'Rules', summary: 'The team rules.', partIds: ['P1'] }],
+      recommended: new Map(),
+      given: new Map([['T1', ['pm']]]),
+    }
+    const last: InitState = { ...chosen, stage: 'improver-install', draft: { ...chosen.draft, instructions: built } }
+    const improving = STAGES['improver-install'].enter({ ...last, sub: { kind: 'start' } })
+    const back = nextStage(improving, { kind: 'answer', text: 'Not now' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
   })
 

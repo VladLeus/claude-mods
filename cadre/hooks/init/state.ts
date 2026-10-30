@@ -153,7 +153,6 @@ export type LegacyStep =
       readonly setup: SetupScan
       readonly locations: InitLocations
     }
-  | { readonly id: 'improver'; readonly instructions: InstructionHandout; readonly setup: SetupScan }
   | { readonly id: 'go-back'; readonly draft: Draft; readonly item: LegacyGoBack }
 
 /**
@@ -179,10 +178,7 @@ export type Applied = {
   readonly outcome: ApplyOutcome
 }
 
-/**
- * What a LegacyStep gave, under the same id: the result of the step it names. The apply gives none when the run holds
- * no host, which never happens, since a --dry-run never sets the apply step.
- */
+/** What a LegacyStep gave, under the same id: the result of the step it names. */
 export type LegacyResult =
   | { readonly id: 'roles'; readonly result: StepResult<RoleProposal> }
   | { readonly id: 'assign'; readonly result: StepResult<readonly RoleSpec[]> }
@@ -190,9 +186,7 @@ export type LegacyResult =
       readonly id: 'instructions'
       readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly instructions: InstructionHandout }>
     }
-  | { readonly id: 'improver'; readonly result: StepResult<readonly string[]> }
   | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
-  | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
 /**
  * The one thing a state asks the runner to do next (D-230): ask the person `question` with its dialog spec, perform a
