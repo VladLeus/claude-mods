@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
-import { reportText } from '../core/text'
 import { BIDI_OVERRIDE } from '../testkit'
-import { panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './pane'
+import { paneColumns, panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks, wrapLine } from './pane'
 import type { PaneRow, PaneSpan } from './pane'
 
 /** A control, format, or line or paragraph separator character. A newline is the one a report may keep. */
@@ -61,9 +60,39 @@ describe('paneView', () => {
   })
 })
 
+describe('wrapLine (D-231)', () => {
+  test('a line longer than the width ends its row at the last space at or before the width', () => {
+    expect(wrapLine('a b c d e f g h i j k l', 10)).toEqual(['a b c d e', 'f g h i j', 'k l'])
+    expect(wrapLine('aaaa bbbbb ccc', 10)).toEqual(['aaaa bbbbb', 'ccc'])
+    expect(wrapLine('fits in ten', 11)).toEqual(['fits in ten'])
+  })
+
+  test('a word longer than the width is cut at the width', () => {
+    expect(wrapLine('abcdefghijklmnop', 5)).toEqual(['abcde', 'fghij', 'klmno', 'p'])
+    expect(wrapLine('one twothreefourfive six', 8)).toEqual(['one', 'twothree', 'fourfive', 'six'])
+  })
+
+  test('no text is dropped: only the one space at each break is left out', () => {
+    const line = Array.from({ length: 40 }, (_, at) => `w${at}`).join(' ')
+    const rows = wrapLine(line, 17)
+    expect(rows.every(row => Array.from(row).length <= 17)).toBe(true)
+    expect(rows.join(' ')).toBe(line)
+  })
+
+  test('an indent is never a break, so no row is only spaces; an empty line is one empty row', () => {
+    expect(wrapLine('    recommended: tl', 10)).toEqual(['    recomm', 'ended: tl'])
+    expect(wrapLine('', 10)).toEqual([''])
+  })
+
+  test('a width under one, or not a whole number, keeps the line whole', () => {
+    for (const columns of [0, -4, 2.5, Number.NaN]) expect(wrapLine('abc def', columns)).toEqual(['abc def'])
+  })
+})
+
 describe('paneRows', () => {
   test('a block gives its title row, then one row per line', () => {
-    expect(paneRows([{ key: 'scan', title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'] }])).toEqual([
+    const block: ShownBlock = { key: 'scan', title: 'Scan', lines: ['Repo scan (read-only):', '  stack: none'] }
+    expect(paneRows([block], null)).toEqual([
       { text: 'Scan', isTitle: true },
       { text: 'Repo scan (read-only):', isTitle: false },
       { text: '  stack: none', isTitle: false },
@@ -71,23 +100,42 @@ describe('paneRows', () => {
   })
 
   test('one empty row parts two blocks, none comes after the last, and no blocks give no rows', () => {
-    expect(paneRows([paneBlock('review', ['a']), paneBlock('scan', ['b'])])).toEqual([
+    expect(paneRows([paneBlock('review', ['a']), paneBlock('scan', ['b'])], null)).toEqual([
       { text: 'review', isTitle: true },
       { text: 'a', isTitle: false },
       { text: '', isTitle: false },
       { text: 'scan', isTitle: true },
       { text: 'b', isTitle: false },
     ])
-    expect(paneRows([])).toEqual([])
+    expect(paneRows([], 60)).toEqual([])
   })
 
-  test('every title and line is cleaned as a report cell, so none can add a row or hide text (T-02-48)', () => {
+  test('every title and line is cleaned, so none can add a row or hide text; none is cut (T-02-48, D-231)', () => {
     const bell = String.fromCharCode(7)
     const long = 'x'.repeat(300)
-    const rows = paneRows([{ key: 'scan', title: `Sc\nan${BIDI_OVERRIDE}`, lines: [`a\nb${bell}`, long] }])
-    expect(rows.map(row => row.text)).toEqual(['Scan', 'ab', reportText(long)])
+    const rows = paneRows([{ key: 'scan', title: `Sc\nan${BIDI_OVERRIDE}`, lines: [`a\nb${bell}`, long] }], null)
+    expect(rows.map(row => row.text)).toEqual(['Scan', 'ab', long])
     expect(rows.filter(row => CONTROL_OR_FORMAT.test(row.text) || row.text.includes('\n'))).toEqual([])
-    expect(Array.from(rows[2]?.text ?? '')).toHaveLength(240)
+  })
+
+  test('at 60 columns no row is longer than 60 code points; a 300-character line is several rows (D-231)', () => {
+    const line = Array.from({ length: 60 }, () => 'word').join(' ')
+    const title = `Conflict: ${'docs/'.repeat(14)}x.md`
+    const rows = paneRows([{ key: 'review', title, lines: [line, 'short'] }], 60)
+    expect(rows.every(row => Array.from(row.text).length <= 60)).toBe(true)
+    expect(rows.filter(row => !row.isTitle).map(row => row.text)).toEqual([...wrapLine(line, 60), 'short'])
+    expect(rows.filter(row => row.isTitle).map(row => row.text)).toEqual(wrapLine(title, 60))
+    expect([rows.filter(row => row.isTitle).length, rows.filter(row => !row.isTitle).length]).toEqual([3, 6])
+  })
+})
+
+describe('paneColumns (D-231)', () => {
+  test('the body columns are read only when they are a whole number of at least one', () => {
+    expect([paneColumns({ bodyColumns: 71 }), paneColumns({ bodyColumns: 1 })]).toEqual([71, 1])
+    const invalid: unknown[] = [{}, null, undefined, 'x', { bodyColumns: 0 }, { bodyColumns: -3 }, { bodyColumns: 1.5 }]
+    for (const props of [...invalid, { bodyColumns: '60' }, { bodyColumns: Number.POSITIVE_INFINITY }]) {
+      expect(paneColumns(props)).toBe(null)
+    }
   })
 })
 

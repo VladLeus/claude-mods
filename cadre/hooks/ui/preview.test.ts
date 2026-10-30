@@ -3,11 +3,13 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskContext, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
+import { wrapLine } from './pane'
 import {
   answersFromNotes,
   askRewrite,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
+  previewColumns,
   previewMarkdown,
   withDescribeOwn,
   withPreviews,
@@ -29,9 +31,37 @@ function longLines(tag: string, count: number): string[] {
   return Array.from({ length: count }, (_, at) => `${tag} ${at}`.padEnd(99, 'x'))
 }
 
+/** A line of 299 characters: 60 words of four letters, one space apart. */
+const WIDE_LINE = Array.from({ length: 60 }, () => 'word').join(' ')
+
+describe('previewColumns (D-231)', () => {
+  test('the preview box is the terminal columns less 38, as the spike measured it: 122 at 160, 72 at 110', () => {
+    expect([previewColumns(160), previewColumns(110), previewColumns(39)]).toEqual([122, 72, 1])
+  })
+
+  test('columns that leave no room, or are not a whole number, give none', () => {
+    for (const columns of [38, 10, 0, -1, 80.5, Number.NaN]) expect(previewColumns(columns)).toBe(null)
+  })
+})
+
 describe('previewMarkdown (D3)', () => {
   test('no blocks give no preview', () => {
     expect(previewMarkdown([])).toBe('')
+  })
+
+  test('each line wraps to the preview width, and with no width none is cut at 240 code points (D-231)', () => {
+    const rows = previewMarkdown([shownBlock('review', 'Review', [WIDE_LINE])], 40).split('\n')
+    expect(rows).toEqual(['**Review**', '```', ...wrapLine(WIDE_LINE, 40), '```'])
+    expect(rows.every(row => Array.from(row).length <= 40)).toBe(true)
+    expect(previewMarkdown([shownBlock('review', 'Review', [WIDE_LINE])]).split('\n')[2]).toBe(WIDE_LINE)
+  })
+
+  test('MAX_PREVIEW_CHARS still caps the whole preview once its lines are wrapped (D-231)', () => {
+    const lines = Array.from({ length: 40 }, () => WIDE_LINE.slice(0, 99))
+    const preview = previewMarkdown([shownBlock('review', 'Review', lines)], 30)
+    expect(preview.length).toBeLessThanOrEqual(MAX_PREVIEW_CHARS)
+    expect(preview.split('\n').at(-1)).toBe('…')
+    expect(preview.split('\n').every(row => Array.from(row).length <= 30)).toBe(true)
   })
 
   test('each block is its bold title and its lines in a fence, in the given order, a blank line between', () => {
@@ -361,6 +391,13 @@ describe('askRewrite (A1, A2, D-203)', () => {
       [preview, preview, preview],
       [preview, preview, preview],
     ])
+  })
+
+  test('each option previews its context wrapped to the width it is given (D-231)', () => {
+    const context: AskContext = { title: 'Wide', lines: [WIDE_LINE], kind: 'review' }
+    const preview = previewMarkdown([context], 40)
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, 40)?.questions)).toEqual([[preview, preview, preview]])
+    expect(preview.split('\n').slice(2, -1)).toEqual(wrapLine(WIDE_LINE, 40))
   })
 
   test('Topic i/n, Memory i/n and Git policy preview only their own context (G-02-16)', () => {

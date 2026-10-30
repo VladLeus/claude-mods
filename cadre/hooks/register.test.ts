@@ -32,6 +32,7 @@ import {
   templateRole,
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
+import { paneRows } from './ui/pane'
 import { OWN_ANSWER_HINT } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
@@ -1919,6 +1920,21 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     ])
   })
 
+  test("each option previews its context wrapped to the box: the command's columns less 38 (D-231)", async ($, on) => {
+    const log = newLog()
+    const line = Array.from({ length: 20 }, () => 'word').join(' ')
+    openAsCadre(on, PICK_QUESTION.question, { title: 'Wide', lines: [line], kind: 'review' })
+    fakeHost(on, initWorld(), log)
+    const presentation = { isFullscreen: false, columns: 80 }
+    await $.command.run({ command: 'cadre', args: 'init --dry-run', origin: { kind: 'composer' }, presentation })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    const [preview] = log.askPreviews.slice(before)[0] ?? []
+    const rows = typeof preview === 'string' ? preview.split('\n').slice(2, -1) : []
+    expect([rows.every(row => Array.from(row).length <= 42), rows.join(' '), rows.length]).toEqual([true, line, 3])
+  })
+
   test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
     openAsCadre(on, PICK_QUESTION.question)
@@ -2068,7 +2084,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 describe('the init pane draws the block of the question being asked (R1)', () => {
   /**
    * `init --dry-run` as the person types it at the prompt, with the origin and presentation the engine stamps on a run:
-   * the kit's types ask for both, and cadre reads neither.
+   * the kit's types ask for both; cadre reads only the presentation's columns, for the width of a preview (D-231).
    */
   const DRY_RUN: Parameters<Engine['command']['run']>[0] = {
     command: 'cadre',
@@ -2102,9 +2118,14 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     return { first: first?.text, rows: box?.children.length ?? 0 }
   }
 
-  /** What a drawing of only the pane's block of this key shows (R1): its title row, then one row per line. */
+  /**
+   * What a drawing of only the pane's block of this key shows (R1): its title row, then its lines, each wrapped to the
+   * 60 columns of the test's pane body (D-231).
+   */
   function blockDrawn(log: HostLog, key: PaneKey): Drawn {
-    return { first: PANE_TITLES[key], rows: 1 + paneLines(log, key).length }
+    const block = { key, title: PANE_TITLES[key], lines: paneLines(log, key) }
+
+    return { first: PANE_TITLES[key], rows: paneRows([block], INLINE_PANE.bodyColumns).length }
   }
 
   /**
@@ -2160,7 +2181,8 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, GIT_POLICY_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: { first: 'Git policy', rows: 4 }, header: 'Git policy' }])
+    // Its first policy line, 67 code points, takes two rows of the 60-column body (D-231).
+    expect(open).toEqual([{ drawn: { first: 'Git policy', rows: 5 }, header: 'Git policy' }])
   })
 
   test('the security question draws its own context, the missing plugins, not a block (D-203)', async ($, on) => {
@@ -2186,6 +2208,24 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     await $.command.run(DRY_RUN)
     // The last dialog's own clear, then the run's: a write that update tries again only adds another null.
     expect(log.headerWrites.slice(-2)).toEqual([null, null])
+  })
+
+  test('the pane wraps each row to the columns its body has, cutting none (D-231)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: { ...INLINE_PANE, bodyColumns: 40 } })
+    const box = await ui.find({ type: 'Box' })
+    await ui.unmount()
+    const texts = (box?.children ?? []).map(row => {
+      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
+
+      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
+    })
+    const lines = paneLines(log, 'review')
+    expect(texts.every(row => Array.from(row.join('')).length <= 40)).toBe(true)
+    expect(texts.length).toBe(paneRows([{ key: 'review', title: 'Review', lines }], 40).length)
+    expect(texts.length).toBeGreaterThan(1 + lines.length)
   })
 
   test('golden: the pane rows drawn inline after the run, each row its span texts (D-219)', async ($, on) => {
