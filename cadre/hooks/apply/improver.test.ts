@@ -339,6 +339,26 @@ describe('improver pass (G-02-1f)', () => {
     expect(disk.files[BE_BUILT_PATH]).toBe(BE_IMPROVED)
   })
 
+  test('a secret-like span of the diff is hidden in the block and context only; Accept keeps it (E1)', async () => {
+    const keyLine = 'Use API_KEY=sk-FAKE-SECRET-0123456789 on staging.'
+    const improved = BE_BUILT.replace('Run the tests before a commit.', keyLine)
+    const disk = builtDisk()
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: improved }]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const lines = [
+      '.cadre/be/CLAUDE.md: 1 line added, 1 removed',
+      '- Run the tests before a commit.',
+      '+ Use API_KEY=[hidden] on staging.',
+    ]
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver' }
+    expect([run.shown, run.specs.map(spec => spec.context)]).toEqual([
+      [{ key: 'improver', title: 'Improver changes', lines }],
+      [context],
+    ])
+    expect([outcome.accepted, disk.files[BE_BUILT_PATH]]).toEqual([new Map([[BE_BUILT_REPO_PATH, improved]]), improved])
+  })
+
   test('Keep original, typed in any case, gives the file back to be written as built; none is accepted', async () => {
     const disk = builtDisk()
     const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
