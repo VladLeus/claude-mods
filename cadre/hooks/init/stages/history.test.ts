@@ -1,11 +1,34 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { PortEntry } from '../../../types'
+import { proposeRoles } from '../../roles/propose'
 import type { HistoryScan } from '../../scan/history'
-import { DEFAULT_LOCATIONS, entry, memIo, memWorld } from '../../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
+  emptySetupScan,
+  entry,
+  memIo,
+  memWorld,
+  repoScan,
+  stateAt,
+} from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, historyStep } from './history'
+import type { Draft } from '../draft'
+import { historyHints } from '../flow'
+import { nextStage } from '../machine'
+import type { Answer } from '../state'
+import {
+  HISTORY_DISMISSED_REASON,
+  HISTORY_OPTIONS,
+  historyLines,
+  historyQuestion,
+  historyStage,
+  historyStep,
+  NO_HISTORY_NOTE,
+  UNLISTED_HISTORY_NOTE,
+} from './history'
 
 /** The session folder of the fixture repo /repo for the fixture user /home/u. */
 const DIR = '/home/u/.claude/projects/-repo'
@@ -141,5 +164,83 @@ describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
     const result = await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '/repo/.claude-alt' }, SCAN_CONTEXT)
     expect([run.listed, run.reads, run.asked, run.logged]).toEqual([[dir], [`${dir}/a.jsonl`], [historyAsked(1)], []])
     expect(result).toEqual({ kind: 'accepted', value: scanned })
+  })
+})
+
+/**
+ * What the history stage is entered with: the fixture session, a scan that found nothing (SCAN_CONTEXT) and the parts
+ * of the base the role steps after it read.
+ */
+const HISTORY_DRAFT: Partial<Draft> = {
+  locations: DEFAULT_LOCATIONS,
+  gathered: { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() },
+  readUserMcp: false,
+  installed: ['none'],
+  choice: { kind: 'none' },
+  proposal: proposeRoles(repoScan()),
+}
+
+/** The listing of the fixture session folder with one transcript, as the list-sessions io call gives it. */
+const ONE_SESSION: readonly PortEntry[] = [transcript('a.jsonl', 1)]
+
+/** The answer to the list-sessions io call: these sessions, or null when the folder cannot be listed. */
+function listed(sessions: readonly PortEntry[] | null): Answer {
+  const result = sessions === null ? null : { sessions, total: sessions.length }
+
+  return { kind: 'io', result: { id: 'list-sessions', result } }
+}
+
+/** The scan of one EXAMPLE transcript, as the scan-history io call gives it. */
+const EXAMPLE_SCAN: HistoryScan = {
+  counts: [
+    { name: 'cadre', count: 1 },
+    { name: 'gsd-plan-phase', count: 1 },
+    { name: 'superpowers:brainstorming', count: 1 },
+  ],
+  scanned: 1,
+  total: 1,
+  skippedLarge: 0,
+  skippedUnknown: 0,
+  isPartial: false,
+}
+
+describe('the history stage (D-230)', () => {
+  test('historyStage lists the session folder as an io effect, then asks with the scan context line', () => {
+    const state = historyStage.enter(stateAt('history', HISTORY_DRAFT))
+    expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR } })
+    expect(state.openQuestion).toBeNull()
+    const asking = nextStage(state, listed(ONE_SESSION))
+    const ask = { question: historyAsked(1), spec: { options: HISTORY_OPTIONS, header: 'History' } }
+    expect(asking.effect).toEqual({ kind: 'ask', ...ask })
+    expect(asking.openQuestion).toEqual(ask)
+  })
+
+  test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {
+    const noUser = { ...HISTORY_DRAFT, locations: { ...DEFAULT_LOCATIONS, home: null } }
+    const skipped = historyStage.enter(stateAt('history', noUser))
+    expect([skipped.sub, skipped.outputs, skipped.draft.hints]).toEqual([
+      { kind: 'done' },
+      [{ kind: 'log', text: NO_HISTORY_NOTE }],
+      new Map(),
+    ])
+    const state = historyStage.enter(stateAt('history', HISTORY_DRAFT))
+    const cases: readonly (readonly [readonly PortEntry[] | null, string])[] = [
+      [null, UNLISTED_HISTORY_NOTE],
+      [[], NO_HISTORY_NOTE],
+    ]
+    for (const [sessions, note] of cases) {
+      const next = nextStage(state, listed(sessions))
+      expect([next.stage, next.outputs, next.draft.hints]).toEqual(['team', [{ kind: 'log', text: note }], new Map()])
+    }
+  })
+
+  test('Yes scans the listed sessions as an io effect, shows the history block and keeps the names as hints', () => {
+    const asking = nextStage(historyStage.enter(stateAt('history', HISTORY_DRAFT)), listed(ONE_SESSION))
+    const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
+    expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
+    const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
+    expect(done.stage).toBe('team')
+    expect(done.outputs).toEqual([{ kind: 'show', block: { key: 'history', lines: historyLines(EXAMPLE_SCAN) } }])
+    expect(done.draft.hints).toEqual(historyHints(EXAMPLE_SCAN))
   })
 })

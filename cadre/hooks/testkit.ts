@@ -57,7 +57,7 @@ import { CHECKOUT_ARGV } from './git/checkout'
 import type { Draft } from './init/draft'
 import { nextStage } from './init/machine'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from './init/stages/instructions'
-import type { Answer, InitStage, InitState, Output } from './init/state'
+import type { Answer, InitStage, InitState, IoCall, Output } from './init/state'
 import { lintRuntimeDenyPattern } from './launch/deny'
 import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
@@ -1599,19 +1599,23 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
   }
 }
 
-/** What a drive through the init machine gave: the state it stopped at, each question and spec asked, every output. */
+/**
+ * What a drive through the init machine gave: the state it stopped at, each question and spec asked, every output, and
+ * every host operation the stage set, the one it stopped at included.
+ */
 export type Driven = {
   readonly state: InitState
   readonly asked: string[]
   readonly specs: AskSpec[]
   readonly outputs: Output[]
+  readonly calls: IoCall[]
 }
 
 /**
  * Drives the init machine through nextStage from `state`, a stage already entered, as init/run would (D-230), until
  * the run leaves that stage, ends, or has an effect with no scripted answer left: each ask gets the next of `answers`
  * (null, or none left, is a dismissal, as memIo rejects), and any other effect the next of `results`. It records each
- * question and spec asked and every output, in order.
+ * question and spec asked, every output and every host operation, in order.
  */
 export function driven(
   state: InitState,
@@ -1621,6 +1625,7 @@ export function driven(
   const asked: string[] = []
   const specs: AskSpec[] = []
   const outputs: Output[] = []
+  const calls: IoCall[] = []
   const stops = ['done', 'cancelled', 'end', 'failed']
   let current = state
   let nextAnswer = 0
@@ -1629,7 +1634,7 @@ export function driven(
     outputs.push(...current.outputs)
     const { effect } = current
     const isStopped = current.stage !== state.stage || effect.kind === 'end' || stops.includes(current.sub.kind)
-    if (isStopped) return { state: current, asked, specs, outputs }
+    if (isStopped) return { state: current, asked, specs, outputs, calls }
     if (effect.kind === 'ask') {
       asked.push(effect.question)
       specs.push(effect.spec)
@@ -1638,8 +1643,9 @@ export function driven(
       current = nextStage({ ...current, outputs: [] }, { kind: 'answer', text })
       continue
     }
+    if (effect.kind === 'io') calls.push(effect.call)
     const result = results[nextResult]
-    if (result === undefined) return { state: current, asked, specs, outputs }
+    if (result === undefined) return { state: current, asked, specs, outputs, calls }
     nextResult += 1
     current = nextStage({ ...current, outputs: [] }, result)
   }
