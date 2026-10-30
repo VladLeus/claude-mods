@@ -4,7 +4,7 @@ import type { RoleSpec } from '../../types'
 import { memIo, memWorld, templateRole } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
-import { handoutStep } from './handout'
+import { handoutAnswer, handoutEnter, handoutStep } from './handout'
 import type { HandoutEntry, HandoutItem, HandoutOutcome } from './handout'
 
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
@@ -204,5 +204,30 @@ describe('handoutStep one by one', () => {
     const run = memIo(memWorld({}), ['Go part by part'])
     expect(givenOf(await handoutStep(run.io, ENTRY, [], ROLES, DISMISSED))).toEqual([])
     expect(run.asked).toEqual([ENTRY_ASKED])
+  })
+})
+
+describe('the hand-out cursor (D-230)', () => {
+  test('handoutEnter asks the entry question with its context line, the three answers in order and its chip', () => {
+    const first = handoutEnter(ENTRY, ITEMS, ROLES, DISMISSED)
+    expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
+      ENTRY_ASKED,
+      { options: ['Accept recommendations', 'Go part by part', 'Whole files'], header: 'Instructions' },
+    ])
+  })
+
+  test('Go part by part asks each item in turn, and the last answer ends it with the roles of every item', () => {
+    const entry = handoutEnter(ENTRY, ITEMS, ROLES, DISMISSED)
+    if (entry.kind !== 'ask') throw new Error('no entry question')
+    const first = handoutAnswer(entry.cursor, 'Go part by part')
+    if (first.kind !== 'ask') throw new Error('no first item question')
+    expect([first.question, first.spec]).toEqual([itemAsked(ITEMS[0]), { options: ['Yes', 'No'], header: 'Topic 1/2' }])
+    const second = handoutAnswer(first.cursor, 'Yes')
+    if (second.kind !== 'ask') throw new Error('no second item question')
+    const done = handoutAnswer(second.cursor, 'tl')
+    expect(done.kind === 'done' && done.outcome.kind === 'given' ? [...done.outcome.given.entries()] : done).toEqual([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+    ])
   })
 })
