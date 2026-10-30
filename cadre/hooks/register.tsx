@@ -19,8 +19,8 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
-import { panePlacement, paneRows, paneSpans, paneView } from './ui/pane'
-import { answersFromNotes, askRewrite, previewBlockFor } from './ui/preview'
+import { panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './ui/pane'
+import { answersFromNotes, askRewrite } from './ui/preview'
 
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
@@ -32,7 +32,7 @@ const NO_BLOCKS: ShownBlock[] = []
 const initPane = atom({ plugin: 'cadre', key: 'initPane' }, NO_BLOCKS)
 /**
  * The question cadre has open now (D-203): set by the init port's ask before the dialog and cleared after it; the pane
- * draws the block of its header, the newest block when null (R1).
+ * draws its own context, the newest block when it has none or none is open (questionPaneBlocks).
  */
 const openQuestion = atom({ plugin: 'cadre', key: 'openQuestion' }, null)
 /**
@@ -351,19 +351,19 @@ export const register: Register = on => {
     }
   })
 
-  // The cadre init side pane (D-133): one block, the one of the header of the question cadre has open now (R1, D-203,
-  // previewBlockFor), the newest block between questions, in the rows of paneRows, coloured by paneSpans (D1). A
-  // terminal render records where the pane is seated (D3).
+  // The cadre init side pane (D-133): one block, the own context of the question cadre has open now (D-203,
+  // questionPaneBlocks), else the newest block, in the rows of paneRows, coloured by paneSpans (D1). A terminal render
+  // records where the pane is seated (D3).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
     const blocks = await read($, initPane)
-    if (blocks.length === 0) return <Text>cadre init has not shown anything yet.</Text>
-    const open = await read($, openQuestion)
+    const shown = questionPaneBlocks(await read($, openQuestion), blocks)
+    if (shown.length === 0) return <Text>cadre init has not shown anything yet.</Text>
 
     return (
       <Box flexDirection="column">
-        {paneRows(previewBlockFor(open === null ? null : open.header, blocks)).map((row, at) => (
+        {paneRows(shown).map((row, at) => (
           <Text key={at}>
             {row.text === ''
               ? ' '

@@ -1,8 +1,9 @@
 /**
- * The cadre init side pane, a layer 8 module: the pane's view and rows (D-133), the runs each row is drawn in (D1) and
- * where the terminal seated the pane (D3). It imports core and the types, so register's Pane hook reads it here.
+ * The cadre init side pane, a layer 8 module: the pane's view and rows (D-133), the one block it draws, the open
+ * question's own context or the newest block between questions (D-203), the runs each row is drawn in (D1) and where
+ * the terminal seated the pane (D3). It imports core and the types, so register's Pane hook reads it here.
  */
-import type { Enforcement, FileOpKind, ShownBlock } from '../../types'
+import type { ContextKind, Enforcement, FileOpKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { reportText } from '../core/text'
 
@@ -25,6 +26,34 @@ export function paneView(blocks: readonly ShownBlock[], block: ShownBlock): Show
   if (old === undefined) return [block, ...others]
 
   return [{ ...block, lines: [...old.lines, ...block.lines] }, ...others]
+}
+
+/** The pane block key of each context kind that names one (D-203); every other kind draws as notes. */
+const CONTEXT_KEYS: Readonly<Partial<Record<ContextKind, PaneKey>>> = Object.freeze({
+  scan: 'scan',
+  history: 'history',
+  roles: 'roles',
+  review: 'review',
+  env: 'env',
+  instructions: 'instructions',
+  skills: 'skills',
+  improver: 'improver',
+})
+
+/**
+ * The one block the side pane draws (D-203): while a question cadre asked is open with its own context, that context
+ * alone, as a block of its title and lines whose key is the pane key of its kind, or `notes` for a kind with none;
+ * otherwise, between questions or for a question with no context (a hunk), the newest block shown, as before; none
+ * when nothing was shown.
+ */
+export function questionPaneBlocks(open: OpenQuestion | null, blocks: readonly ShownBlock[]): ShownBlock[] {
+  const context = open?.context ?? null
+  if (context !== null) {
+    return [{ key: CONTEXT_KEYS[context.kind] ?? 'notes', title: context.title, lines: context.lines }]
+  }
+  const [newest] = blocks
+
+  return newest === undefined ? [] : [newest]
 }
 
 /**
