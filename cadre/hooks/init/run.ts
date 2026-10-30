@@ -91,6 +91,20 @@ export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false;
   readonly surface?: Surface
 }
 
+/** The status line the TUI default shows while the repo scans run (D-232). */
+export const SCAN_PROGRESS = 'cadre: scanning the repo…'
+
+/** The status line the TUI default shows while the history scan reads the session transcripts (D-232). */
+export const HISTORY_PROGRESS = 'cadre: reading session history…'
+
+/** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
+export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
+  'describe-roles': 'cadre: reading your structure…',
+  skills: 'cadre: recommending skills…',
+  topics: 'cadre: grouping instructions…',
+  parts: 'cadre: recommending instruction parts…',
+})
+
 /**
  * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
  * `.cadre/<id>/CLAUDE.md` is desired, when its role.json as the disk holds it is text parseRoleJson takes, with the
@@ -340,13 +354,14 @@ export async function showOutput(io: InitIo, output: Output): Promise<void> {
  * tool list read once more after them for the MCP server questions' contexts (D-211), the listing of the
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
  * the review's plan (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
- * hold, so it gives none there.
+ * hold, so it gives none there. The scans and the history scan first set their status line (D-232).
  */
 async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promise<IoResult> {
   switch (call.id) {
     case 'guard':
       return { id: 'guard', result: await initGuard(io, 'init') }
     case 'scan': {
+      await io.progress(SCAN_PROGRESS)
       const result = await gatherScans(io, call.locations, call.readUserMcp)
 
       return { id: 'scan', result, tools: await io.tools() }
@@ -354,6 +369,8 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
     case 'list-sessions':
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':
+      await io.progress(HISTORY_PROGRESS)
+
       return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
     case 'read-repo-file':
       return { id: 'read-repo-file', result: await readRepoFile(io, call.root, call.path, call.maxBytes) }
@@ -384,6 +401,7 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
 async function recommendedSkillRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'skills' }>,
+  progressText: string,
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const { roles, skills, counts } = call
   const skillIds = ownSkillIds(skills)
@@ -396,7 +414,7 @@ async function recommendedSkillRoles(
   }
   const prompt = (errors: readonly string[]): string => skillsPrompt(roles, skills, counts, errors)
 
-  return checkedCompletion(io, SKILLS_SYSTEM, prompt, parse, () => new Map())
+  return checkedCompletion(io, progressText, SKILLS_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**
@@ -405,7 +423,11 @@ async function recommendedSkillRoles(
  * (checkedCompletion), and then each file is one topic (fallbackTopics). The model has no tools (D-83), and only its
  * checked topics are kept.
  */
-async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonly InstructionTopic[]> {
+async function groupedTopics(
+  io: InitIo,
+  scan: InstructionScan,
+  progressText: string,
+): Promise<readonly InstructionTopic[]> {
   const partIds = scan.parts.map(part => part.id)
   const parse = (reply: string): Checked<readonly InstructionTopic[]> => {
     const parsed = parseTopics(reply, partIds)
@@ -415,7 +437,7 @@ async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonl
   }
   const prompt = (errors: readonly string[]): string => topicsPrompt(scan.parts, errors)
 
-  return checkedCompletion(io, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
+  return checkedCompletion(io, progressText, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
 }
 
 /**
@@ -427,6 +449,7 @@ async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonl
 async function recommendedRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'parts' }>,
+  progressText: string,
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const { roles, topics, memories } = call
   const topicIds = topics.map(topic => topic.id)
@@ -440,25 +463,26 @@ async function recommendedRoles(
   }
   const prompt = (errors: readonly string[]): string => recommendPrompt(roles, topics, memories, errors)
 
-  return checkedCompletion(io, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+  return checkedCompletion(io, progressText, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**
  * Runs one model call of a stage (D-230) as today's step did, retrying through checkedCompletion and falling back as
  * it always did: the roles of a described structure (proposeFromText), the roles recommended for each own skill
  * (recommendedSkillRoles), the topics of an instruction read (groupedTopics), or the roles recommended for each topic
- * and memory (recommendedRoles).
+ * and memory (recommendedRoles), each with the status line of its ModelCall id (MODEL_PROGRESS, D-232).
  */
 async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
+  const progressText = MODEL_PROGRESS[call.id]
   switch (call.id) {
     case 'describe-roles':
-      return { id: 'describe-roles', result: await proposeFromText(io, call.text) }
+      return { id: 'describe-roles', result: await proposeFromText(io, call.text, progressText) }
     case 'skills':
-      return { id: 'skills', result: await recommendedSkillRoles(io, call) }
+      return { id: 'skills', result: await recommendedSkillRoles(io, call, progressText) }
     case 'topics':
-      return { id: 'topics', result: await groupedTopics(io, call.scan) }
+      return { id: 'topics', result: await groupedTopics(io, call.scan, progressText) }
     case 'parts':
-      return { id: 'parts', result: await recommendedRoles(io, call) }
+      return { id: 'parts', result: await recommendedRoles(io, call, progressText) }
     default: {
       const unreachable: never = call
       return unreachable

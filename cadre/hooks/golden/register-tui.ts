@@ -6,13 +6,37 @@
  * log line in the spec) and pasted as printed. Data only: register.test.ts imports it.
  */
 
-/** What the TUI-default dry run did: each pane it opened (none), each line it logged and its reply, split on '\n'. */
+/**
+ * What the TUI-default dry run did: each pane it opened (none), each status line it set, null for a clear (D-232),
+ * each line it logged and its reply, split on '\n'.
+ */
 export const GOLDEN_TUI: {
   readonly opens: readonly string[]
+  readonly statuses: readonly (string | null)[]
   readonly logs: readonly string[]
   readonly reply: readonly string[]
 } = {
   "opens": [],
+  "statuses": [
+    null,
+    "cadre: scanning the repo…",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "cadre: recommending skills…",
+    "cadre: recommending skills…",
+    "cadre: recommending skills…",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
   "logs": [
     "No session history for this repo."
   ],

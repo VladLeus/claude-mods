@@ -19,12 +19,14 @@ export type Checked<T> =
   | { readonly kind: 'invalid'; readonly errors: readonly string[] }
 
 /**
- * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each reply goes through
- * `parse`, and a reply it cannot take, or no text at all (NO_TEXT_ERROR), is sent back through `prompt` with its exact
- * errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
+ * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each attempt first sets
+ * `progressText` as the status line (InitIo.progress, D-232), then each reply goes through `parse`, and a reply it
+ * cannot take, or no text at all (NO_TEXT_ERROR), is sent back through `prompt` with its exact errors,
+ * MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
  */
 export async function checkedCompletion<T>(
   io: InitIo,
+  progressText: string,
   system: string,
   prompt: (errors: readonly string[]) => string,
   parse: (reply: string) => Checked<T>,
@@ -32,6 +34,7 @@ export async function checkedCompletion<T>(
 ): Promise<T> {
   let errors: readonly string[] = []
   for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
+    await io.progress(progressText)
     const reply = await io.complete(prompt(errors), system)
     const checked = reply === null ? null : parse(reply)
     if (checked?.kind === 'ok') return checked.value

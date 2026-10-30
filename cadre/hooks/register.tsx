@@ -144,7 +144,8 @@ type PaneRun = {
  * opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
  * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show
  * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On the
- * TUI default `show` neither writes the pane's state nor opens it, at any time of the run (D-208).
+ * TUI default `show` neither writes the pane's state nor opens it, at any time of the run (D-208); there `progress`
+ * sets the one status line (`$.ui.status`) and `ask` clears it before each dialog (D-232).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -160,6 +161,8 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
       if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
+      // The TUI default's status line is cleared as each question opens (D-232).
+      if (pane.surface === 'tui-default') $.ui.status(undefined)
       try {
         const dialog = {
           options,
@@ -181,8 +184,10 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       lastPlacement = null
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
-    // The status line comes with the TUI default (02.1-30, D-232); until then a progress line shows nowhere.
-    progress: async () => undefined,
+    // Progress is one status line on the TUI default only; a pane surface shows none (D-232).
+    progress: async text => {
+      if (pane.surface === 'tui-default') $.ui.status(text ?? undefined)
+    },
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
       if (model === null) return null

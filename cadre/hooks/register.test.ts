@@ -2345,11 +2345,11 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.statuses).toEqual([])
   })
 
-  test('golden: the TUI-default init dry run, its panes, logs and reply (D-208, D-219)', async ($, on) => {
+  test('golden: the TUI-default init dry run: panes, statuses, logs, reply (D-208, D-219)', async ($, on) => {
     const log = newLog()
     fakeHost(on, skillWorld(), log)
     const out = await $.command.run(TUI_RUN)
-    const golden = { opens: log.panes, logs: log.logs, reply: out.text.split('\n') }
+    const golden = { opens: log.panes, statuses: log.statuses, logs: log.logs, reply: out.text.split('\n') }
     expect(golden).toEqual(GOLDEN_TUI)
   })
 })

@@ -251,10 +251,14 @@ function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, 
   }
 }
 
+/** The status line the TUI default shows while regen asks the model about the changed parts (D-232). */
+const REGEN_PROGRESS = 'cadre: checking changed parts…'
+
 /**
  * The recommendation for each item a regen asks about, by `I<n>` (G-02-1f Regen, D-142): one model call with the role
- * and the items (regenRecommendPrompt, REGEN_RECOMMEND_SYSTEM). A reply parseRegenRecommendation cannot take is sent
- * back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no item is recommended.
+ * and the items (regenRecommendPrompt, REGEN_RECOMMEND_SYSTEM), REGEN_PROGRESS on the status line (D-232). A reply
+ * parseRegenRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
+ * (checkedCompletion), and then no item is recommended.
  */
 async function regenRecommended(
   io: InitIo,
@@ -274,7 +278,7 @@ async function regenRecommended(
   }
   const prompt = (errors: readonly string[]): string => regenRecommendPrompt(role, items, errors)
 
-  return checkedCompletion(io, REGEN_RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+  return checkedCompletion(io, REGEN_PROGRESS, REGEN_RECOMMEND_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**
