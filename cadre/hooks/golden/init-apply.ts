@@ -121,10 +121,9 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
           ],
           "header": "Review",
           "options": [
+            "Next page",
             "Confirm",
-            "Change roles",
-            "Change git policy",
-            "Change launcher start"
+            "Change something…"
           ],
           "multiSelect": false
         }
@@ -758,10 +757,9 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
           ],
           "header": "Review",
           "options": [
+            "Next page",
             "Confirm",
-            "Change roles",
-            "Change git policy",
-            "Change launcher start"
+            "Change something…"
           ],
           "multiSelect": false
         }

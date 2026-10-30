@@ -1,12 +1,13 @@
 /**
- * The review stage of init (D-43, D-105, D-133, D-136, D-230, A1, A2, A3), a layer 10 module: the review question with
- * its context line of the plan, the git policy and the launcher start, and its typed-item hint; its buttons and words
- * (parseReviewItem); the review block the side pane shows before it (reviewLines: the roles, each scope card, the
- * plan, the policy and start, the instructions per role, the private files and the improver line); and reviewStage,
- * the pure stage that has the draft planned, shows it, asks, goes back to one item's stage until Confirm, and then
- * replies with the plan on a --dry-run or has it applied. Pure: it gives states and never performs an effect, imports
- * apply, core, generate, plan, roles, scan, scope, team, ui, init/draft, init/initapply, init/initplan, init/replies,
- * init/state and the launch and policy stages, and never imports init/machine or init/run.
+ * The review stage of init (D-43, D-105, D-133, D-136, D-230, D-233, A1, A2, A3), a layer 10 module: the review
+ * question with its context line of the plan, the git policy and the launcher start, and its typed-item hint, asked
+ * page by page on every surface; its options and words (parseReviewItem); the review block the side pane shows before
+ * it (reviewLines: the roles, each scope card, the plan, the policy and start, the instructions per role, the private
+ * files and the improver line); and reviewStage, the pure stage that has the draft planned, shows it, asks, goes back
+ * to one item's stage until Confirm, and then replies with the plan on a --dry-run or has it applied. Pure: it gives
+ * states and never performs an effect, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft,
+ * init/initapply, init/initplan, init/replies, init/state and the launch and policy stages, and never imports
+ * init/machine or init/run.
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
 import { setupAfterInstalls } from '../../apply/installs'
@@ -25,6 +26,7 @@ import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { scanWarningLines } from '../../ui/blocks/scan'
+import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult, Reviewed } from '../draft'
@@ -89,19 +91,25 @@ type ReviewChoice = Exclude<PageOption, 'change'>
 const CONFIRM_LABEL = 'Confirm'
 
 /**
- * The paged review's own options (D-233, ASKED #4, #23), in the order a page shows them, one label table for
- * labelled(): Next page while a later page exists, Previous page past the first, Confirm, and one typed choice whose
- * item word goes in a note.
+ * The label of the review's typed choice (D-233, ASKED #4): the item to change is named in a note. On a pane surface
+ * register maps that note to the answer for the open cadre question that offers it (ASKED #24).
+ */
+export const CHANGE_SOMETHING_LABEL = 'Change something…'
+
+/**
+ * The review's own options on every surface (D-233, ASKED #4, #19, #23), in the order a page shows them, one label
+ * table for labelled(): Next page while a later page exists, Previous page past the first, Confirm, and one typed
+ * choice whose item word goes in a note.
  */
 const REVIEW_PAGE_CHOICES: readonly Labelled<PageOption>[] = Object.freeze([
   { label: 'Next page', value: 'next' },
   { label: 'Previous page', value: 'previous' },
   { label: CONFIRM_LABEL, value: 'confirm' },
-  { label: 'Change something…', value: 'change' },
+  { label: CHANGE_SOMETHING_LABEL, value: 'change' },
 ])
 
-/** The item words of the paged review as its refusals list them (D-233). */
-const REVIEW_ITEM_WORDS = 'roles, git policy, launcher start, duration, model, assignments, memory, env, hunks'
+/** The item words of the paged review as its refusals list them, after the page's options (D-233). */
+const REVIEW_ITEM_WORDS = 'roles, git policy, launcher start, or duration, model, assignments, memory, env, hunks'
 
 /**
  * The first line of the paged review asked again after Change something… with no item named (ASKED #4, DECIDED #22):
@@ -111,18 +119,17 @@ const CHANGE_REFUSAL =
   'Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, assignments, ' +
   'memory, env or hunks.'
 
-/** Each review button with what it picks, in the order the dialog shows them (D-43, A2). */
-const REVIEW_CHOICES: readonly Labelled<ReviewItem>[] = Object.freeze([
-  { label: 'Confirm', value: 'confirm' },
-  { label: 'Change roles', value: 'roles' },
-  { label: 'Change git policy', value: 'policy' },
-  { label: 'Change launcher start', value: 'launch' },
-])
+/**
+ * Every option a page of the review may show, in their order (D-233, ASKED #23): Next page, Previous page, Confirm and
+ * Change something…, on every surface; the former Confirm / Change roles / Change git policy / Change launcher start
+ * buttons are shown on none.
+ */
+export const REVIEW_OPTIONS: readonly string[] = Object.freeze(REVIEW_PAGE_CHOICES.map(entry => entry.label))
 
-/** The review buttons: Confirm first, then the three items that have a button of their own (D-43, A2). */
-export const REVIEW_OPTIONS: readonly string[] = Object.freeze(REVIEW_CHOICES.map(entry => entry.label))
-
-/** Each item word a person may type under "Other", with the item it goes back to; mcp and skills mean assignments. */
+/**
+ * Each item word a person may type, under "Other" or in a note, with the item it goes back to; mcp and skills mean
+ * assignments, and the labels of the former buttons still read as their items (D-233).
+ */
 const REVIEW_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
   { label: 'roles', value: 'roles' },
   { label: 'git policy', value: 'policy' },
@@ -135,14 +142,20 @@ const REVIEW_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
   { label: 'memory', value: 'memory' },
   { label: 'env', value: 'env' },
   { label: 'hunks', value: 'hunks' },
+  { label: 'Change roles', value: 'roles' },
+  { label: 'Change git policy', value: 'policy' },
+  { label: 'Change launcher start', value: 'launch' },
 ])
 
 /**
- * The item an answer to the review question picks, else null, so it is asked again: a button label or an item word,
- * trimmed and in any case (D-43). Any other answer, a sentence around a word included, is no choice.
+ * The item an answer to the review question picks, else null, so it is asked again: Confirm only as its option gives
+ * it, exactly (T-02.1-78), so a typed confirm in any case is no choice, or an item word, trimmed and in any case (D-43,
+ * D-233). Any other answer, a sentence around a word included, is no choice.
  */
 export function parseReviewItem(answer: string): ReviewItem | null {
-  return labelled(REVIEW_CHOICES, answer) ?? labelled(REVIEW_WORDS, answer)
+  if (answer === CONFIRM_LABEL) return 'confirm'
+
+  return labelled(REVIEW_WORDS, answer)
 }
 
 /**
@@ -152,11 +165,11 @@ export function parseReviewItem(answer: string): ReviewItem | null {
 export const MAX_REVIEW_ROUNDS = 10
 
 /**
- * The rows a page of the review fills on a surface that pages it (D-233): the TUI default's preview rows; null for a
- * surface whose review is not paged yet, which asks the whole review with its buttons.
+ * The rows a page of the review fills on the run's surface (D-233, ASKED #19): the TUI default's preview rows, else
+ * the pane's page rows.
  */
-function pageRows(surface: Surface): number | null {
-  return surface === 'tui-default' ? PREVIEW_ROWS : null
+function pageRows(surface: Surface): number {
+  return surface === 'tui-default' ? PREVIEW_ROWS : PANE_PAGE_ROWS
 }
 
 /** The review lines in pages of `rows - 1` lines each (D-233), the page title on the row left; one page at least. */
@@ -182,24 +195,19 @@ function pageChoices(page: number, count: number): Labelled<PageOption>[] {
 
 /**
  * What an answer to a page of the review picks (D-233, T-02.1-78), else null, so it is asked again: a move to the next
- * or previous page the page offers, an item word or a button label (parseReviewItem), and Confirm only as its own
- * option gives it, so a typed confirm in any case is no choice. Change something… with no item is no choice either.
+ * or previous page the page offers, or an item as parseReviewItem reads it, Confirm only as its own option gives it.
+ * Change something… with no item is no choice.
  */
 function pageChoice(choices: readonly Labelled<PageOption>[], answer: string): ReviewChoice | null {
   const choice = labelled(choices, answer)
   if (choice === 'next' || choice === 'previous') return choice
   if (choice === 'change') return null
-  const item = parseReviewItem(answer)
-  if (item !== 'confirm') return item
 
-  return answer === CONFIRM_LABEL ? 'confirm' : null
+  return parseReviewItem(answer)
 }
 
 /** Why init cancels when the review question is dismissed (A1, D-45); unread answers give NO_USABLE_ANSWER_REASON. */
 export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not answered.'
-
-/** What the review question takes, as its refusal lists it: a button or an item word (D-43, D-136). */
-const REVIEW_ACCEPTS = `${quotedLabels(REVIEW_OPTIONS)}, or duration, model, assignments, memory, env, hunks`
 
 /** Why init cancels once the review question was asked MAX_REVIEW_ROUNDS times without Confirm (A1). */
 export const REVIEW_ROUNDS_REASON =
@@ -339,25 +347,7 @@ function reviewPlanOf(draft: Draft): {
 }
 
 /**
- * The review question as the stage asks it (D-43, D-136): reviewQuestion with the context line of the plan just shown,
- * cleaned as a report cell (reviewContextLine), the four buttons with the Review chip and the review block it is asked
- * about as its own context (reviewLines, reviewContext, D-236), parseReviewItem, which takes a typed item word, so it
- * takes a typed answer (D-234), what its refusal lists, and the reason a dismissal cancels with.
- */
-function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly dismissedReason: string } {
-  const context = reviewContext(reviewLines(draft, reviewPlanOf(draft).scopes, plan))
-
-  return {
-    question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
-    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review, context, acceptsTyped: true },
-    parse: parseReviewItem,
-    accepts: REVIEW_ACCEPTS,
-    dismissedReason: REVIEW_DISMISSED_REASON,
-  }
-}
-
-/**
- * Page `page` of the review as the stage asks it on a surface that pages it (D-233, ASKED #4, D-234): the review
+ * Page `page` of the review as the stage asks it on every surface (D-233, ASKED #4, #19, #23, D-234): the review
  * question with the context line of the plan just shown, the page's options (pageChoices) with the Review chip, and
  * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
  * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). An answer
@@ -375,7 +365,7 @@ function pagedAsk(
   const choices = pageChoices(at, pages.length)
   const labels = choices.map(choice => choice.label)
   const title = pages.length === 1 ? 'Review' : `Review (page ${at + 1} of ${pages.length})`
-  const accepts = `${quotedLabels(labels)}, or ${REVIEW_ITEM_WORDS}`
+  const accepts = `${quotedLabels(labels)}, ${REVIEW_ITEM_WORDS}`
 
   return {
     question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
@@ -387,16 +377,14 @@ function pagedAsk(
   }
 }
 
-/** The review ask of page `page` on the state's surface (D-233): paged where the surface pages it, else whole. */
+/** The review ask of page `page`, paged to the rows of the state's surface (D-233, ASKED #19). */
 function reviewAskOf(
   state: InitState,
   draft: Draft,
   plan: Plan,
   page: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  const rows = pageRows(state.surface)
-
-  return rows === null ? reviewAsk(draft, plan) : pagedAsk(draft, plan, page, rows)
+  return pagedAsk(draft, plan, page, pageRows(state.surface))
 }
 
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */

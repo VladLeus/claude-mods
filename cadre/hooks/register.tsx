@@ -22,6 +22,7 @@ import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
 import { runInit } from './init/run'
 import type { InitOptions } from './init/run'
+import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
 import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collect'
@@ -455,10 +456,11 @@ export const register: Register = on => {
   // (D3, D-203), wrapped to the preview box (previewColumns, D-231) and on the TUI default fitted to its rows
   // (PREVIEW_ROWS, D-228), and, when it takes a typed answer (D-234), a Describe your own option or the hint line
   // (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with no
-  // context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. Any other call, a deny,
-  // an error and a result of another shape pass through unchanged. Apart from the read of the open question, the hook
-  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
-  // (C1).
+  // context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. On a pane surface that
+  // previews nothing, the dialog of the open question that offers Change something… (the review, D-233) is passed
+  // through as asked and a note typed in it becomes its answer (ASKED #24). Any other call, a deny, an error and a
+  // result of another shape pass through unchanged. Apart from the read of the open question, the hook has no .catch
+  // on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
@@ -466,18 +468,25 @@ export const register: Register = on => {
     const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
     if (open === null || asked !== open.question) return await next(e)
     const isPreviewed = runSurface === 'tui-default' || (runSurface === 'pane' && lastPlacement === 'inline')
-    if (!isPreviewed) return await next(e)
     const rows = runSurface === 'tui-default' ? PREVIEW_ROWS : null
-    const rewrite = askRewrite(raw, open.context, open.acceptsTyped, previewColumns(presentationColumns), rows)
-    if (rewrite === null) return await next(e)
+    const columns = previewColumns(presentationColumns)
+    const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, columns, rows) : null
+    // Elsewhere on a pane surface the dialog is passed through as asked, and only for the open question that offers
+    // Change something… a note typed in it becomes the answer, so the review's item word arrives (ASKED #24).
+    const options: unknown = isObject(first) ? first.options : null
+    const isChange = (option: unknown): boolean => isObject(option) && option.label === CHANGE_SOMETHING_LABEL
+    const offersChange = Array.isArray(options) && options.some(isChange)
+    const isPaneNote = !isPreviewed && runSurface === 'pane' && offersChange
+    const notes = rewrite?.asked ?? (isPaneNote ? [{ question: open.question, asked: open.question }] : null)
+    if (notes === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no
     // mismatch.
-    const r = await next({ ...e, questions: rewrite.questions as typeof e.questions })
+    const r = await next(rewrite === null ? e : { ...e, questions: rewrite.questions as typeof e.questions })
     if (r.deny !== undefined) return r
     if (r.isError === true) return r
     const resultValue: unknown = r.result
-    const answers = answersFromNotes(rewrite.asked, resultValue)
+    const answers = answersFromNotes(notes, resultValue)
     if (answers === null) return r
 
     return { ...r, result: { ...r.result, answers } }

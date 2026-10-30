@@ -120,10 +120,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -185,10 +184,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -683,10 +681,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -711,10 +708,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -1180,10 +1176,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -1208,10 +1203,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -1677,10 +1671,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -1705,10 +1698,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -2174,10 +2166,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -2214,10 +2205,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -2683,10 +2673,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -2698,10 +2687,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -3167,10 +3155,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -3182,10 +3169,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -3651,10 +3637,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -3666,10 +3651,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -4135,10 +4119,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       },
@@ -4150,10 +4133,9 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }

@@ -133,10 +133,9 @@ export const GOLDEN_INIT_OWN_SKILLS: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }

@@ -118,10 +118,9 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -489,10 +488,9 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -968,10 +966,9 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -1592,10 +1589,9 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
@@ -2002,10 +1998,9 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Review",
         "options": [
+          "Next page",
           "Confirm",
-          "Change roles",
-          "Change git policy",
-          "Change launcher start"
+          "Change something…"
         ],
         "multiSelect": false
       }
