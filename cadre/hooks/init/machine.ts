@@ -7,6 +7,7 @@
  * is a pure StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives states
  * and never performs an effect; only init/run and the tests import it.
  */
+import { isObject } from '../core/json'
 import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
@@ -48,9 +49,20 @@ const guardStage: StageDef = Object.freeze({
 })
 
 /**
+ * The tool names of a `$.tool.list()` answer (D-211): the string name of each entry, in the order given; anything but
+ * a list gives none. A description or any other field is never read.
+ */
+function toolNamesOf(tools: unknown): string[] {
+  if (!Array.isArray(tools)) return []
+
+  return tools.flatMap(tool => (isObject(tool) && typeof tool.name === 'string' ? [tool.name] : []))
+}
+
+/**
  * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, then the scan block with their warnings in the
  * side pane (D-133), shown before the history question, and what the scans fix for the whole run: the frameworks
- * installed, the framework choice and the template proposal.
+ * installed, the framework choice, the template proposal, and the session's tool names for the MCP server questions'
+ * contexts (D-211).
  */
 const scanStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
@@ -73,7 +85,7 @@ const scanStage: StageDef = Object.freeze({
       choice: chooseFramework(detections, null),
       proposal: proposeRoles(gathered.repo),
     }
-    const scanned = { ...state, draft }
+    const scanned = { ...state, draft, toolNames: toolNamesOf(answer.result.tools) }
 
     return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
   },
@@ -220,6 +232,7 @@ export function initialState(dryRun: boolean): InitState {
     returnAfter: null,
     rounds: 0,
     kept: null,
+    toolNames: [],
     dryRun,
   }
 

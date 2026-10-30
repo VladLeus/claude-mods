@@ -2,15 +2,18 @@
  * The own-skills part of the assignment stage of init (G-02-1b, D-139, D-136), a layer 10 module: the skills that come
  * with no plugin, busiest first (ownSkillsOf), with the roles the model recommends for each (the skills model effect),
  * handed out through the entry question Accept recommendations, Go one by one or Whole group (ownSkillsEntry,
- * ownSkillItems); and what it shares with init/stages/assign: the AssignItem questions on which roles get an item,
- * skillGroupItem with its context line (skillsContextLine), and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts and
- * items only, imports core, suggest/skills, ui/ask, init/answers, init/assign-rules, init/handout and the model stage,
- * and never imports init/machine or init/run.
+ * ownSkillItems, each skill with its own context, D-211); and what it shares with init/stages/assign: the AssignItem
+ * questions on which roles get an item, skillGroupItem with its context line (skillsContextLine) and its own context,
+ * and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts and items only, imports core, suggest/skills, ui/ask,
+ * ui/blocks/assign, init/answers, init/assign-rules, init/handout and the model stage, and never imports init/machine
+ * or init/run.
  */
-import type { RoleSpec, SkillRef } from '../../../types'
+import type { AskContext, RoleSpec, SkillRef } from '../../../types'
 import { asSentence, clean, compareText, countedNoun, idsOrNone } from '../../core/text'
 import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, withContext } from '../../ui/ask'
+import { skillContext, skillGroupContext } from '../../ui/blocks/assign'
+import type { SkillLine } from '../../ui/blocks/assign'
 import { NO_SKILL_PURPOSE, ownSkillIds, skillGroupQuestion, skillUsesText } from '../answers'
 import { groupUses } from '../assign-rules'
 import type { SkillGroup } from '../assign-rules'
@@ -29,28 +32,54 @@ export function skillsContextLine(roles: readonly RoleSpec[]): string {
   return `${teamContextLine(roles)} ${meaning}`
 }
 
-/** One question on which roles get an item, and the names its answer gives them. */
+/** One question on which roles get an item, the names its answer gives them, and its own context (D-203). */
 export type AssignItem = {
   readonly question: string
   /** The chip of its dialog: ASK_HEADERS.mcp for a server, ASK_HEADERS.skills for a skill group (G-02-3c). */
   readonly header: string
   readonly names: readonly string[]
+  readonly context: AskContext
+}
+
+/**
+ * A skill as its question's context lists it (D-211): what it does, NO_SKILL_PURPOSE when the engine gave no
+ * description, how often the history scan saw it (skillUsesText; none at 0) and the roles recommended for it.
+ */
+function skillLineOf(skill: SkillRef, counts: ReadonlyMap<string, number>, recommended: readonly string[]): SkillLine {
+  const uses = skillCount(skill.name, counts)
+
+  return {
+    name: skill.name,
+    purpose: skill.purpose ?? NO_SKILL_PURPOSE,
+    uses: uses === 0 ? '' : skillUsesText(uses),
+    recommended,
+  }
 }
 
 /**
  * The question of a skill group as the assignment stage asks it (D-53, D-59, D-136): skillGroupQuestion with how often
  * the history scan saw the group, the team's role ids and what giving the skills means on its second line, and the
- * Skills chip; its answer gives every skill of the group.
+ * Skills chip; its answer gives every skill of the group. Its own context lists each skill of the group with what it
+ * does, its own uses and the roles `recommended` gives it by name, none when it gives none (skillGroupContext, D-211).
  */
 export function skillGroupItem(
   group: SkillGroup,
   counts: ReadonlyMap<string, number>,
   roles: readonly RoleSpec[],
+  skills: readonly SkillRef[],
+  recommended: ReadonlyMap<string, readonly string[]>,
 ): AssignItem {
+  const lines = group.names.map(name => {
+    const skill = skills.find(ref => ref.name === name && ref.plugin === group.plugin) ?? { name, plugin: group.plugin }
+
+    return skillLineOf(skill, counts, recommended.get(name) ?? [])
+  })
+
   return {
     question: withContext(skillGroupQuestion(group, groupUses(group, counts)), skillsContextLine(roles)),
     header: ASK_HEADERS.skills,
     names: group.names,
+    context: skillGroupContext(group.label, lines),
   }
 }
 
@@ -141,7 +170,8 @@ export function ownSkillsEntry(count: number): HandoutEntry {
 
 /**
  * Each of the user's own skills as a hand-out item (G-02-1b), in the order given: its name as its id, its question,
- * context line and chip, and the roles the recommendation gave it (keyed S1, S2, ... by place), none when it gave none.
+ * context line and chip, the roles the recommendation gave it (keyed S1, S2, ... by place), none when it gave none,
+ * and its own context, that skill alone (skillContext, D-236).
  */
 export function ownSkillItems(
   skills: readonly SkillRef[],
@@ -156,7 +186,9 @@ export function ownSkillItems(
     const roleIds = recommended.get(id) ?? []
     const contextLine = ownSkillContextLine(skill, skillCount(skill.name, counts), roleIds)
     const header = ownSkillHeader(index + 1, skills.length)
+    const context = skillContext(skillLineOf(skill, counts, roleIds), index + 1, skills.length)
+    const question = ownSkillQuestion(skill.name)
 
-    return [{ id: skill.name, question: ownSkillQuestion(skill.name), contextLine, header, recommended: roleIds }]
+    return [{ id: skill.name, question, contextLine, header, recommended: roleIds, context }]
   })
 }

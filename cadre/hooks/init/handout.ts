@@ -5,7 +5,7 @@
  * answer, so a stage asks it from its own StageDef. Pure: it imports core, ui/ask and init/answers, and never imports
  * init/machine or init/run.
  */
-import type { AskSpec, RoleSpec } from '../../types'
+import type { AskContext, AskSpec, RoleSpec } from '../../types'
 import { labelled } from '../core/labelled'
 import { choiceAnswer, quotedLabels, withContext } from '../ui/ask'
 import type { ChoiceAsk } from '../ui/ask'
@@ -19,7 +19,8 @@ export const ACCEPT_RECOMMENDATIONS = 'Accept recommendations'
 
 /**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
- * asked with, and the role ids recommended for it, which Accept gives it.
+ * asked with, the role ids recommended for it, which Accept gives it, and the question's own context, which its ask
+ * carries (D-203).
  */
 export type HandoutItem = {
   readonly id: string
@@ -27,11 +28,13 @@ export type HandoutItem = {
   readonly contextLine: string
   readonly header: string
   readonly recommended: readonly string[]
+  readonly context?: AskContext
 }
 
 /**
- * The entry question of a hand-out (G-02-1f Entry choices): its text, context line and chip, and the labels of its
- * three answers in the order the dialog shows them: accept the recommendations, go one by one, or the whole group.
+ * The entry question of a hand-out (G-02-1f Entry choices): its text, context line and chip, the labels of its three
+ * answers in the order the dialog shows them (accept the recommendations, go one by one, or the whole group), and the
+ * question's own context, which its ask carries (D-203).
  */
 export type HandoutEntry = {
   readonly question: string
@@ -40,6 +43,12 @@ export type HandoutEntry = {
   readonly accept: string
   readonly oneByOne: string
   readonly whole: string
+  readonly context?: AskContext
+}
+
+/** A dialog spec with the question's own context when it has one (D-203); without one the spec has no context. */
+function specWith(spec: AskSpec, context: AskContext | undefined): AskSpec {
+  return context === undefined ? spec : { ...spec, context }
 }
 
 /**
@@ -131,8 +140,9 @@ export type HandoutNext =
 type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
- * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip and its
- * three answers in the order accept, one by one, whole, read trimmed and in any case.
+ * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip, its
+ * own context when it has one, and its three answers in the order accept, one by one, whole, read trimmed and in any
+ * case.
  */
 function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
   const labels = entryLabels(cursor.entry)
@@ -140,7 +150,7 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 
   return {
     question: withContext(cursor.entry.question, cursor.entry.contextLine),
-    spec: { options, header: cursor.entry.header },
+    spec: specWith({ options, header: cursor.entry.header }, cursor.entry.context),
     parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
     accepts: quotedLabels(options),
     dismissedReason: cursor.dismissedReason,
@@ -148,13 +158,13 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 }
 
 /**
- * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip and the
- * buttons Yes and No, a role list typed under "Other" (itemRoles).
+ * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip, its own
+ * context when it has one, and the buttons Yes and No, a role list typed under "Other" (itemRoles).
  */
 function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
   return {
     question: withContext(item.question, item.contextLine),
-    spec: { options: ITEM_OPTIONS, header: item.header },
+    spec: specWith({ options: ITEM_OPTIONS, header: item.header }, item.context),
     parse: (answer: string): readonly string[] | null => itemRoles(answer, item, cursor.roles),
     accepts: itemAccepts(cursor.roles),
     dismissedReason: cursor.dismissedReason,

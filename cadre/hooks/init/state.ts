@@ -122,11 +122,13 @@ export type IoCall =
 
 /**
  * What an IoCall gave, under the same id; a session folder that cannot be listed gives null, and so does an apply in a
- * run that holds no host, which never happens, since a --dry-run never sets the apply.
+ * run that holds no host, which never happens, since a --dry-run never sets the apply. The scans also give the
+ * session's tool list as the host gave it, unvalidated, read once more after them for the MCP server questions'
+ * contexts (D-211).
  */
 export type IoResult =
   | { readonly id: 'guard'; readonly result: GuardResult }
-  | { readonly id: 'scan'; readonly result: Gathered }
+  | { readonly id: 'scan'; readonly result: Gathered; readonly tools?: unknown }
   | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
   | { readonly id: 'scan-history'; readonly result: HistoryScan }
   | { readonly id: 'read-repo-file'; readonly result: PortRead }
@@ -257,7 +259,8 @@ export type MemoryCursor = {
  * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
  *   far, with the names the questions before it gave (`done`).
  * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
- *   recommends roles for them, their hand-out at `cursor`, or the question for the whole group, asked `tries` times.
+ *   recommends roles for them, their hand-out at `cursor`, or the question for the whole group, asked `tries` times,
+ *   with the roles recommended for each skill by name.
  * - `content`: the content consent is out, asked `tries` times so far, with what init found of the repo by name.
  * - `instruction-read`: the read of the instruction files is out.
  * - `topics`, `parts`: the model calls on `scan` are out: the grouping into topics, then the recommendation.
@@ -307,7 +310,12 @@ export type StageSub =
     }
   | { readonly kind: 'skills-model'; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'skills-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }
-  | { readonly kind: 'skills-whole'; readonly tries: number; readonly done: readonly NameAssignment[] }
+  | {
+      readonly kind: 'skills-whole'
+      readonly tries: number
+      readonly done: readonly NameAssignment[]
+      readonly recommended: ReadonlyMap<string, readonly string[]>
+    }
   | { readonly kind: 'content'; readonly tries: number; readonly repo: RepoNames }
   | { readonly kind: 'instruction-read' }
   | { readonly kind: 'topics'; readonly scan: InstructionScan }
@@ -356,6 +364,8 @@ export type InitState = {
   readonly rounds: number
   /** The own-skills, topics and parts model results a review go-back reuses (D-235); null until the first one. */
   readonly kept: Kept | null
+  /** The session's tool names as the scans read them, for the MCP server questions' contexts (D-211); none before. */
+  readonly toolNames: readonly string[]
   /** --dry-run: Confirm replies with the plan and nothing is written or installed (D-82, D-105). */
   readonly dryRun: boolean
 }

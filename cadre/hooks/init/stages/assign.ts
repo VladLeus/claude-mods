@@ -1,20 +1,22 @@
 /**
- * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-230), a layer 10 module: which roles get each MCP server
- * and skill group the tables do not decide, with the team's role ids on each question's second line (mcpContextLine),
- * the plugin groups busiest first with the history hints, then the own skills (init/stages/own-skills) with the roles a
- * skills model effect recommends for them; assignStage, the pure stage that gives each name to the roles its answer
- * names and decides the whole list of each name it asks about. Pure: it gives states and never performs an effect,
- * imports ui/ask, init/answers, init/assign-rules, init/handout, init/state and the memory, model and own-skills
- * stages, and never imports init/machine or init/run.
+ * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230), a layer 10 module: which roles get each MCP
+ * server and skill group the tables do not decide, with the team's role ids on each question's second line
+ * (mcpContextLine) and each question's own context (ui/blocks/assign), the plugin groups busiest first with the
+ * history hints, then the own skills (init/stages/own-skills) with the roles a skills model effect recommends for
+ * them; assignStage, the pure stage that gives each name to the roles its answer names and decides the whole list of
+ * each name it asks about. Pure: it gives states and never performs an effect, imports ui/ask, ui/blocks/assign,
+ * init/answers, init/assign-rules, init/handout, init/state and the memory, model and own-skills stages, and never
+ * imports init/machine or init/run.
  */
-import type { RoleSpec, SetupScan } from '../../../types'
+import type { McpRef, RoleSpec, SetupScan } from '../../../types'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { mcpServerContext, ownSkillsContext } from '../../ui/blocks/assign'
 import { assignToRoles, mcpQuestion, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
 import { handoutAnswer, handoutEnter } from '../handout'
-import type { HandoutNext } from '../handout'
+import type { HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { ROLE_LIST_OPTIONS, roleListAccepts } from './memory'
@@ -42,7 +44,19 @@ type AssignPlan = {
   readonly ownGroup: SkillGroup | undefined
 }
 
-/** The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. */
+/**
+ * The server a name the scan found stands for (D-211): its first ref, as the scan merged them by name; a session
+ * server when there is none, which the scan never gives, since the names come from its refs.
+ */
+function mcpRefOf(mcp: readonly McpRef[], name: string): McpRef {
+  return mcp.find(ref => ref.name === name) ?? { name, source: 'session' }
+}
+
+/**
+ * The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. Each server
+ * question carries its own context with the session's tool names (mcpServerContext, D-211), recommended to no role,
+ * since no table or model recommends an asked server; a plugin group's skills are recommended to none either.
+ */
 function assignPlan(state: InitState): AssignPlan | null {
   const { roles, gathered, hints } = state.draft
   if (roles === undefined || gathered === undefined || hints === undefined) return null
@@ -53,24 +67,28 @@ function assignPlan(state: InitState): AssignPlan | null {
     question: withContext(mcpQuestion(name), mcpContextLine(roles)),
     header: ASK_HEADERS.mcp,
     names: [name],
+    context: mcpServerContext(mcpRefOf(setup.mcp, name), state.toolNames, []),
   }))
   const pluginGroups = skills.groups.filter(group => group.plugin !== null)
-  const groupItems = orderGroupsByUse(pluginGroups, hints).map(group => skillGroupItem(group, hints, roles))
+  const groupItems = orderGroupsByUse(pluginGroups, hints).map(group =>
+    skillGroupItem(group, hints, roles, setup.skills, new Map()),
+  )
   const ownGroup = skills.groups.find(group => group.plugin === null)
 
   return { roles, setup, counts: hints, mcp, skills, items: [...serverItems, ...groupItems], ownGroup }
 }
 
 /**
- * The question on which roles get an item (D-53, D-136): its question, None or All roles with its chip, a typed list of
- * role ids or titles (parseRoleList), what its refusal lists, and ASSIGNMENT_DISMISSED_REASON for a dismissal.
+ * The question on which roles get an item (D-53, D-136): its question, None or All roles with its chip and its own
+ * context (D-203), a typed list of role ids or titles (parseRoleList), what its refusal lists, and
+ * ASSIGNMENT_DISMISSED_REASON for a dismissal.
  */
 function itemAsk(item: AssignItem, roles: readonly RoleSpec[]): ChoiceAsk<readonly string[]> & {
   readonly dismissedReason: string
 } {
   return {
     question: item.question,
-    spec: { options: ROLE_LIST_OPTIONS, header: item.header },
+    spec: { options: ROLE_LIST_OPTIONS, header: item.header, context: item.context },
     parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),
     accepts: roleListAccepts(roles),
     dismissedReason: ASSIGNMENT_DISMISSED_REASON,
@@ -135,9 +153,15 @@ function ownSkillsStart(state: InitState, plan: AssignPlan, done: readonly NameA
   return withEffect(calling, { kind: 'model', call: { id: 'skills', roles, skills, counts } })
 }
 
+/** The roles recommended for each own skill of a hand-out, by the skill's name, as its items hold them. */
+function recommendedByName(items: readonly HandoutItem[]): ReadonlyMap<string, readonly string[]> {
+  return new Map(items.map((item): [string, readonly string[]] => [item.id, item.recommended]))
+}
+
 /**
  * The own-skills hand-out at `next` (handoutAnswer): a question waits at its cursor; Accept or one by one gives each
- * own skill the roles it was given; Whole group asks the group question of D-53 for all of them (skillGroupItem).
+ * own skill the roles it was given; Whole group asks the group question of D-53 for all of them (skillGroupItem), with
+ * the roles the hand-out recommended for each in its context.
  */
 function handedOut(
   state: InitState,
@@ -153,7 +177,11 @@ function handedOut(
 
     return withEffect({ ...state, sub }, { kind: 'ask', question: next.question, spec: next.spec })
   }
-  if (next.outcome.kind === 'whole') return wholeAsked(state, plan, done, 1, null)
+  if (next.outcome.kind === 'whole') {
+    const items = state.sub.kind === 'skills-handout' ? state.sub.cursor.items : []
+
+    return wholeAsked(state, plan, { tries: 1, done, recommended: recommendedByName(items) }, null)
+  }
   const { given } = next.outcome
   const own = ownSkillsOf(plan.setup.skills, ownGroup, counts).map(skill => ({
     name: skill.name,
@@ -163,17 +191,15 @@ function handedOut(
   return assigned(state, plan, done, own)
 }
 
-/** The group question for all the user's own skills, asked `tries` times so far, `question` its text once refused. */
-function wholeAsked(
-  state: InitState,
-  plan: AssignPlan,
-  done: readonly NameAssignment[],
-  tries: number,
-  question: string | null,
-): InitState {
+/** Where the group question for all the user's own skills is: its tries, the answers before it, the recommendation. */
+type WholeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'skills-whole' }>, 'kind'>
+
+/** The group question for all the user's own skills at `cursor`, `question` its text once refused. */
+function wholeAsked(state: InitState, plan: AssignPlan, cursor: WholeCursor, question: string | null): InitState {
   if (plan.ownGroup === undefined) return stageFailed(state)
-  const ask = itemAsk(skillGroupItem(plan.ownGroup, plan.counts, plan.roles), plan.roles)
-  const asking: InitState = { ...state, sub: { kind: 'skills-whole', tries, done } }
+  const item = skillGroupItem(plan.ownGroup, plan.counts, plan.roles, plan.setup.skills, cursor.recommended)
+  const ask = itemAsk(item, plan.roles)
+  const asking: InitState = { ...state, sub: { kind: 'skills-whole', ...cursor } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
 }
@@ -196,7 +222,8 @@ function afterItem(
 
 /**
  * The model's recommendation for the own skills (G-02-1b): the side pane shows every own skill with what it does, its
- * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out.
+ * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out, with that
+ * block as its own context (ownSkillsContext, D-236).
  */
 function afterSkillsModel(
   state: InitState,
@@ -209,22 +236,17 @@ function afterSkillsModel(
   const lines = ownSkillLines(skills, plan.counts, recommended)
   const shown = withOutputs(state, [{ kind: 'show', block: { key: 'skills', lines } }])
   const items = ownSkillItems(skills, plan.counts, recommended)
-  const entry = ownSkillsEntry(skills.length)
+  const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines) }
 
   return handedOut(shown, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }
 
 /** The answer to the group question for all of the user's own skills: every own skill to the roles it named. */
-function afterWhole(
-  state: InitState,
-  plan: AssignPlan,
-  sub: { readonly tries: number; readonly done: readonly NameAssignment[] },
-  answer: string | null,
-): InitState {
+function afterWhole(state: InitState, plan: AssignPlan, sub: WholeCursor, answer: string | null): InitState {
   if (plan.ownGroup === undefined) return stageFailed(state)
-  const item = skillGroupItem(plan.ownGroup, plan.counts, plan.roles)
+  const item = skillGroupItem(plan.ownGroup, plan.counts, plan.roles, plan.setup.skills, sub.recommended)
   const next = choiceAnswer(itemAsk(item, plan.roles), sub, answer)
-  if (next.kind === 'again') return wholeAsked(state, plan, sub.done, next.sub.tries, next.question)
+  if (next.kind === 'again') return wholeAsked(state, plan, { ...sub, tries: next.sub.tries }, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
 
   return assigned(state, plan, sub.done, item.names.map(name => ({ name, roleIds: next.value })))

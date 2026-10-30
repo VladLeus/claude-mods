@@ -1605,6 +1605,7 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     returnAfter: null,
     rounds: 0,
     kept: null,
+    toolNames: [],
     dryRun: true,
     ...over,
   }

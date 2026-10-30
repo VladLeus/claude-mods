@@ -321,7 +321,8 @@ export async function showOutput(io: InitIo, output: Output): Promise<void> {
 }
 
 /**
- * Performs one host operation of a stage (D-230): the guard (initGuard), the scans (gatherScans), the listing of the
+ * Performs one host operation of a stage (D-230): the guard (initGuard), the scans (gatherScans) with the session's
+ * tool list read once more after them for the MCP server questions' contexts (D-211), the listing of the
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
  * the review's plan (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
  * hold, so it gives none there.
@@ -330,8 +331,11 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
   switch (call.id) {
     case 'guard':
       return { id: 'guard', result: await initGuard(io, 'init') }
-    case 'scan':
-      return { id: 'scan', result: await gatherScans(io, call.locations, call.readUserMcp) }
+    case 'scan': {
+      const result = await gatherScans(io, call.locations, call.readUserMcp)
+
+      return { id: 'scan', result, tools: await io.tools() }
+    }
     case 'list-sessions':
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':

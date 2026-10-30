@@ -306,7 +306,9 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'assignments' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['assign', 'review', 'assign'])
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'MCP' })
+    const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
+    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'MCP', context })
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.mcp)).toEqual(REVIEW_DRAFT.roles.map(() => ['sentry']))
