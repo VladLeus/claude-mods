@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, RoleSpec } from '../../types'
+import type { AskContext, AskSpec, RoleSpec } from '../../types'
 import { templateRole } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
 import { handoutAnswer, handoutEnter } from './handout'
@@ -227,5 +227,19 @@ describe('the hand-out cursor (D-230)', () => {
       ['T1', ['security']],
       ['T2', ['tl']],
     ])
+  })
+
+  test('an entry or item with its own context puts it in its dialog spec; one without has none (D-203)', () => {
+    const parts: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
+    const topic: AskContext = { title: 'Topic 1 of 2', lines: ['Security rules only'], kind: 'topic' }
+    const first = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
+    const entry = handoutEnter({ ...ENTRY, context: parts }, [first, ...ITEMS.slice(1)], ROLES, DISMISSED)
+    if (entry.kind !== 'ask') throw new Error('no entry question')
+    const one = handoutAnswer(entry.cursor, 'Go part by part')
+    if (one.kind !== 'ask') throw new Error('no first item question')
+    const two = handoutAnswer(one.cursor, 'Yes')
+    if (two.kind !== 'ask') throw new Error('no second item question')
+    expect([entry.spec.context, one.spec.context, Object.hasOwn(two.spec, 'context')]).toEqual([parts, topic, false])
+    expect([entry.question, one.question]).toEqual([ENTRY_ASKED, itemAsked(first)])
   })
 })

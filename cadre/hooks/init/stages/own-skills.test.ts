@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, RoleSpec, SetupScan, SkillRef } from '../../../types'
+import type { AskContext, InitIo, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import {
   EMPTY_FACTS,
@@ -82,6 +82,28 @@ describe('own skills hand-out (G-02-1b)', () => {
   const ZETA_ASKED =
     'Which roles get the skill zeta?\nNo description. Used 4 times in the last 50 sessions. Recommended: fe.'
   const ALPHA_ASKED = 'Which roles get the skill alpha?\nSort the inbox. Recommended: none.'
+  /** The own-skills block after the recommendation, busiest first (G-02-1b). */
+  const OWN_BLOCK = [
+    OWN_SKILLS_HEADING,
+    '  mid: Draft the weekly report.',
+    '    used 4 times in the last 50 sessions; recommended: be',
+    '  zeta: No description.',
+    '    used 4 times in the last 50 sessions; recommended: fe',
+    '  alpha: Sort the inbox.',
+    '    recommended: none',
+  ]
+  /** Each own skill as its context line reads (D-211): what it does, its own uses and the recommended roles. */
+  const MID_LINE = 'mid: Draft the weekly report. Used 4 times in the last 50 sessions. Recommended: be.'
+  const ZETA_LINE = 'zeta: No description. Used 4 times in the last 50 sessions. Recommended: fe.'
+  const ALPHA_LINE = 'alpha: Sort the inbox. Recommended: none.'
+  /** The own-skills entry question's own context: the own-skills block. */
+  const OWN_CONTEXT = { title: 'Your own skills', lines: OWN_BLOCK, kind: 'skills' }
+  /** The codex group question's own context: its one skill, never used and recommended to no role. */
+  const CODEX_CONTEXT = {
+    title: 'Skills: codex',
+    lines: ['codex:rescue: No description. Recommended: none.'],
+    kind: 'skill-group',
+  }
 
   test("an own skill's purpose with no final mark gets a period in its context line (N1)", () => {
     const deploy: SkillRef = { name: 'deploy', plugin: null, purpose: 'Deploy the app' }
@@ -115,8 +137,8 @@ describe('own skills hand-out (G-02-1b)', () => {
       withContext(ownEntry(3), ENTRY_CONTEXT),
     ])
     expect(run.specs).toEqual([
-      { options: ['None', 'All roles'], header: 'Skills' },
-      { options: OWN_ENTRY_OPTIONS, header: 'Skills' },
+      { options: ['None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT },
+      { options: OWN_ENTRY_OPTIONS, header: 'Skills', context: OWN_CONTEXT },
     ])
   })
 
@@ -138,15 +160,7 @@ describe('own skills hand-out (G-02-1b)', () => {
       'S2 | zeta | (no description) | used 4 times',
       'S3 | alpha | Sort the inbox. | used 0 times',
     ])
-    expect(shownBlock(run, 'skills')).toEqual([
-      OWN_SKILLS_HEADING,
-      '  mid: Draft the weekly report.',
-      '    used 4 times in the last 50 sessions; recommended: be',
-      '  zeta: No description.',
-      '    used 4 times in the last 50 sessions; recommended: fe',
-      '  alpha: Sort the inbox.',
-      '    recommended: none',
-    ])
+    expect(shownBlock(run, 'skills')).toEqual(OWN_BLOCK)
   })
 
   test('Accept recommendations gives each own skill its recommended roles; the plugin answer stays', async () => {
@@ -171,10 +185,15 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('Go one by one asks each own skill once, busiest first, then by name: Yes, No and a role list', async () => {
     const { run, assigned } = await stepRun(['None', 'Go one by one', 'Yes', 'No', 'qa'])
     expect(run.asked.slice(2)).toEqual([MID_ASKED, ZETA_ASKED, ALPHA_ASKED])
+    const skillAt = (at: number, line: string): AskContext => ({
+      title: `Skill ${at} of 3`,
+      lines: [line],
+      kind: 'skill',
+    })
     expect(run.specs.slice(2)).toEqual([
-      { options: ['Yes', 'No'], header: 'Skill 1/3' },
-      { options: ['Yes', 'No'], header: 'Skill 2/3' },
-      { options: ['Yes', 'No'], header: 'Skill 3/3' },
+      { options: ['Yes', 'No'], header: 'Skill 1/3', context: skillAt(1, MID_LINE) },
+      { options: ['Yes', 'No'], header: 'Skill 2/3', context: skillAt(2, ZETA_LINE) },
+      { options: ['Yes', 'No'], header: 'Skill 3/3', context: skillAt(3, ALPHA_LINE) },
     ])
     expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
       ['pm', []],
@@ -197,8 +216,14 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run, assigned } = await stepRun(['None', 'Whole group', 'All roles'])
     const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
     expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
-    expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills' })
+    const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group' }
+    expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))
+  })
+
+  test('each own-skills question carries its own context: the group, the entry, then each skill (D-211)', async () => {
+    const { run } = await stepRun(['None', 'Go one by one', 'No', 'No', 'No'])
+    expect(run.specs.map(spec => spec.context?.kind)).toEqual(['skill-group', 'skills', 'skill', 'skill', 'skill'])
   })
 
   test('a dismissal or three unreadable answers cancel with their reason at the question they hit (A1)', async () => {

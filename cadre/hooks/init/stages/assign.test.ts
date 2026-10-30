@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InitIo, RoleSpec, SetupScan } from '../../../types'
+import type { InitIo, McpRef, RoleSpec, SetupScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import {
   EMPTY_FACTS,
@@ -52,14 +52,25 @@ describe('assignmentStep', () => {
   /** The two questions as asked: the team's role ids and what giving the item means under each (D-136). */
   const SENTRY_ASKED = withContext(SENTRY_QUESTION, mcpContextLine(roles))
   const CODEX_ASKED = withContext(CODEX_QUESTION, skillsContextLine(roles))
+  /** The own context of each question (D-211): a session server with no tool listed, and two undescribed skills. */
+  const SENTRY_CONTEXT = {
+    title: 'MCP: sentry',
+    lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
+    kind: 'mcp-server',
+  }
+  const CODEX_CONTEXT = {
+    title: 'Skills: codex',
+    lines: ['codex:rescue: No description. Recommended: none.', 'codex:setup: No description. Recommended: none.'],
+    kind: 'skill-group',
+  }
 
   test('the tables decide the known names; each unknown server and skill group is asked once', async () => {
     const run = memIo(memWorld({}), ['be', 'All roles'])
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
     expect(run.asked).toEqual([SENTRY_ASKED, CODEX_ASKED])
     expect(run.specs).toEqual([
-      { options: ROLE_LIST_OPTIONS, header: 'MCP' },
-      { options: ROLE_LIST_OPTIONS, header: 'Skills' },
+      { options: ROLE_LIST_OPTIONS, header: 'MCP', context: SENTRY_CONTEXT },
+      { options: ROLE_LIST_OPTIONS, header: 'Skills', context: CODEX_CONTEXT },
     ])
     expect(assigned.map(role => [role.id, role.mcp])).toEqual([
       ['pm', ['jira']],
@@ -234,10 +245,38 @@ describe('the assign stage (D-230)', () => {
   test('assignStage asks each unknown server, then each skill group; the open question is the first', () => {
     const state = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
     const question = withContext('Which roles get the sentry MCP server? (e.g. BE, QA, or none)', mcpContextLine(roles))
-    const ask = { question, spec: { options: ROLE_LIST_OPTIONS, header: 'MCP' } }
+    const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
+    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+    const ask = { question, spec: { options: ROLE_LIST_OPTIONS, header: 'MCP', context } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(state, { kind: 'answer', text: 'be' })
-    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills' })
+    const codexLines = ['codex:rescue: No description. Recommended: none.']
+    const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group' }
+    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills', context: codex })
+  })
+
+  test('an MCP server question names its source and the tools the session lists for it (D-211)', () => {
+    const toolNames = ['mcp__sentry__issues', 'mcp__sentry__events', 'mcp__jira__search', 'Read']
+    const fromRepo: McpRef = { name: 'sentry', source: 'project' }
+    const project = { ...gathered, setup: { ...setup, mcp: [fromRepo] } }
+    const state = assignStage.enter(stateAt('assign', { roles, gathered: project, hints: new Map() }, { toolNames }))
+    expect(state.openQuestion?.spec.context).toEqual({
+      title: 'MCP: sentry',
+      lines: ['Source: .mcp.json', 'Tools: 2 (events, issues)', 'Recommended: none'],
+      kind: 'mcp-server',
+    })
+  })
+
+  test('a skill group question lists each skill with its description, uses and recommended roles (D-211)', () => {
+    const skills = [{ name: 'codex:rescue', plugin: 'codex', purpose: 'Delegate a stuck task' }]
+    const described = { ...gathered, setup: { ...setup, mcp: [], skills } }
+    const hints = new Map([['codex:rescue', 3]])
+    const state = assignStage.enter(stateAt('assign', { roles, gathered: described, hints }))
+    expect(state.openQuestion?.spec.context).toEqual({
+      title: 'Skills: codex',
+      lines: ['codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'],
+      kind: 'skill-group',
+    })
   })
 
   test('the own skills are recommended by a skills model effect, then shown and handed out', () => {

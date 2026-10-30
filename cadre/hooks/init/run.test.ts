@@ -5234,3 +5234,17 @@ describe('init plan', () => {
     }
   })
 })
+
+describe('question contexts (D-211, D-236)', () => {
+  test("the MCP server question's context lists the tools the session gave, never a description (D-211)", async () => {
+    const tools = [{ name: 'mcp__sentry__issues', description: 'SENTRY-DESCRIPTION', mcp: true }]
+    const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const at = run.asked.findIndex(question => question.startsWith('Which roles get the sentry MCP server?'))
+    expect(run.specs[at]?.context).toEqual({
+      title: 'MCP: sentry',
+      lines: ['Source: session', 'Tools: 1 (issues)', 'Recommended: none'],
+      kind: 'mcp-server',
+    })
+  })
+})
