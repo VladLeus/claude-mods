@@ -16,7 +16,7 @@ import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, Kept, StageDef } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 import { FRAMEWORK_LABELS } from './frameworks'
 
@@ -364,23 +364,28 @@ function afterDescribed(state: InitState, rounds: number, described: Proposed): 
 }
 
 /**
- * Whether the kept model results were made for `roles` (ASKED #14): the same role ids, in any order. A Change roles
- * go-back that adds, drops or renames a role drops them, so the own skills and the instruction parts are recommended
- * again; unchanged ids keep them (D-235).
+ * Whether `roles` is the team the kept model results were made for, the team in the draft (ASKED #14, #137): the same
+ * roles by id, title and purpose, in any order. A Change roles go-back that adds, drops or renames a role, or changes a
+ * title or purpose by Adjust or Describe, drops them, so the own skills and the instruction parts are recommended
+ * again; an unchanged team keeps them (D-235).
  */
-function isKeptTeam(kept: Kept | null, roles: readonly RoleSpec[]): boolean {
-  if (kept === null) return false
-  const ids = new Set(kept.roleIds)
+function isKeptTeam(before: readonly RoleSpec[] | undefined, roles: readonly RoleSpec[]): boolean {
+  if (before === undefined || before.length !== roles.length) return false
+  const byId = new Map(before.map((role): [string, RoleSpec] => [role.id, role]))
 
-  return roles.length === ids.size && roles.every(role => ids.has(role.id))
+  return roles.every(role => {
+    const was = byId.get(role.id)
+
+    return was !== undefined && was.title === role.title && was.purpose === role.purpose
+  })
 }
 
 /**
  * The answer to the roles question (choiceAnswer): only `Use these roles` accepts the roles shown, with the scan
- * changes shown with them (A6), keeping the kept model results only for the same role ids (isKeptTeam); `Adjust them`
- * asks the Adjust question and `Describe my own structure` the describe question. Any other answer is asked again with
- * why on top; a dismissal cancels with ROLES_DISMISSED_REASON and MAX_ASKS answers that name no choice with
- * NO_USABLE_ANSWER_REASON (A1).
+ * changes shown with them (A6), keeping the kept model results only for the same roles by id, title and purpose
+ * (isKeptTeam); `Adjust them` asks the Adjust question and `Describe my own structure` the describe question. Any other
+ * answer is asked again with why on top; a dismissal cancels with ROLES_DISMISSED_REASON and MAX_ASKS answers that name
+ * no choice with NO_USABLE_ANSWER_REASON (A1).
  */
 function afterRoles(
   state: InitState,
@@ -397,7 +402,7 @@ function afterRoles(
   }
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (next.value === 'use') {
-    const kept = isKeptTeam(state.kept, roles) ? state.kept : null
+    const kept = isKeptTeam(state.draft.roles, roles) ? state.kept : null
 
     return stageDone({ ...state, draft: { ...state.draft, roles, changes }, kept })
   }
