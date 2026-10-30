@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
+  PANE_PAGE_ROWS,
   paneColumns,
   panePlacement,
   paneRows,
@@ -384,6 +385,14 @@ describe('questionScroll (D-209)', () => {
     expect(questionScroll('cadre-init', openWith(null), true)).toEqual(toStart)
   })
 
+  test('each page ask of the review scrolls again, though its question text is the same (ASKED #19)', () => {
+    const toStart = { to: 'start', in: 'cadre-init', block: 'start' }
+    const second: AskContext = { title: 'Review (page 2 of 3)', lines: ['Scope card: PM (pm)'], kind: 'review' }
+    const third: AskContext = { title: 'Review (page 3 of 3)', lines: ['Summary: 3 create'], kind: 'review' }
+    const scrolls = [openWith(second), openWith(third)].map(open => questionScroll('cadre-init', open, true))
+    expect(scrolls).toEqual([toStart, toStart])
+  })
+
   test('a cleared question, or a run that has not opened the pane, scrolls nothing', () => {
     expect(questionScroll('cadre-init', null, true)).toBe(null)
     expect(questionScroll('cadre-init', openWith(null), false)).toBe(null)
@@ -400,3 +409,10 @@ describe('panePlacement (D3)', () => {
     }
   })
 })
+
+describe('PANE_PAGE_ROWS (D-233, ASKED #19)', () => {
+  test('a page of the review on a pane surface is 20 rows: its title and 19 review lines', () => {
+    expect(PANE_PAGE_ROWS).toBe(20)
+  })
+})
+

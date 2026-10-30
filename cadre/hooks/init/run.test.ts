@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  AskContext,
   AskSpec,
   CadreState,
   Choice,
@@ -154,6 +155,7 @@ import { proposalLines } from '../ui/blocks/context'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { diffLines, lineDiff } from '../ui/diff'
+import { PANE_PAGE_ROWS } from '../ui/pane'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import { HISTORY_PROGRESS, MODEL_PROGRESS, planStep, runInit, SCAN_PROGRESS } from './run'
@@ -210,7 +212,6 @@ import {
   PRIVATE_FILES_HEADING,
   privateFilesRow,
   REVIEW_DISMISSED_REASON,
-  REVIEW_OPTIONS,
   REVIEW_QUESTION,
   REVIEW_ROUNDS_REASON,
   REVIEW_TYPE_HINT,
@@ -3507,6 +3508,18 @@ function everyStepWorld(): MemWorld {
   return { ...secretWorld(), facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } }
 }
 
+/**
+ * The spec of the review question's first page on a pane surface (D-233, ASKED #19): Next page, Confirm and Change
+ * something… with the Review chip, and the first PANE_PAGE_ROWS - 1 review lines as its context, titled with its place.
+ */
+function firstPageSpec(lines: readonly string[]): AskSpec {
+  const size = PANE_PAGE_ROWS - 1
+  const count = Math.ceil(lines.length / size)
+  const context: AskContext = { title: `Review (page 1 of ${count})`, lines: lines.slice(0, size), kind: 'review' }
+
+  return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context }
+}
+
 describe('reviewStep', () => {
   test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
@@ -3546,8 +3559,7 @@ describe('reviewStep', () => {
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    const context = { title: 'Review', lines: expected, kind: 'review' }
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context, acceptsTyped: true })
+    expect(run.specs[reviewAt]).toEqual(firstPageSpec(expected))
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3738,7 +3750,7 @@ describe('reviewStep', () => {
     expect(await runInit(dismissed.io, { dryRun: true })).toBe(cancelledReply(REVIEW_DISMISSED_REASON))
     expect(dismissed.logged.at(-1)).toBe(REVIEW_DISMISSED_REASON)
     const refusal =
-      `'maybe' isn't one of: "Confirm", "Change roles", "Change git policy", "Change launcher start", ` +
+      `'maybe' isn't one of: "Next page", "Confirm", "Change something…", roles, git policy, launcher start, ` +
       'or duration, model, assignments, memory, env, hunks.'
     const unread = memIo(gitWorld(), { ...INIT_ANSWERS, 'Review the plan': 'maybe', [refusal]: 'maybe' })
     expect(await runInit(unread.io, { dryRun: true })).toBe(cancelledReply(NO_USABLE_ANSWER_REASON))
@@ -3868,8 +3880,7 @@ describe('review question hint (G-02-7)', () => {
     expect(asked[0]?.endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    const context = { title: 'Review', lines: shownBlock(run, 'review'), kind: 'review' }
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context, acceptsTyped: true })
+    expect(run.specs[reviewAt]).toEqual(firstPageSpec(shownBlock(run, 'review')))
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {

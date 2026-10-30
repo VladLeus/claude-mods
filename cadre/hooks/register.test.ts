@@ -2062,6 +2062,35 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(log.asks.at(-1)).toBe('ask Name it, or type one under Other.')
   })
 
+  /** The review as a pane surface asks it on its last page: Confirm and Change something… (D-233, ASKED #24). */
+  const CHANGE_SPEC: AskSpec = { options: ['Confirm', 'Change something…'], header: 'Review' }
+
+  test('on a pane surface a note typed with Change something… is the answer (ASKED #24)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, 'Review it?', PICK_CONTEXT, false)
+    const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
+    fakeHost(on, initWorld({ answers, notes: { 'Review it?': ' roles ' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Review it?', CHANGE_SPEC)).toBe('roles')
+    expect([log.asks.at(-1), log.askPreviews.at(-1)]).toEqual(['ask Review it?', [undefined, undefined]])
+  })
+
+  test('a pane question with no Change something… takes no note as answer (ASKED #24)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question, PICK_CONTEXT, false)
+    fakeHost(on, pickWorld('A', 'roles'), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
+  })
+
+  test("another plugin's Change something… passes through untouched (T-02.1-106)", WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    const answers = { ...INIT_ANSWERS, 'Review it?': 'Change something…' }
+    fakeHost(on, initWorld({ answers, notes: { 'Review it?': 'roles' } }), log)
+    const ask = await seatAfterRun($, DOCK_PANE)
+    expect(await ask('Review it?', CHANGE_SPEC)).toBe('Change something…')
+  })
+
   test("another plugin's question asked during a run passes through untouched (D-239)", WITH_ASKER, async ($, on) => {
     const log = newLog()
     const answers: (string | null)[] = []

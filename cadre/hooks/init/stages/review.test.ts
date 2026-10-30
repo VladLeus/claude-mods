@@ -21,6 +21,7 @@ import {
 } from '../../testkit'
 import { contextText, MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { proposalLines } from '../../ui/blocks/context'
+import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
@@ -98,21 +99,22 @@ describe('init plan', () => {
 })
 
 describe('reviewStep', () => {
-  test('the review question, its four buttons and the round cap are fixed (D-43, A2)', () => {
+  test('the review question, the options a page may show and the round cap are fixed (D-43, D-233)', () => {
     expect(REVIEW_QUESTION).toBe(
       'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
     )
-    expect(REVIEW_OPTIONS).toEqual(['Confirm', 'Change roles', 'Change git policy', 'Change launcher start'])
+    expect(REVIEW_OPTIONS).toEqual(['Next page', 'Previous page', 'Confirm', 'Change something…'])
     expect(Object.isFrozen(REVIEW_OPTIONS)).toBe(true)
     expect(MAX_REVIEW_ROUNDS).toBe(10)
     expect(REVIEW_DISMISSED_REASON).toBe('The review question was dismissed or not answered.')
     expect(REVIEW_ROUNDS_REASON).toBe('The review question was asked 10 times without "Confirm": nothing was chosen.')
   })
 
-  test('parseReviewItem reads a button or a typed item, trimmed and in any case; anything else is null', () => {
+  test('parseReviewItem reads Confirm as its option gives it, or a typed item in any case; else null', () => {
     const cases: readonly (readonly [string, ReviewItem | null])[] = [
       ['Confirm', 'confirm'],
-      [' confirm ', 'confirm'],
+      [' confirm ', null],
+      ['confirm', null],
       ['Change roles', 'roles'],
       ['roles', 'roles'],
       ['Change git policy', 'policy'],
@@ -204,21 +206,24 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(planned))
     const context = contextText(reviewContextLine(planned.plan, 'definitions', { kind: 'git-root' }))
     const blocks = asking.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
-    const own = { title: 'Review', lines: blocks[0]?.lines ?? [], kind: 'review' }
-    const spec = { options: REVIEW_OPTIONS, header: 'Review', context: own, acceptsTyped: true }
+    const lines = blocks[0]?.lines ?? []
+    const count = Math.ceil(lines.length / (PANE_PAGE_ROWS - 1))
+    const own = { title: `Review (page 1 of ${count})`, lines: lines.slice(0, PANE_PAGE_ROWS - 1), kind: 'review' }
+    const spec = { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context: own }
     const ask = { question: reviewQuestion(context), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
     expect(blocks.map(block => [block.key, block.lines[0]])).toEqual([['review', 'Roles:']])
   })
 
-  test('the review question carries the review block it was asked about as its own context (D-236)', async () => {
+  test('the review question carries the first page of the review block as its own context (D-236, D-233)', async () => {
     const state = reviewAt()
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
-    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review' })
+    const page = shown.slice(0, PANE_PAGE_ROWS - 1)
+    expect(asking.openQuestion?.spec.context?.lines).toEqual(page)
     const again = nextStage(asking, { kind: 'answer', text: 'maybe' })
-    expect(again.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review' })
+    expect(again.openQuestion?.spec.context?.lines).toEqual(page)
   })
 
   test('Confirm on a --dry-run replies with the plan and the private files of each role; nothing written', async () => {
@@ -468,6 +473,38 @@ describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
     let state = asking
     for (let tries = 0; tries < MAX_ASKS; tries += 1) state = nextStage(state, { kind: 'answer', text: 'maybe' })
     expect(state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
+  })
+})
+
+describe('the paged review on a pane surface (ASKED #19, #23)', () => {
+  test('a page holds PANE_PAGE_ROWS - 1 review lines, with the options of the TUI default', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    expect([PANE_PAGE_ROWS, shown.length > 2 * (PANE_PAGE_ROWS - 1)]).toEqual([20, true])
+    const second = nextStage(asking, { kind: 'answer', text: 'Next page' })
+    const lines = shown.slice(PANE_PAGE_ROWS - 1, 2 * (PANE_PAGE_ROWS - 1))
+    expect(second.openQuestion?.spec.context?.lines).toEqual(lines)
+    expect(second.openQuestion?.spec.options).toEqual(['Next page', 'Previous page', 'Confirm', 'Change something…'])
+    expect([second.rounds, second.openQuestion?.spec.acceptsTyped]).toEqual([0, undefined])
+  })
+
+  test('a review that fits one page offers Confirm and Change something… only, titled Review (ASKED #23)', async () => {
+    const state = reviewAt({ roles: [] })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    expect(shown.length < PANE_PAGE_ROWS).toBe(true)
+    expect(asking.openQuestion?.spec.options).toEqual(['Confirm', 'Change something…'])
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review' })
+  })
+
+  test('the former Change buttons show on no surface, but their labels still go back to their items', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const isFormer = (label: string): boolean => label.startsWith('Change ') && label !== 'Change something…'
+    expect(asking.openQuestion?.spec.options.some(isFormer)).toBe(false)
+    const going = nextStage(asking, { kind: 'answer', text: 'Change launcher start' })
+    expect([going.stage, going.returnAfter]).toEqual(['launch', 'launch'])
   })
 })
 
