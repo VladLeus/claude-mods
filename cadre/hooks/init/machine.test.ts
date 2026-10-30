@@ -1,12 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { InstructionPart } from '../../types'
 import type { GuardResult } from '../guards/repo'
 import { scanWarnings } from '../scan/gather'
-import { DEFAULT_LOCATIONS, gitWorld, scansOf, stateAt, TEMPLATE_ROLES } from '../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  gitWorld,
+  RECOMMENDED,
+  scansOf,
+  stateAt,
+  TEMPLATE_ROLES,
+  TOPICS,
+  wholeDraft,
+} from '../testkit'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { initialState, nextStage, STAGES } from './machine'
 import { INIT_CANCELLED } from './replies'
 import type { Answer, InitState } from './state'
+import { assignStage } from './stages/assign'
+import { instructionsStage } from './stages/instructions'
 import { policyStage } from './stages/policy'
 
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
@@ -92,5 +104,35 @@ describe('the guard and scan stages (D-230)', () => {
     expect(next.stage).toBe('history')
     expect(next.draft.gathered).toBe(gathered)
     expect(next.outputs).toEqual([{ kind: 'show', block: { key: 'scan', lines } }])
+  })
+})
+
+describe('kept model results (D-235)', () => {
+  /** A whole draft whose setup has one skill of the user's own and a global CLAUDE.md. */
+  const draft = wholeDraft({
+    gathered: {
+      ...wholeDraft().gathered,
+      setup: { ...wholeDraft().gathered.setup, hasGlobalClaudeMd: true, skills: [{ name: 'mine', plugin: null }] },
+    },
+  })
+  const roleIds = draft.roles.map(role => role.id)
+
+  test('nextStage keeps the own-skills, topics and parts answers with the role ids they were made for', () => {
+    expect(initialState(true).kept).toBeNull()
+    const calling = assignStage.enter(stateAt('assign', draft))
+    const skills = new Map([['S1', ['pm']]])
+    const recommended = nextStage(calling, { kind: 'model', result: { id: 'skills', result: skills } })
+    expect(recommended.kept).toEqual({ roleIds, ownSkills: skills, topics: null, parts: null })
+    const instructing = instructionsStage.enter(stateAt('instructions', draft, { kept: recommended.kept }))
+    const repo = { rules: [], hasAgentsMd: false }
+    const consent = nextStage(instructing, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
+    const reading = nextStage(consent, { kind: 'answer', text: 'Yes, read them' })
+    const file = '~/.claude/CLAUDE.md'
+    const part: InstructionPart = { id: 'P1', file, heading: 'Rules', source: 'global', text: 'x', hash: 'h' }
+    const scan = { parts: [part], files: [file], memories: [], warnings: [] }
+    const grouping = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: scan } })
+    const grouped = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
+    const parted = nextStage(grouped, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
+    expect(parted.kept).toEqual({ roleIds, ownSkills: skills, topics: TOPICS, parts: RECOMMENDED })
   })
 })

@@ -21,6 +21,7 @@ import {
 import type { MemRun } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
+import type { InitState } from '../state'
 import { assignStage } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, ownSkillContextLine, skillsContextLine } from './own-skills'
 
@@ -241,5 +242,23 @@ describe('own skills hand-out (G-02-1b)', () => {
       'Skill',
       'Skill',
     ])
+  })
+})
+
+describe('own skills on a go-back (D-235)', () => {
+  test('a go-back to the assignments asks with the kept recommendation and makes no model call', () => {
+    const roles = proposeRoles(FULL_SCAN).roles
+    const setup = emptySetupScan({ skills: [{ name: 'mine', plugin: null }] })
+    const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+    const ownSkills = new Map([['S1', ['be']]])
+    const kept = { roleIds: roles.map(role => role.id), ownSkills, topics: null, parts: null }
+    const draft = { roles, gathered, hints: new Map() }
+    const back = { returnTo: 'review', returnAfter: 'assign', kept } satisfies Partial<InitState>
+    const state = assignStage.enter(stateAt('assign', draft, back))
+    expect(state.effect.kind).toBe('ask')
+    expect(state.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
+    expect(state.openQuestion?.question).toContain('Recommended: be.')
+    const first = assignStage.enter(stateAt('assign', draft, { kept }))
+    expect(first.effect.kind).toBe('model')
   })
 })

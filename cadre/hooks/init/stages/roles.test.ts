@@ -27,6 +27,7 @@ import {
   memIo,
   memWorld,
   shownBlock,
+  driven,
   SOURCE_SCAN,
   stageRun,
   stateAt,
@@ -615,5 +616,20 @@ describe('the roles stage (D-230)', () => {
     expect(asked.openQuestion?.question).toBe(withContext(ROLES_QUESTION, rolesContextLine(DESCRIBED_ROLES, [])))
     const lines = proposalLines(DESCRIBED_ROLES, [])
     expect(asked.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
+  })
+})
+
+describe('kept model results on Change roles (D-235, ASKED #14)', () => {
+  test('unchanged role ids keep the kept results; changed ones clear them, so the model is called again', () => {
+    const roleIds = PROPOSAL.roles.map(role => role.id)
+    const kept = { roleIds, ownSkills: new Map([['S1', ['pm']]]), topics: null, parts: null }
+    const again = { returnTo: 'review', returnAfter: 'improver-install', kept } satisfies Partial<InitState>
+    const start = rolesAt(PROPOSAL, FRAMEWORKS, PROPOSAL)
+    const same = driven(rolesStage.enter({ ...start, ...again }), ['Use these roles']).state
+    expect(same.kept).toEqual(kept)
+    const answers = ['Adjust them', 'drop tl', 'Done adjusting', 'Use these roles']
+    const changed = driven(rolesStage.enter({ ...start, ...again }), answers).state
+    expect(changed.draft.roles?.map(role => role.id)).not.toEqual(roleIds)
+    expect(changed.kept).toBeNull()
   })
 })
