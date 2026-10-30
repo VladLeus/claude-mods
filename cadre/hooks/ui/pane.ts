@@ -1,11 +1,12 @@
 /**
  * The cadre init side pane, a layer 8 module: the pane's view and rows (D-133), the one block it draws, the open
- * question's own context or the newest block between questions (D-203), the runs each row is drawn in (D1) and where
- * the terminal seated the pane (D3). It imports core and the types, so register's Pane hook reads it here.
+ * question's own context or the newest block between questions (D-203), its rows wrapped to the columns its body has
+ * (D-231), the runs each row is drawn in (D1) and where the terminal seated the pane (D3). It imports core and the
+ * types, so register's Pane hook reads it here, and the option preview takes wrapLine from it.
  */
 import type { ContextKind, Enforcement, FileOpKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
-import { reportText } from '../core/text'
+import { clean } from '../core/text'
 
 /** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */
 export type PaneRow = {
@@ -57,15 +58,63 @@ export function questionPaneBlocks(open: OpenQuestion | null, blocks: readonly S
 }
 
 /**
- * The rows the side pane draws (D-133): per block its title row, then one row per line, with one empty row between two
- * blocks and none after the last. Every title and line is cleaned as a report cell (reportText), so a scanned or typed
- * value cannot add a row or hide text.
+ * No cap on a row's cleaned text: the pane and the option preview wrap a line to their width instead of cutting it
+ * (D-231), and the data from disk in a line was capped where the line was built.
  */
-export function paneRows(blocks: readonly ShownBlock[]): PaneRow[] {
+export const UNCUT = Number.POSITIVE_INFINITY
+
+/**
+ * Where a row of `points` ends at a space (wrapLine): the last space at or before `columns` that comes after a
+ * non-space, so an indent is never a break; null when there is none.
+ */
+function breakAt(points: readonly string[], columns: number): number | null {
+  const firstWord = points.findIndex(point => point !== ' ')
+  if (firstWord === -1) return null
+  for (let at = columns; at > firstWord; at -= 1) {
+    if (points[at] === ' ') return at
+  }
+
+  return null
+}
+
+/**
+ * One line as rows of at most `columns` code points (D-231): a line that fits is one row; a longer one ends its row at
+ * the last space at or before the width that comes after a non-space (breakAt), the one space at the break left out,
+ * else the row is cut at the width. No other character is dropped, an indent is never a break and '' is one row. A
+ * width under one, or not a whole number, keeps the line whole.
+ */
+export function wrapLine(text: string, columns: number): string[] {
+  if (!Number.isInteger(columns) || columns < 1) return [text]
+  const rows: string[] = []
+  let rest = Array.from(text)
+  while (rest.length > columns) {
+    const cut = breakAt(rest, columns)
+    rows.push(rest.slice(0, cut ?? columns).join(''))
+    rest = rest.slice(cut === null ? columns : cut + 1)
+  }
+  rows.push(rest.join(''))
+
+  return rows
+}
+
+/**
+ * The rows the side pane draws (D-133): per block its title rows, then the rows of each line, with one empty row
+ * between two blocks and none after the last. Every title and line is cleaned (clean, with no cap), so a scanned or
+ * typed value cannot add a row or hide text, then wrapped to `columns` (wrapLine, D-231); with no columns, as on a
+ * surface whose props carry none, each title and line is one row.
+ */
+export function paneRows(blocks: readonly ShownBlock[], columns: number | null): PaneRow[] {
+  const rowsOf = (text: string, isTitle: boolean): PaneRow[] => {
+    const cleaned = clean(text, UNCUT)
+    const texts = columns === null ? [cleaned] : wrapLine(cleaned, columns)
+
+    return texts.map(row => ({ text: row, isTitle }))
+  }
+
   return blocks.flatMap((block, at) => [
     ...(at === 0 ? [] : [{ text: '', isTitle: false }]),
-    { text: reportText(block.title), isTitle: true },
-    ...block.lines.map(line => ({ text: reportText(line), isTitle: false })),
+    ...rowsOf(block.title, true),
+    ...block.lines.flatMap(line => rowsOf(line, false)),
   ])
 }
 
@@ -225,4 +274,16 @@ export function panePlacement(props: unknown): 'dock' | 'inline' | null {
   const { placement } = props
 
   return placement === 'dock' || placement === 'inline' ? placement : null
+}
+
+/**
+ * The columns the cadre init pane's body has, read from its render props (D-231): `bodyColumns` when it is a whole
+ * number of at least one, else null, as on a surface whose Pane props carry none; paneRows then wraps no row.
+ */
+export function paneColumns(props: unknown): number | null {
+  if (!isObject(props)) return null
+  const { bodyColumns } = props
+  if (typeof bodyColumns !== 'number' || !Number.isInteger(bodyColumns) || bodyColumns < 1) return null
+
+  return bodyColumns
 }

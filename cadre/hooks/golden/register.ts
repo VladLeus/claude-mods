@@ -8,11 +8,13 @@
 /**
  * Each question the init dry run of the D3/R1 world (initWorld) asked on the main screen, in order: its header chip
  * (null when none), its options as the dialog drew them and the option preview of each (null where none), the
- * question's own context (D-203). The spec seats the pane inline again at each ask, as a terminal main screen keeps it
- * drawn. The claude.json consent and the hunk questions have no context of their own, so they have no preview and no
- * Describe your own option. "Use these roles?" has none either, and that is a test-kit artifact: the kit draws the
- * pane only on a mount, the first block of a run clears its seat (D3), and the re-seat at that ask lands after its
- * options were rewritten, while a terminal draws the pane as soon as it opens.
+ * question's own context (D-203). The run is given no presentation, as the test kit stamps none, so no preview line
+ * is wrapped (previewColumns, D-231); a register spec pins the wrap at 80 columns. The spec seats the pane inline again
+ * at each ask, as a terminal main screen keeps it drawn. The claude.json consent and the hunk questions have no
+ * context of their own, so they have no preview and no Describe your own option. "Use these roles?" has none either,
+ * and that is a test-kit artifact: the kit draws the pane only on a mount, the first block of a run clears its seat
+ * (D3), and the re-seat at that ask lands after its options were rewritten, while a terminal draws the pane as soon as
+ * it opens.
  */
 export const GOLDEN_PREVIEWS: readonly {
   readonly header: string | null
@@ -198,8 +200,8 @@ export const GOLDEN_PREVIEWS: readonly {
 
 /**
  * The cadre-init pane as the terminal draws it after the init dry run of initWorld, one drawing per placement (inline
- * on the main screen, docked): the review block, each row as the texts of its spans in order, a row with no spans as
- * its own text.
+ * on the main screen, docked): the review block, its lines wrapped to the 60 columns of the test's pane body (D-231),
+ * each row as the texts of its spans in order, a row with no spans as its own text.
  */
 export const GOLDEN_PANE_ROWS: {
   readonly inline: readonly (readonly string[])[]
@@ -234,8 +236,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -278,7 +282,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
@@ -288,7 +298,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -298,7 +311,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -308,12 +327,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/pm/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/pm/instructions/)"
+      " Loads .cadre/pm/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/pm/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -323,12 +351,18 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Attended: GSD workflows need Bash; this role runs them through a person"
+      " Attended: GSD workflows need Bash; this role runs"
+    ],
+    [
+      "them through a person"
     ],
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -356,9 +390,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at"
+    ],
+    [
+      "launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
     ],
     [
       "Scope card:",
@@ -373,8 +408,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -417,17 +454,29 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Bash runs in the sandbox (hard on macOS, best-effort on Linux)"
+      " Bash runs in the sandbox (hard on macOS,"
+    ],
+    [
+      "best-effort on Linux)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -437,7 +486,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -447,12 +502,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/tl/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/tl/instructions/)"
+      " Loads .cadre/tl/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/tl/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -462,7 +526,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -490,9 +557,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/tl/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/tl/ (rendered at"
+    ],
+    [
+      "launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
     ],
     [
       "Scope card:",
@@ -507,8 +575,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -551,17 +621,29 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Bash runs in the sandbox (hard on macOS, best-effort on Linux)"
+      " Bash runs in the sandbox (hard on macOS,"
+    ],
+    [
+      "best-effort on Linux)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -571,7 +653,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -581,12 +669,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/security/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/security/instructions/)"
+      " Loads .cadre/security/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/security/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -596,7 +693,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -624,9 +724,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/security/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/security/"
+    ],
+    [
+      "(rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else"
+    ],
+    [
+      "~/.claude)"
     ],
     [
       "Private files per role (written after Confirm):"
@@ -634,17 +738,35 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md and"
+    ],
+    [
+      "instructions.json (outside the repo, never committed)"
     ],
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md and"
+    ],
+    [
+      "instructions.json (outside the repo, never committed)"
     ],
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md"
+    ],
+    [
+      "and instructions.json (outside the repo, never committed)"
     ],
     [
       "File plan:"
@@ -793,20 +915,32 @@ export const GOLDEN_PANE_ROWS: {
       "            # <<< cadre"
     ],
     [
-      "  hunk      .planning/config.json  mode: not set (GSD default) -> \"yolo\"  (required, accepted)"
+      "  hunk      .planning/config.json  mode: not set (GSD"
+    ],
+    [
+      "default) -> \"yolo\"  (required, accepted)"
     ],
     [
       "            ",
       "run:",
-      " node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo"
+      " node ~/.claude/gsd-core/bin/gsd-tools.cjs"
     ],
     [
-      "  hunk      .planning/config.json  workflow.text_mode: not set (GSD default) -> false  (required, accepted)"
+      "config-set mode yolo"
+    ],
+    [
+      "  hunk      .planning/config.json  workflow.text_mode: not"
+    ],
+    [
+      "set (GSD default) -> false  (required, accepted)"
     ],
     [
       "            ",
       "run:",
-      " node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false"
+      " node ~/.claude/gsd-core/bin/gsd-tools.cjs"
+    ],
+    [
+      "config-set workflow.text_mode false"
     ],
     [
       "Summary:",
@@ -820,9 +954,10 @@ export const GOLDEN_PANE_ROWS: {
       "0",
       " conflict, ",
       "2",
-      " hunks (",
-      "2",
-      " accepted)"
+      " hunks"
+    ],
+    [
+      "(2 accepted)"
     ],
     [
       "Git policy:",
@@ -834,7 +969,10 @@ export const GOLDEN_PANE_ROWS: {
     ],
     [
       "warning:",
-      " could not list docs/superpowers (treated as unknown)"
+      " could not list docs/superpowers (treated as"
+    ],
+    [
+      "unknown)"
     ]
   ],
   "dock": [
@@ -866,8 +1004,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -910,7 +1050,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
@@ -920,7 +1066,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -930,7 +1079,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -940,12 +1095,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/pm/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/pm/instructions/)"
+      " Loads .cadre/pm/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/pm/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -955,12 +1119,18 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Attended: GSD workflows need Bash; this role runs them through a person"
+      " Attended: GSD workflows need Bash; this role runs"
+    ],
+    [
+      "them through a person"
     ],
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -988,9 +1158,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at"
+    ],
+    [
+      "launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
     ],
     [
       "Scope card:",
@@ -1005,8 +1176,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -1049,17 +1222,29 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Bash runs in the sandbox (hard on macOS, best-effort on Linux)"
+      " Bash runs in the sandbox (hard on macOS,"
+    ],
+    [
+      "best-effort on Linux)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -1069,7 +1254,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -1079,12 +1270,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/tl/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/tl/instructions/)"
+      " Loads .cadre/tl/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/tl/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -1094,7 +1294,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -1122,9 +1325,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/tl/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/tl/ (rendered at"
+    ],
+    [
+      "launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
     ],
     [
       "Scope card:",
@@ -1139,8 +1343,10 @@ export const GOLDEN_PANE_ROWS: {
       "model:",
       " opus + medium",
       "; ",
-      "permission mode:",
-      " auto"
+      "permission mode:"
+    ],
+    [
+      "auto"
     ],
     [
       "  ",
@@ -1183,17 +1389,29 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[hard]",
-      " Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)"
+      " Plugins: only agent-fleet@local-mods,"
+    ],
+    [
+      "autopilot@local-mods, cadre@local-mods load"
+    ],
+    [
+      "(--setting-sources project whitelist)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Bash runs in the sandbox (hard on macOS, best-effort on Linux)"
+      " Bash runs in the sandbox (hard on macOS,"
+    ],
+    [
+      "best-effort on Linux)"
     ],
     [
       "    ",
       "[best-effort]",
-      " Reads of .env, .env.*, ~/.ssh and ~/.aws are denied"
+      " Reads of .env, .env.*, ~/.ssh and ~/.aws"
+    ],
+    [
+      "are denied"
     ],
     [
       "    ",
@@ -1203,7 +1421,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
+      " MCP servers the scan could not see, such as"
+    ],
+    [
+      "unusual names or ~/.claude.json without consent, are not"
+    ],
+    [
+      "denied"
     ],
     [
       "    ",
@@ -1213,12 +1437,21 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " Loads .cadre/security/CLAUDE.md and its private instructions (<config dir>/cadre/<repo>-<hash8>/security/instructions/)"
+      " Loads .cadre/security/CLAUDE.md and its private"
+    ],
+    [
+      "instructions (<config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/security/instructions/)"
     ],
     [
       "    ",
       "[hard]",
-      " Autopilot, agent-fleet and the handoff skills are always available"
+      " Autopilot, agent-fleet and the handoff skills are"
+    ],
+    [
+      "always available"
     ],
     [
       "    ",
@@ -1228,7 +1461,10 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "[none]",
-      " MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)"
+      " MCP route: merged (no --strict-mcp-config, so"
+    ],
+    [
+      "/fleet works; MCP denies are best-effort)"
     ],
     [
       "  decisions:"
@@ -1256,9 +1492,13 @@ export const GOLDEN_PANE_ROWS: {
     [
       "  ",
       "memory:",
-      " <config dir>/cadre/<repo>-<hash8>/security/ (rendered at launch",
-      "; ",
-      "<config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)"
+      " <config dir>/cadre/<repo>-<hash8>/security/"
+    ],
+    [
+      "(rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else"
+    ],
+    [
+      "~/.claude)"
     ],
     [
       "Private files per role (written after Confirm):"
@@ -1266,17 +1506,35 @@ export const GOLDEN_PANE_ROWS: {
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/pm/instructions/CLAUDE.md and"
+    ],
+    [
+      "instructions.json (outside the repo, never committed)"
     ],
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/tl/instructions/CLAUDE.md and"
+    ],
+    [
+      "instructions.json (outside the repo, never committed)"
     ],
     [
       "    ",
       "private files:",
-      " <config dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md and instructions.json (outside the repo, never committed)"
+      " <config"
+    ],
+    [
+      "dir>/cadre/<repo>-<hash8>/security/instructions/CLAUDE.md"
+    ],
+    [
+      "and instructions.json (outside the repo, never committed)"
     ],
     [
       "File plan:"
@@ -1425,20 +1683,32 @@ export const GOLDEN_PANE_ROWS: {
       "            # <<< cadre"
     ],
     [
-      "  hunk      .planning/config.json  mode: not set (GSD default) -> \"yolo\"  (required, accepted)"
+      "  hunk      .planning/config.json  mode: not set (GSD"
+    ],
+    [
+      "default) -> \"yolo\"  (required, accepted)"
     ],
     [
       "            ",
       "run:",
-      " node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set mode yolo"
+      " node ~/.claude/gsd-core/bin/gsd-tools.cjs"
     ],
     [
-      "  hunk      .planning/config.json  workflow.text_mode: not set (GSD default) -> false  (required, accepted)"
+      "config-set mode yolo"
+    ],
+    [
+      "  hunk      .planning/config.json  workflow.text_mode: not"
+    ],
+    [
+      "set (GSD default) -> false  (required, accepted)"
     ],
     [
       "            ",
       "run:",
-      " node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false"
+      " node ~/.claude/gsd-core/bin/gsd-tools.cjs"
+    ],
+    [
+      "config-set workflow.text_mode false"
     ],
     [
       "Summary:",
@@ -1452,9 +1722,10 @@ export const GOLDEN_PANE_ROWS: {
       "0",
       " conflict, ",
       "2",
-      " hunks (",
-      "2",
-      " accepted)"
+      " hunks"
+    ],
+    [
+      "(2 accepted)"
     ],
     [
       "Git policy:",
@@ -1466,7 +1737,10 @@ export const GOLDEN_PANE_ROWS: {
     ],
     [
       "warning:",
-      " could not list docs/superpowers (treated as unknown)"
+      " could not list docs/superpowers (treated as"
+    ],
+    [
+      "unknown)"
     ]
   ]
 }

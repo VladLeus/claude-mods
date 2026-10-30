@@ -1,12 +1,14 @@
 /**
  * The option preview, a layer 8 module: the open question's own context as the markdown preview of a dialog option on
- * the terminal main screen (D3, D-203), the rewrite of an AskUserQuestion call with its previews and the Describe your
- * own option (A1, A2, R3, R4), and the answers typed as notes (A3). It imports core and the types, so register's
- * AskUserQuestion hook reads it here.
+ * the terminal main screen (D3, D-203), its lines wrapped to the width of the preview box (D-231), the rewrite of an
+ * AskUserQuestion call with its previews and the Describe your own option (A1, A2, R3, R4), and the answers typed as
+ * notes (A3). It imports core, the line wrap of ui/pane and the types, so register's AskUserQuestion hook reads it
+ * here.
  */
 import type { AskContext, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
-import { reportText } from '../core/text'
+import { clean } from '../core/text'
+import { UNCUT, wrapLine } from './pane'
 
 /**
  * The most characters, by String length, the preview of a dialog option holds (D3): the engine replaces a preview
@@ -22,6 +24,25 @@ const TITLE_MARKUP = /[*_`[\]<>#\\~|]/g
 
 /** What a preview draws of one block or context (D3, D-203): its title and its lines. */
 type Previewed = Pick<ShownBlock, 'title' | 'lines'>
+
+/**
+ * The cells of the terminal's width the dialog's option column and the preview box's frame take (D-231), as the spike
+ * measured them on the main screen: the box's lines wrap at 122 cells at 160 columns and at 72 at 110.
+ */
+const PREVIEW_INSET = 38
+
+/**
+ * The columns a dialog option's preview has on the terminal main screen (D-231): the terminal's columns as the command
+ * runs (CommandPresentation) less PREVIEW_INSET; null when they are not a whole number or leave no column, as for a
+ * command run with no presentation.
+ */
+export function previewColumns(presentationColumns: unknown): number | null {
+  if (typeof presentationColumns !== 'number' || !Number.isInteger(presentationColumns)) return null
+  const columns = presentationColumns - PREVIEW_INSET
+  if (columns < 1) return null
+
+  return columns
+}
 
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */
 type PreviewBlock = {
@@ -41,13 +62,17 @@ function longestBacktickRun(lines: readonly string[]): number {
 }
 
 /**
- * One block as a preview draws it (D3): the title cleaned as a report cell, its markdown characters escaped and set
- * in bold; each line cleaned as a report cell; a fence one backtick longer than the longest run in the lines, and at
- * least three.
+ * One block as a preview draws it (D3): the title cleaned, with no cap, its markdown characters escaped and set in
+ * bold; each line cleaned, with no cap, then wrapped to `columns` (wrapLine, D-231), or kept whole with no columns; a
+ * fence one backtick longer than the longest run in the lines, and at least three.
  */
-function previewBlock(block: Previewed): PreviewBlock {
-  const lines = block.lines.map(reportText)
-  const title = `**${reportText(block.title).replace(TITLE_MARKUP, '\\$&')}**`
+function previewBlock(block: Previewed, columns: number | null): PreviewBlock {
+  const lines = block.lines.flatMap(line => {
+    const cleaned = clean(line, UNCUT)
+
+    return columns === null ? [cleaned] : wrapLine(cleaned, columns)
+  })
+  const title = `**${clean(block.title, UNCUT).replace(TITLE_MARKUP, '\\$&')}**`
 
   return { title, fence: '`'.repeat(Math.max(3, longestBacktickRun(lines) + 1)), lines }
 }
@@ -93,15 +118,15 @@ function cutPreview(parts: readonly PreviewBlock[]): string {
 /**
  * Blocks, such as the open question's own context (D-203), as the markdown preview of a dialog option (D3), for the
  * terminal main screen, where the engine hides the pane while a dialog is open. Per block, in the order given, its
- * title in bold, cleaned as a report cell (reportText) with its markdown characters escaped, then its lines, each
- * cleaned as a report cell with its indent kept, in a fence one backtick longer than any backtick run in them and at
- * least three: the fence keeps every scanned or typed value literal, so none can format the preview or end the fence.
- * A blank line parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed,
+ * title in bold, cleaned with its markdown characters escaped, then its lines, each cleaned with its indent kept and
+ * wrapped to `columns` (previewBlock, D-231), in a fence one backtick longer than any backtick run in them and at least
+ * three: the fence keeps every scanned or typed value literal, so none can format the preview or end the fence. A
+ * blank line parts two blocks. Past MAX_PREVIEW_CHARS the preview is cut after a whole line, its open fence closed,
  * and ends with a `…` line (cutPreview); lengths are String lengths, never fewer than the code points. No blocks give
  * ''.
  */
-export function previewMarkdown(blocks: readonly Previewed[]): string {
-  const parts = blocks.map(previewBlock)
+export function previewMarkdown(blocks: readonly Previewed[], columns: number | null = null): string {
+  const parts = blocks.map(block => previewBlock(block, columns))
   const whole = parts.flatMap((part, at) => [
     ...(at === 0 ? [] : ['']),
     part.title,
@@ -232,15 +257,19 @@ export type AskRewrite = {
  * The rewrite of an AskUserQuestion call while the cadre init pane sits inline on the terminal main screen (A1, A2,
  * D3, R3, R4); null, so the call passes through unchanged and the dialog keeps its Other row, when the open question
  * has no context of its own (D-203) or withPreviews does not rewrite the questions. Each option of each single-select
- * question gets the preview of the open question's own context (previewMarkdown, D-203), whatever its header, and
- * each such question then gets NOTE_WORDING for every OTHER_WORDING in its text (R4), the hint line as its last line
- * (R3) and, when it has room, the Describe your own option with that preview (withDescribeOwn), with an AskedQuestion
- * that pairs its text as asked with the text the dialog shows (A3); a multi-select question is copied unchanged,
- * OTHER_WORDING included, and has none.
+ * question gets the preview of the open question's own context, its lines wrapped to `columns` (previewMarkdown,
+ * D-203, D-231), whatever its header, and each such question then gets NOTE_WORDING for every OTHER_WORDING in its
+ * text (R4), the hint line as its last line (R3) and, when it has room, the Describe your own option with that preview
+ * (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3); a
+ * multi-select question is copied unchanged, OTHER_WORDING included, and has none.
  */
-export function askRewrite(questions: unknown, context: AskContext | null): AskRewrite | null {
+export function askRewrite(
+  questions: unknown,
+  context: AskContext | null,
+  columns: number | null = null,
+): AskRewrite | null {
   if (context === null) return null
-  const preview = previewMarkdown([context])
+  const preview = previewMarkdown([context], columns)
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null
   const pairs = previewed.map(question => {

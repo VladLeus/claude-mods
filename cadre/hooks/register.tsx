@@ -19,8 +19,8 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
-import { panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './ui/pane'
-import { answersFromNotes, askRewrite } from './ui/preview'
+import { paneColumns, panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks } from './ui/pane'
+import { answersFromNotes, askRewrite, previewColumns } from './ui/preview'
 
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
@@ -40,6 +40,11 @@ const openQuestion = atom({ plugin: 'cadre', key: 'openQuestion' }, null)
  * it opens the pane and clears it when it closes the pane, so a dialog after the run never carries the pane.
  */
 let lastPlacement: 'dock' | 'inline' | null = null
+/**
+ * The terminal's columns the last `/cadre` command ran with (CommandPresentation, D-231), as the event gave them; null
+ * before any. The preview of a dialog option wraps its lines to them less the dialog's option column (previewColumns).
+ */
+let presentationColumns: unknown = null
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -344,6 +349,9 @@ export const register: Register = on => {
   // A run that opened the cadre-init pane closes it once it settles: finished, cancelled, refused or thrown (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
     const pane: PaneRun = { isOpened: false }
+    // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
+    const presentation: unknown = e.presentation
+    presentationColumns = isObject(presentation) ? presentation.columns : null
     try {
       return await commandReply($, e.args, pane)
     } finally {
@@ -352,8 +360,8 @@ export const register: Register = on => {
   })
 
   // The cadre init side pane (D-133): one block, the own context of the question cadre has open now (D-203,
-  // questionPaneBlocks), else the newest block, in the rows of paneRows, coloured by paneSpans (D1). A terminal render
-  // records where the pane is seated (D3).
+  // questionPaneBlocks), else the newest block, in the rows of paneRows wrapped to the columns of the pane's body
+  // (paneColumns, D-231), coloured by paneSpans (D1). A terminal render records where the pane is seated (D3).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
@@ -363,7 +371,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        {paneRows(shown).map((row, at) => (
+        {paneRows(shown, paneColumns(e.props)).map((row, at) => (
           <Text key={at}>
             {row.text === ''
               ? ' '
@@ -387,12 +395,12 @@ export const register: Register = on => {
   // text: any other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through
   // untouched, and so does its result (D-239). Only while the terminal main screen seats the pane inline, where the
   // engine hides it behind a dialog, and only for an open question with a context of its own: each single-select
-  // question gets that context as the preview of every option (D3, D-203) and a Describe your own option or the hint
-  // line (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with
-  // no context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. Any other call, a deny,
-  // an error and a result of another shape pass through unchanged. Apart from the read of the open question, the hook
-  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
-  // (C1).
+  // question gets that context as the preview of every option (D3, D-203), wrapped to the preview box (previewColumns,
+  // D-231), and a Describe your own option or the hint line (A2), and notes typed in the dialog become the answer under
+  // the question's text as asked (A3). A question with no context (a hunk, the claude.json consent) keeps its dialog
+  // as asked, Other row included. Any other call, a deny, an error and a result of another shape pass through
+  // unchanged. Apart from the read of the open question, the hook has no .catch on purpose: a hook that throws is
+  // skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
@@ -400,7 +408,7 @@ export const register: Register = on => {
     const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
     if (open === null || asked !== open.question) return await next(e)
     if (lastPlacement !== 'inline') return await next(e)
-    const rewrite = askRewrite(raw, open.context)
+    const rewrite = askRewrite(raw, open.context, previewColumns(presentationColumns))
     if (rewrite === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no
