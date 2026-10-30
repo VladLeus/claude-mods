@@ -147,6 +147,24 @@ async function keptBuiltEntries(
 }
 
 /**
+ * What planStep plans from (PLAN-01, D-105): the roles with their records, the repo default, the git policy, the
+ * launcher start, the compiled scopes, the hunks, the repo scan, the session's locations and the consent answer.
+ */
+export type PlanStepInput = {
+  readonly roles: readonly RoleSpec[]
+  readonly repoDefault: FrameworkId | null
+  readonly policy: GitPolicy
+  readonly launchStart: LaunchStart
+  readonly scopes: ReadonlyMap<string, CompiledScope>
+  readonly hunks: readonly HunkOp[]
+  readonly repo: RepoScan
+  readonly locations: InitLocations
+  readonly readUserMcp: boolean
+  /** The parts each role was given, by role id (repoPartsOf); absent plans no built role file. */
+  readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
+}
+
+/**
  * The truthful file plan of init (PLAN-01, PLAN-03, PLAN-04, D-67). The repo state holds cadre's own version, else
  * `unknown`, the repo default framework, the git policy, the role ids and where the launchers start (A2), and
  * desiredFiles gives every file from it, with the built `.cadre/<id>/CLAUDE.md` of each role from the repo parts
@@ -165,22 +183,7 @@ async function keptBuiltEntries(
  * merged, since the plan then has no op for it. It writes nothing itself: apply writes the plan after Confirm
  * (applyConfirmed).
  */
-export async function planStep(
-  io: InitIo,
-  input: {
-    readonly roles: readonly RoleSpec[]
-    readonly repoDefault: FrameworkId | null
-    readonly policy: GitPolicy
-    readonly launchStart: LaunchStart
-    readonly scopes: ReadonlyMap<string, CompiledScope>
-    readonly hunks: readonly HunkOp[]
-    readonly repo: RepoScan
-    readonly locations: InitLocations
-    readonly readUserMcp: boolean
-    /** The parts each role was given, by role id (repoPartsOf); absent plans no built role file. */
-    readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
-  },
-): Promise<PlanResult> {
+export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
   const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp, repoParts } = input
   const cadreVersion = (await io.cadreVersion()) ?? 'unknown'
   const state: CadreState = {

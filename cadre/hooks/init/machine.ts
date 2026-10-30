@@ -8,21 +8,15 @@
  * that init/run performs with today's step, and merges its result into the draft as runInit did. Pure: it gives
  * states and never performs an effect; only init/run and the tests import it.
  */
-import { setupAfterInstalls } from '../apply/installs'
 import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
-import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
 import { scanWarnings } from '../scan/gather'
-import type { StepResult } from '../ui/ask'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
-import type { Reviewed } from './draft'
-import { initReplyText } from './initapply'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import {
   draftBase,
-  fullDraft,
   STAGE_ORDER,
   stageCancelled,
   stageDone,
@@ -31,11 +25,11 @@ import {
   withEffect,
   withOutputs,
 } from './state'
-import type { Answer, Applied, Effect, InitStage, InitState, StageDef } from './state'
+import type { Answer, Effect, InitStage, InitState, StageDef } from './state'
 import { consentStage } from './stages/consent'
 import { historyStage } from './stages/history'
 import { policyStage } from './stages/policy'
-import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow } from './stages/review'
+import { reviewStage } from './stages/review'
 import { installedFrameworks } from './stages/roles'
 
 /**
@@ -116,60 +110,6 @@ const launchStage: StageDef = Object.freeze({
     if (launch.kind === 'cancelled') return stageCancelled(state, launch.reason)
 
     return stageDone({ ...state, draft: { ...state.draft, launchStart: launch.value } })
-  },
-})
-
-/**
- * The reply of a confirmed --dry-run (D-82, 02-GAPS-B3 S4): the plan as the review confirmed it, with the private
- * files of every role and, when claude-md-management is installed and a built file holds a part, the improver line;
- * nothing was written.
- */
-function dryRunReply(reviewed: Reviewed): string {
-  const { plan, state } = reviewed.planned
-  const confirmed = reviewed.draft
-  const count = improverRunCount(confirmed, plan)
-  const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
-  const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
-  const rows = confirmed.roles.map(role => privateFilesRow(role.id))
-
-  return initReplyText(plan, state.gitPolicy, state.launchStart, null, [PRIVATE_FILES_HEADING, ...rows, ...improver])
-}
-
-/** The review's result (D-43): a --dry-run replies with the confirmed plan; plain init applies it after Confirm. */
-function afterReview(state: InitState, result: StepResult<Reviewed>): InitState {
-  if (result.kind === 'cancelled') return stageCancelled(state, result.reason)
-  const reviewed = result.value
-  const confirmed = { ...state, draft: reviewed.draft }
-  if (state.dryRun) return stageEnded(confirmed, dryRunReply(reviewed))
-  const applying: InitState = { ...confirmed, sub: { kind: 'applying' } }
-
-  return withEffect(applying, { kind: 'legacy', step: { id: 'apply', reviewed } })
-}
-
-/** Confirm's apply (D-105): the reply with the plan as written and what the apply did. */
-function afterApply(state: InitState, result: StepResult<Applied> | null): InitState {
-  if (result === null) return stageFailed(state)
-  if (result.kind === 'cancelled') return stageCancelled(state, result.reason)
-  const { planned, outcome } = result.value
-
-  return stageEnded(state, initReplyText(planned.plan, planned.state.gitPolicy, planned.state.launchStart, outcome))
-}
-
-/** The final review with its go-backs (reviewStep, legacy), then Confirm's apply on plain init (legacy). */
-const reviewStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const draft = fullDraft(state.draft)
-    if (draft === null) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'review', draft } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy') return stageFailed(state)
-    const { result } = answer
-    if (result.id === 'review') return afterReview(state, result.result)
-    if (result.id === 'apply') return afterApply(state, result.result)
-
-    return stageFailed(state)
   },
 })
 

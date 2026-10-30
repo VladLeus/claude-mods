@@ -1,14 +1,15 @@
 /**
- * The review stage of init (D-43, D-105, D-133, D-136, A1, A2, A3), a layer 10 module: the review question with its
- * context line of the plan, the git policy and the launcher start, and its typed-item hint; its buttons and words
+ * The review stage of init (D-43, D-105, D-133, D-136, D-230, A1, A2, A3), a layer 10 module: the review question with
+ * its context line of the plan, the git policy and the launcher start, and its typed-item hint; its buttons and words
  * (parseReviewItem); the review block the side pane shows before it (reviewLines: the roles, each scope card, the
- * plan, the policy and start, the instructions per role, the private files and the improver line); and reviewStep,
- * which plans the draft, shows it, asks, and goes back to one item (goBack) until Confirm. Pure: it asks and reads
- * through the InitIo port it is given, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft,
- * init/flow, init/initplan, init/replies and the launch and policy stages, and never imports init.ts, which imports
- * it, or init/run.
+ * plan, the policy and start, the instructions per role, the private files and the improver line); and reviewStage,
+ * the pure stage that has the draft planned, shows it, asks, goes back to one item through the legacy go-back until
+ * Confirm, and then replies with the plan on a --dry-run or has it applied. Pure: it gives states and never performs an
+ * effect, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft, init/flow, init/initapply,
+ * init/initplan, init/replies, init/state and the launch and policy stages, and never imports init/machine or
+ * init/run.
  */
-import type { CompiledScope, GitPolicy, InitIo, LaunchStart, Plan, RoleSpec } from '../../../types'
+import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
 import { setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -20,24 +21,17 @@ import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
 import { scopesFor } from '../../team'
-import {
-  accepted,
-  ASK_HEADERS,
-  askChoice,
-  cancelled,
-  choiceResult,
-  contextText,
-  quotedLabels,
-  showBlock,
-} from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels } from '../../ui/ask'
+import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { scanWarningLines } from '../../ui/blocks/scan'
-import type { Draft, Reviewed } from '../draft'
-import { goBack } from '../flow'
-import type { ReviewItem } from '../flow'
-import { planStep, privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import type { Draft, PlanResult, Reviewed } from '../draft'
+import { initReplyText } from '../initapply'
+import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
+import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
+import { fullDraft, stageCancelled, stageEnded, stageFailed, withEffect, withOutputs } from '../state'
+import type { Answer, Applied, InitState, ReviewItem, StageDef } from '../state'
 import { launchLine } from './launch'
 import { policyLine } from './policy'
 
@@ -237,55 +231,162 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
 }
 
 /**
- * The final review (D-43, A1). Each round compiles the scopes from the draft (scopesFor), with the plugins answered
- * Install counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every
- * install works (decision #69 A4; a failed install is then a warning, and apply plans again without it), plans the
- * files (planStep) with each role's repo parts (repoPartsOf, G-02-1f), which each parts-flow role's role.json records
- * (withRepoRecords, G-02-1f Regen), shows the summary in the side pane (reviewLines, D-133) and asks reviewQuestion
- * with the context line of that plan, cleaned as a report cell (reviewContextLine, D-136), and REVIEW_OPTIONS; an item
- * word may be typed under "Other" (parseReviewItem), and any other answer is asked again with why on top. Confirm
- * accepts the plan just shown, with the state it was planned with and the draft it was built from (Reviewed). A go-back
- * re-asks that one item (goBack), and the next round shows the summary again. A dismissal (REVIEW_DISMISSED_REASON),
- * MAX_ASKS answers it cannot read (NO_USABLE_ANSWER_REASON), or a cancelled go-back step is cancelled with its reason,
- * and so is a run that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person
- * did not confirm is used (A1, D-45). A go-back picked at the last round cancels at once and asks none of that item's
- * questions (A3). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ * What the review plans a draft with (decision #69 A4, G-02-1f): the scopes compiled with the plugins answered Install
+ * counted as installed (setupAfterInstalls), so the cards and the plan show what Confirm writes when every install
+ * works, and planStep's input, with each role's repo parts (repoPartsOf) recorded in each parts-flow role's role.json
+ * (withRepoRecords, G-02-1f Regen).
  */
-export async function reviewStep(io: InitIo, draft: Draft): Promise<StepResult<Reviewed>> {
-  let current = draft
-  for (let round = 0; round < MAX_REVIEW_ROUNDS; round += 1) {
-    const setup = setupAfterInstalls(current.gathered.setup, current.pluginInstalls)
-    const gathered = { ...current.gathered, setup }
-    const scopes = scopesFor(current.roles, current.repoDefault, gathered, current.hunks, current.launchStart)
-    const repoParts = repoPartsOf(current.instructions)
-    const planned = await planStep(io, {
-      roles: withRepoRecords(current.roles, current.instructions, repoParts),
-      repoDefault: current.repoDefault,
-      policy: current.policy,
-      launchStart: current.launchStart,
-      scopes,
-      hunks: current.hunks,
-      repo: current.gathered.repo,
-      locations: current.locations,
-      readUserMcp: current.readUserMcp,
-      repoParts,
-    })
-    await showBlock(io, 'review', reviewLines(current, scopes, planned.plan))
-    const ask = {
-      question: reviewQuestion(contextText(reviewContextLine(planned.plan, current.policy, current.launchStart))),
-      spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review },
-      parse: parseReviewItem,
-      accepts: REVIEW_ACCEPTS,
-    }
-    const picked = choiceResult(await askChoice(io, ask), REVIEW_DISMISSED_REASON)
-    if (picked.kind === 'cancelled') return picked
-    const item = picked.value
-    if (item === 'confirm') return accepted({ draft: current, planned })
-    if (round === MAX_REVIEW_ROUNDS - 1) break
-    const changed = await goBack(io, current, item)
-    if (changed.kind === 'cancelled') return changed
-    current = changed.value
+function reviewPlanOf(draft: Draft): {
+  readonly scopes: ReadonlyMap<string, CompiledScope>
+  readonly input: PlanStepInput
+} {
+  const setup = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls)
+  const gathered = { ...draft.gathered, setup }
+  const scopes = scopesFor(draft.roles, draft.repoDefault, gathered, draft.hunks, draft.launchStart)
+  const repoParts = repoPartsOf(draft.instructions)
+  const input = {
+    roles: withRepoRecords(draft.roles, draft.instructions, repoParts),
+    repoDefault: draft.repoDefault,
+    policy: draft.policy,
+    launchStart: draft.launchStart,
+    scopes,
+    hunks: draft.hunks,
+    repo: draft.gathered.repo,
+    locations: draft.locations,
+    readUserMcp: draft.readUserMcp,
+    repoParts,
   }
 
-  return cancelled(REVIEW_ROUNDS_REASON)
+  return { scopes, input }
 }
+
+/**
+ * The review question as the stage asks it (D-43, D-136): reviewQuestion with the context line of the plan just shown,
+ * cleaned as a report cell (reviewContextLine), the four buttons with the Review chip, parseReviewItem, what its
+ * refusal lists, and the reason a dismissal cancels with.
+ */
+function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly dismissedReason: string } {
+  return {
+    question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
+    spec: { options: REVIEW_OPTIONS, header: ASK_HEADERS.review },
+    parse: parseReviewItem,
+    accepts: REVIEW_ACCEPTS,
+    dismissedReason: REVIEW_DISMISSED_REASON,
+  }
+}
+
+/** The round's plan of the whole draft out (planStep, through the legacy plan step until it is an io effect). */
+function planning(state: InitState): InitState {
+  const draft = fullDraft(state.draft)
+  if (draft === null) return stageFailed(state)
+  const planned: InitState = { ...state, sub: { kind: 'start' } }
+
+  return withEffect(planned, { kind: 'legacy', step: { id: 'plan', input: reviewPlanOf(draft).input } })
+}
+
+/** The review question about `planned` asked, `tries` times so far; `question` is its text after a refusal. */
+function reviewAsked(state: InitState, planned: PlanResult, question: string | null, tries: number): InitState {
+  const draft = fullDraft(state.draft)
+  if (draft === null) return stageFailed(state)
+  const ask = reviewAsk(draft, planned.plan)
+  const asking: InitState = { ...state, sub: { kind: 'review', tries, planned } }
+
+  return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/** After the plan: the review block in the side pane (reviewLines, D-133), then the review question about it. */
+function afterPlan(state: InitState, planned: PlanResult): InitState {
+  const draft = fullDraft(state.draft)
+  if (draft === null) return stageFailed(state)
+  const lines = reviewLines(draft, reviewPlanOf(draft).scopes, planned.plan)
+
+  return reviewAsked(withOutputs(state, [{ kind: 'show', block: { key: 'review', lines } }]), planned, null, 1)
+}
+
+/**
+ * The reply of a confirmed --dry-run (D-82, 02-GAPS-B3 S4): the plan as the review confirmed it, with the private
+ * files of every role and, when claude-md-management is installed and a built file holds a part, the improver line;
+ * nothing was written.
+ */
+function dryRunReply(reviewed: Reviewed): string {
+  const { plan, state } = reviewed.planned
+  const confirmed = reviewed.draft
+  const count = improverRunCount(confirmed, plan)
+  const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
+  const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
+  const rows = confirmed.roles.map(role => privateFilesRow(role.id))
+
+  return initReplyText(plan, state.gitPolicy, state.launchStart, null, [PRIVATE_FILES_HEADING, ...rows, ...improver])
+}
+
+/** Confirm (D-105): a --dry-run replies with the plan just shown (dryRunReply), and plain init has it applied. */
+function confirmed(state: InitState, reviewed: Reviewed): InitState {
+  if (state.dryRun) return stageEnded(state, dryRunReply(reviewed))
+  const applying: InitState = { ...state, sub: { kind: 'applying' } }
+
+  return withEffect(applying, { kind: 'legacy', step: { id: 'apply', reviewed } })
+}
+
+/**
+ * The answer to the review question (choiceAnswer): Confirm replies with the plan just shown on a --dry-run and has it
+ * applied on plain init (D-105); another item goes back to that item (the legacy go-back, until 02.1-26), except at the
+ * last round, where it cancels at once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3); any
+ * other answer is asked again with why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it
+ * cannot read with NO_USABLE_ANSWER_REASON (A1, D-45).
+ */
+function afterReviewAnswer(state: InitState, answer: string | null): InitState {
+  const draft = fullDraft(state.draft)
+  if (state.sub.kind !== 'review' || draft === null) return stageFailed(state)
+  const { planned } = state.sub
+  const next = choiceAnswer(reviewAsk(draft, planned.plan), state.sub, answer)
+  if (next.kind === 'again') return reviewAsked(state, planned, next.question, next.sub.tries)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  const item = next.value
+  if (item === 'confirm') return confirmed(state, { draft, planned })
+  if (state.rounds >= MAX_REVIEW_ROUNDS - 1) return stageCancelled(state, REVIEW_ROUNDS_REASON)
+  const going: InitState = { ...state, sub: { kind: 'start' } }
+
+  return withEffect(going, { kind: 'legacy', step: { id: 'go-back', draft, item } })
+}
+
+/** After a go-back: its new draft planned again as the next round, or the review cancelled with its reason (A1). */
+function afterGoBack(state: InitState, result: StepResult<Draft>): InitState {
+  if (result.kind === 'cancelled') return stageCancelled(state, result.reason)
+
+  return planning({ ...state, draft: result.value, rounds: state.rounds + 1 })
+}
+
+/** Confirm's apply (D-105): the reply with the plan as written and what the apply did. */
+function afterApply(state: InitState, result: StepResult<Applied> | null): InitState {
+  if (result === null) return stageFailed(state)
+  if (result.kind === 'cancelled') return stageCancelled(state, result.reason)
+  const { planned, outcome } = result.value
+
+  return stageEnded(state, initReplyText(planned.plan, planned.state.gitPolicy, planned.state.launchStart, outcome))
+}
+
+/** The answer to the effect the review has out: the plan, the review question, a go-back, or Confirm's apply. */
+function reviewAnswer(state: InitState, answer: Answer): InitState {
+  if (answer.kind === 'answer') return afterReviewAnswer(state, answer.text)
+  if (answer.kind !== 'legacy') return stageFailed(state)
+  const { result } = answer
+  if (result.id === 'plan') return afterPlan(state, result.result)
+  if (result.id === 'go-back') return afterGoBack(state, result.result)
+  if (result.id === 'apply') return afterApply(state, result.result)
+
+  return stageFailed(state)
+}
+
+/**
+ * The final review (D-43, D-230, A1). Each round has the whole draft planned (reviewPlanOf, planStep), shows the
+ * summary in the side pane (reviewLines, D-133) and asks the review question about that plan (afterReviewAnswer).
+ * Confirm takes the plan just shown, with the state it was planned with and the draft it was built from (Reviewed): a
+ * --dry-run replies with it and writes nothing (D-82), plain init has it applied (D-105). A go-back re-asks that one
+ * item, and the next round shows the summary again; a cancelled go-back cancels with its reason, and so does a run that
+ * has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is
+ * used (A1, D-45). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ */
+export const reviewStage: StageDef = Object.freeze({
+  enter: planning,
+  answer: reviewAnswer,
+})

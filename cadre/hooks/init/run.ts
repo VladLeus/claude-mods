@@ -11,12 +11,12 @@ import { initGuard } from '../guards/repo'
 import { gatherScans } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
 import { askOnce, noteLine, showBlock } from '../ui/ask'
-import { teamStep } from './flow'
+import { goBack, teamStep } from './flow'
 import { applyConfirmed } from './initapply'
+import { planStep } from './initplan'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
 import { launchStartStep } from './stages/launch'
-import { reviewStep } from './stages/review'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -63,8 +63,8 @@ async function performIo(io: InitIo, call: IoCall): Promise<IoResult> {
 
 /**
  * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the role
- * steps from the proposal, the launcher start, the review with its go-backs, and Confirm's apply through the run's
- * host, which a --dry-run does not hold.
+ * steps from the proposal, the launcher start, the review's plan (planStep) and its go-backs (goBack), and Confirm's
+ * apply through the run's host, which a --dry-run does not hold.
  */
 async function performLegacy(io: InitIo, options: InitOptions, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
@@ -72,8 +72,10 @@ async function performLegacy(io: InitIo, options: InitOptions, step: LegacyStep)
       return { id: 'team', result: await teamStep(io, step.base, step.base.proposal, null) }
     case 'launch':
       return { id: 'launch', result: await launchStartStep(io, step.root, step.roles) }
-    case 'review':
-      return { id: 'review', result: await reviewStep(io, step.draft) }
+    case 'plan':
+      return { id: 'plan', result: await planStep(io, step.input) }
+    case 'go-back':
+      return { id: 'go-back', result: await goBack(io, step.draft, step.item) }
     case 'apply':
       return { id: 'apply', result: options.dryRun ? null : await applyConfirmed(io, options.host, step.reviewed) }
     default: {
@@ -115,7 +117,7 @@ async function perform(
  * (policyStage) and, once for the repo, where the launchers start (launchStartStep), shows the one final review with
  * every role's scope card for that start (the one place the cards are shown; reviewLines, ROLE-06, A5) and the exact
  * file plan, each role's built CLAUDE.md included, where the person confirms or goes back to change one item
- * (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
+ * (reviewStage, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
  * installs nothing (D-82); plain init writes it (applyConfirmed, D-105), asking only Keep mine or Take new for each
  * conflicted file (D-67), running the accepted hunks first, then installing the plugins answered Install from the home
  * folder, and writing the plan made again from the disk (D-120), with the improver pass on each built role file before

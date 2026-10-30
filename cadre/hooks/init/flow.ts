@@ -1,10 +1,9 @@
 /**
  * The order of the init questions (ROLE-01 to ROLE-05, D-43, A3, A6), a layer 10 module: teamStep, the role steps from
- * the roles question to the improver install question, with perRoleSteps, the steps after the duration; ReviewItem,
- * what an answer to the review question picks, and goBack, which re-asks one review item and gives the draft with the
- * new answer; and historyHints, the history scan as hints for the skill questions. Pure: it asks through the InitIo
- * port it is given, imports roles, scan, team, ui, init/draft and the init/stages steps, and never imports init.ts,
- * which imports it, or init/run.
+ * the roles question to the improver install question, with perRoleSteps, the steps after the duration; goBack,
+ * which re-asks one review item (ReviewItem, in init/state) and gives the draft with the new answer; and historyHints,
+ * the history scan as hints for the skill questions. Pure: it asks through the InitIo port it is given, imports roles,
+ * scan, team, ui, init/draft, init/state and the init/stages steps, and never imports init/machine or init/run.
  */
 import type { FrameworkId, InitIo, RoleProposal, RoleSpec } from '../../types'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
@@ -16,6 +15,7 @@ import type { StepResult } from '../ui/ask'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { mapped } from './draft'
 import type { Draft, DraftBase, Team } from './draft'
+import type { ReviewItem } from './state'
 import { assignmentStep } from './stages/assign'
 import { carryStep } from './stages/carry'
 import { durationStep, withDuration } from './stages/duration'
@@ -28,23 +28,6 @@ import { modelStep } from './stages/model'
 import { GIT_POLICY_ASK } from './stages/policy'
 import { rolesStep } from './stages/roles'
 import { securityInstallStep, withSecuritySkill } from './stages/security'
-
-/**
- * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
- * them every per-role step), the git policy, the launcher start, the duration, the model and effort, the MCP and skill
- * assignments, the instructions and memories, the carried env names, or the hunks.
- */
-export type ReviewItem =
-  | 'confirm'
-  | 'roles'
-  | 'policy'
-  | 'launch'
-  | 'duration'
-  | 'model'
-  | 'assignments'
-  | 'memory'
-  | 'env'
-  | 'hunks'
 
 /**
  * The per-role steps after the duration (D-52, D-53, D-60, G-02-1f, ROLE-04), in this order: model and effort

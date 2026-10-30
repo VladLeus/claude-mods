@@ -21,12 +21,11 @@ import {
 import { contextText } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
-import type { ReviewItem } from '../flow'
 import { initReplyText } from '../initapply'
 import { planStep } from '../initplan'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
-import type { Answer, InitState } from '../state'
+import type { Answer, InitState, ReviewItem } from '../state'
 import {
   cardLines,
   improverRunLine,
@@ -234,7 +233,7 @@ describe('the review stage (D-230)', () => {
   test('a go-back picked at the last round cancels with REVIEW_ROUNDS_REASON and asks nothing more (A3)', async () => {
     const state = reviewAt({}, { rounds: MAX_REVIEW_ROUNDS - 1 })
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const ended = nextStage(asking, { kind: 'answer', text: 'Change git policy' })
+    const ended = nextStage({ ...asking, outputs: [] }, { kind: 'answer', text: 'Change git policy' })
     expect(ended.effect).toEqual({ kind: 'end', reply: cancelledReply(REVIEW_ROUNDS_REASON) })
     expect(ended.outputs).toEqual([{ kind: 'log', text: REVIEW_ROUNDS_REASON }])
   })

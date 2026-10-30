@@ -3,7 +3,8 @@
  * of a run in today's order; InitState, what one run holds between two answers (the stage and its cursor, the draft as
  * it fills, what to show, the one effect to perform, the open question with its spec, the go-back target and the
  * review rounds); Output, Effect and Answer, what the runner shows, performs and feeds back; StageDef, what each stage
- * of the table gives; and the small constructors the stages build their states with. Types and constructors only: it
+ * of the table gives; ReviewItem, what an answer to the review question picks; and the small constructors the stages
+ * build their states with. Types and constructors only: it
  * imports type shapes and no port, so nothing built on it can reach a port. The stages and init/machine import it,
  * and init/run reads its types.
  */
@@ -14,6 +15,7 @@ import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
 import type { StepResult } from '../ui/ask'
 import type { Draft, DraftBase, PlanResult, Reviewed, Team } from './draft'
+import type { PlanStepInput } from './initplan'
 
 /**
  * The stages of an init run in today's order (D-43, D-230, A1): the guard, the ~/.claude.json consent, the scans, the
@@ -84,8 +86,26 @@ export type IoResult =
 export type LegacyStep =
   | { readonly id: 'team'; readonly base: DraftBase }
   | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
-  | { readonly id: 'review'; readonly draft: Draft }
+  | { readonly id: 'plan'; readonly input: PlanStepInput }
+  | { readonly id: 'go-back'; readonly draft: Draft; readonly item: Exclude<ReviewItem, 'confirm'> }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
+
+/**
+ * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
+ * them every per-role step), the git policy, the launcher start, the duration, the model and effort, the MCP and skill
+ * assignments, the instructions and memories, the carried env names, or the hunks.
+ */
+export type ReviewItem =
+  | 'confirm'
+  | 'roles'
+  | 'policy'
+  | 'launch'
+  | 'duration'
+  | 'model'
+  | 'assignments'
+  | 'memory'
+  | 'env'
+  | 'hunks'
 
 /** What Confirm's apply gives: the plan made again and written, and what the apply did (D-105). */
 export type Applied = {
@@ -100,7 +120,8 @@ export type Applied = {
 export type LegacyResult =
   | { readonly id: 'team'; readonly result: StepResult<Team> }
   | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }
-  | { readonly id: 'review'; readonly result: StepResult<Reviewed> }
+  | { readonly id: 'plan'; readonly result: PlanResult }
+  | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
 /**
@@ -127,6 +148,7 @@ export type Answer =
  * - `start`: just entered; a stage with one effect waits here for its answer.
  * - `ask`: one question is out, asked `tries` times so far (choiceAnswer).
  * - `history`: the history question is out, asked `tries` times so far, with the sessions listed for the scan.
+ * - `review`: the review question about `planned` is out, asked `tries` times so far.
  * - `applying`: the review was confirmed, and Confirm's apply is out.
  * - `done`: the stage finished; nextStage enters the stage after it.
  * - `cancelled`: the stage ends init with nothing written, and `reason` says why (A1).
@@ -137,6 +159,7 @@ export type StageSub =
   | { readonly kind: 'start' }
   | { readonly kind: 'ask'; readonly tries: number }
   | { readonly kind: 'history'; readonly tries: number; readonly listing: SessionListing }
+  | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult }
   | { readonly kind: 'applying' }
   | { readonly kind: 'done' }
   | { readonly kind: 'cancelled'; readonly reason: string }
