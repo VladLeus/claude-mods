@@ -37,11 +37,14 @@ import { policyStage } from './stages/policy'
 import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow } from './stages/review'
 import { installedFrameworks } from './stages/roles'
 
-/** The guard (D-42, legacy): it refuses with its text, which is the whole reply, or gives the session's locations. */
+/**
+ * The guard (D-42, SCAN-04), an io effect before anything is read or asked: it refuses with its text, which is the
+ * whole reply, or gives the session's locations.
+ */
 const guardStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => withEffect(state, { kind: 'legacy', step: { id: 'guard' } }),
+  enter: (state: InitState): InitState => withEffect(state, { kind: 'io', call: { id: 'guard' } }),
   answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'guard') return stageFailed(state)
+    if (answer.kind !== 'io' || answer.result.id !== 'guard') return stageFailed(state)
     const guard = answer.result.result
     if (guard.kind === 'refuse') return stageEnded(state, guard.text)
 
@@ -61,17 +64,20 @@ const consentStage: StageDef = Object.freeze({
   },
 })
 
-/** The scans (SCAN-01, SCAN-02, legacy), then the scan block with their warnings in the side pane (D-133). */
+/**
+ * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, then the scan block with their warnings in the
+ * side pane (D-133), shown before the history question.
+ */
 const scanStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const { locations, readUserMcp } = state.draft
     if (locations === undefined || readUserMcp === undefined) return stageFailed(state)
 
-    return withEffect(state, { kind: 'legacy', step: { id: 'scan', locations, readUserMcp } })
+    return withEffect(state, { kind: 'io', call: { id: 'scan', locations, readUserMcp } })
   },
   answer: (state: InitState, answer: Answer): InitState => {
     const { locations } = state.draft
-    if (answer.kind !== 'legacy' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
+    if (answer.kind !== 'io' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
     const gathered = answer.result.result
     const warnings = scanWarningLines(scanWarnings(locations, gathered))
     const lines = [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings]
@@ -272,11 +278,16 @@ function settled(state: InitState): InitState {
   return failed(current)
 }
 
-/** Whether `answer` answers `effect`: an answer to an ask, the result of the same legacy step; nothing ends a run. */
+/**
+ * Whether `answer` answers `effect`: an answer to an ask, the result of the same host operation or legacy step; nothing
+ * answers the end of a run.
+ */
 function isAnswerTo(effect: Effect, answer: Answer): boolean {
   switch (effect.kind) {
     case 'ask':
       return answer.kind === 'answer'
+    case 'io':
+      return answer.kind === 'io' && answer.result.id === effect.call.id
     case 'legacy':
       return answer.kind === 'legacy' && answer.result.id === effect.step.id
     case 'end':

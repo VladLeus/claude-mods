@@ -54,13 +54,24 @@ export type Output =
   | { readonly kind: 'log'; readonly text: string }
 
 /**
+ * One host operation a stage needs (D-230), named after the helper init/run runs for it, with plain data only: the
+ * guard (initGuard) and the scans with the consent answer (gatherScans).
+ */
+export type IoCall =
+  | { readonly id: 'guard' }
+  | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
+
+/** What an IoCall gave, under the same id. */
+export type IoResult =
+  | { readonly id: 'guard'; readonly result: GuardResult }
+  | { readonly id: 'scan'; readonly result: Gathered }
+
+/**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
  * the draft fields it needs. init/run performs it and gives back its LegacyResult.
  */
 export type LegacyStep =
-  | { readonly id: 'guard' }
   | { readonly id: 'consent' }
-  | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
   | { readonly id: 'history'; readonly locations: InitLocations; readonly context: string }
   | { readonly id: 'team'; readonly base: DraftBase }
   | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
@@ -78,9 +89,7 @@ export type Applied = {
  * no host, which never happens, since a --dry-run never sets the apply step.
  */
 export type LegacyResult =
-  | { readonly id: 'guard'; readonly result: GuardResult }
   | { readonly id: 'consent'; readonly result: StepResult<boolean> }
-  | { readonly id: 'scan'; readonly result: Gathered }
   | { readonly id: 'history'; readonly result: StepResult<HistoryScan | 'skipped'> }
   | { readonly id: 'team'; readonly result: StepResult<Team> }
   | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }
@@ -88,17 +97,22 @@ export type LegacyResult =
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
 /**
- * The one thing a state asks the runner to do next (D-230): ask the person `question` with its dialog spec, run a
- * legacy step, or end the run with `reply`.
+ * The one thing a state asks the runner to do next (D-230): ask the person `question` with its dialog spec, perform a
+ * host operation, run a legacy step, or end the run with `reply`.
  */
 export type Effect =
   | { readonly kind: 'ask'; readonly question: string; readonly spec: AskSpec }
+  | { readonly kind: 'io'; readonly call: IoCall }
   | { readonly kind: 'legacy'; readonly step: LegacyStep }
   | { readonly kind: 'end'; readonly reply: string }
 
-/** What the runner feeds back for an effect: the answer to an ask, null when it was dismissed, or a step's result. */
+/**
+ * What the runner feeds back for an effect: the answer to an ask, null when it was dismissed, what a host operation
+ * gave, or a legacy step's result.
+ */
 export type Answer =
   | { readonly kind: 'answer'; readonly text: string | null }
+  | { readonly kind: 'io'; readonly result: IoResult }
   | { readonly kind: 'legacy'; readonly result: LegacyResult }
 
 /**
