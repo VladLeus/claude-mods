@@ -30,6 +30,7 @@ import { consentStage } from './stages/consent'
 import { durationStage } from './stages/duration'
 import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
+import { hunksStage } from './stages/hunks'
 import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
 import { policyStage } from './stages/policy'
@@ -139,25 +140,6 @@ const instructionsStage: StageDef = Object.freeze({
     const { roles, instructions } = instructed.value
 
     return stageDone({ ...state, draft: { ...state.draft, roles, instructions } })
-  },
-})
-
-/** The autonomy hunks of the frameworks the roles run on (hunkStep, legacy). */
-const hunksStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, repoDefault, gathered, locations } = state.draft
-    const isReady = roles !== undefined && repoDefault !== undefined && gathered !== undefined
-    if (!isReady || locations === undefined) return stageFailed(state)
-    const step = { id: 'hunks', roles, repoDefault, gathered, locations } satisfies LegacyStep
-
-    return withEffect(state, { kind: 'legacy', step })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'hunks') return stageFailed(state)
-    const hunks = answer.result.result
-    if (hunks.kind === 'cancelled') return stageCancelled(state, hunks.reason)
-
-    return stageDone({ ...state, draft: { ...state.draft, hunks: hunks.value } })
   },
 })
 

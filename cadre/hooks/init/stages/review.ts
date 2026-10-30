@@ -334,11 +334,11 @@ function confirmed(state: InitState, reviewed: Reviewed): InitState {
  * The answer to the review question (choiceAnswer): Confirm replies with the plan just shown on a --dry-run and has it
  * applied on plain init (D-105); another item goes back to that item, except at the last round, where it cancels at
  * once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3). Change roles, the git policy, the
- * launcher start, the duration, the model and the env go back as stage transitions (stageBack, D-204): Change roles to
- * the roles stage, from where every role step runs again up to the improver install, the env to the carry stage, and
- * the others to their own stage. The other items go through the legacy go-back until their stages are pure. Any other
- * answer is asked again with why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it
- * cannot read with NO_USABLE_ANSWER_REASON (A1, D-45).
+ * launcher start, the duration, the model, the env and the hunks go back as stage transitions (stageBack, D-204):
+ * Change roles to the roles stage, from where every role step runs again up to the improver install, the env to the
+ * carry stage, and the others to their own stage. The assignments and the memory go through the legacy go-back until
+ * their stages are pure. Any other answer is asked again with why on top. A dismissal cancels with
+ * REVIEW_DISMISSED_REASON and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON (A1, D-45).
  */
 function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   const draft = fullDraft(state.draft)
@@ -352,8 +352,7 @@ function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   if (state.rounds >= MAX_REVIEW_ROUNDS - 1) return stageCancelled(state, REVIEW_ROUNDS_REASON)
   if (item === 'roles') return stageBack(state, 'roles', 'improver-install')
   if (item === 'env') return stageBack(state, 'carry', 'carry')
-  const isOwnStage = item === 'policy' || item === 'launch' || item === 'duration' || item === 'model'
-  if (isOwnStage) return stageBack(state, item, item)
+  if (item !== 'assignments' && item !== 'memory') return stageBack(state, item, item)
   const going: InitState = { ...state, sub: { kind: 'start' } }
 
   return withEffect(going, { kind: 'legacy', step: { id: 'go-back', draft, item } })

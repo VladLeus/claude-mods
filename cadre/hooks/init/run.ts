@@ -65,7 +65,6 @@ import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
 import { assignmentStep } from './stages/assign'
-import { hunkStep } from './stages/hunks'
 import { improverInstallStep } from './stages/improver-install'
 import { instructionsStep } from './stages/instructions'
 import { rolesStep } from './stages/roles'
@@ -329,6 +328,8 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':
       return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
+    case 'read-repo-file':
+      return { id: 'read-repo-file', result: await readRepoFile(io, call.root, call.path, call.maxBytes) }
     case 'launch-dir-check':
       return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
     case 'plan':
@@ -354,8 +355,6 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
       return { id: 'assign', result: await assignmentStep(io, step.roles, step.setup, step.hints) }
     case 'instructions':
       return { id: 'instructions', result: await instructionsStep(io, step.roles, step.setup, step.locations) }
-    case 'hunks':
-      return { id: 'hunks', result: await hunkStep(io, step) }
     case 'improver':
       return { id: 'improver', result: await improverInstallStep(io, step.instructions, step.setup) }
     case 'go-back':

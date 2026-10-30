@@ -16,6 +16,7 @@ import type {
   InstructionHandout,
   PaneKey,
   PortEntry,
+  PortRead,
   RoleProposal,
   RoleSpec,
   SetupScan,
@@ -95,14 +96,16 @@ export type SessionListing = {
 /**
  * One host operation a stage needs (D-230), named after the helper init/run runs for it, with plain data only: the
  * guard (initGuard), the scans with the consent answer (gatherScans), the listing of the session folder
- * (listSessions), the history scan of the listed sessions (scanHistory), the check that a typed launcher folder is a
- * folder inside the repo (isRepoFolder), the review's plan (planStep) and Confirm's apply (applyConfirmed).
+ * (listSessions), the history scan of the listed sessions (scanHistory), the read of a config file the hunks change
+ * (readRepoFile), the check that a typed launcher folder is a folder inside the repo (isRepoFolder), the review's plan
+ * (planStep) and Confirm's apply (applyConfirmed).
  */
 export type IoCall =
   | { readonly id: 'guard' }
   | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
   | { readonly id: 'list-sessions'; readonly dir: string }
   | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
+  | { readonly id: 'read-repo-file'; readonly root: string; readonly path: string; readonly maxBytes: number }
   | { readonly id: 'launch-dir-check'; readonly root: string; readonly path: string }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
@@ -116,6 +119,7 @@ export type IoResult =
   | { readonly id: 'scan'; readonly result: Gathered }
   | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
   | { readonly id: 'scan-history'; readonly result: HistoryScan }
+  | { readonly id: 'read-repo-file'; readonly result: PortRead }
   | { readonly id: 'launch-dir-check'; readonly result: boolean }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
@@ -124,7 +128,7 @@ export type IoResult =
  * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
  * the others, Change roles among them, go back as stage transitions.
  */
-export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'roles' | 'policy' | 'launch' | 'duration' | 'model' | 'env'>
+export type LegacyGoBack = Extract<ReviewItem, 'assignments' | 'memory'>
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
@@ -147,13 +151,6 @@ export type LegacyStep =
       readonly id: 'instructions'
       readonly roles: readonly RoleSpec[]
       readonly setup: SetupScan
-      readonly locations: InitLocations
-    }
-  | {
-      readonly id: 'hunks'
-      readonly roles: readonly RoleSpec[]
-      readonly repoDefault: FrameworkId | null
-      readonly gathered: Gathered
       readonly locations: InitLocations
     }
   | { readonly id: 'improver'; readonly instructions: InstructionHandout; readonly setup: SetupScan }
@@ -193,7 +190,6 @@ export type LegacyResult =
       readonly id: 'instructions'
       readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly instructions: InstructionHandout }>
     }
-  | { readonly id: 'hunks'; readonly result: StepResult<readonly HunkOp[]> }
   | { readonly id: 'improver'; readonly result: StepResult<readonly string[]> }
   | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
@@ -228,6 +224,9 @@ export type Answer =
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
  * - `mode`, `all`, `each`: a question asked once for every role or per role, asked `tries` times so far: the mode
  *   question, the question for all roles, or the question of the role at `index`, with the roles answered before it.
+ * - `hunk-read`: the read of the next config file the hunks change is out, with what the configs read before it gave.
+ * - `hunk`: the question of the next hunk is out, asked `tries` times so far, with the configs read and the hunks
+ *   answered before it.
  * - `applying`: the review was confirmed, and Confirm's apply is out.
  * - `done`: the stage finished; nextStage enters the stage after it.
  * - `cancelled`: the stage ends init with nothing written, and `reason` says why (A1).
@@ -245,6 +244,13 @@ export type StageSub =
   | { readonly kind: 'mode'; readonly tries: number }
   | { readonly kind: 'all'; readonly tries: number }
   | { readonly kind: 'each'; readonly tries: number; readonly index: number; readonly done: readonly RoleSpec[] }
+  | { readonly kind: 'hunk-read'; readonly reads: readonly PortRead[] }
+  | {
+      readonly kind: 'hunk'
+      readonly tries: number
+      readonly reads: readonly PortRead[]
+      readonly done: readonly HunkOp[]
+    }
   | { readonly kind: 'applying' }
   | { readonly kind: 'done' }
   | { readonly kind: 'cancelled'; readonly reason: string }

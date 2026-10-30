@@ -11,18 +11,17 @@ import { mapped } from './draft'
 import type { Draft } from './draft'
 import type { LegacyGoBack } from './state'
 import { assignmentStep } from './stages/assign'
-import { hunkStep } from './stages/hunks'
 import { instructionsAgain } from './stages/instructions'
 
 /**
  * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
  * answer: it re-asks that item's step. The assignment and memory steps run again on the current roles and decide the
  * whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the instruction hand-out
- * it had (instructionsAgain). Change roles, the git policy, the launcher start, the duration, the model and the env go
- * back as stage transitions instead (D-204). A cancelled step ends the review with its reason (A1).
+ * it had (instructionsAgain). Every other item goes back as a stage transition instead (D-204). A cancelled step ends
+ * the review with its reason (A1).
  */
 export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
-  const { gathered, locations, roles } = draft
+  const { gathered, roles } = draft
   switch (item) {
     case 'assignments':
       return mapped(await assignmentStep(io, roles, gathered.setup, draft.hints), assigned => ({
@@ -34,11 +33,6 @@ export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Prom
         ...draft,
         ...instructed,
       }))
-    case 'hunks': {
-      const hunks = await hunkStep(io, { roles, repoDefault: draft.repoDefault, gathered, locations })
-
-      return mapped(hunks, answered => ({ ...draft, hunks: answered }))
-    }
   }
 }
 
