@@ -15,6 +15,7 @@ import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { cancelledReply } from './init/replies'
 import { MODEL_PROGRESS, SCAN_PROGRESS } from './init/run'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
+import { DURATION_QUESTION } from './init/stages/duration'
 import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
@@ -1783,12 +1784,17 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   const PICK_CONTEXT: AskContext = { title: 'Pick context', lines: ['What each pick means.'], kind: 'review' }
 
   /**
-   * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203):
-   * every read of cadre's openQuestion state gives it, so a dialog that asks it is cadre's own and the hook may rewrite
-   * it, as init's own questions are.
+   * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203),
+   * one that takes a typed answer unless `acceptsTyped` says not (D-234): every read of cadre's openQuestion state
+   * gives it, so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
    */
-  function openAsCadre(on: HostOn, question: string, context: AskContext | null = PICK_CONTEXT): void {
-    const open = { question, header: null, context, acceptsTyped: false }
+  function openAsCadre(
+    on: HostOn,
+    question: string,
+    context: AskContext | null = PICK_CONTEXT,
+    acceptsTyped = true,
+  ): void {
+    const open = { question, header: null, context, acceptsTyped }
     on('state.get', async (_$, e, next) => {
       if (e.plugin !== 'cadre' || e.key !== 'openQuestion') return next(e)
 
@@ -1927,6 +1933,32 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect([own.split('\n')[0], files.split('\n')[0]]).toEqual(['**Your own skills**', '**Instruction files**'])
     expect([own.includes('deploy-notes: Write the release notes'), files.includes('<repo>/CLAUDE.md')]).toEqual([
       true,
+      true,
+    ])
+  })
+
+  test('a question that takes no typed answer gets no Describe your own and no hint (D-234)', async ($, on) => {
+    const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question, PICK_CONTEXT, false)
+    fakeHost(on, initWorld(), log)
+    await seatAfterRun($, INLINE_PANE)
+    const before = log.asks.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    expect([log.asks.slice(before), log.askOptions.slice(before)]).toEqual([['ask Pick one?'], [['A', 'B']]])
+  })
+
+  test('Roles keeps its own describe option alone; Duration takes a typed answer, gets one (D-234)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    // On the TUI default every question with a context of its own is previewed (D-208).
+    const presentation = { isFullscreen: false, columns: 120 }
+    await $.command.run({ command: 'cadre', args: 'init --dry-run', origin: { kind: 'composer' }, presentation })
+    const at = (prefix: string): number => log.asks.findIndex(ask => ask.startsWith(`ask ${prefix}`))
+    const [roles, duration] = [at(ROLES_QUESTION), at(DURATION_QUESTION)]
+    expect(log.askOptions[roles]).toEqual(['Use these roles', 'Adjust them', 'Describe my own structure'])
+    expect(log.asks[roles]?.includes(OWN_ANSWER_HINT)).toBe(false)
+    expect([log.askOptions[duration]?.at(-1), log.asks[duration]?.endsWith(OWN_ANSWER_HINT)]).toEqual([
+      'Describe your own',
       true,
     ])
   })

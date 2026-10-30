@@ -264,50 +264,51 @@ describe('withDescribeOwn (A2)', () => {
 
   test('a question with 2 or 3 options gets one last option to type an own answer, and the hint line (R3)', () => {
     const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
-    expect(withDescribeOwn(PICK_QUESTION, 'P')).toEqual({
+    expect(withDescribeOwn(PICK_QUESTION, 'P', true)).toEqual({
       question: hinted,
       header: 'Pick',
       multiSelect: false,
       options: [{ label: 'A', description: 'a' }, { label: 'B', description: 'b' }, OWN_OPTION],
     })
-    const three = withDescribeOwn(pickWith('C'), 'P')
+    const three = withDescribeOwn(pickWith('C'), 'P', true)
     expect(three).toEqual({ ...pickWith('C'), question: hinted, options: [...pickWith('C').options, OWN_OPTION] })
   })
 
   test('a question with 4 options keeps them and gets the hint line as the last line of its text', () => {
     const four = pickWith('C', 'D')
     const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
-    expect(withDescribeOwn(four, 'P')).toEqual({ ...four, question: hinted })
+    expect(withDescribeOwn(four, 'P', true)).toEqual({ ...four, question: hinted })
   })
 
-  test('a question that already has a Describe your own option gets no other one, but the hint line (R3)', () => {
-    const two = { ...PICK_QUESTION, options: [{ label: 'A' }, { label: 'Describe your own', description: 'mine' }] }
-    for (const question of [two, pickWith('C', 'Describe your own')]) {
-      expect(withDescribeOwn(question, 'P')).toEqual({ ...question, question: `Pick one?\n${OWN_ANSWER_HINT}` })
+  test('a question that takes no typed answer gets no option and no hint line, only the note wording (D-234)', () => {
+    for (const question of [PICK_QUESTION, pickWith('C'), pickWith('C', 'D')]) {
+      expect(withDescribeOwn(question, 'P', false)).toEqual(question)
     }
+    const other = { ...PICK_QUESTION, question: 'Type ids under Other.' }
+    expect(withDescribeOwn(other, 'P', false)).toEqual({ ...other, question: 'Type ids as a note (press n).' })
   })
 
   test('a question whose text already ends with the hint line does not get it a second time (R3)', () => {
     const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
-    expect(withDescribeOwn({ ...PICK_QUESTION, question: hinted }, 'P').question).toBe(hinted)
+    expect(withDescribeOwn({ ...PICK_QUESTION, question: hinted }, 'P', true).question).toBe(hinted)
     const four = { ...pickWith('C', 'D'), question: hinted }
-    expect(withDescribeOwn(four, 'P')).toEqual(four)
+    expect(withDescribeOwn(four, 'P', true)).toEqual(four)
   })
 
   test("every 'under Other' reads 'as a note (press n)', and the hint line follows (R4)", () => {
     const question = { ...PICK_QUESTION, question: 'Type ids under Other.' }
-    expect(withDescribeOwn(question, 'P').question).toBe(`Type ids as a note (press n).\n${OWN_ANSWER_HINT}`)
+    expect(withDescribeOwn(question, 'P', true).question).toBe(`Type ids as a note (press n).\n${OWN_ANSWER_HINT}`)
     const twice = { ...PICK_QUESTION, question: 'Pick under Other, or type ids under Other.' }
     const both = `Pick as a note (press n), or type ids as a note (press n).\n${OWN_ANSWER_HINT}`
-    expect(withDescribeOwn(twice, 'P').question).toBe(both)
-    expect(withDescribeOwn(PICK_QUESTION, 'P').question).toBe(`Pick one?\n${OWN_ANSWER_HINT}`)
+    expect(withDescribeOwn(twice, 'P', true).question).toBe(both)
+    expect(withDescribeOwn(PICK_QUESTION, 'P', true).question).toBe(`Pick one?\n${OWN_ANSWER_HINT}`)
   })
 
   test('the question it is given is never changed, and the result is a new object', () => {
     const other = { ...PICK_QUESTION, question: 'Type ids under Other.' }
     for (const question of [pickWith('C'), pickWith('C', 'D'), pickWith('C', 'Describe your own'), other]) {
       const before = JSON.stringify(question)
-      const result = withDescribeOwn(question, 'P')
+      const result = withDescribeOwn(question, 'P', true)
       expect(JSON.stringify(question)).toBe(before)
       expect(result === question).toBe(false)
     }
@@ -328,15 +329,15 @@ describe('askRewrite (A1, A2, D-203)', () => {
   const CONTEXT: AskContext = { title: 'Review', lines: ['Roles:', '  BE (be)'], kind: 'review' }
 
   test('a question with no context gives null, so the call passes through with no preview (D-203)', () => {
-    expect(askRewrite([PICK_QUESTION], null)).toBe(null)
+    expect(askRewrite([PICK_QUESTION], null, true)).toBe(null)
   })
 
   test('a shape withPreviews cannot check gives null', () => {
-    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, CONTEXT)).toBe(null)
+    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, CONTEXT, true)).toBe(null)
   })
 
   test('only multi-select questions give null', () => {
-    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], CONTEXT)).toBe(null)
+    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], CONTEXT, true)).toBe(null)
   })
 
   test('a single-select question gets the preview on every option, Describe your own and the hint (R3)', () => {
@@ -344,7 +345,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
     const before = JSON.stringify(questions)
     const preview = previewMarkdown([CONTEXT])
     const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite(questions, CONTEXT)
+    const rewrite = askRewrite(questions, CONTEXT, true)
     expect(rewrite?.questions).toEqual([
       {
         ...PICK_QUESTION,
@@ -362,14 +363,14 @@ describe('askRewrite (A1, A2, D-203)', () => {
 
   test('the asked entry of a 2-option question pairs its text as asked with the text shown (R3, R4)', () => {
     const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], CONTEXT)
+    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], CONTEXT, true)
     expect(rewrite?.asked).toEqual([{ question: 'Type ids under Other.', asked: shownText }])
     expect(rewrite?.questions[0]?.question).toBe(shownText)
   })
 
   test('a 4-option question is asked with the hint line, and its asked entry pairs the two texts', () => {
     const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
-    const rewrite = askRewrite([pickWith('C', 'D')], CONTEXT)
+    const rewrite = askRewrite([pickWith('C', 'D')], CONTEXT, true)
     expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
     expect(rewrite?.questions[0]?.question).toBe(hinted)
     expect(rewrite?.questions[0]?.options).toHaveLength(4)
@@ -377,7 +378,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
 
   test("a multi-select question among single-select ones is copied unchanged, 'under Other' kept, unasked", () => {
     const multi = { ...PICK_QUESTION, question: 'Which? Type more under Other.', multiSelect: true }
-    const rewrite = askRewrite([PICK_QUESTION, multi], CONTEXT)
+    const rewrite = askRewrite([PICK_QUESTION, multi], CONTEXT, true)
     expect(rewrite?.questions[1]).toEqual(multi)
     expect(rewrite?.questions[1] === multi).toBe(false)
     expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: `Pick one?\n${OWN_ANSWER_HINT}` }])
@@ -389,16 +390,25 @@ describe('askRewrite (A1, A2, D-203)', () => {
       { ...PICK_QUESTION, question: 'Carry?', header: 'Env' },
     ]
     const preview = previewMarkdown([CONTEXT])
-    expect(optionPreviews(askRewrite(questions, CONTEXT)?.questions)).toEqual([
+    expect(optionPreviews(askRewrite(questions, CONTEXT, true)?.questions)).toEqual([
       [preview, preview, preview],
       [preview, preview, preview],
     ])
   })
 
+  test('a question that takes no typed answer is previewed with no Describe your own and no hint (D-234)', () => {
+    const rewrite = askRewrite([PICK_QUESTION], CONTEXT, false)
+    const preview = previewMarkdown([CONTEXT])
+    expect(optionPreviews(rewrite?.questions)).toEqual([[preview, preview]])
+    expect(rewrite?.questions[0]?.question).toBe('Pick one?')
+    expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: 'Pick one?' }])
+  })
+
   test('each option previews its context wrapped to the width it is given (D-231)', () => {
     const context: AskContext = { title: 'Wide', lines: [WIDE_LINE], kind: 'review' }
     const preview = previewMarkdown([context], 40)
-    expect(optionPreviews(askRewrite([PICK_QUESTION], context, 40)?.questions)).toEqual([[preview, preview, preview]])
+    const rewrite = askRewrite([PICK_QUESTION], context, true, 40)
+    expect(optionPreviews(rewrite?.questions)).toEqual([[preview, preview, preview]])
     expect(preview.split('\n').slice(2, -1)).toEqual(wrapLine(WIDE_LINE, 40))
   })
 
@@ -414,7 +424,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
       { title: 'Git policy', lines: policies, kind: 'git-policy' },
     ]
     for (const context of contexts) {
-      const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context)
+      const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context, true)
       const [previews = []] = optionPreviews(rewrite?.questions)
       const lines = typeof previews[0] === 'string' ? previews[0].split('\n') : []
       expect([lines, new Set(previews).size]).toEqual([[`**${context.title}**`, '```', ...context.lines, '```'], 1])
@@ -454,11 +464,11 @@ describe('fitPreview (D-228)', () => {
     const context = linesContext(30)
     const fitted = { ...context, lines: fitPreview(context, 5).lines }
     const preview = previewMarkdown([fitted])
-    expect(optionPreviews(askRewrite([PICK_QUESTION], context, null, 5)?.questions)).toEqual([
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true, null, 5)?.questions)).toEqual([
       [preview, preview, preview],
     ])
     const whole = previewMarkdown([context])
-    expect(optionPreviews(askRewrite([PICK_QUESTION], context)?.questions)).toEqual([[whole, whole, whole]])
+    expect(optionPreviews(askRewrite([PICK_QUESTION], context, true)?.questions)).toEqual([[whole, whole, whole]])
   })
 })
 
