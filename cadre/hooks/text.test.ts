@@ -263,7 +263,6 @@ import {
   DESCRIBE_CONTEXT,
   DESCRIBE_OPTIONS,
   DESCRIBE_QUESTION,
-  proposalLines,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_OPTIONS,
@@ -413,6 +412,7 @@ import {
   withContext,
 } from './ui/ask'
 import { STATUS_LABEL } from './ui/blocks/cards'
+import { proposalLines } from './ui/blocks/context'
 import { instructionLines, instructionReviewLines } from './ui/blocks/instructions'
 import { recommendationLines } from './ui/blocks/recommendations'
 import { scanContextLine, scanSummaryLines, scanWarningLines, truncatedLine } from './ui/blocks/scan'

@@ -11,6 +11,7 @@ import { sortedUnique } from '../../core/text'
 import { SECRET_READ_GUARD } from '../../framework/gsd/adapter'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { ENV_PANE_HEADING } from '../../ui/blocks/context'
 import { ALL_ENV_OPTION, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
 import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -29,9 +30,6 @@ export function envContextLine(roles: readonly RoleSpec[]): string {
 
 /** Why init cancels when the env variables question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
 export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or not answered.'
-
-/** The first line of the side-pane block that lists every scanned env name before the env question (D-135). */
-const ENV_PANE_HEADING = 'Env variable names in your settings (values are never read):'
 
 /**
  * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids

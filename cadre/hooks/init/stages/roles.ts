@@ -10,11 +10,12 @@ import type { Detection, FrameworkId, RoleChange, RoleSpec } from '../../../type
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
-import { pad, reportText } from '../../core/text'
+import { reportText } from '../../core/text'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { proposalLines, roleLines } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -104,34 +105,6 @@ export const ADJUST_DISMISSED_REASON = 'The Adjust question was dismissed.'
 
 /** Why the roles step cancels when the describe question is dismissed or `Cancel init` is chosen there (A1). */
 export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or cancelled.'
-
-/** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
-const ROLE_LABEL_WIDTH = 24
-
-/** The roles as the proposal lists them: a heading, then one line per role with its title, id and purpose. */
-function roleLines(roles: readonly RoleSpec[]): string[] {
-  const rows = roles.map(role => `  ${pad(`${role.title} (${role.id})`, ROLE_LABEL_WIDTH)}${role.purpose}`)
-
-  return ['Proposed roles:', ...rows]
-}
-
-/** One scan change: dropped or kept, the role id and the reason, then its evidence paths when there are any. */
-function changeLine(change: RoleChange): string {
-  const evidence = change.evidence.length === 0 ? '' : ` (${change.evidence.join(', ')})`
-
-  return `  ${change.change} ${change.roleId}: ${change.reason}${evidence}`
-}
-
-/**
- * The proposal as init shows it in the side pane before the roles question (ROLE-01, D-133): every role with its title,
- * id and purpose, then every change the scan made to the template with its reason and evidence, or `none` when it made
- * none.
- */
-export function proposalLines(roles: readonly RoleSpec[], changes: readonly RoleChange[]): string[] {
-  const changeRows = changes.length === 0 ? ['  none'] : changes.map(changeLine)
-
-  return [...roleLines(roles), 'Changes from the scan:', ...changeRows]
-}
 
 /**
  * The context line of the roles question (G-02-1, D-136): every role shown by its title and id, then, when the scan

@@ -18,6 +18,7 @@ import { pluginName } from '../../scope/lint'
 import { resolvedFramework } from '../../team'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
+import { SECURITY_PLUGIN_NOTES } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
 import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -28,16 +29,6 @@ export const SECURITY_INSTALL_PREFIX = 'Install from claude-plugins-official aft
 /** The context line of the security plugins question (D-136): nothing is installed before Confirm or in a dry run. */
 export const SECURITY_INSTALL_CONTEXT =
   'Nothing is installed before you confirm the final review, and a --dry-run installs nothing.'
-
-/** What each security plugin does, by the plugin name before its `@`, as the question tells it (decision #39). */
-const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
-  [
-    'claude-security',
-    'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and ' +
-      'writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
-  ],
-  ['security-guidance', 'security-guidance adds hooks that warn about risky edits.'],
-])
 
 /**
  * The security plugins question (decision #39): SECURITY_INSTALL_PREFIX, the names of the missing plugins joined with

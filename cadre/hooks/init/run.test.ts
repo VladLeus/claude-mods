@@ -150,6 +150,7 @@ import {
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
+import { proposalLines } from '../ui/blocks/context'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { CONFLICT_CONTEXT } from './initapply'
@@ -217,7 +218,6 @@ import {
   ADJUST_QUESTION,
   DESCRIBE_QUESTION,
   MAX_ROLE_ROUNDS,
-  proposalLines,
   ROLE_ROUNDS_REASON,
   ROLES_DISMISSED_REASON,
   ROLES_QUESTION,
