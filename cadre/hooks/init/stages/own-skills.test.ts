@@ -137,7 +137,7 @@ describe('own skills hand-out (G-02-1b)', () => {
       withContext(ownEntry(3), ENTRY_CONTEXT),
     ])
     expect(run.specs).toEqual([
-      { options: ['None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT },
+      { options: ['None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
       { options: OWN_ENTRY_OPTIONS, header: 'Skills', context: OWN_CONTEXT },
     ])
   })
@@ -191,9 +191,9 @@ describe('own skills hand-out (G-02-1b)', () => {
       kind: 'skill',
     })
     expect(run.specs.slice(2)).toEqual([
-      { options: ['Yes', 'No'], header: 'Skill 1/3', context: skillAt(1, MID_LINE) },
-      { options: ['Yes', 'No'], header: 'Skill 2/3', context: skillAt(2, ZETA_LINE) },
-      { options: ['Yes', 'No'], header: 'Skill 3/3', context: skillAt(3, ALPHA_LINE) },
+      { options: ['Yes', 'No'], header: 'Skill 1/3', context: skillAt(1, MID_LINE), acceptsTyped: true },
+      { options: ['Yes', 'No'], header: 'Skill 2/3', context: skillAt(2, ZETA_LINE), acceptsTyped: true },
+      { options: ['Yes', 'No'], header: 'Skill 3/3', context: skillAt(3, ALPHA_LINE), acceptsTyped: true },
     ])
     expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
       ['pm', []],
@@ -217,7 +217,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
     expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
     const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group' }
-    expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context })
+    expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context, acceptsTyped: true })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))
   })
 

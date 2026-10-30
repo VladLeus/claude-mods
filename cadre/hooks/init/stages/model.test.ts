@@ -45,7 +45,7 @@ describe('modelStep', () => {
     )
     expect(run.asked).toEqual([MODE_ASKED, MODEL_ALL])
     const options = ['opus + medium', 'sonnet + medium', 'sonnet + high']
-    expect(run.specs[1]).toEqual({ options, header: 'Model', context })
+    expect(run.specs[1]).toEqual({ options, header: 'Model', context, acceptsTyped: true })
     expect(run.outputs).toEqual([])
   })
 
@@ -62,7 +62,7 @@ describe('modelStep', () => {
         'Model and effort for Security (security)?',
       ].map(question => withContext(question, MODEL_EFFORT_CONTEXT)),
     ])
-    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model', context }
+    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model', context, acceptsTyped: true }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
     expect(run.state.draft.roles?.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
       'pm: opus medium',

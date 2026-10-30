@@ -155,8 +155,8 @@ describe('handoutStep one by one', () => {
     const run = handedOut(ITEMS, ['Go part by part', 'Yes', 'No'])
     expect(run.asked).toEqual([ENTRY_ASKED, itemAsked(ITEMS[0]), itemAsked(ITEMS[1])])
     expect(run.specs.slice(1)).toEqual([
-      { options: ['Yes', 'No'], header: 'Topic 1/2' },
-      { options: ['Yes', 'No'], header: 'Topic 2/2' },
+      { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true },
+      { options: ['Yes', 'No'], header: 'Topic 2/2', acceptsTyped: true },
     ])
   })
 
@@ -219,7 +219,8 @@ describe('the hand-out cursor (D-230)', () => {
     if (entry.kind !== 'ask') throw new Error('no entry question')
     const first = handoutAnswer(entry.cursor, 'Go part by part')
     if (first.kind !== 'ask') throw new Error('no first item question')
-    expect([first.question, first.spec]).toEqual([itemAsked(ITEMS[0]), { options: ['Yes', 'No'], header: 'Topic 1/2' }])
+    const typed = { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true }
+    expect([first.question, first.spec]).toEqual([itemAsked(ITEMS[0]), typed])
     const second = handoutAnswer(first.cursor, 'Yes')
     if (second.kind !== 'ask') throw new Error('no second item question')
     const done = handoutAnswer(second.cursor, 'tl')

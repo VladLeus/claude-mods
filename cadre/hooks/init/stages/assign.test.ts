@@ -69,8 +69,8 @@ describe('assignmentStep', () => {
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
     expect(run.asked).toEqual([SENTRY_ASKED, CODEX_ASKED])
     expect(run.specs).toEqual([
-      { options: ROLE_LIST_OPTIONS, header: 'MCP', context: SENTRY_CONTEXT },
-      { options: ROLE_LIST_OPTIONS, header: 'Skills', context: CODEX_CONTEXT },
+      { options: ROLE_LIST_OPTIONS, header: 'MCP', context: SENTRY_CONTEXT, acceptsTyped: true },
+      { options: ROLE_LIST_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
     ])
     expect(assigned.map(role => [role.id, role.mcp])).toEqual([
       ['pm', ['jira']],
@@ -247,12 +247,13 @@ describe('the assign stage (D-230)', () => {
     const question = withContext('Which roles get the sentry MCP server? (e.g. BE, QA, or none)', mcpContextLine(roles))
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
     const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
-    const ask = { question, spec: { options: ROLE_LIST_OPTIONS, header: 'MCP', context } }
+    const ask = { question, spec: { options: ROLE_LIST_OPTIONS, header: 'MCP', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(state, { kind: 'answer', text: 'be' })
     const codexLines = ['codex:rescue: No description. Recommended: none.']
     const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group' }
-    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills', context: codex })
+    const typed = { acceptsTyped: true }
+    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills', context: codex, ...typed })
   })
 
   test('an MCP server question names its source and the tools the session lists for it (D-211)', () => {

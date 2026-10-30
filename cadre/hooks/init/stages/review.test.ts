@@ -204,7 +204,8 @@ describe('the review stage (D-230)', () => {
     const context = contextText(reviewContextLine(planned.plan, 'definitions', { kind: 'git-root' }))
     const blocks = asking.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
     const own = { title: 'Review', lines: blocks[0]?.lines ?? [], kind: 'review' }
-    const ask = { question: reviewQuestion(context), spec: { options: REVIEW_OPTIONS, header: 'Review', context: own } }
+    const spec = { options: REVIEW_OPTIONS, header: 'Review', context: own, acceptsTyped: true }
+    const ask = { question: reviewQuestion(context), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
     expect(blocks.map(block => [block.key, block.lines[0]])).toEqual([['review', 'Roles:']])
@@ -272,7 +273,8 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'duration' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['duration', 'review', 'duration'])
     const context = { title: 'Roles', lines: proposalLines(REVIEW_DRAFT.roles, []), kind: 'roles' }
-    expect(going.openQuestion?.spec).toEqual({ options: DURATION_OPTIONS, header: 'Duration', context })
+    const spec = { options: DURATION_OPTIONS, header: 'Duration', context, acceptsTyped: true }
+    expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: '2h' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.duration).toBe('2h')
@@ -299,7 +301,8 @@ describe('the review stage (D-230)', () => {
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['carry', 'review', 'carry'])
     const env = ['Env variable names in your settings (values are never read):', '  API_KEY']
     const context = { title: 'Env variables', lines: env, kind: 'env' }
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All of them'], header: 'Env', context })
+    const spec = { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }
+    expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.carry.env)).toEqual(REVIEW_DRAFT.roles.map(() => ['API_KEY']))
@@ -328,7 +331,8 @@ describe('the review stage (D-230)', () => {
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['assign', 'review', 'assign'])
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
     const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'MCP', context })
+    const spec = { options: ['None', 'All roles'], header: 'MCP', context, acceptsTyped: true }
+    expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.mcp)).toEqual(REVIEW_DRAFT.roles.map(() => ['sentry']))
@@ -342,7 +346,8 @@ describe('the review stage (D-230)', () => {
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['instructions', 'review', 'instructions'])
     const lines = ['~/.claude/CLAUDE.md and the files it imports']
     const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group' }
-    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'Memory', context })
+    const spec = { options: ['None', 'All roles'], header: 'Memory', context, acceptsTyped: true }
+    expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.roles?.map(role => role.instructions)).toEqual(REVIEW_DRAFT.roles.map(() => ['global-claude-md']))

@@ -46,6 +46,7 @@ describe('memoryStep', () => {
       options: ROLE_LIST_OPTIONS,
       header: 'Memory',
       context: { title, lines, kind: 'memory-group' },
+      acceptsTyped: true,
     })
     expect(run.specs).toEqual([
       spec('Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
@@ -135,6 +136,7 @@ describe('the whole-file question cursor (D-230)', () => {
         options: ROLE_LIST_OPTIONS,
         header: 'Memory',
         context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group' },
+        acceptsTyped: true,
       },
     ])
     const none = memoryEnter(roles, emptySetupScan())

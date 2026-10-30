@@ -48,7 +48,7 @@ import {
   PYTHON_TIMEOUT_MS,
 } from '../apply/run'
 import { sha256Hex } from '../core/hash'
-import { compareText } from '../core/text'
+import { compareText, countedNoun } from '../core/text'
 import { attendedNote, NOT_SET_TEXT } from '../framework/gsd/hunks'
 import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
@@ -153,6 +153,7 @@ import type { StepResult } from '../ui/ask'
 import { proposalLines } from '../ui/blocks/context'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import { diffLines, lineDiff } from '../ui/diff'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import { planStep, runInit } from './run'
@@ -3521,7 +3522,7 @@ describe('reviewStep', () => {
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     const context = { title: 'Review', lines: expected, kind: 'review' }
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context })
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context, acceptsTyped: true })
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3843,7 +3844,7 @@ describe('review question hint (G-02-7)', () => {
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     const context = { title: 'Review', lines: shownBlock(run, 'review'), kind: 'review' }
-    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context })
+    expect(run.specs[reviewAt]).toEqual({ options: REVIEW_OPTIONS, header: 'Review', context, acceptsTyped: true })
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
@@ -4208,7 +4209,22 @@ describe('init apply conflicts (D-67)', () => {
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     expect(reviewAt).toBeGreaterThan(0)
     expect(run.asked.slice(reviewAt + 1)).toEqual([ROLE_ASKED])
-    expect(run.specs[reviewAt + 1]).toEqual({ options: CONFLICT_OPTIONS, header: 'Conflict' })
+    expect(run.specs[reviewAt + 1]?.options).toEqual(CONFLICT_OPTIONS)
+    expect(run.specs[reviewAt + 1]?.header).toBe('Conflict')
+  })
+
+  test('the conflict question carries the diff of that file from the version on disk to the new (D-236)', async () => {
+    const { world, role } = await editedRoleWorld()
+    const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Keep mine' })
+    await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
+    const diff = lineDiff(EDITED_ROLE, role)
+    const counts = `Take new: ${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+    const at = run.asked.indexOf(ROLE_ASKED)
+    expect(run.specs[at]?.context).toEqual({
+      title: 'Conflict: .cadre/be/ROLE.md',
+      lines: [counts, ...diffLines(diff)],
+      kind: 'conflict-diff',
+    })
   })
 
   test('Take new writes the desired ROLE.md and no copy, and the manifest records its new hash', async () => {

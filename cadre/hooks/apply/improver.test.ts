@@ -327,7 +327,8 @@ describe('improver pass (G-02-1f)', () => {
     expect(run.shown).toEqual([{ key: 'improver', title: 'Improver changes', lines }])
     expect(improverBlockLines(BE_BUILT_REPO_PATH, lineDiff(BE_BUILT, BE_IMPROVED))).toEqual(lines)
     expect(run.asked).toEqual([BE_IMPROVER_ASKED])
-    expect(run.specs).toEqual([{ options: ['Accept', 'Keep original'], header: 'Improver' }])
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver' }
+    expect(run.specs).toEqual([{ options: ['Accept', 'Keep original'], header: 'Improver', context }])
     expect(outcome).toEqual({
       accepted: new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]),
       restores: [],

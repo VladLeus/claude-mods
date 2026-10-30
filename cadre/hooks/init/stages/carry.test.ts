@@ -56,7 +56,7 @@ describe('carryStep', () => {
     const run = driven(carryAt(roles, twoNames), ['JIRA_URL'])
     expect(run.asked).toEqual([ENV_ASKED])
     const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env' }
-    expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context }])
+    expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
     expect(run.outputs).toEqual([TWO_NAMES_BLOCK])
@@ -159,7 +159,7 @@ describe('the carry stage (D-230)', () => {
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
     const context = { title: 'Env variables', lines, kind: 'env' }
-    const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context } }
+    const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
     expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])

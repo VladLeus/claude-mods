@@ -82,7 +82,7 @@ describe('frameworkStep', () => {
     expect(firstLines(run.asked)).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs).toEqual([
       { options: ['Same for all roles', 'Per role'], header: 'Framework', context: DETECTED },
-      { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED },
+      { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true },
     ])
   })
 
@@ -96,7 +96,7 @@ describe('frameworkStep', () => {
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
-    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED }
+    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true }
     expect(run.specs.slice(1)).toEqual([each, each, each])
   })
 
@@ -104,7 +104,8 @@ describe('frameworkStep', () => {
     const run = driven(frameworksAt(installedOnly, roles), ['Same for all roles', 'GSD'])
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
     expect(firstLines(run.asked)).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
-    expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework', context: DETECTED })
+    const options = ['GSD', 'none (built-in)']
+    expect(run.specs[1]).toEqual({ options, header: 'Framework', context: DETECTED, acceptsTyped: true })
   })
 
   test('every framework question carries the detection evidence: each framework, a marker only found (D-236)', () => {
@@ -159,7 +160,7 @@ describe('frameworkStep', () => {
   test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
     const run = driven(frameworksAt(reversed, roles), ['Per role', 'GSD', 'GSD', 'GSD'])
-    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED }
+    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true }
     expect(run.specs.slice(1)).toEqual([each, each, each])
     for (const spec of run.specs) {
       expect(spec.options.length).toBeGreaterThanOrEqual(2)
