@@ -176,9 +176,10 @@ export function previewBlockFor(header: unknown, blocks: readonly ShownBlock[]):
 }
 
 /**
- * The header chip of the question an AskUserQuestion call asks first (R1), which the cadre init pane draws the block of
- * (previewBlockFor): the `header` of the call's first question when that question is an object with a string header;
- * null for anything else. A tool call's args are untrusted input, so their shape is checked before the header is read.
+ * The header chip of the question an AskUserQuestion call asks first (R1): the `header` of the call's first question
+ * when that question is an object with a string header; null for anything else. A tool call's args are untrusted
+ * input, so their shape is checked before the header is read. The cadre init pane now takes the header of the question
+ * cadre has open from the openQuestion state (D-203), so nothing calls this until 02.1-29 removes it.
  */
 export function askedHeader(questions: unknown): string | null {
   if (!Array.isArray(questions)) return null

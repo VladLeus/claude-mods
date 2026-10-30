@@ -269,6 +269,14 @@ describe('testkit', () => {
     expect(run.logged).toEqual([])
   })
 
+  test('progress records each status line in order, null for a clear, and logs nothing (D-232)', async () => {
+    const run = memIo(memWorld({}), [])
+    await run.io.progress('Reading the repo')
+    await run.io.progress(null)
+    expect(run.progress).toEqual(['Reading the repo', null])
+    expect(run.logged).toEqual([])
+  })
+
   test('the other members give the values of the world', async () => {
     const facts = { facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' }
     const world = memWorld({

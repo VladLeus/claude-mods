@@ -6,7 +6,7 @@
  * what stays out of git under it. Pure: it gives states and never performs an effect, imports core, ui/ask and
  * init/state, and never imports init/machine or init/run.
  */
-import type { GitPolicy } from '../../../types'
+import type { AskContext, GitPolicy } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
@@ -16,24 +16,43 @@ import type { Answer, InitState, StageDef } from '../state'
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
 
-/** The context line of the git policy question (D-136): what each policy keeps in git. */
-export const GIT_POLICY_CONTEXT =
-  'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. ' +
-  'Ignore all: nothing in .cadre/ is committed.'
-
-/** Each git policy with its dialog label and the word a person may type under "Other" (D-65). */
+/**
+ * Each git policy with its dialog label, the word a person may type under "Other" (D-65), and the sentence that says
+ * what it commits (D-136).
+ */
 type GitPolicyEntry = {
   readonly label: string
   readonly word: string
   readonly policy: GitPolicy
+  readonly commits: string
 }
 
 const GIT_POLICIES: readonly GitPolicyEntry[] =
   Object.freeze([
-    { label: 'Commit definitions (default)', word: 'definitions', policy: 'definitions' },
-    { label: 'Commit all', word: 'all', policy: 'all' },
-    { label: 'Ignore all of .cadre/', word: 'ignore', policy: 'ignore' },
+    {
+      label: 'Commit definitions (default)',
+      word: 'definitions',
+      policy: 'definitions',
+      commits: 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+    },
+    { label: 'Commit all', word: 'all', policy: 'all', commits: 'Commit all: only per-user files are ignored.' },
+    {
+      label: 'Ignore all of .cadre/',
+      word: 'ignore',
+      policy: 'ignore',
+      commits: 'Ignore all: nothing in .cadre/ is committed.',
+    },
   ])
+
+/** The context line of the git policy question (D-136): what each policy keeps in git. */
+export const GIT_POLICY_CONTEXT = GIT_POLICIES.map(entry => entry.commits).join(' ')
+
+/** The git policy question's own context (D-203, D-229): what each policy commits, one line per policy. */
+const GIT_POLICY_ASK_CONTEXT: AskContext = Object.freeze({
+  title: 'Git policy',
+  lines: Object.freeze(GIT_POLICIES.map(entry => entry.commits)),
+  kind: 'git-policy',
+})
 
 /**
  * The git policy choices in the order default, all, ignore: the dialog focuses the first option; the order is fixed
@@ -67,13 +86,13 @@ export const GIT_POLICY_DISMISSED_REASON = 'The git policy question was dismisse
 const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
 
 /**
- * The git policy question as the policy stage asks it (D-65, D-136): GIT_POLICY_QUESTION with GIT_POLICY_CONTEXT on
- * its second line, the three policy labels with the Git policy chip, parseGitPolicy, the policy words its refusal
- * lists, and the reason a dismissal cancels with.
+ * The git policy question as the policy stage asks it (D-65, D-136): GIT_POLICY_QUESTION with GIT_POLICY_CONTEXT on its
+ * second line, the three policy labels with the Git policy chip and the question's own context (D-203), parseGitPolicy,
+ * the policy words its refusal lists, and the reason a dismissal cancels with.
  */
 const GIT_POLICY_ASK = Object.freeze({
   question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
-  spec: Object.freeze({ options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy }),
+  spec: Object.freeze({ options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy, context: GIT_POLICY_ASK_CONTEXT }),
   parse: parseGitPolicy,
   accepts: GIT_POLICY_ACCEPTS,
   dismissedReason: GIT_POLICY_DISMISSED_REASON,

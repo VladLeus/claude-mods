@@ -184,6 +184,8 @@ export type MemRun = {
   readonly logged: string[]
   /** Every block shown in the side pane, in order. */
   readonly shown: ShownBlock[]
+  /** Every status line set, in order, null for each clear (D-232). */
+  readonly progress: (string | null)[]
   /** Every completion asked, as `${system}\n---\n${prompt}`. */
   readonly prompts: string[]
   readonly reads: string[]
@@ -257,6 +259,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   const specs: AskSpec[] = []
   const logged: string[] = []
   const shown: ShownBlock[] = []
+  const progress: (string | null)[] = []
   const prompts: string[] = []
   const reads: string[] = []
   const listed: string[] = []
@@ -281,7 +284,9 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     show: async block => {
       shown.push(block)
     },
-    progress: async () => undefined,
+    progress: async text => {
+      progress.push(text)
+    },
     complete: async (prompt, system) => {
       prompts.push(`${system}\n---\n${prompt}`)
       const reply = world.replies[nextReply]
@@ -317,7 +322,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     tools: async () => world.tools,
   }
 
-  return { io, asked, specs, logged, shown, prompts, reads, listed }
+  return { io, asked, specs, logged, shown, progress, prompts, reads, listed }
 }
 
 /**

@@ -123,11 +123,12 @@ type World = {
 }
 
 /**
- * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working
- * folder each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the
- * option labels each dialog showed, the preview of each option of each dialog (D3), each text the plugin logged to the
- * transcript, each side pane it opened as `ui.open <id> <title>`, each pane it closed as `ui.close <id>`, each value it
- * set the init pane's state to (D-133), and each path it wrote, in order.
+ * What the fake host saw: every fs, process and settings op in order, the argv of each process call, the working folder
+ * each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the option labels
+ * each dialog showed, the preview of each option of each dialog (D3), the first question of each dialog as the tool
+ * call gave it, each text the plugin logged to the transcript, each side pane it opened as `ui.open <id> <title>`, each
+ * pane it closed as `ui.close <id>`, each value it set the init pane's state to (D-133), and each path it wrote, in
+ * order.
  */
 type HostLog = {
   readonly ops: string[]
@@ -136,12 +137,15 @@ type HostLog = {
   readonly asks: string[]
   readonly askOptions: string[][]
   readonly askPreviews: unknown[][]
+  readonly askQuestions: unknown[]
   readonly logs: string[]
   readonly panes: string[]
   readonly closes: string[]
   readonly paneWrites: unknown[]
-  /** Each value written to the init header state (R1). */
+  /** The header of each value written to the open-question state, null for a clear (R1, D-203). */
   readonly headerWrites: unknown[]
+  /** Each value written to the open-question state (D-203). */
+  readonly questionWrites: unknown[]
   readonly writes: string[]
 }
 
@@ -180,11 +184,13 @@ function newLog(): HostLog {
     asks: [],
     askOptions: [],
     askPreviews: [],
+    askQuestions: [],
     logs: [],
     panes: [],
     closes: [],
     paneWrites: [],
     headerWrites: [],
+    questionWrites: [],
     writes: [],
   }
 }
@@ -435,15 +441,15 @@ function hasPath(world: World, path: string): boolean {
 }
 
 /**
- * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs,
- * process and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript
- * text is kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is
- * kept in `log.paneWrites` and stored, unless `world.denyPane` refuses both. Each value of the init header state is
- * kept in `log.headerWrites` and stored, never refused (R1). A pane closed is kept in `log.closes`,
- * and the close is refused when `world.denyClose`. The model answers `world.replies` in
- * order. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path
- * kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state
- * included, is answered with a refusal, so a call to one would show up in the log and fail its call.
+ * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs, process
+ * and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript text is
+ * kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is kept in
+ * `log.paneWrites` and stored, unless `world.denyPane` refuses both. Each value of the open-question state is kept in
+ * `log.questionWrites`, its header in `log.headerWrites`, and stored, never refused (R1, D-203). A pane closed is kept
+ * in `log.closes`, and the close is refused when `world.denyClose`. The model answers `world.replies` in order. A
+ * process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path kept in
+ * `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state included,
+ * is answered with a refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
@@ -468,11 +474,13 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: undefined }
   })
-  // The init pane's blocks and the header of the question open now are the plugin's own state (D-133, T-02-49, R1);
-  // the header is never refused, and a write of any other state is forbidden.
+  // The init pane's blocks and the question open now are the plugin's own state (D-133, T-02-49, R1, D-203); the
+  // open question is never refused, and a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
-    if (e.plugin === 'cadre' && e.key === 'initHeader') {
-      log.headerWrites.push(e.value)
+    if (e.plugin === 'cadre' && e.key === 'openQuestion') {
+      const open: unknown = e.value
+      log.questionWrites.push(open)
+      log.headerWrites.push(isObject(open) ? open.header : null)
 
       return next(e)
     }
@@ -496,6 +504,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
     log.asks.push(`ask ${question}`)
     log.askOptions.push((asked?.options ?? []).map(option => option.label))
     log.askPreviews.push((asked?.options ?? []).map(option => ('preview' in option ? option.preview : undefined)))
+    log.askQuestions.push(asked)
     await world.onAsk?.()
     const answer = answerFor(world.answers, question)
     if (answer === undefined) return { deny: 'dismissed' }
@@ -1918,6 +1927,20 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(log.asks.at(-1)).toBe('ask Name it, or type one under Other.')
   })
 
+  test('the git policy context goes to the open question, never to the dialog (D-203)', WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    const open: unknown[] = []
+    const atPolicy = async (): Promise<void> => {
+      if ((log.asks.at(-1) ?? '').startsWith(`ask ${GIT_POLICY_QUESTION}`)) open.push(log.questionWrites.at(-1))
+    }
+    fakeHost(on, initWorld({ onAsk: atPolicy }), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const [policy] = open
+    expect(open).toHaveLength(1)
+    expect(isObject(policy) && isObject(policy.context) ? policy.context.kind : null).toBe('git-policy')
+    expect(log.askQuestions.filter(asked => isObject(asked) && Object.hasOwn(asked, 'context'))).toEqual([])
+  })
+
   test('golden: option previews of the init dry run on the main screen (D-219)', async ($, on) => {
     const log = newLog()
     const headers: unknown[] = []
@@ -1951,9 +1974,6 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     presentation: { isFullscreen: false, columns: 80 },
   }
 
-  /** INIT_ANSWERS with `Pick one?` answered A. */
-  const PICK_ANSWERS = { ...INIT_ANSWERS, 'Pick one?': 'A' }
-
   /** What one drawing of the cadre-init pane shows (R1): the text of its first row, and how many rows it has. */
   type Drawn = {
     readonly first: string | undefined
@@ -1985,17 +2005,18 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   }
 
   /**
-   * The onAsk of a world whose `Pick one?` dialog has the terminal draw the pane with `props` while it is open (R1):
-   * what the pane showed and the header last written by then go into `open`. Init's own dialogs are left alone.
+   * The onAsk of a world that has the terminal draw the pane with `props` while init's own question `question` is open
+   * (R1): what the pane showed and the header last written by then go into `open`. Init's other dialogs are left alone.
    */
   function drawWhileOpen(
     $: Engine,
     log: HostLog,
     props: MountTarget<'terminal', 'Pane'>['props'],
     open: Open[],
+    question: string,
   ): () => Promise<void> {
     return async () => {
-      if (!(log.asks.at(-1) ?? '').startsWith('ask Pick one?')) return
+      if (!(log.asks.at(-1) ?? '').startsWith(`ask ${question}`)) return
       open.push({ drawn: await drawPane($, props), header: log.headerWrites.at(-1) })
     }
   }
@@ -2011,13 +2032,11 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   test('an inline pane drawn while a question is open shows its block, the newest once it settles', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
-    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, INLINE_PANE, open) }), log)
+    fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    await drawPane($, INLINE_PANE)
-    const before = log.headerWrites.length
-    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
     expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
-    expect(log.headerWrites.slice(before)).toEqual(['Roles', null])
+    const at = log.headerWrites.indexOf('Roles')
+    expect(log.headerWrites.slice(at, at + 2)).toEqual(['Roles', null])
     expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
@@ -2025,36 +2044,29 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   test('a docked pane drawn while a question is open shows its block too: every placement', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
-    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, DOCK_PANE, open) }), log)
+    fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    await drawPane($, DOCK_PANE)
-    const before = log.headerWrites.length
-    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
     expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
-    expect(log.headerWrites.slice(before)).toEqual(['Roles', null])
+    const at = log.headerWrites.indexOf('Roles')
+    expect(log.headerWrites.slice(at, at + 2)).toEqual(['Roles', null])
     expect(await drawPane($, DOCK_PANE)).toEqual(blockDrawn(log, 'review'))
   })
 
   test('a header with no block of its own, as Git policy, draws the newest block while open', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
-    fakeHost(on, initWorld({ answers: PICK_ANSWERS, onAsk: drawWhileOpen($, log, INLINE_PANE, open) }), log)
+    fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, GIT_POLICY_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    await drawPane($, INLINE_PANE)
-    const questions = [{ ...PICK_QUESTION, header: 'Git policy' }]
-    await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
-    expect(open).toEqual([{ drawn: blockDrawn(log, 'review'), header: 'Git policy' }])
+    expect(open).toEqual([{ drawn: blockDrawn(log, 'recommendations'), header: 'Git policy' }])
   })
 
   test('a dismissed dialog still clears the header, so the pane draws the newest block after it', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
+    fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
     await $.command.run(DRY_RUN)
-    await drawPane($, INLINE_PANE)
-    await $.tool.call({ tool: 'AskUserQuestion', questions: [{ ...PICK_QUESTION, header: 'Roles' }] }).catch(() => null)
-    expect(askHeads(log).at(-1)).toBe('ask Pick one?')
-    expect(log.headerWrites.at(-1)).toBe(null)
-    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+    expect(askHeads(log).at(-1)).toBe(`ask ${ROLES_QUESTION}`)
+    expect(log.headerWrites.slice(-3)).toEqual(['Roles', null, null])
+    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'roles'))
   })
 
   test('a run clears the header when it ends, after the clear of its last dialog', async ($, on) => {

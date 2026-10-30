@@ -17,6 +17,17 @@ import {
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
 const POLICY_DRAFT = { locations: DEFAULT_LOCATIONS, roles: TEMPLATE_ROLES }
 
+/** The git policy question's own context (D-203): what each policy commits, one line per policy. */
+const POLICY_CONTEXT = {
+  title: 'Git policy',
+  lines: [
+    'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+    'Commit all: only per-user files are ignored.',
+    'Ignore all: nothing in .cadre/ is committed.',
+  ],
+  kind: 'git-policy',
+}
+
 describe('init helpers', () => {
   test('parseGitPolicy maps the three labels, trimmed and in any case', () => {
     expect(parseGitPolicy('Commit definitions (default)')).toBe('definitions')
@@ -65,7 +76,7 @@ describe('init helpers', () => {
     const run = driven(policyStage.enter(stateAt('policy', POLICY_DRAFT)), ['Commit all'])
     expect(run.state.draft.policy).toBe('all')
     expect(run.asked).toEqual([withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)])
-    expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS, header: 'Git policy' }])
+    expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS, header: 'Git policy', context: POLICY_CONTEXT }])
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], GIT_POLICY_DISMISSED_REASON],
       [['whatever', 'whatever', 'whatever'], NO_USABLE_ANSWER_REASON],
@@ -93,10 +104,17 @@ describe('the git policy stage (D-230)', () => {
     const state = policyStage.enter(stateAt('policy', POLICY_DRAFT))
     const ask = {
       question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
-      spec: { options: GIT_POLICY_OPTIONS, header: 'Git policy' },
+      spec: { options: GIT_POLICY_OPTIONS, header: 'Git policy', context: POLICY_CONTEXT },
     }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
+  })
+
+  test('the git policy question carries its own context: what each policy commits, one line per policy (D-203)', () => {
+    const state = policyStage.enter(stateAt('policy', POLICY_DRAFT))
+    expect(state.effect.kind === 'ask' ? state.effect.spec.context : null).toEqual(POLICY_CONTEXT)
+    expect(state.openQuestion?.spec.context).toEqual(POLICY_CONTEXT)
+    expect(POLICY_CONTEXT.lines.join(' ')).toBe(GIT_POLICY_CONTEXT)
   })
 
   test('a policy label finishes the stage with that policy in the draft and enters the launcher start stage', () => {
