@@ -313,6 +313,18 @@ describe('the review stage (D-230)', () => {
     ])
   })
 
+  test('a typed assignments goes back to the assign stage, then the review again, counting a round', async () => {
+    const setup = emptySetupScan({ mcp: [session('sentry')] })
+    const state = reviewAt({ gathered: { ...REVIEW_DRAFT.gathered, setup } })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'assignments' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['assign', 'review', 'assign'])
+    expect(going.openQuestion?.spec).toEqual({ options: ['None', 'All roles'], header: 'MCP' })
+    const back = nextStage(going, { kind: 'answer', text: 'All roles' })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.roles?.map(role => role.mcp)).toEqual(REVIEW_DRAFT.roles.map(() => ['sentry']))
+  })
+
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
     const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
     const state = reviewAt({ changes })

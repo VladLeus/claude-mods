@@ -2,19 +2,23 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { proposeRoles } from '../../roles/propose'
 import {
+  EMPTY_FACTS,
   emptySetupScan,
   firstLines,
   FULL_SCAN,
   memIo,
   memWorld,
   OWN_SKILLS_ENTRY_PREFIX,
+  repoScan,
   roleIn,
   session,
   skillRef,
+  stateAt,
   valueOf,
 } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { assignmentStep, mcpContextLine } from './assign'
+import { nextStage } from '../machine'
+import { assignmentStep, assignStage, mcpContextLine } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, skillsContextLine } from './own-skills'
 
 /** The buttons of every question on which roles get an item. */
@@ -199,5 +203,36 @@ describe('history hints', () => {
     expect(first.every(role => role.skills.includes('my-skill') && role.skills.includes('alpha:x'))).toBe(true)
     const again = valueOf(await assignmentStep(memIo(memWorld({}), NONE_FOR_ALL).io, first, setup, hints))
     expect(again.flatMap(role => [...role.mcp, ...role.skills])).toEqual([])
+  })
+})
+
+describe('the assign stage (D-230)', () => {
+  /** PM, Team Lead, BE, FE, QA and Security. */
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** The unknown sentry server, a codex skill group and one skill of the user's own. */
+  const setup = emptySetupScan({
+    mcp: [session('sentry')],
+    skills: [skillRef('codex:rescue', 'codex'), { name: 'mine', plugin: null, purpose: 'Do my thing.' }],
+  })
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+
+  test('assignStage asks each unknown server, then each skill group; the open question is the first', () => {
+    const state = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
+    const question = withContext('Which roles get the sentry MCP server? (e.g. BE, QA, or none)', mcpContextLine(roles))
+    const ask = { question, spec: { options: ROLE_LIST_OPTIONS, header: 'MCP' } }
+    expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
+    const group = nextStage(state, { kind: 'answer', text: 'be' })
+    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills' })
+  })
+
+  test('the own skills are recommended by a skills model effect, then shown and handed out', () => {
+    const state = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
+    const calling = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), { kind: 'answer', text: 'None' })
+    const skills = [{ name: 'mine', plugin: null, purpose: 'Do my thing.' }]
+    expect(calling.effect).toEqual({ kind: 'model', call: { id: 'skills', roles, skills, counts: new Map() } })
+    const recommended = new Map([['S1', ['be']]])
+    const entry = nextStage(calling, { kind: 'model', result: { id: 'skills', result: recommended } })
+    expect(entry.outputs.map(output => (output.kind === 'show' ? output.block.key : output.kind))).toEqual(['skills'])
+    expect(entry.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
   })
 })
