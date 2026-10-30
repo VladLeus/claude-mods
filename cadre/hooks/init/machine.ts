@@ -30,6 +30,7 @@ import { durationStage } from './stages/duration'
 import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
 import { launchStage } from './stages/launch'
+import { modelStage } from './stages/model'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
 import { installedFrameworks } from './stages/roles'
@@ -104,28 +105,17 @@ const rolesStage: StageDef = Object.freeze({
   },
 })
 
-/** A role step that only changes the roles (legacy): the model, the assignments or the carried settings. */
-function rolesAnswer(state: InitState, answer: Answer, id: 'model' | 'assign' | 'carry'): InitState {
+/** A role step that only changes the roles (legacy): the assignments or the carried settings. */
+function rolesAnswer(state: InitState, answer: Answer, id: 'assign' | 'carry'): InitState {
   if (answer.kind !== 'legacy') return stageFailed(state)
   const { result } = answer
-  const isOwn = result.id === id && (result.id === 'model' || result.id === 'assign' || result.id === 'carry')
+  const isOwn = result.id === id && (result.id === 'assign' || result.id === 'carry')
   if (!isOwn) return stageFailed(state)
   const changed = result.result
   if (changed.kind === 'cancelled') return stageCancelled(state, changed.reason)
 
   return stageDone({ ...state, draft: { ...state.draft, roles: changed.value } })
 }
-
-/** Each role's model and effort (modelStep, legacy). */
-const modelStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles } = state.draft
-    if (roles === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'model', roles } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'model'),
-})
 
 /** The MCP servers and skills, with the history hints (assignmentStep, legacy). */
 const assignStage: StageDef = Object.freeze({

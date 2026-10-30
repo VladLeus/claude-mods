@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { RoleSpec } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
-import { driven, memIo, memWorld, roleIn, SOURCE_SCAN, stateAt, templateRole, valueOf } from '../../testkit'
+import { driven, roleIn, SOURCE_SCAN, stateAt, templateRole } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from '../answers'
 import { nextStage } from '../machine'
-import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage, modelStep } from './model'
+import { cancelledReply } from '../replies'
+import type { InitState } from '../state'
+import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage } from './model'
+
+/** The model stage entered for `roles`. */
+function modelAt(roles: readonly RoleSpec[]): InitState {
+  return modelStage.enter(stateAt('model', { roles }))
+}
 
 describe('modelStep', () => {
   /** PM, Team Lead, BE, QA and Security, each with the 90m run the duration step gave them. */
@@ -20,29 +28,26 @@ describe('modelStep', () => {
   /** The first model question as asked for these five roles: their ids under it (D-136). */
   const MODE_ASKED = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
 
-  test('the first model question offers Same for all roles first, then Per role', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'opus + medium'])
-    await modelStep(run.io, roles)
+  test('the first model question offers Same for all roles first, then Per role', () => {
+    const run = driven(modelAt(roles), ['Same for all roles', 'opus + medium'])
     expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
     expect(run.asked[0]).toBe(MODE_ASKED)
     expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model' })
   })
 
-  test('Same for all roles asks once more and gives every role that model family and effort', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'sonnet + high'])
-    const modelled = valueOf(await modelStep(run.io, roles))
-    expect(modelled.map(role => [role.id, role.model, role.effort])).toEqual(
+  test('Same for all roles asks once more and gives every role that model family and effort', () => {
+    const run = driven(modelAt(roles), ['Same for all roles', 'sonnet + high'])
+    expect(run.state.draft.roles?.map(role => [role.id, role.model, role.effort])).toEqual(
       roles.map(role => [role.id, 'sonnet', 'high']),
     )
     expect(run.asked).toEqual([MODE_ASKED, MODEL_ALL])
     expect(run.specs[1]).toEqual({ options: ['opus + medium', 'sonnet + medium', 'sonnet + high'], header: 'Model' })
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([])
   })
 
-  test('Per role asks each role by its title and id in role order, each with the three options (A6)', async () => {
+  test('Per role asks each role by its title and id in role order, each with the three options (A6)', () => {
     const answers = ['Per role', 'opus + medium', 'sonnet + high', 'sonnet + medium', 'haiku low', 'OPUS+max']
-    const run = memIo(memWorld({}), answers)
-    const modelled = valueOf(await modelStep(run.io, roles))
+    const run = driven(modelAt(roles), answers)
     expect(run.asked).toEqual([
       MODE_ASKED,
       ...[
@@ -55,7 +60,7 @@ describe('modelStep', () => {
     ])
     const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model' }
     expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
-    expect(modelled.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
+    expect(run.state.draft.roles?.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
       'pm: opus medium',
       'tl: sonnet high',
       'be: sonnet medium',
@@ -64,57 +69,55 @@ describe('modelStep', () => {
     ])
   })
 
-  test('two roles with the same title are told apart by their ids in the per-role questions (A6)', async () => {
+  test('two roles with the same title are told apart by their ids in the per-role questions (A6)', () => {
     const be = { ...roleIn(roles, 'be'), title: 'Backend' }
-    const run = memIo(memWorld({}), ['Per role', 'opus + medium', 'sonnet + high'])
-    const modelled = valueOf(await modelStep(run.io, [be, { ...be, id: 'be-api' }]))
+    const run = driven(modelAt([be, { ...be, id: 'be-api' }]), ['Per role', 'opus + medium', 'sonnet + high'])
     expect(run.asked).toEqual([
       withContext(MODEL_MODE_QUESTION, 'Roles: be, be-api.'),
       withContext('Model and effort for Backend (be)?', MODEL_EFFORT_CONTEXT),
       withContext('Model and effort for Backend (be-api)?', MODEL_EFFORT_CONTEXT),
     ])
-    expect(modelled.map(role => [role.id, role.model, role.effort])).toEqual([
+    expect(run.state.draft.roles?.map(role => [role.id, role.model, role.effort])).toEqual([
       ['be', 'opus', 'medium'],
       ['be-api', 'sonnet', 'high'],
     ])
   })
 
-  test('a model that is no family alias puts the refusal line on top of the next ask (A4)', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'high high', 'opus + high'])
-    const modelled = valueOf(await modelStep(run.io, roles))
-    expect(modelled.map(role => [role.model, role.effort])).toEqual(roles.map(() => ['opus', 'high']))
+  test('a model that is no family alias puts the refusal line on top of the next ask (A4)', () => {
+    const run = driven(modelAt(roles), ['Same for all roles', 'sonet + high', 'high high', 'opus + high'])
+    expect(run.state.draft.roles?.map(role => [role.model, role.effort])).toEqual(roles.map(() => ['opus', 'high']))
     expect(run.asked).toEqual([
       MODE_ASKED,
       MODEL_ALL,
       `${modelEffortRefusal('sonet + high')}\n${MODEL_ALL}`,
       `${modelEffortRefusal('high high')}\n${MODEL_ALL}`,
     ])
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([])
   })
 
-  test('MAX_ASKS refused models, a pinned id among them, cancel with no usable answer (A4, D-136)', async () => {
+  test('MAX_ASKS refused models, a pinned id among them, cancel with no usable answer (A4, D-136)', () => {
     const refused = ['claude-opus-5-5 high', 'opus', 'sonet high']
-    const run = memIo(memWorld({}), ['Same for all roles', ...refused, 'opus + high'])
-    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    const run = driven(modelAt(roles), ['Same for all roles', ...refused, 'opus + high'])
+    expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
     expect(run.asked).toEqual([
       MODE_ASKED,
       MODEL_ALL,
       `${modelEffortRefusal('claude-opus-5-5 high')}\n${MODEL_ALL}`,
       `${modelEffortRefusal('opus')}\n${MODEL_ALL}`,
     ])
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([{ kind: 'log', text: NO_USABLE_ANSWER_REASON }])
   })
 
-  test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', async () => {
+  test('each role keeps its duration and the threshold 65, asked nowhere, and the input is unchanged', () => {
     const before = JSON.stringify(roles)
-    const modelled = valueOf(await modelStep(memIo(memWorld({}), ['Per role', 'sonnet high']).io, roles.slice(0, 1)))
-    expect(modelled.map(role => role.autopilot)).toEqual([{ duration: '90m', threshold: 65, askUser: true }])
+    const modelled = driven(modelAt(roles.slice(0, 1)), ['Per role', 'sonnet high']).state.draft.roles
+    expect(modelled?.map(role => role.autopilot)).toEqual([{ duration: '90m', threshold: 65, askUser: true }])
     expect(roles.every(role => role.autopilot.threshold === AUTOPILOT_THRESHOLD)).toBe(true)
     expect(AUTOPILOT_THRESHOLD).toBe(65)
     expect(JSON.stringify(roles)).toBe(before)
   })
 
-  test('a dismissal or unlisted answers at any model question cancel with their reason, no roles (A1)', async () => {
+  test('a dismissal or unlisted answers at any model question cancel with their reason, no roles (A1)', () => {
     const scripts: readonly (readonly [readonly string[], string])[] = [
       [[], MODEL_DISMISSED_REASON],
       [['Same for all roles'], MODEL_DISMISSED_REASON],
@@ -122,19 +125,20 @@ describe('modelStep', () => {
       [['nope', 'nope', 'nope'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of scripts) {
-      const run = memIo(memWorld({}), answers)
-      expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason })
-      expect(run.logged).toEqual([])
+      const run = driven(modelAt(roles), answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
+      expect(run.state.draft.roles).toEqual(roles)
+      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
     }
     expect(MODEL_DISMISSED_REASON).toBe('A model and effort question was dismissed or not answered.')
   })
 })
 
 describe('refusal re-ask (G-02-6b)', () => {
-  test('the model loop puts its refusal on top of the next ask; three refused answers cancel (A4)', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'sonet + high', 'opus', 'high high'])
+  test('the model loop puts its refusal on top of the next ask; three refused answers cancel (A4)', () => {
     const roles = [templateRole('pm')]
-    expect(await modelStep(run.io, roles)).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
+    const run = driven(modelAt(roles), ['Same for all roles', 'sonet + high', 'opus', 'high high'])
+    expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(NO_USABLE_ANSWER_REASON) })
     const all = withContext('Model and effort for all roles?', MODEL_EFFORT_CONTEXT)
     expect(run.asked).toEqual([
       withContext(MODEL_MODE_QUESTION, 'Roles: pm.'),
@@ -142,9 +146,9 @@ describe('refusal re-ask (G-02-6b)', () => {
       `${modelEffortRefusal('sonet + high')}\n${all}`,
       `${modelEffortRefusal('opus')}\n${all}`,
     ])
-    expect(run.logged).toEqual([])
-    const dismissed = memIo(memWorld({}), ['Same for all roles', 'sonet + high'])
-    expect(await modelStep(dismissed.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
+    expect(run.outputs).toEqual([{ kind: 'log', text: NO_USABLE_ANSWER_REASON }])
+    const dismissed = driven(modelAt(roles), ['Same for all roles', 'sonet + high'])
+    expect(dismissed.state.effect).toEqual({ kind: 'end', reply: cancelledReply(MODEL_DISMISSED_REASON) })
   })
 })
 

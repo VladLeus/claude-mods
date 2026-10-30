@@ -191,7 +191,7 @@ import {
   launchStage,
 } from './stages/launch'
 import { MEMORY_DISMISSED_REASON, memoryStep } from './stages/memory'
-import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './stages/model'
+import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage } from './stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine, policyStage } from './stages/policy'
 import {
@@ -626,9 +626,9 @@ describe('modelStep', () => {
   const MODEL_ALL = withContext(MODEL_ALL_LINE, MODEL_EFFORT_CONTEXT)
 
   test('Same for all roles gives all five roles the threshold 65, and no init question asks it (B3)', async () => {
-    const all = valueOf(await modelStep(memIo(memWorld({}), ['Same for all roles', 'opus + high']).io, roles))
-    expect(all.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security'])
-    expect(all.map(role => role.autopilot.threshold)).toEqual(all.map(() => AUTOPILOT_THRESHOLD))
+    const all = driven(modelStage.enter(stateAt('model', { roles })), ['Same for all roles', 'opus + high']).state
+    expect(all.draft.roles?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security'])
+    expect(all.draft.roles?.map(role => role.autopilot.threshold)).toEqual(roles.map(() => AUTOPILOT_THRESHOLD))
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(run.asked.filter(question => /threshold/i.test(question))).toEqual([])
@@ -2771,7 +2771,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
         '"Use these roles", "Adjust them", "Describe my own structure"',
       ],
-      ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
       ['mcp', io => assignmentStep(io, roles, emptySetupScan({ mcp: [session('sentry')] })), roleList],
       ['skills', io => assignmentStep(io, roles, emptySetupScan({ skills: [skillRef('x:y', 'x')] })), roleList],
       [
@@ -2811,6 +2810,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         'duration',
         () => driven(durationStage.enter(stateAt('duration', { roles })), ['zzz']).asked,
         'a duration such as 4h, 90m or 1h30m, at most 168h',
+      ],
+      [
+        'model mode',
+        () => driven(modelStage.enter(stateAt('model', { roles })), ['zzz']).asked,
+        '"Same for all roles", "Per role"',
       ],
       ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],

@@ -1,19 +1,21 @@
 /**
- * The model and effort stage of init (D-52, D-86, A4, D-136), a layer 10 module: the first model question, one answer
- * for every role or one per role (the answer modes, which the framework stage reads too), each model and effort
- * question with every family and effort on its second line, and modelStep, which asks them and gives each role a
- * family alias and an effort; and teamContextLine, the team's role ids as the context line of the framework, model,
- * assignment, memory and env questions. Pure: it asks through the InitIo port it is given, imports core, init/answers,
- * init/stages/duration, roles and ui/ask, and never imports init.ts, which imports it, or init/run.
+ * The model and effort stage of init (D-52, D-86, A4, D-136, D-230), a layer 10 module: the first model question, one
+ * answer for every role or one per role (the answer modes, which the framework stage reads too), each model and effort
+ * question with every family and effort on its second line, and modelStage, the pure stage that asks them and gives
+ * each role a family alias and an effort; and teamContextLine, the team's role ids as the context line of the
+ * framework, model, assignment, memory and env questions. Pure: it gives states and never performs an effect, imports
+ * core, init/answers, init/state, init/stages/duration, roles and ui/ask, and never imports init/machine or init/run.
  */
-import type { InitIo, RoleSpec } from '../../../types'
+import type { RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText } from '../../core/text'
 import { EFFORTS, MODEL_ALIASES } from '../../roles/validate'
-import { accepted, ASK_HEADERS, askChoice, choiceResult, quotedLabels, withContext } from '../../ui/ask'
-import type { AskResult, StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from '../answers'
+import { stageCancelled, stageDone, stageFailed, withEffect } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
@@ -63,54 +65,122 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
   return { ...role, model: choice.model, effort: choice.effort }
 }
 
+/** A model question as the stage asks it: a ChoiceAsk with the reason a dismissal cancels with. */
+type ModelAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
+
 /**
- * Asks one model and effort question at most MAX_ASKS times (D-52, A4, D-136), with MODEL_EFFORT_CONTEXT on the line
- * after the question: askChoice with modelEffortRefusal, cleaned as a report cell, as its refusal. A dismissal gives
- * `dismissed` at once and an answer parseModelEffort reads is the choice; after MAX_ASKS refused answers it gives
- * `exhausted`, so a cap is never a choice (A1).
+ * The first model question (D-52, D-86, D-136): MODEL_MODE_QUESTION with the team's role ids (teamContextLine) on its
+ * second line, then `Same for all roles` or `Per role`.
  */
-async function askModelEffort(io: InitIo, question: string): Promise<AskResult<Pick<RoleSpec, 'model' | 'effort'>>> {
-  return askChoice(io, {
+function modeAsk(roles: readonly RoleSpec[]): ModelAsk<AnswerMode> {
+  return {
+    question: withContext(MODEL_MODE_QUESTION, teamContextLine(roles)),
+    spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.model },
+    parse: parseAnswerMode,
+    accepts: quotedLabels(ANSWER_MODE_OPTIONS),
+    dismissedReason: MODEL_DISMISSED_REASON,
+  }
+}
+
+/**
+ * One model and effort question (D-52, A4, D-136), with MODEL_EFFORT_CONTEXT on the line after `question`: an answer
+ * parseModelEffort reads is the choice, and one it cannot read puts modelEffortRefusal, cleaned as a report cell, on
+ * top of the next ask.
+ */
+function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'effort'>> {
+  return {
     question: withContext(question, MODEL_EFFORT_CONTEXT),
     spec: { options: MODEL_EFFORT_OPTIONS, header: ASK_HEADERS.model },
     parse: parseModelEffort,
     accepts: quotedLabels(MODEL_EFFORT_OPTIONS),
     refuse: answer => reportText(modelEffortRefusal(answer)),
-  })
+    dismissedReason: MODEL_DISMISSED_REASON,
+  }
+}
+
+/** The state asking `ask` with the cursor `sub`; `question` is the ask's text after a refusal. */
+function asked<T>(state: InitState, sub: InitState['sub'], ask: ModelAsk<T>, question: string | null): InitState {
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/** The stage done with the roles modelled. */
+function modelledDone(state: InitState, roles: readonly RoleSpec[]): InitState {
+  return stageDone({ ...state, draft: { ...state.draft, roles } })
+}
+
+/** Where the per-role model questions are: the role asked, how often, and the roles modelled before it. */
+type EachCursor = {
+  readonly tries: number
+  readonly index: number
+  readonly done: readonly RoleSpec[]
+}
+
+/** The model question of the role at `index`, asked `tries` times so far, with the roles modelled before it. */
+function roleAsked(state: InitState, roles: readonly RoleSpec[], cursor: EachCursor): InitState {
+  const role = roles[cursor.index]
+  if (role === undefined) return modelledDone(state, cursor.done)
+
+  return asked(state, { kind: 'each', ...cursor }, modelEffortAsk(modelRoleQuestion(role)), null)
 }
 
 /**
- * The model and effort step (D-52, D-86): `Same for all roles` or `Per role`, then `opus + medium`, `sonnet + medium`
- * or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role order. The first
- * question carries the team's role ids (teamContextLine) and each model question MODEL_EFFORT_CONTEXT on its second
- * line (D-136). Each role stores opus, sonnet, haiku or fable, never a pinned model id, and an effort
- * (parseModelEffort, A4); a typed pair it cannot read puts modelEffortRefusal on top of the next ask (askModelEffort).
- * Only an answer to every question gives roles: a dismissal gives the cancel reason MODEL_DISMISSED_REASON, and
- * MAX_ASKS answers it cannot read at one question NO_USABLE_ANSWER_REASON, so no role keeps a model the person did not
- * finish choosing (A1). The roles it is given never change.
+ * The answer to the open model question (choiceAnswer): the first question goes on to the question for all roles or to
+ * the question of each role in role order. An answer it cannot read is asked again with why on top; a dismissal
+ * cancels with MODEL_DISMISSED_REASON and MAX_ASKS answers it cannot read at one question with
+ * NO_USABLE_ANSWER_REASON, so no role keeps a model the person did not finish choosing (A1).
  */
-export async function modelStep(io: InitIo, roles: readonly RoleSpec[]): Promise<StepResult<readonly RoleSpec[]>> {
-  const modeAsk = {
-    question: withContext(MODEL_MODE_QUESTION, teamContextLine(roles)),
-    spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.model },
-    parse: parseAnswerMode,
-    accepts: quotedLabels(ANSWER_MODE_OPTIONS),
-  }
-  const mode = choiceResult(await askChoice(io, modeAsk), MODEL_DISMISSED_REASON)
-  if (mode.kind === 'cancelled') return mode
-  if (mode.value === 'same') {
-    const choice = choiceResult(await askModelEffort(io, MODEL_ALL_QUESTION), MODEL_DISMISSED_REASON)
-    if (choice.kind === 'cancelled') return choice
+function modelAnswer(state: InitState, answer: Answer): InitState {
+  const { roles } = state.draft
+  if (answer.kind !== 'answer' || roles === undefined) return stageFailed(state)
+  const { sub } = state
+  switch (sub.kind) {
+    case 'mode': {
+      const ask = modeAsk(roles)
+      const next = choiceAnswer(ask, sub, answer.text)
+      if (next.kind === 'again') return asked(state, { kind: 'mode', tries: next.sub.tries }, ask, next.question)
+      if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+      if (next.value === 'each') return roleAsked(state, roles, { tries: 1, index: 0, done: [] })
 
-    return accepted(roles.map(role => withModel(role, choice.value)))
-  }
+      return asked(state, { kind: 'all', tries: 1 }, modelEffortAsk(MODEL_ALL_QUESTION), null)
+    }
+    case 'all': {
+      const ask = modelEffortAsk(MODEL_ALL_QUESTION)
+      const next = choiceAnswer(ask, sub, answer.text)
+      if (next.kind === 'again') return asked(state, { kind: 'all', tries: next.sub.tries }, ask, next.question)
+      if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
 
-  const modelled: RoleSpec[] = []
-  for (const role of roles) {
-    const choice = choiceResult(await askModelEffort(io, modelRoleQuestion(role)), MODEL_DISMISSED_REASON)
-    if (choice.kind === 'cancelled') return choice
-    modelled.push(withModel(role, choice.value))
-  }
+      return modelledDone(state, roles.map(role => withModel(role, next.value)))
+    }
+    case 'each': {
+      const role = roles[sub.index]
+      if (role === undefined) return stageFailed(state)
+      const ask = modelEffortAsk(modelRoleQuestion(role))
+      const next = choiceAnswer(ask, sub, answer.text)
+      if (next.kind === 'again') return asked(state, { ...sub, tries: next.sub.tries }, ask, next.question)
+      if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+      const done = [...sub.done, withModel(role, next.value)]
 
-  return accepted(modelled)
+      return roleAsked(state, roles, { tries: 1, index: sub.index + 1, done })
+    }
+    default:
+      return stageFailed(state)
+  }
 }
+
+/**
+ * The model and effort stage (D-52, D-86, D-230): `Same for all roles` or `Per role`, then `opus + medium`,
+ * `sonnet + medium` or `sonnet + high`, or a pair typed under "Other", once for every role or for each role in role
+ * order. The first question carries the team's role ids (teamContextLine) and each model question MODEL_EFFORT_CONTEXT
+ * on its second line (D-136). Each role stores opus, sonnet, haiku or fable, never a pinned model id, and an effort
+ * (parseModelEffort, A4); a typed pair it cannot read puts modelEffortRefusal on top of the next ask (modelEffortAsk).
+ * Only an answer to every question gives roles (modelAnswer, A1).
+ */
+export const modelStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles } = state.draft
+    if (roles === undefined) return stageFailed(state)
+
+    return asked(state, { kind: 'mode', tries: 1 }, modeAsk(roles), null)
+  },
+  answer: modelAnswer,
+})
