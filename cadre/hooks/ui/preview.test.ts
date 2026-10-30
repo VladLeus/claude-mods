@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { PaneKey, ShownBlock } from '../../types'
+import type { AskContext, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
 import { ASK_HEADERS, countedChip, PANE_TITLES } from './ask'
@@ -417,28 +417,28 @@ function optionPreviews(questions: readonly Record<string, unknown>[] | undefine
   })
 }
 
-describe('askRewrite (A1, A2, B1)', () => {
-  /** A pane of one block, so a question's preview is that block whatever its header. */
-  const BLOCKS = [shownBlock('review', 'Review', ['Roles:', '  BE (be)'])]
+describe('askRewrite (A1, A2, D-203)', () => {
+  /** The open question's own context, so every previewed option shows it whatever its header. */
+  const CONTEXT: AskContext = { title: 'Review', lines: ['Roles:', '  BE (be)'], kind: 'review' }
 
-  test('no blocks give null, so the call passes through', () => {
-    expect(askRewrite([PICK_QUESTION], [])).toBe(null)
+  test('a question with no context gives null, so the call passes through with no preview (D-203)', () => {
+    expect(askRewrite([PICK_QUESTION], null)).toBe(null)
   })
 
   test('a shape withPreviews cannot check gives null', () => {
-    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, BLOCKS)).toBe(null)
+    for (const questions of UNCHECKED_QUESTIONS) expect(askRewrite(questions, CONTEXT)).toBe(null)
   })
 
   test('only multi-select questions give null', () => {
-    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], BLOCKS)).toBe(null)
+    expect(askRewrite([{ ...PICK_QUESTION, multiSelect: true }], CONTEXT)).toBe(null)
   })
 
   test('a single-select question gets the preview on every option, Describe your own and the hint (R3)', () => {
     const questions = [PICK_QUESTION]
     const before = JSON.stringify(questions)
-    const preview = previewMarkdown(BLOCKS)
+    const preview = previewMarkdown([CONTEXT])
     const hinted = `Pick one?\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite(questions, BLOCKS)
+    const rewrite = askRewrite(questions, CONTEXT)
     expect(rewrite?.questions).toEqual([
       {
         ...PICK_QUESTION,
@@ -456,14 +456,14 @@ describe('askRewrite (A1, A2, B1)', () => {
 
   test('the asked entry of a 2-option question pairs its text as asked with the text shown (R3, R4)', () => {
     const shownText = `Type ids as a note (press n).\n${OWN_ANSWER_HINT}`
-    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], BLOCKS)
+    const rewrite = askRewrite([{ ...PICK_QUESTION, question: 'Type ids under Other.' }], CONTEXT)
     expect(rewrite?.asked).toEqual([{ question: 'Type ids under Other.', asked: shownText }])
     expect(rewrite?.questions[0]?.question).toBe(shownText)
   })
 
   test('a 4-option question is asked with the hint line, and its asked entry pairs the two texts', () => {
     const hinted = 'Pick one?\nOr press n, type your own answer, then Enter.'
-    const rewrite = askRewrite([pickWith('C', 'D')], BLOCKS)
+    const rewrite = askRewrite([pickWith('C', 'D')], CONTEXT)
     expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: hinted }])
     expect(rewrite?.questions[0]?.question).toBe(hinted)
     expect(rewrite?.questions[0]?.options).toHaveLength(4)
@@ -471,25 +471,41 @@ describe('askRewrite (A1, A2, B1)', () => {
 
   test("a multi-select question among single-select ones is copied unchanged, 'under Other' kept, unasked", () => {
     const multi = { ...PICK_QUESTION, question: 'Which? Type more under Other.', multiSelect: true }
-    const rewrite = askRewrite([PICK_QUESTION, multi], BLOCKS)
+    const rewrite = askRewrite([PICK_QUESTION, multi], CONTEXT)
     expect(rewrite?.questions[1]).toEqual(multi)
     expect(rewrite?.questions[1] === multi).toBe(false)
     expect(rewrite?.asked).toEqual([{ question: 'Pick one?', asked: `Pick one?\n${OWN_ANSWER_HINT}` }])
   })
 
-  test('each question gets the preview of the one block its header needs, Describe your own included (B1)', () => {
-    const env = shownBlock('env', 'Env variables', ['  FOO'])
-    const roles = shownBlock('roles', 'Roles', ['  BE (be)'])
+  test("every single-select question previews the open question's own context, whatever its header (D-203)", () => {
     const questions = [
       { ...PICK_QUESTION, header: 'Roles' },
       { ...PICK_QUESTION, question: 'Carry?', header: 'Env' },
     ]
-    const rolesPreview = previewMarkdown([roles])
-    const envPreview = previewMarkdown([env])
-    expect(optionPreviews(askRewrite(questions, [env, roles])?.questions)).toEqual([
-      [rolesPreview, rolesPreview, rolesPreview],
-      [envPreview, envPreview, envPreview],
+    const preview = previewMarkdown([CONTEXT])
+    expect(optionPreviews(askRewrite(questions, CONTEXT)?.questions)).toEqual([
+      [preview, preview, preview],
+      [preview, preview, preview],
     ])
+  })
+
+  test('Topic i/n, Memory i/n and Git policy preview only their own context (G-02-16)', () => {
+    const policies = [
+      'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+      'Commit all: only per-user files are ignored.',
+      'Ignore all: nothing in .cadre/ is committed.',
+    ]
+    const contexts: readonly AskContext[] = [
+      { title: 'Topic 2 of 3', lines: ['Git and commits: How commits are made.', '  recommended: tl'], kind: 'topic' },
+      { title: 'Memory 1 of 2', lines: ['squad.md: Unsigned commits on per-phase branches.'], kind: 'memory' },
+      { title: 'Git policy', lines: policies, kind: 'git-policy' },
+    ]
+    for (const context of contexts) {
+      const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context)
+      const [previews = []] = optionPreviews(rewrite?.questions)
+      const lines = typeof previews[0] === 'string' ? previews[0].split('\n') : []
+      expect([lines, new Set(previews).size]).toEqual([[`**${context.title}**`, '```', ...context.lines, '```'], 1])
+    }
   })
 })
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
-import type { AskSpec, PaneKey } from '../types'
+import type { AskContext, AskSpec, PaneKey } from '../types'
 import { MANIFEST_SKIPPED_NOTE, NEXT_STEP_NOTE, privateFoldersUnknownWarning } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
@@ -26,6 +26,7 @@ import {
   entry,
   INIT_ANSWERS,
   leaks,
+  OWN_SKILLS_ENTRY_PREFIX,
   SECRET_FIXTURES,
   secretUserSettings,
   templateRole,
@@ -1766,12 +1767,16 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     return probeAsk($)
   }
 
+  /** The own context of the question openAsCadre opens unless a test gives another (D-203): one line, under a title. */
+  const PICK_CONTEXT: AskContext = { title: 'Pick context', lines: ['What each pick means.'], kind: 'review' }
+
   /**
-   * Has the host read `question` as the question cadre has open (D-239): every read of cadre's openQuestion state
-   * gives it, so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
+   * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203):
+   * every read of cadre's openQuestion state gives it, so a dialog that asks it is cadre's own and the hook may rewrite
+   * it, as init's own questions are.
    */
-  function openAsCadre(on: HostOn, question: string): void {
-    const open = { question, header: null, context: null, acceptsTyped: false }
+  function openAsCadre(on: HostOn, question: string, context: AskContext | null = PICK_CONTEXT): void {
+    const open = { question, header: null, context, acceptsTyped: false }
     on('state.get', async (_$, e, next) => {
       if (e.plugin !== 'cadre' || e.key !== 'openQuestion') return next(e)
 
@@ -1786,7 +1791,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     return initWorld(notes === undefined ? { answers } : { answers, notes: { 'Pick one?': notes } })
   }
 
-  test('after a run, each option of an inline pane dialog gets the same preview, the review first', async ($, on) => {
+  test("after a run, each option of an inline pane dialog previews the open question's own context", async ($, on) => {
     const log = newLog()
     openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
@@ -1797,7 +1802,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const seen = log.askPreviews.slice(before)
     expect(seen).toHaveLength(1)
     const [first, ...rest] = seen[0] ?? []
-    expect(typeof first === 'string' && first.startsWith('**Review**')).toBe(true)
+    expect(first).toBe(['**Pick context**', '```', 'What each pick means.', '```'].join('\n'))
     expect(rest).toEqual([first, first])
   })
 
@@ -1843,19 +1848,23 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
   })
 
-  test('an inline pane with no block yet gives no preview', async ($, on) => {
+  test("an inline pane with no block yet still previews the open question's own context (D-203)", async ($, on) => {
     const log = newLog()
     openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
     const before = log.askPreviews.length
     await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
-    expect(log.askPreviews.slice(before)).toEqual(NO_PREVIEWS)
+    const seen = log.askPreviews.slice(before)[0] ?? []
+    expect(seen).toHaveLength(3)
+    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Pick context**'))).toBe(true)
   })
 
-  test('a question with the Roles chip gets the roles block as the preview of every option (B1)', async ($, on) => {
+  test('a question previews its own context, never the block its chip names (D-203)', async ($, on) => {
     const log = newLog()
-    openAsCadre(on, PICK_QUESTION.question)
+    const lines = ['Commit all: only per-user files are ignored.']
+    const policy: AskContext = { title: 'Git policy', lines, kind: 'git-policy' }
+    openAsCadre(on, PICK_QUESTION.question, policy)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1863,20 +1872,51 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
     const seen = log.askPreviews.slice(before)[0] ?? []
     expect(seen).toHaveLength(3)
-    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Roles**'))).toBe(true)
+    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Git policy**'))).toBe(true)
   })
 
-  test('a chip with no block of its own, as Git policy, gets the newest block: the review (B1)', async ($, on) => {
+  test('a question with no context, as a hunk, gets no preview and no Describe your own (D-203)', async ($, on) => {
     const log = newLog()
-    openAsCadre(on, PICK_QUESTION.question)
+    openAsCadre(on, PICK_QUESTION.question, null)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
-    const questions = [{ ...PICK_QUESTION, header: 'Git policy' }]
+    const questions = [{ ...PICK_QUESTION, header: 'Hunk 1 of 2' }]
     await $.tool.call({ tool: 'AskUserQuestion', questions }).catch(() => null)
-    const seen = log.askPreviews.slice(before)[0] ?? []
-    expect(seen).toHaveLength(3)
-    expect(seen.every(preview => typeof preview === 'string' && preview.startsWith('**Review**'))).toBe(true)
+    expect([log.askOptions.slice(before), log.askPreviews.slice(before)]).toEqual([[['A', 'B']], NO_PREVIEWS])
+  })
+
+  test('the own-skills entry and the instructions consent preview their own context (C12)', async ($, on) => {
+    const log = newLog()
+    // The pane is seated inline again at every ask, as a terminal main screen keeps it drawn (D3).
+    const reseat = async (): Promise<void> => {
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+      await ui.unmount()
+    }
+    const world = initWorld({
+      onAsk: reseat,
+      ancestors: [{ dir: '/repo', name: 'CLAUDE.md', content: '# Rules', parts: [] }],
+      commands: [{ name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' }],
+      answers: {
+        ...INIT_ANSWERS,
+        'Read your CLAUDE.md files': 'No, skip it',
+        [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations',
+      },
+    })
+    fakeHost(on, world, log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const previewOf = (prefix: string): string => {
+      const [preview] = log.askPreviews[log.asks.findIndex(ask => ask.startsWith(`ask ${prefix}`))] ?? []
+
+      return typeof preview === 'string' ? preview : ''
+    }
+    const own = previewOf(OWN_SKILLS_ENTRY_PREFIX)
+    const files = previewOf('Read your CLAUDE.md files')
+    expect([own.split('\n')[0], files.split('\n')[0]]).toEqual(['**Your own skills**', '**Instruction files**'])
+    expect([own.includes('deploy-notes: Write the release notes'), files.includes('<repo>/CLAUDE.md')]).toEqual([
+      true,
+      true,
+    ])
   })
 
   test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
