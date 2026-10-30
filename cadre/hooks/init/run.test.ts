@@ -165,7 +165,7 @@ import {
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
   FRAMEWORK_QUESTION_PREFIX,
-  frameworkStep,
+  frameworksStage,
 } from './stages/frameworks'
 import { HISTORY_DISMISSED_REASON, HISTORY_OPTIONS, historyQuestion, NO_HISTORY_NOTE } from './stages/history'
 import { HUNK_DISMISSED_REASON } from './stages/hunks'
@@ -2770,7 +2770,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
         '"Use these roles", "Adjust them", "Describe my own structure"',
       ],
-      ['framework mode', io => frameworkStep(io, choice, roles), '"Same for all roles", "Per role"'],
       ['security', io => securityInstallStep(io, SECURITY_KEYS), '"Install", "Not now"'],
       ['duration', io => durationStep(io, roles), 'a duration such as 4h, 90m or 1h30m, at most 168h'],
       ['model mode', io => modelStep(io, roles), '"Same for all roles", "Per role"'],
@@ -2798,6 +2797,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         'consent',
         () => driven(consentStage.enter(stateAt('consent')), ['zzz']).asked,
         '"No, skip it", "Yes, read names only"',
+      ],
+      [
+        'framework mode',
+        () => driven(frameworksStage.enter(stateAt('frameworks', { choice, roles })), ['zzz']).asked,
+        '"Same for all roles", "Per role"',
       ],
       ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],

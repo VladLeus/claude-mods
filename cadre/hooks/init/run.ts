@@ -67,7 +67,6 @@ import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output
 import { assignmentStep } from './stages/assign'
 import { carryStep } from './stages/carry'
 import { durationStep } from './stages/duration'
-import { frameworkStep } from './stages/frameworks'
 import { hunkStep } from './stages/hunks'
 import { improverInstallStep } from './stages/improver-install'
 import { instructionsStep } from './stages/instructions'
@@ -355,8 +354,6 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
   switch (step.id) {
     case 'roles':
       return { id: 'roles', result: await rolesStep(io, step.proposal, step.installed, step.start) }
-    case 'frameworks':
-      return { id: 'frameworks', result: await frameworkStep(io, step.choice, step.roles) }
     case 'security':
       return { id: 'security', result: await securityInstallStep(io, step.keys) }
     case 'duration':

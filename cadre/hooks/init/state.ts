@@ -10,7 +10,6 @@
  */
 import type {
   AskSpec,
-  Choice,
   FrameworkId,
   HunkOp,
   InitLocations,
@@ -138,7 +137,6 @@ export type LegacyStep =
       readonly installed: readonly FrameworkId[]
       readonly start: RoleProposal
     }
-  | { readonly id: 'frameworks'; readonly choice: Choice; readonly roles: readonly RoleSpec[] }
   | { readonly id: 'security'; readonly keys: readonly string[] }
   | { readonly id: 'duration'; readonly roles: readonly RoleSpec[] }
   | { readonly id: 'model'; readonly roles: readonly RoleSpec[] }
@@ -194,10 +192,6 @@ export type Applied = {
  */
 export type LegacyResult =
   | { readonly id: 'roles'; readonly result: StepResult<RoleProposal> }
-  | {
-      readonly id: 'frameworks'
-      readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly repoDefault: FrameworkId | null }>
-    }
   | { readonly id: 'security'; readonly result: StepResult<readonly string[]> }
   | { readonly id: 'duration'; readonly result: StepResult<string> }
   | { readonly id: 'model'; readonly result: StepResult<readonly RoleSpec[]> }
@@ -240,6 +234,8 @@ export type Answer =
  * - `launch-dir`: the launcher folder question is out, asked `tries` times so far.
  * - `launch-check`: the check of the folder `path`, typed as `answer` at try `tries`, is out.
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
+ * - `mode`, `all`, `each`: a question asked once for every role or per role, asked `tries` times so far: the mode
+ *   question, the question for all roles, or the question of the role at `index`, with the roles answered before it.
  * - `applying`: the review was confirmed, and Confirm's apply is out.
  * - `done`: the stage finished; nextStage enters the stage after it.
  * - `cancelled`: the stage ends init with nothing written, and `reason` says why (A1).
@@ -254,6 +250,9 @@ export type StageSub =
   | { readonly kind: 'launch-dir'; readonly tries: number }
   | { readonly kind: 'launch-check'; readonly tries: number; readonly answer: string; readonly path: string }
   | { readonly kind: 'back'; readonly to: InitStage }
+  | { readonly kind: 'mode'; readonly tries: number }
+  | { readonly kind: 'all'; readonly tries: number }
+  | { readonly kind: 'each'; readonly tries: number; readonly index: number; readonly done: readonly RoleSpec[] }
   | { readonly kind: 'applying' }
   | { readonly kind: 'done' }
   | { readonly kind: 'cancelled'; readonly reason: string }

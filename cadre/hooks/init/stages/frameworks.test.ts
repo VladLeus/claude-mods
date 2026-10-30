@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice } from '../../../types'
+import type { Choice, RoleSpec } from '../../../types'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
-import { firstLines, memIo, memWorld, repoScan, stateAt, valueOf, wholeDraft, withFramework } from '../../testkit'
+import { driven, firstLines, repoScan, stateAt, wholeDraft, withFramework } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
+import { cancelledReply } from '../replies'
+import type { InitState } from '../state'
 import {
   FRAMEWORK_ALL_QUESTION,
   FRAMEWORK_DISMISSED_REASON,
@@ -15,12 +17,16 @@ import {
   frameworkReason,
   frameworkRoleQuestion,
   frameworksStage,
-  frameworkStep,
 } from './frameworks'
 import { teamContextLine } from './model'
 
 /** The framework options when GSD and superpowers are offered: SUPPORTED_IDS order, then the built-in fallback. */
 const BOTH_OPTIONS = ['GSD', 'superpowers', 'none (built-in)']
+
+/** The frameworks stage entered for `choice` and `roles`, the rest of a whole draft set. */
+function frameworksAt(choice: Choice, roles: readonly RoleSpec[]): InitState {
+  return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
+}
 
 describe('frameworkStep', () => {
   /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
@@ -51,28 +57,20 @@ describe('frameworkStep', () => {
     expect(frameworkReason({ kind: 'none' })).toBe('no framework was found')
   })
 
-  test('with one framework in use nothing is asked, overrides stay, and that framework is the default', async () => {
+  test('with one framework in use nothing is asked, overrides stay, and that framework is the default', () => {
     const chosen: Choice = { kind: 'chosen', id: 'gsd', pickedBy: 'only-one-in-use', reason: 'only gsd is in use' }
     const overridden = roles.map(role => (role.id === 'tl' ? withFramework(role, 'superpowers') : role))
-    const run = memIo(memWorld({}), {})
-    expect(await frameworkStep(run.io, chosen, overridden)).toEqual({
-      kind: 'accepted',
-      value: { roles: overridden, repoDefault: 'gsd' },
-    })
-    expect(await frameworkStep(run.io, chosen, roles)).toEqual({
-      kind: 'accepted',
-      value: { roles, repoDefault: 'gsd' },
-    })
-    expect(run.asked).toEqual([])
-    expect(run.logged).toEqual([])
+    for (const team of [overridden, roles]) {
+      const state = frameworksAt(chosen, team)
+      expect([state.sub, state.draft.roles, state.draft.repoDefault]).toEqual([{ kind: 'done' }, team, 'gsd'])
+      expect([state.openQuestion, state.outputs]).toEqual([null, []])
+    }
   })
 
-  test('ambiguous: Same for all roles asks once more and gives every role that framework, no default', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'superpowers'])
-    expect(await frameworkStep(run.io, ambiguous, roles)).toEqual({
-      kind: 'accepted',
-      value: { roles: roles.map(role => withFramework(role, 'superpowers')), repoDefault: null },
-    })
+  test('ambiguous: Same for all roles asks once more and gives every role that framework, no default', () => {
+    const run = driven(frameworksAt(ambiguous, roles), ['Same for all roles', 'superpowers'])
+    expect(run.state.draft.roles).toEqual(roles.map(role => withFramework(role, 'superpowers')))
+    expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs).toEqual([
       { options: ['Same for all roles', 'Per role'], header: 'Framework' },
@@ -80,11 +78,10 @@ describe('frameworkStep', () => {
     ])
   })
 
-  test('ambiguous: Per role asks each role by title and id, in role order, with both frameworks and none', async () => {
-    const run = memIo(memWorld({}), ['Per role', 'GSD', 'none (built-in)', 'superpowers'])
-    const result = valueOf(await frameworkStep(run.io, ambiguous, roles))
-    expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
-    expect(result.repoDefault).toBeNull()
+  test('ambiguous: Per role asks each role by title and id, in role order, with both frameworks and none', () => {
+    const run = driven(frameworksAt(ambiguous, roles), ['Per role', 'GSD', 'none (built-in)', 'superpowers'])
+    expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'none', 'superpowers'])
+    expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([
       AMBIGUOUS_QUESTION,
       'Framework for PM (pm)?',
@@ -95,25 +92,23 @@ describe('frameworkStep', () => {
     expect(run.specs.slice(1)).toEqual([each, each, each])
   })
 
-  test('installed-only asks with the installed framework and none, and says why it asks', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
-    const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
-    expect(result.roles.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
+  test('installed-only asks with the installed framework and none, and says why it asks', () => {
+    const run = driven(frameworksAt(installedOnly, roles), ['Same for all roles', 'GSD'])
+    expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
     expect(firstLines(run.asked)).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs[1]).toEqual({ options: ['GSD', 'none (built-in)'], header: 'Framework' })
   })
 
-  test('a typed framework that is not offered is asked again with why on top; an offered id counts', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'superpowers', ' NONE '])
-    const result = valueOf(await frameworkStep(run.io, installedOnly, roles))
-    expect(result.roles.map(role => role.framework)).toEqual(['none', 'none', 'none'])
+  test('a typed framework that is not offered is asked again with why on top; an offered id counts', () => {
+    const run = driven(frameworksAt(installedOnly, roles), ['Same for all roles', 'superpowers', ' NONE '])
+    expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'none', 'none'])
     const refusal = "'superpowers' isn't one of: GSD, none - a role runs one framework."
     const all = withContext(FRAMEWORK_ALL_QUESTION, teamContextLine(roles))
     expect(firstLines(run.asked)[0]).toBe(INSTALLED_QUESTION)
     expect(run.asked.slice(1)).toEqual([all, `${refusal}\n${all}`])
   })
 
-  test('a dismissed or unread framework question is never a choice: the step is cancelled (A1)', async () => {
+  test('a dismissed or unread framework question is never a choice: the step is cancelled (A1)', () => {
     const scripts: readonly (readonly [readonly string[], string])[] = [
       [[], FRAMEWORK_DISMISSED_REASON],
       [['Same for all roles'], FRAMEWORK_DISMISSED_REASON],
@@ -121,30 +116,26 @@ describe('frameworkStep', () => {
       [['what', 'ever', 'else'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of scripts) {
-      const run = memIo(memWorld({}), answers)
-      expect(await frameworkStep(run.io, ambiguous, roles)).toEqual({ kind: 'cancelled', reason })
-      expect(run.logged).toEqual([])
+      const run = driven(frameworksAt(ambiguous, roles), answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
+      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
     }
     expect(FRAMEWORK_DISMISSED_REASON).toBe('A framework question was dismissed or not answered.')
   })
 
-  test('unsupported and none ask nothing and give the built-in default; unsupported says what was found', async () => {
+  test('unsupported and none ask nothing and give the built-in default; unsupported says what was found', () => {
     const unsupported: Choice = { kind: 'unsupported', ids: ['aidlc'] }
-    const builtIn = { kind: 'accepted', value: { roles, repoDefault: 'none' } }
-    const run = memIo(memWorld({}), {})
-    expect(await frameworkStep(run.io, unsupported, roles)).toEqual(builtIn)
-    expect(run.logged).toEqual([choiceLine(unsupported)])
-    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: [choiceLine(unsupported)] }])
-    const none = memIo(memWorld({}), {})
-    expect(await frameworkStep(none.io, { kind: 'none' }, roles)).toEqual(builtIn)
-    expect(none.asked).toEqual([])
-    expect(none.logged).toEqual([])
+    const run = frameworksAt(unsupported, roles)
+    expect([run.sub, run.draft.roles, run.draft.repoDefault]).toEqual([{ kind: 'done' }, roles, 'none'])
+    expect(run.outputs).toEqual([{ kind: 'note', line: choiceLine(unsupported) }])
+    const none = frameworksAt({ kind: 'none' }, roles)
+    expect([none.sub, none.draft.roles, none.draft.repoDefault]).toEqual([{ kind: 'done' }, roles, 'none'])
+    expect([none.openQuestion, none.outputs]).toEqual([null, []])
   })
 
-  test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', async () => {
+  test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
-    const run = memIo(memWorld({}), ['Per role', 'GSD', 'GSD', 'GSD'])
-    await frameworkStep(run.io, reversed, roles)
+    const run = driven(frameworksAt(reversed, roles), ['Per role', 'GSD', 'GSD', 'GSD'])
     const each = { options: BOTH_OPTIONS, header: 'Framework' }
     expect(run.specs.slice(1)).toEqual([each, each, each])
     for (const spec of run.specs) {
@@ -167,9 +158,9 @@ describe('question context lines (G-02-1)', () => {
   /** The roles of the git fixture worlds, which hold no source: PM, Team Lead and Security. */
   const TEAM = 'pm, tl, security'
 
-  test('the framework question for all roles carries the team too', async () => {
-    const run = memIo(memWorld({}), ['Same for all roles', 'GSD'])
-    await frameworkStep(run.io, { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }, proposeRoles(repoScan()).roles)
+  test('the framework question for all roles carries the team too', () => {
+    const ambiguous: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
+    const run = driven(frameworksAt(ambiguous, proposeRoles(repoScan()).roles), ['Same for all roles', 'GSD'])
     expect(run.asked[1]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
   })
 })

@@ -31,6 +31,7 @@ import {
 import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
 import { consentStage } from './stages/consent'
 import { withDuration } from './stages/duration'
+import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
 import { launchStage } from './stages/launch'
 import { policyStage } from './stages/policy'
@@ -104,24 +105,6 @@ const rolesStage: StageDef = Object.freeze({
     const { roles, changes } = chosen.value
 
     return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
-  },
-})
-
-/** The frameworks of the roles (frameworkStep, legacy), with the repo default. */
-const frameworksStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { choice, roles } = state.draft
-    if (choice === undefined || roles === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'frameworks', choice, roles } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'frameworks') return stageFailed(state)
-    const framed = answer.result.result
-    if (framed.kind === 'cancelled') return stageCancelled(state, framed.reason)
-    const { roles, repoDefault } = framed.value
-
-    return stageDone({ ...state, draft: { ...state.draft, roles, repoDefault } })
   },
 })
 
