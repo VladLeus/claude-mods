@@ -6,6 +6,7 @@ import { attendedNote, hunkCandidates, hunkOp, NOT_SET_TEXT, UNKNOWN_CONFIG_TEXT
 import type { HunkCandidate } from '../../framework/gsd/hunks'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
+import { MAX_READ_BYTES } from '../../scan/facts/normalize'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
@@ -16,12 +17,15 @@ import {
   PROVEN_FACTS,
   PROVEN_USER_GSD,
   repoScan,
+  stateAt,
   valueOf,
+  wholeDraft,
   withFramework,
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON } from '../../ui/ask'
-import { HUNK_DISMISSED_REASON, hunkQuestion, hunkStep, parseHunkAnswer } from './hunks'
+import { nextStage } from '../machine'
+import { HUNK_DISMISSED_REASON, hunkQuestion, hunksStage, hunkStep, parseHunkAnswer } from './hunks'
 
 /** The GSD_AUTONOMY row for a key; a missing row stops the test with a clear message. */
 function row(key: string): SettingProposal {
@@ -335,5 +339,28 @@ describe('hunkStep', () => {
       expect(run.logged).toEqual([])
     }
     expect(HUNK_DISMISSED_REASON).toBe('A hunk question was dismissed or not answered.')
+  })
+})
+
+describe('the hunk stage (D-230)', () => {
+  /** PM, Team Lead and Security: a repo with no source keeps them. */
+  const roles = proposeRoles(repoScan()).roles
+  /** What the scans gave: proven GSD facts, an empty repo scan, and gsd-statusline not the statusline. */
+  const gathered: Gathered = { facts: PROVEN_FACTS, repo: repoScan(), setup: emptySetupScan() }
+
+  test('hunksStage reads the GSD config as an io effect, then asks Hunk 1 of 2; the open question is that ask', () => {
+    const state = hunksStage.enter(stateAt('hunks', wholeDraft({ roles, repoDefault: 'gsd', gathered })))
+    const call = { id: 'read-repo-file', root: DEFAULT_LOCATIONS.root, path: '.planning/config.json' }
+    expect(state.effect).toEqual({ kind: 'io', call: { ...call, maxBytes: MAX_READ_BYTES } })
+    expect(state.openQuestion).toBeNull()
+    const read = configText('{"mode":"interactive"}')
+    const asking = nextStage(state, { kind: 'io', result: { id: 'read-repo-file', result: read } })
+    expect(asking.openQuestion?.spec).toEqual({ options: ['Accept', 'Decline'], header: 'Hunk 1 of 2' })
+    expect(asking.openQuestion?.question.split('\n')[0]).toBe('.planning/config.json: mode')
+  })
+
+  test('with no role on GSD nothing is read or asked, and the stage ends with no hunks', () => {
+    const state = hunksStage.enter(stateAt('hunks', wholeDraft({ roles, repoDefault: 'none', gathered })))
+    expect([state.sub, state.openQuestion, state.draft.hunks, state.outputs]).toEqual([{ kind: 'done' }, null, [], []])
   })
 })

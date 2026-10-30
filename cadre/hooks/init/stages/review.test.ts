@@ -297,6 +297,21 @@ describe('the review stage (D-230)', () => {
     expect(back.draft.roles?.map(role => role.carry.env)).toEqual(REVIEW_DRAFT.roles.map(() => ['API_KEY']))
   })
 
+  test('a typed hunks goes back to the hunk stage, its config read again, then the review again', async () => {
+    const state = reviewAt({ repoDefault: 'gsd' })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'hunks' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['hunks', 'review', 'hunks'])
+    expect(going.effect.kind === 'io' ? going.effect.call.id : null).toBe('read-repo-file')
+    const read = nextStage(going, { kind: 'io', result: { id: 'read-repo-file', result: { state: 'absent' } } })
+    const back = driven(read, ['Accept', 'Accept']).state
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    expect(back.draft.hunks?.map(hunk => [hunk.key, hunk.isAccepted])).toEqual([
+      ['mode', true],
+      ['workflow.text_mode', true],
+    ])
+  })
+
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
     const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
     const state = reviewAt({ changes })
