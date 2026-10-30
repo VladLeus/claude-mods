@@ -281,7 +281,7 @@ describe('history scan', () => {
   test('historyStage: a typed yes counts in any case; an unknown answer is asked again, 3 asks in all', async () => {
     const typed = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
     const yes = await drivenWith(historyAt(), [' YES, scan names and counts '], historyCalls(typed.io))
-    expect(yes.state.stage).toBe('team')
+    expect(yes.state.stage).toBe('roles')
     expect(yes.state.draft.hints?.size).toBeGreaterThan(0)
     const unread = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
     const drive = await drivenWith(historyAt(), ['maybe', 'maybe', 'maybe'], historyCalls(unread.io))
@@ -396,7 +396,7 @@ describe('the history stage (D-230)', () => {
     ]
     for (const [sessions, note] of cases) {
       const next = nextStage(state, listed(sessions))
-      expect([next.stage, next.outputs, next.draft.hints]).toEqual(['team', [{ kind: 'log', text: note }], new Map()])
+      expect([next.stage, next.outputs, next.draft.hints]).toEqual(['roles', [{ kind: 'log', text: note }], new Map()])
     }
   })
 
@@ -405,7 +405,7 @@ describe('the history stage (D-230)', () => {
     const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
     expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
-    expect(done.stage).toBe('team')
+    expect(done.stage).toBe('roles')
     expect(done.outputs).toEqual([{ kind: 'show', block: { key: 'history', lines: historyLines(EXAMPLE_SCAN) } }])
     expect(done.draft.hints).toEqual(historyHints(EXAMPLE_SCAN))
   })

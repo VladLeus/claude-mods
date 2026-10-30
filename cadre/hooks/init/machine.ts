@@ -11,12 +11,15 @@
 import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
+import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
+import { missingSecurityPlugins, recommend } from '../roles/recommend'
 import { scanWarnings } from '../scan/gather'
+import { resolvedFramework } from '../team'
+import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import {
-  draftBase,
   STAGE_ORDER,
   stageCancelled,
   stageDone,
@@ -25,13 +28,15 @@ import {
   withEffect,
   withOutputs,
 } from './state'
-import type { Answer, Effect, InitStage, InitState, StageDef } from './state'
+import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
 import { consentStage } from './stages/consent'
+import { withDuration } from './stages/duration'
 import { historyStage } from './stages/history'
 import { launchStage } from './stages/launch'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
 import { installedFrameworks } from './stages/roles'
+import { withSecuritySkill } from './stages/security'
 
 /**
  * The guard (D-42, SCAN-04), an io effect before anything is read or asked: it refuses with its text, which is the
@@ -80,20 +85,205 @@ const scanStage: StageDef = Object.freeze({
   },
 })
 
-/** The role steps from the roles question to the improver install question (teamStep, legacy), from the proposal. */
-const teamStage: StageDef = Object.freeze({
+/**
+ * The roles (rolesStep, legacy): from the template proposal, or from the current team with the scan changes it was
+ * accepted with when the roles are asked again (A6).
+ */
+const rolesStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
-    const base = draftBase(state.draft)
-    if (base === null) return stageFailed(state)
+    const { proposal, installed, roles, changes } = state.draft
+    if (proposal === undefined || installed === undefined) return stageFailed(state)
+    const start = roles === undefined ? proposal : { roles, changes: changes ?? [] }
 
-    return withEffect(state, { kind: 'legacy', step: { id: 'team', base } })
+    return withEffect(state, { kind: 'legacy', step: { id: 'roles', proposal, installed, start } })
   },
   answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'team') return stageFailed(state)
-    const team = answer.result.result
-    if (team.kind === 'cancelled') return stageCancelled(state, team.reason)
+    if (answer.kind !== 'legacy' || answer.result.id !== 'roles') return stageFailed(state)
+    const chosen = answer.result.result
+    if (chosen.kind === 'cancelled') return stageCancelled(state, chosen.reason)
+    const { roles, changes } = chosen.value
 
-    return stageDone({ ...state, draft: { ...state.draft, ...team.value } })
+    return stageDone({ ...state, draft: { ...state.draft, roles, changes } })
+  },
+})
+
+/** The frameworks of the roles (frameworkStep, legacy), with the repo default. */
+const frameworksStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { choice, roles } = state.draft
+    if (choice === undefined || roles === undefined) return stageFailed(state)
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'frameworks', choice, roles } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    if (answer.kind !== 'legacy' || answer.result.id !== 'frameworks') return stageFailed(state)
+    const framed = answer.result.result
+    if (framed.kind === 'cancelled') return stageCancelled(state, framed.reason)
+    const { roles, repoDefault } = framed.value
+
+    return stageDone({ ...state, draft: { ...state.draft, roles, repoDefault } })
+  },
+})
+
+/**
+ * The recommendations block for the team (ROLE-03), then the security plugins question for the plugins a team with a
+ * Security role misses (securityInstallStep, legacy, decision #39); when claude-security was asked about, every role
+ * that stands for Security gets its review skill on Install and loses it on Not now (withSecuritySkill).
+ */
+const securityStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, repoDefault, gathered } = state.draft
+    if (roles === undefined || repoDefault === undefined || gathered === undefined) return stageFailed(state)
+    const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
+    const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
+    const lines = recommendationLines(recommendations, roles)
+    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'recommendations', lines } }])
+    const keys = missingSecurityPlugins(roles, gathered.setup)
+
+    return withEffect(shown, { kind: 'legacy', step: { id: 'security', keys } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    const { roles, gathered } = state.draft
+    const isAnswer = answer.kind === 'legacy' && answer.result.id === 'security'
+    if (!isAnswer || roles === undefined || gathered === undefined) return stageFailed(state)
+    const installs = answer.result.result
+    if (installs.kind === 'cancelled') return stageCancelled(state, installs.reason)
+    const pluginInstalls = installs.value
+    const isSkillAsked = missingSecurityPlugins(roles, gathered.setup).includes(CLAUDE_SECURITY_PLUGIN)
+    const team = isSkillAsked ? withSecuritySkill(roles, pluginInstalls.includes(CLAUDE_SECURITY_PLUGIN)) : roles
+
+    return stageDone({ ...state, draft: { ...state.draft, roles: team, pluginInstalls } })
+  },
+})
+
+/**
+ * The autopilot duration (durationStep, legacy), once for every role; when the roles are asked again from the review,
+ * the duration the team has is kept (D-51).
+ */
+const durationStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, duration } = state.draft
+    if (roles === undefined) return stageFailed(state)
+    if (duration !== undefined) {
+      return stageDone({ ...state, draft: { ...state.draft, roles: withDuration(roles, duration) } })
+    }
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'duration', roles } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    const { roles } = state.draft
+    if (answer.kind !== 'legacy' || answer.result.id !== 'duration' || roles === undefined) return stageFailed(state)
+    const asked = answer.result.result
+    if (asked.kind === 'cancelled') return stageCancelled(state, asked.reason)
+    const duration = asked.value
+
+    return stageDone({ ...state, draft: { ...state.draft, duration, roles: withDuration(roles, duration) } })
+  },
+})
+
+/** A role step that only changes the roles (legacy): the model, the assignments or the carried settings. */
+function rolesAnswer(state: InitState, answer: Answer, id: 'model' | 'assign' | 'carry'): InitState {
+  if (answer.kind !== 'legacy') return stageFailed(state)
+  const { result } = answer
+  const isOwn = result.id === id && (result.id === 'model' || result.id === 'assign' || result.id === 'carry')
+  if (!isOwn) return stageFailed(state)
+  const changed = result.result
+  if (changed.kind === 'cancelled') return stageCancelled(state, changed.reason)
+
+  return stageDone({ ...state, draft: { ...state.draft, roles: changed.value } })
+}
+
+/** Each role's model and effort (modelStep, legacy). */
+const modelStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles } = state.draft
+    if (roles === undefined) return stageFailed(state)
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'model', roles } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'model'),
+})
+
+/** The MCP servers and skills, with the history hints (assignmentStep, legacy). */
+const assignStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, gathered, hints } = state.draft
+    if (roles === undefined || gathered === undefined || hints === undefined) return stageFailed(state)
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'assign', roles, setup: gathered.setup, hints } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'assign'),
+})
+
+/** The instructions and memories (instructionsStep, legacy), with how they were handed out (G-02-1f). */
+const instructionsStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, gathered, locations } = state.draft
+    if (roles === undefined || gathered === undefined || locations === undefined) return stageFailed(state)
+    const step = { id: 'instructions', roles, setup: gathered.setup, locations } satisfies LegacyStep
+
+    return withEffect(state, { kind: 'legacy', step })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    if (answer.kind !== 'legacy' || answer.result.id !== 'instructions') return stageFailed(state)
+    const instructed = answer.result.result
+    if (instructed.kind === 'cancelled') return stageCancelled(state, instructed.reason)
+    const { roles, instructions } = instructed.value
+
+    return stageDone({ ...state, draft: { ...state.draft, roles, instructions } })
+  },
+})
+
+/** The carried settings (carryStep, legacy). */
+const carryStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, gathered } = state.draft
+    if (roles === undefined || gathered === undefined) return stageFailed(state)
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'carry', roles, setup: gathered.setup } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'carry'),
+})
+
+/** The autonomy hunks of the frameworks the roles run on (hunkStep, legacy). */
+const hunksStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, repoDefault, gathered, locations } = state.draft
+    const isReady = roles !== undefined && repoDefault !== undefined && gathered !== undefined
+    if (!isReady || locations === undefined) return stageFailed(state)
+    const step = { id: 'hunks', roles, repoDefault, gathered, locations } satisfies LegacyStep
+
+    return withEffect(state, { kind: 'legacy', step })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    if (answer.kind !== 'legacy' || answer.result.id !== 'hunks') return stageFailed(state)
+    const hunks = answer.result.result
+    if (hunks.kind === 'cancelled') return stageCancelled(state, hunks.reason)
+
+    return stageDone({ ...state, draft: { ...state.draft, hunks: hunks.value } })
+  },
+})
+
+/**
+ * The claude-md-management install question when the hand-out gave a role a built file and it is missing
+ * (improverInstallStep, legacy, D-141): its plugin goes after the security plugins to install after Confirm.
+ */
+const improverInstallStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { instructions, gathered } = state.draft
+    if (instructions === undefined || gathered === undefined) return stageFailed(state)
+
+    return withEffect(state, { kind: 'legacy', step: { id: 'improver', instructions, setup: gathered.setup } })
+  },
+  answer: (state: InitState, answer: Answer): InitState => {
+    const { pluginInstalls } = state.draft
+    const isAnswer = answer.kind === 'legacy' && answer.result.id === 'improver'
+    if (!isAnswer || pluginInstalls === undefined) return stageFailed(state)
+    const improver = answer.result.result
+    if (improver.kind === 'cancelled') return stageCancelled(state, improver.reason)
+    const installs = [...pluginInstalls, ...improver.value]
+
+    return stageDone({ ...state, draft: { ...state.draft, pluginInstalls: installs } })
   },
 })
 
@@ -109,7 +299,16 @@ export const STAGES: Readonly<Record<InitStage, StageDef>> = Object.freeze({
   consent: consentStage,
   scan: scanStage,
   history: historyStage,
-  team: teamStage,
+  roles: rolesStage,
+  frameworks: frameworksStage,
+  security: securityStage,
+  duration: durationStage,
+  model: modelStage,
+  assign: assignStage,
+  instructions: instructionsStage,
+  carry: carryStage,
+  hunks: hunksStage,
+  'improver-install': improverInstallStage,
   policy: policyStage,
   launch: launchStage,
   review: reviewStage,

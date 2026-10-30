@@ -8,26 +8,49 @@
  * imports type shapes and no port, so nothing built on it can reach a port. The stages and init/machine import it,
  * and init/run reads its types.
  */
-import type { AskSpec, InitLocations, PaneKey, PortEntry } from '../../types'
+import type {
+  AskSpec,
+  Choice,
+  FrameworkId,
+  HunkOp,
+  InitLocations,
+  InstructionHandout,
+  PaneKey,
+  PortEntry,
+  RoleProposal,
+  RoleSpec,
+  SetupScan,
+} from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
 import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
 import type { StepResult } from '../ui/ask'
-import type { Draft, DraftBase, PlanResult, Reviewed, Team } from './draft'
+import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
 import type { PlanStepInput } from './initplan'
 
 /**
  * The stages of an init run in today's order (D-43, D-230, A1): the guard, the ~/.claude.json consent, the scans, the
- * history question, the role steps (`team`), the git policy, the launcher start, and the review with Confirm's apply;
- * then `done`, a run that ended with its reply, or `cancelled`, a run that ended with nothing written.
+ * history question, the role steps (the roles, their frameworks, the security plugins, the duration, each role's model
+ * and effort, the MCP and skill assignments, the instructions and memories, the carried settings, the hunks and the
+ * improver install), the git policy, the launcher start, and the review with Confirm's apply; then `done`, a run that
+ * ended with its reply, or `cancelled`, a run that ended with nothing written.
  */
 export type InitStage =
   | 'guard'
   | 'consent'
   | 'scan'
   | 'history'
-  | 'team'
+  | 'roles'
+  | 'frameworks'
+  | 'security'
+  | 'duration'
+  | 'model'
+  | 'assign'
+  | 'instructions'
+  | 'carry'
+  | 'hunks'
+  | 'improver-install'
   | 'policy'
   | 'launch'
   | 'review'
@@ -40,7 +63,16 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
   'consent',
   'scan',
   'history',
-  'team',
+  'roles',
+  'frameworks',
+  'security',
+  'duration',
+  'model',
+  'assign',
+  'instructions',
+  'carry',
+  'hunks',
+  'improver-install',
   'policy',
   'launch',
   'review',
@@ -100,7 +132,37 @@ export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'policy' | 'launch'>
  * the draft fields it needs. init/run performs it and gives back its LegacyResult.
  */
 export type LegacyStep =
-  | { readonly id: 'team'; readonly base: DraftBase }
+  | {
+      readonly id: 'roles'
+      readonly proposal: RoleProposal
+      readonly installed: readonly FrameworkId[]
+      readonly start: RoleProposal
+    }
+  | { readonly id: 'frameworks'; readonly choice: Choice; readonly roles: readonly RoleSpec[] }
+  | { readonly id: 'security'; readonly keys: readonly string[] }
+  | { readonly id: 'duration'; readonly roles: readonly RoleSpec[] }
+  | { readonly id: 'model'; readonly roles: readonly RoleSpec[] }
+  | {
+      readonly id: 'assign'
+      readonly roles: readonly RoleSpec[]
+      readonly setup: SetupScan
+      readonly hints: ReadonlyMap<string, number>
+    }
+  | {
+      readonly id: 'instructions'
+      readonly roles: readonly RoleSpec[]
+      readonly setup: SetupScan
+      readonly locations: InitLocations
+    }
+  | { readonly id: 'carry'; readonly roles: readonly RoleSpec[]; readonly setup: SetupScan }
+  | {
+      readonly id: 'hunks'
+      readonly roles: readonly RoleSpec[]
+      readonly repoDefault: FrameworkId | null
+      readonly gathered: Gathered
+      readonly locations: InitLocations
+    }
+  | { readonly id: 'improver'; readonly instructions: InstructionHandout; readonly setup: SetupScan }
   | { readonly id: 'go-back'; readonly draft: Draft; readonly item: LegacyGoBack }
 
 /**
@@ -131,7 +193,22 @@ export type Applied = {
  * no host, which never happens, since a --dry-run never sets the apply step.
  */
 export type LegacyResult =
-  | { readonly id: 'team'; readonly result: StepResult<Team> }
+  | { readonly id: 'roles'; readonly result: StepResult<RoleProposal> }
+  | {
+      readonly id: 'frameworks'
+      readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly repoDefault: FrameworkId | null }>
+    }
+  | { readonly id: 'security'; readonly result: StepResult<readonly string[]> }
+  | { readonly id: 'duration'; readonly result: StepResult<string> }
+  | { readonly id: 'model'; readonly result: StepResult<readonly RoleSpec[]> }
+  | { readonly id: 'assign'; readonly result: StepResult<readonly RoleSpec[]> }
+  | {
+      readonly id: 'instructions'
+      readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly instructions: InstructionHandout }>
+    }
+  | { readonly id: 'carry'; readonly result: StepResult<readonly RoleSpec[]> }
+  | { readonly id: 'hunks'; readonly result: StepResult<readonly HunkOp[]> }
+  | { readonly id: 'improver'; readonly result: StepResult<readonly string[]> }
   | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 

@@ -58,12 +58,22 @@ import {
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import type { PlanResult, Reviewed } from './draft'
-import { goBack, teamStep } from './flow'
+import { goBack } from './flow'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
+import { assignmentStep } from './stages/assign'
+import { carryStep } from './stages/carry'
+import { durationStep } from './stages/duration'
+import { frameworkStep } from './stages/frameworks'
+import { hunkStep } from './stages/hunks'
+import { improverInstallStep } from './stages/improver-install'
+import { instructionsStep } from './stages/instructions'
+import { modelStep } from './stages/model'
+import { rolesStep } from './stages/roles'
+import { securityInstallStep } from './stages/security'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -338,13 +348,31 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
 }
 
 /**
- * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the role
- * steps from the proposal, and the review's go-backs to items whose stage is not pure yet (goBack).
+ * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): each role
+ * step that is not a pure stage yet, and the review's go-backs to items whose stage is not pure yet (goBack).
  */
 async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
-    case 'team':
-      return { id: 'team', result: await teamStep(io, step.base, step.base.proposal, null) }
+    case 'roles':
+      return { id: 'roles', result: await rolesStep(io, step.proposal, step.installed, step.start) }
+    case 'frameworks':
+      return { id: 'frameworks', result: await frameworkStep(io, step.choice, step.roles) }
+    case 'security':
+      return { id: 'security', result: await securityInstallStep(io, step.keys) }
+    case 'duration':
+      return { id: 'duration', result: await durationStep(io, step.roles) }
+    case 'model':
+      return { id: 'model', result: await modelStep(io, step.roles) }
+    case 'assign':
+      return { id: 'assign', result: await assignmentStep(io, step.roles, step.setup, step.hints) }
+    case 'instructions':
+      return { id: 'instructions', result: await instructionsStep(io, step.roles, step.setup, step.locations) }
+    case 'carry':
+      return { id: 'carry', result: await carryStep(io, step.roles, step.setup) }
+    case 'hunks':
+      return { id: 'hunks', result: await hunkStep(io, step) }
+    case 'improver':
+      return { id: 'improver', result: await improverInstallStep(io, step.instructions, step.setup) }
     case 'go-back':
       return { id: 'go-back', result: await goBack(io, step.draft, step.item) }
     default: {
