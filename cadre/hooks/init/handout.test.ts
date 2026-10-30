@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { RoleSpec } from '../../types'
-import { memIo, memWorld, templateRole } from '../testkit'
+import type { AskSpec, RoleSpec } from '../../types'
+import { templateRole } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
-import type { StepResult } from '../ui/ask'
-import { handoutAnswer, handoutEnter, handoutStep } from './handout'
-import type { HandoutEntry, HandoutItem, HandoutOutcome } from './handout'
+import { handoutAnswer, handoutEnter } from './handout'
+import type { HandoutEntry, HandoutItem, HandoutNext } from './handout'
 
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
 const ROLES: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('security')]
@@ -44,76 +43,89 @@ const DISMISSED = 'A question on which roles get instruction parts was dismissed
 /** The entry question as it is asked: the question, then its context line (D-136). */
 const ENTRY_ASKED = withContext(ENTRY.question, ENTRY.context)
 
-/** The given map of an outcome as entries, so a test compares plain arrays; null for whole or a cancel. */
-function givenOf(result: StepResult<HandoutOutcome>): (readonly [string, readonly string[]])[] | null {
-  if (result.kind === 'cancelled' || result.value.kind === 'whole') return null
+/** A hand-out as the cursor asked it: every question and spec, in order, and how it ended. */
+type HandedOut = {
+  readonly asked: string[]
+  readonly specs: AskSpec[]
+  readonly end: HandoutNext
+}
 
-  return [...result.value.given.entries()]
+/**
+ * The hand-out of ENTRY with `items` to ROLES, driven through the cursor as init/run asks it: each question gets the
+ * next of `answers` (null, or none left, is a dismissal), and `reason` is what a dismissal cancels with.
+ */
+function handedOut(
+  items: readonly HandoutItem[],
+  answers: readonly (string | null)[],
+  reason: string = DISMISSED,
+): HandedOut {
+  const asked: string[] = []
+  const specs: AskSpec[] = []
+  let next = handoutEnter(ENTRY, items, ROLES, reason)
+  for (let at = 0; next.kind === 'ask'; at += 1) {
+    asked.push(next.question)
+    specs.push(next.spec)
+    next = handoutAnswer(next.cursor, answers[at] ?? null)
+  }
+
+  return { asked, specs, end: next }
+}
+
+/** The given map of a hand-out's end as entries, so a test compares plain arrays; null for whole or a cancel. */
+function givenOf(end: HandoutNext): (readonly [string, readonly string[]])[] | null {
+  if (end.kind !== 'done' || end.outcome.kind === 'whole') return null
+
+  return [...end.outcome.given.entries()]
 }
 
 describe('handoutStep', () => {
-  test('asks the entry question once, with its context line, the three answers in order and its chip', async () => {
-    const run = memIo(memWorld({}), ['Accept recommendations'])
-    await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
+  test('asks the entry question once, with its context line, the three answers in order and its chip', () => {
+    const run = handedOut(ITEMS, ['Accept recommendations'])
     expect(run.asked).toEqual([ENTRY_ASKED])
     expect(run.specs).toEqual([
       { options: ['Accept recommendations', 'Go part by part', 'Whole files'], header: 'Instructions' },
     ])
-    expect(run.logged).toEqual([])
   })
 
-  test('Accept gives each item its recommended roles, one with none to no role, and asks nothing more', async () => {
-    const run = memIo(memWorld({}), ['Accept recommendations'])
-    const result = await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
-    expect(givenOf(result)).toEqual([
+  test('Accept gives each item its recommended roles, one with none to no role, and asks nothing more', () => {
+    const run = handedOut(ITEMS, ['Accept recommendations'])
+    expect(givenOf(run.end)).toEqual([
       ['T1', ['security']],
       ['T2', []],
     ])
     expect(run.asked).toHaveLength(1)
   })
 
-  test('the entry answers are read trimmed and in any case', async () => {
-    const accept = await handoutStep(memIo(memWorld({}), ['  accept RECOMMENDATIONS ']).io, ENTRY, ITEMS, ROLES, '')
-    expect(givenOf(accept)).toEqual([
+  test('the entry answers are read trimmed and in any case', () => {
+    expect(givenOf(handedOut(ITEMS, ['  accept RECOMMENDATIONS '], '').end)).toEqual([
       ['T1', ['security']],
       ['T2', []],
     ])
-    const whole = await handoutStep(memIo(memWorld({}), [' whole files']).io, ENTRY, ITEMS, ROLES, '')
-    expect(whole).toEqual({ kind: 'accepted', value: { kind: 'whole' } })
+    expect(handedOut(ITEMS, [' whole files'], '').end).toEqual({ kind: 'done', outcome: { kind: 'whole' } })
   })
 
-  test('Whole gives the whole-group outcome and asks nothing more', async () => {
-    const run = memIo(memWorld({}), ['Whole files'])
-    expect(await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
-      kind: 'accepted',
-      value: { kind: 'whole' },
-    })
+  test('Whole gives the whole-group outcome and asks nothing more', () => {
+    const run = handedOut(ITEMS, ['Whole files'])
+    expect(run.end).toEqual({ kind: 'done', outcome: { kind: 'whole' } })
     expect(run.asked).toEqual([ENTRY_ASKED])
   })
 
-  test('a dismissed entry question cancels with the reason it is given, and asks nothing more (A1)', async () => {
-    const run = memIo(memWorld({}), [])
-    expect(await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
-      kind: 'cancelled',
-      reason: DISMISSED,
-    })
+  test('a dismissed entry question cancels with the reason it is given, and asks nothing more (A1)', () => {
+    const run = handedOut(ITEMS, [])
+    expect(run.end).toEqual({ kind: 'cancelled', reason: DISMISSED })
     expect(run.asked).toEqual([ENTRY_ASKED])
-    expect(run.logged).toEqual([])
   })
 
-  test('three answers it cannot read cancel with no usable answer; the refusal lists the three answers', async () => {
-    const run = memIo(memWorld({}), ['maybe', 'maybe', 'maybe', 'Accept recommendations'])
-    expect(await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
-      kind: 'cancelled',
-      reason: NO_USABLE_ANSWER_REASON,
-    })
+  test('three answers it cannot read cancel with no usable answer; the refusal lists the three answers', () => {
+    const run = handedOut(ITEMS, ['maybe', 'maybe', 'maybe', 'Accept recommendations'])
+    expect(run.end).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
     const refusal = `'maybe' isn't one of: "Accept recommendations", "Go part by part", "Whole files".`
     expect(run.asked).toEqual([ENTRY_ASKED, `${refusal}\n${ENTRY_ASKED}`, `${refusal}\n${ENTRY_ASKED}`])
   })
 
-  test('the roles and items it is given never change', async () => {
+  test('the roles and items it is given never change', () => {
     const before = JSON.stringify([ROLES, ITEMS])
-    await handoutStep(memIo(memWorld({}), ['Accept recommendations']).io, ENTRY, ITEMS, ROLES, DISMISSED)
+    handedOut(ITEMS, ['Accept recommendations'])
     expect(JSON.stringify([ROLES, ITEMS])).toBe(before)
   })
 })
@@ -139,70 +151,56 @@ function itemAsked(item: HandoutItem | undefined): string {
 const CTO_REFUSAL = `'cto' isn't one of: "Yes", "No", or role ids from: pm, tl, security.`
 
 describe('handoutStep one by one', () => {
-  test('Go part by part asks each item once, in order, with its context line, its chip and Yes / No', async () => {
-    const run = memIo(memWorld({}), ['Go part by part', 'Yes', 'No'])
-    await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
+  test('Go part by part asks each item once, in order, with its context line, its chip and Yes / No', () => {
+    const run = handedOut(ITEMS, ['Go part by part', 'Yes', 'No'])
     expect(run.asked).toEqual([ENTRY_ASKED, itemAsked(ITEMS[0]), itemAsked(ITEMS[1])])
     expect(run.specs.slice(1)).toEqual([
       { options: ['Yes', 'No'], header: 'Topic 1/2' },
       { options: ['Yes', 'No'], header: 'Topic 2/2' },
     ])
-    expect(run.logged).toEqual([])
   })
 
-  test('Yes gives an item its recommended roles, No none, and a typed role list gives that list', async () => {
-    const run = memIo(memWorld({}), ['Go part by part', 'Yes', 'No', 'tl, security'])
-    const result = await handoutStep(run.io, ENTRY, THREE_ITEMS, ROLES, DISMISSED)
-    expect(givenOf(result)).toEqual([
+  test('Yes gives an item its recommended roles, No none, and a typed role list gives that list', () => {
+    expect(givenOf(handedOut(THREE_ITEMS, ['Go part by part', 'Yes', 'No', 'tl, security']).end)).toEqual([
       ['T1', ['security']],
       ['T2', []],
       ['T3', ['tl', 'security']],
     ])
   })
 
-  test('Yes on an item recommended to no role gives it none; none and all work as they do elsewhere', async () => {
-    const run = memIo(memWorld({}), ['Go part by part', ' NO ', 'all', 'yes'])
-    const result = await handoutStep(run.io, ENTRY, THREE_ITEMS, ROLES, DISMISSED)
-    expect(givenOf(result)).toEqual([
+  test('Yes on an item recommended to no role gives it none; none and all work as they do elsewhere', () => {
+    expect(givenOf(handedOut(THREE_ITEMS, ['Go part by part', ' NO ', 'all', 'yes']).end)).toEqual([
       ['T1', []],
       ['T2', ['pm', 'tl', 'security']],
       ['T3', []],
     ])
-    const none = memIo(memWorld({}), ['Go part by part', 'None', 'Yes'])
-    expect(givenOf(await handoutStep(none.io, ENTRY, ITEMS, ROLES, DISMISSED))).toEqual([
+    expect(givenOf(handedOut(ITEMS, ['Go part by part', 'None', 'Yes']).end)).toEqual([
       ['T1', []],
       ['T2', []],
     ])
   })
 
-  test('an answer it cannot read is asked again with why on top: Yes, No or the role ids', async () => {
-    const run = memIo(memWorld({}), ['Go part by part', 'cto', 'Security', 'No'])
-    const result = await handoutStep(run.io, ENTRY, ITEMS, ROLES, DISMISSED)
-    expect(givenOf(result)).toEqual([
+  test('an answer it cannot read is asked again with why on top: Yes, No or the role ids', () => {
+    const run = handedOut(ITEMS, ['Go part by part', 'cto', 'Security', 'No'])
+    expect(givenOf(run.end)).toEqual([
       ['T1', ['security']],
       ['T2', []],
     ])
     expect(run.asked.slice(1, 3)).toEqual([itemAsked(ITEMS[0]), `${CTO_REFUSAL}\n${itemAsked(ITEMS[0])}`])
   })
 
-  test('a dismissed item cancels with the reason given; three unreadable answers with no usable answer', async () => {
-    const dismissed = memIo(memWorld({}), ['Go part by part', 'Yes'])
-    expect(await handoutStep(dismissed.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
-      kind: 'cancelled',
-      reason: DISMISSED,
-    })
+  test('a dismissed item cancels with the reason given; three unreadable answers with no usable answer', () => {
+    const dismissed = handedOut(ITEMS, ['Go part by part', 'Yes'])
+    expect(dismissed.end).toEqual({ kind: 'cancelled', reason: DISMISSED })
     expect(dismissed.asked).toHaveLength(3)
-    const exhausted = memIo(memWorld({}), ['Go part by part', 'cto', 'cto', 'cto', 'Yes'])
-    expect(await handoutStep(exhausted.io, ENTRY, ITEMS, ROLES, DISMISSED)).toEqual({
-      kind: 'cancelled',
-      reason: NO_USABLE_ANSWER_REASON,
-    })
+    const exhausted = handedOut(ITEMS, ['Go part by part', 'cto', 'cto', 'cto', 'Yes'])
+    expect(exhausted.end).toEqual({ kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON })
     expect(exhausted.asked).toHaveLength(4)
   })
 
-  test('with no item, Go part by part asks nothing more and gives every item, none, its roles', async () => {
-    const run = memIo(memWorld({}), ['Go part by part'])
-    expect(givenOf(await handoutStep(run.io, ENTRY, [], ROLES, DISMISSED))).toEqual([])
+  test('with no item, Go part by part asks nothing more and gives every item, none, its roles', () => {
+    const run = handedOut([], ['Go part by part'])
+    expect(givenOf(run.end)).toEqual([])
     expect(run.asked).toEqual([ENTRY_ASKED])
   })
 })

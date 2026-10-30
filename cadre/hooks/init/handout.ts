@@ -1,12 +1,15 @@
 /**
  * The shared hand-out of G-02-1f (instruction parts) and G-02-1b (own skills): an entry question that accepts the
  * model's recommendations, asks each item one by one, or keeps the whole-group questions, and gives each item the roles
- * the person chose. Pure: it asks through the InitIo port it is given, and it never imports init.ts, which imports it.
+ * the person chose. It is a pure cursor (D-230): handoutEnter asks the entry question and handoutAnswer takes each
+ * answer, so a stage asks it from its own StageDef. Pure: it imports core, ui/ask and init/answers, and never imports
+ * init/machine or init/run; handoutStep, the async step, is kept only for the own-skills and instruction steps until
+ * they are pure stages.
  */
-import type { InitIo, RoleSpec } from '../../types'
+import type { AskSpec, InitIo, RoleSpec } from '../../types'
 import { labelled } from '../core/labelled'
-import { accepted, askChoice, choiceResult, quotedLabels, withContext } from '../ui/ask'
-import type { StepResult } from '../ui/ask'
+import { accepted, askChoice, choiceAnswer, choiceResult, quotedLabels, withContext } from '../ui/ask'
+import type { ChoiceAsk, StepResult } from '../ui/ask'
 import { parseRoleList } from './answers'
 
 /**
@@ -133,7 +136,9 @@ async function askEachItem(
 }
 
 /**
- * The hand-out (G-02-1f Entry choices). It asks the entry question with its context line on the second line, its chip
+ * The hand-out as an async step (G-02-1f Entry choices), kept only for the own-skills and instruction steps until they
+ * are pure stages; init asks it through the cursor (handoutEnter, handoutAnswer). It asks the entry question with its
+ * context line on the second line, its chip
  * and its three answers in the order accept, one by one, whole, and asks any other answer again with why on top
  * (askChoice). Accept gives every item its recommended roles, an item with none to no role; one by one asks each item
  * once (askEachItem); the whole answer gives the whole-group outcome, so the caller asks its whole-group questions. A
@@ -162,4 +167,119 @@ export async function handoutStep(
   if (choice.value === 'oneByOne') return askEachItem(io, items, roles, dismissedReason)
 
   return accepted({ kind: 'given', given: recommendedOf(items) })
+}
+
+/**
+ * Where a hand-out is (G-02-1f, D-230): at the entry question, or at the item at `index`, asked `tries` times so far,
+ * with the roles each item before it was given; the entry, the items, the team and the reason a dismissal cancels
+ * with stay with it.
+ */
+export type HandoutCursor = {
+  readonly entry: HandoutEntry
+  readonly items: readonly HandoutItem[]
+  readonly roles: readonly RoleSpec[]
+  readonly dismissedReason: string
+  readonly mode: 'entry' | 'item'
+  readonly index: number
+  readonly tries: number
+  readonly given: ReadonlyMap<string, readonly string[]>
+}
+
+/** What a hand-out does next: ask `question` with `spec` and wait at `cursor`, end with its outcome, or cancel. */
+export type HandoutNext =
+  | { readonly kind: 'ask'; readonly question: string; readonly spec: AskSpec; readonly cursor: HandoutCursor }
+  | { readonly kind: 'done'; readonly outcome: HandoutOutcome }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/** A question of the hand-out as the cursor asks it: a ChoiceAsk with the reason a dismissal cancels with. */
+type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
+
+/**
+ * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip and its
+ * three answers in the order accept, one by one, whole, read trimmed and in any case.
+ */
+function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
+  const labels = entryLabels(cursor.entry)
+  const options = labels.map(label => label.label)
+
+  return {
+    question: withContext(cursor.entry.question, cursor.entry.context),
+    spec: { options, header: cursor.entry.header },
+    parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
+    accepts: quotedLabels(options),
+    dismissedReason: cursor.dismissedReason,
+  }
+}
+
+/**
+ * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip and the
+ * buttons Yes and No, a role list typed under "Other" (itemRoles).
+ */
+function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
+  return {
+    question: withContext(item.question, item.context),
+    spec: { options: ITEM_OPTIONS, header: item.header },
+    parse: (answer: string): readonly string[] | null => itemRoles(answer, item, cursor.roles),
+    accepts: itemAccepts(cursor.roles),
+    dismissedReason: cursor.dismissedReason,
+  }
+}
+
+/** The hand-out asking `ask` at `cursor`; `question` is the ask's text after a refusal. */
+function asked<T>(cursor: HandoutCursor, ask: HandoutAsk<T>, question: string | null): HandoutNext {
+  return { kind: 'ask', question: question ?? ask.question, spec: ask.spec, cursor }
+}
+
+/** The item at `index` asked the first time, or, after the last item, the hand-out done with what each was given. */
+function itemAt(cursor: HandoutCursor, index: number, given: ReadonlyMap<string, readonly string[]>): HandoutNext {
+  const item = cursor.items[index]
+  if (item === undefined) return { kind: 'done', outcome: { kind: 'given', given } }
+  const at: HandoutCursor = { ...cursor, mode: 'item', index, tries: 1, given }
+
+  return asked(at, itemAsk(at, item), null)
+}
+
+/**
+ * The hand-out at its entry question (G-02-1f Entry choices), with `items` to hand out to `roles`; a dismissal of any
+ * of its questions cancels with `dismissedReason` (handoutAnswer). It only asks: the roles and items never change.
+ */
+export function handoutEnter(
+  entry: HandoutEntry,
+  items: readonly HandoutItem[],
+  roles: readonly RoleSpec[],
+  dismissedReason: string,
+): HandoutNext {
+  const given = new Map<string, readonly string[]>()
+  const cursor: HandoutCursor = { entry, items, roles, dismissedReason, mode: 'entry', index: 0, tries: 1, given }
+
+  return asked(cursor, entryAsk(cursor), null)
+}
+
+/**
+ * The answer to the question the hand-out has out (choiceAnswer). At the entry question, Accept gives every item its
+ * recommended roles, an item with none to no role; one by one asks each item once, in item order; the whole answer
+ * gives the whole-group outcome, so the stage asks its whole-group questions. At an item, Yes gives it its recommended
+ * roles, No none, and a typed role list that list; after the last item the hand-out is done. Any other answer is asked
+ * again with why on top; a dismissal cancels with the hand-out's reason, and MAX_ASKS answers it cannot read at one
+ * question with NO_USABLE_ANSWER_REASON, so no answer the person did not give hands anything out (A1).
+ */
+export function handoutAnswer(cursor: HandoutCursor, answer: string | null): HandoutNext {
+  if (cursor.mode === 'entry') {
+    const ask = entryAsk(cursor)
+    const next = choiceAnswer(ask, cursor, answer)
+    if (next.kind === 'again') return asked({ ...cursor, tries: next.sub.tries }, ask, next.question)
+    if (next.kind === 'cancelled') return next
+    if (next.value === 'whole') return { kind: 'done', outcome: { kind: 'whole' } }
+    if (next.value === 'oneByOne') return itemAt(cursor, 0, new Map())
+
+    return { kind: 'done', outcome: { kind: 'given', given: recommendedOf(cursor.items) } }
+  }
+  const item = cursor.items[cursor.index]
+  if (item === undefined) return { kind: 'cancelled', reason: cursor.dismissedReason }
+  const ask = itemAsk(cursor, item)
+  const next = choiceAnswer(ask, cursor, answer)
+  if (next.kind === 'again') return asked({ ...cursor, tries: next.sub.tries }, ask, next.question)
+  if (next.kind === 'cancelled') return next
+
+  return itemAt(cursor, cursor.index + 1, new Map([...cursor.given, [item.id, next.value]]))
 }
