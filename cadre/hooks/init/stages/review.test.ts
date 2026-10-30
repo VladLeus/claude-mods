@@ -173,17 +173,17 @@ function reviewAt(over: Partial<Draft> = {}, state: Partial<InitState> = {}): In
   return reviewStage.enter(stateAt('review', { ...REVIEW_DRAFT, ...over }, state))
 }
 
-/** The plan of the plan effect `state` has out, made by planStep over the testkit git world. */
+/** The plan of the plan io effect `state` has out, made by planStep over the testkit git world. */
 async function plannedFor(state: InitState): Promise<PlanResult> {
   const { effect } = state
-  if (effect.kind !== 'legacy' || effect.step.id !== 'plan') throw new Error('no plan effect is out')
+  if (effect.kind !== 'io' || effect.call.id !== 'plan') throw new Error('no plan io effect is out')
 
-  return planStep(memIo(gitWorld(), {}).io, effect.step.input)
+  return planStep(memIo(gitWorld(), {}).io, effect.call.input)
 }
 
-/** The answer to the plan effect: the plan made. */
+/** The answer to the plan io effect: the plan made. */
 function planAnswer(planned: PlanResult): Answer {
-  return { kind: 'legacy', result: { id: 'plan', result: planned } }
+  return { kind: 'io', result: { id: 'plan', result: planned } }
 }
 
 describe('the review stage (D-230)', () => {
@@ -209,12 +209,12 @@ describe('the review stage (D-230)', () => {
     expect([done.stage, done.effect]).toEqual(['done', { kind: 'end', reply }])
   })
 
-  test('Confirm on a plain init sets the apply of the confirmed draft and the plan just shown', async () => {
+  test('Confirm on a plain init sets the apply io effect of the confirmed draft and the plan just shown', async () => {
     const state = reviewAt({}, { dryRun: false })
     const planned = await plannedFor(state)
     const applying = nextStage(nextStage(state, planAnswer(planned)), { kind: 'answer', text: 'Confirm' })
     const reviewed = { draft: REVIEW_DRAFT, planned }
-    expect(applying.effect).toEqual({ kind: 'legacy', step: { id: 'apply', reviewed } })
+    expect(applying.effect).toEqual({ kind: 'io', call: { id: 'apply', reviewed } })
     expect(applying.openQuestion).toBeNull()
   })
 
