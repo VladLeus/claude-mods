@@ -2,7 +2,16 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { BIDI_OVERRIDE } from '../testkit'
-import { paneColumns, panePlacement, paneRows, paneSpans, paneView, questionPaneBlocks, wrapLine } from './pane'
+import {
+  paneColumns,
+  panePlacement,
+  paneRows,
+  paneSpans,
+  paneView,
+  questionPaneBlocks,
+  questionScroll,
+  wrapLine,
+} from './pane'
 import type { PaneRow, PaneSpan } from './pane'
 
 /** A control, format, or line or paragraph separator character. A newline is the one a report may keep. */
@@ -364,6 +373,21 @@ describe('questionPaneBlocks (D-203)', () => {
     expect(keys).toEqual(['scan', 'roles', 'review', 'env', 'instructions', 'skills', 'notes', 'notes'])
     expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'history' }), [])[0]?.key).toBe('history')
     expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'improver' }), [])[0]?.key).toBe('improver')
+  })
+})
+
+describe('questionScroll (D-209)', () => {
+  test('a question cadre opens while its pane is open scrolls the pane back to its start', () => {
+    const toStart = { to: 'start', in: 'cadre-init', block: 'start' }
+    const context: AskContext = { title: 'Review', lines: ['Summary: 3 create'], kind: 'review' }
+    expect(questionScroll('cadre-init', openWith(context), true)).toEqual(toStart)
+    expect(questionScroll('cadre-init', openWith(null), true)).toEqual(toStart)
+  })
+
+  test('a cleared question, or a run that has not opened the pane, scrolls nothing', () => {
+    expect(questionScroll('cadre-init', null, true)).toBe(null)
+    expect(questionScroll('cadre-init', openWith(null), false)).toBe(null)
+    expect(questionScroll('cadre-init', null, false)).toBe(null)
   })
 })
 

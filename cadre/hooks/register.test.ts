@@ -2210,6 +2210,16 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(log.headerWrites.slice(-2)).toEqual([null, null])
   })
 
+  test('a scroll the host cannot do never blocks a question: init asks on and replies (D-209)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    // The kit has no ui.scroll, so each scroll to a new question's start fails once the pane is open (#156).
+    const out = await $.command.run(DRY_RUN)
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+    expect(askHeads(log).at(-1)).toBe(`ask ${REVIEW_QUESTION}`)
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+  })
+
   test('the pane wraps each row to the columns its body has, cutting none (D-231)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
