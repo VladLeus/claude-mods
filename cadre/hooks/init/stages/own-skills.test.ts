@@ -112,6 +112,11 @@ describe('own skills hand-out (G-02-1b)', () => {
     )
   })
 
+  test("a secret-like span of an own skill's purpose is hidden in its context line (E1)", () => {
+    const deploy: SkillRef = { name: 'deploy', plugin: null, purpose: 'Deploy with Bearer FAKE-TOKEN-0123' }
+    expect(ownSkillContextLine(deploy, 0, ['be'])).toBe('Deploy with Bearer [hidden]. Recommended: be.')
+  })
+
   /** The user's own skills a role was given, in the order its list keeps them. */
   function ownOf(assigned: readonly RoleSpec[], id: string): readonly string[] {
     return roleIn(assigned, id).skills.filter(name => ['alpha', 'mid', 'zeta'].includes(name))

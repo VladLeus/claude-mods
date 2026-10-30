@@ -2739,8 +2739,15 @@ describe('Phase 2 faked-host matrix', () => {
         `{"type":"tool_use","name":"Skill","input":{"skill":"codex:rescue","args":"${sentinel} /Users/v/key"}}`,
     }
     expect(leaks(JSON.stringify([sessions, transcripts]), SECRET_FIXTURES)).toEqual([...SECRET_FIXTURES])
+    // The pane is seated inline again at every ask, as a terminal main screen keeps it drawn, so the dialog draws each
+    // question's option previews too (D-203, E1).
+    const reseat = async (): Promise<void> => {
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+      await ui.unmount()
+    }
     const base = initWorld()
     const world = initWorld({
+      onAsk: reseat,
       settings: { user: secretUserSettings(), project: {}, local: {} },
       listings: { ...base.listings, [HISTORY_DIR]: sessions },
       files: {
@@ -2775,9 +2782,13 @@ describe('Phase 2 faked-host matrix', () => {
       '  codex:rescue  1',
       '  gsd-plan-phase  1',
     ])
-    // Every value the pane's state was set to, so a block shown and later replaced is scanned too.
+    // Every value the pane's state was set to, so a block shown and later replaced is scanned too, and each question's
+    // own context and option previews, which the pane and the dialog draw (D-203, E1).
     const pane = JSON.stringify(log.paneWrites)
-    const shown = [out.text, ...log.logs, pane, ...log.asks, ...log.askOptions.flat()].join('\n')
+    const asked = JSON.stringify([log.questionWrites, log.askPreviews])
+    expect(asked).toContain('codex:rescue: ')
+    expect(log.askPreviews.flat().some(preview => typeof preview === 'string')).toBe(true)
+    const shown = [out.text, ...log.logs, pane, asked, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })

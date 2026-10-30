@@ -281,6 +281,17 @@ describe('ownSkillLines', () => {
     ])
   })
 
+  test("a secret-like span of a skill's purpose is hidden in its row; the name is not read for one (E1)", () => {
+    const skills: readonly SkillRef[] = [
+      { name: 'token-tool', plugin: null, purpose: '2 APIs called with ghp_FAKEFAKEFAKEFAKEFAKE' },
+    ]
+    expect(ownSkillLines(skills, new Map(), new Map([['S1', []]]))).toEqual([
+      HEADING,
+      '  token-tool: 2 APIs called with [hidden]',
+      '    recommended: none',
+    ])
+  })
+
   test('the skills are S1, S2 by their place; a skill a usable map leaves out shows none, with no fallback row', () => {
     expect(ownSkillLines(OWN_SKILLS, new Map(), new Map([['S1', ['be', 'qa']]]))).toEqual(UNUSED_ROWS)
   })

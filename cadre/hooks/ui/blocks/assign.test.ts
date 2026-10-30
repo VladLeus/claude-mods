@@ -107,6 +107,21 @@ describe('skill contexts (D-211)', () => {
     })
   })
 
+  test('a secret-like span of a description is hidden; only the description is read for one (E1)', () => {
+    const skills: readonly SkillLine[] = [
+      { name: 'codex:rescue', purpose: 'Bearer FAKE-TOKEN-0123', uses: '', recommended: [] },
+      { name: 'keys:rotate', purpose: 'Rotate with sk-FAKE-SECRET-0123456789', uses: '', recommended: ['be'] },
+      { name: 'token-count', purpose: '2 ways to count tokens', uses: '', recommended: [] },
+    ]
+    const lines = [
+      'codex:rescue: Bearer [hidden]. Recommended: none.',
+      'keys:rotate: Rotate with [hidden]. Recommended: be.',
+      'token-count: 2 ways to count tokens. Recommended: none.',
+    ]
+    expect(skillGroupContext('codex', skills).lines).toEqual(lines)
+    expect(skills.map((skill, at) => skillContext(skill, at + 1, skills.length).lines)).toEqual(lines.map(l => [l]))
+  })
+
   test('the own-skills entry context is the own-skills block, each line cleaned as a report cell', () => {
     const bidi = String.fromCodePoint(0x202e)
     expect(ownSkillsContext(['Skills with no plugin:', `  mine: Do${bidi} it.`])).toEqual({
