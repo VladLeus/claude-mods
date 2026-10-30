@@ -1128,7 +1128,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Skills: codex",
         "lines": [
-          "codex:rescue: Bearer FAKE-TOKEN-0123. Recommended: none."
+          "codex:rescue: Bearer [hidden]. Recommended: none."
         ],
         "kind": "skill-group"
       },

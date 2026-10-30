@@ -3,10 +3,11 @@
  * server's source, its tool names from the session's tool list (never a description) and the roles recommended for
  * it; a skill group question lists each of its skills with what it does, how often it was used and the roles
  * recommended for it; the own-skills entry question holds the own-skills block, and one own skill's question that
- * skill alone. Every value is cleaned and capped here (D-222). It imports core and the types, so the assignment stage
- * reads it here.
+ * skill alone. Every value is cleaned and capped here (D-222), and a description's secret-like spans are hidden
+ * (redactSecrets, E1). It imports core and the types, so the assignment stage reads it here.
  */
 import type { AskContext, McpRef } from '../../../types'
+import { redactSecrets } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, reportText, shown, sortedUnique } from '../../core/text'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
@@ -82,14 +83,16 @@ export type SkillLine = {
 }
 
 /**
- * A skill's line (D-211): its name cut to 60 code points, then what it does as a sentence, how often it was used
- * (left out when '') and the roles recommended for it, or none; every value cleaned.
+ * A skill's line (D-211): its name cut to 60 code points, then what it does as a sentence with its secret-like spans
+ * hidden (redactSecrets, E1; only the description is read for them, never the name), how often it was used (left out
+ * when '') and the roles recommended for it, or none; every value cleaned.
  */
 function skillLineText(skill: SkillLine): string {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : ` Used ${clean(skill.uses)}.`
+  const purpose = asSentence(redactSecrets(clean(skill.purpose)))
 
-  return `${name}: ${asSentence(clean(skill.purpose))}${used} Recommended: ${roleIdsText(skill.recommended)}.`
+  return `${name}: ${purpose}${used} Recommended: ${roleIdsText(skill.recommended)}.`
 }
 
 /**

@@ -7,6 +7,7 @@
  * read it.
  */
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
+import { redactSecrets } from '../core/redact'
 import { clean, countedNoun, idsOrNone, moreLine, sortedUnique } from '../core/text'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
@@ -72,13 +73,14 @@ export function ownSkillIds(skills: readonly SkillRef[]): string[] {
 }
 
 /**
- * One own skill's rows in the block: its name and purpose, then its own use count (left out at 0) and the roles
- * recommended for it.
+ * One own skill's rows in the block: its name and purpose, the purpose's secret-like spans hidden (redactSecrets, E1),
+ * then its own use count (left out at 0) and the roles recommended for it.
  */
 function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): string[] {
   const used = count === 0 ? '' : `used ${skillUsesText(count)}; `
+  const purpose = redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE)
 
-  return [`  ${skill.name}: ${skill.purpose ?? NO_SKILL_PURPOSE}`, `    ${used}recommended: ${idsOrNone(ids)}`]
+  return [`  ${skill.name}: ${purpose}`, `    ${used}recommended: ${idsOrNone(ids)}`]
 }
 
 /**
