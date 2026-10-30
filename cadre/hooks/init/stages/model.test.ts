@@ -2,10 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
-import { memIo, memWorld, roleIn, SOURCE_SCAN, templateRole, valueOf } from '../../testkit'
+import { driven, memIo, memWorld, roleIn, SOURCE_SCAN, stateAt, templateRole, valueOf } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal } from '../answers'
-import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './model'
+import { nextStage } from '../machine'
+import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage, modelStep } from './model'
 
 describe('modelStep', () => {
   /** PM, Team Lead, BE, QA and Security, each with the 90m run the duration step gave them. */
@@ -144,5 +145,27 @@ describe('refusal re-ask (G-02-6b)', () => {
     expect(run.logged).toEqual([])
     const dismissed = memIo(memWorld({}), ['Same for all roles', 'sonet + high'])
     expect(await modelStep(dismissed.io, roles)).toEqual({ kind: 'cancelled', reason: MODEL_DISMISSED_REASON })
+  })
+})
+
+describe('the model stage (D-230)', () => {
+  /** PM, Team Lead, BE, QA and Security: the team the model and effort are asked for. */
+  const roles = proposeRoles(SOURCE_SCAN).roles
+
+  test('modelStage asks Same for all roles or Per role with the team ids; the open question is that ask', () => {
+    const state = modelStage.enter(stateAt('model', { roles }))
+    const question = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
+    const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    const all = nextStage(state, { kind: 'answer', text: 'Same for all roles' })
+    expect(all.openQuestion?.question).toBe(withContext('Model and effort for all roles?', MODEL_EFFORT_CONTEXT))
+  })
+
+  test('Same for all roles, then a pair, ends the stage with every role on that model and effort', () => {
+    const run = driven(modelStage.enter(stateAt('model', { roles })), ['Same for all roles', 'sonnet + high'])
+    expect(run.state.draft.roles?.map(role => [role.id, role.model, role.effort])).toEqual(
+      roles.map(role => [role.id, 'sonnet', 'high']),
+    )
   })
 })

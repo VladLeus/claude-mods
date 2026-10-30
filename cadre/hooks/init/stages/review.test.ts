@@ -8,6 +8,7 @@ import { scopesFor } from '../../team'
 import {
   cardOf,
   DEFAULT_LOCATIONS,
+  driven,
   EMPTY_FACTS,
   emptySetupScan,
   gitWorld,
@@ -28,6 +29,7 @@ import { planStep } from '../run'
 import type { Answer, InitState, ReviewItem } from '../state'
 import { DURATION_OPTIONS } from './duration'
 import { LAUNCH_START_OPTIONS } from './launch'
+import { MODEL_MODE_QUESTION } from './model'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_QUESTION } from './policy'
 import {
   cardLines,
@@ -269,6 +271,18 @@ describe('the review stage (D-230)', () => {
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.duration).toBe('2h')
     expect(back.draft.roles?.map(role => role.autopilot.duration)).toEqual(REVIEW_DRAFT.roles.map(() => '2h'))
+  })
+
+  test('a typed model goes back to the model stage, then the review again, counting a round', async () => {
+    const state = reviewAt()
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'model' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['model', 'review', 'model'])
+    expect(going.openQuestion?.question.split('\n')[0]).toBe(MODEL_MODE_QUESTION)
+    const back = driven(going, ['Same for all roles', 'opus + medium']).state
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
+    const modelled = REVIEW_DRAFT.roles.map(() => ['opus', 'medium'])
+    expect(back.draft.roles?.map(role => [role.model, role.effort])).toEqual(modelled)
   })
 
   test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
