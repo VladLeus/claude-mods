@@ -2084,13 +2084,14 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 describe('the init pane draws the block of the question being asked (R1)', () => {
   /**
    * `init --dry-run` as the person types it at the prompt, with the origin and presentation the engine stamps on a run:
-   * the kit's types ask for both; cadre reads only the presentation's columns, for the width of a preview (D-231).
+   * the kit's types ask for both. The run is in the fullscreen layout, a pane surface, so the side pane opens (D-208);
+   * on the terminal main screen the TUI default opens none.
    */
   const DRY_RUN: Parameters<Engine['command']['run']>[0] = {
     command: 'cadre',
     args: 'init --dry-run',
     origin: { kind: 'composer' },
-    presentation: { isFullscreen: false, columns: 80 },
+    presentation: { isFullscreen: true, columns: 80 },
   }
 
   /** What one drawing of the cadre-init pane shows (R1): the text of its first row, and how many rows it has. */
@@ -2266,6 +2267,55 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
       return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
     })
     expect(rows).toEqual(GOLDEN_PANE_ROWS.dock)
+  })
+})
+
+describe('the TUI default: the terminal main screen draws no side pane (D-208)', () => {
+  /** `init --dry-run` typed on the terminal main screen, as the engine stamps it: the TUI default (D-208). */
+  const TUI_RUN: Parameters<Engine['command']['run']>[0] = {
+    command: 'cadre',
+    args: 'init --dry-run',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 120 },
+  }
+
+  /** initWorld with one skill of the user's own, so init asks the model for its roles (G-02-1b). */
+  function skillWorld(): World {
+    const commands = [{ name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' }]
+
+    return initWorld({ commands, answers: { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations' } })
+  }
+
+  test('init --dry-run opens no pane and writes no pane block, while the model works too (D-208)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    const out = await $.command.run(TUI_RUN)
+    expect(askHeads(log).some(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))).toBe(true)
+    expect([log.panes, log.paneWrites, log.closes]).toEqual([[], [], []])
+    expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
+  })
+
+  test('the TUI default replies with the same text as a run that draws the pane (D-208)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    const pane = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const tui = await $.command.run(TUI_RUN)
+    expect(tui.text).toBe(pane.text)
+  })
+
+  test('with no presentation, or in fullscreen, the terminal opens the pane as before (D-208)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
+  })
+
+  test('a session drawn on the desktop too opens the pane, even on the main screen (D-208)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ surfaces: ['terminal', 'desktop'] }), log)
+    await $.command.run(TUI_RUN)
+    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
   })
 })
 

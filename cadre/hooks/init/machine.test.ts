@@ -48,6 +48,12 @@ describe('init stage machine (D-230)', () => {
     expect(initialState(false).dryRun).toBe(false)
   })
 
+  test('initialState keeps the surface the run was given, a pane surface when none is given (D-208)', () => {
+    expect(initialState(true, 'tui-default').surface).toBe('tui-default')
+    expect(initialState(false, 'none').surface).toBe('none')
+    expect(initialState(true).surface).toBe('pane')
+  })
+
   test('an answer whose kind does not match the open effect cancels init with the cancel reply (fail closed)', () => {
     const state = nextStage(initialState(true), { kind: 'answer', text: 'Commit all' })
     expect(state.stage).toBe('cancelled')
