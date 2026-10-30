@@ -152,7 +152,7 @@ import {
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   CONSENT_DISMISSED_REASON,
-  consentStep,
+  consentStage,
 } from './stages/consent'
 import { DURATION_DISMISSED_REASON, DURATION_QUESTION, durationStep } from './stages/duration'
 import {
@@ -2759,7 +2759,6 @@ describe('refusal re-ask (G-02-6b)', () => {
       '(or type git root, in here or other)'
     const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
     const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
-      ['consent', io => consentStep(io), '"No, skip it", "Yes, read names only"'],
       [
         'roles',
         io => rolesStep(io, proposeRoles(repoScan()), FRAMEWORKS),
@@ -2790,6 +2789,11 @@ describe('refusal re-ask (G-02-6b)', () => {
       expect([name, run.asked[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
     }
     const stages: readonly (readonly [string, () => readonly string[], string])[] = [
+      [
+        'consent',
+        () => driven(consentStage.enter(stateAt('consent')), ['zzz']).asked,
+        '"No, skip it", "Yes, read names only"',
+      ],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],
     ]
     for (const [name, asked, accepts] of stages) {

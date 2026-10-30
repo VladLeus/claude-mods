@@ -1,15 +1,15 @@
 /**
- * The ~/.claude.json consent stage of init (D-58, D-134, D-136), a layer 10 module: the consent question, asked before
- * the file is read because it holds account data, with its context line of where init still finds MCP servers
- * without it, its two answers with the declining one first (CLAUDE_JSON_OPTIONS), and consentStep, which asks it.
- * Pure: it asks through the InitIo port it is given, imports core and ui/ask, and never imports init.ts, which imports
- * it, or init/run.
+ * The ~/.claude.json consent stage of init (D-58, D-134, D-136, D-230), a layer 10 module: the consent question,
+ * asked before the file is read because it holds account data, with its context line of where init still finds MCP
+ * servers without it, its two answers with the declining one first (CLAUDE_JSON_OPTIONS), and consentStage, the pure
+ * stage that asks it. Pure: it gives states and never performs an effect, imports core, ui/ask and init/state, and
+ * never imports init/machine or init/run.
  */
-import type { InitIo } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
-import { ASK_HEADERS, askChoice, choiceResult, quotedLabels, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { asking, stageCancelled, stageDone, stageFailed } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 
 /** The ~/.claude.json consent question (D-58): the file holds account data, so it is read only after a yes. */
 export const CLAUDE_JSON_QUESTION =
@@ -40,18 +40,38 @@ function parseConsent(answer: string): boolean | null {
 export const CONSENT_DISMISSED_REASON = 'The ~/.claude.json question was dismissed or not answered.'
 
 /**
- * The ~/.claude.json consent step (D-58): CLAUDE_JSON_QUESTION with CLAUDE_JSON_CONTEXT on its second line (D-136).
- * `Yes, read names only` is accepted as true and `No, skip it` as false, and any other answer is asked again with why
- * on top. A dismissal is cancelled with CONSENT_DISMISSED_REASON and MAX_ASKS answers that name neither with
- * NO_USABLE_ANSWER_REASON, so no answer the person did not give decides whether the file is read (A1, D-45).
+ * The ~/.claude.json question as the consent stage asks it (D-58, D-136): CLAUDE_JSON_QUESTION with
+ * CLAUDE_JSON_CONTEXT on its second line, the two answers with the claude.json chip, parseConsent, the answers its
+ * refusal lists, and the reason a dismissal cancels with.
  */
-export async function consentStep(io: InitIo): Promise<StepResult<boolean>> {
-  const ask = {
-    question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
-    spec: { options: CLAUDE_JSON_OPTIONS, header: ASK_HEADERS.claudeJson },
-    parse: parseConsent,
-    accepts: quotedLabels(CLAUDE_JSON_OPTIONS),
-  }
+const CONSENT_ASK = Object.freeze({
+  question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
+  spec: Object.freeze({ options: CLAUDE_JSON_OPTIONS, header: ASK_HEADERS.claudeJson }),
+  parse: parseConsent,
+  accepts: quotedLabels(CLAUDE_JSON_OPTIONS),
+  dismissedReason: CONSENT_DISMISSED_REASON,
+})
 
-  return choiceResult(await askChoice(io, ask), CONSENT_DISMISSED_REASON)
+/**
+ * The answer to the ~/.claude.json question (choiceAnswer): `Yes, read names only` puts true in the draft and `No,
+ * skip it` false, which ends the stage; any other answer is asked again with why on top. A dismissal cancels with
+ * CONSENT_DISMISSED_REASON and MAX_ASKS answers that name neither with NO_USABLE_ANSWER_REASON, so no answer the
+ * person did not give decides whether the file is read (A1, D-45).
+ */
+function consentAnswer(state: InitState, answer: Answer): InitState {
+  if (answer.kind !== 'answer' || state.sub.kind !== 'ask') return stageFailed(state)
+  const next = choiceAnswer(CONSENT_ASK, state.sub, answer.text)
+  if (next.kind === 'value') return stageDone({ ...state, draft: { ...state.draft, readUserMcp: next.value } })
+  if (next.kind === 'again') return asking(state, next.question, CONSENT_ASK.spec, next.sub.tries)
+
+  return stageCancelled(state, next.reason)
 }
+
+/**
+ * The ~/.claude.json consent stage (D-58, D-230): right after the guard, it asks CONSENT_ASK and takes its answer
+ * (consentAnswer), so the scans read the file only after a yes.
+ */
+export const consentStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => asking(state, CONSENT_ASK.question, CONSENT_ASK.spec, 1),
+  answer: consentAnswer,
+})

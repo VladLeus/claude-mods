@@ -14,7 +14,6 @@ import { teamStep } from './flow'
 import { applyConfirmed } from './initapply'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
-import { consentStep } from './stages/consent'
 import { historyStep } from './stages/history'
 import { launchStartStep } from './stages/launch'
 import { reviewStep } from './stages/review'
@@ -56,14 +55,12 @@ async function performIo(io: InitIo, call: IoCall): Promise<IoResult> {
 }
 
 /**
- * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the consent,
- * the history step, the role steps from the proposal, the launcher start, the review with its go-backs, and Confirm's
- * apply through the run's host, which a --dry-run does not hold.
+ * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the history
+ * step, the role steps from the proposal, the launcher start, the review with its go-backs, and Confirm's apply
+ * through the run's host, which a --dry-run does not hold.
  */
 async function performLegacy(io: InitIo, options: InitOptions, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
-    case 'consent':
-      return { id: 'consent', result: await consentStep(io) }
     case 'history':
       return { id: 'history', result: await historyStep(io, step.locations, step.context) }
     case 'team':
@@ -103,7 +100,7 @@ async function perform(
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
- * (consentStep), runs the scans and shows them with their warnings, then runs the history step (historyStep), which
+ * (consentStage), runs the scans and shows them with their warnings, then runs the history step (historyStep), which
  * asks before it reads any session transcript and keeps names and counts only (SCAN-03, D-59), then the role steps
  * (teamStep): the roles and their frameworks, the recommendations (ROLE-03), the security plugins a team with a
  * Security role misses (decision #39), the autopilot duration once for every role, each role's model and effort, the

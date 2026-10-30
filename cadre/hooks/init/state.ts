@@ -71,7 +71,6 @@ export type IoResult =
  * the draft fields it needs. init/run performs it and gives back its LegacyResult.
  */
 export type LegacyStep =
-  | { readonly id: 'consent' }
   | { readonly id: 'history'; readonly locations: InitLocations; readonly context: string }
   | { readonly id: 'team'; readonly base: DraftBase }
   | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
@@ -89,7 +88,6 @@ export type Applied = {
  * no host, which never happens, since a --dry-run never sets the apply step.
  */
 export type LegacyResult =
-  | { readonly id: 'consent'; readonly result: StepResult<boolean> }
   | { readonly id: 'history'; readonly result: StepResult<HistoryScan | 'skipped'> }
   | { readonly id: 'team'; readonly result: StepResult<Team> }
   | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }

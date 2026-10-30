@@ -33,6 +33,7 @@ import {
   withOutputs,
 } from './state'
 import type { Answer, Applied, Effect, InitStage, InitState, StageDef } from './state'
+import { consentStage } from './stages/consent'
 import { policyStage } from './stages/policy'
 import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow } from './stages/review'
 import { installedFrameworks } from './stages/roles'
@@ -49,18 +50,6 @@ const guardStage: StageDef = Object.freeze({
     if (guard.kind === 'refuse') return stageEnded(state, guard.text)
 
     return stageDone({ ...state, draft: { ...state.draft, locations: guard.locations } })
-  },
-})
-
-/** The ~/.claude.json consent (D-58, legacy): the answer the scans are gathered with. */
-const consentStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => withEffect(state, { kind: 'legacy', step: { id: 'consent' } }),
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'consent') return stageFailed(state)
-    const consent = answer.result.result
-    if (consent.kind === 'cancelled') return stageCancelled(state, consent.reason)
-
-    return stageDone({ ...state, draft: { ...state.draft, readUserMcp: consent.value } })
   },
 })
 

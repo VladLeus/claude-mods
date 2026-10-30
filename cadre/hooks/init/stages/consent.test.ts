@@ -1,35 +1,36 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_LOCATIONS, memIo, memWorld, stateAt } from '../../testkit'
+import { DEFAULT_LOCATIONS, driven, stateAt } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
+import { cancelledReply } from '../replies'
 import {
   CLAUDE_JSON_CONTEXT,
   CLAUDE_JSON_OPTIONS,
   CLAUDE_JSON_QUESTION,
   CONSENT_DISMISSED_REASON,
   consentStage,
-  consentStep,
 } from './consent'
 
 /** What the scans after the consent are entered with: the session's locations. */
 const CONSENT_DRAFT = { locations: DEFAULT_LOCATIONS }
 
 describe('runInit', () => {
-  test('consentStep accepts yes or no; a dismissal or unknown answers cancel with their reasons (A1)', async () => {
-    const yes = memIo(memWorld({}), ['Yes, read names only'])
-    expect(await consentStep(yes.io)).toEqual({ kind: 'accepted', value: true })
+  test('consentStage accepts yes or no; a dismissal or unknown answers cancel with their reasons (A1)', () => {
+    const start = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
+    const yes = driven(start, ['Yes, read names only'])
+    expect(yes.state.draft.readUserMcp).toBe(true)
     expect(yes.asked).toEqual([withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT)])
     expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS, header: 'claude.json' }])
-    expect(await consentStep(memIo(memWorld({}), [' no, SKIP it ']).io)).toEqual({ kind: 'accepted', value: false })
+    expect(driven(start, [' no, SKIP it ']).state.draft.readUserMcp).toBe(false)
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], CONSENT_DISMISSED_REASON],
       [['maybe', 'maybe', 'maybe'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of cases) {
-      const run = memIo(memWorld({}), answers)
-      expect(await consentStep(run.io)).toEqual({ kind: 'cancelled', reason })
-      expect(run.logged).toEqual([])
+      const run = driven(start, answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
+      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
     }
     expect(CONSENT_DISMISSED_REASON).toBe('The ~/.claude.json question was dismissed or not answered.')
   })
@@ -41,10 +42,11 @@ describe('consent declines first (G-02-11)', () => {
     expect([...CLAUDE_JSON_OPTIONS].sort()).toEqual(['No, skip it', 'Yes, read names only'])
   })
 
-  test('option 0 of the ~/.claude.json question declines and option 1 consents (T-02-51)', async () => {
+  test('option 0 of the ~/.claude.json question declines and option 1 consents (T-02-51)', () => {
     const [first = '', second = ''] = CLAUDE_JSON_OPTIONS
-    expect(await consentStep(memIo(memWorld({}), [first]).io)).toEqual({ kind: 'accepted', value: false })
-    expect(await consentStep(memIo(memWorld({}), [second]).io)).toEqual({ kind: 'accepted', value: true })
+    const start = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
+    expect(driven(start, [first]).state.draft.readUserMcp).toBe(false)
+    expect(driven(start, [second]).state.draft.readUserMcp).toBe(true)
   })
 })
 
