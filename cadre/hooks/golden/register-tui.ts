@@ -8,12 +8,18 @@
 
 /**
  * What the TUI-default dry run did: each pane it opened (none), each status line it set, null for a clear (D-232),
- * each line it logged and its reply, split on '\n'.
+ * each line it logged, each dialog with its header chip (null when none), its options as drawn and the preview of each
+ * (null where none; D-208, D-228), and its reply, split on '\n'.
  */
 export const GOLDEN_TUI: {
   readonly opens: readonly string[]
   readonly statuses: readonly (string | null)[]
   readonly logs: readonly string[]
+  readonly asks: readonly {
+    readonly header: string | null
+    readonly options: readonly string[]
+    readonly previews: readonly (string | null)[]
+  }[]
   readonly reply: readonly string[]
 } = {
   "opens": [],
@@ -39,6 +45,200 @@ export const GOLDEN_TUI: {
   ],
   "logs": [
     "No session history for this repo."
+  ],
+  "asks": [
+    {
+      "header": "claude.json",
+      "options": [
+        "No, skip it",
+        "Yes, read names only"
+      ],
+      "previews": [
+        null,
+        null
+      ]
+    },
+    {
+      "header": "Roles",
+      "options": [
+        "Use these roles",
+        "Adjust them",
+        "Describe my own structure",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      ]
+    },
+    {
+      "header": "Framework",
+      "options": [
+        "Same for all roles",
+        "Per role",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
+      ]
+    },
+    {
+      "header": "Framework",
+      "options": [
+        "GSD",
+        "superpowers",
+        "none (built-in)",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```",
+        "**Frameworks**\n```\nGSD: in use 1.16.0 (.planning/ (dir); gsd-core 1.16.0 at ~/.claude/gsd-core)\nsuperpowers: in use 6.4.1 (docs/superpowers/;\nenabledPlugins[\"superpowers@claude-plugins-official\"]=true (user))\n```"
+      ]
+    },
+    {
+      "header": "Security",
+      "options": [
+        "Install",
+        "Not now",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```",
+        "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```",
+        "**Security plugins**\n```\nclaude-security@claude-plugins-official: claude-security gives the Security role a\nreview skill (/claude-security), needs Python 3.9 or newer and writes\nCLAUDE-SECURITY-<time>/ report folders into the repo.\nsecurity-guidance@claude-plugins-official: security-guidance adds hooks that warn\nabout risky edits.\n```"
+      ]
+    },
+    {
+      "header": "Duration",
+      "options": [
+        "4h",
+        "2h",
+        "8h",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      ]
+    },
+    {
+      "header": "Model",
+      "options": [
+        "Same for all roles",
+        "Per role",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      ]
+    },
+    {
+      "header": "Model",
+      "options": [
+        "opus + medium",
+        "sonnet + medium",
+        "sonnet + high",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+        "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and\nacceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges\nthe work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
+      ]
+    },
+    {
+      "header": "Skills",
+      "options": [
+        "Accept recommendations",
+        "Go one by one",
+        "Whole group",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
+        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
+        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
+        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```"
+      ]
+    },
+    {
+      "header": "Hunk 1 of 2",
+      "options": [
+        "Accept",
+        "Decline"
+      ],
+      "previews": [
+        null,
+        null
+      ]
+    },
+    {
+      "header": "Hunk 2 of 2",
+      "options": [
+        "Accept",
+        "Decline"
+      ],
+      "previews": [
+        null,
+        null
+      ]
+    },
+    {
+      "header": "Git policy",
+      "options": [
+        "Commit definitions (default)",
+        "Commit all",
+        "Ignore all of .cadre/",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+        "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+        "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```",
+        "**Git policy**\n```\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/.\nCommit all: only per-user files are ignored.\nIgnore all: nothing in .cadre/ is committed.\n```"
+      ]
+    },
+    {
+      "header": "Launch",
+      "options": [
+        "Git root of this repo",
+        "The folder I run it from",
+        "Another folder in this repo",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+        "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+        "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```",
+        "**Launch**\n```\nGit root: the top of this repo, the same for every launcher.\nRun folder: wherever you run a launcher from.\nLaunchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security\n```"
+      ]
+    },
+    {
+      "header": "Review",
+      "options": [
+        "Confirm",
+        "Change roles",
+        "Change git policy",
+        "Change launcher start"
+      ],
+      "previews": [
+        "**Review**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\ncadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or\n~/.claude.json without consent, are not denied\n    [best-effort] Skills: only the listed skills are linked\n    [none] Loads .cadre/pm/CLAUDE.md and its private instructions (<config\ndir>/cadre/<repo>-<hash8>/pm/instructions/)\n    [hard] Autopilot, agent-fleet and the handoff skills are always available\n    [hard] Permission mode: auto\n    [none] Attended: GSD workflows need Bash; this role runs them through a person\n    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies\nare best-effort)\n  decisions:\n    Product: pm -> human (queue_question)\n    Arch: tl -> human (queue_question)\n    Security: security -> human (queue_question)\n    QA: tl -> human (queue_question)\n  memory: <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch; <config dir>\nis CLAUDE_CONFIG_DIR, else ~/.claude)\nScope card: Team Lead (tl)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\n```\n…",
+        "**Review**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\ncadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or\n~/.claude.json without consent, are not denied\n    [best-effort] Skills: only the listed skills are linked\n    [none] Loads .cadre/pm/CLAUDE.md and its private instructions (<config\ndir>/cadre/<repo>-<hash8>/pm/instructions/)\n    [hard] Autopilot, agent-fleet and the handoff skills are always available\n    [hard] Permission mode: auto\n    [none] Attended: GSD workflows need Bash; this role runs them through a person\n    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies\nare best-effort)\n  decisions:\n    Product: pm -> human (queue_question)\n    Arch: tl -> human (queue_question)\n    Security: security -> human (queue_question)\n    QA: tl -> human (queue_question)\n  memory: <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch; <config dir>\nis CLAUDE_CONFIG_DIR, else ~/.claude)\nScope card: Team Lead (tl)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\n```\n…",
+        "**Review**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\ncadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or\n~/.claude.json without consent, are not denied\n    [best-effort] Skills: only the listed skills are linked\n    [none] Loads .cadre/pm/CLAUDE.md and its private instructions (<config\ndir>/cadre/<repo>-<hash8>/pm/instructions/)\n    [hard] Autopilot, agent-fleet and the handoff skills are always available\n    [hard] Permission mode: auto\n    [none] Attended: GSD workflows need Bash; this role runs them through a person\n    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies\nare best-effort)\n  decisions:\n    Product: pm -> human (queue_question)\n    Arch: tl -> human (queue_question)\n    Security: security -> human (queue_question)\n    QA: tl -> human (queue_question)\n  memory: <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch; <config dir>\nis CLAUDE_CONFIG_DIR, else ~/.claude)\nScope card: Team Lead (tl)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\n```\n…",
+        "**Review**\n```\nRoles:\n  PM (pm)\n  Team Lead (tl)\n  Security (security)\nScope card: PM (pm)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\ncadre@local-mods load (--setting-sources project whitelist)\n    [hard] No Bash tool (denied)\n    [best-effort] Reads of .env, .env.*, ~/.ssh and ~/.aws are denied\n    [best-effort] No other scanned MCP servers to deny\n    [none] MCP servers the scan could not see, such as unusual names or\n~/.claude.json without consent, are not denied\n    [best-effort] Skills: only the listed skills are linked\n    [none] Loads .cadre/pm/CLAUDE.md and its private instructions (<config\ndir>/cadre/<repo>-<hash8>/pm/instructions/)\n    [hard] Autopilot, agent-fleet and the handoff skills are always available\n    [hard] Permission mode: auto\n    [none] Attended: GSD workflows need Bash; this role runs them through a person\n    [none] MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies\nare best-effort)\n  decisions:\n    Product: pm -> human (queue_question)\n    Arch: tl -> human (queue_question)\n    Security: security -> human (queue_question)\n    QA: tl -> human (queue_question)\n  memory: <config dir>/cadre/<repo>-<hash8>/pm/ (rendered at launch; <config dir>\nis CLAUDE_CONFIG_DIR, else ~/.claude)\nScope card: Team Lead (tl)\n  framework: GSD; model: opus + medium; permission mode: auto\n  skills: none\n  MCP servers: none\n  not given skills: deploy-notes\n  not given MCP: none\n  hooks loaded: none\n  hooks loaded by project settings: none\n  hooks not loaded: none\n  rules:\n    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods,\n```\n…"
+      ]
+    }
   ],
   "reply": [
     "cadre init --dry-run",

@@ -2388,11 +2388,17 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.logs.includes('Your own skills')).toBe(false)
   })
 
-  test('golden: the TUI-default init dry run: panes, statuses, logs, reply (D-208, D-219)', async ($, on) => {
+  test('golden: the TUI-default init dry run: panes, statuses, logs, asks, reply (D-208, D-219)', async ($, on) => {
     const log = newLog()
-    fakeHost(on, skillWorld(), log)
+    const headers: unknown[] = []
+    fakeHost(on, { ...skillWorld(), onAsk: async () => void headers.push(log.headerWrites.at(-1) ?? null) }, log)
     const out = await $.command.run(TUI_RUN)
-    const golden = { opens: log.panes, statuses: log.statuses, logs: log.logs, reply: out.text.split('\n') }
+    const asks = log.askOptions.map((options, at) => ({
+      header: headers[at] ?? null,
+      options,
+      previews: (log.askPreviews[at] ?? []).map(preview => (typeof preview === 'string' ? preview : null)),
+    }))
+    const golden = { opens: log.panes, statuses: log.statuses, logs: log.logs, asks, reply: out.text.split('\n') }
     expect(golden).toEqual(GOLDEN_TUI)
   })
 })

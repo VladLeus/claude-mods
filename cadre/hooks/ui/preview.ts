@@ -44,6 +44,36 @@ export function previewColumns(presentationColumns: unknown): number | null {
   return columns
 }
 
+/**
+ * The rows of context lines a dialog option's preview shows on the TUI default (D-228): the rows the spike measured
+ * on the terminal main screen at 48 rows (`rows - 26`). The engine hides a preview's rows past its box, and the
+ * terminal's rows are not known to cadre, so this is the one size every TUI-default preview is fitted to.
+ */
+export const PREVIEW_ROWS = 22
+
+/**
+ * What the TUI-default preview shows of a context (D-228): the lines it draws, and whether the context holds more lines
+ * than that, so register prints the whole context as transcript rows right above the dialog.
+ */
+export type FittedPreview = {
+  readonly lines: readonly string[]
+  readonly isOverflow: boolean
+}
+
+/**
+ * A context fitted to `rows` lines of a TUI-default preview (D-228): every line when they fit, and nothing overflows;
+ * else its first `rows - 1` lines and one last line that counts the lines left out, which register prints above the
+ * dialog, and it overflows. The Review is kept whole and never overflows: it is paged instead (D-233). Rows under two
+ * leave no room for a line and the count, so the context is kept whole.
+ */
+export function fitPreview(context: AskContext, rows: number): FittedPreview {
+  const { lines } = context
+  if (context.kind === 'review' || lines.length <= rows || rows < 2) return { lines, isOverflow: false }
+  const shown = lines.slice(0, rows - 1)
+
+  return { lines: [...shown, `+${lines.length - shown.length} more above`], isOverflow: true }
+}
+
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */
 type PreviewBlock = {
   readonly title: string
@@ -261,15 +291,18 @@ export type AskRewrite = {
  * D-203, D-231), whatever its header, and each such question then gets NOTE_WORDING for every OTHER_WORDING in its
  * text (R4), the hint line as its last line (R3) and, when it has room, the Describe your own option with that preview
  * (withDescribeOwn), with an AskedQuestion that pairs its text as asked with the text the dialog shows (A3); a
- * multi-select question is copied unchanged, OTHER_WORDING included, and has none.
+ * multi-select question is copied unchanged, OTHER_WORDING included, and has none. Given `rows`, as on the TUI default,
+ * the preview shows the context fitted to them (fitPreview, D-228); with none it shows every line.
  */
 export function askRewrite(
   questions: unknown,
   context: AskContext | null,
   columns: number | null = null,
+  rows: number | null = null,
 ): AskRewrite | null {
   if (context === null) return null
-  const preview = previewMarkdown([context], columns)
+  const shown = rows === null ? context : { ...context, lines: fitPreview(context, rows).lines }
+  const preview = previewMarkdown([shown], columns)
   const previewed = withPreviews(questions, () => preview)
   if (previewed === null) return null
   const pairs = previewed.map(question => {

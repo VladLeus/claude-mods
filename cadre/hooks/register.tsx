@@ -1,10 +1,20 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { FactsPort, HostIo, IdentityRunResult, InitIo, OpenQuestion, PortRead, ShownBlock } from '../types'
+import type {
+  AskContext,
+  FactsPort,
+  HostIo,
+  IdentityRunResult,
+  InitIo,
+  OpenQuestion,
+  PortRead,
+  ShownBlock,
+} from '../types'
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
 import { isObject } from './core/json'
+import { reportText } from './core/text'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
@@ -28,7 +38,7 @@ import {
   questionPaneBlocks,
   questionScroll,
 } from './ui/pane'
-import { answersFromNotes, askRewrite, previewColumns } from './ui/preview'
+import { answersFromNotes, askRewrite, fitPreview, previewColumns, PREVIEW_ROWS } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -125,6 +135,17 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 }
 
 /**
+ * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
+ * the preview (fitPreview) as transcript rows right above the dialog, its title first, each cleaned as a report cell
+ * (D-228); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
+ */
+function beforeTuiDialog($: EngineInterface, context: AskContext | null): void {
+  $.ui.status(undefined)
+  if (context === null || !fitPreview(context, PREVIEW_ROWS).isOverflow) return
+  for (const line of [context.title, ...context.lines]) $.ui.log(reportText(line))
+}
+
+/**
  * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first show and read once
  * the run settles, and where the run shows its context (D-208), decided before anything opens.
  */
@@ -145,7 +166,8 @@ type PaneRun = {
  * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show
  * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On the
  * TUI default `show` neither writes the pane's state nor opens it, at any time of the run (D-208); there `progress`
- * sets the one status line (`$.ui.status`) and `ask` clears it before each dialog (D-232).
+ * sets the one status line (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a context too
+ * long for the preview above it (beforeTuiDialog, D-228).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -161,8 +183,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
       if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
-      // The TUI default's status line is cleared as each question opens (D-232).
-      if (pane.surface === 'tui-default') $.ui.status(undefined)
+      if (pane.surface === 'tui-default') beforeTuiDialog($, open.context)
       try {
         const dialog = {
           options,
@@ -431,12 +452,12 @@ export const register: Register = on => {
   // untouched, and so does its result (D-239). Only on the TUI default, where no pane opens (D-208), or while the
   // terminal main screen seats the pane inline, where the engine hides it behind a dialog, and only for an open
   // question with a context of its own: each single-select question gets that context as the preview of every option
-  // (D3, D-203), wrapped to the preview box (previewColumns, D-231), and a Describe your own option or the hint line
-  // (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with no
-  // context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. Any other call, a deny,
-  // an error and a result of another shape pass through unchanged. Apart from the read of the open question, the hook
-  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
-  // (C1).
+  // (D3, D-203), wrapped to the preview box (previewColumns, D-231) and on the TUI default fitted to its rows
+  // (PREVIEW_ROWS, D-228), and a Describe your own option or the hint line (A2), and notes typed in the dialog become
+  // the answer under the question's text as asked (A3). A question with no context (a hunk, the claude.json consent)
+  // keeps its dialog as asked, Other row included. Any other call, a deny, an error and a result of another shape pass
+  // through unchanged. Apart from the read of the open question, the hook has no .catch on purpose: a hook that throws
+  // is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
@@ -445,7 +466,8 @@ export const register: Register = on => {
     if (open === null || asked !== open.question) return await next(e)
     const isPreviewed = runSurface === 'tui-default' || (runSurface === 'pane' && lastPlacement === 'inline')
     if (!isPreviewed) return await next(e)
-    const rewrite = askRewrite(raw, open.context, previewColumns(presentationColumns))
+    const rows = runSurface === 'tui-default' ? PREVIEW_ROWS : null
+    const rewrite = askRewrite(raw, open.context, previewColumns(presentationColumns), rows)
     if (rewrite === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no
