@@ -1742,6 +1742,17 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   /** A question asked through ASKER: the answer $.ui.ask resolved to, or null when it rejected. */
   type Ask = (question: string, spec: AskSpec) => Promise<string | null>
 
+  /** The ask of a test that loads ASKER: ASKER's `/ask-probe` asks the question with the spec through $.ui.ask. */
+  function probeAsk($: Engine): Ask {
+    return async (question, spec) => {
+      const { text } = await $.command.run({ command: 'ask-probe', args: JSON.stringify({ question, spec }) })
+      if (text === undefined) return null
+      const reply: unknown = JSON.parse(text)
+
+      return isObject(reply) && typeof reply.answer === 'string' ? reply.answer : null
+    }
+  }
+
   /**
    * Runs `init --dry-run`, so the pane holds the run's blocks, then has the terminal draw the cadre-init pane with
    * `props`: inline on the main screen, or docked as fullscreen seats it. It gives the ask of a test that loads ASKER.
@@ -1751,13 +1762,20 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     await $.ui.mount({ ...PANE_ON_TERMINAL, props })
 
-    return async (question, spec) => {
-      const { text } = await $.command.run({ command: 'ask-probe', args: JSON.stringify({ question, spec }) })
-      if (text === undefined) return null
-      const reply: unknown = JSON.parse(text)
+    return probeAsk($)
+  }
 
-      return isObject(reply) && typeof reply.answer === 'string' ? reply.answer : null
-    }
+  /**
+   * Has the host read `question` as the question cadre has open (D-239): every read of cadre's openQuestion state
+   * gives it, so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
+   */
+  function openAsCadre(on: HostOn, question: string): void {
+    const open = { question, header: null, context: null, acceptsTyped: false }
+    on('state.get', async (_$, e, next) => {
+      if (e.plugin !== 'cadre' || e.key !== 'openQuestion') return next(e)
+
+      return { value: { value: open, version: 1 } }
+    })
   }
 
   /** initWorld with `Pick one?` answered `answer` and, when given, `notes` typed in that dialog's notes (A3). */
@@ -1769,6 +1787,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('after a run, each option of an inline pane dialog gets the same preview, the review first', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1783,6 +1802,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a docked pane gives no preview', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, DOCK_PANE)
     const before = log.askPreviews.length
@@ -1792,6 +1812,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('with no terminal render of the pane after the run, no preview is given', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const before = log.askPreviews.length
@@ -1801,6 +1822,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a multi-select question gets no preview', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1811,6 +1833,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a question with no options makes the whole call pass through unchanged', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1821,6 +1844,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('an inline pane with no block yet gives no preview', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
     const before = log.askPreviews.length
@@ -1830,6 +1854,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a question with the Roles chip gets the roles block as the preview of every option (B1)', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1842,6 +1867,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a chip with no block of its own, as Git policy, gets the newest block: the review (B1)', async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     await seatAfterRun($, INLINE_PANE)
     const before = log.askPreviews.length
@@ -1854,6 +1880,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('A', '  my words  '), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe('my words')
@@ -1862,6 +1889,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('Describe your own with no note resolves to an empty answer (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('Describe your own'), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe('')
@@ -1870,6 +1898,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('an option chosen with no note resolves to its label (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('B'), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe('B')
@@ -1878,6 +1907,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a 4-option question gets the hint line and keeps its answer key (A2, A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('C'), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', { options: ['A', 'B', 'C', 'D'], header: 'Pick' })).toBe('C')
@@ -1887,6 +1917,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a docked pane adds no option and takes no note as the answer (A1)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('A', '  my words  '), log)
     const ask = await seatAfterRun($, DOCK_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
@@ -1895,6 +1926,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a dismissed dialog still rejects $.ui.ask: the deny passes through', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, initWorld(), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe(null)
@@ -1904,6 +1936,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test('a 2-option question gets the hint line too, and keeps its answer key (R3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, PICK_QUESTION.question)
     fakeHost(on, pickWorld('B'), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask('Pick one?', PICK_SPEC)).toBe('B')
@@ -1913,6 +1946,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test("an inline pane asks 'under Other' as a note, keyed as asked (R4)", WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, NAME_QUESTION)
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Name it': 'A' } }), log)
     const ask = await seatAfterRun($, INLINE_PANE)
     expect(await ask(NAME_QUESTION, PICK_SPEC)).toBe('A')
@@ -1921,10 +1955,38 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   test("a docked pane asks the question as it is, 'under Other' included (R4)", WITH_ASKER, async ($, on) => {
     const log = newLog()
+    openAsCadre(on, NAME_QUESTION)
     fakeHost(on, initWorld({ answers: { ...INIT_ANSWERS, 'Name it': 'A' } }), log)
     const ask = await seatAfterRun($, DOCK_PANE)
     expect(await ask(NAME_QUESTION, PICK_SPEC)).toBe('A')
     expect(log.asks.at(-1)).toBe('ask Name it, or type one under Other.')
+  })
+
+  test("another plugin's question asked during a run passes through untouched (D-239)", WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    const answers: (string | null)[] = []
+    // With init's roles question open and the pane seated inline, ASKER asks a question of its own.
+    const askAtRoles = async (): Promise<void> => {
+      if (!(log.asks.at(-1) ?? '').startsWith(`ask ${ROLES_QUESTION}`)) return
+      const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
+      await ui.unmount()
+      answers.push(await probeAsk($)('Pick one?', PICK_SPEC))
+    }
+    const world = pickWorld('A', '  my words  ')
+    fakeHost(on, { ...world, onAsk: askAtRoles }, log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const at = log.asks.indexOf('ask Pick one?')
+    expect(answers).toEqual(['A'])
+    expect([log.askOptions[at], log.askPreviews[at]]).toEqual([['A', 'B'], [undefined, undefined]])
+  })
+
+  test("after the run, another plugin's question passes through untouched (D-239)", WITH_ASKER, async ($, on) => {
+    const log = newLog()
+    fakeHost(on, pickWorld('A', '  my words  '), log)
+    const ask = await seatAfterRun($, INLINE_PANE)
+    expect(await ask('Pick one?', PICK_SPEC)).toBe('A')
+    expect(log.asks.at(-1)).toBe('ask Pick one?')
+    expect([log.askOptions.at(-1), log.askPreviews.at(-1)]).toEqual([['A', 'B'], [undefined, undefined]])
   })
 
   test('the git policy context goes to the open question, never to the dialog (D-203)', WITH_ASKER, async ($, on) => {
