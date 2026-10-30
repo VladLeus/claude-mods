@@ -15,6 +15,7 @@ import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
 import { MAX_PROPOSE_ATTEMPTS } from '../../suggest/checked'
 import { PROPOSE_SYSTEM, rolesFromProposal } from '../../suggest/propose'
+import type { Proposed } from '../../suggest/propose'
 import {
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
@@ -27,11 +28,13 @@ import {
   memWorld,
   shownBlock,
   SOURCE_SCAN,
+  stateAt,
   templateRole,
   withEvents,
 } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
+import { nextStage } from '../machine'
 import {
   ADJUST_DISMISSED_REASON,
   ADJUST_OPTIONS,
@@ -53,6 +56,7 @@ import {
   ROLES_OPTIONS,
   ROLES_QUESTION,
   rolesContextLine,
+  rolesStage,
   rolesStep,
 } from './roles'
 import type { AdjustOutcome } from './roles'
@@ -544,5 +548,35 @@ describe('question context lines (G-02-1)', () => {
       `${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
       `no role "zz"\n${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
     ])
+  })
+})
+
+describe('the roles stage (D-230)', () => {
+  const proposal = proposeRoles(SOURCE_SCAN)
+
+  test('rolesStage shows the proposal, then asks the roles question; the open question is that ask', () => {
+    const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
+    const question = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
+    const ask = { question, spec: { options: [...ROLES_OPTIONS], header: 'Roles' } }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+    const lines = proposalLines(proposal.roles, proposal.changes)
+    expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
+  })
+
+  test('Describe asks for the text, then calls the model as an effect; the described roles are asked about', () => {
+    const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
+    const describing = nextStage(state, { kind: 'answer', text: 'Describe my own structure' })
+    expect(describing.openQuestion?.question).toBe(DESCRIBE_ASKED)
+    const calling = nextStage(describing, { kind: 'answer', text: DESCRIPTION })
+    expect([calling.effect, calling.openQuestion]).toEqual([
+      { kind: 'model', call: { id: 'describe-roles', text: DESCRIPTION } },
+      null,
+    ])
+    const result = { kind: 'roles', roles: DESCRIBED_ROLES } satisfies Proposed
+    const asked = nextStage({ ...calling, outputs: [] }, { kind: 'model', result: { id: 'describe-roles', result } })
+    expect(asked.openQuestion?.question).toBe(withContext(ROLES_QUESTION, rolesContextLine(DESCRIBED_ROLES, [])))
+    const lines = proposalLines(DESCRIBED_ROLES, [])
+    expect(asked.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
   })
 })
