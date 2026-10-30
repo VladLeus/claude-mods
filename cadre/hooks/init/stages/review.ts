@@ -275,13 +275,13 @@ function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly
   }
 }
 
-/** The round's plan of the whole draft out (planStep, through the legacy plan step until it is an io effect). */
+/** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */
 function planning(state: InitState): InitState {
   const draft = fullDraft(state.draft)
   if (draft === null) return stageFailed(state)
   const planned: InitState = { ...state, sub: { kind: 'start' } }
 
-  return withEffect(planned, { kind: 'legacy', step: { id: 'plan', input: reviewPlanOf(draft).input } })
+  return withEffect(planned, { kind: 'io', call: { id: 'plan', input: reviewPlanOf(draft).input } })
 }
 
 /** The review question about `planned` asked, `tries` times so far; `question` is its text after a refusal. */
@@ -319,12 +319,15 @@ function dryRunReply(reviewed: Reviewed): string {
   return initReplyText(plan, state.gitPolicy, state.launchStart, null, [PRIVATE_FILES_HEADING, ...rows, ...improver])
 }
 
-/** Confirm (D-105): a --dry-run replies with the plan just shown (dryRunReply), and plain init has it applied. */
+/**
+ * Confirm (D-105): a --dry-run replies with the plan just shown (dryRunReply) and never sets the apply; plain init has
+ * it applied, an io effect (applyConfirmed, run by init/run through the run's host).
+ */
 function confirmed(state: InitState, reviewed: Reviewed): InitState {
   if (state.dryRun) return stageEnded(state, dryRunReply(reviewed))
   const applying: InitState = { ...state, sub: { kind: 'applying' } }
 
-  return withEffect(applying, { kind: 'legacy', step: { id: 'apply', reviewed } })
+  return withEffect(applying, { kind: 'io', call: { id: 'apply', reviewed } })
 }
 
 /**
@@ -368,10 +371,10 @@ function afterApply(state: InitState, result: StepResult<Applied> | null): InitS
 /** The answer to the effect the review has out: the plan, the review question, a go-back, or Confirm's apply. */
 function reviewAnswer(state: InitState, answer: Answer): InitState {
   if (answer.kind === 'answer') return afterReviewAnswer(state, answer.text)
-  if (answer.kind !== 'legacy') return stageFailed(state)
+  if (answer.kind === 'legacy' && answer.result.id === 'go-back') return afterGoBack(state, answer.result.result)
+  if (answer.kind !== 'io') return stageFailed(state)
   const { result } = answer
   if (result.id === 'plan') return afterPlan(state, result.result)
-  if (result.id === 'go-back') return afterGoBack(state, result.result)
   if (result.id === 'apply') return afterApply(state, result.result)
 
   return stageFailed(state)

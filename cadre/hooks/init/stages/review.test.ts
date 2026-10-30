@@ -22,9 +22,9 @@ import { contextText } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
-import { planStep } from '../initplan'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
+import { planStep } from '../run'
 import type { Answer, InitState, ReviewItem } from '../state'
 import {
   cardLines,

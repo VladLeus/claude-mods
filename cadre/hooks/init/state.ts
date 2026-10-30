@@ -71,13 +71,20 @@ export type IoCall =
   | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
   | { readonly id: 'list-sessions'; readonly dir: string }
   | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
+  | { readonly id: 'plan'; readonly input: PlanStepInput }
+  | { readonly id: 'apply'; readonly reviewed: Reviewed }
 
-/** What an IoCall gave, under the same id; a session folder that cannot be listed gives null. */
+/**
+ * What an IoCall gave, under the same id; a session folder that cannot be listed gives null, and so does an apply in a
+ * run that holds no host, which never happens, since a --dry-run never sets the apply.
+ */
 export type IoResult =
   | { readonly id: 'guard'; readonly result: GuardResult }
   | { readonly id: 'scan'; readonly result: Gathered }
   | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
   | { readonly id: 'scan-history'; readonly result: HistoryScan }
+  | { readonly id: 'plan'; readonly result: PlanResult }
+  | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
@@ -86,9 +93,7 @@ export type IoResult =
 export type LegacyStep =
   | { readonly id: 'team'; readonly base: DraftBase }
   | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
-  | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'go-back'; readonly draft: Draft; readonly item: Exclude<ReviewItem, 'confirm'> }
-  | { readonly id: 'apply'; readonly reviewed: Reviewed }
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -120,7 +125,6 @@ export type Applied = {
 export type LegacyResult =
   | { readonly id: 'team'; readonly result: StepResult<Team> }
   | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }
-  | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
