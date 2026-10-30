@@ -16,9 +16,8 @@ import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { proposeRoles } from '../roles/propose'
 import { scanWarnings } from '../scan/gather'
 import type { StepResult } from '../ui/ask'
-import { scanContextLine, scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import type { Reviewed } from './draft'
-import { historyHints } from './flow'
 import { initReplyText } from './initapply'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import {
@@ -34,6 +33,7 @@ import {
 } from './state'
 import type { Answer, Applied, Effect, InitStage, InitState, StageDef } from './state'
 import { consentStage } from './stages/consent'
+import { historyStage } from './stages/history'
 import { policyStage } from './stages/policy'
 import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow } from './stages/review'
 import { installedFrameworks } from './stages/roles'
@@ -55,7 +55,8 @@ const guardStage: StageDef = Object.freeze({
 
 /**
  * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, then the scan block with their warnings in the
- * side pane (D-133), shown before the history question.
+ * side pane (D-133), shown before the history question, and what the scans fix for the whole run: the frameworks
+ * installed, the framework choice and the template proposal.
  */
 const scanStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
@@ -70,39 +71,17 @@ const scanStage: StageDef = Object.freeze({
     const gathered = answer.result.result
     const warnings = scanWarningLines(scanWarnings(locations, gathered))
     const lines = [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings]
-    const scanned = { ...state, draft: { ...state.draft, gathered } }
-
-    return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
-  },
-})
-
-/**
- * The history question (SCAN-03, D-59, legacy), with the scan's context line; then what the scans fix for the whole
- * run: the frameworks installed, the framework choice, the template proposal and the history hints.
- */
-const historyStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { locations, gathered } = state.draft
-    if (locations === undefined || gathered === undefined) return stageFailed(state)
-    const context = scanContextLine(gathered.repo)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'history', locations, context } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    const { gathered } = state.draft
-    if (answer.kind !== 'legacy' || answer.result.id !== 'history' || gathered === undefined) return stageFailed(state)
-    const history = answer.result.result
-    if (history.kind === 'cancelled') return stageCancelled(state, history.reason)
     const detections = detectAll(gathered.facts.facts)
     const draft = {
       ...state.draft,
+      gathered,
       installed: installedFrameworks(detections),
       choice: chooseFramework(detections, null),
       proposal: proposeRoles(gathered.repo),
-      hints: historyHints(history.value),
     }
+    const scanned = { ...state, draft }
 
-    return stageDone({ ...state, draft })
+    return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
   },
 })
 

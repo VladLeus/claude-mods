@@ -1,12 +1,11 @@
 /**
- * The history step of init (SCAN-03, D-59, D-133), a layer 10 module: the consent question, asked before any session
- * transcript is read, with how many sessions this repo has and that only the newest are read (historyQuestion), and
- * historyStep, which lists this repo's session folder, asks, runs the history scan (scan/history) only after a yes and
- * shows the names and counts it found as the side pane's Session history block (historyLines). Pure: it asks and reads
- * through the InitIo port it is given, imports core, paths, scan/history and ui/ask, and never imports init.ts, which
- * imports it, or init/run.
+ * The history stage of init (SCAN-03, D-59, D-133, D-230), a layer 10 module: the consent question, asked before any
+ * session transcript is read, with how many sessions this repo has and that only the newest are read
+ * (historyQuestion), and historyStage, the pure stage that has this repo's session folder listed, asks, has the
+ * history scan (scan/history) run only after a yes and shows the names and counts it found as the side pane's Session
+ * history block (historyLines). Pure: it gives states and never performs an effect, imports core, paths, scan/history,
+ * ui, init/flow and init/state, and never imports init/machine or init/run.
  */
-import type { InitIo, InitLocations } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { userDirOf } from '../../paths'
@@ -16,12 +15,14 @@ import {
   HISTORY_MAX_SESSIONS,
   HISTORY_MAX_TOTAL_BYTES,
   historyDir,
-  listSessions,
-  scanHistory,
 } from '../../scan/history'
 import type { HistoryScan } from '../../scan/history'
-import { ASK_HEADERS, askChoice, NO_USABLE_ANSWER_REASON, quotedLabels, showBlock, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
+import { scanContextLine } from '../../ui/blocks/scan'
+import { historyHints } from '../flow'
+import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import type { Answer, InitState, SessionListing, StageDef } from '../state'
 
 /** The line init prints when this repo has no session history: no session folder, or no transcript in it (SCAN-03). */
 export const NO_HISTORY_NOTE = 'No session history for this repo.'
@@ -108,48 +109,112 @@ export function historyLines(scan: HistoryScan): string[] {
   return [HISTORY_HEADING, ...(rows.length === 0 ? ['  none'] : rows), ...noteLines(scan)]
 }
 
-/** Logs a note and gives the skipped result: nothing was asked and no transcript was read. */
-function skippedWith(io: InitIo, note: string): StepResult<'skipped'> {
-  io.log(note)
+/** The session folder of this repo in the user folder (historyDir), or null when no user folder is known. */
+function historyDirOf(state: InitState): string | null {
+  const { locations } = state.draft
+  const userDir = locations === undefined ? null : userDirOf(locations)
+  if (locations === undefined || userDir === null) return null
 
-  return { kind: 'accepted', value: 'skipped' }
+  return historyDir(userDir, locations.root)
 }
 
 /**
- * The history step (SCAN-03, D-59), which init runs once, after the scan summary. It lists this repo's session folder
- * in the user folder (historyDir, from the repo root as resolved) and reads nothing else before the person answers.
- * With no folder or no transcript it logs NO_HISTORY_NOTE, and with a folder it cannot list UNLISTED_HISTORY_NOTE;
- * either way it asks nothing and the scan is skipped. Otherwise it asks historyQuestion with the session count, and
- * `context`, the line of what the repo scan found (scanContextLine), on its second line (G-02-1, D-136):
- * `No, skip it` skips the scan and reads no transcript, and `Yes, scan names and counts` runs scanHistory over the
- * newest sessions and shows historyLines as the side pane's Session history block, each line cleaned as a report cell
- * (D-133). Any other answer is asked again with why on top. A dismissal is cancelled with
- * HISTORY_DISMISSED_REASON and MAX_ASKS answers that name neither with NO_USABLE_ANSWER_REASON, which init prints (A1,
- * D-45). It runs no process, and no other step needs its result: the counts are only hints for the skill questions.
+ * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and `context`,
+ * the line of what the repo scan found, on its second line; the two answers with the History chip, the answers its
+ * refusal lists, and the reason a dismissal cancels with.
  */
-export async function historyStep(
-  io: InitIo,
-  locations: InitLocations,
-  context: string,
-): Promise<StepResult<HistoryScan | 'skipped'>> {
-  const userDir = userDirOf(locations)
-  if (userDir === null) return skippedWith(io, NO_HISTORY_NOTE)
-  const dir = historyDir(userDir, locations.root)
-  const listed = await listSessions(io, dir)
-  if (listed === null) return skippedWith(io, UNLISTED_HISTORY_NOTE)
-  if (listed.total === 0) return skippedWith(io, NO_HISTORY_NOTE)
-  const ask = {
-    question: withContext(historyQuestion(listed.total), context),
+function historyAsk(total: number, context: string): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  return {
+    question: withContext(historyQuestion(total), context),
     spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history },
     parse: parseHistoryConsent,
     accepts: quotedLabels(HISTORY_OPTIONS),
+    dismissedReason: HISTORY_DISMISSED_REASON,
   }
-  const answer = await askChoice(io, ask)
-  if (answer.kind === 'dismissed') return { kind: 'cancelled', reason: HISTORY_DISMISSED_REASON }
-  if (answer.kind === 'exhausted') return { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
-  if (!answer.value) return { kind: 'accepted', value: 'skipped' }
-  const scan = await scanHistory(io, dir, listed.sessions)
-  await showBlock(io, 'history', historyLines(scan))
-
-  return { kind: 'accepted', value: scan }
 }
+
+/** The stage done with the hints of `history` (historyHints): none when the scan was skipped (D-59). */
+function withHints(state: InitState, history: HistoryScan | 'skipped'): InitState {
+  return stageDone({ ...state, draft: { ...state.draft, hints: historyHints(history) } })
+}
+
+/** The scan skipped with `note` logged as it is: nothing was asked and no transcript was read. */
+function skippedWith(state: InitState, note: string): InitState {
+  return withHints(withOutputs(state, [{ kind: 'log', text: note }]), 'skipped')
+}
+
+/** The history question asked with the session count and the scan's context line, asked `tries` times so far. */
+function historyAsked(state: InitState, listing: SessionListing, question: string | null, tries: number): InitState {
+  const { gathered } = state.draft
+  if (gathered === undefined) return stageFailed(state)
+  const ask = historyAsk(listing.total, scanContextLine(gathered.repo))
+  const sub: InitState['sub'] = { kind: 'history', tries, listing }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/**
+ * After the session folder was listed: with a folder it cannot list UNLISTED_HISTORY_NOTE, and with no transcript
+ * NO_HISTORY_NOTE, either way asking nothing; else the history question, the listed sessions kept for the scan.
+ */
+function afterListing(state: InitState, listing: SessionListing | null): InitState {
+  if (listing === null) return skippedWith(state, UNLISTED_HISTORY_NOTE)
+  if (listing.total === 0) return skippedWith(state, NO_HISTORY_NOTE)
+
+  return historyAsked(state, listing, null, 1)
+}
+
+/**
+ * The answer to the history question (choiceAnswer): `No, skip it` skips the scan and reads no transcript; `Yes, scan
+ * names and counts` has the newest listed sessions scanned (the scan-history io effect); any other answer is asked
+ * again with why on top. A dismissal cancels with HISTORY_DISMISSED_REASON and MAX_ASKS answers that name neither with
+ * NO_USABLE_ANSWER_REASON (A1, D-45).
+ */
+function afterConsent(state: InitState, answer: string | null): InitState {
+  const { gathered } = state.draft
+  const dir = historyDirOf(state)
+  if (state.sub.kind !== 'history' || gathered === undefined || dir === null) return stageFailed(state)
+  const { listing } = state.sub
+  const next = choiceAnswer(historyAsk(listing.total, scanContextLine(gathered.repo)), state.sub, answer)
+  if (next.kind === 'again') return historyAsked(state, listing, next.question, next.sub.tries)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (!next.value) return withHints(state, 'skipped')
+
+  return withEffect(state, { kind: 'io', call: { id: 'scan-history', dir, sessions: listing.sessions } })
+}
+
+/** After the scan: its names and counts shown as the Session history block (historyLines, D-133), kept as hints. */
+function afterScan(state: InitState, scan: HistoryScan): InitState {
+  return withHints(withOutputs(state, [{ kind: 'show', block: { key: 'history', lines: historyLines(scan) } }]), scan)
+}
+
+/** The answer to the effect the history stage has out: the listing, the history question, or the scan. */
+function historyAnswer(state: InitState, answer: Answer): InitState {
+  if (answer.kind === 'answer') return afterConsent(state, answer.text)
+  if (answer.kind !== 'io') return stageFailed(state)
+  const { result } = answer
+  if (result.id === 'list-sessions') return afterListing(state, result.result)
+  if (result.id === 'scan-history') return afterScan(state, result.result)
+
+  return stageFailed(state)
+}
+
+/**
+ * The history stage (SCAN-03, D-59, D-230), right after the scan summary. It has this repo's session folder in the
+ * user folder listed (historyDir, from the repo root as resolved), and reads nothing else before the person answers:
+ * with no user folder, no folder or no transcript it logs NO_HISTORY_NOTE, and with a folder it cannot list
+ * UNLISTED_HISTORY_NOTE; either way it asks nothing and the scan is skipped. Otherwise it asks the history question
+ * (afterListing, afterConsent), and only after a yes the scan runs over the newest sessions and its names and counts
+ * show as the Session history block, each line cleaned as a report cell (D-133). No other stage needs the result: the
+ * counts are only hints for the skill questions (historyHints).
+ */
+export const historyStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    if (state.draft.locations === undefined) return stageFailed(state)
+    const dir = historyDirOf(state)
+    if (dir === null) return skippedWith(state, NO_HISTORY_NOTE)
+
+    return withEffect(state, { kind: 'io', call: { id: 'list-sessions', dir } })
+  },
+  answer: historyAnswer,
+})

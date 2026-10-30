@@ -7,7 +7,7 @@
  * imports type shapes and no port, so nothing built on it can reach a port. The stages and init/machine import it,
  * and init/run reads its types.
  */
-import type { AskSpec, InitLocations, LaunchStart, PaneKey, RoleSpec } from '../../types'
+import type { AskSpec, InitLocations, LaunchStart, PaneKey, PortEntry, RoleSpec } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
 import type { Gathered } from '../scan/gather'
@@ -53,25 +53,35 @@ export type Output =
   | { readonly kind: 'note'; readonly line: string }
   | { readonly kind: 'log'; readonly text: string }
 
+/** This repo's session transcripts as listSessions gives them: the newest ones, and how many there are in all. */
+export type SessionListing = {
+  readonly sessions: readonly PortEntry[]
+  readonly total: number
+}
+
 /**
  * One host operation a stage needs (D-230), named after the helper init/run runs for it, with plain data only: the
- * guard (initGuard) and the scans with the consent answer (gatherScans).
+ * guard (initGuard), the scans with the consent answer (gatherScans), the listing of the session folder
+ * (listSessions) and the history scan of the listed sessions (scanHistory).
  */
 export type IoCall =
   | { readonly id: 'guard' }
   | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
+  | { readonly id: 'list-sessions'; readonly dir: string }
+  | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
 
-/** What an IoCall gave, under the same id. */
+/** What an IoCall gave, under the same id; a session folder that cannot be listed gives null. */
 export type IoResult =
   | { readonly id: 'guard'; readonly result: GuardResult }
   | { readonly id: 'scan'; readonly result: Gathered }
+  | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
+  | { readonly id: 'scan-history'; readonly result: HistoryScan }
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
  * the draft fields it needs. init/run performs it and gives back its LegacyResult.
  */
 export type LegacyStep =
-  | { readonly id: 'history'; readonly locations: InitLocations; readonly context: string }
   | { readonly id: 'team'; readonly base: DraftBase }
   | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
   | { readonly id: 'review'; readonly draft: Draft }
@@ -88,7 +98,6 @@ export type Applied = {
  * no host, which never happens, since a --dry-run never sets the apply step.
  */
 export type LegacyResult =
-  | { readonly id: 'history'; readonly result: StepResult<HistoryScan | 'skipped'> }
   | { readonly id: 'team'; readonly result: StepResult<Team> }
   | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }
   | { readonly id: 'review'; readonly result: StepResult<Reviewed> }
@@ -117,6 +126,7 @@ export type Answer =
  * Where a stage is inside itself (D-230):
  * - `start`: just entered; a stage with one effect waits here for its answer.
  * - `ask`: one question is out, asked `tries` times so far (choiceAnswer).
+ * - `history`: the history question is out, asked `tries` times so far, with the sessions listed for the scan.
  * - `applying`: the review was confirmed, and Confirm's apply is out.
  * - `done`: the stage finished; nextStage enters the stage after it.
  * - `cancelled`: the stage ends init with nothing written, and `reason` says why (A1).
@@ -126,6 +136,7 @@ export type Answer =
 export type StageSub =
   | { readonly kind: 'start' }
   | { readonly kind: 'ask'; readonly tries: number }
+  | { readonly kind: 'history'; readonly tries: number; readonly listing: SessionListing }
   | { readonly kind: 'applying' }
   | { readonly kind: 'done' }
   | { readonly kind: 'cancelled'; readonly reason: string }

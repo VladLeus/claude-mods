@@ -57,7 +57,7 @@ import { CHECKOUT_ARGV } from './git/checkout'
 import type { Draft } from './init/draft'
 import { nextStage } from './init/machine'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from './init/stages/instructions'
-import type { Answer, InitStage, InitState, IoCall, Output } from './init/state'
+import type { Answer, InitStage, InitState, IoCall, IoResult, Output } from './init/state'
 import { lintRuntimeDenyPattern } from './launch/deny'
 import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
@@ -92,7 +92,8 @@ import type { StepResult } from './ui/ask'
  * or by question, a rejection when the answers run out, files and folders in memory, tri-state reads, and the
  * secret and absolute-path fixtures the property tests scan for. It also gives the Phase 3 tests a scripted HostIo
  * that records every write and run in call order and answers each from a HostWorld, and the specs of the pure init
- * stages a state at a stage (stateAt) and a drive through the stage machine with scripted answers (driven).
+ * stages a state at a stage (stateAt) and a drive through the stage machine with scripted answers (driven, and
+ * drivenWith, which performs the host operations through a scripted port).
  */
 
 /** The session of the fixtures: the repo at /repo, a user whose home is /home/u, no CLAUDE_CONFIG_DIR, no warnings. */
@@ -1648,5 +1649,40 @@ export function driven(
     if (result === undefined) return { state: current, asked, specs, outputs, calls }
     nextResult += 1
     current = nextStage({ ...current, outputs: [] }, result)
+  }
+}
+
+/**
+ * driven, with each host operation performed by `perform` (the helper init/run runs for it, over a scripted port), so
+ * a spec of a pure stage can read what the port was asked (D-230). It stops where driven stops, and also at a legacy
+ * step.
+ */
+export async function drivenWith(
+  state: InitState,
+  answers: readonly (string | null)[],
+  perform: (call: IoCall) => Promise<IoResult>,
+): Promise<Driven> {
+  const asked: string[] = []
+  const specs: AskSpec[] = []
+  const outputs: Output[] = []
+  const calls: IoCall[] = []
+  const stops = ['done', 'cancelled', 'end', 'failed']
+  let current = state
+  let nextAnswer = 0
+  for (;;) {
+    outputs.push(...current.outputs)
+    const { effect } = current
+    const isStopped = current.stage !== state.stage || effect.kind === 'end' || stops.includes(current.sub.kind)
+    if (isStopped || effect.kind === 'legacy') return { state: current, asked, specs, outputs, calls }
+    if (effect.kind === 'ask') {
+      asked.push(effect.question)
+      specs.push(effect.spec)
+      const text = answers[nextAnswer] ?? null
+      nextAnswer += 1
+      current = nextStage({ ...current, outputs: [] }, { kind: 'answer', text })
+      continue
+    }
+    calls.push(effect.call)
+    current = nextStage({ ...current, outputs: [] }, { kind: 'io', result: await perform(effect.call) })
   }
 }

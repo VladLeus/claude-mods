@@ -6,13 +6,11 @@ import {
   HISTORY_OPTIONS,
   historyLines,
   historyQuestion,
-  historyStep,
   NO_HISTORY_NOTE,
   UNLISTED_HISTORY_NOTE,
 } from '../init/stages/history'
-import { DEFAULT_LOCATIONS, entry, leaks, memIo, memWorld } from '../testkit'
+import { entry, memIo, memWorld } from '../testkit'
 import type { MemWorld } from '../testkit'
-import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from '../ui/ask'
 import {
   countNames,
   HISTORY_MAX_FILE_BYTES,
@@ -30,17 +28,6 @@ const DIR = '/home/u/.claude/projects/-repo'
 
 /** The heading every history block starts with. */
 const HEADING = 'Session history (names and counts only):'
-
-/** The refusal on top of the history question when it is asked again after the answer `maybe` (D-136). */
-const MAYBE_REFUSAL = `'maybe' isn't one of: "No, skip it", "Yes, scan names and counts".`
-
-/** The context line init gives the history question on a repo where the scan found nothing (D-136). */
-const SCAN_CONTEXT = 'Scan: stack none; frontend none; backend none; tests none; E2E none.'
-
-/** The history question for `total` sessions as historyStep asks it: SCAN_CONTEXT on its second line (D-136). */
-function historyAsked(total: number): string {
-  return withContext(historyQuestion(total), SCAN_CONTEXT)
-}
 
 /**
  * A transcript line that is the person's own slash command, as Claude Code writes it (IN-04): a user message whose
@@ -345,134 +332,5 @@ describe('history scan', () => {
     const lines = historyLines(scan)
     expect(lines).toHaveLength(1 + 15 + 3)
     expect(lines.join('\n').length <= 2000).toBe(true)
-  })
-
-  test('historyStep: with no session folder, or no .jsonl in it, it logs the note and asks nothing', async () => {
-    const empty = memWorld({ dirs: { [DIR]: [entry('notes.txt'), entry('sub', 'dir')] } })
-    for (const world of [memWorld({}), empty]) {
-      const run = memIo(world, ['Yes, scan names and counts'])
-      expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
-      expect(run.asked).toEqual([])
-      expect(run.logged).toEqual([NO_HISTORY_NOTE])
-      expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
-    }
-  })
-
-  test('historyStep: a session folder it cannot list gets its own note; nothing is asked or read (Q3)', async () => {
-    const run = memIo(memWorld({ unknownPaths: [DIR] }), ['Yes, scan names and counts'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(run.asked).toEqual([])
-    expect(run.logged).toEqual([UNLISTED_HISTORY_NOTE])
-    expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
-  })
-
-  test('historyStep: with sessions it asks first, and No, skip it reads no transcript and shows nothing', async () => {
-    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': EXAMPLE }), ['No, skip it'])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(run.asked).toEqual([historyAsked(2)])
-    expect(run.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History' }])
-    expect(run.reads).toEqual([])
-    expect(run.logged).toEqual([])
-    expect(run.shown).toEqual([])
-  })
-
-  test('historyStep: Yes, scan names and counts reads the sessions newest first and shows the lines once', async () => {
-    const world = historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': commandLine('<command-name>/cadre</command-name>') })
-    const run = memIo(world, ['Yes, scan names and counts'])
-    const scan = scanOf({
-      counts: [
-        { name: 'cadre', count: 2 },
-        { name: 'gsd-plan-phase', count: 1 },
-        { name: 'superpowers:brainstorming', count: 1 },
-      ],
-      scanned: 2,
-      total: 2,
-    })
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: scan })
-    expect(run.reads).toEqual([`${DIR}/a.jsonl`, `${DIR}/b.jsonl`])
-    expect(run.shown.map(block => block.lines)).toEqual([historyLines(scan)])
-    expect(run.logged).toEqual([])
-    expect(historyLines(scan)).toEqual([
-      HEADING,
-      '  cadre  2',
-      '  gsd-plan-phase  1',
-      '  superpowers:brainstorming  1',
-    ])
-  })
-
-  test('historyStep: a Yes run shows one Session history block in the pane and logs no block (D-133)', async () => {
-    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['Yes, scan names and counts'])
-    const result = await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
-    const scan = result.kind === 'accepted' && result.value !== 'skipped' ? result.value : scanOf()
-    expect(run.shown).toEqual([{ key: 'history', title: PANE_TITLES.history, lines: historyLines(scan) }])
-    expect(PANE_TITLES.history).toBe('Session history')
-    expect(run.logged.filter(text => text.includes('\n'))).toEqual([])
-  })
-
-  test('historyStep: a typed yes counts in any case; an unknown answer is asked again, three asks in all', async () => {
-    const typed = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [' YES, scan names and counts '])
-    const result = await historyStep(typed.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
-    expect(result.kind).toBe('accepted')
-    expect(result.kind === 'accepted' ? result.value : 'skipped').not.toBe('skipped')
-    const unread = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), ['maybe', 'maybe', 'maybe'])
-    expect(await historyStep(unread.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({
-      kind: 'cancelled',
-      reason: NO_USABLE_ANSWER_REASON,
-    })
-    const again = `${MAYBE_REFUSAL}\n${historyAsked(1)}`
-    expect(unread.asked).toEqual([historyAsked(1), again, again])
-    expect(unread.reads).toEqual([])
-  })
-
-  test('historyStep: a dismissed question cancels with its reason, and nothing is read or logged (A1)', async () => {
-    const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
-    expect(await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)).toEqual({
-      kind: 'cancelled',
-      reason: HISTORY_DISMISSED_REASON,
-    })
-    expect(run.asked).toEqual([historyAsked(1)])
-    expect(run.reads).toEqual([])
-    expect(run.logged).toEqual([])
-  })
-
-  test('historyStep: the user folder is CLAUDE_CONFIG_DIR when set; with no user folder there is none', async () => {
-    const cfg = '/cfg/projects/-repo'
-    const world = memWorld({ dirs: { [cfg]: [transcript('a.jsonl', 1)] }, files: { [`${cfg}/a.jsonl`]: EXAMPLE } })
-    const run = memIo(world, ['No, skip it'])
-    await historyStep(run.io, { ...DEFAULT_LOCATIONS, configDir: '/cfg' }, SCAN_CONTEXT)
-    expect(run.listed).toEqual([cfg])
-    expect(run.asked).toEqual([historyAsked(1)])
-    const none = memIo(memWorld({}), [])
-    const homeless = { ...DEFAULT_LOCATIONS, home: null, givenHome: null }
-    expect(await historyStep(none.io, homeless, SCAN_CONTEXT)).toEqual({ kind: 'accepted', value: 'skipped' })
-    expect(none.listed).toEqual([])
-    expect(none.logged).toEqual([NO_HISTORY_NOTE])
-  })
-
-  test('historyStep: the session folder is the one of the repo root as resolved', async () => {
-    const locations = { ...DEFAULT_LOCATIONS, root: '/real/repo', givenRoot: '/link/repo' }
-    const run = memIo(memWorld({}), [])
-    await historyStep(run.io, locations, SCAN_CONTEXT)
-    expect(run.listed).toEqual(['/home/u/.claude/projects/-real-repo'])
-  })
-
-  test('no transcript text, path, argument or file name reaches the scan, log or pane (SCAN-03, T-02-41)', async () => {
-    const transcriptText = [
-      commandLine(
-        '<command-name>/gsd-plan-phase</command-name><command-args>SENTINEL_SECRET_VALUE /home/u/x</command-args>',
-      ),
-      '{"type":"user","message":{"content":"my key is SENTINEL_SECRET_VALUE in /home/u/.env"}}',
-      '{"type":"tool_use","name":"Skill","input":{"skill":"codex:rescue","args":"SENTINEL_SECRET_VALUE /home/u"}}',
-    ].join('\n')
-    const world = historyWorld({ 'SENTINEL_SECRET_VALUE.jsonl': transcriptText })
-    const held = JSON.stringify([world.dirs, world.files])
-    expect(leaks(held, ['SENTINEL_SECRET_VALUE', '/home/u'])).toEqual(['SENTINEL_SECRET_VALUE', '/home/u'])
-    const run = memIo(world, ['Yes, scan names and counts'])
-    const result = await historyStep(run.io, DEFAULT_LOCATIONS, SCAN_CONTEXT)
-    const pane = run.shown.flatMap(block => [block.title, ...block.lines]).join('\n')
-    expect(pane).toContain('  gsd-plan-phase  1')
-    expect(pane).toContain('  codex:rescue  1')
-    const shown = [JSON.stringify(result), ...run.logged, pane].join('\n')
-    expect(leaks(shown, ['SENTINEL_SECRET_VALUE', '/home/u'])).toEqual([])
   })
 })
