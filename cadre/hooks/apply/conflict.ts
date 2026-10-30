@@ -5,6 +5,7 @@
  * of ui/diff and the types, so init and the apply steps read it here.
  */
 import type { AskContext, Plan } from '../../types'
+import { redactSecrets } from '../core/redact'
 import { countedNoun, reportText } from '../core/text'
 import { BESIDE_SUFFIX } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
@@ -36,15 +37,17 @@ const UNREAD_CONFLICT_LINE = 'Your version could not be read, so no diff is show
 
 /**
  * The context of a conflict question (D-236): the file's diff from the person's version to cadre's new one, which Take
- * new writes: how many lines Take new adds and removes, then the changed lines (diffLines); with no diff, because the
- * person's version could not be read, UNREAD_CONFLICT_LINE.
+ * new writes: how many lines Take new adds and removes, then the changed lines (diffLines) with their secret-like spans
+ * hidden (redactSecrets, E1; only the shown lines, never a text on disk); with no diff, because the person's version
+ * could not be read, UNREAD_CONFLICT_LINE.
  */
 export function conflictContext(path: string, diff: LineDiff | null): AskContext {
   const title = `Conflict: ${reportText(path)}`
   if (diff === null) return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff' }
   const counts = `Take new: ${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+  const changed = diffLines(diff).map(line => redactSecrets(line))
 
-  return { title, lines: [counts, ...diffLines(diff)], kind: 'conflict-diff' }
+  return { title, lines: [counts, ...changed], kind: 'conflict-diff' }
 }
 
 /**
