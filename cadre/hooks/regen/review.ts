@@ -6,6 +6,7 @@
  * changes, the side read and the types, so regen's entry and plan read it here.
  */
 import type {
+  AskContext,
   HostIo,
   InitIo,
   InitLocations,
@@ -19,7 +20,7 @@ import type { PrivateRole } from '../apply/private'
 import { repoNameOf } from '../apply/run'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
-import { asSentence, clean } from '../core/text'
+import { asSentence, clean, reportText } from '../core/text'
 import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from '../generate/gittrack'
 import { partRecord, TOP_OF_FILE, withPartRecords } from '../records'
 import { NO_MEMORY_SUMMARY } from '../scan/instructions/memories'
@@ -130,9 +131,29 @@ export function notHandedOutWarning(id: string, count: number): string {
 }
 
 /** One new or changed item a regen asks about (G-02-1f Regen, D-142), as its side found it. */
-type RegenAsk =
+export type RegenAsk =
   | { readonly kind: 'part'; readonly part: InstructionPart; readonly change: RegenChange }
   | { readonly kind: 'memory'; readonly memory: MemoryItem; readonly change: RegenChange }
+
+/**
+ * The context of one regen question (D-236): what changed in that item, where it is (a part's file and heading, a
+ * memory's file and summary, never its folder or text), whether it is new or changed since init and whether it is
+ * recommended, titled by its place among the questions.
+ */
+export function regenPartContext(
+  item: RegenAsk,
+  isRecommended: boolean,
+  place: { readonly position: number; readonly count: number },
+): AskContext {
+  const summary = item.kind === 'memory' && item.memory.summary === '' ? NO_MEMORY_SUMMARY : null
+  const where =
+    item.kind === 'part'
+      ? `${clean(item.part.file)} > ${headingText(item.part.heading)}`
+      : `memory ${clean(item.memory.file)}: ${summary ?? item.memory.summary}`
+  const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], `Recommended: ${isRecommended ? 'yes' : 'no'}`]
+
+  return { title: `Regen ${place.position} of ${place.count}`, lines, kind: 'regen-part' }
+}
 
 /** What changed on one side since its records were made, and what regen asks about it (sideChanges). */
 type SideChanges = {
@@ -258,8 +279,8 @@ async function regenRecommended(
 
 /**
  * The question of one regen item (D-142): the part question (regenPartQuestion) or the memory question
- * (regenMemoryQuestion) with its context line, Yes and No, and the chip of its place (regenHeader); an answer that is
- * neither is asked again with why on top (D-136).
+ * (regenMemoryQuestion) with its context line, Yes and No, the chip of its place (regenHeader) and what changed in it
+ * as its own context (regenPartContext, D-236); an answer that is neither is asked again with why on top (D-136).
  */
 function regenAsk(
   id: string,
@@ -277,7 +298,11 @@ function regenAsk(
 
   return {
     question,
-    spec: { options: REGEN_ITEM_OPTIONS, header: regenHeader(place.position, place.count) },
+    spec: {
+      options: REGEN_ITEM_OPTIONS,
+      header: regenHeader(place.position, place.count),
+      context: regenPartContext(item, isRecommended, place),
+    },
     parse: answer => labelled(REGEN_CHOICES, answer),
     accepts: quotedLabels(REGEN_ITEM_OPTIONS),
   }

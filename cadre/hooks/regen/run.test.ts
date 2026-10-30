@@ -774,7 +774,17 @@ describe('regen by part hashes (G-02-1f)', () => {
     expect(run.asked).toEqual([
       withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
     ])
-    expect(run.specs).toEqual([{ options: ['Yes', 'No'], header: 'Regen 1/1' }])
+    expect(run.specs).toEqual([
+      {
+        options: ['Yes', 'No'],
+        header: 'Regen 1/1',
+        context: {
+          title: 'Regen 1 of 1',
+          lines: ['CLAUDE.md > Git', 'Changed since init.', 'Recommended: yes'],
+          kind: 'regen-part',
+        },
+      },
+    ])
     expect(host.writes.slice(0, 2)).toEqual([
       { path: BE_CLAUDE_MD, text: roleClaudeMdText('be', [edited]), isWritten: true },
       { path: '/repo/.cadre/be/role.json', text: roleJsonText(recordedBe([edited], [rules])), isWritten: true },
