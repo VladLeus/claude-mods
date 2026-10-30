@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Plan } from '../../../types'
+import type { Plan, RoleChange, RoleProposal } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
@@ -22,7 +22,7 @@ import { contextText, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
-import { nextStage } from '../machine'
+import { nextStage, STAGES } from '../machine'
 import { cancelledReply } from '../replies'
 import { planStep } from '../run'
 import type { Answer, InitState, ReviewItem } from '../state'
@@ -256,6 +256,26 @@ describe('the review stage (D-230)', () => {
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
     expect(back.draft.launchStart).toEqual({ kind: 'here' })
+  })
+
+  test('Change roles asks the roles again from the current team, then each role step, then the review', async () => {
+    const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
+    const state = reviewAt({ changes })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const going = nextStage(asking, { kind: 'answer', text: 'Change roles' })
+    expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['roles', 'review', 'improver-install'])
+    const start = { roles: REVIEW_DRAFT.roles, changes }
+    const { proposal, installed } = REVIEW_DRAFT
+    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'roles', proposal, installed, start } })
+    const result = { kind: 'accepted', value: start } satisfies StepResult<RoleProposal>
+    const chosen = nextStage({ ...going, outputs: [] }, { kind: 'legacy', result: { id: 'roles', result } })
+    expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
+    const keys = chosen.outputs.flatMap(output => (output.kind === 'show' ? [output.block.key] : []))
+    expect(keys).toEqual(['recommendations'])
+    const improving = STAGES['improver-install'].enter({ ...chosen, stage: 'improver-install', sub: { kind: 'start' } })
+    const improved = { kind: 'accepted', value: [] } satisfies StepResult<readonly string[]>
+    const back = nextStage(improving, { kind: 'legacy', result: { id: 'improver', result: improved } })
+    expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
   })
 
   test('a go-back picked at the last round cancels with REVIEW_ROUNDS_REASON and asks nothing more (A3)', async () => {
