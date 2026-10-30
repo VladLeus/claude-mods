@@ -31,6 +31,7 @@ import type { HistoryScan } from '../scan/history'
 import type { InstructionSources } from '../scan/instructions/read'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
+import type { Surface } from '../ui/surface'
 import type { NameAssignment } from './assign-rules'
 import type { Draft, DraftBase, PlanResult, Reviewed } from './draft'
 import type { HandoutCursor } from './handout'
@@ -375,6 +376,8 @@ export type InitState = {
   readonly toolNames: readonly string[]
   /** --dry-run: Confirm replies with the plan and nothing is written or installed (D-82, D-105). */
   readonly dryRun: boolean
+  /** Where the run shows its context (D-208): the side pane, the TUI default's option preview, or nowhere. */
+  readonly surface: Surface
 }
 
 /**

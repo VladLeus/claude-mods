@@ -73,6 +73,7 @@ import {
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
+import type { Surface } from '../ui/surface'
 import { ownSkillIds } from './answers'
 import type { PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
@@ -83,9 +84,12 @@ import type { Answer, Effect, IoCall, IoResult, ModelCall, ModelResult, Output }
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
- * run; plain init writes the plan through `host` after Confirm.
+ * run; plain init writes the plan through `host` after Confirm. `surface` is where the run shows its context, a pane
+ * surface when absent (D-208); the init state carries it to the stages.
  */
-export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }
+export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }) & {
+  readonly surface?: Surface
+}
 
 /**
  * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
@@ -509,7 +513,7 @@ export async function perform(
  * (init/machine, D-230): runInit only shows each state's outputs, performs its effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
-  let state = initialState(options.dryRun)
+  let state = initialState(options.dryRun, options.surface)
   for (;;) {
     for (const output of state.outputs) await showOutput(io, output)
     const { effect } = state

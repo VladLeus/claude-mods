@@ -1591,7 +1591,7 @@ export function errorsOf(result: Parsed): readonly string[] {
 /**
  * An init state at `stage`, before the stage is entered (D-230): its cursor at start, `draft` as given, nothing to
  * show, an end effect standing in for the one the stage sets, no open question, no go-back, no review round, a dry
- * run; `over` replaces any of these.
+ * run on a pane surface (D-208); `over` replaces any of these.
  */
 export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Partial<InitState> = {}): InitState {
   return {
@@ -1607,6 +1607,7 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     kept: null,
     toolNames: [],
     dryRun: true,
+    surface: 'pane',
     ...over,
   }
 }

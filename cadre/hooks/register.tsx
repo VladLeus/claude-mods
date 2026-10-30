@@ -29,6 +29,8 @@ import {
   questionScroll,
 } from './ui/pane'
 import { answersFromNotes, askRewrite, previewColumns } from './ui/preview'
+import { surfaceOf } from './ui/surface'
+import type { Surface } from './ui/surface'
 
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
@@ -53,6 +55,11 @@ let lastPlacement: 'dock' | 'inline' | null = null
  * before any. The preview of a dialog option wraps its lines to them less the dialog's option column (previewColumns).
  */
 let presentationColumns: unknown = null
+/**
+ * Where the last `/cadre` command shows its context (D-208), as the command.run hook decided it before anything
+ * opened; a pane surface before any. The AskUserQuestion hook previews the open question's context on the TUI default.
+ */
+let runSurface: Surface = 'pane'
 
 /** How long the user-level runtime identity call may run before it is given up. */
 const IDENTITY_TIMEOUT_MS = 10_000
@@ -117,9 +124,13 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
   return portTextOf(await $.fs.read(path).catch(() => null), maxBytes)
 }
 
-/** Whether this command run opened the cadre-init pane (D2): set by the run's first show, read once the run settles. */
+/**
+ * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first show and read once
+ * the run settles, and where the run shows its context (D-208), decided before anything opens.
+ */
 type PaneRun = {
   isOpened: boolean
+  readonly surface: Surface
 }
 
 /**
@@ -132,7 +143,8 @@ type PaneRun = {
  * dialog only its options, header and multi-select (D-203, D-229). `show` puts a block into the side pane's state and
  * opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
  * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show
- * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2).
+ * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On the
+ * TUI default `show` neither writes the pane's state nor opens it, at any time of the run (D-208).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -162,6 +174,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
     },
     log: text => $.ui.log(text),
     show: async block => {
+      if (pane.surface === 'tui-default') return
       await update($, initPane, blocks => (pane.isOpened ? paneView(blocks, block) : [block])).catch(() => undefined)
       if (pane.isOpened) return
       pane.isOpened = true
@@ -305,7 +318,10 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
     case 'detect':
       return { text: await detectReply($, command.adapters) }
     case 'init': {
-      const options: InitOptions = command.dryRun ? { dryRun: true } : { dryRun: false, host: hostIoOf($) }
+      const { surface } = pane
+      const options: InitOptions = command.dryRun
+        ? { dryRun: true, surface }
+        : { dryRun: false, host: hostIoOf($), surface }
 
       return { text: await runInit(initIoOf($, pane), options) }
     }
@@ -358,12 +374,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A run that opened the cadre-init pane closes it once it settles: finished, cancelled, refused or thrown (D2).
+  // A run decides its surface before it opens anything (D-208), and a run that opened the cadre-init pane closes it
+  // once it settles: finished, cancelled, refused or thrown (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
-    const pane: PaneRun = { isOpened: false }
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
+    runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
+    const pane: PaneRun = { isOpened: false, surface: runSurface }
     try {
       return await commandReply($, e.args, pane)
     } finally {
@@ -405,21 +423,23 @@ export const register: Register = on => {
   // The pane draws the own context of the question cadre has open, which the init port's ask writes (R1, D-203);
   // this hook writes no state. It acts only on the question cadre has open, the call's first question by its exact
   // text: any other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through
-  // untouched, and so does its result (D-239). Only while the terminal main screen seats the pane inline, where the
-  // engine hides it behind a dialog, and only for an open question with a context of its own: each single-select
-  // question gets that context as the preview of every option (D3, D-203), wrapped to the preview box (previewColumns,
-  // D-231), and a Describe your own option or the hint line (A2), and notes typed in the dialog become the answer under
-  // the question's text as asked (A3). A question with no context (a hunk, the claude.json consent) keeps its dialog
-  // as asked, Other row included. Any other call, a deny, an error and a result of another shape pass through
-  // unchanged. Apart from the read of the open question, the hook has no .catch on purpose: a hook that throws is
-  // skipped and next(e) runs in its place, a fail-safe pass-through (C1).
+  // untouched, and so does its result (D-239). Only on the TUI default, where no pane opens (D-208), or while the
+  // terminal main screen seats the pane inline, where the engine hides it behind a dialog, and only for an open
+  // question with a context of its own: each single-select question gets that context as the preview of every option
+  // (D3, D-203), wrapped to the preview box (previewColumns, D-231), and a Describe your own option or the hint line
+  // (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with no
+  // context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. Any other call, a deny,
+  // an error and a result of another shape pass through unchanged. Apart from the read of the open question, the hook
+  // has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through
+  // (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
     const first: unknown = Array.isArray(raw) ? raw[0] : undefined
     const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
     if (open === null || asked !== open.question) return await next(e)
-    if (lastPlacement !== 'inline') return await next(e)
+    const isPreviewed = runSurface === 'tui-default' || (runSurface === 'pane' && lastPlacement === 'inline')
+    if (!isPreviewed) return await next(e)
     const rewrite = askRewrite(raw, open.context, previewColumns(presentationColumns))
     if (rewrite === null) return await next(e)
 

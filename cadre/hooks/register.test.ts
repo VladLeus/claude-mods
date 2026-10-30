@@ -9,6 +9,7 @@ import { cadreJsonText, roleJsonText } from './generate/docs'
 import { CHECKOUT_ARGV } from './git/checkout'
 import { GIT_COMMON_DIR_ARGV } from './git/common-dir'
 import { GOLDEN_PANE_ROWS, GOLDEN_PREVIEWS } from './golden/register'
+import { GOLDEN_TUI } from './golden/register-tui'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { cancelledReply } from './init/replies'
@@ -2316,6 +2317,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, initWorld({ surfaces: ['terminal', 'desktop'] }), log)
     await $.command.run(TUI_RUN)
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+  })
+
+  test('golden: the TUI-default init dry run, its panes, logs and reply (D-208, D-219)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    const out = await $.command.run(TUI_RUN)
+    const golden = { opens: log.panes, logs: log.logs, reply: out.text.split('\n') }
+    expect(golden).toEqual(GOLDEN_TUI)
   })
 })
 

@@ -14,6 +14,7 @@ import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
 import { scanWarnings } from '../scan/gather'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import type { Surface } from '../ui/surface'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
 import type { Answer, Effect, InitStage, InitState, Kept, StageDef } from './state'
@@ -219,8 +220,11 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
   }
 }
 
-/** A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet. */
-export function initialState(dryRun: boolean): InitState {
+/**
+ * A run before its first answer (D-230): the guard entered, its effect out, nothing to show yet, on the surface the run
+ * was given, a pane surface when none is given (D-208).
+ */
+export function initialState(dryRun: boolean, surface: Surface = 'pane'): InitState {
   const blank: InitState = {
     stage: 'guard',
     sub: { kind: 'start' },
@@ -234,6 +238,7 @@ export function initialState(dryRun: boolean): InitState {
     kept: null,
     toolNames: [],
     dryRun,
+    surface,
   }
 
   return settled(entered(blank, 'guard'))
