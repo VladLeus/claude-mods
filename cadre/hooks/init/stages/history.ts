@@ -3,8 +3,9 @@
  * session transcript is read, with how many sessions this repo has and that only the newest are read
  * (historyQuestion), and historyStage, the pure stage that has this repo's session folder listed, asks, has the
  * history scan (scan/history) run only after a yes and shows the names and counts it found as the side pane's Session
- * history block (historyLines). Pure: it gives states and never performs an effect, imports core, paths, scan/history,
- * ui, init/flow and init/state, and never imports init/machine or init/run.
+ * history block (historyLines); and historyHints, the scan as hints for the skill questions. Pure: it gives states and
+ * never performs an effect, imports core, paths, scan/history, ui and init/state, and never imports init/machine or
+ * init/run.
  */
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -20,7 +21,6 @@ import type { HistoryScan } from '../../scan/history'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { scanContextLine } from '../../ui/blocks/scan'
-import { historyHints } from '../flow'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, SessionListing, StageDef } from '../state'
 
@@ -131,6 +131,13 @@ function historyAsk(total: number, context: string): ChoiceAsk<boolean> & { read
     accepts: quotedLabels(HISTORY_OPTIONS),
     dismissedReason: HISTORY_DISMISSED_REASON,
   }
+}
+
+/** The history scan as hints for the skill questions: each name with its count; none when the scan was skipped. */
+export function historyHints(history: HistoryScan | 'skipped'): ReadonlyMap<string, number> {
+  if (history === 'skipped') return new Map()
+
+  return new Map(history.counts.map((entry): [string, number] => [entry.name, entry.count]))
 }
 
 /** The stage done with the hints of `history` (historyHints): none when the scan was skipped (D-59). */

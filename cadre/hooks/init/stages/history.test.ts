@@ -19,13 +19,13 @@ import {
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from '../../ui/ask'
 import type { Draft } from '../draft'
-import { historyHints } from '../flow'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
 import type { Answer, InitState, IoCall, IoResult } from '../state'
 import {
   HISTORY_DISMISSED_REASON,
   HISTORY_OPTIONS,
+  historyHints,
   historyLines,
   historyQuestion,
   historyStage,
