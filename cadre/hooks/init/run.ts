@@ -34,7 +34,7 @@ import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
-import { GITIGNORE_FILE, roleJsonPath } from '../paths'
+import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths, planWithManifest } from '../plan/plan'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
@@ -64,7 +64,6 @@ import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
-import { launchStartStep } from './stages/launch'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -311,8 +310,9 @@ async function showOutput(io: InitIo, output: Output): Promise<void> {
 
 /**
  * Performs one host operation of a stage (D-230): the guard (initGuard), the scans (gatherScans), the listing of the
- * session folder (listSessions), the history scan (scanHistory), the review's plan (planStep), or Confirm's apply
- * through the run's host (applyConfirmed), which a --dry-run does not hold, so it gives none there.
+ * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
+ * the review's plan (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
+ * hold, so it gives none there.
  */
 async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promise<IoResult> {
   switch (call.id) {
@@ -324,6 +324,8 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':
       return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
+    case 'launch-dir-check':
+      return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
     case 'plan':
       return { id: 'plan', result: await planStep(io, call.input) }
     case 'apply':
@@ -337,14 +339,12 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
 
 /**
  * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the role
- * steps from the proposal, the launcher start and the review's go-backs (goBack).
+ * steps from the proposal, and the review's go-backs to items whose stage is not pure yet (goBack).
  */
 async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult> {
   switch (step.id) {
     case 'team':
       return { id: 'team', result: await teamStep(io, step.base, step.base.proposal, null) }
-    case 'launch':
-      return { id: 'launch', result: await launchStartStep(io, step.root, step.roles) }
     case 'go-back':
       return { id: 'go-back', result: await goBack(io, step.draft, step.item) }
     default: {
@@ -383,7 +383,7 @@ async function perform(
  * MCP servers and skills, the instructions and memories (instructionsStep: the content consent, then the instruction
  * parts or the whole-file questions; G-02-1f), the carried env names, the autonomy hunks of the frameworks in use, and
  * the claude-md-management install when a role got a built file and it is missing (D-141). It then asks the git policy
- * (policyStage) and, once for the repo, where the launchers start (launchStartStep), shows the one final review with
+ * (policyStage) and, once for the repo, where the launchers start (launchStage), shows the one final review with
  * every role's scope card for that start (the one place the cards are shown; reviewLines, ROLE-06, A5) and the exact
  * file plan, each role's built CLAUDE.md included, where the person confirms or goes back to change one item
  * (reviewStage, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and

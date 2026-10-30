@@ -1,29 +1,20 @@
 /**
- * The launcher start stage of init (A2, A1, D-136), a layer 10 module: where the role launchers start, asked once per
- * repo with the role ids on its second line (launchContextLine): the git root, the folder a launcher is run from, or
- * another folder of the repo, which the folder question asks for and checks is a folder inside the repo
- * (launchDirStep); launchStartStep, which asks it; and launchLine, the line of the review and the init reply that says
- * where the launchers start. Pure: it asks and stats through the InitIo port it is given, imports core, paths, ui/ask
- * and init/stages/duration, and never imports init.ts, which imports it, or init/run.
+ * The launcher start stage of init (A2, A1, D-136, D-230), a layer 10 module: where the role launchers start, asked
+ * once per repo with the role ids on its second line (launchContextLine): the git root, the folder a launcher is run
+ * from, or another folder of the repo, which the folder question asks for and has checked to be a folder inside the
+ * repo (the launch-dir-check io effect); launchStage, the pure stage that asks them; and launchLine, the line of the
+ * review and the init reply that says where the launchers start. Pure: it gives states and never performs an effect,
+ * imports core, paths, ui/ask, init/state and init/stages/duration, and never imports init/machine or init/run.
  */
-import type { InitIo, LaunchStart, RoleSpec } from '../../../types'
+import type { LaunchStart, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
-import { isRepoFolder, isSafeRelativePath } from '../../paths'
-import {
-  accepted,
-  ASK_HEADERS,
-  askChoice,
-  askedText,
-  askOnce,
-  cancelled,
-  choiceResult,
-  MAX_ASKS,
-  quotedLabels,
-  withContext,
-} from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { isSafeRelativePath } from '../../paths'
+import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
+import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
@@ -107,70 +98,117 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
   return labelled(LAUNCH_START_LABELS, answer) ?? labelled(LAUNCH_START_WORDS, answer)
 }
 
-/**
- * What is wrong with a typed launcher folder, or null when it can be used: the path must pass isSafeRelativePath, and
- * it must be a folder inside the repo (isRepoFolder), so a link anywhere in the path that leads out is refused, and so
- * is a folder whose real path the host could not give.
- */
-async function launchDirProblem(io: InitIo, root: string, path: string): Promise<string | null> {
-  if (!isSafeRelativePath(path)) return UNSAFE_LAUNCH_DIR
-  if (!(await isRepoFolder(io, root, path))) return NOT_A_LAUNCH_DIR
-
-  return null
-}
-
-/**
- * The folder question (A2), with LAUNCH_DIR_CONTEXT on its second line (D-136), asked at most MAX_ASKS times: `Cancel
- * init` or a dismissal cancels. An answer is trimmed and loses one trailing `/`; one that launchDirProblem refuses
- * puts `Cannot use <typed>: <problem>.`, cleaned as a report cell, on top of the next ask, and after MAX_ASKS refused
- * answers nothing is chosen (LAUNCH_DIR_ROUNDS_REASON). It keeps its own loop, not askChoice: its check is
- * asynchronous (isRepoFolder) and its refusal names the problem that check found.
- */
-async function launchDirStep(io: InitIo, root: string): Promise<StepResult<LaunchStart>> {
-  const spec = { options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir }
-  const question = withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT)
-  let refusal: string | null = null
-  for (let asked = 0; asked < MAX_ASKS; asked += 1) {
-    const answer = await askOnce(io, askedText(question, refusal), spec)
-    const isCancel = answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel'
-    if (isCancel) return cancelled(LAUNCH_DIR_CANCELLED_REASON)
-    const trimmed = answer.trim()
-    const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
-    const problem = await launchDirProblem(io, root, path)
-    if (problem === null) return accepted({ kind: 'dir', path })
-    refusal = reportText(`Cannot use ${shown(answer)}: ${problem}.`)
-  }
-
-  return cancelled(LAUNCH_DIR_ROUNDS_REASON)
-}
-
 /** What the launcher start question takes, as its refusal lists it: a button or its word (A2, D-136). */
 const LAUNCH_START_ACCEPTS = `${quotedLabels(LAUNCH_START_OPTIONS)} (or type git root, in here or other)`
 
+/** The dialog of the folder question: its one button with the Launch dir chip. */
+const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir })
+
 /**
- * Where the role launchers start (A2), asked once per repo right after the git policy, with the ids of `roles` on its
- * second line (launchContextLine, D-136): `Git root of this repo`, `The folder I run it from`, or `Another folder in
- * this repo`, which asks for a folder relative to the repo root (launchDirStep). The labels and the words `git root`,
- * `in here` and `other` match trimmed and in any case, and any other answer is asked again with why on top. Only an
- * explicit answer gives a start: a dismissal (LAUNCH_START_DISMISSED_REASON), MAX_ASKS unlisted answers
- * (NO_USABLE_ANSWER_REASON) or no usable folder is cancelled with a reason, so nothing the person did not confirm is
- * used (A1).
+ * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
+ * second line (launchContextLine), the three starts with the Launch chip, parseLaunchChoice, what its refusal lists,
+ * and the reason a dismissal cancels with.
  */
-export async function launchStartStep(
-  io: InitIo,
-  root: string,
-  roles: readonly RoleSpec[],
-): Promise<StepResult<LaunchStart>> {
-  const ask = {
+function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
+  return {
     question: withContext(LAUNCH_START_QUESTION, launchContextLine(roles)),
     spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch },
     parse: parseLaunchChoice,
     accepts: LAUNCH_START_ACCEPTS,
+    dismissedReason: LAUNCH_START_DISMISSED_REASON,
   }
-  const picked = choiceResult(await askChoice(io, ask), LAUNCH_START_DISMISSED_REASON)
-  if (picked.kind === 'cancelled') return picked
-  const choice = picked.value
-  if (choice === 'dir') return launchDirStep(io, root)
-
-  return accepted({ kind: choice })
 }
+
+/** The folder question asked (A2), with LAUNCH_DIR_CONTEXT on its second line and `refusal` on top, `tries` so far. */
+function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
+  const question = askedText(withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT), refusal)
+  const sub: InitState['sub'] = { kind: 'launch-dir', tries }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question, spec: LAUNCH_DIR_SPEC })
+}
+
+/**
+ * A typed folder refused with `problem`: `Cannot use <typed>: <problem>.`, cleaned as a report cell, goes on top of the
+ * next ask; after MAX_ASKS refused answers nothing is chosen (LAUNCH_DIR_ROUNDS_REASON).
+ */
+function dirRefused(state: InitState, tries: number, answer: string, problem: string): InitState {
+  if (tries >= MAX_ASKS) return stageCancelled(state, LAUNCH_DIR_ROUNDS_REASON)
+
+  return dirAsked(state, tries + 1, reportText(`Cannot use ${shown(answer)}: ${problem}.`))
+}
+
+/**
+ * The answer to the launcher start question (choiceAnswer): the git root or the folder a launcher is run from ends the
+ * stage with that start; `Another folder in this repo` asks for the folder. Any other answer is asked again with why on
+ * top; a dismissal cancels with LAUNCH_START_DISMISSED_REASON and MAX_ASKS unlisted answers with
+ * NO_USABLE_ANSWER_REASON (A1).
+ */
+function afterStart(state: InitState, answer: string | null): InitState {
+  const { roles } = state.draft
+  if (state.sub.kind !== 'ask' || roles === undefined) return stageFailed(state)
+  const ask = launchStartAsk(roles)
+  const next = choiceAnswer(ask, state.sub, answer)
+  if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  const choice = next.value
+  if (choice === 'dir') return dirAsked(state, 1, null)
+
+  return stageDone({ ...state, draft: { ...state.draft, launchStart: { kind: choice } } })
+}
+
+/**
+ * The answer to the folder question (A2): `Cancel init` or a dismissal cancels with LAUNCH_DIR_CANCELLED_REASON. An
+ * answer is trimmed and loses one trailing `/`; one isSafeRelativePath refuses is asked again at once, and a safe one
+ * is checked to be a folder inside the repo (the launch-dir-check io effect, isRepoFolder), so a link anywhere in the
+ * path that leads out is refused, and so is a folder whose real path the host could not give.
+ */
+function afterDir(state: InitState, answer: string | null): InitState {
+  const { locations } = state.draft
+  if (state.sub.kind !== 'launch-dir' || locations === undefined) return stageFailed(state)
+  if (answer === null || labelled(LAUNCH_DIR_CHOICES, answer) === 'cancel') {
+    return stageCancelled(state, LAUNCH_DIR_CANCELLED_REASON)
+  }
+  const { tries } = state.sub
+  const trimmed = answer.trim()
+  const path = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed
+  if (!isSafeRelativePath(path)) return dirRefused(state, tries, answer, UNSAFE_LAUNCH_DIR)
+  const sub: InitState['sub'] = { kind: 'launch-check', tries, answer, path }
+
+  return withEffect({ ...state, sub }, { kind: 'io', call: { id: 'launch-dir-check', root: locations.root, path } })
+}
+
+/** After the folder check: a folder inside the repo ends the stage with it; else it is asked again with why on top. */
+function afterCheck(state: InitState, isFolder: boolean): InitState {
+  if (state.sub.kind !== 'launch-check') return stageFailed(state)
+  const { tries, answer, path } = state.sub
+  if (isFolder) return stageDone({ ...state, draft: { ...state.draft, launchStart: { kind: 'dir', path } } })
+
+  return dirRefused(state, tries, answer, NOT_A_LAUNCH_DIR)
+}
+
+/** The answer to the effect the launch stage has out: the start question, the folder question, or the check. */
+function launchAnswer(state: InitState, answer: Answer): InitState {
+  if (answer.kind === 'io' && answer.result.id === 'launch-dir-check') return afterCheck(state, answer.result.result)
+  if (answer.kind !== 'answer') return stageFailed(state)
+  if (state.sub.kind === 'launch-dir') return afterDir(state, answer.text)
+
+  return afterStart(state, answer.text)
+}
+
+/**
+ * Where the role launchers start (A2, D-230), asked once per repo right after the git policy, with the ids of the
+ * roles on its second line (D-136): `Git root of this repo`, `The folder I run it from`, or `Another folder in this
+ * repo`, which asks for a folder relative to the repo root (afterDir, afterCheck). Only an explicit answer gives a
+ * start: a dismissal, MAX_ASKS unlisted answers or no usable folder is cancelled with a reason, so nothing the person
+ * did not confirm is used (A1).
+ */
+export const launchStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles } = state.draft
+    if (roles === undefined) return stageFailed(state)
+    const ask = launchStartAsk(roles)
+
+    return asking(state, ask.question, ask.spec, 1)
+  },
+  answer: launchAnswer,
+})

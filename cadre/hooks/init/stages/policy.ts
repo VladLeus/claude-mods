@@ -71,7 +71,7 @@ const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
  * its second line, the three policy labels with the Git policy chip, parseGitPolicy, the policy words its refusal
  * lists, and the reason a dismissal cancels with.
  */
-export const GIT_POLICY_ASK = Object.freeze({
+const GIT_POLICY_ASK = Object.freeze({
   question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
   spec: Object.freeze({ options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy }),
   parse: parseGitPolicy,

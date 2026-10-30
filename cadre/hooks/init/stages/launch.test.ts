@@ -1,11 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, LaunchStart, PortStat } from '../../../types'
+import { isRepoFolder } from '../../paths'
 import { proposeRoles } from '../../roles/propose'
-import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, memIo, memWorld, repoScan, stateAt } from '../../testkit'
+import {
+  BIDI_OVERRIDE,
+  DEFAULT_LOCATIONS,
+  driven,
+  drivenWith,
+  memIo,
+  memWorld,
+  repoScan,
+  stateAt,
+  wholeDraft,
+} from '../../testkit'
 import type { MemRun } from '../../testkit'
 import { MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
+import { cancelledReply } from '../replies'
+import type { InitState, IoCall, IoResult } from '../state'
 import {
   LAUNCH_DIR_CANCELLED_REASON,
   LAUNCH_DIR_CONTEXT,
@@ -18,7 +31,6 @@ import {
   launchContextLine,
   launchLine,
   launchStage,
-  launchStartStep,
 } from './launch'
 
 /** The world of the launcher folder tests: apps/web is a folder, a file, a linked folder and nothing else. */
@@ -44,11 +56,25 @@ const UNSAFE_FOLDER = 'use a folder inside this repo: letters, digits, . _ @ - a
 /** The problem with a folder whose real path is not a folder inside the repo. */
 const NOT_A_FOLDER = 'it is not a folder in this repo'
 
-/** What launchStartStep gives for the folder apps/web of the repo. */
-const APPS_WEB = { kind: 'accepted', value: { kind: 'dir', path: 'apps/web' } }
+/** What the launch stage chooses for the folder apps/web of the repo. */
+const APPS_WEB: LaunchStart = { kind: 'dir', path: 'apps/web' }
 
 /** The team the launcher start is asked for: PM, Team Lead and Security, whose ids its context line names (D-136). */
 const LAUNCH_TEAM = proposeRoles(repoScan()).roles
+
+/** The launch stage entered for LAUNCH_TEAM in the fixture repo, the rest of a whole draft set: its question out. */
+function launchAt(): InitState {
+  return launchStage.enter(stateAt('launch', wholeDraft({ roles: LAUNCH_TEAM })))
+}
+
+/** The launch stage's host operation as init/run performs it, through `io` (isRepoFolder). */
+function launchCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
+  return async call => {
+    if (call.id !== 'launch-dir-check') throw new Error(`the launch stage does not set ${call.id}`)
+
+    return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
+  }
+}
 
 /** The launcher start question as asked for LAUNCH_TEAM: whose launchers start there, under it (D-136). */
 const LAUNCH_ASKED = withContext(LAUNCH_START_QUESTION, launchContextLine(LAUNCH_TEAM))
@@ -74,7 +100,7 @@ describe('launchStartStep', () => {
     expect(Object.isFrozen(LAUNCH_DIR_OPTIONS)).toBe(true)
   })
 
-  test('the git root and the folder it is run from are chosen by label or word, trimmed and in any case', async () => {
+  test('the git root and the folder it is run from are chosen by label or word, trimmed and in any case', () => {
     const cases: readonly (readonly [string, LaunchStart])[] = [
       ['Git root of this repo', { kind: 'git-root' }],
       [' git root ', { kind: 'git-root' }],
@@ -82,8 +108,8 @@ describe('launchStartStep', () => {
       ['IN HERE', { kind: 'here' }],
     ]
     for (const [answer, start] of cases) {
-      const run = memIo(memWorld({}), [answer])
-      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual({ kind: 'accepted', value: start })
+      const run = driven(launchAt(), [answer])
+      expect(run.state.draft.launchStart).toEqual(start)
       expect(run.asked).toEqual([LAUNCH_ASKED])
       expect(run.specs[0]).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch' })
     }
@@ -92,11 +118,11 @@ describe('launchStartStep', () => {
   test('another folder asks for it, and a plain folder of the repo is chosen, one trailing slash dropped', async () => {
     for (const first of ['Another folder in this repo', 'other']) {
       for (const folder of ['apps/web', 'apps/web/', ' apps/web ']) {
-        const run = memIo(FOLDER_WORLD, [first, folder])
-        expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
+        const run = await drivenWith(launchAt(), [first, folder], launchCalls(memIo(FOLDER_WORLD, []).io))
+        expect(run.state.draft.launchStart).toEqual(APPS_WEB)
         expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
         expect(run.specs[1]).toEqual({ options: ['Cancel init'], header: 'Launch dir' })
-        expect(run.logged).toEqual([])
+        expect(run.outputs).toEqual([])
       }
     }
   })
@@ -104,10 +130,10 @@ describe('launchStartStep', () => {
   test('an unsafe or missing folder, a file or a link out of the repo is asked again with why on top', async () => {
     const bad = ['../x', '/etc', 'a b', '${HOME}', 'missing', 'apps/readme.md', 'apps/linked']
     for (const answer of bad) {
-      const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
-      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
+      const run = await drivenWith(launchAt(), ['other', answer, 'apps/web'], launchCalls(memIo(FOLDER_WORLD, []).io))
+      expect(run.state.draft.launchStart).toEqual(APPS_WEB)
       const problem = ['missing', 'apps/readme.md', 'apps/linked'].includes(answer) ? NOT_A_FOLDER : UNSAFE_FOLDER
-      expect(run.logged).toEqual([])
+      expect(run.outputs).toEqual([])
       expect(run.asked).toEqual([
         LAUNCH_ASKED,
         DIR_ASKED,
@@ -117,10 +143,12 @@ describe('launchStartStep', () => {
   })
 
   test('a folder reached through a linked parent that leaves the repo is refused, and asked again', async () => {
-    const run = memIo(FOLDER_WORLD, ['other', 'vendor/ui', 'apps/web'])
+    const port = memIo(FOLDER_WORLD, [])
     const outside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/elsewhere/vendor/ui' }
-    expect(await launchStartStep(withStat(run, '/repo/vendor/ui', outside), '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
-    expect(run.logged).toEqual([])
+    const io = withStat(port, '/repo/vendor/ui', outside)
+    const run = await drivenWith(launchAt(), ['other', 'vendor/ui', 'apps/web'], launchCalls(io))
+    expect(run.state.draft.launchStart).toEqual(APPS_WEB)
+    expect(run.outputs).toEqual([])
     expect(run.asked).toEqual([
       LAUNCH_ASKED,
       DIR_ASKED,
@@ -129,11 +157,12 @@ describe('launchStartStep', () => {
   })
 
   test('a folder whose stat has no real path is refused, and asked again', async () => {
-    const run = memIo(FOLDER_WORLD, ['other', 'apps/unresolved', 'apps/web'])
+    const port = memIo(FOLDER_WORLD, [])
     const unresolved: PortStat = { kind: 'dir', size: 0, isLink: false }
-    const io = withStat(run, '/repo/apps/unresolved', unresolved)
-    expect(await launchStartStep(io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
-    expect(run.logged).toEqual([])
+    const io = withStat(port, '/repo/apps/unresolved', unresolved)
+    const run = await drivenWith(launchAt(), ['other', 'apps/unresolved', 'apps/web'], launchCalls(io))
+    expect(run.state.draft.launchStart).toEqual(APPS_WEB)
+    expect(run.outputs).toEqual([])
     expect(run.asked).toEqual([
       LAUNCH_ASKED,
       DIR_ASKED,
@@ -142,40 +171,38 @@ describe('launchStartStep', () => {
   })
 
   test('a folder whose real path lies inside the repo is still chosen', async () => {
-    const run = memIo(FOLDER_WORLD, ['other', 'packages/api'])
     const inside: PortStat = { kind: 'dir', size: 0, isLink: false, realPath: '/repo/packages/api' }
-    const chosen = { kind: 'accepted', value: { kind: 'dir', path: 'packages/api' } }
-    expect(await launchStartStep(withStat(run, '/repo/packages/api', inside), '/repo', LAUNCH_TEAM)).toEqual(chosen)
+    const io = withStat(memIo(FOLDER_WORLD, []), '/repo/packages/api', inside)
+    const run = await drivenWith(launchAt(), ['other', 'packages/api'], launchCalls(io))
+    expect(run.state.draft.launchStart).toEqual({ kind: 'dir', path: 'packages/api' })
     expect(run.asked).toEqual([LAUNCH_ASKED, DIR_ASKED])
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([])
   })
 
   test('a refused folder is shown cleaned and capped in the line that says why', async () => {
     const answer = `a${BIDI_OVERRIDE} ${'x'.repeat(200)}`
-    const run = memIo(FOLDER_WORLD, ['other', answer, 'apps/web'])
-    await launchStartStep(run.io, '/repo', LAUNCH_TEAM)
+    const run = await drivenWith(launchAt(), ['other', answer, 'apps/web'], launchCalls(memIo(FOLDER_WORLD, []).io))
     expect(run.asked[2]).toBe(`${cannotUse(`a ${'x'.repeat(107)}…`, UNSAFE_FOLDER)}\n${DIR_ASKED}`)
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([])
   })
 
   test(`${MAX_ASKS} unusable folders cancel with the rounds reason, and nothing was chosen`, async () => {
-    const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b', 'apps/web'])
-    const rounds = { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
-    expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(rounds)
+    const answers = ['other', '../a', 'missing', '/b', 'apps/web']
+    const run = await drivenWith(launchAt(), answers, launchCalls(memIo(FOLDER_WORLD, []).io))
+    expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(LAUNCH_DIR_ROUNDS_REASON) })
     expect(run.asked.slice(1)).toEqual([
       DIR_ASKED,
       `${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`,
       `${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
-    expect(run.logged).toEqual([])
+    expect(run.outputs).toEqual([{ kind: 'log', text: LAUNCH_DIR_ROUNDS_REASON }])
     expect(LAUNCH_DIR_ROUNDS_REASON).toBe('No usable launcher folder after 3 tries: nothing was chosen.')
   })
 
   test('Cancel init or a dismissal at the folder question cancels with its reason', async () => {
     for (const answers of [['other', 'Cancel init'], ['other', ' cancel INIT '], ['other']]) {
-      const run = memIo(FOLDER_WORLD, answers)
-      const cancelled = { kind: 'cancelled', reason: LAUNCH_DIR_CANCELLED_REASON }
-      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(cancelled)
+      const run = await drivenWith(launchAt(), answers, launchCalls(memIo(FOLDER_WORLD, []).io))
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(LAUNCH_DIR_CANCELLED_REASON) })
     }
     expect(LAUNCH_DIR_CANCELLED_REASON).toBe('The launcher folder question was dismissed or cancelled.')
   })
@@ -186,8 +213,8 @@ describe('launchStartStep', () => {
       [['somewhere', 'else', 'again'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of cases) {
-      const run = memIo(memWorld({}), answers)
-      expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual({ kind: 'cancelled', reason })
+      const run = driven(launchAt(), answers)
+      expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
     }
     expect(LAUNCH_START_DISMISSED_REASON).toBe('The launcher start question was dismissed or not answered.')
   })
@@ -201,18 +228,18 @@ describe('launchStartStep', () => {
 
 describe('refusal re-ask (G-02-6b)', () => {
   test('the launcher folder loop puts its refusal on top of the next ask; the cap keeps its reason', async () => {
-    const run = memIo(FOLDER_WORLD, ['other', '../a', 'missing', 'apps/web'])
-    expect(await launchStartStep(run.io, '/repo', LAUNCH_TEAM)).toEqual(APPS_WEB)
+    const calls = launchCalls(memIo(FOLDER_WORLD, []).io)
+    const run = await drivenWith(launchAt(), ['other', '../a', 'missing', 'apps/web'], calls)
+    expect(run.state.draft.launchStart).toEqual(APPS_WEB)
     expect(run.asked).toEqual([
       LAUNCH_ASKED,
       DIR_ASKED,
       `${cannotUse('../a', UNSAFE_FOLDER)}\n${DIR_ASKED}`,
       `${cannotUse('missing', NOT_A_FOLDER)}\n${DIR_ASKED}`,
     ])
-    expect(run.logged).toEqual([])
-    const capped = memIo(FOLDER_WORLD, ['other', '../a', 'missing', '/b'])
-    const rounds = { kind: 'cancelled', reason: LAUNCH_DIR_ROUNDS_REASON }
-    expect(await launchStartStep(capped.io, '/repo', LAUNCH_TEAM)).toEqual(rounds)
+    expect(run.outputs).toEqual([])
+    const capped = await drivenWith(launchAt(), ['other', '../a', 'missing', '/b'], calls)
+    expect(capped.state.effect).toEqual({ kind: 'end', reply: cancelledReply(LAUNCH_DIR_ROUNDS_REASON) })
   })
 })
 

@@ -28,6 +28,7 @@ import {
 import type { Answer, Effect, InitStage, InitState, StageDef } from './state'
 import { consentStage } from './stages/consent'
 import { historyStage } from './stages/history'
+import { launchStage } from './stages/launch'
 import { policyStage } from './stages/policy'
 import { reviewStage } from './stages/review'
 import { installedFrameworks } from './stages/roles'
@@ -96,23 +97,6 @@ const teamStage: StageDef = Object.freeze({
   },
 })
 
-/** Where the launchers start (A2, legacy), asked once for the repo with the role ids. */
-const launchStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { locations, roles } = state.draft
-    if (locations === undefined || roles === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'launch', root: locations.root, roles } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'launch') return stageFailed(state)
-    const launch = answer.result.result
-    if (launch.kind === 'cancelled') return stageCancelled(state, launch.reason)
-
-    return stageDone({ ...state, draft: { ...state.draft, launchStart: launch.value } })
-  },
-})
-
 /** An ended run: it sets no effect, and takes no answer. */
 const endStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => state,
@@ -167,8 +151,25 @@ function entered(state: InitState, stage: InitStage): InitState {
 }
 
 /**
- * The state once its stage's cursor is acted on: a done stage enters the stage after it, again until a stage sets an
- * effect; a cancel, an end or a failure ends the run. No more hops than there are stages, so it always ends.
+ * Whether the done stage of `state` ends a go-back from the review (D-204): it is the go-back's returnAfter stage, so
+ * the review comes next instead of the stage after it.
+ */
+function isGoBackDone(state: InitState): boolean {
+  return state.returnTo === 'review' && state.stage === state.returnAfter
+}
+
+/**
+ * The review entered again once a go-back is done (D-204, A3): the go-back cleared and one more review round counted,
+ * as the review counts a round after each go-back (MAX_REVIEW_ROUNDS).
+ */
+function backToReview(state: InitState): InitState {
+  return entered({ ...state, returnTo: null, returnAfter: null, rounds: state.rounds + 1 }, 'review')
+}
+
+/**
+ * The state once its stage's cursor is acted on: a done stage enters the stage after it, or the review again when it
+ * ends a go-back, and a go-back from the review enters its stage, again until a stage sets an effect; a cancel, an end
+ * or a failure ends the run. No more hops than there are stages, so it always ends.
  */
 function settled(state: InitState): InitState {
   let current = state
@@ -177,7 +178,15 @@ function settled(state: InitState): InitState {
     if (sub.kind === 'cancelled') return cancelledWith(current, sub.reason)
     if (sub.kind === 'end') return endedWith(current, sub.reply)
     if (sub.kind === 'failed') return failed(current)
+    if (sub.kind === 'back') {
+      current = entered(current, sub.to)
+      continue
+    }
     if (sub.kind !== 'done') return current
+    if (isGoBackDone(current)) {
+      current = backToReview(current)
+      continue
+    }
     const next = stageAfter(current.stage)
     if (next === null) return failed(current)
     current = entered(current, next)
@@ -217,6 +226,7 @@ export function initialState(dryRun: boolean): InitState {
     effect: { kind: 'end', reply: INIT_CANCELLED },
     openQuestion: null,
     returnTo: null,
+    returnAfter: null,
     rounds: 0,
     dryRun,
   }

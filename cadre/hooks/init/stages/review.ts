@@ -30,7 +30,7 @@ import { initReplyText } from '../initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
-import { fullDraft, stageCancelled, stageEnded, stageFailed, withEffect, withOutputs } from '../state'
+import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, Applied, InitState, ReviewItem, StageDef } from '../state'
 import { launchLine } from './launch'
 import { policyLine } from './policy'
@@ -332,10 +332,11 @@ function confirmed(state: InitState, reviewed: Reviewed): InitState {
 
 /**
  * The answer to the review question (choiceAnswer): Confirm replies with the plan just shown on a --dry-run and has it
- * applied on plain init (D-105); another item goes back to that item (the legacy go-back, until 02.1-26), except at the
- * last round, where it cancels at once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3); any
- * other answer is asked again with why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it
- * cannot read with NO_USABLE_ANSWER_REASON (A1, D-45).
+ * applied on plain init (D-105); another item goes back to that item, except at the last round, where it cancels at
+ * once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3): the git policy and the launcher start go
+ * back as stage transitions (stageBack, D-204), the other items through the legacy go-back until their stages are
+ * pure. Any other answer is asked again with why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS
+ * answers it cannot read with NO_USABLE_ANSWER_REASON (A1, D-45).
  */
 function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   const draft = fullDraft(state.draft)
@@ -347,6 +348,7 @@ function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   const item = next.value
   if (item === 'confirm') return confirmed(state, { draft, planned })
   if (state.rounds >= MAX_REVIEW_ROUNDS - 1) return stageCancelled(state, REVIEW_ROUNDS_REASON)
+  if (item === 'policy' || item === 'launch') return stageBack(state, item, item)
   const going: InitState = { ...state, sub: { kind: 'start' } }
 
   return withEffect(going, { kind: 'legacy', step: { id: 'go-back', draft, item } })

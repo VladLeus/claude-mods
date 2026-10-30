@@ -66,6 +66,7 @@ import { buildPlan } from './plan/plan'
 import type { PlanInput } from './plan/plan'
 import type { PartRecord } from './regen/part-changes'
 import { INFRA_SKILLS } from './roles/infra'
+import { proposeRoles } from './roles/propose'
 import {
   AUTOPILOT_THRESHOLD,
   DEFAULT_DURATION,
@@ -1594,8 +1595,36 @@ export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Part
     effect: { kind: 'end', reply: '' },
     openQuestion: null,
     returnTo: null,
+    returnAfter: null,
     rounds: 0,
     dryRun: true,
+    ...over,
+  }
+}
+
+/**
+ * A whole init draft of a dry run over the testkit repo (D-230): the template team of an empty repo scan on the
+ * built-in default, nothing handed out or installed, the default git policy and the git root as the launcher start;
+ * `over` replaces any field.
+ */
+export function wholeDraft(over: Partial<Draft> = {}): Draft {
+  return {
+    locations: DEFAULT_LOCATIONS,
+    gathered: { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() },
+    readUserMcp: false,
+    installed: ['none'],
+    choice: { kind: 'none' },
+    proposal: proposeRoles(repoScan()),
+    hints: new Map(),
+    duration: DEFAULT_DURATION,
+    roles: proposeRoles(repoScan()).roles,
+    changes: [],
+    repoDefault: 'none',
+    hunks: [],
+    pluginInstalls: [],
+    instructions: { kind: 'none' },
+    policy: 'definitions',
+    launchStart: { kind: 'git-root' },
     ...over,
   }
 }

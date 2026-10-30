@@ -8,7 +8,7 @@
  * imports type shapes and no port, so nothing built on it can reach a port. The stages and init/machine import it,
  * and init/run reads its types.
  */
-import type { AskSpec, InitLocations, LaunchStart, PaneKey, PortEntry, RoleSpec } from '../../types'
+import type { AskSpec, InitLocations, PaneKey, PortEntry } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
 import type { Gathered } from '../scan/gather'
@@ -64,13 +64,15 @@ export type SessionListing = {
 /**
  * One host operation a stage needs (D-230), named after the helper init/run runs for it, with plain data only: the
  * guard (initGuard), the scans with the consent answer (gatherScans), the listing of the session folder
- * (listSessions) and the history scan of the listed sessions (scanHistory).
+ * (listSessions), the history scan of the listed sessions (scanHistory), the check that a typed launcher folder is a
+ * folder inside the repo (isRepoFolder), the review's plan (planStep) and Confirm's apply (applyConfirmed).
  */
 export type IoCall =
   | { readonly id: 'guard' }
   | { readonly id: 'scan'; readonly locations: InitLocations; readonly readUserMcp: boolean }
   | { readonly id: 'list-sessions'; readonly dir: string }
   | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
+  | { readonly id: 'launch-dir-check'; readonly root: string; readonly path: string }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
 
@@ -83,8 +85,15 @@ export type IoResult =
   | { readonly id: 'scan'; readonly result: Gathered }
   | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
   | { readonly id: 'scan-history'; readonly result: HistoryScan }
+  | { readonly id: 'launch-dir-check'; readonly result: boolean }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
+
+/**
+ * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
+ * the others go back as stage transitions.
+ */
+export type LegacyGoBack = Exclude<ReviewItem, 'confirm' | 'policy' | 'launch'>
 
 /**
  * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
@@ -92,8 +101,7 @@ export type IoResult =
  */
 export type LegacyStep =
   | { readonly id: 'team'; readonly base: DraftBase }
-  | { readonly id: 'launch'; readonly root: string; readonly roles: readonly RoleSpec[] }
-  | { readonly id: 'go-back'; readonly draft: Draft; readonly item: Exclude<ReviewItem, 'confirm'> }
+  | { readonly id: 'go-back'; readonly draft: Draft; readonly item: LegacyGoBack }
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -124,7 +132,6 @@ export type Applied = {
  */
 export type LegacyResult =
   | { readonly id: 'team'; readonly result: StepResult<Team> }
-  | { readonly id: 'launch'; readonly result: StepResult<LaunchStart> }
   | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 
@@ -153,6 +160,9 @@ export type Answer =
  * - `ask`: one question is out, asked `tries` times so far (choiceAnswer).
  * - `history`: the history question is out, asked `tries` times so far, with the sessions listed for the scan.
  * - `review`: the review question about `planned` is out, asked `tries` times so far.
+ * - `launch-dir`: the launcher folder question is out, asked `tries` times so far.
+ * - `launch-check`: the check of the folder `path`, typed as `answer` at try `tries`, is out.
+ * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
  * - `applying`: the review was confirmed, and Confirm's apply is out.
  * - `done`: the stage finished; nextStage enters the stage after it.
  * - `cancelled`: the stage ends init with nothing written, and `reason` says why (A1).
@@ -164,6 +174,9 @@ export type StageSub =
   | { readonly kind: 'ask'; readonly tries: number }
   | { readonly kind: 'history'; readonly tries: number; readonly listing: SessionListing }
   | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult }
+  | { readonly kind: 'launch-dir'; readonly tries: number }
+  | { readonly kind: 'launch-check'; readonly tries: number; readonly answer: string; readonly path: string }
+  | { readonly kind: 'back'; readonly to: InitStage }
   | { readonly kind: 'applying' }
   | { readonly kind: 'done' }
   | { readonly kind: 'cancelled'; readonly reason: string }
@@ -185,8 +198,10 @@ export type InitState = {
   readonly effect: Effect
   /** The question open now with its spec: the ask effect's, else null (withEffect sets both, D-204). */
   readonly openQuestion: { readonly question: string; readonly spec: AskSpec } | null
-  /** Where a go-back from the review goes once its stage is done; null outside a go-back (D-204). */
+  /** Where a go-back from the review goes once it is done; null outside a go-back (D-204). */
   readonly returnTo: 'review' | null
+  /** The stage whose finish ends a go-back and jumps back to returnTo: the item's own stage, or the last role step. */
+  readonly returnAfter: InitStage | null
   /** How many review rounds ended in a go-back so far. */
   readonly rounds: number
   /** --dry-run: Confirm replies with the plan and nothing is written or installed (D-82, D-105). */
@@ -227,6 +242,14 @@ export function stageDone(state: InitState): InitState {
 /** The stage ends init with nothing written; nextStage logs `reason` and replies with it (A1). */
 export function stageCancelled(state: InitState, reason: string): InitState {
   return { ...state, sub: { kind: 'cancelled', reason } }
+}
+
+/**
+ * The review goes back to `stage` (D-204): nextStage enters it, and once `after` is done it enters the review again,
+ * counting a round.
+ */
+export function stageBack(state: InitState, stage: InitStage, after: InitStage): InitState {
+  return { ...state, sub: { kind: 'back', to: stage }, returnTo: 'review', returnAfter: after }
 }
 
 /** The run ends with `reply`. */

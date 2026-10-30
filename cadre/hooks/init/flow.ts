@@ -10,12 +10,12 @@ import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { missingSecurityPlugins, recommend } from '../roles/recommend'
 import type { HistoryScan } from '../scan/history'
 import { resolvedFramework } from '../team'
-import { accepted, askChoice, choiceResult, showBlock } from '../ui/ask'
+import { accepted, showBlock } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { mapped } from './draft'
 import type { Draft, DraftBase, Team } from './draft'
-import type { ReviewItem } from './state'
+import type { LegacyGoBack } from './state'
 import { assignmentStep } from './stages/assign'
 import { carryStep } from './stages/carry'
 import { durationStep, withDuration } from './stages/duration'
@@ -23,9 +23,7 @@ import { frameworkStep } from './stages/frameworks'
 import { hunkStep } from './stages/hunks'
 import { improverInstallStep } from './stages/improver-install'
 import { instructionsAgain, instructionsStep } from './stages/instructions'
-import { launchStartStep } from './stages/launch'
 import { modelStep } from './stages/model'
-import { GIT_POLICY_ASK } from './stages/policy'
 import { rolesStep } from './stages/roles'
 import { securityInstallStep, withSecuritySkill } from './stages/security'
 
@@ -108,18 +106,14 @@ export async function teamStep(
 }
 
 /**
- * Goes back to one review item (D-43) and gives the draft with the new answer: it re-asks that item's step, and for
- * Change roles every role step from the current team, shown with the scan changes it was accepted with (A6), with the
- * duration kept (teamStep). The duration, model, assignment, memory and env steps run again on the current roles and
- * decide the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the
- * instruction hand-out it had (instructionsAgain); the git policy is asked again as its stage asks it (GIT_POLICY_ASK,
- * until 02.1-26 makes the go-backs stage transitions). A cancelled step ends the review with its reason (A1).
+ * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
+ * answer: it re-asks that item's step, and for Change roles every role step from the current team, shown with the scan
+ * changes it was accepted with (A6), with the duration kept (teamStep). The duration, model, assignment, memory and
+ * env steps run again on the current roles and decide the whole list they ask about (A3), so a narrower answer takes a
+ * name away; memory goes back to the instruction hand-out it had (instructionsAgain). The git policy and the launcher
+ * start go back as stage transitions instead (D-204). A cancelled step ends the review with its reason (A1).
  */
-export async function goBack(
-  io: InitIo,
-  draft: Draft,
-  item: Exclude<ReviewItem, 'confirm'>,
-): Promise<StepResult<Draft>> {
+export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
   const { gathered, locations, roles } = draft
   switch (item) {
     case 'roles': {
@@ -127,13 +121,6 @@ export async function goBack(
 
       return mapped(team, decided => ({ ...draft, ...decided }))
     }
-    case 'policy': {
-      const policy = choiceResult(await askChoice(io, GIT_POLICY_ASK), GIT_POLICY_ASK.dismissedReason)
-
-      return mapped(policy, chosen => ({ ...draft, policy: chosen }))
-    }
-    case 'launch':
-      return mapped(await launchStartStep(io, locations.root, roles), launchStart => ({ ...draft, launchStart }))
     case 'duration':
       return mapped(await durationStep(io, roles), duration => ({
         ...draft,

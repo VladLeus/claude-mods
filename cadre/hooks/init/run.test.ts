@@ -187,7 +187,7 @@ import {
   LAUNCH_START_DISMISSED_REASON,
   LAUNCH_START_QUESTION,
   launchLine,
-  launchStartStep,
+  launchStage,
 } from './stages/launch'
 import { MEMORY_DISMISSED_REASON, memoryStep } from './stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './stages/model'
@@ -2787,7 +2787,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         io => carryStep(io, roles, emptySetupScan({ carry: envNames })),
         '"None", "All of them", or names from the list, typed exactly',
       ],
-      ['launch', io => launchStartStep(io, '/repo', roles), launch],
     ]
     for (const [name, step, accepts] of steps) {
       const run = memIo(memWorld({}), ['zzz'])
@@ -2800,6 +2799,7 @@ describe('refusal re-ask (G-02-6b)', () => {
         () => driven(consentStage.enter(stateAt('consent')), ['zzz']).asked,
         '"No, skip it", "Yes, read names only"',
       ],
+      ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],
     ]
     for (const [name, asked, accepts] of stages) {
