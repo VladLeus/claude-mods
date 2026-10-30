@@ -1,48 +1,93 @@
 /**
- * The runner of /cadre init (D-43, D-45, D-58, D-105, A1), a layer 11 module: runInit, which runs the guard, the
- * ~/.claude.json consent, the scans, the history step, the role steps (teamStep), the git policy and the launcher
- * start, then the final review (reviewStep), and on Confirm of a plain init applies the plan through the HostIo its
- * InitOptions hold (applyConfirmed); a --dry-run holds no host, so it writes and runs nothing. cancelReply prints a
- * cancel reason once. It is pure and imports the init stages and init/ modules below it; register.tsx and the tests
- * import it, and no init module does.
+ * The runner of /cadre init (D-43, D-45, D-58, D-105, D-230, A1), a layer 11 module: runInit, the one place init
+ * performs its effects. It starts from initialState, shows each state's outputs in order, performs the state's one
+ * effect (an ask through askOnce, or a legacy step through today's step function) and feeds what it gave to
+ * nextStage, until an end effect gives the reply. On Confirm of a plain init the apply writes through the HostIo its
+ * InitOptions hold; a --dry-run holds no host, so it writes and runs nothing. register.tsx and the tests import it,
+ * and no init module does.
  */
 import type { HostIo, InitIo } from '../../types'
-import { setupAfterInstalls } from '../apply/installs'
-import { reportText } from '../core/text'
-import { chooseFramework } from '../framework/contract'
-import { detectAll } from '../framework/registry'
 import { initGuard } from '../guards/repo'
-import { CLAUDE_MD_PLUGIN } from '../roles/infra'
-import { proposeRoles } from '../roles/propose'
-import { gatherScans, scanWarnings } from '../scan/gather'
-import { showBlock } from '../ui/ask'
-import { scanContextLine, scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
-import type { DraftBase } from './draft'
-import { historyHints, teamStep } from './flow'
-import { applyConfirmed, initReplyText } from './initapply'
-import { cancelledReply } from './replies'
+import { gatherScans } from '../scan/gather'
+import { askOnce, noteLine, showBlock } from '../ui/ask'
+import { teamStep } from './flow'
+import { applyConfirmed } from './initapply'
+import { initialState, nextStage } from './machine'
+import type { Answer, Effect, LegacyResult, LegacyStep, Output } from './state'
 import { consentStep } from './stages/consent'
 import { historyStep } from './stages/history'
 import { launchStartStep } from './stages/launch'
-import { gitPolicyStep } from './stages/policy'
-import { improverRunCount, improverRunLine, PRIVATE_FILES_HEADING, privateFilesRow, reviewStep } from './stages/review'
-import { installedFrameworks } from './stages/roles'
-
-/**
- * The reply of a cancelled step: its reason logged as its own line, the one place a cancel reason is printed (A1), and
- * cancelledReply of that reason, so the reply names it too (batch-1 review S1).
- */
-function cancelReply(io: InitIo, reason: string): string {
-  io.log(reportText(reason))
-
-  return cancelledReply(reason)
-}
+import { reviewStep } from './stages/review'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
  * run; plain init writes the plan through `host` after Confirm.
  */
 export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; readonly host: HostIo }
+
+/** Shows one output of a state (D-133): a side-pane block (showBlock), a note (noteLine), or one line logged as is. */
+async function showOutput(io: InitIo, output: Output): Promise<void> {
+  switch (output.kind) {
+    case 'show':
+      return showBlock(io, output.block.key, output.block.lines)
+    case 'note':
+      return noteLine(io, output.line)
+    case 'log':
+      return io.log(output.text)
+    default: {
+      const unreachable: never = output
+      return unreachable
+    }
+  }
+}
+
+/**
+ * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): the guard,
+ * the consent, the scans, the history step, the role steps from the proposal, the launcher start, the review with its
+ * go-backs, and Confirm's apply through the run's host, which a --dry-run does not hold.
+ */
+async function performLegacy(io: InitIo, options: InitOptions, step: LegacyStep): Promise<LegacyResult> {
+  switch (step.id) {
+    case 'guard':
+      return { id: 'guard', result: await initGuard(io, 'init') }
+    case 'consent':
+      return { id: 'consent', result: await consentStep(io) }
+    case 'scan':
+      return { id: 'scan', result: await gatherScans(io, step.locations, step.readUserMcp) }
+    case 'history':
+      return { id: 'history', result: await historyStep(io, step.locations, step.context) }
+    case 'team':
+      return { id: 'team', result: await teamStep(io, step.base, step.base.proposal, null) }
+    case 'launch':
+      return { id: 'launch', result: await launchStartStep(io, step.root, step.roles) }
+    case 'review':
+      return { id: 'review', result: await reviewStep(io, step.draft) }
+    case 'apply':
+      return { id: 'apply', result: options.dryRun ? null : await applyConfirmed(io, options.host, step.reviewed) }
+    default: {
+      const unreachable: never = step
+      return unreachable
+    }
+  }
+}
+
+/** Performs a state's effect (D-230): an ask through askOnce (null when dismissed), or a legacy step's run. */
+async function perform(
+  io: InitIo,
+  options: InitOptions,
+  effect: Exclude<Effect, { readonly kind: 'end' }>,
+): Promise<Answer> {
+  switch (effect.kind) {
+    case 'ask':
+      return { kind: 'answer', text: await askOnce(io, effect.question, effect.spec) }
+    case 'legacy':
+      return { kind: 'legacy', result: await performLegacy(io, options, effect.step) }
+    default: {
+      const unreachable: never = effect
+      return unreachable
+    }
+  }
+}
 
 /**
  * `/cadre init`. It runs the guard before it reads or asks anything (initGuard), asks the ~/.claude.json consent
@@ -53,7 +98,7 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * MCP servers and skills, the instructions and memories (instructionsStep: the content consent, then the instruction
  * parts or the whole-file questions; G-02-1f), the carried env names, the autonomy hunks of the frameworks in use, and
  * the claude-md-management install when a role got a built file and it is missing (D-141). It then asks the git policy
- * (gitPolicyStep) and, once for the repo, where the launchers start (launchStartStep), shows the one final review with
+ * (policyStage) and, once for the repo, where the launchers start (launchStartStep), shows the one final review with
  * every role's scope card for that start (the one place the cards are shown; reviewLines, ROLE-06, A5) and the exact
  * file plan, each role's built CLAUDE.md included, where the person confirms or goes back to change one item
  * (reviewStep, D-43). --dry-run then replies with the confirmed plan and the note that nothing was written, and
@@ -64,59 +109,15 @@ export type InitOptions = { readonly dryRun: true } | { readonly dryRun: false; 
  * StepResult (A1): runInit checks its kind before it uses the value, and for a cancelled step prints the reason as its
  * own line and answers cancelledReply with the step's reason (D-45), so only values the person accepted reach the steps
  * after it, and nothing is written or installed before Confirm. Every answer lives in memory for this one run, and
- * nothing is kept for the next (D-45, D-82).
+ * nothing is kept for the next (D-45, D-82). The order, the merges and the cancels are the stage machine's
+ * (init/machine, D-230): runInit only shows each state's outputs, performs its effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
-  const guard = await initGuard(io, 'init')
-  if (guard.kind === 'refuse') return guard.text
-
-  const consent = await consentStep(io)
-  if (consent.kind === 'cancelled') return cancelReply(io, consent.reason)
-
-  const gathered = await gatherScans(io, guard.locations, consent.value)
-  const warnings = scanWarningLines(scanWarnings(guard.locations, gathered))
-  await showBlock(io, 'scan', [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings])
-
-  const history = await historyStep(io, guard.locations, scanContextLine(gathered.repo))
-  if (history.kind === 'cancelled') return cancelReply(io, history.reason)
-
-  const detections = detectAll(gathered.facts.facts)
-  const proposal = proposeRoles(gathered.repo)
-  const base: DraftBase = {
-    locations: guard.locations,
-    gathered,
-    readUserMcp: consent.value,
-    installed: installedFrameworks(detections),
-    choice: chooseFramework(detections, null),
-    proposal,
-    hints: historyHints(history.value),
+  let state = initialState(options.dryRun)
+  for (;;) {
+    for (const output of state.outputs) await showOutput(io, output)
+    const { effect } = state
+    if (effect.kind === 'end') return effect.reply
+    state = nextStage({ ...state, outputs: [] }, await perform(io, options, effect))
   }
-  const team = await teamStep(io, base, proposal, null)
-  if (team.kind === 'cancelled') return cancelReply(io, team.reason)
-
-  const policy = await gitPolicyStep(io)
-  if (policy.kind === 'cancelled') return cancelReply(io, policy.reason)
-
-  const launch = await launchStartStep(io, guard.locations.root, team.value.roles)
-  if (launch.kind === 'cancelled') return cancelReply(io, launch.reason)
-
-  const draft = { ...base, ...team.value, policy: policy.value, launchStart: launch.value }
-  const reviewed = await reviewStep(io, draft)
-  if (reviewed.kind === 'cancelled') return cancelReply(io, reviewed.reason)
-  const { plan, state } = reviewed.value.planned
-  if (options.dryRun) {
-    const confirmed = reviewed.value.draft
-    const count = improverRunCount(confirmed, plan)
-    const installed = setupAfterInstalls(confirmed.gathered.setup, confirmed.pluginInstalls).installedPlugins
-    const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
-    const rows = confirmed.roles.map(role => privateFilesRow(role.id))
-
-    return initReplyText(plan, state.gitPolicy, state.launchStart, null, [PRIVATE_FILES_HEADING, ...rows, ...improver])
-  }
-
-  const applied = await applyConfirmed(io, options.host, reviewed.value)
-  if (applied.kind === 'cancelled') return cancelReply(io, applied.reason)
-  const asWritten = applied.value.planned
-
-  return initReplyText(asWritten.plan, asWritten.state.gitPolicy, asWritten.state.launchStart, applied.value.outcome)
 }

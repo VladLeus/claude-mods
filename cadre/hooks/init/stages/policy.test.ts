@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DEFAULT_LOCATIONS, memIo, memWorld, stateAt, TEMPLATE_ROLES } from '../../testkit'
+import { DEFAULT_LOCATIONS, driven, stateAt, TEMPLATE_ROLES } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
+import { cancelledReply } from '../replies'
 import {
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
   GIT_POLICY_OPTIONS,
   GIT_POLICY_QUESTION,
-  gitPolicyStep,
   parseGitPolicy,
   policyLine,
   policyStage,
@@ -61,9 +61,9 @@ describe('init helpers', () => {
     expect(GIT_POLICY_OPTIONS.map(option => parseGitPolicy(option))).toEqual(['definitions', 'all', 'ignore'])
   })
 
-  test('gitPolicyStep accepts a policy; a dismissal or unknown answers are cancelled with its reason', async () => {
-    const run = memIo(memWorld({}), ['Commit all'])
-    expect(await gitPolicyStep(run.io)).toEqual({ kind: 'accepted', value: 'all' })
+  test('policyStage accepts a policy; a dismissal or unknown answers are cancelled with its reason', () => {
+    const run = driven(policyStage.enter(stateAt('policy', POLICY_DRAFT)), ['Commit all'])
+    expect(run.state.draft.policy).toBe('all')
     expect(run.asked).toEqual([withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)])
     expect(run.specs).toEqual([{ options: GIT_POLICY_OPTIONS, header: 'Git policy' }])
     const cases: readonly (readonly [readonly string[], string])[] = [
@@ -71,10 +71,10 @@ describe('init helpers', () => {
       [['whatever', 'whatever', 'whatever'], NO_USABLE_ANSWER_REASON],
     ]
     for (const [answers, reason] of cases) {
-      const dismissed = memIo(memWorld({}), answers)
-      expect(await gitPolicyStep(dismissed.io)).toEqual({ kind: 'cancelled', reason })
+      const dismissed = driven(policyStage.enter(stateAt('policy', POLICY_DRAFT)), answers)
+      expect(dismissed.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
       expect(dismissed.asked).toHaveLength(Math.max(1, answers.length))
-      expect(dismissed.logged).toEqual([])
+      expect(dismissed.outputs).toEqual([{ kind: 'log', text: reason }])
     }
     expect(GIT_POLICY_DISMISSED_REASON).toBe('The git policy question was dismissed or not answered.')
   })

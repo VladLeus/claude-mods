@@ -1,15 +1,17 @@
 /**
- * The git policy stage of init (D-65, D-90, D-136), a layer 10 module: the git policy question with its context line
- * of what each policy keeps in git, the three policies with their dialog labels and the words a person may type
- * under "Other" (GIT_POLICIES), parseGitPolicy, which reads an answer, and gitPolicyStep, which asks it; and
- * policyLine, the one line that states a policy and what stays out of git under it. Pure: it asks through the InitIo
- * port it is given, imports core and ui/ask, and never imports init.ts, which imports it, or init/run.
+ * The git policy stage of init (D-65, D-90, D-136, D-230), a layer 10 module: the git policy question with its
+ * context line of what each policy keeps in git, the three policies with their dialog labels and the words a person
+ * may type under "Other" (GIT_POLICIES), parseGitPolicy, which reads an answer, GIT_POLICY_ASK, the question as the
+ * stage asks it, and policyStage, the pure stage that asks it; and policyLine, the one line that states a policy and
+ * what stays out of git under it. Pure: it gives states and never performs an effect, imports core, ui/ask and
+ * init/state, and never imports init/machine or init/run.
  */
-import type { GitPolicy, InitIo } from '../../../types'
+import type { GitPolicy } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
-import { ASK_HEADERS, askChoice, choiceResult, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
+import { asking, stageCancelled, stageDone, stageFailed } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 
 /** The git policy question (D-65). */
 export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
@@ -65,21 +67,41 @@ export const GIT_POLICY_DISMISSED_REASON = 'The git policy question was dismisse
 const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
 
 /**
- * The git policy step (D-65): GIT_POLICY_QUESTION with GIT_POLICY_CONTEXT on its second line (D-136). The policy a
- * label or word names (parseGitPolicy) is accepted, and an answer that names none is asked again with why on top. A
- * dismissal is cancelled with GIT_POLICY_DISMISSED_REASON and MAX_ASKS answers that name no policy with
- * NO_USABLE_ANSWER_REASON, never taken as the default (A1, D-45).
+ * The git policy question as the policy stage asks it (D-65, D-136): GIT_POLICY_QUESTION with GIT_POLICY_CONTEXT on
+ * its second line, the three policy labels with the Git policy chip, parseGitPolicy, the policy words its refusal
+ * lists, and the reason a dismissal cancels with.
  */
-export async function gitPolicyStep(io: InitIo): Promise<StepResult<GitPolicy>> {
-  const ask = {
-    question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
-    spec: { options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy },
-    parse: parseGitPolicy,
-    accepts: GIT_POLICY_ACCEPTS,
-  }
+export const GIT_POLICY_ASK = Object.freeze({
+  question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
+  spec: Object.freeze({ options: GIT_POLICY_OPTIONS, header: ASK_HEADERS.gitPolicy }),
+  parse: parseGitPolicy,
+  accepts: GIT_POLICY_ACCEPTS,
+  dismissedReason: GIT_POLICY_DISMISSED_REASON,
+})
 
-  return choiceResult(await askChoice(io, ask), GIT_POLICY_DISMISSED_REASON)
+/**
+ * The answer to the git policy question (choiceAnswer): the policy a label or word names goes into the draft and ends
+ * the stage; an answer that names none is asked again with why on top; a dismissal cancels with
+ * GIT_POLICY_DISMISSED_REASON and MAX_ASKS answers that name no policy with NO_USABLE_ANSWER_REASON, never taken as
+ * the default (A1, D-45).
+ */
+function policyAnswer(state: InitState, answer: Answer): InitState {
+  if (answer.kind !== 'answer' || state.sub.kind !== 'ask') return stageFailed(state)
+  const next = choiceAnswer(GIT_POLICY_ASK, state.sub, answer.text)
+  if (next.kind === 'value') return stageDone({ ...state, draft: { ...state.draft, policy: next.value } })
+  if (next.kind === 'again') return asking(state, next.question, GIT_POLICY_ASK.spec, next.sub.tries)
+
+  return stageCancelled(state, next.reason)
 }
+
+/**
+ * The git policy stage (D-65, D-230): it asks GIT_POLICY_ASK once the role steps are done and takes its answer
+ * (policyAnswer), so the open question is the git policy question until a policy is chosen.
+ */
+export const policyStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => asking(state, GIT_POLICY_ASK.question, GIT_POLICY_ASK.spec, 1),
+  answer: policyAnswer,
+})
 
 /** The line that states each git policy and what stays out of git under it (D-65, D-90). */
 const POLICY_LINES: Readonly<Record<GitPolicy, string>> = Object.freeze({

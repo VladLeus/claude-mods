@@ -75,6 +75,7 @@ import {
   BUILT_RULE,
   builtWorld,
   DEFAULT_LOCATIONS,
+  driven,
   EMPTY_FACTS,
   emptyDiskPlan,
   emptySetupScan,
@@ -125,6 +126,7 @@ import {
   shownBlock,
   skillRef,
   SOURCE_SCAN,
+  stateAt,
   STATUS_PATH,
   templateRole,
   USER_DIR_LISTED,
@@ -184,7 +186,7 @@ import {
 import { MEMORY_DISMISSED_REASON, memoryStep } from './stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStep } from './stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
-import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, gitPolicyStep, policyLine } from './stages/policy'
+import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine, policyStage } from './stages/policy'
 import {
   cardLines,
   improverRunLine,
@@ -2781,12 +2783,17 @@ describe('refusal re-ask (G-02-6b)', () => {
         '"None", "All of them", or names from the list, typed exactly',
       ],
       ['launch', io => launchStartStep(io, '/repo', roles), launch],
-      ['git policy', io => gitPolicyStep(io), 'definitions, all, ignore'],
     ]
     for (const [name, step, accepts] of steps) {
       const run = memIo(memWorld({}), ['zzz'])
       await step(run.io)
       expect([name, run.asked[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
+    }
+    const stages: readonly (readonly [string, () => readonly string[], string])[] = [
+      ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],
+    ]
+    for (const [name, asked, accepts] of stages) {
+      expect([name, asked()[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
     }
   })
 

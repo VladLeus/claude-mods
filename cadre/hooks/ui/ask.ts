@@ -1,6 +1,7 @@
 /**
- * The ask machinery every init step shares (D-45, D-133, D-136): one ask, the refusal loop, context lines, pane
- * blocks, notes and step results. init.ts and history.ts both import it, and it imports neither, so the two never
+ * The ask machinery every init step shares (D-45, D-133, D-136): one ask, the refusal loop and its pure twin for the
+ * stages of the init machine (choiceAnswer, D-230), context lines, pane blocks, notes and step results. init.ts and
+ * history.ts both import it, and it imports neither, so the two never
  * import each other.
  * ui/ask is a layer 8 module: the init stages, regen, apply and epic import it.
  */
@@ -184,6 +185,36 @@ export function choiceResult<T>(result: AskResult<T>, dismissedReason: string): 
   if (result.kind === 'dismissed') return cancelled(dismissedReason)
 
   return cancelled(NO_USABLE_ANSWER_REASON)
+}
+
+/**
+ * What one answer to a question of a pure init stage gives (D-230, D-136): the value its parser took, the question to
+ * ask again with the try it will be, or a cancel with its reason. Only `value` holds a choice (A1).
+ */
+export type ChoiceAnswer<T> =
+  | { readonly kind: 'value'; readonly value: T }
+  | { readonly kind: 'again'; readonly question: string; readonly sub: { readonly tries: number } }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
+/**
+ * askChoice and choiceResult as one pure step (D-230, D-136, D-45), for a question asked `sub.tries` times so far: an
+ * answer the parser takes gives its value; one it does not take gives the question again with the refusal on top (the
+ * question's own refuse text, else refusalLine) and the next try, until the MAX_ASKS-th such answer, which cancels with
+ * NO_USABLE_ANSWER_REASON; a dismissal (null) cancels at once with the question's `dismissedReason`. A dismissal, an
+ * empty answer and an unknown answer are never taken as the person's choice (A1).
+ */
+export function choiceAnswer<T>(
+  ask: ChoiceAsk<T> & { readonly dismissedReason: string },
+  sub: { readonly tries: number },
+  answer: string | null,
+): ChoiceAnswer<T> {
+  if (answer === null) return { kind: 'cancelled', reason: ask.dismissedReason }
+  const value = ask.parse(answer)
+  if (value !== null) return { kind: 'value', value }
+  if (sub.tries >= MAX_ASKS) return { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
+  const refusal = ask.refuse === undefined ? refusalLine(answer, ask.accepts) : ask.refuse(answer)
+
+  return { kind: 'again', question: askedText(ask.question, refusal), sub: { tries: sub.tries + 1 } }
 }
 
 /**

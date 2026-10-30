@@ -54,7 +54,10 @@ import { adapterOf } from './framework/registry'
 import { desiredFiles } from './generate/files'
 import { RUNTIME_KICKOFF_TEST } from './generate/launcher'
 import { CHECKOUT_ARGV } from './git/checkout'
+import type { Draft } from './init/draft'
+import { nextStage } from './init/machine'
 import { CONTENT_QUESTION, INSTRUCTIONS_ENTRY_QUESTION } from './init/stages/instructions'
+import type { Answer, InitStage, InitState, Output } from './init/state'
 import { lintRuntimeDenyPattern } from './launch/deny'
 import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
@@ -88,7 +91,8 @@ import type { StepResult } from './ui/ask'
  * does not run it, and `npm run typecheck:cadre` checks it. It gives a pure test a scripted InitIo: answers in order
  * or by question, a rejection when the answers run out, files and folders in memory, tri-state reads, and the
  * secret and absolute-path fixtures the property tests scan for. It also gives the Phase 3 tests a scripted HostIo
- * that records every write and run in call order and answers each from a HostWorld.
+ * that records every write and run in call order and answers each from a HostWorld, and the specs of the pure init
+ * stages a state at a stage (stateAt) and a drive through the stage machine with scripted answers (driven).
  */
 
 /** The session of the fixtures: the repo at /repo, a user whose home is /home/u, no CLAUDE_CONFIG_DIR, no warnings. */
@@ -1573,4 +1577,70 @@ export type Parsed = { readonly kind: 'ok' } | { readonly kind: 'invalid'; reado
 /** The errors of an invalid reply; [] for a reply that parsed. */
 export function errorsOf(result: Parsed): readonly string[] {
   return result.kind === 'invalid' ? result.errors : []
+}
+
+/**
+ * An init state at `stage`, before the stage is entered (D-230): its cursor at start, `draft` as given, nothing to
+ * show, an end effect standing in for the one the stage sets, no open question, no go-back, no review round, a dry
+ * run; `over` replaces any of these.
+ */
+export function stateAt(stage: InitStage, draft: Partial<Draft> = {}, over: Partial<InitState> = {}): InitState {
+  return {
+    stage,
+    sub: { kind: 'start' },
+    draft,
+    outputs: [],
+    effect: { kind: 'end', reply: '' },
+    openQuestion: null,
+    returnTo: null,
+    rounds: 0,
+    dryRun: true,
+    ...over,
+  }
+}
+
+/** What a drive through the init machine gave: the state it stopped at, each question and spec asked, every output. */
+export type Driven = {
+  readonly state: InitState
+  readonly asked: string[]
+  readonly specs: AskSpec[]
+  readonly outputs: Output[]
+}
+
+/**
+ * Drives the init machine through nextStage from `state`, a stage already entered, as init/run would (D-230), until
+ * the run leaves that stage, ends, or has an effect with no scripted answer left: each ask gets the next of `answers`
+ * (null, or none left, is a dismissal, as memIo rejects), and any other effect the next of `results`. It records each
+ * question and spec asked and every output, in order.
+ */
+export function driven(
+  state: InitState,
+  answers: readonly (string | null)[],
+  results: readonly Answer[] = [],
+): Driven {
+  const asked: string[] = []
+  const specs: AskSpec[] = []
+  const outputs: Output[] = []
+  const stops = ['done', 'cancelled', 'end', 'failed']
+  let current = state
+  let nextAnswer = 0
+  let nextResult = 0
+  for (;;) {
+    outputs.push(...current.outputs)
+    const { effect } = current
+    const isStopped = current.stage !== state.stage || effect.kind === 'end' || stops.includes(current.sub.kind)
+    if (isStopped) return { state: current, asked, specs, outputs }
+    if (effect.kind === 'ask') {
+      asked.push(effect.question)
+      specs.push(effect.spec)
+      const text = answers[nextAnswer] ?? null
+      nextAnswer += 1
+      current = nextStage({ ...current, outputs: [] }, { kind: 'answer', text })
+      continue
+    }
+    const result = results[nextResult]
+    if (result === undefined) return { state: current, asked, specs, outputs }
+    nextResult += 1
+    current = nextStage({ ...current, outputs: [] }, result)
+  }
 }
