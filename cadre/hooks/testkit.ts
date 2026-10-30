@@ -281,6 +281,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     show: async block => {
       shown.push(block)
     },
+    progress: async () => undefined,
     complete: async (prompt, system) => {
       prompts.push(`${system}\n---\n${prompt}`)
       const reply = world.replies[nextReply]

@@ -392,11 +392,57 @@ export type Choice =
       readonly kind: 'none'
     }
 
-/** One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select. */
+/**
+ * What a question's context is about (D-229, D-236): one kind per question family, so the renderers can tell how to
+ * draw it.
+ */
+export type ContextKind =
+  | 'scan'
+  | 'history'
+  | 'roles'
+  | 'detection'
+  | 'security'
+  | 'mcp-server'
+  | 'skill-group'
+  | 'skills'
+  | 'skill'
+  | 'instructions'
+  | 'topic'
+  | 'memory'
+  | 'memory-group'
+  | 'git-policy'
+  | 'env'
+  | 'hunk'
+  | 'improver-install'
+  | 'launch'
+  | 'launch-dir'
+  | 'review'
+  | 'conflict-diff'
+  | 'improver'
+  | 'regen-part'
+
+/**
+ * The context a question carries with it (D-203, D-229): a title, the lines that explain the choice, and what it is
+ * about. register.tsx keeps it in the open-question state for the renderers; it never reaches the dialog.
+ */
+export type AskContext = {
+  readonly title: string
+  readonly lines: readonly string[]
+  readonly kind: ContextKind
+}
+
+/**
+ * One dialog question's options: 2 to 4 labels, an optional header chip (12 characters at most), multi-select; and,
+ * kept out of the dialog, the question's own context and whether it takes a typed answer (D-203, D-229, D-234).
+ */
 export type AskSpec = {
   readonly options: readonly string[]
   readonly header?: string
   readonly multiSelect?: true
+  /** The question's own context; register.tsx puts it in the open-question state and never passes it to the dialog. */
+  readonly context?: AskContext
+  /** The question takes a typed answer, so the TUI default may offer "Describe your own" (D-234). */
+  readonly acceptsTyped?: true
 }
 
 /** One directory entry as the host lists it. A symlink is `other` with `isLink` true. */
@@ -485,8 +531,24 @@ declare module 'claude-code' {
        * question's block (R1).
        */
       initHeader: string | null
+      /**
+       * The question cadre has open now, or null when none is: written by the init port's ask before the dialog and
+       * cleared after it (D-203); the cadre init pane draws the block of its header (R1).
+       */
+      openQuestion: OpenQuestion | null
     }
   }
+}
+
+/**
+ * The question cadre has open now, as register.tsx keeps it in the openQuestion state (D-203, D-229): its text, its
+ * header chip (null when it has none), its context (null when it has none) and whether it takes a typed answer.
+ */
+export type OpenQuestion = {
+  readonly question: string
+  readonly header: string | null
+  readonly context: AskContext | null
+  readonly acceptsTyped: boolean
 }
 
 /**
@@ -508,6 +570,8 @@ export type InitIo = {
    * never rejects.
    */
   readonly show: (block: ShownBlock) => Promise<void>
+  /** One status line between questions on the TUI default, or null to clear it; never rejects (D-232). */
+  readonly progress: (text: string | null) => Promise<void>
   /** One model completion; the model has no tools (D-83). Null when the model gave no text. */
   readonly complete: (prompt: string, system: string) => Promise<string | null>
   /** True when a surface can show a dialog, false in `claude -p`, null when unknown. */

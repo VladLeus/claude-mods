@@ -128,6 +128,8 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       lastPlacement = null
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
+    // The status line comes with the TUI default (02.1-30, D-232); until then a progress line shows nowhere.
+    progress: async () => undefined,
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
       if (model === null) return null
