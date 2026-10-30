@@ -156,7 +156,7 @@ import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { diffLines, lineDiff } from '../ui/diff'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
-import { planStep, runInit } from './run'
+import { HISTORY_PROGRESS, MODEL_PROGRESS, planStep, runInit, SCAN_PROGRESS } from './run'
 import type { InitOptions } from './run'
 import { assignStage } from './stages/assign'
 import { carryStage, ENV_DISMISSED_REASON } from './stages/carry'
@@ -870,6 +870,31 @@ function cardSkills(run: MemRun, id: string): string {
 
   return at === -1 ? '' : (review[at + 2] ?? '')
 }
+
+describe('progress lines (D-232)', () => {
+  test('the scans and the history scan each set the status line before they read', async () => {
+    const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    await runInit(run.io, { dryRun: true })
+    expect(run.progress).toEqual([SCAN_PROGRESS, HISTORY_PROGRESS])
+  })
+
+  test('each attempt of a model call sets its own status line, so a retry shows it again', async () => {
+    const run = memIo(ownSkillsWorld([]), OWN_ACCEPTED)
+    await runInit(run.io, { dryRun: true })
+    const skills = Array.from({ length: MAX_PROPOSE_ATTEMPTS }, () => MODEL_PROGRESS.skills)
+    expect(run.progress).toEqual([SCAN_PROGRESS, ...skills])
+  })
+
+  test('the status texts name what init waits for, one per model call (D-232, DECIDED #22)', () => {
+    expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['cadre: scanning the repo…', 'cadre: reading session history…'])
+    expect(MODEL_PROGRESS).toEqual({
+      'describe-roles': 'cadre: reading your structure…',
+      skills: 'cadre: recommending skills…',
+      topics: 'cadre: grouping instructions…',
+      parts: 'cadre: recommending instruction parts…',
+    })
+  })
+})
 
 describe('own skills hand-out (G-02-1b)', () => {
   const CODEX_QUESTION = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'

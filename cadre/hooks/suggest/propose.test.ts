@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { BIDI_OVERRIDE, slugMessage, TEMPLATE_ORDER } from '../testkit'
-import { parseProposal, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './propose'
+import { BIDI_OVERRIDE, memIo, memWorld, slugMessage, TEMPLATE_ORDER } from '../testkit'
+import { parseProposal, proposeFromText, PROPOSE_SYSTEM, proposePrompt, rolesFromProposal } from './propose'
 
 /** `count` valid roles r0, r1, ... for the checks that only count them. */
 function manyRoles(count: number): { id: string; title: string }[] {
@@ -359,5 +359,13 @@ describe('rolesFromProposal', () => {
 
     expect(role?.hasBash).toBe(false)
     expect(role?.permissionMode).toBe('auto')
+  })
+})
+
+describe('proposeFromText progress (D-232)', () => {
+  test('the status line it is given shows while the model reads the described structure', async () => {
+    const run = memIo(memWorld({ replies: [reply(entry({ id: 'be', title: 'Backend' }))] }), {})
+    const proposed = await proposeFromText(run.io, 'one backend role', 'cadre: reading your structure…')
+    expect([proposed.kind, run.progress]).toEqual(['roles', ['cadre: reading your structure…']])
   })
 })

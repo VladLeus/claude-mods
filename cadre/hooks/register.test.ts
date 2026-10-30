@@ -13,6 +13,7 @@ import { GOLDEN_TUI } from './golden/register-tui'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './guards/refusals'
 import { commandRefusal, NOT_INTERACTIVE_REPLY } from './guards/repo'
 import { cancelledReply } from './init/replies'
+import { MODEL_PROGRESS, SCAN_PROGRESS } from './init/run'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
 import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
@@ -150,6 +151,8 @@ type HostLog = {
   readonly headerWrites: unknown[]
   /** Each value written to the open-question state (D-203). */
   readonly questionWrites: unknown[]
+  /** Each status line the plugin set, null for a clear (D-232). */
+  readonly statuses: (string | null)[]
   readonly writes: string[]
 }
 
@@ -195,6 +198,7 @@ function newLog(): HostLog {
     paneWrites: [],
     headerWrites: [],
     questionWrites: [],
+    statuses: [],
     writes: [],
   }
 }
@@ -463,6 +467,11 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('clock.now', async () => ({ value: world.now }))
   on('ui.log', async (_$, e) => {
     log.logs.push(e.text)
+
+    return { value: undefined }
+  })
+  on('ui.status', async (_$, e) => {
+    log.statuses.push(e.text ?? null)
 
     return { value: undefined }
   })
@@ -2317,6 +2326,23 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, initWorld({ surfaces: ['terminal', 'desktop'] }), log)
     await $.command.run(TUI_RUN)
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+  })
+
+  test('each scan and model call sets one status line, cleared as the next question opens (D-232)', async ($, on) => {
+    const log = newLog()
+    const atAsk: unknown[] = []
+    fakeHost(on, { ...skillWorld(), onAsk: async () => void atAsk.push(log.statuses.at(-1) ?? null) }, log)
+    await $.command.run(TUI_RUN)
+    const set = log.statuses.filter((text, at) => text !== null && log.statuses[at - 1] !== text)
+    expect(set).toEqual([SCAN_PROGRESS, MODEL_PROGRESS.skills])
+    expect([atAsk.length > 0, atAsk.every(text => text === null)]).toEqual([true, true])
+  })
+
+  test('on a pane surface progress sets no status line (D-232)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    expect(log.statuses).toEqual([])
   })
 
   test('golden: the TUI-default init dry run, its panes, logs and reply (D-208, D-219)', async ($, on) => {
