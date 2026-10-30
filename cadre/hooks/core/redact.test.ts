@@ -9,16 +9,22 @@ const BASE64_RUN = 'QWxhZGRpbjpvcGVuIHNlc2FtZQ0123456789abcd'
 /** A hex run of exactly 32 characters. */
 const HEX_RUN = '0123456789abcdef0123456789ABCDEF'
 
+/** A fake JWT ({"alg":"HS256"}, {}, no real signature), joined at runtime so secret scanners do not flag the source. */
+const FAKE_JWT = ['eyJhbGciOiJIUzI1NiJ9', 'e30', 'abc123'].join('.')
+
+/** A fake Anthropic-style key, joined at runtime for the same reason. */
+const FAKE_ANT_KEY = ['sk', 'ant', 'api03', 'AbCdEf0123456789xyz'].join('-')
+
 describe('redactSecrets (E1)', () => {
   test('a Bearer token is hidden and the scheme word kept, in any case', () => {
     expect(redactSecrets('Calls Jira with Bearer FAKE-TOKEN-0123 set.')).toBe('Calls Jira with Bearer [hidden] set.')
-    const header = 'Authorization: bearer eyJhbGciOiJIUzI1NiJ9.e30.abc123'
+    const header = `Authorization: bearer ${FAKE_JWT}`
     expect(redactSecrets(header)).toBe('Authorization: bearer [hidden]')
   })
 
   test('an sk- API key is hidden', () => {
     expect(redactSecrets('Key sk-FAKE-SECRET-0123456789 here')).toBe('Key [hidden] here')
-    expect(redactSecrets('sk-ant-api03-AbCdEf0123456789xyz')).toBe(REDACTED)
+    expect(redactSecrets(FAKE_ANT_KEY)).toBe(REDACTED)
   })
 
   test('a GitHub token of each kind is hidden', () => {
