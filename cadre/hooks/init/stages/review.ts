@@ -20,11 +20,13 @@ import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
 import { scopesFor } from '../../team'
-import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels, refusalLine } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
 import { scanWarningLines } from '../../ui/blocks/scan'
+import { PREVIEW_ROWS } from '../../ui/preview'
+import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
@@ -77,6 +79,38 @@ export function reviewContextLine(plan: Plan, policy: GitPolicy, start: LaunchSt
   return `${planSummary(plan)}; ${policyLine(policy)}; ${launchLine(start)}`
 }
 
+/** What an option of a page of the paged review stands for (D-233): an item, a page move, or Change something…. */
+type PageOption = ReviewItem | 'next' | 'previous' | 'change'
+
+/** What an answer to a page of the paged review picks (D-233): an item, or a move to the next or previous page. */
+type ReviewChoice = Exclude<PageOption, 'change'>
+
+/** The one answer that confirms the paged review: its Confirm option, as the dialog gives it (T-02.1-78). */
+const CONFIRM_LABEL = 'Confirm'
+
+/**
+ * The paged review's own options (D-233, ASKED #4, #23), in the order a page shows them, one label table for
+ * labelled(): Next page while a later page exists, Previous page past the first, Confirm, and one typed choice whose
+ * item word goes in a note.
+ */
+const REVIEW_PAGE_CHOICES: readonly Labelled<PageOption>[] = Object.freeze([
+  { label: 'Next page', value: 'next' },
+  { label: 'Previous page', value: 'previous' },
+  { label: CONFIRM_LABEL, value: 'confirm' },
+  { label: 'Change something…', value: 'change' },
+])
+
+/** The item words of the paged review as its refusals list them (D-233). */
+const REVIEW_ITEM_WORDS = 'roles, git policy, launcher start, duration, model, assignments, memory, env, hunks'
+
+/**
+ * The first line of the paged review asked again after Change something… with no item named (ASKED #4, DECIDED #22):
+ * where the item goes and the item words.
+ */
+const CHANGE_REFUSAL =
+  'Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, assignments, ' +
+  'memory, env or hunks.'
+
 /** Each review button with what it picks, in the order the dialog shows them (D-43, A2). */
 const REVIEW_CHOICES: readonly Labelled<ReviewItem>[] = Object.freeze([
   { label: 'Confirm', value: 'confirm' },
@@ -116,6 +150,50 @@ export function parseReviewItem(answer: string): ReviewItem | null {
  * cancels at once, asking nothing more, so no answer is asked for and then thrown away (A3).
  */
 export const MAX_REVIEW_ROUNDS = 10
+
+/**
+ * The rows a page of the review fills on a surface that pages it (D-233): the TUI default's preview rows; null for a
+ * surface whose review is not paged yet, which asks the whole review with its buttons.
+ */
+function pageRows(surface: Surface): number | null {
+  return surface === 'tui-default' ? PREVIEW_ROWS : null
+}
+
+/** The review lines in pages of `rows - 1` lines each (D-233), the page title on the row left; one page at least. */
+function reviewPages(lines: readonly string[], rows: number): (readonly string[])[] {
+  const size = Math.max(1, rows - 1)
+  const count = Math.max(1, Math.ceil(lines.length / size))
+
+  return Array.from({ length: count }, (_, at) => lines.slice(at * size, (at + 1) * size))
+}
+
+/**
+ * The options of page `page` of `count` (D-233, ASKED #4, #23): Next page while a later page exists, Previous page past
+ * the first, Confirm and Change something…; a review of one page offers Confirm and Change something… only.
+ */
+function pageChoices(page: number, count: number): Labelled<PageOption>[] {
+  return REVIEW_PAGE_CHOICES.filter(({ value }) => {
+    if (value === 'next') return page < count - 1
+    if (value === 'previous') return page > 0
+
+    return true
+  })
+}
+
+/**
+ * What an answer to a page of the review picks (D-233, T-02.1-78), else null, so it is asked again: a move to the next
+ * or previous page the page offers, an item word or a button label (parseReviewItem), and Confirm only as its own
+ * option gives it, so a typed confirm in any case is no choice. Change something… with no item is no choice either.
+ */
+function pageChoice(choices: readonly Labelled<PageOption>[], answer: string): ReviewChoice | null {
+  const choice = labelled(choices, answer)
+  if (choice === 'next' || choice === 'previous') return choice
+  if (choice === 'change') return null
+  const item = parseReviewItem(answer)
+  if (item !== 'confirm') return item
+
+  return answer === CONFIRM_LABEL ? 'confirm' : null
+}
 
 /** Why init cancels when the review question is dismissed (A1, D-45); unread answers give NO_USABLE_ANSWER_REASON. */
 export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not answered.'
@@ -278,6 +356,49 @@ function reviewAsk(draft: Draft, plan: Plan): ChoiceAsk<ReviewItem> & { readonly
   }
 }
 
+/**
+ * Page `page` of the review as the stage asks it on a surface that pages it (D-233, ASKED #4, D-234): the review
+ * question with the context line of the plan just shown, the page's options (pageChoices) with the Review chip, and
+ * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
+ * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). An answer
+ * pageChoice cannot read is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change
+ * something….
+ */
+function pagedAsk(
+  draft: Draft,
+  plan: Plan,
+  page: number,
+  rows: number,
+): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
+  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan), rows)
+  const at = Math.min(Math.max(0, page), pages.length - 1)
+  const choices = pageChoices(at, pages.length)
+  const labels = choices.map(choice => choice.label)
+  const title = pages.length === 1 ? 'Review' : `Review (page ${at + 1} of ${pages.length})`
+  const accepts = `${quotedLabels(labels)}, or ${REVIEW_ITEM_WORDS}`
+
+  return {
+    question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
+    spec: { options: labels, header: ASK_HEADERS.review, context: { ...reviewContext(pages[at] ?? []), title } },
+    parse: answer => pageChoice(choices, answer),
+    accepts,
+    refuse: answer => (labelled(choices, answer) === 'change' ? CHANGE_REFUSAL : refusalLine(answer, accepts)),
+    dismissedReason: REVIEW_DISMISSED_REASON,
+  }
+}
+
+/** The review ask of page `page` on the state's surface (D-233): paged where the surface pages it, else whole. */
+function reviewAskOf(
+  state: InitState,
+  draft: Draft,
+  plan: Plan,
+  page: number,
+): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
+  const rows = pageRows(state.surface)
+
+  return rows === null ? reviewAsk(draft, plan) : pagedAsk(draft, plan, page, rows)
+}
+
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */
 function planning(state: InitState): InitState {
   const draft = fullDraft(state.draft)
@@ -287,12 +408,21 @@ function planning(state: InitState): InitState {
   return withEffect(planned, { kind: 'io', call: { id: 'plan', input: reviewPlanOf(draft).input } })
 }
 
-/** The review question about `planned` asked, `tries` times so far; `question` is its text after a refusal. */
-function reviewAsked(state: InitState, planned: PlanResult, question: string | null, tries: number): InitState {
+/**
+ * The review question about `planned` asked on page `page`, `tries` times so far; `question` is its text after a
+ * refusal (D-233).
+ */
+function reviewAsked(
+  state: InitState,
+  planned: PlanResult,
+  question: string | null,
+  tries: number,
+  page: number,
+): InitState {
   const draft = fullDraft(state.draft)
   if (draft === null) return stageFailed(state)
-  const ask = reviewAsk(draft, planned.plan)
-  const asking: InitState = { ...state, sub: { kind: 'review', tries, planned } }
+  const ask = reviewAskOf(state, draft, planned.plan, page)
+  const asking: InitState = { ...state, sub: { kind: 'review', tries, planned, page } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
 }
@@ -303,7 +433,7 @@ function afterPlan(state: InitState, planned: PlanResult): InitState {
   if (draft === null) return stageFailed(state)
   const lines = reviewLines(draft, reviewPlanOf(draft).scopes, planned.plan)
 
-  return reviewAsked(withOutputs(state, [{ kind: 'show', block: { key: 'review', lines } }]), planned, null, 1)
+  return reviewAsked(withOutputs(state, [{ kind: 'show', block: { key: 'review', lines } }]), planned, null, 1, 0)
 }
 
 /**
@@ -334,24 +464,27 @@ function confirmed(state: InitState, reviewed: Reviewed): InitState {
 }
 
 /**
- * The answer to the review question (choiceAnswer): Confirm replies with the plan just shown on a --dry-run and has it
- * applied on plain init (D-105); another item goes back to that item, except at the last round, where it cancels at
- * once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3). Change roles, the git policy, the
- * launcher start, the duration, the model, the env, the hunks, the assignments and the memory go back as stage
- * transitions (stageBack, D-204): Change roles to the roles stage, from where every role step runs again up to the
- * improver install, the env to the carry stage, the assignments to the assign stage, the memory to the instruction
- * stage, which asks again what it handed out, and the others to their own stage. Any other answer is asked again with
- * why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it cannot read with
- * NO_USABLE_ANSWER_REASON (A1, D-45).
+ * The answer to the review question (choiceAnswer): a move to the next or previous page asks that page, a first try
+ * again, and counts no round (D-233); Confirm replies with the plan just shown on a --dry-run and has it applied on
+ * plain init (D-105); another item goes back to that item, except at the last round, where it cancels at once with
+ * REVIEW_ROUNDS_REASON and asks none of that item's questions (A3). Change roles, the git policy, the launcher start,
+ * the duration, the model, the env, the hunks, the assignments and the memory go back as stage transitions (stageBack,
+ * D-204): Change roles to the roles stage, from where every role step runs again up to the improver install, the env
+ * to the carry stage, the assignments to the assign stage, the memory to the instruction stage, which asks again what
+ * it handed out, and the others to their own stage. Any other answer is asked again on the same page with why on top.
+ * A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON
+ * (A1, D-45).
  */
 function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   const draft = fullDraft(state.draft)
   if (state.sub.kind !== 'review' || draft === null) return stageFailed(state)
-  const { planned } = state.sub
-  const next = choiceAnswer(reviewAsk(draft, planned.plan), state.sub, answer)
-  if (next.kind === 'again') return reviewAsked(state, planned, next.question, next.sub.tries)
+  const { planned, page } = state.sub
+  const next = choiceAnswer(reviewAskOf(state, draft, planned.plan, page), state.sub, answer)
+  if (next.kind === 'again') return reviewAsked(state, planned, next.question, next.sub.tries, page)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   const item = next.value
+  if (item === 'next') return reviewAsked(state, planned, null, 1, page + 1)
+  if (item === 'previous') return reviewAsked(state, planned, null, 1, page - 1)
   if (item === 'confirm') return confirmed(state, { draft, planned })
   if (state.rounds >= MAX_REVIEW_ROUNDS - 1) return stageCancelled(state, REVIEW_ROUNDS_REASON)
   if (item === 'roles') return stageBack(state, 'roles', 'improver-install')

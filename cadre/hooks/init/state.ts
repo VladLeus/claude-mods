@@ -245,7 +245,7 @@ export type MemoryCursor = {
  * - `start`: just entered; a stage with one effect waits here for its answer.
  * - `ask`: one question is out, asked `tries` times so far (choiceAnswer).
  * - `history`: the history question is out, asked `tries` times so far, with the sessions listed for the scan.
- * - `review`: the review question about `planned` is out, asked `tries` times so far.
+ * - `review`: the review question about `planned` is out on page `page` (D-233), asked `tries` times so far.
  * - `launch-dir`: the launcher folder question is out, asked `tries` times so far.
  * - `launch-check`: the check of the folder `path`, typed as `answer` at try `tries`, is out.
  * - `back`: the review goes back to the stage `to` (D-204); nextStage enters it.
@@ -281,7 +281,7 @@ export type StageSub =
   | { readonly kind: 'start' }
   | { readonly kind: 'ask'; readonly tries: number }
   | { readonly kind: 'history'; readonly tries: number; readonly listing: SessionListing }
-  | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult }
+  | { readonly kind: 'review'; readonly tries: number; readonly planned: PlanResult; readonly page: number }
   | { readonly kind: 'launch-dir'; readonly tries: number }
   | { readonly kind: 'launch-check'; readonly tries: number; readonly answer: string; readonly path: string }
   | { readonly kind: 'back'; readonly to: InitStage }
