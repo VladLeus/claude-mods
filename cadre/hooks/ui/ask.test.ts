@@ -9,6 +9,7 @@ import { BIDI_OVERRIDE, memIo, memWorld } from '../testkit'
 import {
   ASK_HEADERS,
   askChoice,
+  choiceAnswer,
   MAX_ASKS,
   NO_USABLE_ANSWER_REASON,
   PANE_TITLES,
@@ -219,5 +220,42 @@ describe('question context lines (G-02-1)', () => {
     expect(withContext('Q?', `a\nb${BIDI_OVERRIDE}c`)).toBe('Q?\nabc')
     expect(withContext('Q?', 'x'.repeat(400))).toBe(`Q?\n${'x'.repeat(400)}`)
     expect(withContext('Q?', 'x'.repeat(500))).toBe(`Q?\n${'x'.repeat(399)}…`)
+  })
+})
+
+describe('choiceAnswer (D-230)', () => {
+  /** Why the question of the refuse cases is cancelled when it is dismissed. */
+  const DISMISSED = 'The pick question was dismissed.'
+
+  /** The question of the refuse cases as a pure stage asks it: OK_ASK with the reason a dismissal cancels with. */
+  const STAGE_ASK = { ...OK_ASK, dismissedReason: DISMISSED }
+
+  test('choiceAnswer gives the value of an answer the parser takes', () => {
+    expect(choiceAnswer(STAGE_ASK, { tries: 1 }, 'ok')).toEqual({ kind: 'value', value: 'ok' })
+    expect(choiceAnswer(STAGE_ASK, { tries: MAX_ASKS }, 'ok')).toEqual({ kind: 'value', value: 'ok' })
+  })
+
+  test('an answer it cannot read asks again with the refusal or the own refuse text on top, and the next try', () => {
+    expect(choiceAnswer(STAGE_ASK, { tries: 1 }, 'nope')).toEqual({
+      kind: 'again',
+      question: `${refusalLine('nope', ACCEPTS)}\n${QUESTION}`,
+      sub: { tries: 2 },
+    })
+    expect(choiceAnswer({ ...STAGE_ASK, refuse: refuseWith }, { tries: 2 }, 'nope')).toEqual({
+      kind: 'again',
+      question: `R:nope\n${QUESTION}`,
+      sub: { tries: 3 },
+    })
+  })
+
+  test('the MAX_ASKS-th answer it cannot read cancels with NO_USABLE_ANSWER_REASON', () => {
+    const exhausted = { kind: 'cancelled', reason: NO_USABLE_ANSWER_REASON }
+    expect(choiceAnswer(STAGE_ASK, { tries: MAX_ASKS }, 'nope')).toEqual(exhausted)
+    expect(choiceAnswer(STAGE_ASK, { tries: MAX_ASKS }, '')).toEqual(exhausted)
+  })
+
+  test("a dismissal cancels with the question's own dismissed reason at any try", () => {
+    expect(choiceAnswer(STAGE_ASK, { tries: 1 }, null)).toEqual({ kind: 'cancelled', reason: DISMISSED })
+    expect(choiceAnswer(STAGE_ASK, { tries: MAX_ASKS }, null)).toEqual({ kind: 'cancelled', reason: DISMISSED })
   })
 })

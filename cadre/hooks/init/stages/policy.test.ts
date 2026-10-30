@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { memIo, memWorld } from '../../testkit'
+import { DEFAULT_LOCATIONS, memIo, memWorld, stateAt, TEMPLATE_ROLES } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import { nextStage } from '../machine'
 import {
   GIT_POLICY_CONTEXT,
   GIT_POLICY_DISMISSED_REASON,
@@ -10,7 +11,11 @@ import {
   gitPolicyStep,
   parseGitPolicy,
   policyLine,
+  policyStage,
 } from './policy'
+
+/** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
+const POLICY_DRAFT = { locations: DEFAULT_LOCATIONS, roles: TEMPLATE_ROLES }
 
 describe('init helpers', () => {
   test('parseGitPolicy maps the three labels, trimmed and in any case', () => {
@@ -80,5 +85,24 @@ describe('init helpers', () => {
       'Git policy: commit all (only per-user rendered files in .cadre/*/.runtime/ ignored)',
     )
     expect(policyLine('ignore')).toBe('Git policy: ignore all of .cadre/')
+  })
+})
+
+describe('the git policy stage (D-230)', () => {
+  test('policyStage asks the git policy question with its context line and chip; the open question is that ask', () => {
+    const state = policyStage.enter(stateAt('policy', POLICY_DRAFT))
+    const ask = {
+      question: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
+      spec: { options: GIT_POLICY_OPTIONS, header: 'Git policy' },
+    }
+    expect(state.effect).toEqual({ kind: 'ask', ...ask })
+    expect(state.openQuestion).toEqual(ask)
+  })
+
+  test('a policy label finishes the stage with that policy in the draft and enters the launcher start stage', () => {
+    const state = nextStage(policyStage.enter(stateAt('policy', POLICY_DRAFT)), { kind: 'answer', text: 'Commit all' })
+    expect(state.stage).toBe('launch')
+    expect(state.draft.policy).toBe('all')
+    expect(state.draft.roles).toBe(TEMPLATE_ROLES)
   })
 })
