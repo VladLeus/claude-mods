@@ -4,6 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { FactsPort, HostIo, IdentityRunResult, InitIo, OpenQuestion, PortRead, ShownBlock } from '../types'
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
+import { isObject } from './core/json'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
@@ -382,14 +383,20 @@ export const register: Register = on => {
   })
 
   // The pane draws the block of the question cadre has open, which the init port's ask writes (R1, D-203); this hook
-  // writes no state. Only while the terminal main screen seats the pane inline, where the engine hides it behind a
-  // dialog: each single-select question gets its preview of the pane on every option (D3, B1) and a Describe your own
-  // option or the hint line (A2), and notes typed in the dialog become the answer under the question's text as asked
-  // (A3). Any other call, a deny, an error and a result of another shape pass through unchanged. Apart from the read
-  // of the pane's blocks, the hook has no .catch on purpose: a hook that throws is skipped and next(e) runs in its
-  // place, a fail-safe pass-through (C1).
+  // writes no state. It acts only on the question cadre has open, the call's first question by its exact text: any
+  // other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through untouched,
+  // and so does its result (D-239). Only while the terminal main screen seats the pane inline, where the engine hides
+  // it behind a dialog: each single-select question gets its preview of the pane on every option (D3, B1) and a
+  // Describe your own option or the hint line (A2), and notes typed in the dialog become the answer under the
+  // question's text as asked (A3). Any other call, a deny, an error and a result of another shape pass through
+  // unchanged. Apart from the reads of the open question and of the pane's blocks, the hook has no .catch on purpose:
+  // a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
+    const open = await read($, openQuestion).catch(() => null)
+    const first: unknown = Array.isArray(raw) ? raw[0] : undefined
+    const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
+    if (open === null || asked !== open.question) return await next(e)
     if (lastPlacement !== 'inline') return await next(e)
     const blocks = await read($, initPane).catch(() => NO_BLOCKS)
     if (blocks.length === 0) return await next(e)
