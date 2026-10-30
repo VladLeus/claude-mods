@@ -11,15 +11,14 @@ import { mapped } from './draft'
 import type { Draft } from './draft'
 import type { LegacyGoBack } from './state'
 import { assignmentStep } from './stages/assign'
-import { carryStep } from './stages/carry'
 import { hunkStep } from './stages/hunks'
 import { instructionsAgain } from './stages/instructions'
 
 /**
  * Goes back to one review item whose stage is not pure yet (D-43, LegacyGoBack) and gives the draft with the new
- * answer: it re-asks that item's step. The assignment, memory and env steps run again on the current roles and decide
- * the whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the instruction
- * hand-out it had (instructionsAgain). Change roles, the git policy, the launcher start, the duration and the model go
+ * answer: it re-asks that item's step. The assignment and memory steps run again on the current roles and decide the
+ * whole list they ask about (A3), so a narrower answer takes a name away; memory goes back to the instruction hand-out
+ * it had (instructionsAgain). Change roles, the git policy, the launcher start, the duration, the model and the env go
  * back as stage transitions instead (D-204). A cancelled step ends the review with its reason (A1).
  */
 export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Promise<StepResult<Draft>> {
@@ -35,8 +34,6 @@ export async function goBack(io: InitIo, draft: Draft, item: LegacyGoBack): Prom
         ...draft,
         ...instructed,
       }))
-    case 'env':
-      return mapped(await carryStep(io, roles, gathered.setup), carried => ({ ...draft, roles: carried }))
     case 'hunks': {
       const hunks = await hunkStep(io, { roles, repoDefault: draft.repoDefault, gathered, locations })
 

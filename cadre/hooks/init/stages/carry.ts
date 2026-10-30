@@ -1,17 +1,19 @@
 /**
- * The carried settings stage of init (D-60, D-62, D-84, D-103, D-135, D-136), a layer 10 module: the env question,
- * with the team's role ids on its second line (envContextLine), asked after the side pane lists every scanned env name
- * (carriedEnv), and carryStep, which gives every role the same picked names, never a value, the autoCompactWindow and
- * statusLine settings the user sets, and the GSD secret read guard any settings source registers. Pure: it asks
- * through the InitIo port it is given, imports core, framework/gsd, init/answers, ui/ask and init/stages/model, and
- * never imports init.ts, which imports it, or init/run.
+ * The carried settings stage of init (D-60, D-62, D-84, D-103, D-135, D-136, D-230), a layer 10 module: the env
+ * question, with the team's role ids on its second line (envContextLine), asked after the side pane lists every
+ * scanned env name, and carryStage, the pure stage that gives every role the same picked names, never a value, the
+ * autoCompactWindow and statusLine settings the user sets, and the GSD secret read guard any settings source registers.
+ * Pure: it gives states and never performs an effect, imports core, framework/gsd, init/answers, init/state, ui/ask
+ * and init/stages/model, and never imports init/machine or init/run.
  */
-import type { InitIo, RoleCarry, RoleSpec, SetupScan } from '../../../types'
+import type { RoleCarry, RoleSpec, SetupScan } from '../../../types'
 import { sortedUnique } from '../../core/text'
 import { SECRET_READ_GUARD } from '../../framework/gsd/adapter'
-import { accepted, ASK_HEADERS, askChoice, choiceResult, quotedLabels, showBlock, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
 import { ALL_ENV_OPTION, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
+import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
+import type { Answer, InitState, StageDef } from '../state'
 import { teamContextLine } from './model'
 
 /** The buttons of the env question: no name or every scanned name; names are typed under "Other" (D-60). */
@@ -32,51 +34,82 @@ export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or
 const ENV_PANE_HEADING = 'Env variable names in your settings (values are never read):'
 
 /**
- * The env variable names roles carry (D-60): none when the scan found no name, and then nothing is shown or asked. Else
- * the side pane first lists every scanned name, one per row (D-135), since the question shows only the first five
- * (envQuestion), so All of them never covers a name the person cannot see; then the one env question, with the team's
- * role ids on its second line (envContextLine, D-136), is answered with None, All of them or typed names that were
- * scanned (parseEnvNames), and any other answer is asked again with why on top. A dismissal is cancelled with
- * ENV_DISMISSED_REASON and MAX_ASKS answers that name no scanned variable with NO_USABLE_ANSWER_REASON (A1).
+ * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids
+ * on its second line (envContextLine), the buttons None and All of them with the Env chip, typed names that were
+ * scanned (parseEnvNames), what its refusal lists, and the reason a dismissal cancels with.
  */
-async function carriedEnv(
-  io: InitIo,
+function envAsk(
   names: readonly string[],
   roles: readonly RoleSpec[],
-): Promise<StepResult<readonly string[]>> {
-  if (names.length === 0) return accepted([])
-  const parse = (answer: string): readonly string[] | null => parseEnvNames(answer, names)
-  await showBlock(io, 'env', [ENV_PANE_HEADING, ...names.map(name => `  ${name}`)])
-  const spec = { options: ENV_OPTIONS, header: ASK_HEADERS.env }
-  const ask = { question: withContext(envQuestion(names), envContextLine(roles)), spec, parse, accepts: ENV_ACCEPTS }
-
-  return choiceResult(await askChoice(io, ask), ENV_DISMISSED_REASON)
+): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
+  return {
+    question: withContext(envQuestion(names), envContextLine(roles)),
+    spec: { options: ENV_OPTIONS, header: ASK_HEADERS.env },
+    parse: (answer: string): readonly string[] | null => parseEnvNames(answer, names),
+    accepts: ENV_ACCEPTS,
+    dismissedReason: ENV_DISMISSED_REASON,
+  }
 }
 
 /**
- * The carried settings step (D-60, D-62, D-84). When the user settings define env variables, the side pane lists their
- * names and one question asks which ones roles carry (carriedEnv, D-135); with none, nothing is shown or asked. Every
- * role carries the same: the picked names, never a value; `autoCompactWindow` and `statusLine` when the user settings
- * set them; and the GSD secret read guard, the one hook carried, when any settings source registers it: launch renders
- * it from the user, project and local settings (D-103). Hooks registered in project settings load in roles that start
- * at the git root, and the card lists them as loaded by project settings (D-122). A dismissal gives the cancel reason
- * ENV_DISMISSED_REASON, and MAX_ASKS answers that name no scanned variable NO_USABLE_ANSWER_REASON (A1, D-136). No env
- * or settings value is read, stored or printed (T-02-34); the roles it is given never change.
+ * The stage done with every role carrying the same (D-60, D-62, D-84): the picked names `env`, never a value;
+ * `autoCompactWindow` and `statusLine` when the user settings set them; and the GSD secret read guard, the one hook
+ * carried, when any settings source registers it: launch renders it from the user, project and local settings
+ * (D-103). Hooks registered in project settings load in roles that start at the git root, and the card lists them as
+ * loaded by project settings (D-122).
  */
-export async function carryStep(
-  io: InitIo,
+function carriedDone(
+  state: InitState,
   roles: readonly RoleSpec[],
   setup: SetupScan,
-): Promise<StepResult<readonly RoleSpec[]>> {
-  const env = await carriedEnv(io, setup.carry.envNames, roles)
-  if (env.kind === 'cancelled') return env
+  env: readonly string[],
+): InitState {
   const guards = setup.hooks.map(hook => hook.script).filter(script => SECRET_READ_GUARD.test(script))
   const carry: RoleCarry = {
     autoCompactWindow: setup.carry.autoCompactWindow !== null,
     statusLine: setup.carry.hasStatusLine,
-    env: env.value,
+    env,
     hooks: sortedUnique(guards),
   }
 
-  return accepted(roles.map(role => ({ ...role, carry })))
+  return stageDone({ ...state, draft: { ...state.draft, roles: roles.map(role => ({ ...role, carry })) } })
 }
+
+/** The answer to the env question (choiceAnswer): None, All of them or typed names that were scanned. */
+function carryAnswer(state: InitState, answer: Answer): InitState {
+  const { roles, gathered } = state.draft
+  const isOpen = answer.kind === 'answer' && state.sub.kind === 'ask'
+  if (!isOpen || roles === undefined || gathered === undefined) return stageFailed(state)
+  const { setup } = gathered
+  const ask = envAsk(setup.carry.envNames, roles)
+  const next = choiceAnswer(ask, state.sub, answer.text)
+  if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+
+  return carriedDone(state, roles, setup, next.value)
+}
+
+/**
+ * The carried settings stage (D-60, D-62, D-84, D-230). When the user settings define env variables, the side pane
+ * first lists every scanned name, one per row (D-135), since the question shows only the first five (envQuestion), so
+ * All of them never covers a name the person cannot see; then the one env question asks which ones roles carry
+ * (envAsk), and any other answer is asked again with why on top. With none, nothing is shown or asked. Every role
+ * carries the same (carriedDone). A dismissal is cancelled with ENV_DISMISSED_REASON and MAX_ASKS answers that name no
+ * scanned variable with NO_USABLE_ANSWER_REASON (A1, D-136). No env or settings value is read, stored or printed
+ * (T-02-34).
+ */
+export const carryStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const { roles, gathered } = state.draft
+    if (roles === undefined || gathered === undefined) return stageFailed(state)
+    const { setup } = gathered
+    const names = setup.carry.envNames
+    if (names.length === 0) return carriedDone(state, roles, setup, [])
+    const lines = [ENV_PANE_HEADING, ...names.map(name => `  ${name}`)]
+    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'env', lines } }])
+    const ask = envAsk(names, roles)
+
+    return asking(shown, ask.question, ask.spec, 1)
+  },
+  answer: carryAnswer,
+})

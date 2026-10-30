@@ -65,7 +65,6 @@ import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import type { Answer, Effect, IoCall, IoResult, LegacyResult, LegacyStep, Output } from './state'
 import { assignmentStep } from './stages/assign'
-import { carryStep } from './stages/carry'
 import { hunkStep } from './stages/hunks'
 import { improverInstallStep } from './stages/improver-install'
 import { instructionsStep } from './stages/instructions'
@@ -355,8 +354,6 @@ async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult
       return { id: 'assign', result: await assignmentStep(io, step.roles, step.setup, step.hints) }
     case 'instructions':
       return { id: 'instructions', result: await instructionsStep(io, step.roles, step.setup, step.locations) }
-    case 'carry':
-      return { id: 'carry', result: await carryStep(io, step.roles, step.setup) }
     case 'hunks':
       return { id: 'hunks', result: await hunkStep(io, step) }
     case 'improver':

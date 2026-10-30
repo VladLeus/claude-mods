@@ -25,6 +25,7 @@ import {
   withOutputs,
 } from './state'
 import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
+import { carryStage } from './stages/carry'
 import { consentStage } from './stages/consent'
 import { durationStage } from './stages/duration'
 import { frameworksStage } from './stages/frameworks'
@@ -105,18 +106,6 @@ const rolesStage: StageDef = Object.freeze({
   },
 })
 
-/** A role step that only changes the roles (legacy): the assignments or the carried settings. */
-function rolesAnswer(state: InitState, answer: Answer, id: 'assign' | 'carry'): InitState {
-  if (answer.kind !== 'legacy') return stageFailed(state)
-  const { result } = answer
-  const isOwn = result.id === id && (result.id === 'assign' || result.id === 'carry')
-  if (!isOwn) return stageFailed(state)
-  const changed = result.result
-  if (changed.kind === 'cancelled') return stageCancelled(state, changed.reason)
-
-  return stageDone({ ...state, draft: { ...state.draft, roles: changed.value } })
-}
-
 /** The MCP servers and skills, with the history hints (assignmentStep, legacy). */
 const assignStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
@@ -125,7 +114,13 @@ const assignStage: StageDef = Object.freeze({
 
     return withEffect(state, { kind: 'legacy', step: { id: 'assign', roles, setup: gathered.setup, hints } })
   },
-  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'assign'),
+  answer: (state: InitState, answer: Answer): InitState => {
+    if (answer.kind !== 'legacy' || answer.result.id !== 'assign') return stageFailed(state)
+    const assigned = answer.result.result
+    if (assigned.kind === 'cancelled') return stageCancelled(state, assigned.reason)
+
+    return stageDone({ ...state, draft: { ...state.draft, roles: assigned.value } })
+  },
 })
 
 /** The instructions and memories (instructionsStep, legacy), with how they were handed out (G-02-1f). */
@@ -145,17 +140,6 @@ const instructionsStage: StageDef = Object.freeze({
 
     return stageDone({ ...state, draft: { ...state.draft, roles, instructions } })
   },
-})
-
-/** The carried settings (carryStep, legacy). */
-const carryStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, gathered } = state.draft
-    if (roles === undefined || gathered === undefined) return stageFailed(state)
-
-    return withEffect(state, { kind: 'legacy', step: { id: 'carry', roles, setup: gathered.setup } })
-  },
-  answer: (state: InitState, answer: Answer): InitState => rolesAnswer(state, answer, 'carry'),
 })
 
 /** The autonomy hunks of the frameworks the roles run on (hunkStep, legacy). */

@@ -153,7 +153,7 @@ import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import { planStep, runInit } from './run'
 import type { InitOptions } from './run'
 import { assignmentStep } from './stages/assign'
-import { carryStep, ENV_DISMISSED_REASON } from './stages/carry'
+import { carryStage, ENV_DISMISSED_REASON } from './stages/carry'
 import {
   CLAUDE_JSON_CONTEXT,
   CLAUDE_JSON_OPTIONS,
@@ -2765,6 +2765,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       '"Git root of this repo", "The folder I run it from", "Another folder in this repo" ' +
       '(or type git root, in here or other)'
     const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
+    const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ carry: envNames }) }
     const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
       [
         'roles',
@@ -2779,11 +2780,6 @@ describe('refusal re-ask (G-02-6b)', () => {
         '"Accept recommendations", "Go one by one", "Whole group"',
       ],
       ['memory', io => memoryStep(io, roles, emptySetupScan({ hasGlobalClaudeMd: true })), roleList],
-      [
-        'env',
-        io => carryStep(io, roles, emptySetupScan({ carry: envNames })),
-        '"None", "All of them", or names from the list, typed exactly',
-      ],
     ]
     for (const [name, step, accepts] of steps) {
       const run = memIo(memWorld({}), ['zzz'])
@@ -2815,6 +2811,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         'model mode',
         () => driven(modelStage.enter(stateAt('model', { roles })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
+      ],
+      [
+        'env',
+        () => driven(carryStage.enter(stateAt('carry', wholeDraft({ roles, gathered }))), ['zzz']).asked,
+        '"None", "All of them", or names from the list, typed exactly',
       ],
       ['launch', () => driven(launchStage.enter(stateAt('launch', { roles })), ['zzz']).asked, launch],
       ['git policy', () => driven(policyStage.enter(stateAt('policy')), ['zzz']).asked, 'definitions, all, ignore'],
