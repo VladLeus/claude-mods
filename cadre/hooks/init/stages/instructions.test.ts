@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { InstructionGroup, InstructionHandout, InstructionPart, InstructionScan } from '../../../types'
+import type {
+  InitIo,
+  InitLocations,
+  InstructionGroup,
+  InstructionHandout,
+  InstructionPart,
+  InstructionScan,
+  RoleSpec,
+  SetupScan,
+} from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
@@ -25,12 +34,14 @@ import {
   RECOMMENDED,
   repoScan,
   SECURITY_TOPIC,
+  stageStep,
   stateAt,
   TOPICS,
   valueOf,
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { contextText, withContext } from '../../ui/ask'
+import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
 import {
   CONTENT_DISMISSED_REASON,
@@ -43,7 +54,6 @@ import {
   INSTRUCTIONS_ENTRY_QUESTION,
   instructionsEntry,
   instructionsStage,
-  instructionsStep,
   memoryItemContextLine,
   memoryItemHeader,
   memoryItemQuestion,
@@ -54,6 +64,7 @@ import {
   topicItems,
   topicQuestion,
 } from './instructions'
+import type { Instructed } from './instructions'
 
 /**
  * A part of the global CLAUDE.md with this id, heading and text, and a stand-in hash; `file` changes the file it comes
@@ -74,6 +85,23 @@ const SCAN: InstructionScan = { parts: PARTS, files: ['~/.claude/CLAUDE.md'], me
 
 /** The read of GLOBAL_TEXT with the two MEMORIES. */
 const MEMORY_SCAN: InstructionScan = { ...SCAN, memories: MEMORIES }
+
+/** The instruction stage run over `io` for `roles`, the setup scan `setup` and `locations`, as a step result. */
+function instructedBy(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  locations: InitLocations,
+): Promise<StepResult<Instructed>> {
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+  const state = stateAt('instructions', { roles, gathered, locations })
+
+  return stageStep(io, instructionsStage, state, draft => {
+    const { roles: given, instructions } = draft
+
+    return given === undefined || instructions === undefined ? undefined : { roles: given, instructions }
+  })
+}
 
 describe('instruction questions (G-02-1f)', () => {
   test('the content consent asks before anything is read, No, skip it first (D-134)', () => {
@@ -252,7 +280,7 @@ describe('instruction parts (G-02-1f)', () => {
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
     const groups: readonly InstructionGroup[] = ['auto-memory']
     const roles = proposeRoles(repoScan()).roles.map(role => ({ ...role, instructions: groups }))
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
+    const value = valueOf(await instructedBy(run.io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.roles.map(role => role.instructions)).toEqual([[], [], []])
     const handout = partsOf(value.instructions)
     expect(handout.topics.map(topic => topic.title)).toEqual(['Security rules', 'Git and commits'])
@@ -296,7 +324,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
   test('the rule file is a repo part of the hand-out, with its file, heading and source', async () => {
     const roles = proposeRoles(repoScan()).roles
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS))
+    const value = valueOf(await instructedBy(run.io, roles, emptySetupScan(), DEFAULT_LOCATIONS))
     expect(value.instructions.kind).toBe('parts')
     const handout = partsOf(value.instructions)
     expect(handout.scan.parts.map(part => [part.file, part.heading, part.source])).toEqual([
@@ -311,7 +339,7 @@ describe('memories one by one (G-02-1f)', () => {
     const roles = proposeRoles(repoScan()).roles
     const setup = emptySetupScan({ hasGlobalClaudeMd: true, memoryFiles: ['MEMORY.md', 'squad.md', 'workflow.md'] })
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
-    const value = valueOf(await instructionsStep(run.io, roles, setup, DEFAULT_LOCATIONS))
+    const value = valueOf(await instructedBy(run.io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.instructions.kind).toBe('parts')
     const handout = partsOf(value.instructions)
     expect(Object.keys(handout.scan)).toContain('memories')
@@ -344,7 +372,7 @@ describe('memories one by one (G-02-1f)', () => {
     const roles = proposeRoles(repoScan()).roles
     const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
-    const value = valueOf(await instructionsStep(memIo(world, PARTS_ANSWERS).io, roles, setup, locations))
+    const value = valueOf(await instructedBy(memIo(world, PARTS_ANSWERS).io, roles, setup, locations))
     expect(value.instructions.kind).toBe('parts')
     const { scan } = partsOf(value.instructions)
     expect(Object.keys(scan)).toContain('memories')

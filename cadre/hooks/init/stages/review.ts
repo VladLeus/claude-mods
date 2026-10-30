@@ -3,11 +3,10 @@
  * its context line of the plan, the git policy and the launcher start, and its typed-item hint; its buttons and words
  * (parseReviewItem); the review block the side pane shows before it (reviewLines: the roles, each scope card, the
  * plan, the policy and start, the instructions per role, the private files and the improver line); and reviewStage,
- * the pure stage that has the draft planned, shows it, asks, goes back to one item through the legacy go-back until
- * Confirm, and then replies with the plan on a --dry-run or has it applied. Pure: it gives states and never performs an
- * effect, imports apply, core, generate, plan, roles, scan, scope, team, ui, init/draft, init/flow, init/initapply,
- * init/initplan, init/replies, init/state and the launch and policy stages, and never imports init/machine or
- * init/run.
+ * the pure stage that has the draft planned, shows it, asks, goes back to one item's stage until Confirm, and then
+ * replies with the plan on a --dry-run or has it applied. Pure: it gives states and never performs an effect, imports
+ * apply, core, generate, plan, roles, scan, scope, team, ui, init/draft, init/initapply, init/initplan, init/replies,
+ * init/state and the launch and policy stages, and never imports init/machine or init/run.
  */
 import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../../../types'
 import { setupAfterInstalls } from '../../apply/installs'
@@ -334,12 +333,12 @@ function confirmed(state: InitState, reviewed: Reviewed): InitState {
  * The answer to the review question (choiceAnswer): Confirm replies with the plan just shown on a --dry-run and has it
  * applied on plain init (D-105); another item goes back to that item, except at the last round, where it cancels at
  * once with REVIEW_ROUNDS_REASON and asks none of that item's questions (A3). Change roles, the git policy, the
- * launcher start, the duration, the model, the env, the hunks and the assignments go back as stage transitions
- * (stageBack, D-204): Change roles to the roles stage, from where every role step runs again up to the improver
- * install, the env to the carry stage, the assignments to the assign stage, and the others to their own stage. The
- * memory goes through the legacy go-back until its stage is pure. Any other answer is asked again with why on top. A
- * dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON
- * (A1, D-45).
+ * launcher start, the duration, the model, the env, the hunks, the assignments and the memory go back as stage
+ * transitions (stageBack, D-204): Change roles to the roles stage, from where every role step runs again up to the
+ * improver install, the env to the carry stage, the assignments to the assign stage, the memory to the instruction
+ * stage, which asks again what it handed out, and the others to their own stage. Any other answer is asked again with
+ * why on top. A dismissal cancels with REVIEW_DISMISSED_REASON and MAX_ASKS answers it cannot read with
+ * NO_USABLE_ANSWER_REASON (A1, D-45).
  */
 function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   const draft = fullDraft(state.draft)
@@ -354,17 +353,9 @@ function afterReviewAnswer(state: InitState, answer: string | null): InitState {
   if (item === 'roles') return stageBack(state, 'roles', 'improver-install')
   if (item === 'env') return stageBack(state, 'carry', 'carry')
   if (item === 'assignments') return stageBack(state, 'assign', 'assign')
-  if (item !== 'memory') return stageBack(state, item, item)
-  const going: InitState = { ...state, sub: { kind: 'start' } }
+  if (item === 'memory') return stageBack(state, 'instructions', 'instructions')
 
-  return withEffect(going, { kind: 'legacy', step: { id: 'go-back', draft, item } })
-}
-
-/** After a go-back: its new draft planned again as the next round, or the review cancelled with its reason (A1). */
-function afterGoBack(state: InitState, result: StepResult<Draft>): InitState {
-  if (result.kind === 'cancelled') return stageCancelled(state, result.reason)
-
-  return planning({ ...state, draft: result.value, rounds: state.rounds + 1 })
+  return stageBack(state, item, item)
 }
 
 /** Confirm's apply (D-105): the reply with the plan as written and what the apply did. */
@@ -376,10 +367,9 @@ function afterApply(state: InitState, result: StepResult<Applied> | null): InitS
   return stageEnded(state, initReplyText(planned.plan, planned.state.gitPolicy, planned.state.launchStart, outcome))
 }
 
-/** The answer to the effect the review has out: the plan, the review question, a go-back, or Confirm's apply. */
+/** The answer to the effect the review has out: the plan, the review question, or Confirm's apply. */
 function reviewAnswer(state: InitState, answer: Answer): InitState {
   if (answer.kind === 'answer') return afterReviewAnswer(state, answer.text)
-  if (answer.kind === 'legacy' && answer.result.id === 'go-back') return afterGoBack(state, answer.result.result)
   if (answer.kind !== 'io') return stageFailed(state)
   const { result } = answer
   if (result.id === 'plan') return afterPlan(state, result.result)
@@ -393,9 +383,10 @@ function reviewAnswer(state: InitState, answer: Answer): InitState {
  * summary in the side pane (reviewLines, D-133) and asks the review question about that plan (afterReviewAnswer).
  * Confirm takes the plan just shown, with the state it was planned with and the draft it was built from (Reviewed): a
  * --dry-run replies with it and writes nothing (D-82), plain init has it applied (D-105). A go-back re-asks that one
- * item, and the next round shows the summary again; a cancelled go-back cancels with its reason, and so does a run that
- * has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the person did not confirm is
- * used (A1, D-45). The review itself writes nothing: Confirm is the consent apply writes the plan on (D-105).
+ * item in its stage (D-204), and the next round shows the summary again; a cancelled go-back cancels with its reason,
+ * and so does a run that has asked MAX_REVIEW_ROUNDS times without Confirm (REVIEW_ROUNDS_REASON), so no plan the
+ * person did not confirm is used (A1, D-45). The review itself writes nothing: Confirm is the consent apply writes the
+ * plan on (D-105).
  */
 export const reviewStage: StageDef = Object.freeze({
   enter: planning,

@@ -3,13 +3,12 @@
  * model's recommendations, asks each item one by one, or keeps the whole-group questions, and gives each item the roles
  * the person chose. It is a pure cursor (D-230): handoutEnter asks the entry question and handoutAnswer takes each
  * answer, so a stage asks it from its own StageDef. Pure: it imports core, ui/ask and init/answers, and never imports
- * init/machine or init/run; handoutStep, the async step, is kept only for the own-skills and instruction steps until
- * they are pure stages.
+ * init/machine or init/run.
  */
-import type { AskSpec, InitIo, RoleSpec } from '../../types'
+import type { AskSpec, RoleSpec } from '../../types'
 import { labelled } from '../core/labelled'
-import { accepted, askChoice, choiceAnswer, choiceResult, quotedLabels, withContext } from '../ui/ask'
-import type { ChoiceAsk, StepResult } from '../ui/ask'
+import { choiceAnswer, quotedLabels, withContext } from '../ui/ask'
+import type { ChoiceAsk } from '../ui/ask'
 import { parseRoleList } from './answers'
 
 /**
@@ -104,69 +103,6 @@ function itemRoles(answer: string, item: HandoutItem, roles: readonly RoleSpec[]
   if (word === NO_LABEL.toLowerCase()) return []
 
   return parseRoleList(answer, roles)
-}
-
-/**
- * Asks each item once, in item order (G-02-1f Part by part): its question with its context line on the second line,
- * its chip and the buttons Yes and No, a role list typed under "Other"; an answer it cannot read is asked again with
- * why on top (askChoice). Only an answer to every item gives roles: a dismissal is cancelled with `dismissedReason`,
- * and MAX_ASKS answers it cannot read at one item with NO_USABLE_ANSWER_REASON (A1).
- */
-async function askEachItem(
-  io: InitIo,
-  items: readonly HandoutItem[],
-  roles: readonly RoleSpec[],
-  dismissedReason: string,
-): Promise<StepResult<HandoutOutcome>> {
-  const accepts = itemAccepts(roles)
-  const given = new Map<string, readonly string[]>()
-  for (const item of items) {
-    const ask = {
-      question: withContext(item.question, item.context),
-      spec: { options: ITEM_OPTIONS, header: item.header },
-      parse: (answer: string): readonly string[] | null => itemRoles(answer, item, roles),
-      accepts,
-    }
-    const answer = choiceResult(await askChoice(io, ask), dismissedReason)
-    if (answer.kind === 'cancelled') return answer
-    given.set(item.id, answer.value)
-  }
-
-  return accepted({ kind: 'given', given })
-}
-
-/**
- * The hand-out as an async step (G-02-1f Entry choices), kept only for the own-skills and instruction steps until they
- * are pure stages; init asks it through the cursor (handoutEnter, handoutAnswer). It asks the entry question with its
- * context line on the second line, its chip
- * and its three answers in the order accept, one by one, whole, and asks any other answer again with why on top
- * (askChoice). Accept gives every item its recommended roles, an item with none to no role; one by one asks each item
- * once (askEachItem); the whole answer gives the whole-group outcome, so the caller asks its whole-group questions. A
- * dismissal is cancelled with `dismissedReason` and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON, so
- * no answer the person did not give hands anything out (A1). It only asks: the roles and the items it is given never
- * change.
- */
-export async function handoutStep(
-  io: InitIo,
-  entry: HandoutEntry,
-  items: readonly HandoutItem[],
-  roles: readonly RoleSpec[],
-  dismissedReason: string,
-): Promise<StepResult<HandoutOutcome>> {
-  const labels = entryLabels(entry)
-  const options = labels.map(label => label.label)
-  const ask = {
-    question: withContext(entry.question, entry.context),
-    spec: { options, header: entry.header },
-    parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
-    accepts: quotedLabels(options),
-  }
-  const choice = choiceResult(await askChoice(io, ask), dismissedReason)
-  if (choice.kind === 'cancelled') return choice
-  if (choice.value === 'whole') return accepted({ kind: 'whole' })
-  if (choice.value === 'oneByOne') return askEachItem(io, items, roles, dismissedReason)
-
-  return accepted({ kind: 'given', given: recommendedOf(items) })
 }
 
 /**

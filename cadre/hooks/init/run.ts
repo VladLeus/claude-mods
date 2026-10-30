@@ -1,8 +1,8 @@
 /**
  * The runner of /cadre init (D-43, D-45, D-58, D-105, D-230, A1), a layer 11 module: runInit, the one place init
  * performs its effects. It starts from initialState, shows each state's outputs in order, performs the state's one
- * effect (an ask through askOnce, a host operation, or a legacy step through today's step function) and feeds what
- * it gave to nextStage, until an end effect gives the reply. On Confirm of a plain init the apply writes through the
+ * effect (an ask through askOnce, a host operation, or a model call through checkedCompletion) and feeds what it gave
+ * to nextStage, until an end effect gives the reply. On Confirm of a plain init the apply writes through the
  * HostIo its InitOptions hold; a --dry-run holds no host, so it writes and runs nothing. register.tsx and the tests
  * import it, and no init module does.
  */
@@ -12,6 +12,8 @@ import type {
   HostIo,
   InitIo,
   InstructionPartRecord,
+  InstructionScan,
+  InstructionTopic,
   Manifest,
   ManifestEntry,
   PortRead,
@@ -43,11 +45,14 @@ import { standsFor } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { gatherScans } from '../scan/gather'
 import { listSessions, scanHistory } from '../scan/history'
+import { readInstructionFiles, repoInstructionNames } from '../scan/instructions/read'
 import { readPaths, readRepoFile } from '../scan/port-read'
 import { checkedCompletion } from '../suggest/checked'
 import type { Checked } from '../suggest/checked'
+import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from '../suggest/instructions'
 import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
+import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
 import { attendedByConfig, compileAll, resolvedFramework } from '../team'
 import {
   accepted,
@@ -63,23 +68,11 @@ import {
 import type { StepResult } from '../ui/ask'
 import { ownSkillIds } from './answers'
 import type { PlanResult, Reviewed } from './draft'
-import { goBack } from './flow'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
-import type {
-  Answer,
-  Effect,
-  IoCall,
-  IoResult,
-  LegacyResult,
-  LegacyStep,
-  ModelCall,
-  ModelResult,
-  Output,
-} from './state'
-import { instructionsStep } from './stages/instructions'
+import type { Answer, Effect, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -345,6 +338,10 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
     case 'read-repo-file':
       return { id: 'read-repo-file', result: await readRepoFile(io, call.root, call.path, call.maxBytes) }
+    case 'repo-instruction-names':
+      return { id: 'repo-instruction-names', result: await repoInstructionNames(io, call.root) }
+    case 'read-instruction-files':
+      return { id: 'read-instruction-files', result: await readInstructionFiles(io, call.sources) }
     case 'launch-dir-check':
       return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
     case 'plan':
@@ -353,23 +350,6 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'apply', result: options.dryRun ? null : await applyConfirmed(io, options.host, call.reviewed) }
     default: {
       const unreachable: never = call
-      return unreachable
-    }
-  }
-}
-
-/**
- * Runs one legacy step with today's step function and the draft fields it carries (D-230, until 02.1-26): each role
- * step that is not a pure stage yet, and the review's go-backs to items whose stage is not pure yet (goBack).
- */
-async function performLegacy(io: InitIo, step: LegacyStep): Promise<LegacyResult> {
-  switch (step.id) {
-    case 'instructions':
-      return { id: 'instructions', result: await instructionsStep(io, step.roles, step.setup, step.locations) }
-    case 'go-back':
-      return { id: 'go-back', result: await goBack(io, step.draft, step.item) }
-    default: {
-      const unreachable: never = step
       return unreachable
     }
   }
@@ -401,9 +381,54 @@ async function recommendedSkillRoles(
 }
 
 /**
+ * The topics of a read (G-02-1f Part unit): one model call groups the parts across files (topicsPrompt, TOPICS_SYSTEM).
+ * A reply parseTopics cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
+ * (checkedCompletion), and then each file is one topic (fallbackTopics). The model has no tools (D-83), and only its
+ * checked topics are kept.
+ */
+async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonly InstructionTopic[]> {
+  const partIds = scan.parts.map(part => part.id)
+  const parse = (reply: string): Checked<readonly InstructionTopic[]> => {
+    const parsed = parseTopics(reply, partIds)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: parsed.topics }
+  }
+  const prompt = (errors: readonly string[]): string => topicsPrompt(scan.parts, errors)
+
+  return checkedCompletion(io, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
+}
+
+/**
+ * The roles recommended for each topic and each memory (G-02-1f Recommendation, Memories): a second model call reads
+ * each role's work, the topics and the memories by file and summary (recommendPrompt, RECOMMEND_SYSTEM). A reply
+ * parseRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
+ * (checkedCompletion), and then no topic or memory is recommended to any role: the map is empty.
+ */
+async function recommendedRoles(
+  io: InitIo,
+  call: Extract<ModelCall, { readonly id: 'parts' }>,
+): Promise<ReadonlyMap<string, readonly string[]>> {
+  const { roles, topics, memories } = call
+  const topicIds = topics.map(topic => topic.id)
+  const memoryIds = memories.map(memory => memory.id)
+  const roleIds = roles.map(role => role.id)
+  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
+    const parsed = parseRecommendation(reply, topicIds, memoryIds, roleIds)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => recommendPrompt(roles, topics, memories, errors)
+
+  return checkedCompletion(io, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+}
+
+/**
  * Runs one model call of a stage (D-230) as today's step did, retrying through checkedCompletion and falling back as
- * it always did: the roles of a described structure (proposeFromText), or the roles recommended for each own skill
- * (recommendedSkillRoles).
+ * it always did: the roles of a described structure (proposeFromText), the roles recommended for each own skill
+ * (recommendedSkillRoles), the topics of an instruction read (groupedTopics), or the roles recommended for each topic
+ * and memory (recommendedRoles).
  */
 async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
   switch (call.id) {
@@ -411,6 +436,10 @@ async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
       return { id: 'describe-roles', result: await proposeFromText(io, call.text) }
     case 'skills':
       return { id: 'skills', result: await recommendedSkillRoles(io, call) }
+    case 'topics':
+      return { id: 'topics', result: await groupedTopics(io, call.scan) }
+    case 'parts':
+      return { id: 'parts', result: await recommendedRoles(io, call) }
     default: {
       const unreachable: never = call
       return unreachable
@@ -419,8 +448,8 @@ async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
 }
 
 /**
- * Performs a state's effect (D-230): an ask through askOnce (null when dismissed), a host operation, a model call
- * (performModel), a legacy step. The testkit's stageRun performs a stage's effects through it too.
+ * Performs a state's effect (D-230): an ask through askOnce (null when dismissed), a host operation (performIo) or a
+ * model call (performModel). The testkit's stageRun performs a stage's effects through it too.
  */
 export async function perform(
   io: InitIo,
@@ -434,8 +463,6 @@ export async function perform(
       return { kind: 'io', result: await performIo(io, options, effect.call) }
     case 'model':
       return { kind: 'model', result: await performModel(io, effect.call) }
-    case 'legacy':
-      return { kind: 'legacy', result: await performLegacy(io, effect.step) }
     default: {
       const unreachable: never = effect
       return unreachable

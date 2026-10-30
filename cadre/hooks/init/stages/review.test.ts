@@ -20,7 +20,6 @@ import {
   withFramework,
 } from '../../testkit'
 import { contextText, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
 import { nextStage, STAGES } from '../machine'
@@ -225,18 +224,6 @@ describe('the review stage (D-230)', () => {
     const reviewed = { draft: REVIEW_DRAFT, planned }
     expect(applying.effect).toEqual({ kind: 'io', call: { id: 'apply', reviewed } })
     expect(applying.openQuestion).toBeNull()
-  })
-
-  test('a go-back goes through the legacy go-back, and its new draft is planned again the next round', async () => {
-    const state = reviewAt()
-    const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const going = nextStage(asking, { kind: 'answer', text: 'memory' })
-    expect(going.effect).toEqual({ kind: 'legacy', step: { id: 'go-back', draft: REVIEW_DRAFT, item: 'memory' } })
-    const changed = { ...REVIEW_DRAFT, policy: 'all' } satisfies Draft
-    const result = { kind: 'accepted', value: changed } satisfies StepResult<Draft>
-    const back = nextStage(going, { kind: 'legacy', result: { id: 'go-back', result } })
-    expect([back.stage, back.rounds, back.draft.policy]).toEqual(['review', 1, 'all'])
-    expect((await plannedFor(back)).state.gitPolicy).toBe('all')
   })
 
   test('Change git policy goes back to the git policy stage, then the review again, counting a round', async () => {

@@ -3,10 +3,9 @@
  * initialState, a run with its first effect out; and nextStage, the one transition: the open stage takes the answer,
  * and once that stage is done the stages after it in STAGE_ORDER are entered until one sets an effect. A cancelled
  * stage has its reason logged as its own line and ends the run with cancelledReply (A1, D-45); an answer that does not
- * fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED (fail closed). Until
- * 02.1-26 the stages that are not pure yet are legacy stages here: each sets one legacy effect, made from the draft,
- * that init/run performs with today's step, and merges its result into the draft as runInit did. Pure: it gives
- * states and never performs an effect; only init/run and the tests import it.
+ * fit the effect that is out, or any answer once the run ended, ends it with INIT_CANCELLED (fail closed). Every stage
+ * is a pure StageDef of init/stages, but for the guard and the scans, which are io effects here. Pure: it gives states
+ * and never performs an effect; only init/run and the tests import it.
  */
 import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
@@ -15,16 +14,8 @@ import { proposeRoles } from '../roles/propose'
 import { scanWarnings } from '../scan/gather'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { cancelledReply, INIT_CANCELLED } from './replies'
-import {
-  STAGE_ORDER,
-  stageCancelled,
-  stageDone,
-  stageEnded,
-  stageFailed,
-  withEffect,
-  withOutputs,
-} from './state'
-import type { Answer, Effect, InitStage, InitState, LegacyStep, StageDef } from './state'
+import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
+import type { Answer, Effect, InitStage, InitState, StageDef } from './state'
 import { assignStage } from './stages/assign'
 import { carryStage } from './stages/carry'
 import { consentStage } from './stages/consent'
@@ -33,6 +24,7 @@ import { frameworksStage } from './stages/frameworks'
 import { historyStage } from './stages/history'
 import { hunksStage } from './stages/hunks'
 import { improverInstallStage } from './stages/improver-install'
+import { instructionsStage } from './stages/instructions'
 import { launchStage } from './stages/launch'
 import { modelStage } from './stages/model'
 import { policyStage } from './stages/policy'
@@ -84,25 +76,6 @@ const scanStage: StageDef = Object.freeze({
     const scanned = { ...state, draft }
 
     return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
-  },
-})
-
-/** The instructions and memories (instructionsStep, legacy), with how they were handed out (G-02-1f). */
-const instructionsStage: StageDef = Object.freeze({
-  enter: (state: InitState): InitState => {
-    const { roles, gathered, locations } = state.draft
-    if (roles === undefined || gathered === undefined || locations === undefined) return stageFailed(state)
-    const step = { id: 'instructions', roles, setup: gathered.setup, locations } satisfies LegacyStep
-
-    return withEffect(state, { kind: 'legacy', step })
-  },
-  answer: (state: InitState, answer: Answer): InitState => {
-    if (answer.kind !== 'legacy' || answer.result.id !== 'instructions') return stageFailed(state)
-    const instructed = answer.result.result
-    if (instructed.kind === 'cancelled') return stageCancelled(state, instructed.reason)
-    const { roles, instructions } = instructed.value
-
-    return stageDone({ ...state, draft: { ...state.draft, roles, instructions } })
   },
 })
 
@@ -214,8 +187,8 @@ function settled(state: InitState): InitState {
 }
 
 /**
- * Whether `answer` answers `effect`: an answer to an ask, the result of the same host operation, model call or legacy
- * step; nothing answers the end of a run.
+ * Whether `answer` answers `effect`: an answer to an ask, or the result of the same host operation or model call;
+ * nothing answers the end of a run.
  */
 function isAnswerTo(effect: Effect, answer: Answer): boolean {
   switch (effect.kind) {
@@ -225,8 +198,6 @@ function isAnswerTo(effect: Effect, answer: Answer): boolean {
       return answer.kind === 'io' && answer.result.id === effect.call.id
     case 'model':
       return answer.kind === 'model' && answer.result.id === effect.call.id
-    case 'legacy':
-      return answer.kind === 'legacy' && answer.result.id === effect.step.id
     case 'end':
       return false
     default: {

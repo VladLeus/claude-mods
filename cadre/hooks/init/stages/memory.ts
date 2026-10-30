@@ -1,16 +1,17 @@
 /**
- * The instruction and memory stage of init (D-63, D-100, D-136), a layer 10 module: one question per instruction
- * group the scan found, in the order the global CLAUDE.md, the auto-memories, the project CLAUDE.md, with the team's
- * role ids on its second line (memoryContextLine), and memoryStep, which gives each role the groups it was given, by
- * name only; and the None and All roles buttons and the refusal list of every question on which roles get an item
- * (ROLE_LIST_OPTIONS, roleListAccepts), which the assignment questions read too. Pure: it asks through the InitIo
- * port it is given, imports init/answers, ui/ask and the duration and model stages, and never imports init.ts, which
- * imports it, or init/run.
+ * The instruction and memory questions of init (D-63, D-100, D-136, D-230), a layer 10 module: one question per
+ * instruction group the scan found, in the order the global CLAUDE.md, the auto-memories, the project CLAUDE.md, with
+ * the team's role ids on its second line (memoryContextLine), and the pure cursor that asks them and gives each role
+ * the groups it was given, by name only (memoryEnter, memoryAnswer), which the instruction stage runs; and the None and
+ * All roles buttons and the refusal list of every question on which roles get an item (ROLE_LIST_OPTIONS,
+ * roleListAccepts), which the assignment questions read too. Pure: it imports init/answers, init/state types, ui/ask
+ * and the duration and model stages, and never imports init/machine or init/run.
  */
-import type { InitIo, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
-import { accepted, ASK_HEADERS, askChoice, choiceResult, quotedLabels, withContext } from '../../ui/ask'
-import type { StepResult } from '../../ui/ask'
+import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
 import { ALL_OPTION, memoryQuestion, NONE_OPTION, parseRoleList } from '../answers'
+import type { MemoryCursor } from '../state'
 import { idsOf } from './duration'
 import { teamContextLine } from './model'
 
@@ -54,39 +55,88 @@ function groupNames(group: InstructionGroup, setup: SetupScan): readonly string[
   }
 }
 
+/** What the group questions do next: ask `question` with `spec` and wait at `cursor`, end with roles, or cancel. */
+export type MemoryNext =
+  | { readonly kind: 'ask'; readonly question: string; readonly spec: AskSpec; readonly cursor: MemoryCursor }
+  | { readonly kind: 'done'; readonly roles: RoleSpec[] }
+  | { readonly kind: 'cancelled'; readonly reason: string }
+
 /**
- * The instruction and memory step (D-63, D-100). For each group the scan found, in the order the global
- * ~/.claude/CLAUDE.md, the auto-memories for this repo, the project CLAUDE.md, one question names the group and its
- * files and asks which roles get it (memoryQuestion), with the team's role ids and that no content is shown on its
- * second line (memoryContextLine, D-136), answered with None, All roles or a typed list of role ids or titles
- * (parseRoleList), and an answer that names no role list is asked again with why on top; a group the scan did not find
- * is not asked. Each role's `instructions` becomes the groups it was given, in that order, so the answers decide the
- * whole list. Only an answer to every question gives roles: a dismissal gives the cancel reason
- * MEMORY_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question NO_USABLE_ANSWER_REASON (A1). No file is
- * read and no content is shown; the roles it is given never change.
+ * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
+ * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip, a typed list of role
+ * ids or titles (parseRoleList), and MEMORY_DISMISSED_REASON for a dismissal.
  */
-export async function memoryStep(
-  io: InitIo,
+function groupAsk(
+  group: InstructionGroup,
+  names: readonly string[],
+  roles: readonly RoleSpec[],
+): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
+  return {
+    question: withContext(memoryQuestion(group, names), memoryContextLine(roles)),
+    spec: { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory },
+    parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),
+    accepts: roleListAccepts(roles),
+    dismissedReason: MEMORY_DISMISSED_REASON,
+  }
+}
+
+/**
+ * The question of the first group at or after `from` the scan found, asked the first time; after the last, the roles
+ * with the groups they were given, in the order global, auto-memory, project, so the answers decide the whole list.
+ */
+function groupAt(
   roles: readonly RoleSpec[],
   setup: SetupScan,
-): Promise<StepResult<readonly RoleSpec[]>> {
-  const parse = (answer: string): readonly string[] | null => parseRoleList(answer, roles)
-  const accepts = roleListAccepts(roles)
-  const given = new Map<InstructionGroup, readonly string[]>()
-  for (const group of INSTRUCTION_ORDER) {
-    const names = groupNames(group, setup)
-    if (names === null) continue
-    const spec = { options: ROLE_LIST_OPTIONS, header: ASK_HEADERS.memory }
-    const ask = { question: withContext(memoryQuestion(group, names), memoryContextLine(roles)), spec, parse, accepts }
-    const roleIds = choiceResult(await askChoice(io, ask), MEMORY_DISMISSED_REASON)
-    if (roleIds.kind === 'cancelled') return roleIds
-    given.set(group, roleIds.value)
-  }
-
-  return accepted(
-    roles.map(role => ({
+  from: number,
+  given: ReadonlyMap<InstructionGroup, readonly string[]>,
+): MemoryNext {
+  const at = INSTRUCTION_ORDER.findIndex((group, index) => index >= from && groupNames(group, setup) !== null)
+  const group = INSTRUCTION_ORDER[at]
+  const names = group === undefined ? null : groupNames(group, setup)
+  if (group === undefined || names === null) {
+    const instructed = roles.map(role => ({
       ...role,
-      instructions: INSTRUCTION_ORDER.filter(group => given.get(group)?.includes(role.id) === true),
-    })),
-  )
+      instructions: INSTRUCTION_ORDER.filter(item => given.get(item)?.includes(role.id) === true),
+    }))
+
+    return { kind: 'done', roles: instructed }
+  }
+  const ask = groupAsk(group, names, roles)
+
+  return { kind: 'ask', question: ask.question, spec: ask.spec, cursor: { tries: 1, at, given } }
+}
+
+/**
+ * The instruction and memory questions (D-63, D-100) at their first question: for each group the scan found, in the
+ * order the global ~/.claude/CLAUDE.md, the auto-memories for this repo, the project CLAUDE.md, one question names the
+ * group and its files and asks which roles get it (groupAsk); a group the scan did not find is not asked, and with none
+ * found every role gets no group. No file is read and no content is shown; the roles it is given never change.
+ */
+export function memoryEnter(roles: readonly RoleSpec[], setup: SetupScan): MemoryNext {
+  return groupAt(roles, setup, 0, new Map())
+}
+
+/**
+ * The answer to the group question at `cursor` (choiceAnswer): the roles it names get the group, then the next group is
+ * asked. An answer that names no role list is asked again with why on top; only an answer to every question gives
+ * roles: a dismissal cancels with MEMORY_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question with
+ * NO_USABLE_ANSWER_REASON (A1).
+ */
+export function memoryAnswer(
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  cursor: MemoryCursor,
+  answer: string | null,
+): MemoryNext {
+  const group = INSTRUCTION_ORDER[cursor.at]
+  const names = group === undefined ? null : groupNames(group, setup)
+  if (group === undefined || names === null) return { kind: 'cancelled', reason: MEMORY_DISMISSED_REASON }
+  const ask = groupAsk(group, names, roles)
+  const next = choiceAnswer(ask, cursor, answer)
+  if (next.kind === 'again') {
+    return { kind: 'ask', question: next.question, spec: ask.spec, cursor: { ...cursor, tries: next.sub.tries } }
+  }
+  if (next.kind === 'cancelled') return next
+
+  return groupAt(roles, setup, cursor.at + 1, new Map([...cursor.given, [group, next.value]]))
 }

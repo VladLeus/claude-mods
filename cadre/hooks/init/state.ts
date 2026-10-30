@@ -12,19 +12,23 @@ import type {
   AskSpec,
   HunkOp,
   InitLocations,
+  InstructionGroup,
   InstructionHandout,
+  InstructionScan,
+  InstructionTopic,
+  MemoryItem,
   PaneKey,
   PortEntry,
   PortRead,
   RoleChange,
   RoleSpec,
-  SetupScan,
   SkillRef,
 } from '../../types'
 import type { ApplyOutcome } from '../apply/run'
 import type { GuardResult } from '../guards/repo'
 import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
+import type { InstructionSources } from '../scan/instructions/read'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
 import type { NameAssignment } from './assign-rules'
@@ -100,8 +104,9 @@ export type SessionListing = {
  * One host operation a stage needs (D-230), named after the helper init/run runs for it, with plain data only: the
  * guard (initGuard), the scans with the consent answer (gatherScans), the listing of the session folder
  * (listSessions), the history scan of the listed sessions (scanHistory), the read of a config file the hunks change
- * (readRepoFile), the check that a typed launcher folder is a folder inside the repo (isRepoFolder), the review's plan
- * (planStep) and Confirm's apply (applyConfirmed).
+ * (readRepoFile), the names of the repo's rule files and AGENTS.md (repoInstructionNames), the read of the instruction
+ * files after the content consent (readInstructionFiles), the check that a typed launcher folder is a folder inside
+ * the repo (isRepoFolder), the review's plan (planStep) and Confirm's apply (applyConfirmed).
  */
 export type IoCall =
   | { readonly id: 'guard' }
@@ -109,6 +114,8 @@ export type IoCall =
   | { readonly id: 'list-sessions'; readonly dir: string }
   | { readonly id: 'scan-history'; readonly dir: string; readonly sessions: readonly PortEntry[] }
   | { readonly id: 'read-repo-file'; readonly root: string; readonly path: string; readonly maxBytes: number }
+  | { readonly id: 'repo-instruction-names'; readonly root: string }
+  | { readonly id: 'read-instruction-files'; readonly sources: InstructionSources }
   | { readonly id: 'launch-dir-check'; readonly root: string; readonly path: string }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
@@ -123,28 +130,11 @@ export type IoResult =
   | { readonly id: 'list-sessions'; readonly result: SessionListing | null }
   | { readonly id: 'scan-history'; readonly result: HistoryScan }
   | { readonly id: 'read-repo-file'; readonly result: PortRead }
+  | { readonly id: 'repo-instruction-names'; readonly result: RepoNames }
+  | { readonly id: 'read-instruction-files'; readonly result: InstructionScan }
   | { readonly id: 'launch-dir-check'; readonly result: boolean }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
-
-/**
- * The review items whose stage is not pure yet, so their go-back still runs as today's goBack (D-204, until 02.1-26);
- * the others, Change roles among them, go back as stage transitions.
- */
-export type LegacyGoBack = Extract<ReviewItem, 'memory'>
-
-/**
- * An init step that still runs as today's async step (D-230, until 02.1-26): the step, named after what it runs, with
- * the draft fields it needs. init/run performs it and gives back its LegacyResult.
- */
-export type LegacyStep =
-  | {
-      readonly id: 'instructions'
-      readonly roles: readonly RoleSpec[]
-      readonly setup: SetupScan
-      readonly locations: InitLocations
-    }
-  | { readonly id: 'go-back'; readonly draft: Draft; readonly item: LegacyGoBack }
 
 /**
  * What an answer to the review question picks (D-43, A2): confirm the plan, or go back to one item: the roles (and with
@@ -169,18 +159,11 @@ export type Applied = {
   readonly outcome: ApplyOutcome
 }
 
-/** What a LegacyStep gave, under the same id: the result of the step it names. */
-export type LegacyResult =
-  | {
-      readonly id: 'instructions'
-      readonly result: StepResult<{ readonly roles: readonly RoleSpec[]; readonly instructions: InstructionHandout }>
-    }
-  | { readonly id: 'go-back'; readonly result: StepResult<Draft> }
-
 /**
  * One model call a stage needs (D-230), named after what it asks the model, with plain data only; init/run runs it
- * through checkedCompletion as today's step did: the roles of a structure the person described (proposeFromText), and
- * the roles recommended for each of the user's own skills, with their use counts.
+ * through checkedCompletion as today's step did: the roles of a structure the person described (proposeFromText), the
+ * roles recommended for each of the user's own skills with their use counts, the topics the parts of an instruction
+ * read group into, and the roles recommended for each topic and memory.
  */
 export type ModelCall =
   | { readonly id: 'describe-roles'; readonly text: string }
@@ -190,32 +173,55 @@ export type ModelCall =
       readonly skills: readonly SkillRef[]
       readonly counts: ReadonlyMap<string, number>
     }
+  | { readonly id: 'topics'; readonly scan: InstructionScan }
+  | {
+      readonly id: 'parts'
+      readonly roles: readonly RoleSpec[]
+      readonly topics: readonly InstructionTopic[]
+      readonly memories: readonly MemoryItem[]
+    }
 
-/** What a ModelCall gave, under the same id, unchanged; the recommendations are keyed S1, S2, ... by place. */
+/**
+ * What a ModelCall gave, under the same id, unchanged: the recommendations are keyed S1, S2, ... by place for the
+ * skills, and by topic and memory id for the parts.
+ */
 export type ModelResult =
   | { readonly id: 'describe-roles'; readonly result: Proposed }
   | { readonly id: 'skills'; readonly result: ReadonlyMap<string, readonly string[]> }
+  | { readonly id: 'topics'; readonly result: readonly InstructionTopic[] }
+  | { readonly id: 'parts'; readonly result: ReadonlyMap<string, readonly string[]> }
 
 /**
  * The one thing a state asks the runner to do next (D-230): ask the person `question` with its dialog spec, perform a
- * host operation, call the model, run a legacy step, or end the run with `reply`.
+ * host operation, call the model, or end the run with `reply`.
  */
 export type Effect =
   | { readonly kind: 'ask'; readonly question: string; readonly spec: AskSpec }
   | { readonly kind: 'io'; readonly call: IoCall }
   | { readonly kind: 'model'; readonly call: ModelCall }
-  | { readonly kind: 'legacy'; readonly step: LegacyStep }
   | { readonly kind: 'end'; readonly reply: string }
 
 /**
- * What the runner feeds back for an effect: the answer to an ask, null when it was dismissed, what a host operation
- * or a model call gave, or a legacy step's result.
+ * What the runner feeds back for an effect: the answer to an ask, null when it was dismissed, or what a host operation
+ * or a model call gave.
  */
 export type Answer =
   | { readonly kind: 'answer'; readonly text: string | null }
   | { readonly kind: 'io'; readonly result: IoResult }
   | { readonly kind: 'model'; readonly result: ModelResult }
-  | { readonly kind: 'legacy'; readonly result: LegacyResult }
+
+/** What init finds of the repo's own instruction files before the content consent, by name only (G-02-1f Sources). */
+export type RepoNames = Pick<InstructionSources, 'rules' | 'hasAgentsMd'>
+
+/**
+ * Where the instruction group questions are (D-63, D-230): the group at `at` of their order, asked `tries` times so
+ * far, with the roles each group before it was given.
+ */
+export type MemoryCursor = {
+  readonly tries: number
+  readonly at: number
+  readonly given: ReadonlyMap<InstructionGroup, readonly string[]>
+}
 
 /**
  * Where a stage is inside itself (D-230):
@@ -238,6 +244,11 @@ export type Answer =
  *   far, with the names the questions before it gave (`done`).
  * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
  *   recommends roles for them, their hand-out at `cursor`, or the question for the whole group, asked `tries` times.
+ * - `content`: the content consent is out, asked `tries` times so far, with what init found of the repo by name.
+ * - `instruction-read`: the read of the instruction files is out.
+ * - `topics`, `parts`: the model calls on `scan` are out: the grouping into topics, then the recommendation.
+ * - `parts-handout`: the hand-out of the topics and memories at `cursor`, with what the read and the model gave.
+ * - `memory`: the instruction group questions at `cursor`; the hand-out ends as `keep` (whole, or the one it had).
  * - `hunk-read`: the read of the next config file the hunks change is out, with what the configs read before it gave.
  * - `hunk`: the question of the next hunk is out, asked `tries` times so far, with the configs read and the hunks
  *   answered before it.
@@ -283,6 +294,18 @@ export type StageSub =
   | { readonly kind: 'skills-model'; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'skills-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'skills-whole'; readonly tries: number; readonly done: readonly NameAssignment[] }
+  | { readonly kind: 'content'; readonly tries: number; readonly repo: RepoNames }
+  | { readonly kind: 'instruction-read' }
+  | { readonly kind: 'topics'; readonly scan: InstructionScan }
+  | { readonly kind: 'parts'; readonly scan: InstructionScan; readonly topics: readonly InstructionTopic[] }
+  | {
+      readonly kind: 'parts-handout'
+      readonly cursor: HandoutCursor
+      readonly scan: InstructionScan
+      readonly topics: readonly InstructionTopic[]
+      readonly recommended: ReadonlyMap<string, readonly string[]>
+    }
+  | { readonly kind: 'memory'; readonly cursor: MemoryCursor; readonly keep: InstructionHandout }
   | { readonly kind: 'hunk-read'; readonly reads: readonly PortRead[] }
   | {
       readonly kind: 'hunk'

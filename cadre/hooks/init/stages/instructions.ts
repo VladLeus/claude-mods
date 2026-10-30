@@ -1,16 +1,14 @@
 /**
- * The instruction stage of init (G-02-1f, D-63, D-134, D-136), a layer 10 module: the content consent, asked before
- * any instruction or memory text is read, with its context line of what init found by name (contentContextLine); the
- * entry question of the instruction hand-out (instructionsEntry); each topic and memory as a hand-out item with its
- * question, context line and chip (topicItems, memoryItems); instructionsStep, which asks the consent, then the
- * whole-file questions or the parts flow (the read, the model's topics and recommendations, the hand-out); and
- * instructionsAgain, the step again for the review item memory. Pure: it asks, reads and calls the model through the
- * InitIo port it is given, imports core, paths, scan/instructions, suggest, ui, init/draft, init/handout and
- * init/stages/memory, and never imports init.ts, which imports it, or init/run.
+ * The instruction stage of init (G-02-1f, D-63, D-134, D-136, D-230), a layer 10 module: the content consent, asked
+ * before any instruction or memory text is read, with its context line of what init found by name (contentContextLine);
+ * the entry question of the instruction hand-out (instructionsEntry); each topic and memory as a hand-out item with its
+ * question, context line and chip (topicItems, memoryItems); and instructionsStage, the pure stage that has the names
+ * listed, asks the consent, then the whole-file questions or the parts flow (the read as an io effect, the model's
+ * topics and recommendations as model effects, the hand-out), and in the memory go-back from the review asks the
+ * hand-out it had again. Pure: it gives states and never performs an effect, imports core, paths, scan/instructions,
+ * ui, init/handout, init/state and init/stages/memory, and never imports init/machine or init/run.
  */
 import type {
-  InitIo,
-  InitLocations,
   InstructionHandout,
   InstructionPart,
   InstructionScan,
@@ -24,28 +22,16 @@ import type { Labelled } from '../../core/labelled'
 import { asSentence, countedNoun, idsOrNone, shown } from '../../core/text'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
-import { readInstructionFiles, repoInstructionNames } from '../../scan/instructions/read'
 import type { InstructionSources } from '../../scan/instructions/read'
-import { checkedCompletion } from '../../suggest/checked'
-import type { Checked } from '../../suggest/checked'
-import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from '../../suggest/instructions'
-import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../../suggest/topics'
-import {
-  accepted,
-  ASK_HEADERS,
-  askChoice,
-  choiceResult,
-  countedChip,
-  quotedLabels,
-  showBlock,
-  withContext,
-} from '../../ui/ask'
-import type { ChoiceAsk, StepResult } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, countedChip, quotedLabels, withContext } from '../../ui/ask'
+import type { ChoiceAsk } from '../../ui/ask'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
-import { mapped } from '../draft'
-import { ACCEPT_RECOMMENDATIONS, handoutStep } from '../handout'
-import type { HandoutEntry, HandoutItem } from '../handout'
-import { memoryStep } from './memory'
+import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
+import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
+import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import type { Answer, InitState, RepoNames, StageDef } from '../state'
+import { memoryAnswer, memoryEnter } from './memory'
+import type { MemoryNext } from './memory'
 
 /**
  * The content consent question (G-02-1f "Consent first", D-134): no instruction or memory text is read before a yes,
@@ -136,7 +122,7 @@ export function entryContextLine(scan: InstructionScan, topics: readonly Instruc
 }
 
 /**
- * The entry question of the instruction hand-out as handoutStep asks it (G-02-1f Entry choices): its context line, the
+ * The entry question of the instruction hand-out as the hand-out asks it (G-02-1f Entry choices): its context line, the
  * Instructions chip and the three answers.
  */
 export function instructionsEntry(scan: InstructionScan, topics: readonly InstructionTopic[]): HandoutEntry {
@@ -250,21 +236,33 @@ export function memoryItems(
   })
 }
 
-/** What the instruction step gives (G-02-1f): the roles with their instruction groups, and how it handed them out. */
+/** What the instruction stage gives (G-02-1f): the roles with their instruction groups, and how it handed them out. */
 export type Instructed = {
   readonly roles: readonly RoleSpec[]
   readonly instructions: InstructionHandout
 }
 
-/** What the parts flow found before the hand-out: the read, its topics and the roles recommended for each topic. */
+/** What the parts flow found before the hand-out: the read, its topics and the roles recommended for each item. */
 type PartsFound = {
   readonly scan: InstructionScan
   readonly topics: readonly InstructionTopic[]
   readonly recommended: ReadonlyMap<string, readonly string[]>
 }
 
-/** What init finds of the repo's own instruction files before the content consent, by name only (G-02-1f Sources). */
-type RepoNames = Pick<InstructionSources, 'rules' | 'hasAgentsMd'>
+/** What the instruction stage works from: the team, the setup scan and where init runs. */
+type InstructionInput = {
+  readonly roles: readonly RoleSpec[]
+  readonly setup: SetupScan
+  readonly locations: NonNullable<InitState['draft']['locations']>
+}
+
+/** The InstructionInput of a state's draft; null while the roles, the scans or the locations are not set. */
+function instructionInput(state: InitState): InstructionInput | null {
+  const { roles, gathered, locations } = state.draft
+  if (roles === undefined || gathered === undefined || locations === undefined) return null
+
+  return { roles, setup: gathered.setup, locations }
+}
 
 /** Whether the setup scan found what the whole-file questions ask about: the global CLAUDE.md, a chain or a memory. */
 function hasSetupFiles(setup: SetupScan): boolean {
@@ -281,179 +279,216 @@ function withoutGroups(roles: readonly RoleSpec[]): RoleSpec[] {
   return roles.map(role => ({ ...role, instructions: [] }))
 }
 
-/** Nothing to hand out (G-02-1f): no question is asked, the hand-out is `none` and every role gets no group. */
-function nothingToHandOut(roles: readonly RoleSpec[]): StepResult<Instructed> {
-  return accepted({ roles: withoutGroups(roles), instructions: { kind: 'none' } })
-}
-
 /** The whole-files hand-out: the D-63 group questions were asked. */
-const WHOLE: InstructionHandout = { kind: 'whole' }
+const WHOLE: InstructionHandout = Object.freeze({ kind: 'whole' })
 
-/** The whole-file questions of D-63 (memoryStep), handed out as `whole`; a cancel keeps its reason (A1). */
-async function wholeFiles(io: InitIo, roles: readonly RoleSpec[], setup: SetupScan): Promise<StepResult<Instructed>> {
-  return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: WHOLE }))
+/** The stage done with `roles`, given their instruction groups, and the hand-out `instructions` (Instructed). */
+function instructedDone(state: InitState, instructed: Instructed): InitState {
+  return stageDone({ ...state, draft: { ...state.draft, ...instructed } })
 }
 
 /**
- * The content consent as askChoice asks it (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on
- * its second line (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first,
- * and the Instructions chip.
+ * The content consent (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on its second line
+ * (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first, the Instructions
+ * chip, and CONTENT_DISMISSED_REASON for a dismissal.
  */
-function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> {
+function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   return {
     question: withContext(CONTENT_QUESTION, contentContextLine(setup, repo)),
     spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions },
     parse: parseContentConsent,
     accepts: quotedLabels(CONTENT_OPTIONS),
+    dismissedReason: CONTENT_DISMISSED_REASON,
   }
 }
 
-/**
- * The topics of a read (G-02-1f Part unit): one model call groups the parts across files (topicsPrompt, TOPICS_SYSTEM).
- * A reply parseTopics cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
- * (checkedCompletion), and then each file is one topic (fallbackTopics). The model has no tools (D-83), and only its
- * checked topics are kept.
- */
-async function groupedTopics(io: InitIo, scan: InstructionScan): Promise<readonly InstructionTopic[]> {
-  const partIds = scan.parts.map(part => part.id)
-  const parse = (reply: string): Checked<readonly InstructionTopic[]> => {
-    const parsed = parseTopics(reply, partIds)
-    if (parsed.kind === 'invalid') return parsed
+/** The content consent asked `tries` times so far, `question` its text once refused. */
+function contentAsked(
+  state: InitState,
+  input: InstructionInput,
+  repo: RepoNames,
+  tries: number,
+  question: string | null,
+): InitState {
+  const ask = contentAsk(input.setup, repo)
+  const asking: InitState = { ...state, sub: { kind: 'content', tries, repo } }
 
-    return { kind: 'ok', value: parsed.topics }
-  }
-  const prompt = (errors: readonly string[]): string => topicsPrompt(scan.parts, errors)
+  return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
 
-  return checkedCompletion(io, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
+/** The instruction group questions (D-63, memoryAnswer) at `next`; the hand-out ends as `keep` (A1). */
+function grouped(state: InitState, keep: InstructionHandout, next: MemoryNext): InitState {
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (next.kind === 'done') return instructedDone(state, { roles: next.roles, instructions: keep })
+  const asking: InitState = { ...state, sub: { kind: 'memory', cursor: next.cursor, keep } }
+
+  return withEffect(asking, { kind: 'ask', question: next.question, spec: next.spec })
+}
+
+/** The whole-file questions of D-63 (memoryEnter), handed out as `keep`. */
+function wholeFiles(state: InitState, input: InstructionInput, keep: InstructionHandout): InitState {
+  return grouped(state, keep, memoryEnter(input.roles, input.setup))
 }
 
 /**
- * The roles recommended for each topic and each memory (G-02-1f Recommendation, Memories): a second model call reads
- * each role's work, the topics and the memories by file and summary (recommendPrompt, RECOMMEND_SYSTEM). A reply
- * parseRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
- * (checkedCompletion), and then no topic or memory is recommended to any role: the map is empty.
+ * The instruction hand-out at `next` (handoutAnswer): Whole files asks the whole-file questions; the other answers keep
+ * the topics and memories with the roles given each, and give every role no D-63 group. The read, the topics and the
+ * answers live in memory for this run; only the repo parts a role was given are planned, as its built CLAUDE.md
+ * (repoPartsOf, planStep).
  */
-async function recommendedRoles(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  topics: readonly InstructionTopic[],
-  memories: readonly MemoryItem[],
-): Promise<ReadonlyMap<string, readonly string[]>> {
-  const topicIds = topics.map(topic => topic.id)
-  const memoryIds = memories.map(memory => memory.id)
-  const roleIds = roles.map(role => role.id)
-  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
-    const parsed = parseRecommendation(reply, topicIds, memoryIds, roleIds)
-    if (parsed.kind === 'invalid') return parsed
+function partsHandedOut(state: InitState, input: InstructionInput, found: PartsFound, next: HandoutNext): InitState {
+  const { scan, topics, recommended } = found
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (next.kind === 'ask') {
+    const sub: InitState['sub'] = { kind: 'parts-handout', cursor: next.cursor, scan, topics, recommended }
 
-    return { kind: 'ok', value: parsed.recommended }
+    return withEffect({ ...state, sub }, { kind: 'ask', question: next.question, spec: next.spec })
   }
-  const prompt = (errors: readonly string[]): string => recommendPrompt(roles, topics, memories, errors)
+  if (next.outcome.kind === 'whole') return wholeFiles(state, input, WHOLE)
+  const instructions: InstructionHandout = { kind: 'parts', scan, topics, recommended, given: next.outcome.given }
 
-  return checkedCompletion(io, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+  return instructedDone(state, { roles: withoutGroups(input.roles), instructions })
 }
 
 /**
  * The hand-out of what the parts flow found (G-02-1f Entry choices, Memories): the instructions block in the side pane
- * first (instructionLines), then the entry question and its answers (handoutStep), with the topics as items and then
- * the memories. Whole files asks the whole-file questions (memoryStep); the other answers keep the topics and memories
- * with the roles given each, and give every role no D-63 group. The read, the topics and the answers live in memory
- * for this run; only the repo parts a role was given are planned, as its built CLAUDE.md (repoPartsOf, planStep).
+ * first (instructionLines), then the entry question with the topics and then the memories as items.
  */
-async function handOutParts(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
-  found: PartsFound,
-): Promise<StepResult<Instructed>> {
+function handOutParts(state: InitState, input: InstructionInput, found: PartsFound): InitState {
   const { scan, topics, recommended } = found
-  await showBlock(io, 'instructions', instructionLines(scan, topics, recommended))
+  const lines = instructionLines(scan, topics, recommended)
+  const shownBlock = withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }])
   const items = [...topicItems(scan, topics, recommended), ...memoryItems(scan.memories, recommended)]
-  const outcome = await handoutStep(io, instructionsEntry(scan, topics), items, roles, HANDOUT_DISMISSED_REASON)
-  if (outcome.kind === 'cancelled') return outcome
-  if (outcome.value.kind === 'whole') return wholeFiles(io, roles, setup)
-  const instructions: InstructionHandout = { kind: 'parts', scan, topics, recommended, given: outcome.value.given }
+  const next = handoutEnter(instructionsEntry(scan, topics), items, input.roles, HANDOUT_DISMISSED_REASON)
 
-  return accepted({ roles: withoutGroups(roles), instructions })
+  return partsHandedOut(shownBlock, input, found, next)
 }
 
 /**
- * A consented read that gave no part and no memory (G-02-1f): its read warnings, if any, in the instructions block,
- * so each is shown, then the whole-file questions (memoryStep).
+ * The roles recommended for the topics and the memories (G-02-1f Recommendation, Memories): the parts model effect,
+ * which reads each role's work, the topics and the memories by file and summary.
  */
-async function noPartRead(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
+function recommending(
+  state: InitState,
+  input: InstructionInput,
   scan: InstructionScan,
-): Promise<StepResult<Instructed>> {
-  if (scan.warnings.length > 0) await showBlock(io, 'instructions', instructionLines(scan, [], new Map()))
+  topics: readonly InstructionTopic[],
+): InitState {
+  const calling: InitState = { ...state, sub: { kind: 'parts', scan, topics } }
+  const { roles } = input
 
-  return wholeFiles(io, roles, setup)
+  return withEffect(calling, { kind: 'model', call: { id: 'parts', roles, topics, memories: scan.memories } })
 }
 
 /**
- * The parts flow after a yes (G-02-1f): it reads the instruction files and the memories (readInstructionFiles: the
- * setup scan's chain, the rule files and AGENTS.md init found by name, and the memory folders of this repo); a read
- * with no part and no memory goes to the whole-file questions (noPartRead); else the model groups the parts into
- * topics across files (no call without a part), a second call recommends roles for the topics and the memories, and
- * the person hands them out (handOutParts).
+ * After the read (G-02-1f): a read with no part and no memory shows its read warnings, if any, in the instructions
+ * block, then asks the whole-file questions; else the model groups the parts into topics across files (no call without
+ * a part, the topics model effect), and a second call recommends roles for the topics and the memories.
  */
-async function partsFlow(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
-  locations: InitLocations,
-  repo: RepoNames,
-): Promise<StepResult<Instructed>> {
-  const { root, home, configDir } = locations
-  const memoryFolders = memoryFoldersOf(locations)
-  const scan = await readInstructionFiles(io, { root, home, configDir, chain: setup.claudeMd, ...repo, memoryFolders })
-  if (scan.parts.length === 0 && scan.memories.length === 0) return noPartRead(io, roles, setup, scan)
-  const topics = scan.parts.length === 0 ? [] : await groupedTopics(io, scan)
-  const recommended = await recommendedRoles(io, roles, topics, scan.memories)
+function afterRead(state: InitState, input: InstructionInput, scan: InstructionScan): InitState {
+  const isEmpty = scan.parts.length === 0 && scan.memories.length === 0
+  if (isEmpty && scan.warnings.length === 0) return wholeFiles(state, input, WHOLE)
+  if (isEmpty) {
+    const lines = instructionLines(scan, [], new Map())
 
-  return handOutParts(io, roles, setup, { scan, topics, recommended })
+    return wholeFiles(withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }]), input, WHOLE)
+  }
+  if (scan.parts.length === 0) return recommending(state, input, scan, [])
+
+  return withEffect({ ...state, sub: { kind: 'topics', scan } }, { kind: 'model', call: { id: 'topics', scan } })
 }
 
 /**
- * The instruction step (G-02-1f, replacing the D-63 group step in the per-role steps), the same in a plain init and in
- * --dry-run. It first lists `.claude/rules` and stats AGENTS.md, by name only (repoInstructionNames); with no global
- * CLAUDE.md, no CLAUDE.md in the repo chain, no rule file, no AGENTS.md and no memory file it asks nothing, hands out
- * `none` and gives every role no group. Else it asks the content consent (contentAsk), so no instruction or memory
- * text is read before a yes: No asks the whole-file questions (memoryStep), handed out as `whole`, and Yes runs the
- * parts flow (partsFlow). A dismissal of any of its questions is cancelled with that question's reason, and MAX_ASKS
- * answers it cannot read with NO_USABLE_ANSWER_REASON (A1). The step writes nothing, and the roles it is given never
- * change; the repo parts it hands out reach the plan through the draft (repoPartsOf).
+ * The answer to the content consent (choiceAnswer): No asks the whole-file questions, handed out as `whole`, and Yes
+ * has the instruction files and the memories read (the read-instruction-files io effect: the setup scan's chain, the
+ * rule files and AGENTS.md init found by name, and the memory folders of this repo). Any other answer is asked again
+ * with why on top; a dismissal cancels with CONTENT_DISMISSED_REASON and MAX_ASKS answers it cannot read with
+ * NO_USABLE_ANSWER_REASON (A1).
  */
-export async function instructionsStep(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
-  locations: InitLocations,
-): Promise<StepResult<Instructed>> {
-  const repo = await repoInstructionNames(io, locations.root)
-  if (!hasInstructionFiles(setup, repo)) return nothingToHandOut(roles)
-  const consent = choiceResult(await askChoice(io, contentAsk(setup, repo)), CONTENT_DISMISSED_REASON)
-  if (consent.kind === 'cancelled') return consent
-  if (!consent.value) return wholeFiles(io, roles, setup)
+function afterContent(
+  state: InitState,
+  input: InstructionInput,
+  sub: { readonly tries: number; readonly repo: RepoNames },
+  answer: string | null,
+): InitState {
+  const next = choiceAnswer(contentAsk(input.setup, sub.repo), sub, answer)
+  if (next.kind === 'again') return contentAsked(state, input, sub.repo, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (!next.value) return wholeFiles(state, input, WHOLE)
+  const { root, home, configDir } = input.locations
+  const memoryFolders = memoryFoldersOf(input.locations)
+  const sources: InstructionSources = { root, home, configDir, chain: input.setup.claudeMd, ...sub.repo, memoryFolders }
+  const reading: InitState = { ...state, sub: { kind: 'instruction-read' } }
 
-  return partsFlow(io, roles, setup, locations, repo)
+  return withEffect(reading, { kind: 'io', call: { id: 'read-instruction-files', sources } })
 }
 
 /**
- * The instruction step again, for the review item memory (G-02-1f): a parts hand-out goes back to its entry question
- * with the same read, topics and recommendations, its block shown again first, so nothing is read and the model is not
- * called again (handOutParts); a whole-files or none hand-out asks the whole-file questions as before (memoryStep) and
- * keeps its kind.
+ * After the names (G-02-1f Sources): with no global CLAUDE.md, no CLAUDE.md in the repo chain, no rule file, no
+ * AGENTS.md and no memory file nothing is asked, the hand-out is `none` and every role gets no group; else the content
+ * consent, so no instruction or memory text is read before a yes.
  */
-export async function instructionsAgain(
-  io: InitIo,
-  roles: readonly RoleSpec[],
-  setup: SetupScan,
-  handout: InstructionHandout,
-): Promise<StepResult<Instructed>> {
-  if (handout.kind === 'parts') return handOutParts(io, roles, setup, handout)
+function afterNames(state: InitState, input: InstructionInput, repo: RepoNames): InitState {
+  if (hasInstructionFiles(input.setup, repo)) return contentAsked(state, input, repo, 1, null)
 
-  return mapped(await memoryStep(io, roles, setup), (given): Instructed => ({ roles: given, instructions: handout }))
+  return instructedDone(state, { roles: withoutGroups(input.roles), instructions: { kind: 'none' } })
 }
+
+/** The answer to the effect the instruction stage has out: a host operation, a model call, or a question. */
+function instructionsAnswer(state: InitState, answer: Answer): InitState {
+  const input = instructionInput(state)
+  if (input === null) return stageFailed(state)
+  const { sub } = state
+  if (answer.kind === 'io') {
+    const { result } = answer
+    if (result.id === 'repo-instruction-names' && sub.kind === 'start') return afterNames(state, input, result.result)
+    const isRead = result.id === 'read-instruction-files' && sub.kind === 'instruction-read'
+
+    return isRead ? afterRead(state, input, result.result) : stageFailed(state)
+  }
+  if (answer.kind === 'model') {
+    const { result } = answer
+    if (result.id === 'topics' && sub.kind === 'topics') return recommending(state, input, sub.scan, result.result)
+    if (result.id !== 'parts' || sub.kind !== 'parts') return stageFailed(state)
+
+    return handOutParts(state, input, { scan: sub.scan, topics: sub.topics, recommended: result.result })
+  }
+  switch (sub.kind) {
+    case 'content':
+      return afterContent(state, input, sub, answer.text)
+    case 'parts-handout': {
+      const { scan, topics, recommended } = sub
+
+      return partsHandedOut(state, input, { scan, topics, recommended }, handoutAnswer(sub.cursor, answer.text))
+    }
+    case 'memory':
+      return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text))
+    default:
+      return stageFailed(state)
+  }
+}
+
+/**
+ * The instruction stage (G-02-1f, replacing the D-63 group step among the role steps, D-230), the same in a plain init
+ * and in --dry-run. It first has `.claude/rules` listed and AGENTS.md looked up, by name only (the
+ * repo-instruction-names io effect, afterNames), then asks the content consent (afterContent): No asks the whole-file
+ * questions, handed out as `whole`, and Yes runs the parts flow (afterRead). In the memory go-back from the review it
+ * asks again what it handed out (D-204): a parts hand-out goes back to its entry question with the same read, topics
+ * and recommendations, its block shown again first, so nothing is read and the model is not called again; a whole-files
+ * or none hand-out asks the whole-file questions as before and keeps its kind. A dismissal of any of its questions is
+ * cancelled with that question's reason, and MAX_ASKS answers it cannot read with NO_USABLE_ANSWER_REASON (A1). The
+ * stage writes nothing; the repo parts it hands out reach the plan through the draft (repoPartsOf).
+ */
+export const instructionsStage: StageDef = Object.freeze({
+  enter: (state: InitState): InitState => {
+    const input = instructionInput(state)
+    if (input === null) return stageFailed(state)
+    const { instructions } = state.draft
+    const isAgain = state.returnAfter === 'instructions' && instructions !== undefined
+    if (isAgain && instructions.kind === 'parts') return handOutParts(state, input, instructions)
+    if (isAgain) return wholeFiles(state, input, instructions)
+
+    return withEffect(state, { kind: 'io', call: { id: 'repo-instruction-names', root: input.locations.root } })
+  },
+  answer: instructionsAnswer,
+})

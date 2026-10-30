@@ -1,12 +1,31 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { InitIo, RoleSpec, SetupScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, FULL_SCAN, memIo, memWorld, roleIn, valueOf } from '../../testkit'
-import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
-import { MEMORY_DISMISSED_REASON, memoryContextLine, memoryEnter, memoryStep } from './memory'
+import { askOnce, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
+import type { StepResult } from '../../ui/ask'
+import { MEMORY_DISMISSED_REASON, memoryAnswer, memoryContextLine, memoryEnter } from './memory'
 
 /** The buttons of every question on which roles get an item. */
 const ROLE_LIST_OPTIONS = ['None', 'All roles']
+
+/**
+ * The instruction group questions of `roles` for `setup`, asked over `io` as init/run asks them (askOnce), as a step
+ * result: the roles with the groups they were given, or why it cancelled.
+ */
+async function groupsOver(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+): Promise<StepResult<readonly RoleSpec[]>> {
+  let next = memoryEnter(roles, setup)
+  while (next.kind === 'ask') {
+    next = memoryAnswer(roles, setup, next.cursor, await askOnce(io, next.question, next.spec))
+  }
+
+  return next.kind === 'done' ? { kind: 'accepted', value: next.roles } : next
+}
 
 describe('memoryStep', () => {
   const roles = proposeRoles(FULL_SCAN).roles
@@ -21,7 +40,7 @@ describe('memoryStep', () => {
 
   test('one question per group that is there: the global CLAUDE.md, the auto-memories, the project', async () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
-    const given = valueOf(await memoryStep(run.io, roles, found))
+    const given = valueOf(await groupsOver(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
     const spec = { options: ROLE_LIST_OPTIONS, header: 'Memory' }
     expect(run.specs).toEqual([spec, spec, spec])
@@ -37,25 +56,25 @@ describe('memoryStep', () => {
   })
 
   test('a role keeps the groups it was given in the order global, auto-memory, project', async () => {
-    const given = valueOf(await memoryStep(memIo(memWorld({}), ['None', 'be', 'BE']).io, roles, found))
+    const given = valueOf(await groupsOver(memIo(memWorld({}), ['None', 'be', 'BE']).io, roles, found))
     expect(roleIn(given, 'be').instructions).toEqual(['auto-memory', 'project-claude-md'])
     expect(roleIn(given, 'pm').instructions).toEqual([])
   })
 
   test('only the groups the scan found are asked, and with none found nothing is asked', async () => {
     const run = memIo(memWorld({}), ['qa'])
-    const given = valueOf(await memoryStep(run.io, roles, emptySetupScan({ memoryFiles: ['a.md', 'b.md'] })))
+    const given = valueOf(await groupsOver(run.io, roles, emptySetupScan({ memoryFiles: ['a.md', 'b.md'] })))
     const question = 'Which roles get the auto-memories for this repo (a.md, b.md)? (e.g. PM, TL, or none)'
     expect(run.asked).toEqual([asAsked(question)])
     expect(roleIn(given, 'qa').instructions).toEqual(['auto-memory'])
     const none = memIo(memWorld({}), [])
-    expect(await memoryStep(none.io, roles, emptySetupScan())).toEqual({ kind: 'accepted', value: roles })
+    expect(await groupsOver(none.io, roles, emptySetupScan())).toEqual({ kind: 'accepted', value: roles })
     expect(none.asked).toEqual([])
   })
 
   test('an unknown role is asked again; three such answers or a dismissal cancel with their reason (A1)', async () => {
     const again = memIo(memWorld({}), ['cto', 'pm', 'None', 'None'])
-    expect(roleIn(valueOf(await memoryStep(again.io, roles, found)), 'pm').instructions).toEqual(['global-claude-md'])
+    expect(roleIn(valueOf(await groupsOver(again.io, roles, found)), 'pm').instructions).toEqual(['global-claude-md'])
     const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
     expect(again.asked).toEqual([
       asAsked(GLOBAL_QUESTION),
@@ -70,7 +89,7 @@ describe('memoryStep', () => {
     ]
     for (const [answers, reason] of cases) {
       const run = memIo(memWorld({}), answers)
-      expect(await memoryStep(run.io, roles, found)).toEqual({ kind: 'cancelled', reason })
+      expect(await groupsOver(run.io, roles, found)).toEqual({ kind: 'cancelled', reason })
       expect(run.logged).toEqual([])
     }
     expect(MEMORY_DISMISSED_REASON).toBe(
@@ -82,7 +101,7 @@ describe('memoryStep', () => {
     const world = memWorld({ files: { '/home/u/.claude/CLAUDE.md': 'SENTINEL_SECRET_VALUE' } })
     const run = memIo(world, ['pm', 'pm', 'pm'])
     const before = JSON.stringify(roles)
-    await memoryStep(run.io, roles, found)
+    await groupsOver(run.io, roles, found)
     expect(run.reads).toEqual([])
     expect(run.listed).toEqual([])
     expect(JSON.stringify(roles)).toBe(before)

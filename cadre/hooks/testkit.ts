@@ -1701,7 +1701,7 @@ export function driven(
 /**
  * driven, with each host operation performed by `perform` (the helper init/run runs for it, over a scripted port), so
  * a spec of a pure stage can read what the port was asked (D-230). It stops where driven stops, and also at a model
- * call or a legacy step.
+ * call.
  */
 export async function drivenWith(
   state: InitState,

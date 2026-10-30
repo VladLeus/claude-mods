@@ -15,6 +15,7 @@ import type {
   HunkOp,
   InitFacts,
   InitIo,
+  InitLocations,
   InstructionGroup,
   InstructionPart,
   MemoryItem,
@@ -133,6 +134,7 @@ import {
   shownBlock,
   skillRef,
   SOURCE_SCAN,
+  stageStep,
   stateAt,
   stateOf,
   STATUS_PATH,
@@ -147,6 +149,7 @@ import {
 } from '../testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
 import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from '../ui/ask'
+import type { StepResult } from '../ui/ask'
 import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { CONFLICT_CONTEXT } from './initapply'
@@ -181,9 +184,10 @@ import {
   CONTENT_OPTIONS,
   CONTENT_QUESTION,
   INSTRUCTIONS_ENTRY_QUESTION,
-  instructionsStep,
+  instructionsStage,
   parseContentConsent,
 } from './stages/instructions'
+import type { Instructed } from './stages/instructions'
 import {
   LAUNCH_DIR_QUESTION,
   LAUNCH_START_DISMISSED_REASON,
@@ -191,7 +195,7 @@ import {
   launchLine,
   launchStage,
 } from './stages/launch'
-import { MEMORY_DISMISSED_REASON, memoryStep } from './stages/memory'
+import { MEMORY_DISMISSED_REASON } from './stages/memory'
 import { MODEL_DISMISSED_REASON, MODEL_EFFORT_CONTEXT, MODEL_MODE_QUESTION, modelStage } from './stages/model'
 import { ASSIGNMENT_DISMISSED_REASON } from './stages/own-skills'
 import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine, policyStage } from './stages/policy'
@@ -915,7 +919,24 @@ describe('own skills hand-out (G-02-1b)', () => {
   })
 })
 
-/** The whole-file question of the global CLAUDE.md (D-63), as memoryStep asks it. */
+/** The instruction stage run over `io` for `roles`, the setup scan `setup` and `locations`, as a step result. */
+function instructedBy(
+  io: InitIo,
+  roles: readonly RoleSpec[],
+  setup: SetupScan,
+  locations: InitLocations,
+): Promise<StepResult<Instructed>> {
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+  const state = stateAt('instructions', { roles, gathered, locations })
+
+  return stageStep(io, instructionsStage, state, draft => {
+    const { roles: given, instructions } = draft
+
+    return given === undefined || instructions === undefined ? undefined : { roles: given, instructions }
+  })
+}
+
+/** The whole-file question of the global CLAUDE.md (D-63), as the instruction stage asks it. */
 const GLOBAL_GROUP_QUESTION =
   'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
 
@@ -1130,7 +1151,7 @@ describe('instruction parts (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     expect(firstLines(run.asked)).not.toContain(CONTENT_QUESTION)
     const roles = [templateRole('pm', { instructions: ['global-claude-md'] })]
-    const none = await instructionsStep(memIo(memWorld({}), []).io, roles, emptySetupScan(), DEFAULT_LOCATIONS)
+    const none = await instructedBy(memIo(memWorld({}), []).io, roles, emptySetupScan(), DEFAULT_LOCATIONS)
     expect(none).toEqual({
       kind: 'accepted',
       value: { roles: [templateRole('pm')], instructions: { kind: 'none' } },
@@ -1247,7 +1268,7 @@ describe('instruction parts (G-02-1f)', () => {
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
     const roles = proposeRoles(repoScan()).roles
     const io = memIo(partsWorld(), answers).io
-    const value = valueOf(await instructionsStep(io, roles, setup, DEFAULT_LOCATIONS))
+    const value = valueOf(await instructedBy(io, roles, setup, DEFAULT_LOCATIONS))
     expect(value.instructions).toEqual({ kind: 'whole' })
     expect(value.roles.map(role => role.instructions)).toEqual([['global-claude-md'], [], []])
   })
@@ -2775,14 +2796,9 @@ describe('refusal re-ask (G-02-6b)', () => {
       return assignStage.enter(stateAt('assign', { roles, gathered: scans, hints: new Map() }))
     }
     const recommendedNone: Answer = { kind: 'model', result: { id: 'skills', result: new Map() } }
-    const steps: readonly (readonly [string, (io: InitIo) => Promise<unknown>, string])[] = [
-      ['memory', io => memoryStep(io, roles, emptySetupScan({ hasGlobalClaudeMd: true })), roleList],
-    ]
-    for (const [name, step, accepts] of steps) {
-      const run = memIo(memWorld({}), ['zzz'])
-      await step(run.io)
-      expect([name, run.asked[1]?.split('\n')[0]]).toEqual([name, `'zzz' isn't one of: ${accepts}.`])
-    }
+    const globalFile = { ...wholeDraft().gathered, setup: emptySetupScan({ hasGlobalClaudeMd: true }) }
+    const memoryDraft = wholeDraft({ roles, gathered: globalFile, instructions: { kind: 'none' } })
+    const memoryAgain = { returnTo: 'review', returnAfter: 'instructions' } satisfies Partial<InitState>
     const stages: readonly (readonly [string, () => readonly string[], string])[] = [
       [
         'roles',
@@ -2815,6 +2831,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         '"Same for all roles", "Per role"',
       ],
       ['mcp', () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz']).asked, roleList],
+      [
+        'memory',
+        () => driven(instructionsStage.enter(stateAt('instructions', memoryDraft, memoryAgain)), ['zzz']).asked,
+        roleList,
+      ],
       ['skills', () => driven(assignAt({ skills: [skillRef('x:y', 'x')] }), ['zzz']).asked, roleList],
       [
         'own skills',
