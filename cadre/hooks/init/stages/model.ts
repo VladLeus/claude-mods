@@ -11,6 +11,7 @@ import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
+import { t } from '../../locales/t'
 import { EFFORTS, MODEL_ALIASES } from '../../roles/validate'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
@@ -22,7 +23,7 @@ import { idsOf } from './duration'
 
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
 export function teamContextLine(roles: readonly RoleSpec[]): string {
-  return `Roles: ${idsOf(roles)}.`
+  return t('init.model.teamContextLine', { ids: idsOf(roles) })
 }
 
 /** How the framework or the model question is answered: once for every role, or role by role (D-86). */
@@ -43,24 +44,27 @@ export function parseAnswerMode(answer: string): AnswerMode | null {
 }
 
 /** The first model question: one answer for every role or one per role, `Same for all roles` first (D-52, D-86). */
-export const MODEL_MODE_QUESTION = 'Model and effort: same for all roles, or per role?'
+export const MODEL_MODE_QUESTION = t('init.model.modelModeQuestion')
 
 /** The one model question after `Same for all roles` (D-86). */
-const MODEL_ALL_QUESTION = 'Model and effort for all roles?'
+const MODEL_ALL_QUESTION = t('init.model.modelAllQuestion')
 
 /** The context line of each model and effort question (D-136): every model family and effort a role may use. */
-export const MODEL_EFFORT_CONTEXT = `Models: ${MODEL_ALIASES.join(', ')}; efforts: ${EFFORTS.join(', ')}.`
+export const MODEL_EFFORT_CONTEXT = t('init.model.modelEffortContext', {
+  modelAliases: MODEL_ALIASES.join(', '),
+  efforts: EFFORTS.join(', '),
+})
 
 /**
  * The model question for one role after `Per role` (D-52): its title, its secret-like spans hidden (redactedText, E1,
  * #163), and its id, since the id tells apart roles with the same title (A6).
  */
 function modelRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
-  return `Model and effort for ${redactedText(role.title)} (${role.id})?`
+  return t('init.model.modelRoleQuestion', { title: redactedText(role.title), id: role.id })
 }
 
 /** Why init cancels when a model and effort question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
-export const MODEL_DISMISSED_REASON = 'A model and effort question was dismissed or not answered.'
+export const MODEL_DISMISSED_REASON = t('init.model.modelDismissedReason')
 
 /** The role with its model family alias and its effort set. */
 function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): RoleSpec {

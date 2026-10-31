@@ -165,6 +165,13 @@ export const EN = Object.freeze({
   'init.duration.durationContextLine': 'Applies to every role: {ids}.',
   'init.duration.durationDismissedReason': 'The autopilot duration question was dismissed or not answered.',
   'init.duration.durationAccepts': 'a duration such as 4h, 90m or 1h30m, at most 168h',
+
+  'init.model.teamContextLine': 'Roles: {ids}.',
+  'init.model.modelModeQuestion': 'Model and effort: same for all roles, or per role?',
+  'init.model.modelAllQuestion': 'Model and effort for all roles?',
+  'init.model.modelEffortContext': 'Models: {modelAliases}; efforts: {efforts}.',
+  'init.model.modelRoleQuestion': 'Model and effort for {title} ({id})?',
+  'init.model.modelDismissedReason': 'A model and effort question was dismissed or not answered.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
