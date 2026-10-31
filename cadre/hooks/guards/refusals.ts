@@ -3,15 +3,13 @@
  * it, and the file system root, checked for every pair of root and home forms, as given and as resolved (WR-06).
  * Pure: it reads nothing. It imports paths, so detect, the repo guards and init word these refusals here.
  */
+import { t } from '../locales/t'
 import { trimSlash } from '../paths'
 
 /** Reply when the session root is the home folder or contains it; detection would read the whole home. */
-export const HOME_ROOT_REPLY =
-  'cadre detect needs a repo root other than your home folder. Open the session in a repo and run /cadre detect again.'
+export const HOME_ROOT_REPLY = t('guard.refusals.homeRootReply')
 /** Reply when the session root is the file system root; detection would read the whole disk (WR-06). */
-export const FILE_SYSTEM_ROOT_REPLY =
-  'cadre detect needs a repo root other than the file system root (/). ' +
-  'Open the session in a repo and run /cadre detect again.'
+export const FILE_SYSTEM_ROOT_REPLY = t('guard.refusals.fileSystemRootReply')
 
 /**
  * The reply when the session root is the home folder or contains it, else null. Both paths are compared after

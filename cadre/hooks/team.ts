@@ -20,6 +20,7 @@ import { idsOrNone } from './core/text'
 import { isAttendedFromConfig, isUnmetHunk } from './framework/gsd/hunks'
 import { ADAPTERS } from './framework/registry'
 import type { CommandWord } from './guards/repo'
+import { t } from './locales/t'
 import { cadreStatePath, isRepoFolder, roleJsonPath } from './paths'
 import { parseRoleJson } from './roles/rolejson'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
@@ -111,7 +112,7 @@ export type TeamCommand = Exclude<CommandWord, 'init'>
  * nothing to work from until init has run (D-68).
  */
 export function noStateReply(command: TeamCommand): string {
-  return `cadre ${command} needs .cadre/cadre.json from /cadre init: run /cadre init first.`
+  return t('team.noStateReply', { command })
 }
 
 /** The reply when regen finds no `.cadre/cadre.json`: there is nothing to re-render from until init has run (D-68). */
@@ -121,11 +122,11 @@ export const REGEN_NO_STATE = noStateReply('regen')
  * The reply when `.cadre/cadre.json` is there but cannot be used: it cannot be read, is too large or is not valid repo
  * state (parseCadreState), or the launcher folder it stores is not a folder inside the repo (T-02-36).
  */
-export const REGEN_BAD_STATE = '.cadre/cadre.json is not valid: fix it, or run /cadre init again.'
+export const REGEN_BAD_STATE = t('team.regenBadState')
 
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
-  return `no role ${id} in .cadre/cadre.json (roles: ${idsOrNone(roles)})`
+  return t('team.regenNoRole', { id, roles: idsOrNone(roles) })
 }
 
 /**
@@ -133,15 +134,12 @@ export function regenNoRole(id: string, roles: readonly string[]): string {
  * another folder (T-02-36).
  */
 export function regenBadRole(id: string): string {
-  return `.cadre/${id}/role.json is missing or not valid: fix it, or run /cadre init again.`
+  return t('team.regenBadRole', { id })
 }
 
 /** The reply when a role stores no framework and the repo has no default framework to run it on (D-73, D-97d). */
 export function regenNeedsFramework(id: string): string {
-  return (
-    `role ${id} has no framework and this repo has no default: set "framework" in .cadre/${id}/role.json to gsd, ` +
-    `superpowers or none, then run /cadre regen ${id} again.`
-  )
+  return t('team.regenNeedsFramework', { id })
 }
 
 /** What a read of regen, /cadre start or /cadre status gives: the value it found, or the exact reply that refuses. */

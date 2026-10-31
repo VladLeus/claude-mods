@@ -26,12 +26,12 @@ export type CommandWord = 'init' | 'regen' | 'start' | 'status' | 'epic'
 export function gitRootRefusal(root: string, top: string, command: CommandWord): string | null {
   if (trimSlash(root) === trimSlash(top)) return null
 
-  return `run /cadre ${command} from the repo root: ${clean(top, MAX_TOP_CHARS)}`
+  return t('guard.repo.gitRootRefusal', { command, top: clean(top, MAX_TOP_CHARS) })
 }
 
 /** The refusal when no git repo is above the session root, with the wording D-97 fixes. */
 export function notGitRepoReply(command: CommandWord): string {
-  return `cadre ${command} needs a git repo: run git init first`
+  return t('guard.repo.notGitRepoReply', { command })
 }
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
@@ -39,7 +39,7 @@ export const NOT_INTERACTIVE_REPLY = t('init.notInteractive')
 
 /** The reply when the session root cannot be read, worded for its command: it stops before it reads anything. */
 export function rootUnknownReply(command: CommandWord): string {
-  return `cadre ${command} could not read the session root, so it stopped before reading anything.`
+  return t('guard.repo.rootUnknownReply', { command })
 }
 
 /**

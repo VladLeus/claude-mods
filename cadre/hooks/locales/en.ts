@@ -879,6 +879,26 @@ export const EN = Object.freeze({
   'detect.report.status': 'Status',
   'detect.report.version': 'Version',
   'detect.report.evidence': 'Evidence',
+
+  'guard.repo.gitRootRefusal': 'run /cadre {command} from the repo root: {top}',
+  'guard.repo.notGitRepoReply': 'cadre {command} needs a git repo: run git init first',
+  'guard.repo.rootUnknownReply':
+    'cadre {command} could not read the session root, so it stopped before reading anything.',
+
+  'guard.refusals.homeRootReply':
+    'cadre detect needs a repo root other than your home folder. Open the session in a repo and run ' +
+    '/cadre detect again.',
+  'guard.refusals.fileSystemRootReply':
+    'cadre detect needs a repo root other than the file system root (/). Open the session in a repo and ' +
+    'run /cadre detect again.',
+
+  'team.noStateReply': 'cadre {command} needs .cadre/cadre.json from /cadre init: run /cadre init first.',
+  'team.regenBadState': '.cadre/cadre.json is not valid: fix it, or run /cadre init again.',
+  'team.regenNoRole': 'no role {id} in .cadre/cadre.json (roles: {roles})',
+  'team.regenBadRole': '.cadre/{id}/role.json is missing or not valid: fix it, or run /cadre init again.',
+  'team.regenNeedsFramework':
+    `role {id} has no framework and this repo has no default: set "framework" in .cadre/{id}/role.json ${
+    ''}to gsd, superpowers or none, then run /cadre regen {id} again.`,
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
