@@ -96,6 +96,23 @@ export const SCREEN_LIST_WORDS = Object.freeze({
   more: (count: number): string => t('ui.list.more', { count }),
 })
 
+/**
+ * The field label a row template draws: the text before its first `: `, after the last slot before it, trimmed; ''
+ * when the template has no `: `. ui/pane styles a field by this label, so it never matches EN wording of its own.
+ */
+export function labelOf(template: string): string {
+  const end = template.indexOf(': ')
+  if (end === -1) return ''
+  const head = template.slice(0, end)
+
+  return head.slice(head.lastIndexOf('}') + 1).trim()
+}
+
+/** The field label of an EN row template (labelOf). */
+export function keyLabel(key: EnKey): string {
+  return labelOf(EN[key])
+}
+
 /** The slot names of a template, once each, in the order they first appear (the walk specs check every template). */
 export function templateSlots(template: string): readonly string[] {
   return [...new Set([...template.matchAll(SLOT)].map(match => match[1] ?? ''))]

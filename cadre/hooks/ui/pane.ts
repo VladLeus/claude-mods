@@ -1,12 +1,15 @@
 /**
  * The cadre init side pane, a layer 8 module: the pane's view and rows (D-133), the one block it draws, the open
  * question's own context or the newest block between questions (D-203), its rows wrapped to the columns its body has
- * (D-231), the runs each row is drawn in (D1) and where the terminal seated the pane (D3). It imports core and the
- * types, so register's Pane hook reads it here, and the option preview takes wrapLine from it.
+ * (D-231), the runs each row is drawn in (D1) and where the terminal seated the pane (D3). It imports core, the locale
+ * tables (for the labels it styles) and the types, so register's Pane hook reads it here, and the option preview takes
+ * wrapLine from it.
  */
 import type { ContextKind, Enforcement, FileOpKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { clean } from '../core/text'
+import { ARTIFACT } from '../locales/artifact'
+import { keyLabel, labelOf, SCREEN_LIST_WORDS } from '../locales/t'
 
 /** One row the cadre init side pane draws (D-133): its cleaned text, and whether it is a block title (drawn bold). */
 export type PaneRow = {
@@ -191,6 +194,15 @@ const MAX_LABEL_CHARS = 40
 /** The text between two fields of one pane row (D1), as scope cards and scan rows join them. */
 const FIELD_SEPARATOR = '; '
 
+/** The label of the plan summary row (plan/text planSummary), whose runs of digits are bold. */
+const SUMMARY_LABEL = keyLabel('plan.text.planSummary4')
+
+/** The label of a scope card's title row (scope/card), whose value is bold. */
+const SCOPE_CARD_LABEL = labelOf(ARTIFACT.cardTitle)
+
+/** The label of a row of recommended roles, whose value is bold unless no role is recommended. */
+const RECOMMENDED_LABEL = keyLabel('ui.instructions.topicRows3')
+
 /** Whether a word is a key of a look table, so the table can be read at it. */
 function hasKey<K extends string>(table: Readonly<Record<K, unknown>>, word: string): word is K {
   return Object.hasOwn(table, word)
@@ -221,11 +233,12 @@ function opSpans(text: string): PaneSpan[] | null {
 }
 
 /**
- * The spans of a field's value with the space before it (D1): bold after `recommended` unless it is `none`, bold
- * after `Scope card`, each run of digits bold after `Summary`, else plain.
+ * The spans of a field's value with the space before it (D1): bold after RECOMMENDED_LABEL unless the value is the
+ * screen's none word, bold after SCOPE_CARD_LABEL, each run of digits bold after SUMMARY_LABEL, else plain. Each label
+ * is taken from the template that builds its row (labelOf), so no EN wording is matched here (D-225).
  */
 function valueSpans(label: string, value: string): PaneSpan[] {
-  if (label === 'Summary') {
+  if (label === SUMMARY_LABEL) {
     const runs = value.split(/(\d+)/).flatMap((run, at): PaneSpan[] => {
       if (run === '') return []
 
@@ -234,7 +247,7 @@ function valueSpans(label: string, value: string): PaneSpan[] {
 
     return [{ text: ' ' }, ...runs]
   }
-  const isBold = label === 'Scope card' || (label === 'recommended' && value !== 'none')
+  const isBold = label === SCOPE_CARD_LABEL || (label === RECOMMENDED_LABEL && value !== SCREEN_LIST_WORDS.none)
 
   return isBold ? [{ text: ' ' }, { text: value, bold: true }] : [{ text: ` ${value}` }]
 }

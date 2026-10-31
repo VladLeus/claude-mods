@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
+import { ARTIFACT } from '../locales/artifact'
+import type { EnKey } from '../locales/en'
+import { keyLabel, labelOf } from '../locales/t'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
   PANE_PAGE_ROWS,
@@ -334,6 +337,20 @@ describe('paneSpans (D1)', () => {
         expect(spans.filter(span => span.dim === true && span.text === text)).toEqual([])
       }
     }
+  })
+
+  test('the styled labels come from the templates that build their rows (WE-S4)', () => {
+    const recommended: readonly EnKey[] = [
+      'init.answers.ownSkillRecommended',
+      'ui.instructions.topicRows3',
+      'ui.instructions.memoryRows2',
+      'ui.context.topicContext3',
+      'ui.context.memoryContext2',
+    ]
+    expect(recommended.map(key => keyLabel(key))).toEqual(recommended.map(() => 'recommended'))
+    expect(keyLabel('plan.text.planSummary4')).toBe('Summary')
+    expect(labelOf(ARTIFACT.cardTitle)).toBe('Scope card')
+    expect(labelOf('a text with no field')).toBe('')
   })
 })
 
