@@ -5341,3 +5341,20 @@ describe('performState (WD-S1)', () => {
     }
   })
 })
+
+describe('one session tool list read per scan (#163)', () => {
+  test('the scans read the session tool list once and give that read as their tools', async () => {
+    const reads: unknown[] = []
+    const tools = async (): Promise<unknown> => {
+      const read = [{ name: `mcp__read${reads.length + 1}__list`, description: 'Lists', mcp: true }]
+      reads.push(read)
+
+      return read
+    }
+    const locations = DEFAULT_LOCATIONS
+    const scan = { kind: 'io', call: { id: 'scan', locations, readUserMcp: false } } satisfies Effect
+    const answer = await perform({ ...memIo(memWorld({}), []).io, tools }, { dryRun: true }, scan)
+    const given = answer.kind === 'io' && answer.result.id === 'scan' ? answer.result.tools : null
+    expect([reads.length, given]).toEqual([1, reads[0]])
+  })
+})
