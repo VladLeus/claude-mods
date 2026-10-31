@@ -11,6 +11,7 @@ import type { RoleSpec, SetupScan } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText } from '../../core/text'
+import { t } from '../../locales/t'
 import { CLAUDE_SECURITY_PLUGIN, CLAUDE_SECURITY_SKILL } from '../../roles/infra'
 import { missingSecurityPlugins, recommend } from '../../roles/recommend'
 import { standsFor } from '../../roles/template'
@@ -24,11 +25,10 @@ import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../
 import type { Answer, InitState, StageDef } from '../state'
 
 /** The start of the security plugins question, which init asks right after the recommendations (decision #39). */
-export const SECURITY_INSTALL_PREFIX = 'Install from claude-plugins-official after you confirm the plan:'
+export const SECURITY_INSTALL_PREFIX = t('init.security.securityInstallPrefix')
 
 /** The context line of the security plugins question (D-136): nothing is installed before Confirm or in a dry run. */
-export const SECURITY_INSTALL_CONTEXT =
-  'Nothing is installed before you confirm the final review, and a --dry-run installs nothing.'
+export const SECURITY_INSTALL_CONTEXT = t('init.security.securityInstallContext')
 
 /**
  * The security plugins question (decision #39): SECURITY_INSTALL_PREFIX, the names of the missing plugins joined with
@@ -40,7 +40,9 @@ export function securityInstallQuestion(keys: readonly string[]): string {
   const names = keys.map(pluginName)
   const notes = names.flatMap(name => SECURITY_PLUGIN_NOTES.get(name) ?? [])
 
-  return `${SECURITY_INSTALL_PREFIX} ${names.map(reportText).join(' and ')}? ${notes.join(' ')}`
+  const shown = names.map(reportText).join(t('init.security.namesJoin'))
+
+  return t('init.security.installQuestion', { prefix: SECURITY_INSTALL_PREFIX, names: shown, notes: notes.join(' ') })
 }
 
 /**
@@ -48,8 +50,8 @@ export function securityInstallQuestion(keys: readonly string[]): string {
  * security plugins (decision #39) and claude-md-management (D-141; 02-GAPS-B3 N6).
  */
 export const INSTALL_CHOICES: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'Install', value: true },
-  { label: 'Not now', value: false },
+  { label: t('init.security.choiceInstall'), value: true },
+  { label: t('init.security.choiceNotNow'), value: false },
 ])
 
 /**
@@ -59,7 +61,7 @@ export const INSTALL_CHOICES: readonly Labelled<boolean>[] = Object.freeze([
 export const INSTALL_OPTIONS: readonly string[] = Object.freeze(INSTALL_CHOICES.map(entry => entry.label))
 
 /** Why init cancels when the security plugins question is dismissed or not answered (decision #39, A1, D-45). */
-export const SECURITY_INSTALL_DISMISSED_REASON = 'The security plugins question was dismissed or not answered.'
+export const SECURITY_INSTALL_DISMISSED_REASON = t('init.security.securityInstallDismissedReason')
 
 /**
  * The roles with the claude-security review skill given or taken away (decision #39): each role that stands for

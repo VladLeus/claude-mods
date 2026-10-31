@@ -143,6 +143,15 @@ export const EN = Object.freeze({
   'init.frameworks.frameworkDismissedReason': 'A framework question was dismissed or not answered.',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
   'init.frameworks.frameworkAskAccepts': '{map} - a role runs one framework',
+
+  'init.security.securityInstallPrefix': 'Install from claude-plugins-official after you confirm the plan:',
+  'init.security.securityInstallContext':
+    'Nothing is installed before you confirm the final review, and a --dry-run installs nothing.',
+  'init.security.choiceInstall': 'Install',
+  'init.security.choiceNotNow': 'Not now',
+  'init.security.securityInstallDismissedReason': 'The security plugins question was dismissed or not answered.',
+  'init.security.namesJoin': ' and ',
+  'init.security.installQuestion': '{prefix} {names}? {notes}',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
