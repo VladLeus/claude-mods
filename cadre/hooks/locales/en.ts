@@ -93,6 +93,14 @@ export const EN = Object.freeze({
   'init.history.skippedUnknown.one': 'skipped {skipped} of {count} session that could not be read',
   'init.history.skippedUnknown.other': 'skipped {skipped} of {count} sessions that could not be read',
   'init.history.noneRow': '  none',
+
+  'init.consent.claudeJsonQuestion':
+    'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
+  'init.consent.claudeJsonContext':
+    'Without it, init still finds MCP servers in .mcp.json, your plugins and this session.',
+  'init.consent.consentNo': 'No, skip it',
+  'init.consent.consentYes': 'Yes, read names only',
+  'init.consent.consentDismissedReason': 'The ~/.claude.json question was dismissed or not answered.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

@@ -7,22 +7,21 @@
  */
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 
 /** The ~/.claude.json consent question (D-58): the file holds account data, so it is read only after a yes. */
-export const CLAUDE_JSON_QUESTION =
-  'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.'
+export const CLAUDE_JSON_QUESTION = t('init.consent.claudeJsonQuestion')
 
 /** The context line of the ~/.claude.json question (D-136): where init still finds MCP servers without the file. */
-export const CLAUDE_JSON_CONTEXT =
-  'Without it, init still finds MCP servers in .mcp.json, your plugins and this session.'
+export const CLAUDE_JSON_CONTEXT = t('init.consent.claudeJsonContext')
 
 /** Each consent answer with what it allows, the declining one first: only the yes reads ~/.claude.json (D-58). */
 const CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'No, skip it', value: false },
-  { label: 'Yes, read names only', value: true },
+  { label: t('init.consent.consentNo'), value: false },
+  { label: t('init.consent.consentYes'), value: true },
 ])
 
 /**
@@ -37,7 +36,7 @@ function parseConsent(answer: string): boolean | null {
 }
 
 /** Why init cancels when the ~/.claude.json question is dismissed or not answered (A1, D-45). */
-export const CONSENT_DISMISSED_REASON = 'The ~/.claude.json question was dismissed or not answered.'
+export const CONSENT_DISMISSED_REASON = t('init.consent.consentDismissedReason')
 
 /**
  * The ~/.claude.json question as the consent stage asks it (D-58, D-136): CLAUDE_JSON_QUESTION with
