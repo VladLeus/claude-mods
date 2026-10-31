@@ -174,6 +174,22 @@ export const EN = Object.freeze({
   'init.model.modelDismissedReason': 'A model and effort question was dismissed or not answered.',
 
   'init.assign.mcpContextLine': '{teamContext} A role not given the server cannot use it.',
+
+  'init.ownSkills.assignmentDismissedReason':
+    'A question on which roles get an MCP server or skills was dismissed or not answered.',
+  'init.ownSkills.skillsContextLine':
+    'A role given these skills can run them in its session; a role not given them cannot.',
+  'init.ownSkills.oneByOne': 'Go one by one',
+  'init.ownSkills.wholeGroup': 'Whole group',
+  'init.ownSkills.ownSkillsQuestion': 'How do you want to hand out your own skills ({count})?',
+  'init.ownSkills.ownSkillQuestion': 'Which roles get the skill {name}?',
+  'init.ownSkills.used': ' Used {skillUses}.',
+  'init.ownSkills.contextLine': '{purpose}{used} Recommended: {recommended}.',
+  'init.ownSkills.chip': 'Skill',
+  'init.ownSkills.noPlugin.one':
+    '{count} skill with no plugin; the pane shows what each does and the roles it is recommended for.',
+  'init.ownSkills.noPlugin.other':
+    '{count} skills with no plugin; the pane shows what each does and the roles it is recommended for.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

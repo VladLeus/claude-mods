@@ -10,7 +10,8 @@
  */
 import type { AskContext, RoleSpec, SkillRef } from '../../../types'
 import { redactSecrets } from '../../core/redact'
-import { asSentence, clean, compareText, countedNoun, idsOrNone } from '../../core/text'
+import { asSentence, clean, compareText, idsOrNone } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, withContext } from '../../ui/ask'
 import { skillContext, skillGroupContext } from '../../ui/blocks/assign'
@@ -23,12 +24,11 @@ import type { HandoutEntry, HandoutItem } from '../handout'
 import { teamContextLine } from './model'
 
 /** Why init cancels when a question on which roles get an MCP server or skills is dismissed or not answered (A1). */
-export const ASSIGNMENT_DISMISSED_REASON =
-  'A question on which roles get an MCP server or skills was dismissed or not answered.'
+export const ASSIGNMENT_DISMISSED_REASON = t('init.ownSkills.assignmentDismissedReason')
 
 /** The context line of a skill group question (D-136): the team's role ids, and what giving the skills means. */
 export function skillsContextLine(roles: readonly RoleSpec[]): string {
-  const meaning = 'A role given these skills can run them in its session; a role not given them cannot.'
+  const meaning = t('init.ownSkills.skillsContextLine')
 
   return `${teamContextLine(roles)} ${meaning}`
 }
@@ -85,10 +85,10 @@ export function skillGroupItem(
 }
 
 /** The entry answer that asks each of the user's own skills once (G-02-1b). */
-const ONE_BY_ONE_LABEL = 'Go one by one'
+const ONE_BY_ONE_LABEL = t('init.ownSkills.oneByOne')
 
 /** The entry answer that asks the group question of D-53 for all of the user's own skills at once (G-02-1b). */
-const WHOLE_GROUP_LABEL = 'Whole group'
+const WHOLE_GROUP_LABEL = t('init.ownSkills.wholeGroup')
 
 /** The answers of the own-skills entry question, in the order the dialog shows them (G-02-1b). */
 export const OWN_SKILLS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
@@ -99,7 +99,7 @@ export const OWN_SKILLS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
 
 /** The entry question of the hand-out of the user's own skills (G-02-1b), with how many there are. */
 export function ownSkillsQuestion(count: number): string {
-  return `How do you want to hand out your own skills (${count})?`
+  return t('init.ownSkills.ownSkillsQuestion', { count })
 }
 
 /**
@@ -107,9 +107,7 @@ export function ownSkillsQuestion(count: number): string {
  * side pane shows what each does and the roles it is recommended for.
  */
 export function ownSkillsContextLine(count: number): string {
-  const skills = countedNoun(count, 'skill', 'skills')
-
-  return `${skills} with no plugin; the pane shows what each does and the roles it is recommended for.`
+  return tn('init.ownSkills.noPlugin', count, { count })
 }
 
 /** The most code points of a skill name an own-skill question shows. A scanned name is data, not text to trust. */
@@ -117,7 +115,7 @@ const MAX_SHOWN_SKILL_CHARS = 60
 
 /** The question of one of the user's own skills (G-02-1b): which roles get it, by its name cleaned and cut to 60. */
 export function ownSkillQuestion(name: string): string {
-  return `Which roles get the skill ${clean(name, MAX_SHOWN_SKILL_CHARS)}?`
+  return t('init.ownSkills.ownSkillQuestion', { name: clean(name, MAX_SHOWN_SKILL_CHARS) })
 }
 
 /**
@@ -127,10 +125,10 @@ export function ownSkillQuestion(name: string): string {
  * roles the model recommended for it, or none.
  */
 export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: readonly string[]): string {
-  const used = uses === 0 ? '' : ` Used ${skillUsesText(uses)}.`
+  const used = uses === 0 ? '' : t('init.ownSkills.used', { skillUses: skillUsesText(uses) })
   const purpose = asSentence(redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE))
 
-  return `${purpose}${used} Recommended: ${idsOrNone(recommended)}.`
+  return t('init.ownSkills.contextLine', { purpose, used, recommended: idsOrNone(recommended) })
 }
 
 /**
@@ -138,7 +136,7 @@ export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: 
  * points a chip shows (countedChip).
  */
 export function ownSkillHeader(position: number, count: number): string {
-  return countedChip('Skill', position, count)
+  return countedChip(t('init.ownSkills.chip'), position, count)
 }
 
 /**
