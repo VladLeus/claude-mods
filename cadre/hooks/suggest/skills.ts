@@ -6,8 +6,8 @@
 import type { RoleSpec, SkillRef } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
-import { asciiLower, countedNoun } from '../core/text'
-import { PROMPTS } from '../locales/prompts'
+import { asciiLower } from '../core/text'
+import { PROMPTS, skillRowOf } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { invalidReply, NOT_JSON_ERROR, roleMapOf, ROLES_INTRO } from './checked'
 
@@ -44,9 +44,9 @@ export function skillsPrompt(
   const skillLine = (skill: SkillRef, index: number): string => {
     const purpose = skill.purpose ?? NO_PURPOSE_FOR_MODEL
 
-    const used = countedNoun(skillCount(skill.name, uses), 'time', 'times')
+    const count = skillCount(skill.name, uses)
 
-    return fill(PROMPTS.skillRow, { id: ownSkillId(index), name: skill.name, purpose, used })
+    return fill(skillRowOf(count), { id: ownSkillId(index), name: skill.name, purpose, count })
   }
   const lines = [
     ROLES_INTRO,

@@ -70,7 +70,7 @@ const CONTENT_NO_TEXT = t('init.instructions.noText')
 
 /** A fact as the content consent context line says it: yes or no. */
 function yesNo(isThere: boolean): string {
-  return isThere ? 'yes' : 'no'
+  return isThere ? t('ui.scan.yes') : t('ui.scan.no')
 }
 
 /**

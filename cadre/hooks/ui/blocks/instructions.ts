@@ -6,8 +6,8 @@
  */
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
-import { clean, countedNoun, idsOrNone } from '../../core/text'
-import { SCREEN_LIST_WORDS, t } from '../../locales/t'
+import { clean, idsOrNone } from '../../core/text'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
 
@@ -133,8 +133,8 @@ const MAX_SHOWN_TITLES = 3
  */
 function roleItemsLine(id: string, topics: readonly InstructionTopic[], memories: number): string {
   if (topics.length === 0 && memories === 0) return t('ui.instructions.roleItemsLine', { id })
-  const memoryCount = countedNoun(memories, 'memory', 'memories')
-  const topicCount = countedNoun(topics.length, 'topic', 'topics')
+  const memoryCount = tn('init.instructions.memories', memories, { count: memories })
+  const topicCount = tn('init.instructions.topics', topics.length, { count: topics.length })
   if (topics.length === 0) return t('ui.instructions.roleItemsLine2', { id, topicCount, memoryCount })
   const titles = cappedList(topics.map(topic => topic.title), MAX_SHOWN_TITLES)
 
@@ -156,8 +156,10 @@ export function instructionReviewLines(
 ): string[] {
   const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
   const isKept = (itemId: string): boolean => (given.get(itemId) ?? []).length === 0
-  const keptTopics = countedNoun(topics.filter(topic => isKept(topic.id)).length, 'topic', 'topics')
-  const keptMemories = countedNoun(memories.filter(memory => isKept(memory.id)).length, 'memory', 'memories')
+  const keptTopicCount = topics.filter(topic => isKept(topic.id)).length
+  const keptMemoryCount = memories.filter(memory => isKept(memory.id)).length
+  const keptTopics = tn('init.instructions.topics', keptTopicCount, { count: keptTopicCount })
+  const keptMemories = tn('init.instructions.memories', keptMemoryCount, { count: keptMemoryCount })
   const roleLine = (id: string): string => {
     const roleTopics = topics.filter(topic => isGiven(topic.id, id))
 

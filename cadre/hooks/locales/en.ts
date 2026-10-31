@@ -958,8 +958,10 @@ export const EN = Object.freeze({
   'scan.instructions.read.configFileWarning':
     `{file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or ${
     ''}plugins/), not read: no role gets it`,
-  'scan.instructions.read.totalCapWarning':
-    'stopped reading at {value} KiB in total, {files} not read: no role gets {which}',
+  'scan.instructions.read.totalCapWarning.one':
+    'stopped reading at {value} KiB in total, {count} file not read: no role gets it',
+  'scan.instructions.read.totalCapWarning.other':
+    'stopped reading at {value} KiB in total, {count} files not read: no role gets them',
   'scan.instructions.read.morePartsWarning': '{count} more parts were not offered: they stay with the root session',
 
   'scan.markers.markerRows': 'JavaScript/TypeScript (package.json)',
@@ -1226,6 +1228,10 @@ export const EN = Object.freeze({
   'plan.text.accepted': 'accepted',
   'plan.text.declined': 'declined',
   'plan.text.flags': '{required}, {accepted}',
+
+  'register.paneTitle': 'cadre init',
+  'register.commandDescription':
+    'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

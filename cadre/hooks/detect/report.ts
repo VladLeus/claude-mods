@@ -105,7 +105,7 @@ export function detectReportLines(facts: Facts): string[] {
 function gateRow(gate: Gate): string {
   const id = pad(gate.id, GATE_ID_WIDTH)
   const type = pad(gate.decisionType ?? t('detect.report.gateRow'), GATE_TYPE_WIDTH)
-  const human = pad(gate.needsHuman ? 'yes' : 'no', GATE_HUMAN_WIDTH)
+  const human = pad(gate.needsHuman ? t('ui.scan.yes') : t('ui.scan.no'), GATE_HUMAN_WIDTH)
 
   return `    ${id}${type}${human}${gate.kickoff}`
 }
@@ -129,7 +129,7 @@ function autonomyLines(adapter: FrameworkAdapter): string[] {
   }
 
   return adapter.autonomy.map(proposal => {
-    const requirement = proposal.isRequired ? 'required' : 'optional'
+    const requirement = proposal.isRequired ? t('plan.text.required') : t('plan.text.optional')
 
     return t('detect.report.autonomyLines', { key: proposal.key, to: proposal.to, requirement, why: proposal.why })
   })

@@ -1,8 +1,8 @@
 /**
  * The text helpers every module shares, a layer 0 leaf: clean and its display caps (reportText, shown, idLabel), list
- * and count wording (idsOrNone, countedNoun, asSentence, cardList), column padding, code unit order (compareText,
- * sortedUnique), UTF-8 sizes and ASCII lowercasing. It imports no other module, so facts, render, ask, history and
- * every later layer can import it with no cycle; ask.ts takes reportText from here, not from render.ts (C11).
+ * wording (idsOrNone, asSentence, cardList), column padding, code unit order (compareText, sortedUnique), UTF-8 sizes
+ * and ASCII lowercasing. It imports no other module, so facts, render, ask, history and every later layer can import
+ * it with no cycle; ask.ts takes reportText from here, not from render.ts (C11).
  */
 
 /** The character a cut value ends with. */
@@ -42,11 +42,6 @@ export type ListWords = { readonly none: string; readonly more: (count: number) 
  */
 export function idsOrNone(ids: readonly string[], none: string): string {
   return ids.length === 0 ? none : ids.join(', ')
-}
-
-/** A count with its noun, singular for exactly one: `1 file`, `0 files`, `2 files` (02-GAPS-B2 S7). */
-export function countedNoun(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`
 }
 
 /** The marks a sentence may end with: a period, a question mark or an exclamation mark. */

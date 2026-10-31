@@ -22,7 +22,7 @@ import { detectRefusal } from './guards/refusals'
 import { runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
-import { setMissingSlotSink } from './locales/t'
+import { setMissingSlotSink, t } from './locales/t'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
 import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collect'
@@ -46,7 +46,7 @@ import type { Surface } from './ui/surface'
 /** The id of the cadre init side pane (D-133). */
 const PANE = 'cadre-init'
 /** The title the cadre init side pane opens with (D-133). */
-const PANE_TITLE = 'cadre init'
+const PANE_TITLE = t('register.paneTitle')
 /** The side pane's blocks before a run shows any. */
 const NO_BLOCKS: ShownBlock[] = []
 /** The blocks of the cadre init side pane, newest first; a run's first block replaces the last run's (D-133). */
@@ -405,7 +405,7 @@ export const register: Register = on => {
     setMissingSlotSink(text => void $.ui.log(text, { to: 'debug' }))
     await $.command.register({
       name: 'cadre',
-      description: 'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
+      description: t('register.commandDescription'),
       argumentHint:
         'detect [--adapters] | init [--dry-run] | regen <id> [--dry-run] | ' +
         'start <id> [--terminal[=terminal|iterm|tmux]] | status <id> | ' +

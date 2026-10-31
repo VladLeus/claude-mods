@@ -168,6 +168,11 @@ describe('t and tn (D-207, D-216, D-223)', () => {
     expect(tn('init.answers.skillUses', 2, { count: 2, sessions: 50 })).toBe('2 times in the last 50 sessions')
   })
 
+  test('the counted word pairs keep the bytes the old counted-noun helper gave', () => {
+    expect(tn('init.instructions.files', 1, { count: 1 })).toBe('1 file')
+    expect(tn('init.instructions.files', 0, { count: 0 })).toBe('0 files')
+  })
+
   test('a counted sentence built through tn keeps its bytes for every count', () => {
     expect(skillUsesText(1)).toBe('1 time in the last 50 sessions')
     expect(skillUsesText(3)).toBe('3 times in the last 50 sessions')

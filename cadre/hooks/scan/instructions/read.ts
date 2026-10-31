@@ -9,8 +9,8 @@
  */
 import type { InitIo, InstructionPart, InstructionScan, MemoryItem, PartSource } from '../../../types'
 import { sha256Hex } from '../../core/hash'
-import { clean, countedNoun, sortedUnique, utf8Bytes } from '../../core/text'
-import { t } from '../../locales/t'
+import { clean, sortedUnique, utf8Bytes } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import {
   displayPath,
   isDirInsideRoot,
@@ -183,10 +183,7 @@ export function configFileWarning(file: string): string {
  * gets (02-GAPS-B2 S2).
  */
 export function totalCapWarning(count: number): string {
-  const files = countedNoun(count, 'file', 'files')
-  const which = count === 1 ? 'it' : 'them'
-
-  return t('scan.instructions.read.totalCapWarning', { value: MAX_TOTAL_BYTES / 1024, files, which })
+  return tn('scan.instructions.read.totalCapWarning', count, { value: MAX_TOTAL_BYTES / 1024, count })
 }
 
 /** The warning for the parts past MAX_PARTS (G-02-1f Part unit): not offered, they stay with the root session. */

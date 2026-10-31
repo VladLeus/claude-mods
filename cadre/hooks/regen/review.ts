@@ -88,7 +88,7 @@ const REGEN_CHANGE_TEXTS: Readonly<Record<RegenChange, string>> = Object.freeze(
 export function regenPartContextLine(change: RegenChange, isRecommended: boolean): string {
   return t('regen.review.regenPartContextLine', {
     regenChangeTexts: REGEN_CHANGE_TEXTS[change],
-    value: isRecommended ? 'yes' : 'no',
+    value: isRecommended ? t('ui.scan.yes') : t('ui.scan.no'),
   })
 }
 
@@ -157,7 +157,7 @@ export function regenPartContext(
         value: redactedText(summary ?? item.memory.summary),
       })
   const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], t('regen.review.recommended', {
-    value: isRecommended ? 'yes' : 'no',
+    value: isRecommended ? t('ui.scan.yes') : t('ui.scan.no'),
   })]
 
   return { title: t('regen.review.pagedChip', {

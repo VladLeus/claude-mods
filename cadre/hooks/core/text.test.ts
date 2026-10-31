@@ -6,7 +6,6 @@ import {
   asSentence,
   cardList,
   clean,
-  countedNoun,
   idLabel,
   idsOrNone,
   pad,
@@ -88,11 +87,6 @@ describe('facts helpers (S7)', () => {
   test('idsOrNone is none for no ids, else the ids joined with a comma', () => {
     expect(idsOrNone([], 'none')).toBe('none')
     expect(idsOrNone(['be', 'qa'], 'none')).toBe('be, qa')
-  })
-
-  test('countedNoun is singular for exactly one, plural otherwise', () => {
-    expect(countedNoun(1, 'file', 'files')).toBe('1 file')
-    expect(countedNoun(0, 'file', 'files')).toBe('0 files')
   })
 })
 

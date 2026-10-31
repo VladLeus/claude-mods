@@ -49,7 +49,7 @@ import {
   PYTHON_TIMEOUT_MS,
 } from '../apply/run'
 import { sha256Hex } from '../core/hash'
-import { compareText, countedNoun } from '../core/text'
+import { compareText } from '../core/text'
 import { attendedNote, NOT_SET_TEXT } from '../framework/gsd/hunks'
 import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
@@ -4256,7 +4256,7 @@ describe('init apply conflicts (D-67)', () => {
     const run = memIo(world, { ...INIT_ANSWERS, [ROLE_QUESTION]: 'Keep mine' })
     await runInit(run.io, { dryRun: false, host: memHost(hostWorld({})).io })
     const diff = lineDiff(EDITED_ROLE, role)
-    const counts = `Take new: ${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+    const counts = `Take new: ${diff.added} ${diff.added === 1 ? 'line' : 'lines'} added, ${diff.removed} removed`
     const at = run.asked.indexOf(ROLE_ASKED)
     expect(run.specs[at]?.context).toEqual({
       title: 'Conflict: .cadre/be/ROLE.md',
