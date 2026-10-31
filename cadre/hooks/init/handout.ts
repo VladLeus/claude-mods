@@ -7,6 +7,7 @@
  */
 import type { AskContext, AskSpec, RoleSpec } from '../../types'
 import { labelled } from '../core/labelled'
+import { t } from '../locales/t'
 import { choiceAnswer, quotedLabels, withContext } from '../ui/ask'
 import type { ChoiceAsk } from '../ui/ask'
 import { parseRoleList } from './answers'
@@ -15,7 +16,7 @@ import { parseRoleList } from './answers'
  * The entry answer that gives every item its recommended roles (G-02-1f Entry choices, G-02-1b), the same for the
  * instruction parts and the own skills (02-GAPS-B2 S7).
  */
-export const ACCEPT_RECOMMENDATIONS = 'Accept recommendations'
+export const ACCEPT_RECOMMENDATIONS = t('init.handout.acceptRecommendations')
 
 /**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
@@ -88,17 +89,20 @@ function recommendedOf(items: readonly HandoutItem[]): ReadonlyMap<string, reado
 }
 
 /** The item answer that gives an item its recommended roles (G-02-1f Part by part). */
-const YES_LABEL = 'Yes'
+const YES_LABEL = t('init.handout.yesLabel')
 
 /** The item answer that gives an item to no role (G-02-1f Part by part). */
-const NO_LABEL = 'No'
+const NO_LABEL = t('init.handout.noLabel')
 
 /** The buttons of an item question; a role list is typed under "Other" (G-02-1f Part by part). */
 const ITEM_OPTIONS: readonly string[] = Object.freeze([YES_LABEL, NO_LABEL])
 
 /** What an item question takes, as its refusal lists it: Yes, No or the team's role ids (D-136). */
 function itemAccepts(roles: readonly RoleSpec[]): string {
-  return `${quotedLabels(ITEM_OPTIONS)}, or role ids from: ${roles.map(role => role.id).join(', ')}`
+  return t('init.handout.itemAccepts', {
+    quotedLabels: quotedLabels(ITEM_OPTIONS),
+    map: roles.map(role => role.id).join(', '),
+  })
 }
 
 /**

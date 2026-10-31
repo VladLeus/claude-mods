@@ -61,6 +61,11 @@ export const EN = Object.freeze({
   'init.answers.memoryAnswerHint': '(e.g. PM, TL, or none)',
   'init.answers.shownNames': ' ({cappedNames})',
   'init.answers.memoryQuestion': 'Which roles get {instructionLabels}{shownNames}? {memoryAnswerHint}',
+
+  'init.handout.acceptRecommendations': 'Accept recommendations',
+  'init.handout.yesLabel': 'Yes',
+  'init.handout.noLabel': 'No',
+  'init.handout.itemAccepts': '{quotedLabels}, or role ids from: {map}',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
