@@ -69,6 +69,11 @@ export type Draft = {
   readonly instructions: InstructionHandout
   readonly policy: GitPolicy
   readonly launchStart: LaunchStart
+  /**
+   * The answer to GSD's own check question, kept for the run so a review go-back never asks it again (D-243 "one
+   * question", WF-S2); never written.
+   */
+  readonly gsdCheck?: 'declined' | 'run'
 }
 
 /** What the person confirmed in the review (D-43, D-105): the draft the plan was built from, and that plan. */

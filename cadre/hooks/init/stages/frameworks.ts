@@ -235,6 +235,11 @@ export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismi
   }
 }
 
+/** The state with the answer to the GSD check kept in its draft (WF-S2). */
+function withGsdCheck(state: InitState, gsdCheck: 'declined' | 'run'): InitState {
+  return { ...state, draft: { ...state.draft, gsdCheck } }
+}
+
 /** The GSD check asked `tries` times so far; `question` is its text after a refusal. */
 function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: string | null): InitState {
   const ask = gsdCheckAsk(facts)
@@ -285,9 +290,10 @@ function gsdCheckAnswer(state: InitState, answer: Answer): InitState {
   const next = choiceAnswer(ask, sub, answer.text)
   if (next.kind === 'again') return gsdCheckAsked(state, gathered.facts.facts, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
-  if (!next.value) return frameworkStep(state)
+  if (!next.value) return frameworkStep(withGsdCheck(state, 'declined'))
+  const started = withGsdCheck({ ...state, sub: { kind: 'start' } }, 'run')
 
-  return withEffect({ ...state, sub: { kind: 'start' } }, { kind: 'io', call: { id: 'gsd-identity', locations } })
+  return withEffect(started, { kind: 'io', call: { id: 'gsd-identity', locations } })
 }
 
 /**
@@ -306,10 +312,12 @@ function gsdChecked(state: InitState, result: IoResult): InitState {
 
 /**
  * The framework stage (DET-03, D-73, D-17, D-230): the GSD check first when the scan found a user-level GSD that is not
- * proven (D-243, ASKED #20), then the framework step (frameworkStep, frameworkAnswer).
+ * proven (D-243, ASKED #20), then the framework step (frameworkStep, frameworkAnswer). The GSD check is asked at most
+ * once per run: its answer stays in the draft, so a review go-back goes straight to the framework step (WF-S2).
  */
 export const frameworksStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
+    if (state.draft.gsdCheck !== undefined) return frameworkStep(state)
     const facts = state.draft.gathered?.facts.facts
     if (facts === undefined || !needsGsdCheck(facts)) return frameworkStep(state)
 
