@@ -35,7 +35,9 @@ function hunkRows(op: HunkOp): string[] {
     before: reportText(op.before),
     after: reportText(op.after),
   })
-  const flags = `${op.isRequired ? 'required' : 'optional'}, ${op.isAccepted ? 'accepted' : 'declined'}`
+  const required = op.isRequired ? t('plan.text.required') : t('plan.text.optional')
+  const accepted = op.isAccepted ? t('plan.text.accepted') : t('plan.text.declined')
+  const flags = t('plan.text.flags', { required, accepted })
 
   return [
     t('plan.text.hunkRows2', { pad: pad('hunk', KIND_WIDTH), file: reportText(op.file), change, flags }),

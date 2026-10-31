@@ -1215,6 +1215,17 @@ export const EN = Object.freeze({
   'paths.noUserFolderWarning':
     'user-level installs were not checked: no CLAUDE_CONFIG_DIR or home folder outside the repo',
   'paths.resolvedPath': 'could not resolve {label} (used as given)',
+  'detect.report.gate': 'gate',
+  'detect.report.type': 'type',
+  'detect.report.human': 'human?',
+  'detect.report.gateHeader': '    {columns}',
+  'detect.report.autonomyNote': '    {note}',
+  'detect.report.noAutonomy': 'no autonomy settings',
+  'plan.text.required': 'required',
+  'plan.text.optional': 'optional',
+  'plan.text.accepted': 'accepted',
+  'plan.text.declined': 'declined',
+  'plan.text.flags': '{required}, {accepted}',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

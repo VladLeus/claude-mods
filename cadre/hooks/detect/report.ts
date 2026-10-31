@@ -112,14 +112,21 @@ function gateRow(gate: Gate): string {
 
 /** The gate table of one adapter: its header, then one row per gate in the order the adapter lists them. */
 function gateRows(gates: readonly Gate[]): string[] {
-  const header = `    ${pad('gate', GATE_ID_WIDTH)}${pad('type', GATE_TYPE_WIDTH)}${pad('human?', GATE_HUMAN_WIDTH)}`
+  const columns = [
+    pad(t('detect.report.gate'), GATE_ID_WIDTH),
+    pad(t('detect.report.type'), GATE_TYPE_WIDTH),
+    pad(t('detect.report.human'), GATE_HUMAN_WIDTH),
+  ]
+  const header = t('detect.report.gateHeader', { columns: columns.join('') })
 
   return [t('detect.report.gateRows', { header }), ...gates.map(gateRow)]
 }
 
 /** The autonomy lines of one adapter: one per setting proposal, or the note that says why it needs no settings. */
 function autonomyLines(adapter: FrameworkAdapter): string[] {
-  if (adapter.autonomy.length === 0) return [`    ${adapter.autonomyNote ?? 'no autonomy settings'}`]
+  if (adapter.autonomy.length === 0) {
+    return [t('detect.report.autonomyNote', { note: adapter.autonomyNote ?? t('detect.report.noAutonomy') })]
+  }
 
   return adapter.autonomy.map(proposal => {
     const requirement = proposal.isRequired ? 'required' : 'optional'
