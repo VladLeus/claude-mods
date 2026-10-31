@@ -23,6 +23,7 @@ import type { Labelled } from '../core/labelled'
 import { redactedText } from '../core/redact'
 import { asSentence, clean, reportText } from '../core/text'
 import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from '../generate/gittrack'
+import { t, tn } from '../locales/t'
 import { partRecord, TOP_OF_FILE, withPartRecords } from '../records'
 import { NO_MEMORY_SUMMARY } from '../scan/instructions/memories'
 import { checkedCompletion } from '../suggest/checked'
@@ -41,8 +42,8 @@ export type RegenChange = 'new' | 'changed'
 
 /** Each answer to a regen question with what it does: Yes gives the item to the role, No leaves it out (D-142). */
 const REGEN_CHOICES: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'Yes', value: true },
-  { label: 'No', value: false },
+  { label: t('regen.review.yes'), value: true },
+  { label: t('regen.review.no'), value: false },
 ])
 
 /** The answers to a regen question, Yes first (D-142). */
@@ -52,11 +53,11 @@ export const REGEN_ITEM_OPTIONS: readonly string[] = Object.freeze(REGEN_CHOICES
  * Why regen cancels when a regen question is dismissed or not answered (D-142, A1); MAX_ASKS answers it cannot read
  * give NO_USABLE_ANSWER_REASON.
  */
-export const REGEN_DISMISSED_REASON = 'A regen question on instruction parts was dismissed or not answered.'
+export const REGEN_DISMISSED_REASON = t('regen.review.regenDismissedReason')
 
 /** The chip of a regen question (D-142, G-02-3c): `Regen <i>/<n>`, or just `Regen` when that is over 12 code points. */
 export function regenHeader(position: number, count: number): string {
-  return countedChip('Regen', position, count)
+  return countedChip(t('regen.review.chip'), position, count)
 }
 
 /** A part's heading as regen names it: the heading, or TOP_OF_FILE for the text before the first heading. */
@@ -70,23 +71,30 @@ function headingText(heading: string): string {
  * not by a topic.
  */
 export function regenPartQuestion(id: string, part: Pick<InstructionPart, 'file' | 'heading'>): string {
-  return `Should ${id} get "${redactedText(headingText(part.heading))}" from ${clean(part.file)}?`
+  return t('regen.review.regenPartQuestion', {
+    id,
+    heading: redactedText(headingText(part.heading)),
+    file: clean(part.file),
+  })
 }
 
 /** How the context line of a regen question names each kind of item (D-142). */
 const REGEN_CHANGE_TEXTS: Readonly<Record<RegenChange, string>> = Object.freeze({
-  new: 'New since init.',
-  changed: 'Changed since init.',
+  new: t('regen.review.changeNew'),
+  changed: t('regen.review.changeChanged'),
 })
 
 /** The context line of a part's regen question (D-142): whether it is new or changed, then the recommendation. */
 export function regenPartContextLine(change: RegenChange, isRecommended: boolean): string {
-  return `${REGEN_CHANGE_TEXTS[change]} Recommended: ${isRecommended ? 'yes' : 'no'}.`
+  return t('regen.review.regenPartContextLine', {
+    regenChangeTexts: REGEN_CHANGE_TEXTS[change],
+    value: isRecommended ? 'yes' : 'no',
+  })
 }
 
 /** The regen question of a memory (D-142): whether the role gets it, by its file name, cleaned. */
 export function regenMemoryQuestion(id: string, memory: Pick<MemoryItem, 'file'>): string {
-  return `Should ${id} get the memory "${clean(memory.file)}"?`
+  return t('regen.review.regenMemoryQuestion', { id, file: clean(memory.file) })
 }
 
 /**
@@ -106,12 +114,12 @@ export function regenMemoryContextLine(
 
 /** The reply line of a part regen dropped from a role because it is gone from its file (G-02-1f Regen). */
 export function partDroppedLine(id: string, record: Pick<InstructionPartRecord, 'file' | 'heading'>): string {
-  return `dropped from ${id}: ${clean(record.file)} > ${headingText(record.heading)} (gone from its file)`
+  return t('regen.review.partDroppedLine', { id, file: clean(record.file), heading: headingText(record.heading) })
 }
 
 /** The reply line of a memory regen dropped from a role because its file is gone (G-02-1f Regen). */
 export function memoryDroppedLine(id: string, memory: Pick<MemoryItem, 'file'>): string {
-  return `dropped from ${id}: memory ${clean(memory.file)} (gone)`
+  return t('regen.review.memoryDroppedLine', { id, file: clean(memory.file) })
 }
 
 /**
@@ -119,17 +127,7 @@ export function memoryDroppedLine(id: string, memory: Pick<MemoryItem, 'file'>):
  * and memories were left out of the role, and the command that asks about them.
  */
 export function notHandedOutWarning(id: string, count: number): string {
-  if (count === 1) {
-    return (
-      `1 new or changed instruction part or memory for ${id} was not handed out: ` +
-      `run /cadre regen ${id} in a session to answer it`
-    )
-  }
-
-  return (
-    `${count} new or changed instruction parts or memories for ${id} were not handed out: ` +
-    `run /cadre regen ${id} in a session to answer them`
-  )
+  return tn('regen.review.notHandedOut', count, { count, id })
 }
 
 /** One new or changed item a regen asks about (G-02-1f Regen, D-142), as its side found it. */
@@ -150,11 +148,22 @@ export function regenPartContext(
   const summary = item.kind === 'memory' && item.memory.summary === '' ? NO_MEMORY_SUMMARY : null
   const where =
     item.kind === 'part'
-      ? `${clean(item.part.file)} > ${redactedText(headingText(item.part.heading))}`
-      : `memory ${clean(item.memory.file)}: ${redactedText(summary ?? item.memory.summary)}`
-  const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], `Recommended: ${isRecommended ? 'yes' : 'no'}`]
+      ? t('regen.review.partSource', {
+        file: clean(item.part.file),
+        heading: redactedText(headingText(item.part.heading)),
+      })
+      : t('regen.review.memorySource', {
+        file: clean(item.memory.file),
+        value: redactedText(summary ?? item.memory.summary),
+      })
+  const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], t('regen.review.recommended', {
+    value: isRecommended ? 'yes' : 'no',
+  })]
 
-  return { title: `Regen ${place.position} of ${place.count}`, lines, kind: 'regen-part' }
+  return { title: t('regen.review.pagedChip', {
+    position: place.position,
+    count: place.count,
+  }), lines, kind: 'regen-part' }
 }
 
 /** What changed on one side since its records were made, and what regen asks about it (sideChanges). */
@@ -254,7 +263,7 @@ function sideResult(id: string, found: SideChanges, yes: ReadonlySet<RegenAsk>, 
 }
 
 /** The status line the TUI default shows while regen asks the model about the changed parts (D-232). */
-const REGEN_PROGRESS = 'cadre: checking changed parts…'
+const REGEN_PROGRESS = t('init.status.regen')
 
 /**
  * The recommendation for each item a regen asks about, by `I<n>` (G-02-1f Regen, D-142): one model call with the role

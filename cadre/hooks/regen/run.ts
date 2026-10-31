@@ -7,6 +7,7 @@
 import type { HostIo, InitIo } from '../../types'
 import { reportText } from '../core/text'
 import { initGuard } from '../guards/repo'
+import { t } from '../locales/t'
 import { readTeam, regenBadRole } from '../team'
 import { regenApply, regenPlan, regenReplyText } from './plan'
 import { regenHandout } from './review'
@@ -84,9 +85,9 @@ export async function runRegen(io: InitIo, options: RegenOptions): Promise<strin
  * The start of the reply of a regen cancelled at one of its questions: nothing was written (AUTO-PICK #19 Q7);
  * regenCancelledReply adds the reason.
  */
-export const REGEN_CANCELLED = 'regen cancelled, nothing written'
+export const REGEN_CANCELLED = t('regen.run.cancelled')
 
 /** The reply of a cancelled regen (AUTO-PICK #19 Q7): REGEN_CANCELLED, a colon and the reason as a report cell. */
 export function regenCancelledReply(reason: string): string {
-  return `${REGEN_CANCELLED}: ${reportText(reason)}`
+  return t('regen.run.cancelledReply', { regenCancelled: REGEN_CANCELLED, reason: reportText(reason) })
 }

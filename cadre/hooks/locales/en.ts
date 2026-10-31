@@ -310,6 +310,7 @@ export const EN = Object.freeze({
   'init.status.skills': 'cadre: recommending skills…',
   'init.status.topics': 'cadre: grouping instructions…',
   'init.status.parts': 'cadre: recommending instruction parts…',
+  'init.status.regen': 'cadre: checking changed parts…',
 
   'init.assignRules.ownSkillsLabel': 'your own',
 
@@ -538,6 +539,37 @@ export const EN = Object.freeze({
   'apply.installs.namesJoin': ' and ',
   'apply.installs.installed.one': 'Installed {names}: run /reload-plugins to load it in this session.',
   'apply.installs.installed.other': 'Installed {names}: run /reload-plugins to load them in this session.',
+
+  'regen.review.yes': 'Yes',
+  'regen.review.no': 'No',
+  'regen.review.regenDismissedReason': 'A regen question on instruction parts was dismissed or not answered.',
+  'regen.review.chip': 'Regen',
+  'regen.review.regenPartQuestion': 'Should {id} get "{heading}" from {file}?',
+  'regen.review.changeNew': 'New since init.',
+  'regen.review.changeChanged': 'Changed since init.',
+  'regen.review.regenPartContextLine': '{regenChangeTexts} Recommended: {value}.',
+  'regen.review.regenMemoryQuestion': 'Should {id} get the memory "{file}"?',
+  'regen.review.partDroppedLine': 'dropped from {id}: {file} > {heading} (gone from its file)',
+  'regen.review.memoryDroppedLine': 'dropped from {id}: memory {file} (gone)',
+  'regen.review.partSource': '{file} > {heading}',
+  'regen.review.memorySource': 'memory {file}: {value}',
+  'regen.review.recommended': 'Recommended: {value}',
+  'regen.review.pagedChip': 'Regen {position} of {count}',
+  'regen.review.notHandedOut.one':
+    `1 new or changed instruction part or memory for {id} was not handed out: ${
+    ''}run /cadre regen {id} in a session to answer it`,
+  'regen.review.notHandedOut.other':
+    `{count} new or changed instruction parts or memories for {id} were not handed out: ${
+    ''}run /cadre regen {id} in a session to answer them`,
+
+  'regen.plan.improverNotOfferedWarning':
+    `the improver was not offered for {id}: claude -p cannot ask Accept or Keep original; run /cadre ${
+    ''}regen {id} in a session to review the changes`,
+  'regen.plan.dryRunHead': 'cadre regen {id} --dry-run',
+  'regen.plan.head': 'cadre regen {id}',
+
+  'regen.run.cancelled': 'regen cancelled, nothing written',
+  'regen.run.cancelledReply': '{regenCancelled}: {reason}',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

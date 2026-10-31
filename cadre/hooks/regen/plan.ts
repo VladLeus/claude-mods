@@ -24,6 +24,7 @@ import { applySteps } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
 import { desiredFiles } from '../generate/files'
 import { builtClaudeMdPath } from '../generate/launcher'
+import { t } from '../locales/t'
 import { launcherPath, roleJsonPath } from '../paths'
 import { planReadPaths, planWithManifest } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
@@ -40,8 +41,9 @@ import type { RegenScans } from './side-read'
  */
 export function improverNotOfferedWarning(id: string): string {
   return (
-    `the improver was not offered for ${id}: claude -p cannot ask Accept or Keep original; ` +
-    `run /cadre regen ${id} in a session to review the changes`
+    t('regen.plan.improverNotOfferedWarning', {
+      id,
+    })
   )
 }
 
@@ -139,7 +141,7 @@ export async function regenPlan(
  * written), else the lines of what the apply did (appliedLines), with the regen manifest note (A4).
  */
 export function regenReplyText(planned: RegenPlanned, id: string, applied: ApplyOutcome | null): string {
-  const command = applied === null ? `cadre regen ${id} --dry-run` : `cadre regen ${id}`
+  const command = applied === null ? t('regen.plan.dryRunHead', { id }) : t('regen.plan.head', { id })
   const ending = applied === null ? [DRY_RUN_NOTE] : appliedLines(applied, regenManifestSkippedNote(id))
   const warnings = scanWarningLines(planned.warnings)
 
