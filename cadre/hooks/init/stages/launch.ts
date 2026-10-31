@@ -10,6 +10,7 @@ import type { LaunchStart, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
+import { t } from '../../locales/t'
 import { isSafeRelativePath } from '../../paths'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
@@ -19,11 +20,11 @@ import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 
 /** The question init asks once per repo, right after the git policy: where the role launchers start (A2). */
-export const LAUNCH_START_QUESTION = 'Where should the role launchers start their sessions? (asked once for this repo)'
+export const LAUNCH_START_QUESTION = t('init.launch.launchStartQuestion')
 
 /** The context line of the launcher start question (D-136): the launcher of each role, by its id, starts there. */
 export function launchContextLine(roles: readonly RoleSpec[]): string {
-  return `The launcher of each role (${idsOf(roles)}) starts its session there.`
+  return t('init.launch.launchContextLine', { ids: idsOf(roles) })
 }
 
 /** What the launcher start question picks: the git root, the folder a launcher is run from, or a typed folder. */
@@ -37,9 +38,9 @@ type LaunchStartEntry = {
 }
 
 const LAUNCH_STARTS: readonly LaunchStartEntry[] = Object.freeze([
-  { label: 'Git root of this repo', word: 'git root', choice: 'git-root' },
-  { label: 'The folder I run it from', word: 'in here', choice: 'here' },
-  { label: 'Another folder in this repo', word: 'other', choice: 'dir' },
+  { label: t('init.launch.startGitRoot'), word: 'git root', choice: 'git-root' },
+  { label: t('init.launch.startHere'), word: 'in here', choice: 'here' },
+  { label: t('init.launch.startOther'), word: 'other', choice: 'dir' },
 ])
 
 /**
@@ -59,39 +60,40 @@ const LAUNCH_START_WORDS: readonly Labelled<LaunchChoice>[] = Object.freeze(
 )
 
 /** The free-text question for the folder the launchers start in, after `Another folder in this repo` (A2). */
-export const LAUNCH_DIR_QUESTION =
-  'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).'
+export const LAUNCH_DIR_QUESTION = t('init.launch.launchDirQuestion')
 
 /** The context line of the launcher folder question (D-136): which folders can be used. */
-export const LAUNCH_DIR_CONTEXT = 'It must be a folder inside this repo; a link that leads out is refused.'
+export const LAUNCH_DIR_CONTEXT = t('init.launch.launchDirContext')
 
 /** The one button of the folder question, which ends init; the folder itself is typed in the text field. */
-const LAUNCH_DIR_CHOICES: readonly Labelled<'cancel'>[] = Object.freeze([{ label: 'Cancel init', value: 'cancel' }])
+const LAUNCH_DIR_CHOICES: readonly Labelled<'cancel'>[] = Object.freeze([
+  { label: t('init.launch.dirCancel'), value: 'cancel' },
+])
 
 /** The buttons of the folder question. */
 export const LAUNCH_DIR_OPTIONS: readonly string[] = Object.freeze(LAUNCH_DIR_CHOICES.map(entry => entry.label))
 
 /** Why init cancels when the launcher start question is dismissed; unread answers give NO_USABLE_ANSWER_REASON. */
-export const LAUNCH_START_DISMISSED_REASON = 'The launcher start question was dismissed or not answered.'
+export const LAUNCH_START_DISMISSED_REASON = t('init.launch.launchStartDismissedReason')
 
 /** Why init cancels when the folder question is dismissed or `Cancel init` is chosen there. */
-export const LAUNCH_DIR_CANCELLED_REASON = 'The launcher folder question was dismissed or cancelled.'
+export const LAUNCH_DIR_CANCELLED_REASON = t('init.launch.launchDirCancelledReason')
 
 /** Why init cancels when no typed folder could be used after MAX_ASKS tries. */
-export const LAUNCH_DIR_ROUNDS_REASON = `No usable launcher folder after ${MAX_ASKS} tries: nothing was chosen.`
+export const LAUNCH_DIR_ROUNDS_REASON = t('init.launch.launchDirRoundsReason', { maxAsks: MAX_ASKS })
 
 /** The problem with a typed folder that isSafeRelativePath refuses. */
-const UNSAFE_LAUNCH_DIR = 'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /'
+const UNSAFE_LAUNCH_DIR = t('init.launch.unsafeLaunchDir')
 
 /** The problem with a typed folder whose real path is not a folder inside the repo. */
-const NOT_A_LAUNCH_DIR = 'it is not a folder in this repo'
+const NOT_A_LAUNCH_DIR = t('init.launch.notALaunchDir')
 
 /** The line of the init reply that says where the role launchers start (A2). */
 export function launchLine(start: LaunchStart): string {
-  if (start.kind === 'git-root') return 'Launchers start in: the git root'
-  if (start.kind === 'here') return 'Launchers start in: the folder they are run from'
+  if (start.kind === 'git-root') return t('init.launch.lineGitRoot')
+  if (start.kind === 'here') return t('init.launch.lineHere')
 
-  return `Launchers start in: ${start.path}/ under the git root`
+  return t('init.launch.lineDir', { path: start.path })
 }
 
 /** The launcher start an answer picks, by its label or its word, trimmed and in any case; else null. */
@@ -100,7 +102,7 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
 }
 
 /** What the launcher start question takes, as its refusal lists it: a button or its word (A2, D-136). */
-const LAUNCH_START_ACCEPTS = `${quotedLabels(LAUNCH_START_OPTIONS)} (or type git root, in here or other)`
+const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', { quotedLabels: quotedLabels(LAUNCH_START_OPTIONS) })
 
 /** The dialog of the folder question: its one button with the Launch dir chip. */
 const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir })
@@ -140,7 +142,7 @@ function dirAsked(state: InitState, tries: number, refusal: string | null): Init
 function dirRefused(state: InitState, tries: number, answer: string, problem: string): InitState {
   if (tries >= MAX_ASKS) return stageCancelled(state, LAUNCH_DIR_ROUNDS_REASON)
 
-  return dirAsked(state, tries + 1, reportText(`Cannot use ${shown(answer)}: ${problem}.`))
+  return dirAsked(state, tries + 1, reportText(t('init.launch.dirRefused', { answer: shown(answer), problem })))
 }
 
 /**

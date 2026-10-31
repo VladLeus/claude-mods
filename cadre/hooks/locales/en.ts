@@ -244,6 +244,28 @@ export const EN = Object.freeze({
   'init.hunks.why': 'Why: {why}',
   'init.hunks.chip': 'Hunk {index} of {total}',
   'init.hunks.hunkDismissedReason': 'A hunk question was dismissed or not answered.',
+
+  'init.launch.launchStartQuestion': 'Where should the role launchers start their sessions? (asked once for this repo)',
+  'init.launch.launchContextLine': 'The launcher of each role ({ids}) starts its session there.',
+  'init.launch.startGitRoot': 'Git root of this repo',
+  'init.launch.startHere': 'The folder I run it from',
+  'init.launch.startOther': 'Another folder in this repo',
+  'init.launch.launchDirQuestion':
+    'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).',
+  'init.launch.launchDirContext': 'It must be a folder inside this repo; a link that leads out is refused.',
+  'init.launch.dirCancel': 'Cancel init',
+  'init.launch.launchStartDismissedReason': 'The launcher start question was dismissed or not answered.',
+  'init.launch.launchDirCancelledReason': 'The launcher folder question was dismissed or cancelled.',
+  'init.launch.launchDirRoundsReason': 'No usable launcher folder after {maxAsks} tries: nothing was chosen.',
+  'init.launch.unsafeLaunchDir':
+    'use a folder inside this repo: letters, digits, . _ @ - and /, with no .. and no leading /',
+  'init.launch.notALaunchDir': 'it is not a folder in this repo',
+  'init.launch.lineGitRoot': 'Launchers start in: the git root',
+  'init.launch.lineHere': 'Launchers start in: the folder they are run from',
+  'init.launch.lineDir': 'Launchers start in: {path}/ under the git root',
+  'init.launch.launchStartAccepts': '{quotedLabels} (or type git root, in here or other)',
+  'init.launch.dirRefused': 'Cannot use {answer}: {problem}.',
+
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
