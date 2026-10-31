@@ -104,6 +104,13 @@ describe('instructionLines redaction (WD-S5, #163)', () => {
       `  squad.md: Uses token=${REDACTED}`,
     ])
   })
+
+  test('a secret-like span of a topic title is hidden in its row (PR-S3)', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topics = [{ id: 'T1', title: `Deploy ${secret}`, summary: 'Deploy notes', partIds: ['P1'] }]
+    const lines = instructionLines(SCAN, topics, new Map())
+    expect(lines.filter(line => line.startsWith('  Deploy '))).toEqual([`  Deploy token=${REDACTED}: Deploy notes`])
+  })
 })
 
 describe('instructionReviewLines', () => {

@@ -261,6 +261,12 @@ describe('instruction questions (G-02-1f)', () => {
     expect(memoryItemContextLine(squad, [])).toBe(`Deploy with token=${REDACTED}. Recommended: none.`)
   })
 
+  test('a secret-like span of a topic title is hidden in its question (PR-S3)', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topic = { ...SECURITY_TOPIC, title: `Deploy ${secret}` }
+    expect(topicQuestion(topic)).toBe(`Which roles get "Deploy token=${REDACTED}"?`)
+  })
+
   test('the memory chip is Memory i/n, and just Memory when that is over 12 characters', () => {
     expect(memoryItemHeader(1, 2)).toBe('Memory 1/2')
     expect(memoryItemHeader(10, 99)).toBe('Memory 10/99')

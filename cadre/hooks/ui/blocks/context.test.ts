@@ -276,6 +276,12 @@ describe('context redaction (WD-S5, #163)', () => {
     const [, row] = rolesContext([role], []).lines
     expect(row).toBe(`  BE token=${REDACTED} (be)  Owns token=${REDACTED} rotation.`)
   })
+
+  test('a secret-like span of a topic title is hidden in its context (PR-S3)', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topic = { ...SECURITY_TOPIC, title: `Deploy ${secret}`, summary: 'Deploy notes' }
+    expect(topicContext(topic, [PART], [], 1, 1).lines[0]).toBe(`Deploy token=${REDACTED}: Deploy notes`)
+  })
 })
 
 describe('context lines kept whole (#163)', () => {
