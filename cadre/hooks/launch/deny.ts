@@ -9,7 +9,7 @@ import { shown, sortedUnique } from '../core/text'
 import { t } from '../locales/t'
 import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from '../paths'
 import { isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
-import { isPartsFlowRole } from './links'
+import { isPartsFlowRole, launchRoots } from './links'
 import type { LaunchUser } from './links'
 
 /** The deny list of a role at launch, and what to tell the person about it. */
@@ -214,7 +214,7 @@ function privateInstructionsDeny(user: LaunchUser, id: string): DenyResult {
  * UNDENIED_MEMORY_FOLDER_WARNING comes once.
  */
 function memoryFolderDeny(user: LaunchUser): DenyResult {
-  const roots = [user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+  const roots = launchRoots(user)
   const folders = sortedUnique(roots.map(root => memoryFolderOf(user.userDir, root)))
   const rules = folders.map(folder => editWriteRules(folder, '/**'))
   const deny = rules.flatMap(rule => rule ?? [])
@@ -231,7 +231,7 @@ function memoryFolderDeny(user: LaunchUser): DenyResult {
  * Bash role is not held by an Edit deny. Each role's `.runtime/` stays writable.
  */
 function launchFilesDeny(user: LaunchUser): DenyResult {
-  const roots = sortedUnique([user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])])
+  const roots = sortedUnique(launchRoots(user))
   const rules = roots.flatMap(root => [
     editWriteRules(`${root}/.claude/settings.json`, ''),
     editWriteRules(`${root}/.claude/settings.local.json`, ''),

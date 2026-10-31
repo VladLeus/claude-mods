@@ -8,7 +8,7 @@ import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
 import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { invalidReply, NOT_JSON_ERROR, roleMapOf, ROLES_INTRO } from './checked'
+import { invalidReply, NOT_JSON_ERROR, roleMapOf, roleRowText, ROLES_INTRO } from './checked'
 
 /** What parseRecommendation gives: the roles recommended for each topic and memory, or every error found. */
 export type RecommendReply =
@@ -36,7 +36,7 @@ export function recommendPrompt(
 ): string {
   const lines = [
     ROLES_INTRO,
-    ...roles.map(role => fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })),
+    ...roles.map(roleRowText),
     TOPICS_INTRO,
     ...topics.map(topic => fill(PROMPTS.topicRow, { id: topic.id, title: topic.title, summary: topic.summary })),
     MEMORIES_INTRO,

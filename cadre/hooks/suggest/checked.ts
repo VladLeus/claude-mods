@@ -3,7 +3,7 @@
  * suggest/ module shares (D-46, D-83; 02-GAPS-B2 S7). It imports core and the types, so init and the suggest/ modules
  * call the model here.
  */
-import type { InitIo } from '../../types'
+import type { InitIo, RoleSpec } from '../../types'
 import { cappedErrors } from '../core/reply'
 import { idLabel } from '../core/text'
 import { PROMPTS } from '../locales/prompts'
@@ -58,6 +58,11 @@ export function invalidReply(
 
 /** The line that introduces the roles in the skills and the recommendation prompts. */
 export const ROLES_INTRO = PROMPTS.rolesIntro
+
+/** One role as every suggest/ prompt lists it: `<id> | <title> | <purpose>` (PROMPTS.roleRow). */
+export function roleRowText(role: Pick<RoleSpec, 'id' | 'title' | 'purpose'>): string {
+  return fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })
+}
 
 /**
  * One role map of a model reply, whose keys are `kind` ids (skill, topic or memory) and whose values list role ids:

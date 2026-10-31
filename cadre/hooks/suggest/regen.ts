@@ -12,7 +12,7 @@ import { PROMPTS } from '../locales/prompts'
 import { fill } from '../locales/t'
 import { TOP_OF_FILE } from '../records'
 import { summaryText } from '../scan/instructions/memories'
-import { invalidReply, NOT_JSON_ERROR } from './checked'
+import { invalidReply, NOT_JSON_ERROR, roleRowText } from './checked'
 import { preview } from './topics'
 
 /** One new or changed item a regen asks about, as its recommendation prompt lists it (G-02-1f Regen, D-142). */
@@ -56,8 +56,7 @@ export function regenRecommendPrompt(
   items: readonly RegenPromptItem[],
   errors: readonly string[],
 ): string {
-  const roleRow = fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })
-  const lines = [REGEN_ROLE_INTRO, roleRow, REGEN_ITEMS_INTRO]
+  const lines = [REGEN_ROLE_INTRO, roleRowText(role), REGEN_ITEMS_INTRO]
 
   return withReplyErrors([...lines, ...items.map(regenItemLine)], errors, PROMPTS.replyErrorsIntro)
 }

@@ -26,7 +26,7 @@ import { desiredFiles } from '../generate/files'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { t } from '../locales/t'
 import { launcherPath, roleJsonPath } from '../paths'
-import { planReadPaths, planWithManifest } from '../plan/plan'
+import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { scanWarnings } from '../scan/gather'
@@ -127,7 +127,7 @@ export async function regenPlan(
     carried: [...own, ...built, ...carriedEntries(manifest, generated, id)],
     gitignore: null,
     hunks: [],
-    cadreVersion: (await io.cadreVersion()) ?? 'unknown',
+    cadreVersion: recordedCadreVersion(await io.cadreVersion()),
   })
   const warnings = [...scanWarnings(locations, scans.gathered), ...handed.warnings]
 

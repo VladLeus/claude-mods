@@ -45,7 +45,7 @@ import { hasRunFailed } from '../host/steps'
 import { t } from '../locales/t'
 import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
-import { planReadPaths, planWithManifest } from '../plan/plan'
+import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
 import { parseRoleJson } from '../roles/rolejson'
 import { standsFor } from '../roles/template'
@@ -162,7 +162,7 @@ async function keptBuiltEntries(
  */
 export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanResult> {
   const { roles, repoDefault, policy, launchStart, scopes, hunks, repo, locations, readUserMcp, repoParts } = input
-  const cadreVersion = (await io.cadreVersion()) ?? 'unknown'
+  const cadreVersion = recordedCadreVersion(await io.cadreVersion())
   const state: CadreState = {
     schema: 1,
     cadreVersion,

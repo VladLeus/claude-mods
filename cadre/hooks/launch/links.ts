@@ -76,6 +76,14 @@ export type LaunchUser = {
   readonly mainRoot?: string
 }
 
+/**
+ * The roots a launch covers: the git top level as resolved and as given, then the main checkout when `mainRoot` is
+ * set (03.1-W3 M1). The memory folder denies, the launch file denies and the memory links all read this one list.
+ */
+export function launchRoots(user: LaunchUser): string[] {
+  return [user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+}
+
 /** One symlink the launch plans: `path` is where renderRole makes it, `target` is what it points at. Both absolute. */
 export type OverlayLink = {
   readonly path: string

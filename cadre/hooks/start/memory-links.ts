@@ -11,7 +11,7 @@ import { instructionsRecordPath, parseInstructionsRecord } from '../apply/privat
 import type { RecordedMemory } from '../apply/private'
 import { sha256Hex } from '../core/hash'
 import { reportText, shown, sortedUnique } from '../core/text'
-import { isSafeFileName, unsafeMemoryNameWarning } from '../launch/links'
+import { isSafeFileName, launchRoots, unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { CONTRACTS } from '../locales/contracts'
 import { fill, t } from '../locales/t'
@@ -178,7 +178,7 @@ async function memoryLinkOf(
 ): Promise<MemoryLinkOutcome> {
   const { folder, id, memory } = input
   if (!isLinkableMemory(memory.file)) return { link: null, warning: unsafeMemoryNameWarning(memory.file) }
-  const roots = [user.root, user.givenRoot, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
+  const roots = launchRoots(user)
   const repoFolders = roots.map(root => memoryFolderOf(user.userDir, root))
   if (!repoFolders.includes(memory.folder)) return { link: null, warning: memoryGoneWarning(memory.file) }
   const path = `${folder}/${memory.file}`

@@ -314,6 +314,14 @@ function hunkPart(hunks: readonly HunkOp[]): { readonly ops: readonly HunkOp[]; 
   return { ops, warnings }
 }
 
+/**
+ * The cadre version a run records in the manifest and in `.cadre/cadre.json`: the plugin's own version, else
+ * `unknown` when it could not be read. Init and regen both record it this way.
+ */
+export function recordedCadreVersion(version: string | null): string {
+  return version ?? 'unknown'
+}
+
 /** The file plan and the manifest it records, which apply writes last (LNCH-01). */
 export type PlannedFiles = { readonly plan: Plan; readonly manifest: Manifest }
 

@@ -9,7 +9,7 @@ import { unfenced, withReplyErrors } from '../core/reply'
 import { asciiLower } from '../core/text'
 import { PROMPTS, skillRowOf } from '../locales/prompts'
 import { fill } from '../locales/t'
-import { invalidReply, NOT_JSON_ERROR, roleMapOf, ROLES_INTRO } from './checked'
+import { invalidReply, NOT_JSON_ERROR, roleMapOf, roleRowText, ROLES_INTRO } from './checked'
 
 /** How often the history scan saw a skill, its name looked up in the form the scan keeps (asciiLower); 0 if never. */
 export function skillCount(name: string, counts: ReadonlyMap<string, number>): number {
@@ -50,7 +50,7 @@ export function skillsPrompt(
   }
   const lines = [
     ROLES_INTRO,
-    ...roles.map(role => fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })),
+    ...roles.map(roleRowText),
     SKILLS_INTRO,
     ...skills.map(skillLine),
   ]
