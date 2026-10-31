@@ -421,3 +421,29 @@ describe('apply conflicts (D-67)', () => {
     expect(steps.map(stepLine)).toEqual([`write ${ROLE_MD}`])
   })
 })
+
+describe('improved keys as the plan keys files (D-241)', () => {
+  /** A built role file the plan accepts, and the text the improver gave it. */
+  const BUILT = '.cadre/be/CLAUDE.md'
+  const IMPROVED_TEXT = '# be\nimproved\n'
+
+  test('an improved key in another case maps to the file the plan accepted', async () => {
+    const desired = [file(BUILT, '# be\n')]
+    const planned = await planWithManifest(input({ desired }))
+    const improved = new Map([['.CADRE/be/CLAUDE.md', IMPROVED_TEXT]])
+    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
+
+    const entry = { path: BUILT, sha256: await sha256Hex(IMPROVED_TEXT), mode: 'file' }
+    expect(writtenManifest(steps)?.files).toEqual([entry])
+  })
+
+  test('an improved key the plan did not accept in any case gives no manifest entry and no write', async () => {
+    const desired = [file(BUILT, '# be\n'), file('CLAUDE.md', 'x\n')]
+    const planned = await planWithManifest(input({ desired }))
+    const improved = new Map([['CLAUDE.md', IMPROVED_TEXT]])
+    const steps = await applySteps({ ...planned, desired, gitignore: null, choices: NO_CHOICES, improved })
+
+    expect(writtenManifest(steps)?.files.map(entry => entry.path)).toEqual([BUILT])
+    expect(steps.filter(step => step.path === 'CLAUDE.md')).toEqual([])
+  })
+})
