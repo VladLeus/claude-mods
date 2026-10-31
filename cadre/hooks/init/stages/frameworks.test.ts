@@ -134,6 +134,25 @@ describe('frameworkStep', () => {
     expect(context?.lines[2]?.startsWith('AI-DLC: unsupported (aidlc/ present; detected but unsupported: ')).toBe(true)
   })
 
+  test('the framework question shows a repo-local GSD by the repo folder name, never <repo> (WF-S5, D-226)', () => {
+    const local: GsdFact = {
+      location: 'project',
+      dir: '<repo>/.claude/gsd-core',
+      version: '1.16.0',
+      identity: 'proven',
+      runtimeIdentityTried: false,
+    }
+    const gathered = {
+      facts: { facts: facts({ gsd: [local] }), gsdUserDir: null },
+      repo: repoScan(),
+      setup: emptySetupScan(),
+    }
+    const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ gathered, choice: installedOnly })))
+    const lines = state.effect.kind === 'ask' ? state.effect.spec.context?.lines.join('\n') : undefined
+
+    expect([lines?.includes('repo/.claude/gsd-core'), lines?.includes('<repo>')]).toEqual([true, false])
+  })
+
   test('a typed framework that is not offered is asked again with why on top; an offered id counts', () => {
     const run = driven(frameworksAt(installedOnly, roles), ['Same for all roles', 'superpowers', ' NONE '])
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['none', 'none', 'none'])
