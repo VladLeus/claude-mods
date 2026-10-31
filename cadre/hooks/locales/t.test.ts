@@ -2,7 +2,9 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import { skillUsesText } from '../init/answers'
+import { ARTIFACT } from './artifact'
 import { EN } from './en'
+import { PROMPTS } from './prompts'
 import { fill, setMissingSlotSink, t, templateSlots, tn } from './t'
 
 /** Whether a template keeps a brace once every well-formed `{name}` slot is taken out: an unbalanced or odd brace. */
@@ -74,13 +76,26 @@ describe('templateSlots (D-224)', () => {
     for (const good of ['{a} {b}', 'plain', '']) expect(hasStrayBrace(good)).toBe(false)
   })
 
-  test('every EN template has only well-formed slots: balanced braces, names of letters only', () => {
-    const stray = Object.entries(EN).filter(([, template]) => hasStrayBrace(template))
+  test('every EN, ARTIFACT and PROMPTS template has only well-formed slots: balanced braces, letter names', () => {
+    const tables = [EN, ARTIFACT, PROMPTS].map(table => Object.entries(table))
+    const stray = tables.flatMap(entries => entries.filter(([, template]) => hasStrayBrace(template)))
 
     expect(stray).toEqual([])
-    for (const template of Object.values(EN)) {
+    for (const [, template] of tables.flat()) {
       for (const name of templateSlots(template)) expect(name).toMatch(/^[a-zA-Z]+$/)
     }
+  })
+
+  test('every counted EN sentence comes as a pair: each .one key has its .other twin and each .other its .one', () => {
+    const keys = Object.keys(EN)
+    const twinless = keys.filter(key => {
+      if (key.endsWith('.one')) return !keys.includes(`${key.slice(0, -'.one'.length)}.other`)
+      if (key.endsWith('.other')) return !keys.includes(`${key.slice(0, -'.other'.length)}.one`)
+
+      return false
+    })
+
+    expect(twinless).toEqual([])
   })
 })
 
