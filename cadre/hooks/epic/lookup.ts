@@ -5,6 +5,7 @@
  * imports core and epic/record; epic/create and epic/done read it.
  */
 import { reportText } from '../core/text'
+import { t } from '../locales/t'
 import { EPIC_BRANCH_PREFIX } from './record'
 
 /** One worktree of a `git worktree list --porcelain` run (D-163). */
@@ -68,18 +69,15 @@ export function isEpicBranchOf(branch: string, keySlug: string): boolean {
 }
 
 /** The refusal when git cannot list the worktrees or the epic branches (D-163): it fails closed, before any add. */
-export const EPIC_NO_WORKTREE_LIST =
-  'cadre epic could not list the worktrees and epic branches from git, so it stopped before creating anything.'
+export const EPIC_NO_WORKTREE_LIST = t('epic.lookup.epicNoWorktreeList')
 
 /**
  * The refusal of a key with more than one worktree on its epic branches (D-163): cadre reuses one and does not pick
  * it, so the reply names them all, cleaned.
  */
 export function epicManyWorktreesReply(paths: readonly string[]): string {
-  return (
-    'cadre epic reuses one worktree per key, but this key has more than one, so it stopped: ' +
-    reportText(paths.join(', '))
-  )
+  return t('epic.lookup.epicManyWorktreesReply') +
+  reportText(paths.join(', '))
 }
 
 /**
@@ -87,10 +85,7 @@ export function epicManyWorktreesReply(paths: readonly string[]): string {
  * and does not pick it, so the reply names them all, cleaned.
  */
 export function epicManyBranchesReply(branches: readonly string[]): string {
-  return (
-    'cadre epic adds a worktree back on one kept branch per key, but this key has more than one and no worktree, ' +
-    `so it stopped: ${reportText(branches.join(', '))}`
-  )
+  return t('epic.lookup.epicManyBranchesReply', { branches: reportText(branches.join(', ')) })
 }
 
 /**

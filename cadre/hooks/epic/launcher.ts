@@ -7,6 +7,7 @@
 import type { PortRead } from '../../types'
 import { reportText } from '../core/text'
 import { hasRuntimeKickoff } from '../generate/launcher'
+import { t } from '../locales/t'
 
 /**
  * The role line of a role whose launcher in the epic worktree predates the epic kickoff (D-158): the epic branch holds
@@ -17,11 +18,7 @@ import { hasRuntimeKickoff } from '../generate/launcher'
 export function epicWorktreeLauncherLine(id: string): string {
   const role = reportText(id)
 
-  return (
-    `not opened: the epic branch holds a launcher .cadre/bin/${role} older than the epic kickoff. ` +
-    `Commit the regenerated .cadre/bin/${role} and .cadre/manifest.json to the branch and run /cadre epic with the ` +
-    'same key again.'
-  )
+  return t('epic.launcher.epicWorktreeLauncherLine', { role })
 }
 
 /**
@@ -32,7 +29,7 @@ export function epicWorktreeLauncherLine(id: string): string {
 export function epicWorktreeLauncherChangedLine(id: string): string {
   const role = reportText(id)
 
-  return `not opened: the worktree's .cadre/bin/${role} is not the launcher cadre checked in the main checkout.`
+  return t('epic.launcher.epicWorktreeLauncherChangedLine', { role })
 }
 
 /**

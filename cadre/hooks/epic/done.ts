@@ -12,6 +12,7 @@ import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
+import { t, tn } from '../locales/t'
 import { foldersAbove } from '../paths'
 import { roleRunState } from '../status/autopilot-files'
 import { readTeam } from '../team'
@@ -59,11 +60,11 @@ export function epicLinkRemovals(
 }
 
 /** The refusal when git cannot list the worktrees for /cadre epic done (D-152): it fails closed and removes nothing. */
-export const EPIC_DONE_NO_LIST = 'cadre epic done could not list the worktrees from git, so it removed nothing.'
+export const EPIC_DONE_NO_LIST = t('epic.done.epicDoneNoList')
 
 /** The refusal when git lists no worktree on an epic branch of the key (D-152, D-163); the key is shown cleaned. */
 export function epicNotFoundReply(key: string): string {
-  return `git lists no worktree of the epic ${reportText(key)}, so cadre epic done removed nothing.`
+  return t('epic.done.epicNotFoundReply', { key: reportText(key) })
 }
 
 /**
@@ -71,9 +72,9 @@ export function epicNotFoundReply(key: string): string {
  * kept, as cadre never deletes a branch. The key, the path and the branch are shown cleaned.
  */
 export function epicRemovedText(key: string, path: string, branch: string): string {
-  const kept = `its branch ${reportText(branch)} is kept, as cadre never deletes a branch.`
+  const kept = t('epic.done.epicRemovedText', { branch: reportText(branch) })
 
-  return `cadre epic done ${reportText(key)}: removed the worktree ${reportText(path)}; ${kept}`
+  return t('epic.done.epicRemovedText2', { key: reportText(key), path: reportText(path), kept })
 }
 
 /**
@@ -81,10 +82,7 @@ export function epicRemovedText(key: string, path: string, branch: string): stri
  * the worktree stays without them, and /cadre epic with the key, shown cleaned, links them again.
  */
 export function epicRemoveFailedReply(key: string): string {
-  return (
-    'git could not remove the epic worktree, so cadre epic done stopped. The links it records were removed first: ' +
-    `run /cadre epic ${reportText(key)} to link them again.`
-  )
+  return t('epic.done.epicRemoveFailedReply', { key: reportText(key) })
 }
 
 /**
@@ -125,9 +123,9 @@ export function mergedStateOf(run: HostRun | null): MergedState {
 /** The reason the clean check gives (D-169), with its fix: none when the worktree is clean. */
 function cleanProblems(clean: CleanState): string[] {
   if (clean === 'clean') return []
-  if (clean === 'dirty') return ['git shows changes in the worktree: commit or stash them there']
+  if (clean === 'dirty') return [t('epic.done.cleanProblems')]
 
-  return ['git could not tell whether the worktree is clean: run git status there, then commit or stash what it shows']
+  return [t('epic.done.cleanProblems2')]
 }
 
 /**
@@ -139,14 +137,13 @@ function mergedProblems(merged: MergedState, branch: string, base: string | null
   const name = reportText(branch)
   if (merged === 'no-record' || base === null) {
     return [
-      `the epic record ${EPIC_RECORD_FILE}, which names the branch the worktree was made from, is missing or not ` +
-        `valid, so cadre cannot tell whether ${name} is merged: merge it, then use --force`,
+      t('epic.done.mergedProblems', { epicRecordFile: EPIC_RECORD_FILE, name }),
     ]
   }
   const into = reportText(base)
-  if (merged === 'not-merged') return [`the branch ${name} is not merged into ${into}: merge it into ${into}`]
+  if (merged === 'not-merged') return [t('epic.done.mergedProblems2', { name, into })]
 
-  return [`git could not tell whether ${name} is merged into ${into}: check that ${into} exists, then merge into it`]
+  return [t('epic.done.mergedProblems3', { name, into })]
 }
 
 /**
@@ -156,15 +153,12 @@ function mergedProblems(merged: MergedState, branch: string, base: string | null
 function roleProblems(running: readonly string[], teamRead: boolean): string[] {
   if (!teamRead) {
     return [
-      'role states unknown: cadre could not read the team in .cadre/, so it cannot tell whether a role still runs ' +
-        'in the worktree: fix the team, or stop every role and use --force',
+      t('epic.done.roleProblems'),
     ]
   }
   if (running.length === 0) return []
   const ids = reportText(running.join(', '))
-  if (running.length === 1) return [`the role ${ids} still runs in the worktree: stop it first`]
-
-  return [`the roles ${ids} still run in the worktree: stop them first`]
+  return [tn('epic.done.roleRunning', running.length, { ids })]
 }
 
 /**
@@ -197,10 +191,9 @@ export function epicDoneProblems(input: {
 export function epicDoneRefusal(key: string, problems: readonly string[]): string {
   const name = reportText(key)
   const head =
-    `cadre epic done kept the worktree of the epic ${name} and removed nothing: fix what is below, or run ` +
-    `/cadre epic done ${name} --force to remove it anyway after one question.`
+    t('epic.done.epicDoneRefusal', { name })
 
-  return [head, ...problems.map(problem => `- ${problem}`)].join('\n')
+  return [head, ...problems.map(problem => t('epic.done.epicDoneRefusal2', { problem }))].join('\n')
 }
 
 /**
@@ -216,16 +209,16 @@ export function lockPid(reason: string): number | null {
 }
 
 /** The chip of the consent question of /cadre epic done --force (D-152). */
-export const EPIC_DONE_HEADER = 'Epic done'
+export const EPIC_DONE_HEADER = t('epic.done.epicDoneHeader')
 
 /** The answer to the epic done question that removes the worktree; the other answer keeps it (D-134). */
-const REMOVE_OPTION = 'Yes, remove it'
+const REMOVE_OPTION = t('epic.done.removeOption')
 
 /**
  * The answers to the epic done question, the one that keeps the worktree first (D-134): the dialog starts with its
  * first option focused, so a quick Submit keeps it, and only REMOVE_OPTION removes it.
  */
-export const EPIC_DONE_OPTIONS: readonly string[] = Object.freeze(['No, keep it', REMOVE_OPTION])
+export const EPIC_DONE_OPTIONS: readonly string[] = Object.freeze([t('epic.done.keepOption'), REMOVE_OPTION])
 
 /** Whether an answer to the epic done question removes the worktree; null when, trimmed, it is no answer label. */
 function removesWorktree(answer: string): boolean | null {
@@ -242,20 +235,19 @@ function removesWorktree(answer: string): boolean | null {
  */
 export function epicDoneQuestion(key: string, problems: readonly string[]): string {
   const name = reportText(key)
-  const steps = 'cadre removes its links first and keeps its branch.'
-  if (problems.length === 0) return `Remove the worktree of the epic ${name}? ${steps}`
-  const head = `Remove the worktree of the epic ${name} anyway? ${steps} Without --force it stays, as:`
+  const steps = t('epic.done.epicDoneQuestion')
+  if (problems.length === 0) return t('epic.done.epicDoneQuestion2', { name, steps })
+  const head = t('epic.done.epicDoneQuestion3', { name, steps })
 
-  return [head, ...problems.map(problem => `- ${problem}`)].join('\n')
+  return [head, ...problems.map(problem => t('epic.done.epicDoneQuestion4', { problem }))].join('\n')
 }
 
 /** The reply when --force finds no dialog to ask in (D-152, D-134): with no yes, nothing is removed. */
-export const EPIC_DONE_NO_DIALOG =
-  'cadre epic done --force asks before it removes anything, and this session has no dialog, so it removed nothing.'
+export const EPIC_DONE_NO_DIALOG = t('epic.done.epicDoneNoDialog')
 
 /** The reply when the --force question gets no yes (D-152, D-134): the worktree is kept; the key is shown cleaned. */
 export function epicKeptReply(key: string): string {
-  return `cadre epic done kept the worktree of the epic ${reportText(key)}: nothing was removed.`
+  return t('epic.done.epicKeptReply', { key: reportText(key) })
 }
 
 /**
@@ -263,30 +255,25 @@ export function epicKeptReply(key: string): string {
  * stale, so it removes nothing, with or without --force. The reason is shown cleaned.
  */
 export function epicLockedReply(reason: string): string {
-  const lock = reason === '' ? 'locked with no reason' : `locked (${reportText(reason)})`
+  const lock =
+    reason === '' ? t('epic.done.epicLockedReply') : t('epic.done.epicLockedReply2', { reason: reportText(reason) })
 
-  return (
-    `the epic worktree is ${lock}, and the lock names no process, so cadre epic done cannot tell whether it is ` +
-    'stale and removed nothing: run git worktree unlock on it once nothing uses it.'
-  )
+  return t('epic.done.epicLockedReply3', { lock })
 }
 
 /** The refusal of a worktree locked by a process that still runs (D-152, D-170), with or without --force. */
 export function epicLockLiveReply(pid: number): string {
-  return `the epic worktree is locked by process ${pid}, which still runs, so cadre epic done removed nothing.`
+  return t('epic.done.epicLockLiveReply', { pid })
 }
 
 /** The refusal when ps cannot tell whether the lock's process still runs (D-152, D-170): it fails closed. */
 export function epicLockUnknownReply(pid: number): string {
-  return (
-    `the epic worktree is locked by process ${pid}, and cadre could not tell whether it still runs, so cadre epic ` +
-    'done removed nothing.'
-  )
+  return t('epic.done.epicLockUnknownReply', { pid })
 }
 
 /** The refusal when git cannot clear the lock of a process that has ended (D-170): nothing is removed. */
 export function epicUnlockFailedReply(pid: number): string {
-  return `git could not unlock the epic worktree, whose lock names the ended process ${pid}, so nothing was removed.`
+  return t('epic.done.epicUnlockFailedReply', { pid })
 }
 
 /** An epic worktree as /cadre epic done finds it: its path, the epic branch checked out there and its lock reason. */

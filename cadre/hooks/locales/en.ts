@@ -714,6 +714,141 @@ export const EN = Object.freeze({
   'start.run.rendered.other': 'Rendered .cadre/{id}/.runtime/ ({count} links).',
   'ui.diff.more.one': '... {count} more changed line',
   'ui.diff.more.other': '... {count} more changed lines',
+
+  'epic.create.epicAddFailedReply':
+    'git could not add the epic worktree on the kept branch {name}, so cadre epic stopped.',
+  'epic.create.epicAddFailedReply2':
+    `git could not add the epic worktree, so cadre epic stopped. The branch {name} may now exist: cadre ${
+    ''}keeps it, and the next /cadre epic run adds the worktree on it.`,
+  'epic.create.epicPathExistsReply':
+    `the epic worktree path already exists and git lists no worktree of this key there, so cadre epic ${
+    ''}stopped before adding it: {path}`,
+  'epic.create.epicNoRecordWarning': 'cadre could not write {epicRecordFile} for the epic {key}: the write failed.',
+  'epic.create.outcomeLine': 'Created the worktree {path} on the new branch {branch}.',
+  'epic.create.outcomeLine2': 'Reused the worktree {path} on the branch {branch}.',
+  'epic.create.outcomeLine3': 'Added the worktree {path} back on the kept branch {branch}.',
+  'epic.create.epicCreatedText': 'cadre epic {key}',
+  'epic.create.epicCreatedText2': 'Title: {title}',
+  'epic.create.epicCreatedText3': 'Linked {linked}, copied {copied}.',
+  'epic.create.epicCreatedText4': 'warning: {warning}',
+  'epic.create.openedRole': 'opened in a new {name}',
+  'epic.create.openedLines': '  {id}: {line}',
+  'epic.create.openedLines2': '  {id}: {line}',
+  'epic.create.renderedLines': 'warning: {id}: {warning}',
+
+  'epic.done.epicDoneNoList': 'cadre epic done could not list the worktrees from git, so it removed nothing.',
+  'epic.done.epicNotFoundReply': 'git lists no worktree of the epic {key}, so cadre epic done removed nothing.',
+  'epic.done.epicRemovedText': 'its branch {branch} is kept, as cadre never deletes a branch.',
+  'epic.done.epicRemovedText2': 'cadre epic done {key}: removed the worktree {path}; {kept}',
+  'epic.done.epicRemoveFailedReply':
+    `git could not remove the epic worktree, so cadre epic done stopped. The links it records were ${
+    ''}removed first: run /cadre epic {key} to link them again.`,
+  'epic.done.cleanProblems': 'git shows changes in the worktree: commit or stash them there',
+  'epic.done.cleanProblems2':
+    'git could not tell whether the worktree is clean: run git status there, then commit or stash what it shows',
+  'epic.done.mergedProblems':
+    `the epic record {epicRecordFile}, which names the branch the worktree was made from, is missing or ${
+    ''}not valid, so cadre cannot tell whether {name} is merged: merge it, then use --force`,
+  'epic.done.mergedProblems2': 'the branch {name} is not merged into {into}: merge it into {into}',
+  'epic.done.mergedProblems3':
+    'git could not tell whether {name} is merged into {into}: check that {into} exists, then merge into it',
+  'epic.done.roleProblems':
+    'role states unknown: cadre could not read the team in .cadre/, so it cannot tell whether a role ' +
+    'still runs in the worktree: fix the team, or stop every role and use --force',
+  'epic.done.epicDoneRefusal':
+    `cadre epic done kept the worktree of the epic {name} and removed nothing: fix what is below, or run ${
+    ''}/cadre epic done {name} --force to remove it anyway after one question.`,
+  'epic.done.epicDoneRefusal2': '- {problem}',
+  'epic.done.epicDoneHeader': 'Epic done',
+  'epic.done.removeOption': 'Yes, remove it',
+  'epic.done.keepOption': 'No, keep it',
+  'epic.done.epicDoneQuestion': 'cadre removes its links first and keeps its branch.',
+  'epic.done.epicDoneQuestion2': 'Remove the worktree of the epic {name}? {steps}',
+  'epic.done.epicDoneQuestion3': 'Remove the worktree of the epic {name} anyway? {steps} Without --force it stays, as:',
+  'epic.done.epicDoneQuestion4': '- {problem}',
+  'epic.done.epicDoneNoDialog':
+    'cadre epic done --force asks before it removes anything, and this session has no dialog, so it removed nothing.',
+  'epic.done.epicKeptReply': 'cadre epic done kept the worktree of the epic {key}: nothing was removed.',
+  'epic.done.epicLockedReply': 'locked with no reason',
+  'epic.done.epicLockedReply2': 'locked ({reason})',
+  'epic.done.epicLockedReply3':
+    `the epic worktree is {lock}, and the lock names no process, so cadre epic done cannot tell whether ${
+    ''}it is stale and removed nothing: run git worktree unlock on it once nothing uses it.`,
+  'epic.done.epicLockLiveReply':
+    'the epic worktree is locked by process {pid}, which still runs, so cadre epic done removed nothing.',
+  'epic.done.epicLockUnknownReply':
+    `the epic worktree is locked by process {pid}, and cadre could not tell whether it still runs, so ${
+    ''}cadre epic done removed nothing.`,
+  'epic.done.epicUnlockFailedReply':
+    'git could not unlock the epic worktree, whose lock names the ended process {pid}, so nothing was removed.',
+
+  'epic.key.epicBadKeyReply':
+    `{raw} is not an epic key: a key is 1-32 letters, digits, - or _, starting with a letter or a digit ${
+    ''}(one leading # is dropped, so #123 works).`,
+  'epic.key.epicBadNameReply':
+    `{name} cannot name an epic worktree (lowercase letters and digits with single - between them), so ${
+    ''}cadre epic stopped.`,
+
+  'epic.launcher.epicWorktreeLauncherLine':
+    `not opened: the epic branch holds a launcher .cadre/bin/{role} older than the epic kickoff. Commit ${
+    ''}the regenerated .cadre/bin/{role} and .cadre/manifest.json to the branch and run /cadre epic with ${
+    ''}the same key again.`,
+  'epic.launcher.epicWorktreeLauncherChangedLine':
+    "not opened: the worktree's .cadre/bin/{role} is not the launcher cadre checked in the main checkout.",
+
+  'epic.mirrorRun.globalExcludesWarning':
+    `cadre epic could not read your global git excludes file {path}, so the worktree's excludes file ${
+    ''}leaves its patterns out: a file only it ignores may show as untracked in the worktree.`,
+  'epic.mirrorRun.epicListFailedReply':
+    `git could not list the untracked and ignored files of the main checkout, so cadre epic linked and ${
+    ''}copied nothing into the worktree. The worktree stays: run /cadre epic {key} again.`,
+  'epic.mirrorRun.epicExcludesFailedReply':
+    `cadre epic could not set up the excludes file that hides its links from git, so it made no links. ${
+    ''}The worktree stays: run /cadre epic {key} again.`,
+  'epic.mirrorRun.epicStepFailedReply':
+    `cadre epic could not make {path} in the worktree (a folder, link or copy), so it stopped there. The ${
+    ''}worktree stays: fix it and run /cadre epic with the same key again.`,
+
+  'epic.mirror.mirrorLinkedParentWarning':
+    `cadre epic left {path} out of the worktree: a folder above it there is a link, and cadre never ${
+    ''}links or copies through a link.`,
+  'epic.mirror.mirrorUnhideableWarning':
+    `cadre epic left {path} out of the worktree: its name holds a line break or another control ${
+    ''}character, so no excludes line could hide it from git.`,
+
+  'epic.pick.epicUnknownCheckout':
+    'cadre epic could not tell from git whether this is the main checkout, so it stopped before creating anything.',
+  'epic.pick.epicNotMainReply': 'run /cadre epic in the root session of the main checkout, not in a linked worktree.',
+  'epic.pick.epicNotMainReply2': 'run /cadre epic in the root session of the main checkout: {main}',
+  'epic.pick.epicNoPm':
+    'cadre epic needs a PM role to fetch the epic: add one (id pm, or based on pm) with /cadre init.',
+  'epic.pick.epicManyPmReply':
+    `cadre epic needs one PM role to fetch the epic, but {ids} are all based on pm and none has the id ${
+    ''}pm: give the PM the id pm.`,
+  'epic.pick.epicOldLauncherReply': '/cadre regen {id}',
+  'epic.pick.epicOldLauncherReply2':
+    `cadre epic stopped before creating anything: the launcher of {ids} predates the epic kickoff and ${
+    ''}would start without it. Run {regens}. A new epic worktree is made from HEAD, so if this repo ${
+    ''}commits .cadre/, commit the regenerated .cadre/ files (the .cadre/bin/ launchers and ${
+    ''}.cadre/manifest.json) too. Then run /cadre epic again.`,
+  'epic.pick.epicRolesHeader': 'Epic roles',
+  'epic.pick.pmOnlyOption': 'PM only',
+  'epic.pick.allRolesOption': 'All {count} roles (Recommended)',
+  'epic.pick.epicRolesQuestion':
+    `Which roles should cadre epic open in the worktree? All {count}, PM only, or type role ids under ${
+    ''}Other; the PM always opens, as it fetches the epic.`,
+  'epic.pick.epicCancelled': 'cadre epic was cancelled: no roles were picked to open, so it created nothing.',
+  'epic.pick.epicPickedRolesAccepts': '{quotedLabels}, or role ids from: {ids}',
+
+  'epic.lookup.epicNoWorktreeList':
+    'cadre epic could not list the worktrees and epic branches from git, so it stopped before creating anything.',
+  'epic.lookup.epicManyWorktreesReply':
+    'cadre epic reuses one worktree per key, but this key has more than one, so it stopped: ',
+  'epic.lookup.epicManyBranchesReply':
+    `cadre epic adds a worktree back on one kept branch per key, but this key has more than one and no ${
+    ''}worktree, so it stopped: {branches}`,
+  'epic.done.roleRunning.one': 'the role {ids} still runs in the worktree: stop it first',
+  'epic.done.roleRunning.other': 'the roles {ids} still run in the worktree: stop them first',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

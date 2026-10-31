@@ -16,6 +16,7 @@ import { GIT_TIMEOUT_MS } from '../git/argv'
 import { CHECKOUT_ARGV, checkoutOf } from '../git/checkout'
 import { repoGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
+import { t } from '../locales/t'
 import { launcherPath } from '../paths'
 import { standIn } from '../roles/template'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -68,12 +69,9 @@ import { EPIC_BRANCH_PREFIX, EPIC_RECORD_FILE, epicRecordPath, epicRecordText, r
  */
 export function epicAddFailedReply(branch: string, isNew: boolean): string {
   const name = reportText(branch)
-  if (!isNew) return `git could not add the epic worktree on the kept branch ${name}, so cadre epic stopped.`
+  if (!isNew) return t('epic.create.epicAddFailedReply', { name })
 
-  return (
-    `git could not add the epic worktree, so cadre epic stopped. The branch ${name} may now exist: ` +
-    'cadre keeps it, and the next /cadre epic run adds the worktree on it.'
-  )
+  return t('epic.create.epicAddFailedReply2', { name })
 }
 
 /**
@@ -81,10 +79,7 @@ export function epicAddFailedReply(branch: string, isNew: boolean): string {
  * cadre adds no worktree over it. The path is shown cleaned.
  */
 export function epicPathExistsReply(path: string): string {
-  return (
-    'the epic worktree path already exists and git lists no worktree of this key there, so cadre epic stopped ' +
-    `before adding it: ${reportText(path)}`
-  )
+  return t('epic.create.epicPathExistsReply', { path: reportText(path) })
 }
 
 /**
@@ -92,15 +87,15 @@ export function epicPathExistsReply(path: string): string {
  * failed. The worktree stays and the run goes on; the key is shown cleaned.
  */
 export function epicNoRecordWarning(key: string): string {
-  return `cadre could not write ${EPIC_RECORD_FILE} for the epic ${reportText(key)}: the write failed.`
+  return t('epic.create.epicNoRecordWarning', { epicRecordFile: EPIC_RECORD_FILE, key: reportText(key) })
 }
 
 /** The line that says how the epic came by its worktree: made on a new branch, reused, or added back on a kept one. */
 function outcomeLine(outcome: 'created' | 'reused' | 're-added', path: string, branch: string): string {
-  if (outcome === 'created') return `Created the worktree ${path} on the new branch ${branch}.`
-  if (outcome === 'reused') return `Reused the worktree ${path} on the branch ${branch}.`
+  if (outcome === 'created') return t('epic.create.outcomeLine', { path, branch })
+  if (outcome === 'reused') return t('epic.create.outcomeLine2', { path, branch })
 
-  return `Added the worktree ${path} back on the kept branch ${branch}.`
+  return t('epic.create.outcomeLine3', { path, branch })
 }
 
 /**
@@ -120,11 +115,11 @@ export function epicCreatedText(input: {
   readonly warnings: readonly string[]
 }): string {
   return [
-    `cadre epic ${reportText(input.key)}`,
-    ...(input.title === '' ? [] : [`Title: ${reportText(input.title)}`]),
+    t('epic.create.epicCreatedText', { key: reportText(input.key) }),
+    ...(input.title === '' ? [] : [t('epic.create.epicCreatedText2', { title: reportText(input.title) })]),
     outcomeLine(input.outcome, reportText(input.path), reportText(input.branch)),
-    `Linked ${input.linked}, copied ${input.copied}.`,
-    ...input.warnings.map(warning => `warning: ${warning}`),
+    t('epic.create.epicCreatedText3', { linked: input.linked, copied: input.copied }),
+    ...input.warnings.map(warning => t('epic.create.epicCreatedText4', { warning })),
   ].join('\n')
 }
 
@@ -144,7 +139,7 @@ async function openedRole(host: HostIo, plan: TerminalPlan, command: string): Pr
   const opened = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })
   if (hasRunFailed(opened)) return { line: command, command, refusal: null }
 
-  return { line: `opened in a new ${plan.name}`, command: null, refusal: null }
+  return { line: t('epic.create.openedRole', { name: plan.name }), command: null, refusal: null }
 }
 
 /**
@@ -169,13 +164,13 @@ async function openedLines(
   const refusals: string[] = []
   for (const { id, line } of rendered) {
     if (line !== null) {
-      lines.push(`  ${id}: ${line}`)
+      lines.push(t('epic.create.openedLines', { id, line }))
       continue
     }
     const launcher = launcherCommand(worktree, id)
     const plan = terminalPlan({ choice: terminal, tmux, termProgram, isMacOs, id, root: worktree, command: launcher })
     const opened = await openedRole(host, plan, `cd -- ${shQuote(worktree)} && ${launcher}`)
-    lines.push(`  ${id}: ${opened.line}`)
+    lines.push(t('epic.create.openedLines2', { id, line: opened.line }))
     if (opened.command !== null) commands.push(opened.command)
     if (opened.refusal !== null) refusals.push(opened.refusal)
   }
@@ -249,7 +244,7 @@ async function renderedLines(
       rendered.push({ id, line: render.text })
       continue
     }
-    warnings.push(...render.warnings.map(warning => `warning: ${id}: ${warning}`))
+    warnings.push(...render.warnings.map(warning => t('epic.create.renderedLines', { id, warning })))
     // Open only the launcher cadre checked in main (03.1-W4 S1).
     const launcher = await io.read(`${worktree}/${launcherPath(id)}`, MAX_READ_BYTES)
     rendered.push({ id, line: epicWorktreeLauncherCheck(id, launcher, team.launchers.get(id)) })

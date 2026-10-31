@@ -4,6 +4,7 @@
  * key or name. It is pure and imports only core; the other epic modules read it.
  */
 import { reportText } from '../core/text'
+import { t } from '../locales/t'
 
 /** The most characters an epic slug keeps (D-162). */
 export const SLUG_MAX = 48
@@ -53,16 +54,10 @@ export function isEpicSlug(slug: string): boolean {
 
 /** The refusal of a typed key that is not an epic key (D-162): the key as typed, cleaned, and what a key may hold. */
 export function epicBadKeyReply(raw: string): string {
-  return (
-    `${reportText(raw)} is not an epic key: a key is 1-32 letters, digits, - or _, starting with a letter or ` +
-    'a digit (one leading # is dropped, so #123 works).'
-  )
+  return t('epic.key.epicBadKeyReply', { raw: reportText(raw) })
 }
 
 /** The refusal of a worktree name that isEpicSlug refuses (D-147), shown cleaned: nothing is created. */
 export function epicBadNameReply(name: string): string {
-  return (
-    `${reportText(name)} cannot name an epic worktree (lowercase letters and digits with single - between them), ` +
-    'so cadre epic stopped.'
-  )
+  return t('epic.key.epicBadNameReply', { name: reportText(name) })
 }

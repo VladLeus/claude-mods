@@ -6,6 +6,7 @@
  */
 import type { InitIo, RoleSpec, TemplateRoleId } from '../../types'
 import { reportText } from '../core/text'
+import { t } from '../locales/t'
 import { standIn, standsFor } from '../roles/template'
 import { askChoice, quotedLabels } from '../ui/ask'
 
@@ -16,32 +17,27 @@ const PM_ROLE: TemplateRoleId = 'pm'
 export const TL_ROLE: TemplateRoleId = 'tl'
 
 /** The refusal when git cannot tell whether the session root is the main checkout (D-165): it fails closed. */
-export const EPIC_UNKNOWN_CHECKOUT =
-  'cadre epic could not tell from git whether this is the main checkout, so it stopped before creating anything.'
+export const EPIC_UNKNOWN_CHECKOUT = t('epic.pick.epicUnknownCheckout')
 
 /**
  * The refusal in a linked worktree (D-16, D-165): /cadre epic runs only in the root session of the main checkout, which
  * the reply names, cleaned, when git gave it.
  */
 export function epicNotMainReply(main: string | null): string {
-  if (main === null) return 'run /cadre epic in the root session of the main checkout, not in a linked worktree.'
+  if (main === null) return t('epic.pick.epicNotMainReply')
 
-  return `run /cadre epic in the root session of the main checkout: ${reportText(main)}`
+  return t('epic.pick.epicNotMainReply2', { main: reportText(main) })
 }
 
 /** The refusal of a team with no PM role (D-161): the PM is the role that fetches the epic. */
-export const EPIC_NO_PM =
-  'cadre epic needs a PM role to fetch the epic: add one (id pm, or based on pm) with /cadre init.'
+export const EPIC_NO_PM = t('epic.pick.epicNoPm')
 
 /**
  * The refusal of a team with several roles based on `pm` and none with the id `pm` (D-161): the PM fetches the epic,
  * and cadre does not pick one of them. The ids are shown cleaned.
  */
 export function epicManyPmReply(ids: readonly string[]): string {
-  return (
-    `cadre epic needs one PM role to fetch the epic, but ${reportText(ids.join(', '))} are all based on pm ` +
-    'and none has the id pm: give the PM the id pm.'
-  )
+  return t('epic.pick.epicManyPmReply', { ids: reportText(ids.join(', ')) })
 }
 
 /**
@@ -87,25 +83,20 @@ export function epicParentOf(
  * holds each launcher's sha256, since /cadre start in the worktree checks it, 03.1-W6 S2).
  */
 export function epicOldLauncherReply(ids: readonly string[]): string {
-  const regens = ids.map(id => `/cadre regen ${reportText(id)}`).join(', ')
+  const regens = ids.map(id => t('epic.pick.epicOldLauncherReply', { id: reportText(id) })).join(', ')
 
-  return (
-    `cadre epic stopped before creating anything: the launcher of ${reportText(ids.join(', '))} predates the epic ` +
-    `kickoff and would start without it. Run ${regens}. A new epic worktree is made from HEAD, so if this repo ` +
-    'commits .cadre/, commit the regenerated .cadre/ files (the .cadre/bin/ launchers and .cadre/manifest.json) ' +
-    'too. Then run /cadre epic again.'
-  )
+  return t('epic.pick.epicOldLauncherReply2', { ids: reportText(ids.join(', ')), regens })
 }
 
 /** The chip of the question on which roles of the epic to open (D-166). */
-export const EPIC_ROLES_HEADER = 'Epic roles'
+export const EPIC_ROLES_HEADER = t('epic.pick.epicRolesHeader')
 
 /** The option of the role question that opens only the PM, who always opens (D-166). */
-const PM_ONLY_OPTION = 'PM only'
+const PM_ONLY_OPTION = t('epic.pick.pmOnlyOption')
 
 /** The recommended option of the role question, which opens each of the team's `count` roles (D-166). */
 function allRolesOption(count: number): string {
-  return `All ${count} roles (Recommended)`
+  return t('epic.pick.allRolesOption', { count })
 }
 
 /**
@@ -113,14 +104,11 @@ function allRolesOption(count: number): string {
  * the role ids typed under Other. The PM always opens, as it fetches the epic.
  */
 export function epicRolesQuestion(count: number): string {
-  return (
-    `Which roles should cadre epic open in the worktree? All ${count}, PM only, or type role ids under Other; ` +
-    'the PM always opens, as it fetches the epic.'
-  )
+  return t('epic.pick.epicRolesQuestion', { count })
 }
 
 /** The reply when the role question is dismissed or gets no usable answer (D-166): nothing was created. */
-export const EPIC_CANCELLED = 'cadre epic was cancelled: no roles were picked to open, so it created nothing.'
+export const EPIC_CANCELLED = t('epic.pick.epicCancelled')
 
 /**
  * The role ids an answer to the role question picks (D-166), in cadre.json order: every id for the all option, the PM
@@ -155,7 +143,7 @@ export async function epicPickedRoles(
     question: epicRolesQuestion(ids.length),
     spec: { options, header: EPIC_ROLES_HEADER },
     parse: text => pickedIds(text, ids, pmId),
-    accepts: `${quotedLabels(options)}, or role ids from: ${ids.join(', ')}`,
+    accepts: t('epic.pick.epicPickedRolesAccepts', { quotedLabels: quotedLabels(options), ids: ids.join(', ') }),
   })
   if (answer.kind !== 'answered') return null
 

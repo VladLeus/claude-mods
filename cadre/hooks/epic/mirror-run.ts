@@ -10,6 +10,7 @@ import type { HostIo, InitIo, PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
 import { GIT_TIMEOUT_MS } from '../git/argv'
 import { hasRunFailed } from '../host/steps'
+import { t } from '../locales/t'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { EXCLUDES_FILE, excludesText, globalExcludesPath, untrackedEntries } from './excludes'
 import {
@@ -28,10 +29,7 @@ import type { EpicStep } from './mirror'
  * own excludes file, which git reads in its place there, starts without its patterns. The path is shown cleaned.
  */
 export function globalExcludesWarning(path: string): string {
-  return (
-    `cadre epic could not read your global git excludes file ${reportText(path)}, so the worktree's excludes file ` +
-    'leaves its patterns out: a file only it ignores may show as untracked in the worktree.'
-  )
+  return t('epic.mirrorRun.globalExcludesWarning', { path: reportText(path) })
 }
 
 /**
@@ -39,10 +37,7 @@ export function globalExcludesWarning(path: string): string {
  * The worktree stays, and the reply says to run /cadre epic with the key, cleaned, again.
  */
 export function epicListFailedReply(key: string): string {
-  return (
-    'git could not list the untracked and ignored files of the main checkout, so cadre epic linked and copied ' +
-    `nothing into the worktree. The worktree stays: run /cadre epic ${reportText(key)} again.`
-  )
+  return t('epic.mirrorRun.epicListFailedReply', { key: reportText(key) })
 }
 
 /**
@@ -51,10 +46,7 @@ export function epicListFailedReply(key: string): string {
  * made; the worktree stays, and the reply says to run /cadre epic with the key, cleaned, again.
  */
 export function epicExcludesFailedReply(key: string): string {
-  return (
-    'cadre epic could not set up the excludes file that hides its links from git, so it made no links. ' +
-    `The worktree stays: run /cadre epic ${reportText(key)} again.`
-  )
+  return t('epic.mirrorRun.epicExcludesFailedReply', { key: reportText(key) })
 }
 
 /**
@@ -62,10 +54,7 @@ export function epicExcludesFailedReply(key: string): string {
  * root, cleaned. What ran before it stays and is recorded, and the next /cadre epic run of the key makes the rest.
  */
 export function epicStepFailedReply(path: string): string {
-  return (
-    `cadre epic could not make ${reportText(path)} in the worktree (a folder, link or copy), so it stopped there. ` +
-    'The worktree stays: fix it and run /cadre epic with the same key again.'
-  )
+  return t('epic.mirrorRun.epicStepFailedReply', { path: reportText(path) })
 }
 
 /** What the mirror stage of runEpic did: the reply it stopped with (else null), what it made, and its warnings. */

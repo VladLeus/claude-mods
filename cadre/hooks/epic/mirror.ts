@@ -7,6 +7,7 @@
  */
 import type { PortEntry } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { foldersAbove } from '../paths'
 import { WORKTREES_DIR } from './git'
 
@@ -215,10 +216,7 @@ export function mirrorPlan(input: {
  * T-03.1-05): a step there would land in the link's target. The repo-relative path is shown cleaned.
  */
 export function mirrorLinkedParentWarning(path: string): string {
-  return (
-    `cadre epic left ${reportText(path)} out of the worktree: a folder above it there is a link, and cadre never ` +
-    'links or copies through a link.'
-  )
+  return t('epic.mirror.mirrorLinkedParentWarning', { path: reportText(path) })
 }
 
 /**
@@ -227,8 +225,5 @@ export function mirrorLinkedParentWarning(path: string): string {
  * is shown cleaned.
  */
 export function mirrorUnhideableWarning(path: string): string {
-  return (
-    `cadre epic left ${reportText(path)} out of the worktree: its name holds a line break or another control ` +
-    'character, so no excludes line could hide it from git.'
-  )
+  return t('epic.mirror.mirrorUnhideableWarning', { path: reportText(path) })
 }
