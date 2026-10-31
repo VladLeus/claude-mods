@@ -364,7 +364,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -521,7 +530,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -888,7 +906,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -1016,7 +1043,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -1383,7 +1419,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -1511,7 +1556,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -1878,7 +1932,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -2006,7 +2069,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -2385,7 +2457,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -2513,7 +2594,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -2867,7 +2957,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -2995,7 +3094,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -3349,7 +3457,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -3477,7 +3594,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -3831,7 +3957,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -3959,7 +4094,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -4313,7 +4457,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       },
       {
@@ -4441,7 +4594,16 @@ export const GOLDEN_INIT_GOBACK: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],

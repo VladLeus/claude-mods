@@ -445,7 +445,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 12)",
+        "title": "Review (page 1 of 13)",
         "lines": [
           "Roles:",
           "  PM (pm)",
@@ -911,7 +911,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     {
       "header": "Review",
       "context": {
-        "title": "Review (page 1 of 7)",
+        "title": "Review (page 1 of 8)",
         "lines": [
           "Roles:",
           "  PM (pm)",

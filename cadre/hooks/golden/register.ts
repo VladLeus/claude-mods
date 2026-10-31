@@ -962,6 +962,43 @@ export const GOLDEN_PANE_ROWS: {
     ],
     [
       "unknown)"
+    ],
+    [
+      "Recommendations (print-only; init asks before it installs"
+    ],
+    [
+      "any):"
+    ],
+    [
+      "- claude-security for Security: claude-security gives the"
+    ],
+    [
+      "Security role Anthropic's review skill (needs Python 3.9 or"
+    ],
+    [
+      "newer)"
+    ],
+    [
+      "    ",
+      "run:",
+      " claude plugin install"
+    ],
+    [
+      "claude-security@claude-plugins-official"
+    ],
+    [
+      "- security-guidance for Security: no hooks warn the Security"
+    ],
+    [
+      "role about risky edits"
+    ],
+    [
+      "    ",
+      "run:",
+      " claude plugin install"
+    ],
+    [
+      "security-guidance@claude-plugins-official"
     ]
   ],
   "dock": [
@@ -1730,6 +1767,43 @@ export const GOLDEN_PANE_ROWS: {
     ],
     [
       "unknown)"
+    ],
+    [
+      "Recommendations (print-only; init asks before it installs"
+    ],
+    [
+      "any):"
+    ],
+    [
+      "- claude-security for Security: claude-security gives the"
+    ],
+    [
+      "Security role Anthropic's review skill (needs Python 3.9 or"
+    ],
+    [
+      "newer)"
+    ],
+    [
+      "    ",
+      "run:",
+      " claude plugin install"
+    ],
+    [
+      "claude-security@claude-plugins-official"
+    ],
+    [
+      "- security-guidance for Security: no hooks warn the Security"
+    ],
+    [
+      "role about risky edits"
+    ],
+    [
+      "    ",
+      "run:",
+      " claude plugin install"
+    ],
+    [
+      "security-guidance@claude-plugins-official"
     ]
   ]
 }

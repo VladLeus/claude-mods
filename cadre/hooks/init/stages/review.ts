@@ -18,14 +18,16 @@ import { countedNoun, reportText } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { planSummary, renderPlan } from '../../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
+import { recommend } from '../../roles/recommend'
 import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
-import { scopesFor } from '../../team'
+import { resolvedFramework, scopesFor } from '../../team'
 import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels, refusalLine } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
+import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
 import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
@@ -287,11 +289,14 @@ function handoutLines(draft: Draft): string[] {
  * (privateFilesRow, 02-GAPS-B3 S4), the file plan with its hunks, its warnings and the `.gitignore` block rows as
  * renderPlan prints them (so none is printed twice), the git policy line, the launcher-start line, IGNORE_ALL_NOTE when
  * the policy is `ignore`, so both items with a review button of their own can be checked before Confirm, then the scan
- * warnings of the run, kept for this review, the plugins Confirm installs when the person answered Install for any (the
- * security plugins, decision #39, and claude-md-management, D-141), each key cleaned and capped as a report cell is
- * (decision #69 B7), and last, when claude-md-management is installed or answered Install and the improver has a
- * built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4). Every line has its secret-like spans hidden
- * (redactedText, E1, #163), so the review block and each page of its context show none.
+ * warnings of the run, kept for this review, then the recommendations for the team as the security stage shows them
+ * (recommend over the roles, their resolved frameworks and the scans before any install; recommendationLines,
+ * ROLE-03), so every surface shows them, paged, before Confirm (WD-M2), then the plugins Confirm installs when the
+ * person answered Install for any (the security plugins, decision #39, and claude-md-management, D-141), each key
+ * cleaned and capped as a report cell is (decision #69 B7), and last, when claude-md-management is installed or
+ * answered Install and the improver has a built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
+ * Every line has its secret-like spans hidden (redactedText, E1, #163), so the review block and each page of its
+ * context show none.
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
@@ -301,6 +306,9 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
   const count = improverRunCount(draft, plan)
   const installed = setupAfterInstalls(draft.gathered.setup, draft.pluginInstalls).installedPlugins
   const improver = installed.includes(CLAUDE_MD_PLUGIN) && count > 0 ? [improverRunLine(count)] : []
+  const frameworks = draft.roles.map(role => resolvedFramework(role, draft.repoDefault))
+  const { repo, setup } = draft.gathered
+  const recommendations = recommend({ roles: draft.roles, frameworks, scan: repo, setup })
 
   return [
     'Roles:',
@@ -313,6 +321,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
     launchLine(draft.launchStart),
     ...(draft.policy === 'ignore' ? [IGNORE_ALL_NOTE] : []),
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
+    ...recommendationLines(recommendations, draft.roles),
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     ...improver,
   ].map(line => redactedText(line))

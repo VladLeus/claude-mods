@@ -298,7 +298,16 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -778,7 +787,16 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "            run: node ~/.claude/gsd-core/bin/gsd-tools.cjs config-set workflow.text_mode false",
           "Summary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted)",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
-          "Launchers start in: the git root"
+          "Launchers start in: the git root",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+          "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+          "- DevTools MCP for FE: the FE role cannot inspect the running page",
+          "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -1251,7 +1269,16 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "            # <<< cadre",
           "Summary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
-          "Launchers start in: the git root"
+          "Launchers start in: the git root",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+          "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+          "- DevTools MCP for FE: the FE role cannot inspect the running page",
+          "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -1795,7 +1822,12 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted)",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],
@@ -2201,7 +2233,16 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "Summary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks",
           "Git policy: commit definitions (.cadre/*/.runtime/ ignored)",
           "Launchers start in: the git root",
-          "warning: could not list the repo root (treated as unknown)"
+          "warning: could not list the repo root (treated as unknown)",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official"
         ]
       }
     ],

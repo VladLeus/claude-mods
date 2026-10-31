@@ -76,7 +76,7 @@ import { parseCadreState } from '../state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from '../suggest/checked'
 import { RECOMMEND_SYSTEM } from '../suggest/instructions'
 import { TOPICS_SYSTEM } from '../suggest/topics'
-import { scopesFor } from '../team'
+import { resolvedFramework, scopesFor } from '../team'
 import {
   ABSOLUTE_PATH_MARKERS,
   ancestor,
@@ -3542,6 +3542,7 @@ describe('reviewStep', () => {
       readUserMcp: false,
       repoParts: new Map(),
     })
+    const frameworks = team.map(role => resolvedFramework(role, 'none'))
     const expected = [
       'Roles:',
       ...team.map(role => `  ${role.title} (${role.id})`),
@@ -3552,6 +3553,7 @@ describe('reviewStep', () => {
       policyLine('definitions'),
       launchLine({ kind: 'git-root' }),
       ...scanWarningLines(scanWarnings(locations, gathered)),
+      ...recommendationLines(recommend({ roles: team, frameworks, scan: gathered.repo, setup: gathered.setup }), team),
     ]
     expect(team).toHaveLength(6)
     expect(expected).toContain('warning: the root was given through a link')
