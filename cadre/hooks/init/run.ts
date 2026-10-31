@@ -80,6 +80,7 @@ import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
+import { INIT_CANCELLED } from './replies'
 import type { Answer, Effect, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
@@ -491,8 +492,9 @@ async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
 }
 
 /**
- * Performs a state's effect (D-230): an ask through askOnce (null when dismissed), a host operation (performIo) or a
- * model call (performModel). The testkit's stageRun performs a stage's effects through it too.
+ * Performs an effect (D-230): an ask through askOnce (null when dismissed), a host operation (performIo) or a model
+ * call (performModel). runInit performs its states through performState, which asks the state's open question; the
+ * testkit's stageRun performs a stage's effects through perform.
  */
 export async function perform(
   io: InitIo,
@@ -513,12 +515,18 @@ export async function perform(
   }
 }
 
-/** A state's effect performed (WD-S1 stub until its GREEN): the effect through perform, and null for the end. */
+/**
+ * Performs a state's effect, the runner's one way to do so (D-204, D-230, WD-S1): an ask asks `state.openQuestion`,
+ * its question and spec, never the effect's copy; an ask with no open question, or the end, gives null, so the run
+ * ends with INIT_CANCELLED (fail closed); a host operation or a model call goes through perform.
+ */
 export async function performState(io: InitIo, options: InitOptions, state: InitState): Promise<Answer | null> {
-  const { effect } = state
+  const { effect, openQuestion } = state
   if (effect.kind === 'end') return null
+  if (effect.kind !== 'ask') return perform(io, options, effect)
+  if (openQuestion === null) return null
 
-  return perform(io, options, effect)
+  return perform(io, options, { kind: 'ask', question: openQuestion.question, spec: openQuestion.spec })
 }
 
 /**
@@ -550,6 +558,8 @@ export async function runInit(io: InitIo, options: InitOptions): Promise<string>
     for (const output of state.outputs) await showOutput(io, output)
     const { effect } = state
     if (effect.kind === 'end') return effect.reply
-    state = nextStage({ ...state, outputs: [] }, await perform(io, options, effect))
+    const answer = await performState(io, options, state)
+    if (answer === null) return INIT_CANCELLED
+    state = nextStage({ ...state, outputs: [] }, answer)
   }
 }

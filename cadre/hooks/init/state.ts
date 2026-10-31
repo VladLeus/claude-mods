@@ -368,7 +368,10 @@ export type InitState = {
   /** What to show before the effect, in order; the runner shows them and hands the next transition none. */
   readonly outputs: readonly Output[]
   readonly effect: Effect
-  /** The question open now with its spec: the ask effect's, else null (withEffect sets both, D-204). */
+  /**
+   * The question open now with its spec, the one runInit asks (performState, WD-S1): the ask effect's, else null
+   * (withEffect sets both, D-204).
+   */
   readonly openQuestion: { readonly question: string; readonly spec: AskSpec } | null
   /** Where a go-back from the review goes once it is done; null outside a go-back (D-204). */
   readonly returnTo: 'review' | null
