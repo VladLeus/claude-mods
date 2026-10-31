@@ -101,6 +101,36 @@ export const EN = Object.freeze({
   'init.consent.consentNo': 'No, skip it',
   'init.consent.consentYes': 'Yes, read names only',
   'init.consent.consentDismissedReason': 'The ~/.claude.json question was dismissed or not answered.',
+
+  'init.roles.rolesQuestion': 'Use these roles?',
+  'init.roles.choiceUse': 'Use these roles',
+  'init.roles.choiceAdjust': 'Adjust them',
+  'init.roles.choiceDescribe': 'Describe my own structure',
+  'init.roles.describeQuestion': 'Describe your role structure in your own words: type it under Other.',
+  'init.roles.describeContext': 'For example: a PM, one full-stack developer, and a QA who also covers security.',
+  'init.roles.describeTemplate': 'Use the template instead',
+  'init.roles.describeCancel': 'Cancel init',
+  'init.roles.describeAccepts': 'a description of your roles, {quotedLabels}',
+  'init.roles.adjustQuestion':
+    'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename ' +
+    'be api "API", or framework qa gsd.',
+  'init.roles.adjustDone': 'Done adjusting',
+  'init.roles.adjustShow': 'Show the roles',
+  'init.roles.adjustContextLine': 'Roles now: {ids}.',
+  'init.roles.roleRoundsReason':
+    'The roles question was asked {maxRoleRounds} times without "Use these roles": nothing was chosen.',
+  'init.roles.adjustRoundsNote':
+    'Adjust took {maxAdjustRounds} answers without "Done adjusting": showing the roles as they are now.',
+  'init.roles.rolesDismissedReason': 'The roles question was dismissed or not answered.',
+  'init.roles.adjustDismissedReason': 'The Adjust question was dismissed.',
+  'init.roles.describeCancelledReason': 'The describe question was dismissed or cancelled.',
+  'init.roles.unreadChange': 'Could not read that change: {trim}. Use add, drop, rename or framework.',
+  'init.roles.notInstalledMessage':
+    'Cannot set {id} to {framework}: it is not installed for this repo (installed: {names}). {id} keeps its framework.',
+  'init.roles.proposedRole': '{title} ({id})',
+  'init.roles.proposed': 'Proposed: {roles}.',
+  'init.roles.proposedChanges.one': 'Proposed: {roles}; {count} change from the scan.',
+  'init.roles.proposedChanges.other': 'Proposed: {roles}; {count} changes from the scan.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

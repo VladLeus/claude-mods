@@ -12,6 +12,7 @@ import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
@@ -23,16 +24,16 @@ import { idsOf } from './duration'
 import { FRAMEWORK_LABELS } from './frameworks'
 
 /** The roles question init asks after it shows the proposal (D-46). */
-export const ROLES_QUESTION = 'Use these roles?'
+export const ROLES_QUESTION = t('init.roles.rolesQuestion')
 
 /** What the person can do with the roles shown: use them, adjust them, or describe a structure of their own. */
 type RolesChoice = 'use' | 'adjust' | 'describe'
 
 /** Each answer to the roles question with what it does, in the order the dialog shows them (D-46). */
 const ROLES_CHOICES: readonly Labelled<RolesChoice>[] = Object.freeze([
-  { label: 'Use these roles', value: 'use' },
-  { label: 'Adjust them', value: 'adjust' },
-  { label: 'Describe my own structure', value: 'describe' },
+  { label: t('init.roles.choiceUse'), value: 'use' },
+  { label: t('init.roles.choiceAdjust'), value: 'adjust' },
+  { label: t('init.roles.choiceDescribe'), value: 'describe' },
 ])
 
 /**
@@ -42,38 +43,36 @@ const ROLES_CHOICES: readonly Labelled<RolesChoice>[] = Object.freeze([
 export const ROLES_OPTIONS: readonly string[] = Object.freeze(ROLES_CHOICES.map(entry => entry.label))
 
 /** The free-text question for the person's own role structure (ROLE-02); its answer is all the model sees (D-83). */
-export const DESCRIBE_QUESTION = 'Describe your role structure in your own words: type it under Other.'
+export const DESCRIBE_QUESTION = t('init.roles.describeQuestion')
 
 /** The context line of the describe question (D-136): an example of a structure in a person's own words. */
-export const DESCRIBE_CONTEXT = 'For example: a PM, one full-stack developer, and a QA who also covers security.'
+export const DESCRIBE_CONTEXT = t('init.roles.describeContext')
 
 /** What a button of the describe question does: back to the template, or end init. */
 type DescribeChoice = 'template' | 'cancel'
 
 /** Each button of the describe question with what it does. */
 const DESCRIBE_CHOICES: readonly Labelled<DescribeChoice>[] = Object.freeze([
-  { label: 'Use the template instead', value: 'template' },
-  { label: 'Cancel init', value: 'cancel' },
+  { label: t('init.roles.describeTemplate'), value: 'template' },
+  { label: t('init.roles.describeCancel'), value: 'cancel' },
 ])
 
 /** The buttons of the describe question; the description itself is typed in the text field. */
 export const DESCRIBE_OPTIONS: readonly string[] = Object.freeze(DESCRIBE_CHOICES.map(entry => entry.label))
 
 /** What the describe question takes, as its refusal lists it: a typed description or one of its buttons (D-136). */
-const DESCRIBE_ACCEPTS = `a description of your roles, ${quotedLabels(DESCRIBE_OPTIONS)}`
+const DESCRIBE_ACCEPTS = t('init.roles.describeAccepts', { quotedLabels: quotedLabels(DESCRIBE_OPTIONS) })
 
 /** The Adjust question (D-47): one typed change per answer, with an example of each of the four changes. */
-export const ADJUST_QUESTION =
-  'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename be api "API", ' +
-  'or framework qa gsd.'
+export const ADJUST_QUESTION = t('init.roles.adjustQuestion')
 
 /** What a button of the Adjust question does: end the loop, or show the roles as they are now in the side pane. */
 type AdjustChoice = 'done' | 'show'
 
 /** Each button of the Adjust question with what it does. */
 const ADJUST_CHOICES: readonly Labelled<AdjustChoice>[] = Object.freeze([
-  { label: 'Done adjusting', value: 'done' },
-  { label: 'Show the roles', value: 'show' },
+  { label: t('init.roles.adjustDone'), value: 'done' },
+  { label: t('init.roles.adjustShow'), value: 'show' },
 ])
 
 /** The buttons of the Adjust question; a change itself is typed in the text field. */
@@ -81,7 +80,7 @@ export const ADJUST_OPTIONS: readonly string[] = Object.freeze(ADJUST_CHOICES.ma
 
 /** The context line of the Adjust question (D-136): the ids of the roles as they are now, after the changes so far. */
 export function adjustContextLine(roles: readonly RoleSpec[]): string {
-  return `Roles now: ${idsOf(roles)}.`
+  return t('init.roles.adjustContextLine', { ids: idsOf(roles) })
 }
 
 /** The most times the roles question is asked; the round after them cancels, so no roles are taken unconfirmed (A1). */
@@ -92,20 +91,20 @@ export const MAX_ADJUST_ROUNDS = 30
 
 /** Why the roles step cancels once the roles question was asked MAX_ROLE_ROUNDS times (A1). */
 export const ROLE_ROUNDS_REASON =
-  `The roles question was asked ${MAX_ROLE_ROUNDS} times without "Use these roles": nothing was chosen.`
+  t('init.roles.roleRoundsReason', { maxRoleRounds: MAX_ROLE_ROUNDS })
 
 /** The note the Adjust loop prints at its cap, before it goes back to the roles question with the roles so far (A1). */
 export const ADJUST_ROUNDS_NOTE =
-  `Adjust took ${MAX_ADJUST_ROUNDS} answers without "Done adjusting": showing the roles as they are now.`
+  t('init.roles.adjustRoundsNote', { maxAdjustRounds: MAX_ADJUST_ROUNDS })
 
 /** Why the roles step cancels when its question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
-export const ROLES_DISMISSED_REASON = 'The roles question was dismissed or not answered.'
+export const ROLES_DISMISSED_REASON = t('init.roles.rolesDismissedReason')
 
 /** Why the roles step cancels when the Adjust question is dismissed (A1). */
-export const ADJUST_DISMISSED_REASON = 'The Adjust question was dismissed.'
+export const ADJUST_DISMISSED_REASON = t('init.roles.adjustDismissedReason')
 
 /** Why the roles step cancels when the describe question is dismissed or `Cancel init` is chosen there (A1). */
-export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or cancelled.'
+export const DESCRIBE_CANCELLED_REASON = t('init.roles.describeCancelledReason')
 
 /**
  * The context line of the roles question (G-02-1, D-136): every role shown by its title, its secret-like spans hidden
@@ -113,11 +112,10 @@ export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or
  * `<n> changes`).
  */
 export function rolesContextLine(roles: readonly RoleSpec[], changes: readonly RoleChange[]): string {
-  const proposed = `Proposed: ${roles.map(role => `${redactedText(role.title)} (${role.id})`).join(', ')}`
-  if (changes.length === 0) return `${proposed}.`
-  const noun = changes.length === 1 ? 'change' : 'changes'
+  const shown = roles.map(role => t('init.roles.proposedRole', { title: redactedText(role.title), id: role.id }))
+  if (changes.length === 0) return t('init.roles.proposed', { roles: shown.join(', ') })
 
-  return `${proposed}; ${changes.length} ${noun} from the scan.`
+  return tn('init.roles.proposedChanges', changes.length, { roles: shown.join(', '), count: changes.length })
 }
 
 /** An answer to the describe question: one of its buttons, or the typed description. */
@@ -139,7 +137,7 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
 
 /** The message for a typed line that is none of the four changes (D-47). */
 function unreadChange(answer: string): string {
-  return `Could not read that change: ${answer.trim()}. Use add, drop, rename or framework.`
+  return t('init.roles.unreadChange', { trim: answer.trim() })
 }
 
 /**
@@ -158,8 +156,11 @@ function notInstalledMessage(id: string, framework: FrameworkId, installed: read
   const names = installed.map(item => FRAMEWORK_LABELS[item]).join(', ')
 
   return (
-    `Cannot set ${id} to ${framework}: it is not installed for this repo (installed: ${names}). ` +
-    `${id} keeps its framework.`
+    t('init.roles.notInstalledMessage', {
+      id,
+      framework,
+      names,
+    })
   )
 }
 
