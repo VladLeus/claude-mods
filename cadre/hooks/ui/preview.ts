@@ -45,9 +45,13 @@ export function previewColumns(presentationColumns: unknown): number | null {
   return columns
 }
 
-/** The preview's columns at each ask (#163 stub until its GREEN): the command's (previewColumns). */
+/**
+ * The columns a dialog option's preview has at an ask (D-231, #163): from the newest width a terminal drawing reported
+ * since the command began (`viewportColumns`), else from the command's (`presentationColumns`), each less
+ * PREVIEW_INSET (previewColumns); null when neither leaves a column.
+ */
 export function latestColumns(viewportColumns: unknown, presentationColumns: unknown): number | null {
-  return previewColumns(presentationColumns)
+  return previewColumns(viewportColumns) ?? previewColumns(presentationColumns)
 }
 
 /**

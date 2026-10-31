@@ -38,7 +38,7 @@ import {
   questionPaneBlocks,
   questionScroll,
 } from './ui/pane'
-import { answersFromNotes, dialogPlan, previewColumns, tuiTranscriptRows } from './ui/preview'
+import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptRows } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -62,9 +62,15 @@ const openQuestion = atom({ plugin: 'cadre', key: 'openQuestion' }, null)
 let lastPlacement: 'dock' | 'inline' | null = null
 /**
  * The terminal's columns the last `/cadre` command ran with (CommandPresentation, D-231), as the event gave them; null
- * before any. The preview of a dialog option wraps its lines to them less the dialog's option column (previewColumns).
+ * before any. The preview of a dialog option wraps its lines to them less the dialog's option column when no terminal
+ * drawing reported a width since (latestColumns).
  */
 let presentationColumns: unknown = null
+/**
+ * The terminal's columns the newest terminal ui.render reported since the last `/cadre` command (#163), as the event
+ * gave them; null before any. The preview of a dialog option wraps to them first (latestColumns).
+ */
+let viewportColumns: unknown = null
 /**
  * Where the last `/cadre` command shows its context (D-208), as the command.run hook decided it before anything
  * opened; a pane surface before any. The AskUserQuestion hook previews the open question's context on the TUI default.
@@ -412,6 +418,7 @@ export const register: Register = on => {
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
+    viewportColumns = null
     runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
     const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null }
     try {
@@ -423,10 +430,12 @@ export const register: Register = on => {
 
   // The cadre init side pane (D-133): one block, the own context of the question cadre has open now (D-203,
   // questionPaneBlocks), else the newest block, in the rows of paneRows wrapped to the columns of the pane's body
-  // (paneColumns, D-231), coloured by paneSpans (D1). A terminal render records where the pane is seated (D3).
+  // (paneColumns, D-231), coloured by paneSpans (D1). A terminal render records where the pane is seated (D3) and the
+  // width it was drawn at (#163).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
+    if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
     const blocks = await read($, initPane)
     const shown = questionPaneBlocks(await read($, openQuestion), blocks)
     if (shown.length === 0) return <Text>cadre init has not shown anything yet.</Text>
@@ -452,6 +461,14 @@ export const register: Register = on => {
     )
   })
 
+  // A drawn AskUserQuestion dialog on the terminal records the width it was drawn at (#163); it records the width only:
+  // any dialog, cadre's or not, is drawn as the engine draws it (D-239).
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next) => {
+    if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
+
+    return await next(e)
+  })
+
   // The dialog of the question cadre has open is decided by dialogPlan (WD-S2); this hook reads the open question,
   // which the init port's ask writes, and writes no state (R1, D-203). With no open question or no plan the call
   // passes through untouched, and so does its result (D-239). Else the dialog shows the plan's questions, or the
@@ -463,7 +480,7 @@ export const register: Register = on => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
     if (open === null) return await next(e)
-    const columns = previewColumns(presentationColumns)
+    const columns = latestColumns(viewportColumns, presentationColumns)
     const plan = dialogPlan(raw, open, runSurface, lastPlacement, columns, CHANGE_SOMETHING_LABEL)
     if (plan === null) return await next(e)
 
