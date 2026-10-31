@@ -845,7 +845,7 @@ describe('improver link checks (02-GAPS-B3 M1)', () => {
       total: 2,
     })
     expect(host.calls.map(call => call.argv)).toEqual([improverArgv(BE_BUILT_PATH, BE_GUARD)])
-    expect(run.logged).toEqual([improverNoChangeNote(BE_BUILT_REPO_PATH)])
+    expect(run.logged).toEqual([improverNoChangeNote(BE_BUILT_REPO_PATH), ...otherFilesLines('.cadre/be', others)])
   })
 
   test('a change through a folder link four levels down is read through one level and reported', async () => {

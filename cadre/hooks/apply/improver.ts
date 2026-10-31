@@ -174,9 +174,14 @@ export function improverBlockLines(path: string, diff: LineDiff): string[] {
   return [`${path}: ${diffCounts(diff)}`, ...diffLines(diff).map(line => redactSecrets(line))]
 }
 
-/** The context of the per-file improver question (D-236): its diff, as the improver block shows it. */
-export function improverContext(path: string, diff: LineDiff): AskContext {
-  return { title: `Improver: ${reportText(path)}`, lines: improverBlockLines(path, diff), kind: 'improver' }
+/**
+ * The context of the per-file improver question (D-236): its diff, as the improver block shows it, then the other files
+ * the run changed (otherFilesLines, T-02-75).
+ */
+export function improverContext(path: string, diff: LineDiff, otherLines: readonly string[]): AskContext {
+  const lines = [...improverBlockLines(path, diff), ...otherLines]
+
+  return { title: `Improver: ${reportText(path)}`, lines, kind: 'improver' }
 }
 
 /** The note for a built file the improver ran on and did not change (D-141). */
@@ -216,7 +221,8 @@ const MAX_NAMED_OTHERS = 3
 /**
  * The reply warning for an improver run that changed other files in its folder (D-141, T-02-75), the risk the person
  * accepted in place of a scratch copy: how many, the folder, the first MAX_NAMED_OTHERS shown paths and how many more,
- * and that the pane lists them. They are not undone.
+ * and that they are listed above: their rows are shown at the improver question, and logged when the file did not
+ * change, so the TUI default prints them too (WD-M3). They are not undone.
  */
 export function otherChangesWarning(folder: string, paths: readonly string[]): string {
   const named = paths.slice(0, MAX_NAMED_OTHERS)
@@ -224,7 +230,7 @@ export function otherChangesWarning(folder: string, paths: readonly string[]): s
   const listed = rest === 0 ? named.join(', ') : `${named.join(', ')}, +${rest} more`
   const count = countedNoun(paths.length, 'other file', 'other files')
 
-  return `the improver also changed ${count} in ${folder}: ${listed}; review them (listed in the pane)`
+  return `the improver also changed ${count} in ${folder}: ${listed}; review them (listed above)`
 }
 
 /**
@@ -521,6 +527,7 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
   if (state.kind !== 'changed') {
     await noteLine(io, stateNote(state, shownPath))
     if (otherLines.length > 0) await showBlock(io, 'improver', otherLines)
+    for (const line of otherLines) await noteLine(io, line)
     const isRestored = state.kind === 'unreadable' || (state.kind === 'failed' && state.isChanged)
 
     return { accepted: null, isRestored, warnings }
@@ -528,7 +535,11 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
   await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
   const answer = await askChoice(io, {
     question: withContext(improverQuestion(shownPath), improverContextLine(state.diff)),
-    spec: { options: IMPROVER_OPTIONS, header: ASK_HEADERS.improver, context: improverContext(shownPath, state.diff) },
+    spec: {
+      options: IMPROVER_OPTIONS,
+      header: ASK_HEADERS.improver,
+      context: improverContext(shownPath, state.diff, otherLines),
+    },
     parse: parseImproverAnswer,
     accepts: quotedLabels(IMPROVER_OPTIONS),
   })
