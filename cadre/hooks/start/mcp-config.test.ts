@@ -12,6 +12,9 @@ const CLAUDE_JSON = '/home/u/.claude.json'
 /** The config of the user's redmine server, with a token that may only ever reach the runtime file. */
 const REDMINE = { command: 'r', env: { TOKEN: 'sk-FAKE-SECRET-0123456789' } }
 
+/** The roots a launch keeps the user folder outside of for the fixture locations: the root, then as given (WF-S4). */
+const ROOTS = [DEFAULT_LOCATIONS.root, DEFAULT_LOCATIONS.givenRoot]
+
 /** CLAUDE_CONFIG_DIR values the D-238 rule ignores: relative, with a `..`, `.` or empty segment, inside the repo. */
 const UNSAFE_CONFIG_DIRS = ['.claude-alt', '/cfg/../repo/.claude-alt', '/repo/./.claude-alt', '/repo//.claude-alt',
   '/repo/.claude-alt']
@@ -40,7 +43,7 @@ describe('runtime MCP config (D-93)', () => {
   test('readClaudeJson reads nothing without the stored consent, and gives null (D-58)', async () => {
     const run = memIo(memWorld({ files: { [CLAUDE_JSON]: '{"mcpServers":{}}' } }), {})
 
-    expect(await readClaudeJson(run.io, DEFAULT_LOCATIONS, false)).toBeNull()
+    expect(await readClaudeJson(run.io, DEFAULT_LOCATIONS, false, ROOTS)).toBeNull()
     expect(run.reads.filter(path => path.endsWith('.claude.json'))).toEqual([])
   })
 
@@ -48,10 +51,11 @@ describe('runtime MCP config (D-93)', () => {
     const value = { mcpServers: { redmine: REDMINE } }
     const run = memIo(memWorld({ files: { [CLAUDE_JSON]: JSON.stringify(value) } }), {})
 
-    expect(await readClaudeJson(run.io, DEFAULT_LOCATIONS, true)).toEqual(value)
+    expect(await readClaudeJson(run.io, DEFAULT_LOCATIONS, true, ROOTS)).toEqual(value)
     expect(run.reads).toEqual([CLAUDE_JSON])
     const configured = memIo(memWorld({ files: { '/cfg/.claude.json': '{"a":1}', [CLAUDE_JSON]: '{"b":2}' } }), {})
-    expect(await readClaudeJson(configured.io, { ...DEFAULT_LOCATIONS, configDir: '/cfg' }, true)).toEqual({ a: 1 })
+    const cfg = { ...DEFAULT_LOCATIONS, configDir: '/cfg' }
+    expect(await readClaudeJson(configured.io, cfg, true, ROOTS)).toEqual({ a: 1 })
     expect(configured.reads).toEqual(['/cfg/.claude.json'])
   })
 
@@ -59,9 +63,13 @@ describe('runtime MCP config (D-93)', () => {
     const files = { '/repo/.claude-alt/.claude.json': '{"repo":1}', [CLAUDE_JSON]: '{"home":2}' }
     for (const configDir of UNSAFE_CONFIG_DIRS) {
       const run = memIo(memWorld({ files }), {})
-      const value = await readClaudeJson(run.io, { ...DEFAULT_LOCATIONS, configDir }, true)
+      const value = await readClaudeJson(run.io, { ...DEFAULT_LOCATIONS, configDir }, true, ROOTS)
       expect([configDir, value, run.reads]).toEqual([configDir, { home: 2 }, [CLAUDE_JSON]])
     }
+    const mainFiles = { '/main/.claude-alt/.claude.json': '{"main":3}', [CLAUDE_JSON]: '{"home":2}' }
+    const main = memIo(memWorld({ files: mainFiles }), {})
+    const inMain = { ...DEFAULT_LOCATIONS, configDir: '/main/.claude-alt' }
+    expect(await readClaudeJson(main.io, inMain, true, [...ROOTS, '/main'])).toEqual({ home: 2 })
   })
 
   test('readClaudeJson gives null for a file that is absent, unreadable, too large or not JSON', async () => {
@@ -72,10 +80,10 @@ describe('runtime MCP config (D-93)', () => {
       memWorld({ files: { [CLAUDE_JSON]: '{' } }),
     ]
     for (const [index, world] of worlds.entries()) {
-      expect([index, await readClaudeJson(memIo(world, {}).io, DEFAULT_LOCATIONS, true)]).toEqual([index, null])
+      expect([index, await readClaudeJson(memIo(world, {}).io, DEFAULT_LOCATIONS, true, ROOTS)]).toEqual([index, null])
     }
     const homeless = { ...DEFAULT_LOCATIONS, home: null }
-    expect(await readClaudeJson(memIo(memWorld({}), {}).io, homeless, true)).toBeNull()
+    expect(await readClaudeJson(memIo(memWorld({}), {}).io, homeless, true, ROOTS)).toBeNull()
   })
 
   test('runtimeMcpText renders each given server with its config from ~/.claude.json, and no warning', () => {

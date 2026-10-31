@@ -229,6 +229,8 @@ export async function projectMcpScan(io: InitIo, ctx: SetupContext, warnings: st
  * consent nothing is read, stat'ed or warned about. A file that is not there is quiet, one that cannot be read, is over
  * the 4 MiB cap or does not parse adds a warning. The scan is partial when the file was not read (no consent, no user
  * folder, or a file it could not read or parse) or a server name was dropped (A4); a file that is not there is not.
+ * The file is the one claudeJsonPathOf names for the repo root, the root list of the scan's user folder (scanSetup),
+ * whose userDirOf call already shows the warning for a CLAUDE_CONFIG_DIR the D-238 rule ignores (SR-1, WF-S3).
  */
 export async function userConfigMcpScan(
   io: InitIo,
@@ -237,7 +239,7 @@ export async function userConfigMcpScan(
   warnings: string[],
 ): Promise<McpScan> {
   if (!isAllowed) return UNREAD_MCP
-  const path = claudeJsonPathOf(ctx)
+  const path = claudeJsonPathOf(ctx, [ctx.root], [])
   if (path === null) return UNREAD_MCP
   const read = await readJsonFile(io, ctx, path, CLAUDE_JSON_MAX_BYTES, warnings)
   if (read.state === 'unknown') return UNREAD_MCP

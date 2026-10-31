@@ -137,7 +137,10 @@ export async function renderRole(
           mainRoot: input.epic.mainRoot,
         }
   const plan = withPrivateInstructions(launchPlan(role, scope, user), user, id)
-  const claudeJson = await readClaudeJson(io, locations, state.readUserMcp)
+  // The roots gatherLaunchUser kept the user folder outside of (WF-S4): ~/.claude.json follows the same rule (SR-1).
+  const mainRoots = gathered.mainRoot === undefined ? [] : [gathered.mainRoot]
+  const userRoots = [locations.root, locations.givenRoot, ...mainRoots]
+  const claudeJson = await readClaudeJson(io, locations, state.readUserMcp, userRoots)
   const mcpRoots = [...input.mcpRoots, ...(user.mainRoot === undefined ? [] : [user.mainRoot])]
   const mcp = runtimeMcpText(role, claudeJson, mcpRoots, state.readUserMcp)
   const expectationsText = probeExpectationsText(expectationsFor(scope, roleMemoryDir(user, id)))

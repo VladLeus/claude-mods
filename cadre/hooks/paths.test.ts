@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { t } from './locales/t'
 import {
   cadreStatePath,
+  claudeJsonPathOf,
   displayPath,
   handoffFolderOf,
   isFileInsideRoot,
@@ -157,6 +159,23 @@ describe('memoryFoldersOf (D-238)', () => {
     for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
       expect(memoryFoldersOf({ ...DEFAULT_LOCATIONS, configDir })).toEqual(['/home/u/.claude/projects/-repo/memory'])
     }
+  })
+})
+
+describe('claudeJsonPathOf (D-238, SR-1)', () => {
+  test('an unsafe CLAUDE_CONFIG_DIR gives <home>/.claude.json and the warning; a safe one gives its own file', () => {
+    const roots = ['/repo', '/main']
+    const unsafe = ['.claude-alt', '/cfg/../x', '/cfg/./x', '/cfg//x', '/repo/.claude-alt', '/main/.claude-alt']
+    for (const configDir of unsafe) {
+      const warnings: string[] = []
+      const path = claudeJsonPathOf({ configDir, home: '/home/u' }, roots, warnings)
+      expect([configDir, path, warnings]).toEqual([configDir, '/home/u/.claude.json', [t('paths.configDirWarning')]])
+    }
+    const warnings: string[] = []
+    expect(claudeJsonPathOf({ configDir: '/cfg', home: '/home/u' }, roots, warnings)).toBe('/cfg/.claude.json')
+    expect(claudeJsonPathOf({ configDir: '/cfg', home: null }, roots, warnings)).toBe('/cfg/.claude.json')
+    expect(warnings).toEqual([])
+    expect(claudeJsonPathOf({ configDir: '.claude-alt', home: null }, roots, [])).toBeNull()
   })
 })
 

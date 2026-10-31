@@ -249,12 +249,19 @@ export function memoryFolderOf(userDir: string, root: string): string {
   return `${projectFolderOf(userDir, root)}/memory`
 }
 
-/** The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED], else in the home folder. */
-export function claudeJsonPathOf(ctx: {
-  readonly configDir: string | null
-  readonly home: string | null
-}): string | null {
-  if (ctx.configDir !== null) return `${ctx.configDir}/.claude.json`
+/**
+ * The file that holds `~/.claude.json`: in CLAUDE_CONFIG_DIR when that is set [ASSUMED] and passes the rule userDirOf
+ * uses (an absolute path with no empty, `.` or `..` segment, outside every root in `roots`; D-238, SR-1), else in the
+ * home folder; null when there is neither. A value that is set but fails the rule is not used and adds
+ * CONFIG_DIR_WARNING to `warnings`; a caller whose run already shows that warning passes `[]` (WF-S3).
+ */
+export function claudeJsonPathOf(
+  ctx: { readonly configDir: string | null; readonly home: string | null },
+  roots: readonly string[],
+  warnings: string[],
+): string | null {
+  const configDir = usableConfigDir(ctx.configDir, roots, warnings)
+  if (configDir !== null) return `${configDir}/.claude.json`
 
   return ctx.home === null ? null : `${ctx.home}/.claude.json`
 }

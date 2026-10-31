@@ -887,10 +887,10 @@ describe('launch exports', () => {
   })
 
   test('claudeJsonPathOf is the file in CLAUDE_CONFIG_DIR when it is set, else in the home folder, else null', () => {
-    expect(claudeJsonPathOf(CTX)).toBe('/home/u/.claude.json')
-    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg' })).toBe('/cfg/.claude.json')
-    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg', home: null })).toBe('/cfg/.claude.json')
-    expect(claudeJsonPathOf({ ...CTX, home: null })).toBeNull()
+    expect(claudeJsonPathOf(CTX, [CTX.root], [])).toBe('/home/u/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg' }, [CTX.root], [])).toBe('/cfg/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, configDir: '/cfg', home: null }, [CTX.root], [])).toBe('/cfg/.claude.json')
+    expect(claudeJsonPathOf({ ...CTX, home: null }, [CTX.root], [])).toBeNull()
   })
 })
 

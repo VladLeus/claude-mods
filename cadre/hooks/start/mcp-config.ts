@@ -26,13 +26,20 @@ function mcpNotInFileWarning(name: string): string {
 
 /**
  * The user's `~/.claude.json` as a parsed value (D-93), read only when cadre.json records the consent (readUserMcp,
- * D-58): without it nothing is read. The file is the one claudeJsonPathOf names, read up to CLAUDE_JSON_MAX_BYTES.
+ * D-58): without it nothing is read. The file is the one claudeJsonPathOf names for `roots`, the roots the launch keeps
+ * the user folder outside of (WF-S4), so a CLAUDE_CONFIG_DIR the D-238 rule ignores never names it (SR-1); the run's
+ * setup scan already shows that warning, so none is added here (WF-S3). It is read up to CLAUDE_JSON_MAX_BYTES.
  * Null when the read is not allowed, there is no user folder, or the file is absent, unreadable, too large or not
  * JSON. Its values reach only the runtime MCP config (runtimeMcpText), never a reply or a warning.
  */
-export async function readClaudeJson(io: InitIo, locations: InitLocations, readUserMcp: boolean): Promise<unknown> {
+export async function readClaudeJson(
+  io: InitIo,
+  locations: InitLocations,
+  readUserMcp: boolean,
+  roots: readonly string[],
+): Promise<unknown> {
   if (!readUserMcp) return null
-  const path = claudeJsonPathOf(locations)
+  const path = claudeJsonPathOf(locations, roots, [])
   if (path === null) return null
   const read = await io.read(path, CLAUDE_JSON_MAX_BYTES)
   if (read.state !== 'text') return null
