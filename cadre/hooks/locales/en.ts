@@ -172,6 +172,8 @@ export const EN = Object.freeze({
   'init.model.modelEffortContext': 'Models: {modelAliases}; efforts: {efforts}.',
   'init.model.modelRoleQuestion': 'Model and effort for {title} ({id})?',
   'init.model.modelDismissedReason': 'A model and effort question was dismissed or not answered.',
+
+  'init.assign.mcpContextLine': '{teamContext} A role not given the server cannot use it.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

@@ -9,6 +9,7 @@
  * imports init/machine or init/run.
  */
 import type { McpRef, RoleSpec, SetupScan } from '../../../types'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpServerContext, ownSkillsContext } from '../../ui/blocks/assign'
@@ -26,7 +27,7 @@ import type { AssignItem } from './own-skills'
 
 /** The context line of an MCP server question (D-136): the team's role ids; only a role given it can use it. */
 export function mcpContextLine(roles: readonly RoleSpec[]): string {
-  return `${teamContextLine(roles)} A role not given the server cannot use it.`
+  return t('init.assign.mcpContextLine', { teamContext: teamContextLine(roles) })
 }
 
 /**
