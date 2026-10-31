@@ -21,7 +21,7 @@ import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { asSentence, idsOrNone, shown } from '../../core/text'
-import { t, tn } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
@@ -166,7 +166,7 @@ export function topicContextLine(
 
   return t('init.instructions.topicContextLine', {
     asSentence: asSentence(redactedText(topic.summary)),
-    recommended: idsOrNone(recommended),
+    recommended: idsOrNone(recommended, SCREEN_LIST_WORDS.none),
     sources,
   })
 }
@@ -215,7 +215,7 @@ export function memoryItemQuestion(memory: MemoryItem): string {
 export function memoryItemContextLine(memory: MemoryItem, recommended: readonly string[]): string {
   return t('init.instructions.memoryItemContextLine', {
     asSentence: asSentence(redactedText(memory.summary)),
-    recommended: idsOrNone(recommended),
+    recommended: idsOrNone(recommended, SCREEN_LIST_WORDS.none),
   })
 }
 

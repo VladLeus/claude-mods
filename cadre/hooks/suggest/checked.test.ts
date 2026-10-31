@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { cappedErrors } from '../core/reply'
+import { PROMPTS } from '../locales/prompts'
 import { memIo, memWorld } from '../testkit'
 import { checkedCompletion, invalidReply, NOT_JSON_ERROR } from './checked'
 import type { Checked } from './checked'
@@ -24,6 +25,6 @@ describe('checkedCompletion (D-83, D-232)', () => {
 describe('invalidReply', () => {
   test('marks the reply invalid with its errors capped as cappedErrors caps them', () => {
     const errors = Array.from({ length: 25 }, (_, at) => `error ${at + 1}`)
-    expect(invalidReply(errors)).toEqual({ kind: 'invalid', errors: cappedErrors(errors) })
+    expect(invalidReply(errors)).toEqual({ kind: 'invalid', errors: cappedErrors(errors, PROMPTS.moreErrors) })
   })
 })

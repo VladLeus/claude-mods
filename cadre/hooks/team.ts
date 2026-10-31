@@ -20,7 +20,7 @@ import { idsOrNone } from './core/text'
 import { isAttendedFromConfig, isUnmetHunk } from './framework/gsd/hunks'
 import { ADAPTERS } from './framework/registry'
 import type { CommandWord } from './guards/repo'
-import { t } from './locales/t'
+import { SCREEN_LIST_WORDS, t } from './locales/t'
 import { cadreStatePath, isRepoFolder, roleJsonPath } from './paths'
 import { parseRoleJson } from './roles/rolejson'
 import { MAX_READ_BYTES } from './scan/facts/normalize'
@@ -126,7 +126,7 @@ export const REGEN_BAD_STATE = t('team.regenBadState')
 
 /** The reply when `.cadre/cadre.json` does not list the role asked for: it names the roles listed, or none. */
 export function regenNoRole(id: string, roles: readonly string[]): string {
-  return t('team.regenNoRole', { id, roles: idsOrNone(roles) })
+  return t('team.regenNoRole', { id, roles: idsOrNone(roles, SCREEN_LIST_WORDS.none) })
 }
 
 /**

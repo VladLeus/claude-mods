@@ -87,6 +87,15 @@ export function tn(base: PluralBase, count: number, values: SlotValues = {}): st
   return filled(EN[key], values)
 }
 
+/**
+ * The words of a list on screen: `none` for an empty list, and `more` for the last item of a capped list. core/text
+ * ListWords takes this shape; t.ts imports no core type.
+ */
+export const SCREEN_LIST_WORDS = Object.freeze({
+  none: t('ui.scan.none'),
+  more: (count: number): string => t('ui.list.more', { count }),
+})
+
 /** The slot names of a template, once each, in the order they first appear (the walk specs check every template). */
 export function templateSlots(template: string): readonly string[] {
   return [...new Set([...template.matchAll(SLOT)].map(match => match[1] ?? ''))]

@@ -10,7 +10,7 @@
 import type { AskContext, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
-import { t } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { UNCUT } from '../pane'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
@@ -54,7 +54,7 @@ export function mcpToolNamesOf(tools: unknown, server: string): string[] {
 
 /** Role ids as a context line lists them, each cleaned: `none` when there are none. */
 function roleIdsText(ids: readonly string[]): string {
-  return idsOrNone(ids.map(id => shown(id)))
+  return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
 /**
@@ -66,7 +66,7 @@ export function mcpServerContext(ref: McpRef, sessionTools: unknown, recommended
   const tools = mcpToolNamesOf(sessionTools, ref.name)
   const toolsLine = tools.length === 0 ? t('ui.assign.mcpServerContext') : t('ui.assign.mcpServerContext2', {
     count: tools.length,
-    tools: cardList(tools),
+    tools: cardList(tools, SCREEN_LIST_WORDS),
   })
 
   return {

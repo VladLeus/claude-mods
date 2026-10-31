@@ -55,7 +55,7 @@ export function skillsPrompt(
     ...skills.map(skillLine),
   ]
 
-  return withReplyErrors(lines, errors)
+  return withReplyErrors(lines, errors, PROMPTS.replyErrorsIntro)
 }
 
 /** What parseSkillRecommendation gives: the roles recommended for each own skill, or every error found (G-02-1b). */

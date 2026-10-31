@@ -47,7 +47,7 @@ function partLine(part: InstructionPart): string {
  * part reaches the model, which has no tools (D-83).
  */
 export function topicsPrompt(parts: readonly InstructionPart[], errors: readonly string[]): string {
-  return withReplyErrors([PARTS_INTRO, ...parts.map(partLine)], errors)
+  return withReplyErrors([PARTS_INTRO, ...parts.map(partLine)], errors, PROMPTS.replyErrorsIntro)
 }
 
 /** What parseTopics gives: the checked topics, or every error found. */

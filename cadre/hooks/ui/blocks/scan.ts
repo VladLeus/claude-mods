@@ -6,7 +6,7 @@
  */
 import type { RepoScan, ScanKind, SetupScan } from '../../../types'
 import { cardList, idsOrNone, shown } from '../../core/text'
-import { t, tn } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { undecidedFacts } from '../../scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from '../../scan/walk'
 
@@ -71,7 +71,9 @@ function partialLines(repo: RepoScan): string[] {
 
 /** The labels of the repo findings of one kind, in scan order, or `none`. */
 function findingLabels(repo: RepoScan, kind: ScanKind): string {
-  return idsOrNone(repo.findings.filter(finding => finding.kind === kind).map(finding => finding.label))
+  const labels = repo.findings.filter(finding => finding.kind === kind).map(finding => finding.label)
+
+  return idsOrNone(labels, SCREEN_LIST_WORDS.none)
 }
 
 /** What an earlier run left in `.cadre/`: `none`, or the folder's state with the state of its manifest. */
@@ -85,7 +87,9 @@ function cadreSummary(cadre: RepoScan['cadre']): string {
 function pluginSummary(plugins: readonly string[]): string {
   if (plugins.length === 0) return '0'
 
-  return t('ui.scan.pluginSummary', { count: plugins.length, map: cardList(plugins.map(plugin => shown(plugin))) })
+  const map = cardList(plugins.map(plugin => shown(plugin)), SCREEN_LIST_WORDS)
+
+  return t('ui.scan.pluginSummary', { count: plugins.length, map })
 }
 
 /**
@@ -97,12 +101,12 @@ function pluginSummary(plugins: readonly string[]): string {
  * or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
-  const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages) })
+  const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
   const sides = t('ui.scan.sides', {
     findingLabels: findingLabels(repo, 'fe'),
     findingLabelsB: findingLabels(repo, 'be'),
   })
-  const mcp = cardList(setup.mcp.map(server => shown(server.name)))
+  const mcp = cardList(setup.mcp.map(server => shown(server.name)), SCREEN_LIST_WORDS)
   const globalMd = setup.hasGlobalClaudeMd ? t('ui.scan.yes') : t('ui.scan.no')
 
   return [
@@ -117,7 +121,7 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
     t('ui.scan.setupFiles', {
       globalMd,
       count: setup.memoryFiles.length,
-      map: cardList(setup.claudeMd.map(file => shown(file))),
+      map: cardList(setup.claudeMd.map(file => shown(file)), SCREEN_LIST_WORDS),
     }),
   ]
 }
@@ -136,7 +140,7 @@ export function scanContextLine(repo: RepoScan): string {
     findingLabelsB: findingLabels(repo, 'e2e'),
   })
 
-  return t('ui.scan.context', { languages: idsOrNone(repo.languages), sides, checks })
+  return t('ui.scan.context', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none), sides, checks })
 }
 
 /** The scan warnings as init shows them, one `warning: <text>` line each; nothing when there are none. */

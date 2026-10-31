@@ -43,7 +43,7 @@ export function recommendPrompt(
     ...memories.map(memory => fill(PROMPTS.memoryRow, { id: memory.id, file: memory.file, summary: memory.summary })),
   ]
 
-  return withReplyErrors(lines, errors)
+  return withReplyErrors(lines, errors, PROMPTS.replyErrorsIntro)
 }
 
 /** The errors of a reply that lacks a map: no topics object, no memories object, or both. */

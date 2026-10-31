@@ -7,7 +7,7 @@ import { ARTIFACT } from './artifact'
 import { CONTRACTS } from './contracts'
 import { EN } from './en'
 import { PROMPTS } from './prompts'
-import { fill, setMissingSlotSink, t, templateSlots, tn } from './t'
+import { fill, SCREEN_LIST_WORDS, setMissingSlotSink, t, templateSlots, tn } from './t'
 
 /** The keys of a table whose value's type widened to string, so its slots are no longer typed. */
 type Widened<T> = { [K in keyof T]: string extends T[K] ? K : never }[keyof T]
@@ -182,5 +182,15 @@ describe('t and tn (D-207, D-216, D-223)', () => {
     })
 
     expect(sunk.length).toBe(1)
+  })
+})
+
+describe('SCREEN_LIST_WORDS (WE-S3)', () => {
+  test('one name left out is counted as +1 more', () => {
+    expect(SCREEN_LIST_WORDS.more(1)).toBe('+1 more')
+  })
+
+  test('twelve names left out are counted as +12 more', () => {
+    expect(SCREEN_LIST_WORDS.more(12)).toBe('+12 more')
   })
 })

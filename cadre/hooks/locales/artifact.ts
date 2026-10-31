@@ -83,6 +83,10 @@ export const ARTIFACT = Object.freeze({
   cardHandoffsFollow: 'Handoffs ({handoffs}) and GSD .planning/ follow the start folder ({folder})',
   cardRouteStrict: 'MCP route: strict (--strict-mcp-config)',
   cardRouteMerged: 'MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)',
+  // The words of a scope card or INDEX.md list (scope/card CARD_LIST_WORDS): an empty list, and the last item of a
+  // capped list.
+  cardNone: 'none',
+  cardMore: '+{count} more',
   // The lines of a scope card (scope/card scopeCardLines), as ROLE.md holds it and init shows it.
   cardTitle: 'Scope card: {title} ({id})',
   cardFramework: '  framework: {framework}; model: {model} + {effort}; permission mode: {mode}',

@@ -6,8 +6,8 @@
  */
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
-import { clean, countedNoun, idsOrNone, moreLine } from '../../core/text'
-import { t } from '../../locales/t'
+import { clean, countedNoun, idsOrNone } from '../../core/text'
+import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
 
@@ -38,7 +38,7 @@ export function cappedList(items: readonly string[], max: number): string {
   const shown = items.slice(0, max)
   const rest = items.length - shown.length
 
-  return (rest > 0 ? [...shown, moreLine(rest)] : shown).join(', ')
+  return (rest > 0 ? [...shown, SCREEN_LIST_WORDS.more(rest)] : shown).join(', ')
 }
 
 /** The first row of the instructions block (G-02-1f; AUTO-PICK #12): what a plain init writes after Confirm. */
@@ -77,7 +77,7 @@ function topicRows(topic: InstructionTopic, parts: readonly InstructionPart[], i
   return [
     t('ui.instructions.topicRows', { title: topic.title, summary: redactedText(topic.summary) }),
     ...topicParts(topic, parts).map(part => t('ui.instructions.topicRows2', { source: sourceText(part) })),
-    t('ui.instructions.topicRows3', { ids: idsOrNone(ids) }),
+    t('ui.instructions.topicRows3', { ids: idsOrNone(ids, SCREEN_LIST_WORDS.none) }),
   ]
 }
 
@@ -93,7 +93,7 @@ function memoryRows(memory: MemoryItem, ids: readonly string[]): string[] {
     file: memory.file,
     summary: redactedText(memory.summary),
   }), t('ui.instructions.memoryRows2', {
-    ids: idsOrNone(ids),
+    ids: idsOrNone(ids, SCREEN_LIST_WORDS.none),
   })]
 }
 

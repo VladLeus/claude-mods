@@ -53,7 +53,7 @@ export const NOT_JSON_ERROR = PROMPTS.notJsonError
 export function invalidReply(
   errors: readonly string[],
 ): { readonly kind: 'invalid'; readonly errors: readonly string[] } {
-  return { kind: 'invalid', errors: cappedErrors(errors) }
+  return { kind: 'invalid', errors: cappedErrors(errors, PROMPTS.moreErrors) }
 }
 
 /** The line that introduces the roles in the skills and the recommendation prompts. */

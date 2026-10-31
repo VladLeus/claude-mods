@@ -43,7 +43,7 @@ export function proposePrompt(description: string, errors: readonly string[]): s
     fill(PROMPTS.allowedBasedOn, { ids: TEMPLATE_IDS.join(', ') }),
   ]
 
-  return withReplyErrors(lines, errors)
+  return withReplyErrors(lines, errors, PROMPTS.replyErrorsIntro)
 }
 
 /** What parseProposal returns: the validated roles, or every error found. */
@@ -110,7 +110,7 @@ export function parseProposal(text: string): ProposalReply {
     if (read.role !== null) roles.push(read.role)
   }
   if (errors.length <= MAX_PROPOSAL_ERRORS) errors.push(...listProblems(roles, list.length))
-  if (errors.length > 0) return { kind: 'invalid', errors: cappedErrors(errors) }
+  if (errors.length > 0) return { kind: 'invalid', errors: cappedErrors(errors, PROMPTS.moreErrors) }
 
   return { kind: 'ok', roles }
 }

@@ -11,7 +11,7 @@
 import type { AskContext, RoleSpec, SkillRef } from '../../../types'
 import { redactSecrets } from '../../core/redact'
 import { asSentence, clean, compareText, idsOrNone } from '../../core/text'
-import { t, tn } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, withContext } from '../../ui/ask'
 import { skillContext, skillGroupContext } from '../../ui/blocks/assign'
@@ -128,7 +128,7 @@ export function ownSkillContextLine(skill: SkillRef, uses: number, recommended: 
   const used = uses === 0 ? '' : t('init.ownSkills.used', { skillUses: skillUsesText(uses) })
   const purpose = asSentence(redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE))
 
-  return t('init.ownSkills.contextLine', { purpose, used, recommended: idsOrNone(recommended) })
+  return t('init.ownSkills.contextLine', { purpose, used, recommended: idsOrNone(recommended, SCREEN_LIST_WORDS.none) })
 }
 
 /**

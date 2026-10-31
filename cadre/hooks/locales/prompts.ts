@@ -10,6 +10,10 @@
 
 /** Every single-line prompt text and template by its name (D-221). Object.freeze keeps each literal type. */
 export const PROMPTS = Object.freeze({
+  // The reply check's retry lines (core/reply): the line before the previous reply's errors, and the last line of a
+  // capped error list.
+  replyErrorsIntro: 'Your previous reply had these errors; fix all of them:',
+  moreErrors: 'more errors not shown',
   // The no-text and not-JSON retry errors, and the line that introduces the roles (suggest/checked).
   noTextError: 'the model gave no text',
   notJsonError: 'the reply is not JSON',

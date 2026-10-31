@@ -30,9 +30,18 @@ export function isChangedByClean(value: string, maxChars: number): boolean {
   return clean(value, maxChars) !== value
 }
 
-/** Ids or names as a row or a context line names them: joined with `, `, or `none` for none (02-GAPS-B2 S7). */
-export function idsOrNone(ids: readonly string[]): string {
-  return ids.length === 0 ? 'none' : ids.join(', ')
+/**
+ * The words a list is shown with, which the caller takes from the table its text belongs to: `none` for an empty list,
+ * and `more` for the last item of a capped list, which counts the names it leaves out.
+ */
+export type ListWords = { readonly none: string; readonly more: (count: number) => string }
+
+/**
+ * Ids or names as a row or a context line names them: joined with `, `, or the caller's word for none when there are
+ * none (02-GAPS-B2 S7).
+ */
+export function idsOrNone(ids: readonly string[], none: string): string {
+  return ids.length === 0 ? none : ids.join(', ')
 }
 
 /** A count with its noun, singular for exactly one: `1 file`, `0 files`, `2 files` (02-GAPS-B2 S7). */
@@ -134,22 +143,18 @@ export function shown(value: string, maxChars = MAX_SHOWN_CHARS): string {
   return clean(value, maxChars)
 }
 
-/** The last item of a list that counts the names it leaves out: `+N more`, the one wording every capped list uses. */
-export function moreLine(count: number): string {
-  return `+${count} more`
-}
-
 /**
- * A list as a card line or rule shows it: `none` when empty, else the names, past 12 of them the first 12 and
- * `+N more`. A rule passes each scanned name through `shown` first. A line can still pass the 240 code points a card
- * line keeps, so a rule puts its fixed text before a list, or on its own line, never after it (B6).
+ * A list as a card line or rule shows it: the caller's none word when empty, else the names, past 12 of them the first
+ * 12 and the caller's more word, which counts the rest. A rule passes each scanned name through `shown` first. A line
+ * can still pass the 240 code points a card line keeps, so a rule puts its fixed text before a list, or on its own
+ * line, never after it (B6).
  */
-export function cardList(names: readonly string[]): string {
-  if (names.length === 0) return 'none'
+export function cardList(names: readonly string[], words: ListWords): string {
+  if (names.length === 0) return words.none
   const rest = names.length - MAX_CARD_LIST
   if (rest <= 0) return names.join(', ')
 
-  return [...names.slice(0, MAX_CARD_LIST), moreLine(rest)].join(', ')
+  return [...names.slice(0, MAX_CARD_LIST), words.more(rest)].join(', ')
 }
 
 /**

@@ -15,7 +15,7 @@ import { handoffFolderOf, launcherPath } from '../paths'
 import { TOP_OF_FILE } from '../records'
 import { INFRA_SKILLS } from '../roles/infra'
 import { MAX_PURPOSE_CHARS } from '../roles/validate'
-import { scopeCardLines } from '../scope/card'
+import { CARD_LIST_WORDS, scopeCardLines } from '../scope/card'
 
 /**
  * The text of `.cadre/<id>/role.json`: the role with schema 1, its repo part records included when it has them
@@ -154,7 +154,7 @@ function cell(text: string, maxChars: number): string {
 
 /** Server names for a cell, each as a cell shows it, listed as a scope card lists names (cardList). */
 function namesCell(names: readonly string[]): string {
-  return cardList(names.map(name => cell(name, MAX_NAME_CHARS)))
+  return cardList(names.map(name => cell(name, MAX_NAME_CHARS)), CARD_LIST_WORDS)
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
   SkillRef,
 } from '../../types'
 import { cardList, reportText, shown, sortedUnique } from '../core/text'
+import type { ListWords } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
 import { fill } from '../locales/t'
@@ -34,6 +35,12 @@ import {
   skillPlugin,
 } from './lint'
 import type { Refusal } from './lint'
+
+/** The words of a scope card or INDEX.md list (core/text cardList): generated-file text, so ARTIFACT words (D-221). */
+export const CARD_LIST_WORDS: ListWords = Object.freeze({
+  none: ARTIFACT.cardNone,
+  more: (count: number) => fill(ARTIFACT.cardMore, { count }),
+})
 
 /**
  * The scanned MCP servers this role was not given, once each and sorted. The infra servers are never in the list:
@@ -118,7 +125,7 @@ function bashRule(role: RoleSpec): ScopeRule {
 /** The rule for the code dirs that are denied; none when no dir is. */
 function deniedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.dirs.length === 0) return []
-  const dirList = cardList(deny.dirs.map(dir => shown(dir)))
+  const dirList = cardList(deny.dirs.map(dir => shown(dir)), CARD_LIST_WORDS)
   const text = fill(ARTIFACT.cardDeniedDirs, { dirs: dirList })
 
   return [rule(text, 'best-effort')]
@@ -130,7 +137,7 @@ function deniedDirRules(deny: DenyPlan): ScopeRule[] {
  */
 function ownDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.ownDirs.length === 0) return []
-  const dirList = cardList(deny.ownDirs.map(dir => shown(dir)))
+  const dirList = cardList(deny.ownDirs.map(dir => shown(dir)), CARD_LIST_WORDS)
 
   return [rule(fill(ARTIFACT.cardOwnDirs, { dirs: dirList }), 'none')]
 }
@@ -138,7 +145,7 @@ function ownDirRules(deny: DenyPlan): ScopeRule[] {
 /** The rule for the code dirs the committed template leaves to the launch render; none when no dir is skipped. */
 function skippedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.skippedDirs.length === 0) return []
-  const dirList = cardList(deny.skippedDirs.map(dir => shown(dir)))
+  const dirList = cardList(deny.skippedDirs.map(dir => shown(dir)), CARD_LIST_WORDS)
   const text = fill(ARTIFACT.cardSkippedDirs, { dirs: dirList })
 
   return [rule(text, 'best-effort')]
@@ -161,7 +168,7 @@ const MCP_REACHABLE_TEXT = ARTIFACT.cardMcpReachable
 function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
   if (deny.mcp.length === 0) return [rule(ARTIFACT.cardNoMcpToDeny, enforcement)]
-  const text = fill(ARTIFACT.cardDeniedMcp, { servers: cardList(deny.mcp.map(name => shown(name))) })
+  const text = fill(ARTIFACT.cardDeniedMcp, { servers: cardList(deny.mcp.map(name => shown(name)), CARD_LIST_WORDS) })
   const checks = deny.mcp.map((name): ProbeCheck => ({ kind: 'tool-prefix-absent', token: `${mcpToolName(name)}__` }))
   const listed = checkedRule(text, enforcement, checks)
   if (route === 'strict') return [listed]
@@ -281,7 +288,7 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
  */
 function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[], deny: DenyPlan): ScopeRule[] {
   const mode = role.permissionMode === 'manual' ? 'default' : role.permissionMode
-  const pluginList = cardList(plugins.map(plugin => shown(plugin)))
+  const pluginList = cardList(plugins.map(plugin => shown(plugin)), CARD_LIST_WORDS)
 
   return [
     ...bypassRules(role),
@@ -353,13 +360,13 @@ export function scopeCardLines(card: ScopeCard): string[] {
   const lines = [
     fill(ARTIFACT.cardTitle, { title: card.title, id: card.roleId }),
     fill(ARTIFACT.cardFramework, { framework, model: card.model, effort: card.effort, mode: card.permissionMode }),
-    fill(ARTIFACT.cardSkillsLine, { skills: cardList(card.skills) }),
-    fill(ARTIFACT.cardMcpLine, { servers: cardList(card.mcp) }),
-    fill(ARTIFACT.cardNotGivenSkills, { skills: cardList(card.notGiven.skills) }),
-    fill(ARTIFACT.cardNotGivenMcp, { servers: cardList(card.notGiven.mcp) }),
-    fill(ARTIFACT.cardHooksLoaded, { hooks: cardList(card.hooks.loaded) }),
-    fill(ARTIFACT.cardHooksByProject, { hooks: cardList(card.hooks.loadedByProject) }),
-    fill(ARTIFACT.cardHooksNotLoaded, { hooks: cardList(card.hooks.notLoaded) }),
+    fill(ARTIFACT.cardSkillsLine, { skills: cardList(card.skills, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardMcpLine, { servers: cardList(card.mcp, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardNotGivenSkills, { skills: cardList(card.notGiven.skills, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardNotGivenMcp, { servers: cardList(card.notGiven.mcp, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardHooksLoaded, { hooks: cardList(card.hooks.loaded, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardHooksByProject, { hooks: cardList(card.hooks.loadedByProject, CARD_LIST_WORDS) }),
+    fill(ARTIFACT.cardHooksNotLoaded, { hooks: cardList(card.hooks.notLoaded, CARD_LIST_WORDS) }),
     ARTIFACT.cardRules,
     ...card.rules.map(item => fill(ARTIFACT.cardRule, { enforcement: item.enforcement, text: item.text })),
     ARTIFACT.cardDecisions,

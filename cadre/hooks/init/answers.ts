@@ -8,8 +8,8 @@
  */
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
-import { clean, idsOrNone, moreLine, sortedUnique } from '../core/text'
-import { t, tn } from '../locales/t'
+import { clean, idsOrNone, sortedUnique } from '../core/text'
+import { SCREEN_LIST_WORDS, t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
@@ -87,7 +87,7 @@ function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): s
 
   return [
     t('init.answers.ownSkillRow', { name: skill.name, purpose }),
-    t('init.answers.ownSkillRecommended', { used, ids: idsOrNone(ids) }),
+    t('init.answers.ownSkillRecommended', { used, ids: idsOrNone(ids, SCREEN_LIST_WORDS.none) }),
   ]
 }
 
@@ -311,7 +311,7 @@ const MAX_SHOWN_NAMES = 5
 export function cappedNames(names: readonly string[]): string {
   const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
   const rest = names.length - shown.length
-  const items = rest > 0 ? [...shown, moreLine(rest)] : shown
+  const items = rest > 0 ? [...shown, SCREEN_LIST_WORDS.more(rest)] : shown
 
   return items.join(', ')
 }

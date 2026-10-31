@@ -384,6 +384,7 @@ export const EN = Object.freeze({
   'ui.scan.yes': 'yes',
   'ui.scan.no': 'no',
   'ui.scan.none': 'none',
+  'ui.list.more': '+{count} more',
 
   'ui.recommendations.recommendationsHeading': 'Recommendations (print-only; init asks before it installs any):',
   'ui.recommendations.noRecommendations': 'Recommendations: none',

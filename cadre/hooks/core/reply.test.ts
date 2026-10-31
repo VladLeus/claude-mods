@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { cappedErrors, MAX_REPLY_ERRORS, REPLY_ERRORS_INTRO, unfenced, withReplyErrors } from './reply'
+import { PROMPTS } from '../locales/prompts'
+import { cappedErrors, MAX_REPLY_ERRORS, unfenced, withReplyErrors } from './reply'
 
 describe('reply helpers (S7)', () => {
   test('unfenced takes off the one code fence and its json tag, then trims', () => {
@@ -9,13 +10,14 @@ describe('reply helpers (S7)', () => {
 
   test('cappedErrors keeps the first MAX_REPLY_ERRORS errors, then says there are more', () => {
     const errors = Array.from({ length: 21 }, (_, at) => `error ${at + 1}`)
-    expect(cappedErrors(errors)).toEqual([...errors.slice(0, MAX_REPLY_ERRORS), 'more errors not shown'])
-    expect(cappedErrors(errors.slice(0, MAX_REPLY_ERRORS))).toEqual(errors.slice(0, MAX_REPLY_ERRORS))
+    const kept = errors.slice(0, MAX_REPLY_ERRORS)
+    expect(cappedErrors(errors, PROMPTS.moreErrors)).toEqual([...kept, 'more errors not shown'])
+    expect(cappedErrors(kept, PROMPTS.moreErrors)).toEqual(kept)
     expect(MAX_REPLY_ERRORS).toBe(20)
   })
 
   test('withReplyErrors adds nothing with no errors, and the intro and one line per error with them', () => {
-    expect(withReplyErrors(['a'], [])).toBe('a')
-    expect(withReplyErrors(['a'], ['e'])).toBe(`a\n${REPLY_ERRORS_INTRO}\n- e`)
+    expect(withReplyErrors(['a'], [], PROMPTS.replyErrorsIntro)).toBe('a')
+    expect(withReplyErrors(['a'], ['e'], PROMPTS.replyErrorsIntro)).toBe(`a\n${PROMPTS.replyErrorsIntro}\n- e`)
   })
 })

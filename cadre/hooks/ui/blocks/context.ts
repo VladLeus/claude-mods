@@ -20,9 +20,9 @@ import type {
 } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { redactedText } from '../../core/redact'
-import { cardList, clean, idsOrNone, MAX_CARD_LIST, moreLine, pad, shown } from '../../core/text'
+import { cardList, clean, idsOrNone, MAX_CARD_LIST, pad, shown } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
-import { t } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { launcherPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
 import type { Gathered } from '../../scan/gather'
@@ -85,7 +85,7 @@ export const SECURITY_PLUGIN_NOTES: ReadonlyMap<string, string> = new Map([
 
 /** Role ids as a context line lists them, each cleaned: `none` when there are none. */
 function roleIdsText(ids: readonly string[]): string {
-  return idsOrNone(ids.map(id => shown(id)))
+  return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
 /** Items as indented rows, each cleaned: the first MAX_CARD_LIST, then a row that counts the rest. */
@@ -93,7 +93,7 @@ function cappedRows(items: readonly string[]): string[] {
   const rows = items.slice(0, MAX_CARD_LIST).map(item => `  ${shown(item)}`)
   const rest = items.length - rows.length
 
-  return rest > 0 ? [...rows, `  ${moreLine(rest)}`] : rows
+  return rest > 0 ? [...rows, `  ${SCREEN_LIST_WORDS.more(rest)}`] : rows
 }
 
 /**
@@ -264,7 +264,7 @@ const GLOBAL_GROUP_LINE = t('ui.context.globalGroupLine', { globalClaudeMdText: 
 export function memoryGroupContext(group: InstructionGroup, names: readonly string[]): AskContext {
   const shownNames = names.slice(0, MAX_CARD_LIST).map(name => shown(name))
   const rest = names.length - shownNames.length
-  const files = rest > 0 ? [...shownNames, moreLine(rest)] : shownNames
+  const files = rest > 0 ? [...shownNames, SCREEN_LIST_WORDS.more(rest)] : shownNames
   const lines = group === 'global-claude-md' ? [GLOBAL_GROUP_LINE] : files
 
   return { title: MEMORY_GROUP_TITLES[group], lines, kind: 'memory-group' }
@@ -294,10 +294,11 @@ export function improverInstallContext(roleIds: readonly string[]): AskContext {
  * launcher of each role (launcherPath), 12 of them and how many more.
  */
 export function launchContext(roles: readonly RoleSpec[]): AskContext {
+  const map = cardList(roles.map(role => launcherPath(shown(role.id))), SCREEN_LIST_WORDS)
   const lines = [
     t('ui.context.launchContext'),
     t('ui.context.launchContext2'),
-    t('ui.context.launchContext3', { map: cardList(roles.map(role => launcherPath(shown(role.id)))) }),
+    t('ui.context.launchContext3', { map }),
   ]
 
   return { title: t('ui.context.launchContext4'), lines, kind: 'launch' }

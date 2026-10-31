@@ -59,7 +59,7 @@ export function regenRecommendPrompt(
   const roleRow = fill(PROMPTS.roleRow, { id: role.id, title: role.title, purpose: role.purpose })
   const lines = [REGEN_ROLE_INTRO, roleRow, REGEN_ITEMS_INTRO]
 
-  return withReplyErrors([...lines, ...items.map(regenItemLine)], errors)
+  return withReplyErrors([...lines, ...items.map(regenItemLine)], errors, PROMPTS.replyErrorsIntro)
 }
 
 /** What parseRegenRecommendation gives: whether each item is recommended, or every error found. */

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Facts, FrameworkId } from '../types'
 import { helpText, USAGE_LINES } from './command/usage'
-import { REPLY_ERRORS_INTRO } from './core/reply'
 import { detectText } from './detect/report'
 import { ADAPTERS } from './framework/registry'
 import { desiredFiles } from './generate/files'
@@ -74,7 +73,6 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
     'outside locales',
     'kept',
     [
-      REPLY_ERRORS_INTRO,
       ADAPTERS,
       ADAPTERS.map(adapter => adapter.roleStart('x')),
       INSTALL_COMMANDS,
