@@ -9,6 +9,7 @@
 import type { RoleCarry, RoleSpec, SetupScan } from '../../../types'
 import { sortedUnique } from '../../core/text'
 import { SECRET_READ_GUARD } from '../../framework/gsd/adapter'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { ENV_PANE_HEADING, envContext } from '../../ui/blocks/context'
@@ -21,15 +22,15 @@ import { teamContextLine } from './model'
 const ENV_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, ALL_ENV_OPTION])
 
 /** What the env question takes, as its refusal lists it: a button or scanned names (D-60, D-136). */
-const ENV_ACCEPTS = `${quotedLabels(ENV_OPTIONS)}, or names from the list, typed exactly`
+const ENV_ACCEPTS = t('init.carry.envAccepts', { quotedLabels: quotedLabels(ENV_OPTIONS) })
 
 /** The context line of the env question (D-136): the team's role ids, and that every role carries the same names. */
 export function envContextLine(roles: readonly RoleSpec[]): string {
-  return `${teamContextLine(roles)} Every role carries the same names; values are filled in at launch.`
+  return t('init.carry.envContextLine', { teamContext: teamContextLine(roles) })
 }
 
 /** Why init cancels when the env variables question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */
-export const ENV_DISMISSED_REASON = 'The env variables question was dismissed or not answered.'
+export const ENV_DISMISSED_REASON = t('init.carry.envDismissedReason')
 
 /**
  * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids

@@ -229,6 +229,10 @@ export const EN = Object.freeze({
   'init.instructions.topicsFrom': '{topicCount} from {files}',
   'init.instructions.entryContext':
     '{topics} and {memoryCount}; the pane shows each with the roles it is recommended for.',
+
+  'init.carry.envAccepts': '{quotedLabels}, or names from the list, typed exactly',
+  'init.carry.envContextLine': '{teamContext} Every role carries the same names; values are filled in at launch.',
+  'init.carry.envDismissedReason': 'The env variables question was dismissed or not answered.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
