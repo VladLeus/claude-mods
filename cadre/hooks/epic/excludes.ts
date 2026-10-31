@@ -6,6 +6,7 @@
  */
 import type { HostRun } from '../../types'
 import { sortedUnique } from '../core/text'
+import { CONTRACTS } from '../locales/contracts'
 
 /**
  * The entries of the main checkout that the epic worktree mirrors (D-147): the NUL-ended names of the LS_OTHERS_ARGV
@@ -25,10 +26,10 @@ export const EXCLUDES_FILE = 'cadre-links.exclude'
  * The excludes line that hides each role's own `.runtime/` in the worktree (AUTO-PICK #25, RESEARCH Pitfall 5): the
  * mirror makes `.cadre/<id>/` a real folder there, so the files a render writes into it would show as untracked.
  */
-export const RUNTIME_EXCLUDE_LINE = '/.cadre/*/.runtime/'
+export const RUNTIME_EXCLUDE_LINE = CONTRACTS.runtimeExcludeLine
 
 /** The line that starts cadre's own lines in the excludes file. */
-const EXCLUDES_HEADING = '# cadre links (cadre epic)'
+const EXCLUDES_HEADING = CONTRACTS.excludesHeading
 
 /**
  * The excludes line of a link (03.1-W2 S2): `/` then the path with gitignore's special characters `\`, `*`, `?` and

@@ -13,6 +13,8 @@ import { sha256Hex } from '../core/hash'
 import { reportText, shown, sortedUnique } from '../core/text'
 import { isSafeFileName, unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser, OverlayLink } from '../launch/links'
+import { CONTRACTS } from '../locales/contracts'
+import { fill } from '../locales/t'
 import { displayPath, INSTRUCTIONS_RECORD_FILE, MARKDOWN_EXTENSION, memoryFolderOf, roleMemoryDir } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from '../scan/instructions/memories'
@@ -20,10 +22,10 @@ import { isPlainName, isRealEntry, notReplacedWarning } from './render-plan'
 import type { MemoryLinks } from './render-plan'
 
 /** The begin marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract, as IGNORE_BEGIN is. */
-export const MEMORY_BLOCK_BEGIN = '<!-- >>> cadre linked memories (read-only; rebuilt by /cadre start) -->'
+export const MEMORY_BLOCK_BEGIN = CONTRACTS.memoryBlockBegin
 
 /** The end marker of cadre's block in a role's MEMORY.md (D-140 q3-a); an on-disk contract like MEMORY_BLOCK_BEGIN. */
-export const MEMORY_BLOCK_END = '<!-- <<< cadre linked memories -->'
+export const MEMORY_BLOCK_END = CONTRACTS.memoryBlockEnd
 
 /** The lines of a text, each with its own line ending, so joining them gives the text back byte for byte. */
 function linesWithEnds(text: string): string[] {
@@ -55,7 +57,7 @@ function memoryBlockMarkers(lines: readonly string[]): { readonly begin: number;
 function memoryBlockLine(entry: Pick<MemoryItem, 'file' | 'summary'>): string {
   const file = reportText(entry.file)
 
-  return `- [${file}](${file}) \u2014 ${reportText(entry.summary)}`
+  return fill(CONTRACTS.memoryBlockLine, { file, summary: reportText(entry.summary) })
 }
 
 /**

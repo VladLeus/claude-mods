@@ -15,6 +15,8 @@ import { reportText, sortedUnique } from '../core/text'
 import type { RenderStep } from '../host/steps'
 import type { OverlayLink } from '../launch/links'
 import type { LaunchPlan } from '../launch/plan'
+import { CONTRACTS } from '../locales/contracts'
+import { fill } from '../locales/t'
 import {
   INBOX_FILE,
   isDirInsideRoot,
@@ -457,5 +459,5 @@ export function renderSteps(input: RenderInput): RenderResult {
 
 /** The text of the stamp a render writes last: the cadre version that rendered, on one line. */
 export function stampText(cadreVersion: string): string {
-  return `rendered by cadre ${cadreVersion}\n`
+  return fill(CONTRACTS.stamp, { version: cadreVersion })
 }

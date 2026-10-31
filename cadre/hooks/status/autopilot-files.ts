@@ -8,6 +8,7 @@
  */
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortRead } from '../../types'
 import { clean } from '../core/text'
+import { CONTRACTS } from '../locales/contracts'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from '../scan/autopilot'
 import type { RunState } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -30,16 +31,16 @@ export const LOG_MAX_BYTES = 4 * 1024 * 1024
 const LOG_SHOWN_CHARS = 160
 
 /** The start of the text of the log line autopilot writes when a run ends: `finished (<reason>): ...`. */
-const FINISHED_TEXT = 'finished ('
+const FINISHED_TEXT = CONTRACTS.autopilotFinished
 
 /** The start of that text when the run ended done, after AUTOPILOT_DONE and the final handoff. */
-const FINISHED_DONE_TEXT = 'finished (done)'
+const FINISHED_DONE_TEXT = CONTRACTS.autopilotFinishedDone
 
 /** The start of the text of the log line autopilot writes when `/autopilot` starts a run: `started: ...`. */
-const STARTED_TEXT = 'started: '
+const STARTED_TEXT = CONTRACTS.autopilotStarted
 
 /** The text of the log line autopilot writes when the person stops the run with `/autopilot stop`. */
-const STOPPED_TEXT = 'stopped by the person'
+const STOPPED_TEXT = CONTRACTS.autopilotStopped
 
 /**
  * One autopilot log line: its stamp, one word, then two spaces and the text, as autopilot's log writes it. The text

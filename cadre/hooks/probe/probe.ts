@@ -7,6 +7,8 @@
  */
 import type { CompiledScope, ProbeCheck, ProbeCheckKind, ProbeExpectation, ScopeRule } from '../../types'
 import { asciiLine } from '../generate/kickoff'
+import { CONTRACTS } from '../locales/contracts'
+import { fill } from '../locales/t'
 
 /** Every kind of probe check, in the order of the ProbeCheckKind type (D-112). */
 export const PROBE_CHECK_KINDS: readonly ProbeCheckKind[] = Object.freeze([
@@ -50,7 +52,7 @@ export function isProbeToken(token: string): boolean {
 }
 
 /** What the text of an expectation ends with when its token is not compared (T-03-10). */
-const UNUSUAL_SUFFIX = ' (not checked: unusual characters)'
+const UNUSUAL_SUFFIX = CONTRACTS.probeUnusual
 
 /**
  * An expectation as the file holds it: as it is when its token can be compared (isProbeToken), else not-visible with
@@ -66,13 +68,13 @@ function written(expectation: ProbeExpectation): ProbeExpectation {
 /** What the probe prints after the text of a rule for one of its checks. */
 function checkLabel(check: ProbeCheck): string {
   const { kind, token } = check
-  if (kind === 'tool-absent') return `tool ${token} absent`
-  if (kind === 'tool-prefix-absent') return `tools of ${token} absent`
-  if (kind === 'tool-present') return `tool ${token} present`
-  if (kind === 'command-present') return `command ${token} present`
-  if (kind === 'skill-present') return `skill ${token} present`
+  if (kind === 'tool-absent') return fill(CONTRACTS.probeToolAbsent, { token })
+  if (kind === 'tool-prefix-absent') return fill(CONTRACTS.probeToolsAbsent, { token })
+  if (kind === 'tool-present') return fill(CONTRACTS.probeToolPresent, { token })
+  if (kind === 'command-present') return fill(CONTRACTS.probeCommandPresent, { token })
+  if (kind === 'skill-present') return fill(CONTRACTS.probeSkillPresent, { token })
 
-  return `permission mode ${token}`
+  return fill(CONTRACTS.probePermissionMode, { token })
 }
 
 /**
@@ -91,7 +93,7 @@ function ruleExpectations(rule: ScopeRule): ProbeExpectation[] {
     written({
       check: check.kind,
       enforcement,
-      text: probeText(`${text} [${checkLabel(check)}]`),
+      text: probeText(fill(CONTRACTS.probeChecked, { text, label: checkLabel(check) })),
       token: check.token,
     }),
   )
@@ -109,7 +111,7 @@ export function expectationsFor(scope: CompiledScope, memoryDir: string): ProbeE
   const memory = written({
     check: 'memory-path',
     enforcement: 'hard',
-    text: probeText(`Memory folder: ${memoryDir} (autoMemoryDirectory)`),
+    text: probeText(fill(CONTRACTS.probeMemoryFolder, { dir: memoryDir })),
     token: memoryDir,
   })
 

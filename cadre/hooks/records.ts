@@ -8,6 +8,7 @@ import type { InstructionPart, InstructionPartRecord, RoleSpec } from '../types'
 import { allOrNull, isObject } from './core/json'
 import { MAX_HEADING_CHARS, SHA256_HEX } from './core/names'
 import { isChangedByClean } from './core/text'
+import { CONTRACTS } from './locales/contracts'
 
 /** The extension of every file a repo part comes from: the read of the instruction files takes only `.md` files. */
 const PART_FILE_EXTENSION = '.md'
@@ -80,7 +81,7 @@ export function recordedParts(value: unknown): InstructionPartRecord[] | null {
  * How a part with no heading is named: the text before the first heading of its file (G-02-1f); the built role file's
  * markers name it the same way (generate.ts).
  */
-export const TOP_OF_FILE = '(top of file)'
+export const TOP_OF_FILE = CONTRACTS.topOfFile
 
 /**
  * A role with these repo part records in place of any it had (G-02-1f Regen, AUTO-PICK #19 Q1): the parts it was

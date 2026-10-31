@@ -19,13 +19,6 @@ export const MAX_SPEC_PATH_CHARS = 260
 export const UNNAMED_ROLE = 'unnamed'
 
 /**
- * The rule autopilot uses to spot its done marker (isDoneAnswer in autopilot/hooks/autopilot.ts): AUTOPILOT_DONE at
- * the start of a line, after optional spaces or tabs. Tests use it to prove that no kickoff line other than the done
- * line reads as the marker.
- */
-export const DONE_MARKER_LINE = /^[ \t]*AUTOPILOT_DONE\b/m
-
-/**
  * Text from outside the adapter, such as a role name or a repo path, as it may appear in a kickoff. Unsafe characters
  * are removed, so the text cannot start a new kickoff line or hide itself. The rest is cut to maxChars code points, and
  * a cut ends in an ellipsis. The rule is facts.ts `clean`, so a kickoff and a report clean text the same way; a cap

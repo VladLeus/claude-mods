@@ -3,7 +3,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   cleanKickoffText,
   cleanKickoffTextOr,
-  DONE_MARKER_LINE,
   MAX_ROLE_CHARS,
   MAX_SPEC_PATH_CHARS,
   UNNAMED_ROLE,
@@ -104,17 +103,5 @@ describe('cleanKickoffTextOr', () => {
 
   test('text with something left once cleaned is returned cleaned, untrimmed', () => {
     expect(cleanKickoffTextOr(' BE\n', MAX_ROLE_CHARS, UNNAMED_ROLE)).toBe(' BE')
-  })
-})
-
-describe('DONE_MARKER_LINE', () => {
-  test('it matches AUTOPILOT_DONE at a line start, after optional spaces or tabs', () => {
-    expect(DONE_MARKER_LINE.test('AUTOPILOT_DONE')).toBe(true)
-    expect(DONE_MARKER_LINE.test('x\n \tAUTOPILOT_DONE: ok')).toBe(true)
-  })
-
-  test('it does not match the marker inside a line or as part of a longer word', () => {
-    expect(DONE_MARKER_LINE.test('answer with a line that starts with AUTOPILOT_DONE.')).toBe(false)
-    expect(DONE_MARKER_LINE.test('AUTOPILOT_DONEX')).toBe(false)
   })
 })

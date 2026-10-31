@@ -6,6 +6,7 @@
 import type { RunOptions, TerminalChoice } from '../../types'
 import { reportText } from '../core/text'
 import { shQuote } from '../generate/launcher'
+import { CONTRACTS, ITERM_LINES, TERMINAL_APP_LINES } from '../locales/contracts'
 import { launcherPath } from '../paths'
 
 /** The command that starts a role: the absolute path of its launcher `<root>/.cadre/bin/<id>`, as one shell word. */
@@ -58,41 +59,10 @@ function terminalUnknownText(termProgram: string | null): string {
 }
 
 /**
- * The AppleScript lines that open a new Terminal window running the shell text, the last argv item, which `do script`
- * reads through `on run argv` (D-126). Terminal.app cannot make a tab without System Events, so it is a window.
- */
-const TERMINAL_APP_LINES: readonly string[] = Object.freeze([
-  'on run argv',
-  'tell application "Terminal"',
-  'activate',
-  'do script (item 1 of argv)',
-  'end tell',
-  'end run',
-])
-
-/**
- * The AppleScript lines that open a new iTerm tab in the current window, or a new window when none is open, and write
- * the shell text, the last argv item, into its session through `on run argv` (D-126).
- */
-const ITERM_LINES: readonly string[] = Object.freeze([
-  'on run argv',
-  'tell application "iTerm"',
-  'activate',
-  'if (count of windows) is 0 then',
-  'create window with default profile',
-  'else',
-  'tell current window to create tab with default profile',
-  'end if',
-  'tell current session of current window to write text (item 1 of argv)',
-  'end tell',
-  'end run',
-])
-
-/**
  * What a tmux window runs after a launcher that exits non-zero: a note, then a wait for Enter, so the launcher's
  * refusal stays on screen and does not close with the window (RESEARCH Pitfall 7).
  */
-const TMUX_WAIT = "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }"
+const TMUX_WAIT = CONTRACTS.tmuxWait
 
 /**
  * What the reply names an iTerm open: ITERM_LINES make a tab in the current window, or a window when none is open,

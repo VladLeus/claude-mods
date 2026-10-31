@@ -4,16 +4,17 @@
  * decision #39). It imports paths and the types, so the file plan and init read the block here.
  */
 import type { GitPolicy } from '../../types'
+import { CONTRACTS } from '../locales/contracts'
 import { RUNTIME_RENDERED } from '../paths'
 
 /**
  * The begin marker of the cadre block in the root `.gitignore`. The marker strings are an on-disk contract: re-runs,
  * regen and a later uninstall find the block by them (D-64).
  */
-export const IGNORE_BEGIN = '# >>> cadre'
+export const IGNORE_BEGIN = CONTRACTS.ignoreBegin
 
 /** The end marker of the cadre block in the root `.gitignore`; an on-disk contract like IGNORE_BEGIN (D-64). */
-export const IGNORE_END = '# <<< cadre'
+export const IGNORE_END = CONTRACTS.ignoreEnd
 
 /** The scratch copies a conflict plans beside a user-edited file are for diffing and never go into git (D-99). */
 const CADRE_NEW_LINE = '.cadre/**/*.cadre-new'
