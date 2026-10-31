@@ -9,6 +9,8 @@ import { allOrNull, isObject, parseJsonValue, stableJson } from '../core/json'
 import { isSha256Hex } from '../core/names'
 import { reportText } from '../core/text'
 import { partsBody } from '../generate/docs'
+import { ARTIFACT } from '../locales/artifact'
+import { fill } from '../locales/t'
 import { INSTRUCTIONS_RECORD_FILE, PRIVATE_INSTRUCTIONS_FOLDER } from '../paths'
 import { recordedParts, recordsOf } from '../records'
 import type { ConflictChoice } from './conflict'
@@ -106,10 +108,7 @@ export function instructionsRecordPath(folder: string): string {
  * always mark their parts the same way.
  */
 export function privateClaudeMdText(id: string, repo: string, parts: readonly InstructionPart[]): string {
-  const header =
-    `<!-- cadre: your global instructions for role ${id} in ${reportText(repo)}, ` +
-    'built from your global CLAUDE.md, its imports and the CLAUDE.md files above the repo. ' +
-    'Private to you, never committed; rebuilt by /cadre init and /cadre regen. -->'
+  const header = fill(ARTIFACT.privateClaudeMdHeader, { id, repo: reportText(repo) })
 
   return `${header}${partsBody(parts)}`
 }

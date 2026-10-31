@@ -19,6 +19,8 @@ import type {
 } from '../../types'
 import { cardList, reportText, shown, sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
+import { ARTIFACT } from '../locales/artifact'
+import { fill } from '../locales/t'
 import { handoffFolderOf } from '../paths'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS } from '../roles/infra'
 import { chainLines } from '../roles/template'
@@ -100,7 +102,7 @@ function isBypass(role: RoleSpec): boolean {
 function bypassRules(role: RoleSpec): ScopeRule[] {
   if (!isBypass(role)) return []
 
-  return [rule('WARNING: bypassPermissions is set in role.json: permission prompts are skipped', 'none')]
+  return [rule(ARTIFACT.cardBypass, 'none')]
 }
 
 /**
@@ -108,16 +110,16 @@ function bypassRules(role: RoleSpec): ScopeRule[] {
  * sandbox (hard on macOS, best effort on Linux) for a role with Bash, which the inventory cannot show.
  */
 function bashRule(role: RoleSpec): ScopeRule {
-  if (!role.hasBash) return checkedRule('No Bash tool (denied)', 'hard', [{ kind: 'tool-absent', token: 'Bash' }])
+  if (!role.hasBash) return checkedRule(ARTIFACT.cardNoBash, 'hard', [{ kind: 'tool-absent', token: 'Bash' }])
 
-  return rule('Bash runs in the sandbox (hard on macOS, best-effort on Linux)', 'best-effort')
+  return rule(ARTIFACT.cardSandbox, 'best-effort')
 }
 
 /** The rule for the code dirs that are denied; none when no dir is. */
 function deniedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.dirs.length === 0) return []
   const dirList = cardList(deny.dirs.map(dir => shown(dir)))
-  const text = `Reads and edits under ${dirList} are denied; the patterns match at any depth`
+  const text = fill(ARTIFACT.cardDeniedDirs, { dirs: dirList })
 
   return [rule(text, 'best-effort')]
 }
@@ -130,27 +132,25 @@ function ownDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.ownDirs.length === 0) return []
   const dirList = cardList(deny.ownDirs.map(dir => shown(dir)))
 
-  return [rule(`Reads and edits under ${dirList} are never denied (own folders)`, 'none')]
+  return [rule(fill(ARTIFACT.cardOwnDirs, { dirs: dirList }), 'none')]
 }
 
 /** The rule for the code dirs the committed template leaves to the launch render; none when no dir is skipped. */
 function skippedDirRules(deny: DenyPlan): ScopeRule[] {
   if (deny.skippedDirs.length === 0) return []
   const dirList = cardList(deny.skippedDirs.map(dir => shown(dir)))
-  const text =
-    `Reads and edits under ${dirList} are not denied in the committed template: ` +
-    "those names match the role's own folders at any depth (exact denies are rendered at launch)"
+  const text = fill(ARTIFACT.cardSkippedDirs, { dirs: dirList })
 
   return [rule(text, 'best-effort')]
 }
 
 /** One rule for each code dir that is not denied because its name is unusual. */
 function unusualDirRules(deny: DenyPlan): ScopeRule[] {
-  return deny.unusualDirs.map(dir => rule(`Code dir ${shown(dir)} has an unusual name and is not denied`, 'none'))
+  return deny.unusualDirs.map(dir => rule(fill(ARTIFACT.cardUnusualDir, { dir: shown(dir) }), 'none'))
 }
 
 /** What the launch render does to a denied server on the merged route, as its own card rule (D-124, B6, #39). */
-const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)'
+const MCP_REACHABLE_TEXT = ARTIFACT.cardMcpReachable
 
 /**
  * The deny rule of the scanned servers: none to deny, the list, and on the merged route the reachable rule after it.
@@ -160,8 +160,8 @@ const MCP_REACHABLE_TEXT = 'Denied servers: tools removed and the whole server d
  */
 function deniedMcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   const enforcement: Enforcement = route === 'strict' ? 'hard' : 'best-effort'
-  if (deny.mcp.length === 0) return [rule('No other scanned MCP servers to deny', enforcement)]
-  const text = `Scanned MCP servers not given are denied: ${cardList(deny.mcp.map(name => shown(name)))}`
+  if (deny.mcp.length === 0) return [rule(ARTIFACT.cardNoMcpToDeny, enforcement)]
+  const text = fill(ARTIFACT.cardDeniedMcp, { servers: cardList(deny.mcp.map(name => shown(name))) })
   const checks = deny.mcp.map((name): ProbeCheck => ({ kind: 'tool-prefix-absent', token: `${mcpToolName(name)}__` }))
   const listed = checkedRule(text, enforcement, checks)
   if (route === 'strict') return [listed]
@@ -180,9 +180,11 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
   return [
     ...deniedMcpRules(deny, route),
     ...deny.unusualMcp.map(name =>
-      rule(`MCP server ${shown(name)} shares its tool name with a server this role has and is not denied`, 'none'),
+      rule(fill(ARTIFACT.cardUnusualMcp, { name: shown(name) }), 'none'),
     ),
-    ...deny.refused.map(item => rule(`${shown(item.pattern)} was not emitted: ${item.message}`, 'none')),
+    ...deny.refused.map(item =>
+      rule(fill(ARTIFACT.cardRefused, { pattern: shown(item.pattern), message: item.message }), 'none'),
+    ),
   ]
 }
 
@@ -191,9 +193,9 @@ function mcpRules(deny: DenyPlan, route: McpRoute): ScopeRule[] {
  * is best effort; strict passes the flag. It states the route and enforces nothing, so it is labelled none.
  */
 function routeRule(route: McpRoute): ScopeRule {
-  if (route === 'strict') return rule('MCP route: strict (--strict-mcp-config)', 'none')
+  if (route === 'strict') return rule(ARTIFACT.cardRouteStrict, 'none')
 
-  return rule('MCP route: merged (no --strict-mcp-config, so /fleet works; MCP denies are best-effort)', 'none')
+  return rule(ARTIFACT.cardRouteMerged, 'none')
 }
 
 /**
@@ -202,10 +204,7 @@ function routeRule(route: McpRoute): ScopeRule {
  */
 function partialMcpRules(setup: SetupScan): ScopeRule[] {
   if (!setup.isMcpPartial) return []
-  const text =
-    'MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied'
-
-  return [rule(text, 'none')]
+  return [rule(ARTIFACT.cardPartialMcp, 'none')]
 }
 
 /**
@@ -223,10 +222,10 @@ function isGsdWithoutBash(role: RoleSpec, ctx: ScopeContext): boolean {
 function attendedRules(role: RoleSpec, ctx: ScopeContext): ScopeRule[] {
   const rules: ScopeRule[] = []
   if (ctx.isAttended) {
-    rules.push(rule('Attended: this role needs a person for framework steps that cannot run unattended', 'none'))
+    rules.push(rule(ARTIFACT.cardAttendedSteps, 'none'))
   }
   if (isGsdWithoutBash(role, ctx)) {
-    rules.push(rule('Attended: GSD workflows need Bash; this role runs them through a person', 'none'))
+    rules.push(rule(ARTIFACT.cardAttendedGsd, 'none'))
   }
 
   return rules
@@ -241,11 +240,7 @@ function projectMonitorRules(setup: SetupScan): ScopeRule[] {
   const monitors = setup.hooks.filter(hook => hook.source === 'project' && isContextMonitorScript(hook.script))
 
   return sortedUnique(monitors.map(hook => hook.script)).map(script => {
-    const text =
-      `WARNING: ${shown(script)} is registered in project settings and loads in every role; ` +
-      'it conflicts with the autopilot handoff (D-62)'
-
-    return rule(text, 'none')
+    return rule(fill(ARTIFACT.cardProjectMonitor, { script: shown(script) }), 'none')
   })
 }
 
@@ -254,9 +249,9 @@ function projectMonitorRules(setup: SetupScan): ScopeRule[] {
  * of a `dir` start under `<git root>`, or for `here` the folder the launcher is run from.
  */
 function startFolderText(start: Exclude<LaunchStart, { readonly kind: 'git-root' }>): string {
-  if (start.kind === 'dir') return `<git root>/${shown(start.path)}`
+  if (start.kind === 'dir') return fill(ARTIFACT.cardStartDir, { path: shown(start.path) })
 
-  return 'the folder the launcher is run from'
+  return ARTIFACT.cardStartHere
 }
 
 /**
@@ -270,9 +265,9 @@ function startRules(role: RoleSpec, start: LaunchStart): ScopeRule[] {
   const handoffs = `${handoffFolderOf(role.id)}/`
 
   return [
-    rule(`project settings (<git root>/.claude/settings.json) do not load: the session starts in ${folder}`, 'none'),
-    rule(`Additional directory: <git root> (start folder is ${folder})`, 'none'),
-    rule(`Handoffs (${handoffs}) and GSD .planning/ follow the start folder (${folder})`, 'none'),
+    rule(fill(ARTIFACT.cardNoProjectSettings, { folder }), 'none'),
+    rule(fill(ARTIFACT.cardAdditionalDir, { folder }), 'none'),
+    rule(fill(ARTIFACT.cardHandoffsFollow, { handoffs, folder }), 'none'),
   ]
 }
 
@@ -290,23 +285,21 @@ function rulesFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly string[],
 
   return [
     ...bypassRules(role),
-    rule(`Plugins: only ${pluginList} load (--setting-sources project whitelist)`, 'hard'),
+    rule(fill(ARTIFACT.cardPlugins, { plugins: pluginList }), 'hard'),
     bashRule(role),
     ...deniedDirRules(deny),
     ...ownDirRules(deny),
     ...skippedDirRules(deny),
     ...unusualDirRules(deny),
-    rule('Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', 'best-effort'),
+    rule(ARTIFACT.cardSecrets, 'best-effort'),
     ...mcpRules(deny, ctx.mcpRoute),
     ...partialMcpRules(ctx.setup),
-    rule('Skills: only the listed skills are linked', 'best-effort'),
-    rule(
-      `Loads .cadre/${role.id}/CLAUDE.md and its private instructions ` +
-        `(<config dir>/cadre/<repo>-<hash8>/${role.id}/instructions/)`,
-      'none',
-    ),
-    checkedRule('Autopilot, agent-fleet and the handoff skills are always available', 'hard', INFRA_CHECKS),
-    checkedRule(`Permission mode: ${role.permissionMode}`, 'hard', [{ kind: 'permission-mode', token: mode }]),
+    rule(ARTIFACT.cardSkills, 'best-effort'),
+    rule(fill(ARTIFACT.cardLoads, { id: role.id }), 'none'),
+    checkedRule(ARTIFACT.cardInfra, 'hard', INFRA_CHECKS),
+    checkedRule(fill(ARTIFACT.cardPermissionMode, { mode: role.permissionMode }), 'hard', [
+      { kind: 'permission-mode', token: mode },
+    ]),
     ...attendedRules(role, ctx),
     ...(ctx.launchStart.kind === 'git-root' ? projectMonitorRules(ctx.setup) : []),
     ...startRules(role, ctx.launchStart),
@@ -358,20 +351,20 @@ export function cardFor(role: RoleSpec, ctx: ScopeContext, plugins: readonly str
 export function scopeCardLines(card: ScopeCard): string[] {
   const framework = adapterOf(card.framework).name
   const lines = [
-    `Scope card: ${card.title} (${card.roleId})`,
-    `  framework: ${framework}; model: ${card.model} + ${card.effort}; permission mode: ${card.permissionMode}`,
-    `  skills: ${cardList(card.skills)}`,
-    `  MCP servers: ${cardList(card.mcp)}`,
-    `  not given skills: ${cardList(card.notGiven.skills)}`,
-    `  not given MCP: ${cardList(card.notGiven.mcp)}`,
-    `  hooks loaded: ${cardList(card.hooks.loaded)}`,
-    `  hooks loaded by project settings: ${cardList(card.hooks.loadedByProject)}`,
-    `  hooks not loaded: ${cardList(card.hooks.notLoaded)}`,
-    '  rules:',
-    ...card.rules.map(item => `    [${item.enforcement}] ${item.text}`),
-    '  decisions:',
-    ...card.chain.map(line => `    ${line}`),
-    `  memory: ${card.memoryPattern} (rendered at launch; <config dir> is CLAUDE_CONFIG_DIR, else ~/.claude)`,
+    fill(ARTIFACT.cardTitle, { title: card.title, id: card.roleId }),
+    fill(ARTIFACT.cardFramework, { framework, model: card.model, effort: card.effort, mode: card.permissionMode }),
+    fill(ARTIFACT.cardSkillsLine, { skills: cardList(card.skills) }),
+    fill(ARTIFACT.cardMcpLine, { servers: cardList(card.mcp) }),
+    fill(ARTIFACT.cardNotGivenSkills, { skills: cardList(card.notGiven.skills) }),
+    fill(ARTIFACT.cardNotGivenMcp, { servers: cardList(card.notGiven.mcp) }),
+    fill(ARTIFACT.cardHooksLoaded, { hooks: cardList(card.hooks.loaded) }),
+    fill(ARTIFACT.cardHooksByProject, { hooks: cardList(card.hooks.loadedByProject) }),
+    fill(ARTIFACT.cardHooksNotLoaded, { hooks: cardList(card.hooks.notLoaded) }),
+    ARTIFACT.cardRules,
+    ...card.rules.map(item => fill(ARTIFACT.cardRule, { enforcement: item.enforcement, text: item.text })),
+    ARTIFACT.cardDecisions,
+    ...card.chain.map(line => fill(ARTIFACT.cardDecision, { line })),
+    fill(ARTIFACT.cardMemory, { pattern: card.memoryPattern }),
   ]
 
   return lines.map(reportText)

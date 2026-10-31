@@ -6,7 +6,9 @@
  */
 import type { CompiledScope, LaunchStart, RoleSpec } from '../../types'
 import { clean } from '../core/text'
+import { ARTIFACT } from '../locales/artifact'
 import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 import { cadreStatePath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from '../paths'
 
 /** A word a shell reads as itself without quotes: letters, digits and `_ . / = : @ + -`. */
@@ -70,7 +72,7 @@ function rootWord(path: string): string {
 function startLines(start: LaunchStart, id: string): string[] {
   if (start.kind === 'git-root') return ['cd -- "$root"']
   if (start.kind === 'dir') return [`cd -- ${rootWord(start.path)}`]
-  const outside = refusal(`cadre: run .cadre/bin/${id} from a folder of its repo`)
+  const outside = refusal(fill(ARTIFACT.launcherOutside, { id }))
 
   return [`case "$(pwd -P)/" in "$root"/*) ;; *) ${outside} ;; esac`]
 }
@@ -90,7 +92,7 @@ function refusal(message: string): string {
  * /cadre start <id>`. A problem starts with a space unless it names files in the folder.
  */
 function runtimeMessage(id: string, problem: string): string {
-  return `cadre: .cadre/${id}/.runtime/${problem}: run /cadre start ${id}`
+  return fill(ARTIFACT.launcherRuntime, { id, problem })
 }
 
 /**
@@ -134,14 +136,13 @@ export const PROBE_PROMPT = PROMPTS.probe
  * The refusal of --probe when the init line does not hold one tools, skills and slash_commands list each (D-130,
  * decision #48).
  */
-const PROBE_INVENTORY_MESSAGE =
-  'cadre: the probe startup inventory does not hold one tools, skills and slash_commands list'
+const PROBE_INVENTORY_MESSAGE = ARTIFACT.launcherProbeInventory
 
 /**
  * The refusal of --probe when a tools, skills or slash_commands list holds a name its sed read cannot take whole: a
  * name with `]`, or with a character JSON escapes (#72 A1).
  */
-const PROBE_NAME_MESSAGE = 'cadre: the probe startup inventory holds a name the launcher cannot read'
+const PROBE_NAME_MESSAGE = ARTIFACT.launcherProbeName
 
 /**
  * The lines of the `--probe` branch after its print-mode run (D-112, D-130). They refuse when the run gave no init line
@@ -158,10 +159,10 @@ const PROBE_NAME_MESSAGE = 'cadre: the probe startup inventory holds a name the 
  * instead of comparing a cut list. The rule is the one parseInitEvent states for its null.
  */
 function probeVerdictLines(id: string): readonly string[] {
-  const noRule = runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} gave no rule`)
+  const noRule = runtimeMessage(id, fill(ARTIFACT.launcherNoRule, { file: PROBE_EXPECTATIONS_FILE }))
 
   return [
-    `  [ -n "$init" ] || ${refusal('cadre: the probe run gave no startup inventory')}`,
+    `  [ -n "$init" ] || ${refusal(ARTIFACT.launcherNoInventory)}`,
     '  cadre_once() { case "$init" in *"\\"$1\\":["*"\\"$1\\":["*) return 1 ;; ' +
       '*"\\"$1\\":["*) return 0 ;; *) return 1 ;; esac; }',
     `  for k in tools skills slash_commands; do cadre_once "$k" || ${refusal(PROBE_INVENTORY_MESSAGE)}; done`,
@@ -282,22 +283,22 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
   ]
   const fresh = [...renderInputs.map(rootWord), '"$rt"/settings.json', '"$rt"/mcp.json', expectations].join(' ')
   const jsonFiles = '"$rt"/settings.json "$rt"/mcp.json >/dev/null 2>&1'
-  const usage = errorLine(`cadre: usage: .cadre/bin/${id} [--probe]`)
+  const usage = errorLine(fill(ARTIFACT.launcherUsage, { id }))
   const probeRun =
     '  init=$(claude -p --max-turns 1 --output-format stream-json --verbose --no-session-persistence ' +
     `${probeFlags}${rootDir} -- ${shQuote(PROBE_PROMPT)} </dev/null | grep '"subtype":"init"' | ` +
     'head -n 1) || true'
   const parse = shQuote('for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))')
-  const foreign = `cadre: not the repo of role ${id}`
-  const missing = `cadre: .cadre/${id}/ROLE.md or kickoff.txt is missing: run /cadre regen ${id}`
-  const unrendered = `${runtimeMessage(id, ' is not rendered')} in the root session of the repo`
-  const empty = runtimeMessage(id, 'settings.json or mcp.json is missing or empty')
-  const invalid = refusal(runtimeMessage(id, ' holds a file that is not valid JSON'))
+  const foreign = fill(ARTIFACT.launcherForeign, { id })
+  const missing = fill(ARTIFACT.launcherMissing, { id })
+  const unrendered = fill(ARTIFACT.launcherUnrendered, { message: runtimeMessage(id, ARTIFACT.launcherNotRendered) })
+  const empty = runtimeMessage(id, ARTIFACT.launcherEmpty)
+  const invalid = refusal(runtimeMessage(id, ARTIFACT.launcherInvalid))
+  const expectationsMissing = fill(ARTIFACT.launcherExpectationsMissing, { file: PROBE_EXPECTATIONS_FILE })
   const lines = [
     '#!/bin/sh',
-    `# cadre launcher for role ${id}: checks claude and .cadre/${id}/.runtime/, then starts the session.`,
-    `# /cadre start ${id} renders .cadre/${id}/.runtime/ in the root session of the repo; ` +
-      'this script never renders it.',
+    fill(ARTIFACT.launcherHead, { id }),
+    fill(ARTIFACT.launcherHeadNote, { id }),
     'set -eu',
     ROOT_LINE,
     `[ -f ${rootWord(roleJsonPath(role.id))} ] || ${refusal(foreign)}`,
@@ -307,12 +308,10 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     'probe=0',
     `case $# in 0) ;; 1) [ "$1" = --probe ] || { ${usage}; exit 2; }; probe=1 ;; *) ${usage}; exit 2 ;; esac`,
     ...VERSION_CHECK_LINES,
-    `cadre_claude_ok || ${refusal(
-      `cadre: needs claude ${MIN_CLAUDE_VERSION_TEXT} or newer on PATH (see claude --version)`,
-    )}`,
+    `cadre_claude_ok || ${refusal(fill(ARTIFACT.launcherNeedsClaude, { version: MIN_CLAUDE_VERSION_TEXT }))}`,
     `[ -f ${stamp} ] || ${refusal(unrendered)}`,
     `for f in ${fresh}; do`,
-    `  if [ "$f" -nt ${stamp} ]; then ${errorLine(runtimeMessage(id, ' is older than the role files'))}; exit 1; fi`,
+    `  if [ "$f" -nt ${stamp} ]; then ${errorLine(runtimeMessage(id, ARTIFACT.launcherOlder))}; exit 1; fi`,
     'done',
     `[ -s "$rt"/settings.json ] && [ -s "$rt"/mcp.json ] || ${refusal(empty)}`,
     // The JSON check (D-129): jq when it is on PATH, else node, else one line that says the files were not
@@ -322,11 +321,11 @@ export function launcherText(role: RoleSpec, scope: CompiledScope, start: Launch
     'elif command -v node >/dev/null 2>&1; then',
     `  node -e ${parse} ${jsonFiles} || ${invalid}`,
     'else',
-    `  ${errorLine('cadre: (JSON not re-checked: no jq or node)')}`,
+    `  ${errorLine(ARTIFACT.launcherNoJsonCheck)}`,
     'fi',
     ...startLines(start, id),
     'if [ "$probe" = 1 ]; then',
-    `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, `${PROBE_EXPECTATIONS_FILE} is missing`))}`,
+    `  [ -s ${expectations} ] || ${refusal(runtimeMessage(id, expectationsMissing))}`,
     probeRun,
     ...probeVerdictLines(id),
     `${EXEC_CLAUDE} ${flags}${rootDir} -- "$(cat "$kick")"`,
