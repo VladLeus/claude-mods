@@ -54,6 +54,7 @@ const RENDER_STEP_TIMEOUT_MS = 10_000
 export async function isStepDone(host: HostIo, step: RenderStep): Promise<boolean> {
   if (step.kind === 'write') return host.write(step.path, step.text)
   const argv = renderArgv(step)
+  // Defensive: renderArgv is null only for a write, which returned above; the check narrows the type.
   if (argv === null) return false
   const run = await host.run(argv, { timeoutMs: RENDER_STEP_TIMEOUT_MS })
 

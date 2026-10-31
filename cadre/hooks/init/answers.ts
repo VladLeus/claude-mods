@@ -230,9 +230,6 @@ export const SAME_FOR_ALL = t('init.answers.sameForAll')
 /** The button that asks the question for each role in turn (D-86). */
 export const PER_ROLE = t('init.answers.perRole')
 
-/** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18); roles.ts owns the list. */
-export { EFFORTS }
-
 /** What separates a model from its effort in a typed answer: a plus with or without spaces, or spaces alone. */
 const MODEL_EFFORT_SEPARATOR = /\s*\+\s*|\s+/
 

@@ -189,11 +189,7 @@ export function parseInstructionsRecord(text: string): InstructionsRecord | null
   return { parts, partsNotGiven, memories }
 }
 
-/** One private step per role that has a private file, in the order given (privateFilesOf). */
+/** One private step per role, in the order given, with the role's private files (privateFilesOf). */
 export function privateSteps(roles: readonly PrivateRole[]): ApplyStep[] {
-  return roles.flatMap((role): ApplyStep[] => {
-    const files = privateFilesOf(role)
-
-    return files.length === 0 ? [] : [{ kind: 'private', path: role.folder, files }]
-  })
+  return roles.map((role): ApplyStep => ({ kind: 'private', path: role.folder, files: privateFilesOf(role) }))
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef } from '../../types'
+import { EFFORTS } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
 import {
@@ -8,7 +9,6 @@ import {
   ALL_OPTION,
   assignToRoles,
   cappedNames,
-  EFFORTS,
   envQuestion,
   INSTRUCTION_LABELS,
   mcpQuestion,

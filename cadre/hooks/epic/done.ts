@@ -380,6 +380,7 @@ export async function runEpicDone(
 ): Promise<string> {
   const key = epicKeyOf(options.key)
   const keySlug = key === null ? null : epicSlug(key, '')
+  // Defensive: a key that passed EPIC_KEY_PATTERN starts with a letter or digit, so its slug is never null.
   if (key === null || keySlug === null) return epicBadKeyReply(options.key)
   const guard = await repoGuard(io, 'epic')
   if (guard.kind === 'refuse') return guard.text

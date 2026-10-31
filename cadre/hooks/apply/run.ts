@@ -247,7 +247,7 @@ export async function writeSteps(
   host: HostIo,
   locations: InitLocations,
   steps: readonly ApplyStep[],
-  allowed: ReadonlySet<string> = new Set(),
+  allowed: ReadonlySet<string>,
 ): Promise<ApplyOutcome> {
   return (await runSteps(io, host, locations, steps, allowed)).outcome
 }

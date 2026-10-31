@@ -374,6 +374,7 @@ export async function runEpic(
 
   const slug = epicSlug(key, options.title)
   const keySlug = epicSlug(key, '')
+  // Defensive: a key that passed EPIC_KEY_PATTERN starts with a letter or digit, so neither slug is null.
   if (slug === null || keySlug === null) return epicBadKeyReply(options.key)
   if (!isEpicSlug(slug)) return epicBadNameReply(slug)
   const listed = await host.run(WORKTREE_LIST_ARGV(root), { timeoutMs: GIT_TIMEOUT_MS })

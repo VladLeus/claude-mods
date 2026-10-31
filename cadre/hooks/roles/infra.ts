@@ -80,15 +80,6 @@ export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
 const SECURITY_REVIEW_PATTERN = /(^|[-:])security-review$/i
 
 /**
- * Whether a skill name is a security-review skill (SECURITY_REVIEW_PATTERN). The skill table's security-review row uses
- * the same pattern (pinned by assign.test); since decision #39 no module calls this function, as the recommendations
- * name the claude-security and security-guidance plugins by their exact keys.
- */
-export function isSecurityReviewSkill(name: string): boolean {
-  return SECURITY_REVIEW_PATTERN.test(name)
-}
-
-/**
  * Which roles a skill goes to, by its name in any case (D-53), tried in order like MCP_ROLE_ROWS: `security-review`
  * goes to Security, so does the installed claude-security skill `claude-security:claude-security` (the whole name,
  * decision #39), and frontend and design skills go to FE. A name needs whole words (`-` or `:` around it, or the ends

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec } from '../../types'
+import { RESERVED_ROLE_IDS } from '../core/role-id'
 import { BIDI_OVERRIDE, slugMessage, ZERO_WIDTH_SPACE } from '../testkit'
 import { applyAdjust } from './adjust'
 import type { AdjustOp } from './adjust'
@@ -13,7 +14,6 @@ import {
   MAX_PURPOSE_CHARS,
   MAX_ROLES,
   MODEL_ALIASES,
-  RESERVED_ROLE_IDS,
   validateRoleId,
   validateRoles,
 } from './validate'

@@ -7,7 +7,6 @@ import {
   INFRA_PLUGINS,
   INFRA_SKILLS,
   INFRA_TOOLS,
-  isSecurityReviewSkill,
   MCP_ROLE_ROWS,
   SKILL_ROLE_ROWS,
 } from '../roles/infra'
@@ -364,19 +363,13 @@ describe('skill assignment', () => {
     ])
   })
 
-  test('isSecurityReviewSkill takes security-review as the whole last word, after a plugin or a dash', () => {
+  test('the security-review row takes security-review as the whole last word, after a plugin or a dash', () => {
     const matching = ['security-review', 'SECURITY-REVIEW', 'acme:security-review', 'my-security-review']
     const other = ['security-reviewer', 'notsecurity-review', 'security-review-x', 'review', '']
-
-    expect(matching.filter(name => !isSecurityReviewSkill(name))).toEqual([])
-    expect(other.filter(isSecurityReviewSkill)).toEqual([])
-  })
-
-  test('the security-review row of the table follows isSecurityReviewSkill', () => {
-    const names = ['security-review', 'Acme:Security-Review', 'my-security-review', 'security-reviewer', 'x-review']
     const row = SKILL_ROLE_ROWS[0]
 
-    expect(names.map(name => row?.pattern.test(name))).toEqual(names.map(isSecurityReviewSkill))
+    expect(matching.filter(name => row?.pattern.test(name) !== true)).toEqual([])
+    expect(other.filter(name => row?.pattern.test(name) === true)).toEqual([])
   })
 
   test('an installed claude-security skill goes to Security with no question (decision #39)', () => {

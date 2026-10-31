@@ -15,9 +15,6 @@ import { t } from '../locales/t'
 import { ROLE_TEMPLATE } from './template'
 import type { RoleTraits } from './template'
 
-/** Role ids a role cannot take; command.ts owns the list beside ROLE_ID_PATTERN (Pitfall 7). */
-export { RESERVED_ROLE_IDS }
-
 /** The most roles one team has; a longer list is refused (D-46). */
 export const MAX_ROLES = 12
 
