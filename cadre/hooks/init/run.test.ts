@@ -57,6 +57,7 @@ import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
+import { t } from '../locales/t'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
@@ -1408,6 +1409,16 @@ describe('instruction parts (G-02-1f)', () => {
       'warning: ~/.claude/big.md is over 256 KiB, not split: no role gets it',
       'warning: could not read CLAUDE.md: no role gets it',
     ])
+  })
+
+  test('an ignored CLAUDE_CONFIG_DIR is not shown again in the instructions block (WF-S3)', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, configDir: '.claude-alt' }
+    const run = memIo(partsWorld({ locations }), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const lines = run.shown.filter(block => block.key === 'instructions').flatMap(block => block.lines)
+
+    expect(lines).not.toHaveLength(0)
+    expect(lines.filter(line => line.includes(t('paths.configDirWarning')))).toEqual([])
   })
 })
 

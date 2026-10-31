@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionScan } from '../../../types'
 import { sha256Hex } from '../../core/hash'
-import { t } from '../../locales/t'
 import { contentContextLine, topicContextLine } from '../../init/stages/instructions'
 import { fallbackTopics, topicsPrompt } from '../../suggest/topics'
 import { emptySetupScan, entry, link, memIo, memWorld, RECOMMENDED, TOPICS } from '../../testkit'
@@ -103,15 +102,19 @@ describe('readInstructionFiles', () => {
     ])
   })
 
-  test('a relative or inside-repo CLAUDE_CONFIG_DIR warns once; the config folder is ~/.claude (D-238)', async () => {
-    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
-      const files = { [`${CONFIG}/CLAUDE.md`]: '# G\n', [`${configDir}/CLAUDE.md`]: '# Alt\n' }
-      const run = memIo(filesWorld(files), [])
-      const scan = await readInstructionFiles(run.io, { ...sourcesOf(), configDir })
-      const global = ['~/.claude/CLAUDE.md', 'G', 'global']
-      expect([placesOf(scan), scan.warnings]).toEqual([[global], [t('paths.configDirWarning')]])
-    }
-  })
+  test(
+    'a relative or inside-repo CLAUDE_CONFIG_DIR gives ~/.claude and no warning: ' +
+      'the setup scan of the run shows it (D-238, WF-S3)',
+    async () => {
+      for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+        const files = { [`${CONFIG}/CLAUDE.md`]: '# G\n', [`${configDir}/CLAUDE.md`]: '# Alt\n' }
+        const run = memIo(filesWorld(files), [])
+        const scan = await readInstructionFiles(run.io, { ...sourcesOf(), configDir })
+        const global = ['~/.claude/CLAUDE.md', 'G', 'global']
+        expect([placesOf(scan), scan.warnings]).toEqual([[global], []])
+      }
+    },
+  )
 
   test('imports are followed at most 3 levels deep', async () => {
     const run = memIo(

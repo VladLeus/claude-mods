@@ -29,6 +29,7 @@ import { MIN_CLAUDE_VERSION } from '../generate/launcher'
 import { repoGuard } from '../guards/repo'
 import { unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
+import { t } from '../locales/t'
 import { compileTeam, readTeam } from '../team'
 import {
   BIDI_OVERRIDE,
@@ -807,6 +808,14 @@ describe('runStart warnings and links (D-102)', () => {
     const { reply } = await startBe({ ...(await appliedWorld()), facts: UNPROVEN_FACTS })
 
     expect([reply.includes(USER_LINE), reply.includes(LOCAL_LINE)]).toEqual([false, true])
+  })
+
+  test('start shows an ignored CLAUDE_CONFIG_DIR once (WF-S3, D-238)', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, configDir: '.claude-alt' }
+    const { reply } = await startBe({ ...(await appliedWorld()), locations })
+    const count = reply.split('\n').filter(line => line.includes(t('paths.configDirWarning'))).length
+
+    expect(count).toBe(1)
   })
 
   test('the scan warnings are printed as regen prints them: an unreadable settings source is named', async () => {
