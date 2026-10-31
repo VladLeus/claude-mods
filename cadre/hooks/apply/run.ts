@@ -47,20 +47,15 @@ export const APPLIED_NONE_NOTE = t('apply.run.appliedNoneNote')
 /** The last line of a plain init or regen reply: what to run next to launch a role from the files written. */
 export const NEXT_STEP_NOTE = t('apply.run.nextStepNote')
 
-/** The start of the manifest-skipped warning; init and regen end it with the command to run again. */
-const MANIFEST_SKIPPED_START = t('apply.run.manifestSkippedStart')
-
 /**
  * The warning in an init reply when apply did not write the manifest because a file write before it failed or was
  * refused, so the manifest never claims a file that is not on the disk (LNCH-01, T-03-18).
  */
-export const MANIFEST_SKIPPED_NOTE = t('apply.run.manifestSkippedNote', {
-  manifestSkippedStart: MANIFEST_SKIPPED_START,
-})
+export const MANIFEST_SKIPPED_NOTE = t('apply.run.manifestSkippedNote')
 
 /** The manifest-skipped warning of a regen reply: re-running regen of the role is the narrower fix (A4). */
 export function regenManifestSkippedNote(id: string): string {
-  return t('apply.run.regenManifestSkippedNote', { manifestSkippedStart: MANIFEST_SKIPPED_START, id: reportText(id) })
+  return t('apply.run.regenManifestSkippedNote', { id: reportText(id) })
 }
 
 /**

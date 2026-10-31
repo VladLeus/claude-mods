@@ -79,11 +79,11 @@ export function writeProblem(
 ): string | null {
   const target = stats.get(path) ?? 'failed'
   const above = foldersAbove(path).map(folder => stats.get(folder) ?? 'failed')
-  const refused = t('apply.safety.writeProblem', { path: reportText(path) })
-  if (target === 'failed' || above.includes('failed')) return `${refused}${STAT_FAILED_REASON}`
-  if (!above.every(stat => isSafeFolder(stat, root))) return `${refused}${LINK_REASON}`
-  if (target !== 'absent' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
-  if (!isSafeTarget(target, root)) return `${refused}${LINK_REASON}`
+  const refused = (reason: string): string => t('apply.safety.refusedWrite', { path: reportText(path), reason })
+  if (target === 'failed' || above.includes('failed')) return refused(STAT_FAILED_REASON)
+  if (!above.every(stat => isSafeFolder(stat, root))) return refused(LINK_REASON)
+  if (target !== 'absent' && !target.isLink && target.kind === 'dir') return refused(FOLDER_REASON)
+  if (!isSafeTarget(target, root)) return refused(LINK_REASON)
 
   return null
 }
@@ -126,15 +126,15 @@ export function listedLinkProblem(
   stats: ReadonlyMap<string, WriteStat>,
   listings: ReadonlyMap<string, readonly PortEntry[] | null>,
 ): string | null {
-  const refused = t('apply.safety.listedLinkProblem', { path: reportText(path) })
+  const refused = (reason: string): string => t('apply.safety.refusedWrite', { path: reportText(path), reason })
   for (const entryPath of [...foldersAbove(path), path]) {
     const folder = folderOf(entryPath)
     const entries = listings.get(folder) ?? null
     if (entries === null && folder === '') continue
     if (entries === null && stats.get(folder) === 'absent') return null
-    if (entries === null) return `${refused}${LIST_FAILED_REASON}`
+    if (entries === null) return refused(LIST_FAILED_REASON)
     const name = entryPath.slice(folder === '' ? 0 : folder.length + 1)
-    if (entries.some(entry => entry.name === name && entry.isLink)) return `${refused}${LISTED_LINK_REASON}`
+    if (entries.some(entry => entry.name === name && entry.isLink)) return refused(LISTED_LINK_REASON)
   }
 
   return null
@@ -272,16 +272,17 @@ function privateListingProblem(way: readonly string[], check: PrivateWriteCheck)
  */
 export function privateWriteProblem(path: string, check: PrivateWriteCheck): string | null {
   const { home, root, configDir } = check.locations
-  const refused = t('apply.safety.privateWriteProblem', { path: displayPath(path, home, root, configDir) })
+  const refused = (reason: string): string =>
+    t('apply.safety.refusedWrite', { path: displayPath(path, home, root, configDir), reason })
   const folder = privateFolderOf(path)
-  if (folder === null || !check.allowed.has(path)) return `${refused}${OUTSIDE_REASON}`
+  if (folder === null || !check.allowed.has(path)) return refused(OUTSIDE_REASON)
   const way = privateWay(folder, path)
   const stats = way.map(onWay => check.stats.get(onWay) ?? 'failed')
-  if (stats.includes('failed')) return `${refused}${STAT_FAILED_REASON}`
+  if (stats.includes('failed')) return refused(STAT_FAILED_REASON)
   const listed = privateListingProblem(way, check)
-  if (listed !== null) return `${refused}${listed}`
+  if (listed !== null) return refused(listed)
   const target = stats.at(-1)
-  if (typeof target === 'object' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
+  if (typeof target === 'object' && !target.isLink && target.kind === 'dir') return refused(FOLDER_REASON)
 
   return null
 }

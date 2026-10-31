@@ -44,7 +44,7 @@ export const MARKETPLACE_ADD_ARGV: readonly string[] = Object.freeze([
  */
 export function installFailureText(key: string, isMarketplaceFailed: boolean): string {
   const shown = reportText(key)
-  const install = t('apply.installs.installFailureText', { shown })
+  const install = pluginInstallArgv(shown).join(' ')
   const add = t('apply.installs.installFailureText2', { marketplaceAddArgv: MARKETPLACE_ADD_ARGV.join(' ') })
 
   return t('apply.installs.installFailureText3', { shown, install, value: isMarketplaceFailed ? add : '' })
@@ -73,8 +73,7 @@ const PYTHON_VERSION_LINE = /^Python (\d+)\.(\d+)/
  */
 export function pythonProblem(run: HostRun | null): string | null {
   const needs = (why: string): string =>
-    t('apply.installs.pythonProblem', { why }) +
-    pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' ')
+    t('apply.installs.pythonProblem', { why, command: pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' ') })
   if (run === null || run.exitCode !== 0) return needs(t('apply.installs.pythonProblem2'))
   const firstLine = (text: string): string | undefined => text.split(/\r?\n/).find(line => line.trim() !== '')
   const line = firstLine(run.stdout) ?? firstLine(run.stderr)
@@ -98,6 +97,7 @@ export function noHomeInstallText(key: string): string {
   return (
     t('apply.installs.noHomeInstallText', {
       shown,
+      command: pluginInstallArgv(shown).join(' '),
     })
   )
 }

@@ -514,9 +514,11 @@ export const EN = Object.freeze({
 
   'apply.run.appliedNoneNote': 'Applied: nothing to write; every file is up to date.',
   'apply.run.nextStepNote': 'Next: run /cadre start <id> to launch a role.',
-  'apply.run.manifestSkippedStart': '.cadre/manifest.json was not written because a file above was not written: run ',
-  'apply.run.manifestSkippedNote': '{manifestSkippedStart}/cadre init again.',
-  'apply.run.regenManifestSkippedNote': '{manifestSkippedStart}/cadre regen {id} again.',
+  'apply.run.manifestSkippedNote':
+    '.cadre/manifest.json was not written because a file above was not written: run /cadre init again.',
+  'apply.run.regenManifestSkippedNote':
+    `.cadre/manifest.json was not written because a file above was not written: ${
+    ''}run /cadre regen {id} again.`,
   'apply.run.privateFoldersUnknownWarning':
     `the private files of {map} were not written: their role memory folders are unknown (no home folder, ${
     ''}or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)`,
@@ -525,17 +527,16 @@ export const EN = Object.freeze({
   'apply.run.appliedLines2': 'could not make {pathText} executable: run chmod 755 {pathText}',
   'apply.run.appliedLines3': 'warning: {warning}',
 
-  'apply.installs.installFailureText': 'claude plugin install {shown}',
   'apply.installs.installFailureText2':
     ' (if the claude-plugins-official marketplace is missing, first run: {marketplaceAddArgv})',
   'apply.installs.installFailureText3': 'could not install {shown}: run it yourself: {install}{value}',
   'apply.installs.pythonProblem':
-    'claude-security was not installed: it needs Python 3.9 or newer on PATH ({why}): install it, then run: ',
+    'claude-security was not installed: it needs Python 3.9 or newer on PATH ({why}): install it, then run: {command}',
   'apply.installs.pythonProblem2': 'python3 was not found',
   'apply.installs.pythonProblem3': 'python3 --version says nothing',
   'apply.installs.pythonProblem4': 'python3 --version says {line}',
   'apply.installs.noHomeInstallText':
-    'could not install {shown}: no home folder is known to run it from: run it yourself: claude plugin install {shown}',
+    'could not install {shown}: no home folder is known to run it from: run it yourself: {command}',
 
   'apply.hunks.hunkFailureLine': 'the {file} change {key}',
   'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',
@@ -555,13 +556,11 @@ export const EN = Object.freeze({
   'apply.safety.linkReason': 'it or a folder above it is a link, or not inside the repo',
   'apply.safety.folderReason': 'it is a folder',
   'apply.safety.statFailedReason': 'it or a folder above it could not be checked (a stat failed)',
-  'apply.safety.writeProblem': 'refused to write {path}: ',
+  'apply.safety.refusedWrite': 'refused to write {path}: {reason}',
   'apply.safety.listedLinkReason': 'it or a folder above it is listed as a link',
   'apply.safety.listFailedReason': 'it or a folder above it could not be checked (a folder listing failed)',
-  'apply.safety.listedLinkProblem': 'refused to write {path}: ',
   'apply.safety.chmodProblem': '{path} was not made executable: its write was refused or failed',
   'apply.safety.outsideReason': 'outside the repo and the role memory folders',
-  'apply.safety.privateWriteProblem': 'refused to write {path}: ',
 
   'regen.review.yes': 'Yes',
   'regen.review.no': 'No',
@@ -868,7 +867,7 @@ export const EN = Object.freeze({
   'epic.lookup.epicNoWorktreeList':
     'cadre epic could not list the worktrees and epic branches from git, so it stopped before creating anything.',
   'epic.lookup.epicManyWorktreesReply':
-    'cadre epic reuses one worktree per key, but this key has more than one, so it stopped: ',
+    'cadre epic reuses one worktree per key, but this key has more than one, so it stopped: {paths}',
   'epic.lookup.epicManyBranchesReply':
     `cadre epic adds a worktree back on one kept branch per key, but this key has more than one and no ${
     ''}worktree, so it stopped: {branches}`,

@@ -76,8 +76,7 @@ export const EPIC_NO_WORKTREE_LIST = t('epic.lookup.epicNoWorktreeList')
  * it, so the reply names them all, cleaned.
  */
 export function epicManyWorktreesReply(paths: readonly string[]): string {
-  return t('epic.lookup.epicManyWorktreesReply') +
-  reportText(paths.join(', '))
+  return t('epic.lookup.epicManyWorktreesReply', { paths: reportText(paths.join(', ')) })
 }
 
 /**
