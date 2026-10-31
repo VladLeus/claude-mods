@@ -304,13 +304,21 @@ function instructedDone(state: InitState, instructed: Instructed): InitState {
 /**
  * The content consent (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on its second line
  * (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first, the Instructions
- * chip, the files and memories found by name as its own context (instructionsContext, D-236), and
- * CONTENT_DISMISSED_REASON for a dismissal.
+ * chip, the files and memories found by name as its own context (instructionsContext, D-236), the repo by the folder
+ * name of `root` (D-226), and CONTENT_DISMISSED_REASON for a dismissal.
  */
-function contentAsk(setup: SetupScan, repo: RepoNames): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+function contentAsk(
+  setup: SetupScan,
+  repo: RepoNames,
+  root: string,
+): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   return {
     question: withContext(CONTENT_QUESTION, contentContextLine(setup, repo)),
-    spec: { options: CONTENT_OPTIONS, header: ASK_HEADERS.instructions, context: instructionsContext(setup, repo) },
+    spec: {
+      options: CONTENT_OPTIONS,
+      header: ASK_HEADERS.instructions,
+      context: instructionsContext(setup, repo, root),
+    },
     parse: parseContentConsent,
     accepts: quotedLabels(CONTENT_OPTIONS),
     dismissedReason: CONTENT_DISMISSED_REASON,
@@ -325,7 +333,7 @@ function contentAsked(
   tries: number,
   question: string | null,
 ): InitState {
-  const ask = contentAsk(input.setup, repo)
+  const ask = contentAsk(input.setup, repo, input.locations.root)
   const asking: InitState = { ...state, sub: { kind: 'content', tries, repo } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -342,7 +350,7 @@ function grouped(state: InitState, keep: InstructionHandout, next: MemoryNext): 
 
 /** The whole-file questions of D-63 (memoryEnter), handed out as `keep`. */
 function wholeFiles(state: InitState, input: InstructionInput, keep: InstructionHandout): InitState {
-  return grouped(state, keep, memoryEnter(input.roles, input.setup))
+  return grouped(state, keep, memoryEnter(input.roles, input.setup, input.locations.root))
 }
 
 /**
@@ -448,7 +456,7 @@ function afterContent(
   sub: { readonly tries: number; readonly repo: RepoNames },
   answer: string | null,
 ): InitState {
-  const next = choiceAnswer(contentAsk(input.setup, sub.repo), sub, answer)
+  const next = choiceAnswer(contentAsk(input.setup, sub.repo, input.locations.root), sub, answer)
   if (next.kind === 'again') return contentAsked(state, input, sub.repo, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return wholeFiles(state, input, WHOLE)
@@ -499,7 +507,9 @@ function instructionsAnswer(state: InitState, answer: Answer): InitState {
       return partsHandedOut(state, input, { scan, topics, recommended }, handoutAnswer(sub.cursor, answer.text))
     }
     case 'memory':
-      return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text))
+      const root = input.locations.root
+
+      return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text, root))
     default:
       return stageFailed(state)
   }

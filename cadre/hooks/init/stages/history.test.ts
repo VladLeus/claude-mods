@@ -111,7 +111,7 @@ function historyAt(locations: InitLocations = DEFAULT_LOCATIONS): InitState {
 }
 
 /** The history question's own context (D-236): the scan block of an empty repo and setup, with no warning. */
-const SCAN_ASK_CONTEXT = { title: 'Scan', lines: scanSummaryLines(repoScan(), emptySetupScan()), kind: 'scan' }
+const SCAN_ASK_CONTEXT = { title: 'Scan', lines: scanSummaryLines(repoScan(), emptySetupScan(), '/repo'), kind: 'scan' }
 
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
@@ -391,7 +391,7 @@ describe('the history stage (D-230)', () => {
     const repo = repoScan({ warnings: ['could not list src'] })
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
     const state = historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, gathered }))
-    const lines = [...scanSummaryLines(repo, emptySetupScan()), 'warning: could not list src']
+    const lines = [...scanSummaryLines(repo, emptySetupScan(), '/repo'), 'warning: could not list src']
     const asking = nextStage(state, listed(ONE_SESSION))
     expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan' })
   })

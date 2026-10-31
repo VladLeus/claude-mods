@@ -106,7 +106,7 @@ describe('the guard and scan stages (D-230)', () => {
     const gathered = await scansOf(gitWorld())
     const next = nextStage(state, { kind: 'io', result: { id: 'scan', result: gathered } })
     const warnings = scanWarningLines(scanWarnings(DEFAULT_LOCATIONS, gathered))
-    const lines = [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings]
+    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, '/repo'), ...warnings]
     expect(next.stage).toBe('history')
     expect(next.draft.gathered).toBe(gathered)
     expect(next.outputs).toEqual([{ kind: 'show', block: { key: 'scan', lines } }])

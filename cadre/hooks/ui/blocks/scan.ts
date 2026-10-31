@@ -7,6 +7,7 @@
 import type { RepoScan, ScanKind, SetupScan } from '../../../types'
 import { cardList, idsOrNone, shown } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
+import { screenPath } from '../../paths'
 import { undecidedFacts } from '../../scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from '../../scan/walk'
 
@@ -97,10 +98,11 @@ function pluginSummary(plugins: readonly string[]): string {
  * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
  * folder only in part or stopped at its safety cap, D-137), then the user setup as names and counts only. Each setup
  * line gives its counts first and its name list last, and a list shows 12 names cleaned and capped, then counts the
- * rest, so a long list never pushes a count past the 240 code points a line keeps (B2). No setting value, file content
- * or warning is part of it.
+ * rest, so a long list never pushes a count past the 240 code points a line keeps (B2). A CLAUDE.md file in the repo
+ * is named with the folder name of `root` (screenPath, D-226). No setting value, file content or warning is part of
+ * it.
  */
-export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
+export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string): string[] {
   const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
   const sides = t('ui.scan.sides', {
     findingLabels: findingLabels(repo, 'fe'),
@@ -121,7 +123,7 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
     t('ui.scan.setupFiles', {
       globalMd,
       count: setup.memoryFiles.length,
-      map: cardList(setup.claudeMd.map(file => shown(file)), SCREEN_LIST_WORDS),
+      map: cardList(setup.claudeMd.map(file => shown(screenPath(file, root))), SCREEN_LIST_WORDS),
     }),
   ]
 }

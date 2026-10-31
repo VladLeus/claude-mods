@@ -96,7 +96,7 @@ describe('question contexts (D-203, D-236)', () => {
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup }
     expect(scanContext(DEFAULT_LOCATIONS, gathered)).toEqual({
       title: 'Scan',
-      lines: [...scanSummaryLines(repo, setup), 'warning: could not list src'],
+      lines: [...scanSummaryLines(repo, setup, '/repo'), 'warning: could not list src'],
       kind: 'scan',
     })
   })
@@ -137,12 +137,12 @@ describe('question contexts (D-203, D-236)', () => {
 
   test('instructionsContext lists the files and memories found by name, MEMORY.md left out', () => {
     const setup = { hasGlobalClaudeMd: true, claudeMd: ['<repo>/CLAUDE.md'], memoryFiles: ['MEMORY.md', 'squad.md'] }
-    expect(instructionsContext(setup, { rules: ['security.md'], hasAgentsMd: true })).toEqual({
+    expect(instructionsContext(setup, { rules: ['security.md'], hasAgentsMd: true }, '/repo')).toEqual({
       title: 'Instruction files',
       lines: [
         'Files found by name (nothing is read before a yes):',
         '  ~/.claude/CLAUDE.md',
-        '  <repo>/CLAUDE.md',
+        '  repo/CLAUDE.md',
         '  .claude/rules/security.md',
         '  AGENTS.md',
         'Memories:',
@@ -151,7 +151,7 @@ describe('question contexts (D-203, D-236)', () => {
       kind: 'instructions',
     })
     const none = { hasGlobalClaudeMd: false, claudeMd: [], memoryFiles: [] }
-    expect(instructionsContext(none, { rules: null, hasAgentsMd: false }).lines).toEqual([
+    expect(instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo').lines).toEqual([
       'Files found by name (nothing is read before a yes):',
       '  none',
       'Memories:',

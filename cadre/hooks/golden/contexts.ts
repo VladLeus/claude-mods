@@ -617,7 +617,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "Files found by name (nothing is read before a yes):",
           "  ~/.claude/CLAUDE.md",
-          "  <repo>/CLAUDE.md",
+          "  repo/CLAUDE.md",
           "Memories:",
           "  notes.md"
         ],
@@ -652,7 +652,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Project CLAUDE.md",
         "lines": [
-          "<repo>/CLAUDE.md"
+          "repo/CLAUDE.md"
         ],
         "kind": "memory-group"
       },

@@ -19,9 +19,9 @@ async function groupsOver(
   roles: readonly RoleSpec[],
   setup: SetupScan,
 ): Promise<StepResult<readonly RoleSpec[]>> {
-  let next = memoryEnter(roles, setup)
+  let next = memoryEnter(roles, setup, '/repo')
   while (next.kind === 'ask') {
-    next = memoryAnswer(roles, setup, next.cursor, await askOnce(io, next.question, next.spec))
+    next = memoryAnswer(roles, setup, next.cursor, await askOnce(io, next.question, next.spec), '/repo')
   }
 
   return next.kind === 'done' ? { kind: 'accepted', value: next.roles } : next
@@ -34,7 +34,7 @@ describe('memoryStep', () => {
   const GLOBAL_QUESTION =
     'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)'
   const MEMORY_QUESTION = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
-  const PROJECT_QUESTION = 'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)'
+  const PROJECT_QUESTION = 'Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)'
   /** A memory question as asked: the team's role ids and the never-shown promise under it (D-136). */
   const asAsked = (question: string): string => withContext(question, memoryContextLine(roles))
 
@@ -51,7 +51,7 @@ describe('memoryStep', () => {
     expect(run.specs).toEqual([
       spec('Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
       spec('Auto-memories', ['a.md']),
-      spec('Project CLAUDE.md', ['<repo>/CLAUDE.md']),
+      spec('Project CLAUDE.md', ['repo/CLAUDE.md']),
     ])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
       ['pm', ['global-claude-md', 'project-claude-md']],
@@ -68,7 +68,7 @@ describe('memoryStep', () => {
     const memories = emptySetupScan({ memoryFiles: ['a.md', 'b.md'], claudeMd: ['<repo>/CLAUDE.md'] })
     const run = memIo(memWorld({}), ['None', 'None'])
     valueOf(await groupsOver(run.io, roles, memories))
-    expect(run.specs.map(spec => spec.context?.lines)).toEqual([['a.md', 'b.md'], ['<repo>/CLAUDE.md']])
+    expect(run.specs.map(spec => spec.context?.lines)).toEqual([['a.md', 'b.md'], ['repo/CLAUDE.md']])
   })
 
   test('a role keeps the groups it was given in the order global, auto-memory, project', async () => {
@@ -128,7 +128,7 @@ describe('the whole-file question cursor (D-230)', () => {
   const roles = proposeRoles(FULL_SCAN).roles
 
   test('memoryEnter asks the first group the scan found, and with none found the roles get no group', () => {
-    const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }))
+    const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }), '/repo')
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       withContext(question, memoryContextLine(roles)),
@@ -139,7 +139,7 @@ describe('the whole-file question cursor (D-230)', () => {
         acceptsTyped: true,
       },
     ])
-    const none = memoryEnter(roles, emptySetupScan())
+    const none = memoryEnter(roles, emptySetupScan(), '/repo')
     expect(none.kind === 'done' ? none.roles.map(role => role.instructions) : none).toEqual(roles.map(() => []))
   })
 })

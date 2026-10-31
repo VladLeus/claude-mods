@@ -433,6 +433,23 @@ export function pathFromDisplay(
 }
 
 /**
+ * A path in display form as a screen shows it (D-226): a leading `<repo>` becomes the folder name of the repo root,
+ * cleaned as any shown value, so `<repo>/CLAUDE.md` reads `trainual/CLAUDE.md`; a root of `/` has no folder name, so
+ * there the path reads `/CLAUDE.md` and a bare `<repo>` reads `/` (ASKED #21). Any other form is given back as it is.
+ * Only screen builders call it: warnings, prompts to the model and generated files keep the `<repo>` mask.
+ */
+export function screenPath(display: string, root: string): string {
+  const mask = REPO_PREFIX.slice(0, -1)
+  if (display !== mask && !display.startsWith(REPO_PREFIX)) return display
+  const trimmed = trimSlash(root)
+  const name = clean(trimmed.slice(trimmed.lastIndexOf('/') + 1))
+  const rest = display.slice(mask.length)
+  if (name === '') return rest === '' ? '/' : rest
+
+  return `${name}${rest}`
+}
+
+/**
  * Whether a repo-relative path is a folder whose real path lies inside the repo (isDirInsideRoot): a link anywhere in
  * the path that leads out, a file, and a folder whose real path the host could not give are not. The launcher folder
  * question checks a typed folder with it, and regen checks the folder `.cadre/cadre.json` stores.

@@ -1515,7 +1515,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          "Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)",
+          "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)",
           "Roles: pm, tl, security. Their content is never shown or committed."
         ],
         "header": "Memory",
@@ -1639,7 +1639,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
           "User setup (names only):",
           "  plugins: 0",
           "  skills: 1; agents: 0; MCP servers: sentry",
-          "  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: <repo>/CLAUDE.md",
+          "  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: repo/CLAUDE.md",
           "warning: could not list the repo root (treated as unknown)"
         ]
       },

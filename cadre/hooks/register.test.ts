@@ -1973,10 +1973,11 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const own = previewOf(OWN_SKILLS_ENTRY_PREFIX)
     const files = previewOf('Read your CLAUDE.md files')
     expect([own.split('\n')[0], files.split('\n')[0]]).toEqual(['**Your own skills**', '**Instruction files**'])
-    expect([own.includes('deploy-notes: Write the release notes'), files.includes('<repo>/CLAUDE.md')]).toEqual([
+    expect([own.includes('deploy-notes: Write the release notes'), files.includes('repo/CLAUDE.md')]).toEqual([
       true,
       true,
     ])
+    expect(files.includes('<repo>/')).toBe(false)
   })
 
   test('a question that takes no typed answer gets no Describe your own and no hint (D-234)', async ($, on) => {

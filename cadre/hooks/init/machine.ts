@@ -77,7 +77,7 @@ const scanStage: StageDef = Object.freeze({
     if (answer.kind !== 'io' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
     const gathered = answer.result.result
     const warnings = scanWarningLines(scanWarnings(locations, gathered))
-    const lines = [...scanSummaryLines(gathered.repo, gathered.setup), ...warnings]
+    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, locations.root), ...warnings]
     const detections = detectAll(gathered.facts.facts)
     const draft = {
       ...state.draft,

@@ -23,7 +23,7 @@ import { redactedText } from '../../core/redact'
 import { cardList, clean, idsOrNone, MAX_CARD_LIST, pad, shown } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { SCREEN_LIST_WORDS, t } from '../../locales/t'
-import { launcherPath } from '../../paths'
+import { launcherPath, screenPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
 import type { Gathered } from '../../scan/gather'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
@@ -102,7 +102,7 @@ function cappedRows(items: readonly string[]): string[] {
  */
 export function scanContext(locations: InitLocations, gathered: Gathered): AskContext {
   const lines = [
-    ...scanSummaryLines(gathered.repo, gathered.setup),
+    ...scanSummaryLines(gathered.repo, gathered.setup, locations.root),
     ...scanWarningLines(scanWarnings(locations, gathered)),
   ]
 
@@ -168,15 +168,17 @@ function foundRows(items: readonly string[]): string[] {
 /**
  * The context of the content consent (D-236): the instruction files and the memories init found, by name only, before
  * anything is read: the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules` and
- * AGENTS.md, then the memory files, MEMORY.md in any letter case left out, as the hand-out never offers it.
+ * AGENTS.md, then the memory files, MEMORY.md in any letter case left out, as the hand-out never offers it. A file in
+ * the repo is named with the folder name of `root` (screenPath, D-226).
  */
 export function instructionsContext(
   setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
   repo: Pick<InstructionSources, 'rules' | 'hasAgentsMd'>,
+  root: string,
 ): AskContext {
   const files = [
     ...(setup.hasGlobalClaudeMd ? [GLOBAL_CLAUDE_MD_TEXT] : []),
-    ...setup.claudeMd,
+    ...setup.claudeMd.map(file => screenPath(file, root)),
     ...(repo.rules ?? []).map(rule => `.claude/rules/${rule}`),
     ...(repo.hasAgentsMd ? ['AGENTS.md'] : []),
   ]

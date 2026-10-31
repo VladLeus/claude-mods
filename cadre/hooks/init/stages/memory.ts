@@ -9,6 +9,7 @@
  */
 import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
 import { t } from '../../locales/t'
+import { screenPath } from '../../paths'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { memoryGroupContext } from '../../ui/blocks/context'
@@ -43,16 +44,17 @@ export function memoryContextLine(roles: readonly RoleSpec[]): string {
 /**
  * The names the question of an instruction group shows, or null when the scan did not find the group, so it is not
  * asked: none for the global CLAUDE.md, which its label names, the file names of the auto-memories, and the CLAUDE.md
- * files of the chain in display form (D-63, D-100). These are names only: no file is read.
+ * files of the chain as a screen shows them, the repo by its folder name (screenPath, D-226) (D-63, D-100). These are
+ * names only: no file is read.
  */
-function groupNames(group: InstructionGroup, setup: SetupScan): readonly string[] | null {
+function groupNames(group: InstructionGroup, setup: SetupScan, root: string): readonly string[] | null {
   switch (group) {
     case 'global-claude-md':
       return setup.hasGlobalClaudeMd ? [] : null
     case 'auto-memory':
       return setup.memoryFiles.length > 0 ? setup.memoryFiles : null
     case 'project-claude-md':
-      return setup.claudeMd.length > 0 ? setup.claudeMd : null
+      return setup.claudeMd.length > 0 ? setup.claudeMd.map(file => screenPath(file, root)) : null
   }
 }
 
@@ -94,12 +96,13 @@ function groupAsk(
 function groupAt(
   roles: readonly RoleSpec[],
   setup: SetupScan,
+  root: string,
   from: number,
   given: ReadonlyMap<InstructionGroup, readonly string[]>,
 ): MemoryNext {
-  const at = INSTRUCTION_ORDER.findIndex((group, index) => index >= from && groupNames(group, setup) !== null)
+  const at = INSTRUCTION_ORDER.findIndex((group, index) => index >= from && groupNames(group, setup, root) !== null)
   const group = INSTRUCTION_ORDER[at]
-  const names = group === undefined ? null : groupNames(group, setup)
+  const names = group === undefined ? null : groupNames(group, setup, root)
   if (group === undefined || names === null) {
     const instructed = roles.map(role => ({
       ...role,
@@ -119,8 +122,8 @@ function groupAt(
  * group and its files and asks which roles get it (groupAsk); a group the scan did not find is not asked, and with none
  * found every role gets no group. No file is read and no content is shown; the roles it is given never change.
  */
-export function memoryEnter(roles: readonly RoleSpec[], setup: SetupScan): MemoryNext {
-  return groupAt(roles, setup, 0, new Map())
+export function memoryEnter(roles: readonly RoleSpec[], setup: SetupScan, root: string): MemoryNext {
+  return groupAt(roles, setup, root, 0, new Map())
 }
 
 /**
@@ -134,9 +137,10 @@ export function memoryAnswer(
   setup: SetupScan,
   cursor: MemoryCursor,
   answer: string | null,
+  root: string,
 ): MemoryNext {
   const group = INSTRUCTION_ORDER[cursor.at]
-  const names = group === undefined ? null : groupNames(group, setup)
+  const names = group === undefined ? null : groupNames(group, setup, root)
   if (group === undefined || names === null) return { kind: 'cancelled', reason: MEMORY_DISMISSED_REASON }
   const ask = groupAsk(group, names, roles)
   const next = choiceAnswer(ask, cursor, answer)
@@ -145,5 +149,5 @@ export function memoryAnswer(
   }
   if (next.kind === 'cancelled') return next
 
-  return groupAt(roles, setup, cursor.at + 1, new Map([...cursor.given, [group, next.value]]))
+  return groupAt(roles, setup, root, cursor.at + 1, new Map([...cursor.given, [group, next.value]]))
 }

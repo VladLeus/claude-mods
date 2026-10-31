@@ -15,6 +15,7 @@ import {
   projectFolderOf,
   relativeTo,
   resolvedPath,
+  screenPath,
   trimSlash,
 } from './paths'
 import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry } from './testkit'
@@ -130,6 +131,24 @@ describe('projectFolderOf', () => {
   test('projectFolderOf: <userDir>/projects/<the root mangled>, with the user folder as given (no trim)', () => {
     expect(projectFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
     expect(projectFolderOf('/cfg/', '/a b')).toBe('/cfg//projects/-a-b')
+  })
+})
+
+describe('screenPath (D-226)', () => {
+  test('a leading <repo> shows the folder name of the root; another form, or <repo> inside a pattern, stays', () => {
+    expect(screenPath('<repo>/CLAUDE.md', '/home/u/code/trainual')).toBe('trainual/CLAUDE.md')
+    expect(screenPath('<repo>', '/home/u/code/trainual/')).toBe('trainual')
+    expect(screenPath('~/.claude/CLAUDE.md', '/repo')).toBe('~/.claude/CLAUDE.md')
+    expect(screenPath('<config dir>/cadre/<repo>-<hash8>/', '/repo')).toBe('<config dir>/cadre/<repo>-<hash8>/')
+    expect(screenPath('<repository>/x', '/repo')).toBe('<repository>/x')
+  })
+
+  test('with a root of /, <repo>/CLAUDE.md reads /CLAUDE.md and a bare <repo> reads / (ASKED #21)', () => {
+    expect([screenPath('<repo>/CLAUDE.md', '/'), screenPath('<repo>', '/')]).toEqual(['/CLAUDE.md', '/'])
+  })
+
+  test('the folder name is cleaned as any shown value', () => {
+    expect(screenPath('<repo>/CLAUDE.md', `/home/u/re${BIDI_OVERRIDE}po`)).toBe('repo/CLAUDE.md')
   })
 })
 
