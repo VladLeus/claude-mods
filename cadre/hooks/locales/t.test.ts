@@ -1,11 +1,43 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { sha256Hex } from '../core/hash'
 import { NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import { skillUsesText } from '../init/answers'
 import { ARTIFACT } from './artifact'
 import { EN } from './en'
 import { PROMPTS } from './prompts'
 import { fill, setMissingSlotSink, t, templateSlots, tn } from './t'
+
+/**
+ * The 24 table values that were `+` chains of single-line literals (WE-S6), as [table, key]: the EN keys, then the
+ * ARTIFACT keys, then the PROMPTS key. Their joined bytes are pinned, so a rewrite of their source form keeps them.
+ */
+const CHAINED: readonly (readonly [Readonly<Record<string, string>>, string])[] = [
+  [EN, 'init.notInteractive'],
+  [EN, 'init.roles.adjustQuestion'],
+  [EN, 'init.improverInstall.improverInstallQuestion'],
+  [EN, 'init.instructions.contentQuestion'],
+  [EN, 'init.review.changeRefusal'],
+  [EN, 'ui.context.securityPluginNotes'],
+  [EN, 'start.gatherUser.startNoGitDir'],
+  [EN, 'epic.done.roleProblems'],
+  [EN, 'guard.refusals.homeRootReply'],
+  [EN, 'guard.refusals.fileSystemRootReply'],
+  [EN, 'framework.contract.unsupportedMarkers'],
+  [EN, 'framework.gsd.adapter.gsdAdapter'],
+  [EN, 'framework.superpowers.adapter.superpowersAdapter'],
+  [EN, 'framework.superpowers.adapter.superpowersAdapter5'],
+  [ARTIFACT, 'roleMdNoteLine'],
+  [ARTIFACT, 'gsdGateBlocker'],
+  [ARTIFACT, 'gsdGateShip'],
+  [ARTIFACT, 'gsdKickoffStart'],
+  [ARTIFACT, 'spGateBrainstorm'],
+  [ARTIFACT, 'spGateOutward'],
+  [ARTIFACT, 'spDoneLine'],
+  [ARTIFACT, 'spKickoffNoQuestion'],
+  [ARTIFACT, 'builtinGateQuestion'],
+  [PROMPTS, 'regenItemsIntro'],
+]
 
 /** Whether a template keeps a brace once every well-formed `{name}` slot is taken out: an unbalanced or odd brace. */
 function hasStrayBrace(template: string): boolean {
@@ -96,6 +128,14 @@ describe('templateSlots (D-224)', () => {
     })
 
     expect(twinless).toEqual([])
+  })
+})
+
+describe('long table values (D-224, WE-S6)', () => {
+  test('the long values keep their bytes in any source form (WE-S6)', async () => {
+    const values = CHAINED.map(([table, key]) => table[key])
+
+    expect(await sha256Hex(values.join('\n'))).toBe('e6ad1d960b474519381abe97b3d31082a801c9a3bd8f8fcec3278759166055f0')
   })
 })
 
