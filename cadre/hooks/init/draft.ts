@@ -1,9 +1,8 @@
 /**
  * The draft of an init run (D-43, D-45, D-82, D-105), a layer 10 module: Draft, what one run holds in memory while the
- * person reviews the plan, with its parts DraftBase (what the scans fix for the whole run) and Team (what the role
- * steps decide); Reviewed, the confirmed draft with its plan (PlanResult, what planStep gives); and mapped, which turns
- * a step result's value into another. It holds types and one pure helper and imports ui/ask and the types the draft is
- * made of; init.ts reads it.
+ * person reviews the plan, with its part DraftBase (what the scans fix for the whole run); and Reviewed, the confirmed
+ * draft with its plan (PlanResult, what planStep gives). It holds types only and imports the types the draft is made
+ * of; init.ts reads it.
  */
 import type {
   CadreState,
@@ -22,8 +21,6 @@ import type {
   RoleSpec,
 } from '../../types'
 import type { Gathered } from '../scan/gather'
-import { accepted } from '../ui/ask'
-import type { StepResult } from '../ui/ask'
 
 /** What planStep gives: the file plan, the repo state it was planned with, and what apply writes it from (D-105). */
 export type PlanResult = {
@@ -86,16 +83,3 @@ export type Reviewed = {
  */
 export type DraftBase =
   Pick<Draft, 'locations' | 'gathered' | 'readUserMcp' | 'installed' | 'choice' | 'proposal' | 'hints'>
-
-/**
- * What the role steps decide: the duration, the roles with every per-role answer, the scan changes they were accepted
- * with (A6), the repo default, the hunks, the plugins to install after Confirm (decision #39, D-141) and how the
- * instruction files were handed out (G-02-1f).
- */
-export type Team =
-  Pick<Draft, 'duration' | 'roles' | 'changes' | 'repoDefault' | 'hunks' | 'pluginInstalls' | 'instructions'>
-
-/** A step result with its value turned into another; a cancelled result stays cancelled with its reason (A1). */
-export function mapped<T, U>(result: StepResult<T>, apply: (value: T) => U): StepResult<U> {
-  return result.kind === 'cancelled' ? result : accepted(apply(result.value))
-}
