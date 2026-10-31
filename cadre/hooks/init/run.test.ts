@@ -2865,6 +2865,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       '(or type git root, in here or other)'
     const envNames = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: ['API_KEY'] }
     const gathered = { ...wholeDraft().gathered, setup: emptySetupScan({ carry: envNames }) }
+    const frameworksDraft = { choice, roles, gathered, locations: DEFAULT_LOCATIONS }
     const assignAt = (setup: Partial<SetupScan>): InitState => {
       const scans = { ...wholeDraft().gathered, setup: emptySetupScan(setup) }
 
@@ -2887,7 +2888,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       ],
       [
         'framework mode',
-        () => driven(frameworksStage.enter(stateAt('frameworks', { choice, roles, gathered })), ['zzz']).asked,
+        () => driven(frameworksStage.enter(stateAt('frameworks', frameworksDraft)), ['zzz']).asked,
         '"Same for all roles", "Per role"',
       ],
       [

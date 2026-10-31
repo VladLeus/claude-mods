@@ -19,7 +19,7 @@ import { detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { detectionContext } from '../../ui/blocks/context'
+import { detectionContext, screenFacts } from '../../ui/blocks/context'
 import { askedWithContext, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, EachCursor, InitState, IoResult, StageDef } from '../state'
 import { ANSWER_MODE_OPTIONS, parseAnswerMode, teamContextLine } from './model'
@@ -135,10 +135,11 @@ function frameworkAsk(choice: AskedChoice, question: string, roles: readonly Rol
  * (detectionContext, D-236); `question` is the ask's text after a refusal.
  */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: FrameworkAsk<T>, question: string | null): InitState {
-  const { gathered } = state.draft
-  if (gathered === undefined) return stageFailed(state)
+  const { gathered, locations } = state.draft
+  if (gathered === undefined || locations === undefined) return stageFailed(state)
+  const context = detectionContext(detectAll(screenFacts(gathered.facts.facts, locations.root)))
 
-  return askedWithContext(state, sub, ask, question, detectionContext(detectAll(gathered.facts.facts)))
+  return askedWithContext(state, sub, ask, question, context)
 }
 
 /** The stage done with the roles framed and the repo default. */

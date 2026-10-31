@@ -8,6 +8,7 @@
 import type {
   AskContext,
   Detection,
+  Facts,
   InitLocations,
   InstructionGroup,
   InstructionPart,
@@ -144,6 +145,15 @@ export function detectionContext(detections: readonly Detection[]): AskContext {
   )
 
   return { title: t('ui.context.detectionContext'), lines: shownDetections.map(detectionLine), kind: 'detection' }
+}
+
+/**
+ * The facts a screen draws its detections from (D-226, WF-S5, AUTO-PICK #97): each GSD install's display path as the
+ * screen shows it (screenPath), so a repo-local install is named by the repo folder name; everything else as it is.
+ * Detection logic, warnings, prompts and the /cadre detect table keep the `<repo>` mask.
+ */
+export function screenFacts(facts: Facts, root: string): Facts {
+  return { ...facts, gsd: facts.gsd.map(fact => ({ ...fact, dir: screenPath(fact.dir, root) })) }
 }
 
 /** The context of the security plugins question (D-236): each missing plugin by its key, with what it does. */
