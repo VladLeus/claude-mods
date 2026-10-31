@@ -738,7 +738,7 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
     expect(copiedTexts(run)).toEqual([])
   })
 
-  test('off macOS nothing opens: the refusal shows once, each command is printed, and all are copied', async () => {
+  test('off macOS nothing opens: each command is printed and copied, then the refusal shows once (D-237)', async () => {
     const linux = rule(['/usr/bin/uname', '-s'], 0, 'Linux\n')
     const run = await epic(await renderWorld(), [...RENDER_RULES, linux], 'PROJ-1', '')
     const lines = run.reply.split('\n')
@@ -746,7 +746,12 @@ describe('opening each picked role inside the epic worktree (D-145, D-167)', () 
 
     expect(opens).toEqual([])
     expect(lines.filter(line => line === TERMINAL_MAC_ONLY)).toHaveLength(1)
-    expect(lines.slice(-3)).toEqual([`  pm: ${epicCommand('pm')}`, `  be: ${epicCommand('be')}`, COPIED_LINE])
+    expect(lines.slice(-4)).toEqual([
+      `  pm: ${epicCommand('pm')}`,
+      `  be: ${epicCommand('be')}`,
+      COPIED_LINE,
+      TERMINAL_MAC_ONLY,
+    ])
     expect(copiedTexts(run)).toEqual([`${epicCommand('pm')}\n${epicCommand('be')}`])
   })
 
