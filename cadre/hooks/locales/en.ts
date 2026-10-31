@@ -1250,6 +1250,7 @@ export const EN = Object.freeze({
   'register.paneTitle': 'cadre init',
   'register.commandDescription':
     'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
+  'register.paneEmpty': 'cadre init has not shown anything yet.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

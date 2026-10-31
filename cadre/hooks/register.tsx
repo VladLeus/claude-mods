@@ -446,7 +446,7 @@ export const register: Register = on => {
     if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
     const blocks = await read($, initPane)
     const shown = questionPaneBlocks(await read($, openQuestion), blocks)
-    if (shown.length === 0) return <Text>cadre init has not shown anything yet.</Text>
+    if (shown.length === 0) return <Text>{t('register.paneEmpty')}</Text>
 
     return (
       <Box flexDirection="column">
