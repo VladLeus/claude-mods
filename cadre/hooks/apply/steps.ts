@@ -15,11 +15,18 @@ import type { ConflictChoice } from './conflict'
 import { privateSteps } from './private'
 import type { ApplyInput, ApplyStep } from './private'
 
-/** The desired files by path; of two with the same path the first is kept. */
-function desiredByPath(desired: readonly DesiredFile[]): ReadonlyMap<string, DesiredFile> {
+/**
+ * The desired files the plan accepted, keyed as plan's acceptFiles keys them (D-241): by the path in lower case, so a
+ * path is looked up with `path.toLowerCase()` and a path in another case finds the file the plan accepted. A desired
+ * file is accepted when the plan has a file op for its exact path; a refused one (outside `.cadre/`, or a second path
+ * that differs only in case) has none, so it is not here at all.
+ */
+function desiredByPath(desired: readonly DesiredFile[], plan: Plan): ReadonlyMap<string, DesiredFile> {
+  const planned = new Set(plan.ops.flatMap(op => (op.kind === 'hunk' ? [] : [op.path])))
   const files = new Map<string, DesiredFile>()
   for (const file of desired) {
-    if (!files.has(file.path)) files.set(file.path, file)
+    const key = file.path.toLowerCase()
+    if (planned.has(file.path) && !files.has(key)) files.set(key, file)
   }
 
   return files
@@ -60,7 +67,7 @@ function ignoreSteps(op: FileOp, gitignore: string | null): ApplyStep[] {
 function besideOriginal(path: string, files: ReadonlyMap<string, DesiredFile>): DesiredFile | null {
   if (!path.endsWith(BESIDE_SUFFIX)) return null
 
-  return files.get(path.slice(0, -BESIDE_SUFFIX.length)) ?? null
+  return files.get(path.slice(0, -BESIDE_SUFFIX.length).toLowerCase()) ?? null
 }
 
 /**
@@ -72,7 +79,7 @@ function besideOriginal(path: string, files: ReadonlyMap<string, DesiredFile>): 
  */
 function opSteps(op: FileOp, input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): ApplyStep[] {
   if (op.path === GITIGNORE_FILE) return ignoreSteps(op, input.gitignore)
-  const file = files.get(op.path)
+  const file = files.get(op.path.toLowerCase())
   if (file !== undefined) return isWritten(op, input.choices) ? writeOf(op.path, file.content, op.mode) : []
   const original = besideOriginal(op.path, files)
   if (original === null || !isCreateOrChange(op) || input.choices.get(original.path) === 'new') return []
@@ -97,7 +104,7 @@ function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): D
   const taken: DesiredFile[] = []
   for (const op of input.plan.ops) {
     if (op.kind !== 'conflict' || op.path === MANIFEST_PATH || op.path === GITIGNORE_FILE) continue
-    const file = files.get(op.path)
+    const file = files.get(op.path.toLowerCase())
     if (file === undefined || !isWritten(op, input.choices)) continue
     taken.push({ path: op.path, content: file.content, mode: op.mode })
   }
@@ -108,18 +115,20 @@ function takenNew(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): D
 /**
  * The files whose text the manifest records anew (D-67, D-141): each file taken new with its desired text, and each
  * built role file whose improved text the person accepted (`improved`) with that text, which wins over the desired
- * text of the same path; each with the mode of its desired file. An improved path with no desired file gives none.
+ * text of the same file; each with the path and the mode of the desired file the plan accepted. An improved key is
+ * looked up in lower case like every desired path (D-241), so a key in another case counts for the accepted file, of
+ * two keys of one file the first counts, and a key the plan accepted in no case gives nothing.
  */
 function changedFiles(input: ApplyInput, files: ReadonlyMap<string, DesiredFile>): DesiredFile[] {
-  const improved = input.improved ?? new Map<string, string>()
-  const taken = takenNew(input, files).filter(file => !improved.has(file.path))
-  const accepted = Array.from(improved).flatMap(([path, content]): DesiredFile[] => {
-    const desired = files.get(path)
+  const accepted = new Map<string, DesiredFile>()
+  for (const [path, content] of input.improved ?? new Map<string, string>()) {
+    const desired = files.get(path.toLowerCase())
+    if (desired === undefined || accepted.has(desired.path)) continue
+    accepted.set(desired.path, { path: desired.path, content, mode: desired.mode })
+  }
+  const taken = takenNew(input, files).filter(file => !accepted.has(file.path))
 
-    return desired === undefined ? [] : [{ path, content, mode: desired.mode }]
-  })
-
-  return [...taken, ...accepted]
+  return [...taken, ...accepted.values()]
 }
 
 /**
@@ -150,7 +159,7 @@ async function manifestAfter(manifest: Manifest, taken: readonly DesiredFile[]):
  * taken new or improved. No step deletes anything.
  */
 export async function applySteps(input: ApplyInput): Promise<ApplyStep[]> {
-  const files = desiredByPath(input.desired)
+  const files = desiredByPath(input.desired, input.plan)
   const steps: ApplyStep[] = []
   for (const op of input.plan.ops) {
     if (op.kind === 'hunk' || op.path === MANIFEST_PATH) continue
