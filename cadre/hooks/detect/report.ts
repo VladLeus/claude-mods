@@ -7,6 +7,7 @@ import type { Choice, Detection, Facts, FrameworkAdapter, Gate } from '../../typ
 import { pad, reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { ADAPTERS, detectAll } from '../framework/registry'
+import { t } from '../locales/t'
 import { STATUS_LABEL } from '../ui/blocks/cards'
 
 /** Column widths of the detect table, in code points: the framework name, the status and the version. */
@@ -20,21 +21,21 @@ const GATE_TYPE_WIDTH = 15
 const GATE_HUMAN_WIDTH = 8
 
 /** The title line of the detect report. It says that nothing was written. */
-const TITLE = 'cadre detect  (read-only, nothing was written)'
+const TITLE = t('detect.report.title')
 
 /**
  * The line that says which adapter the repo gets, or why none is chosen. Only a chosen adapter is named as the one in
  * use; an ambiguous or installed-only repo names its candidates and says init will ask (D-07, D-08, D-29).
  */
 export function choiceLine(choice: Choice): string {
-  if (choice.kind === 'chosen') return `Adapter: ${choice.id} (${choice.reason})`
-  if (choice.kind === 'ambiguous') return `Adapter: ambiguous: ${choice.ids.join(', ')}; init will ask`
-  if (choice.kind === 'installed-only') return `Adapter: installed-only: ${choice.ids.join(', ')}; init will ask`
+  if (choice.kind === 'chosen') return t('detect.report.choiceLine', { id: choice.id, reason: choice.reason })
+  if (choice.kind === 'ambiguous') return t('detect.report.choiceLine2', { ids: choice.ids.join(', ') })
+  if (choice.kind === 'installed-only') return t('detect.report.choiceLine3', { ids: choice.ids.join(', ') })
   if (choice.kind === 'unsupported') {
-    return `Adapter: none usable: ${choice.ids.join(', ')} detected but unsupported; init will ask`
+    return t('detect.report.choiceLine4', { ids: choice.ids.join(', ') })
   }
 
-  return 'Adapter: none (built-in); nothing detected, init will recommend GSD or superpowers'
+  return t('detect.report.choiceLine5')
 }
 
 /** One framework row, with the same column widths as the header. An unknown version shows as a dash. */
@@ -57,7 +58,7 @@ function unsupportedNoteLines(detections: readonly Detection[], choice: Choice):
   const names = detections.filter(detection => detection.status === 'unsupported').map(detection => detection.name)
   if (names.length === 0) return []
 
-  return [`Warning: also detected but unsupported: ${names.join(', ')}`]
+  return [t('detect.report.unsupportedNoteLines', { names: names.join(', ') })]
 }
 
 /**
@@ -69,15 +70,15 @@ function gsdHookLines(facts: Facts): string[] {
     if (adapter.factsHeading === null || adapter.roleFacts === undefined) return []
     const hooks = adapter.roleFacts(facts)
     if (hooks.length === 0) return []
-    const items = hooks.map(hook => `${hook.name} (${hook.note})`).join(', ')
+    const items = hooks.map(hook => t('detect.report.gsdHookLines', { name: hook.name, note: hook.note })).join(', ')
 
-    return [`${adapter.factsHeading}: ${items}`]
+    return [t('detect.report.gsdHookLines2', { factsHeading: adapter.factsHeading, items })]
   })
 }
 
 /** One line per host warning, with the text cleaned and capped as every report cell is. */
 function warningLines(facts: Facts): string[] {
-  return facts.warnings.map(warning => `Warning: ${reportText(warning)}`)
+  return facts.warnings.map(warning => t('detect.report.warningLines', { warning: reportText(warning) }))
 }
 
 /**
@@ -88,7 +89,8 @@ function warningLines(facts: Facts): string[] {
 export function detectReportLines(facts: Facts): string[] {
   const detections = detectAll(facts)
   const choice = chooseFramework(detections, null)
-  const header = `${pad('Framework', NAME_WIDTH)}${pad('Status', STATUS_WIDTH)}${pad('Version', VERSION_WIDTH)}Evidence`
+  const columns = [pad(t('detect.report.framework'), NAME_WIDTH), pad(t('detect.report.status'), STATUS_WIDTH)]
+  const header = [...columns, pad(t('detect.report.version'), VERSION_WIDTH), t('detect.report.evidence')].join('')
   const lines = [TITLE, '', header, ...detections.map(detectionRow), '']
   const notes = [...unsupportedNoteLines(detections, choice), ...gsdHookLines(facts), ...warningLines(facts)]
   if (notes.length > 0) lines.push(...notes, '')
@@ -102,7 +104,7 @@ export function detectReportLines(facts: Facts): string[] {
  */
 function gateRow(gate: Gate): string {
   const id = pad(gate.id, GATE_ID_WIDTH)
-  const type = pad(gate.decisionType ?? 'standing rule', GATE_TYPE_WIDTH)
+  const type = pad(gate.decisionType ?? t('detect.report.gateRow'), GATE_TYPE_WIDTH)
   const human = pad(gate.needsHuman ? 'yes' : 'no', GATE_HUMAN_WIDTH)
 
   return `    ${id}${type}${human}${gate.kickoff}`
@@ -112,7 +114,7 @@ function gateRow(gate: Gate): string {
 function gateRows(gates: readonly Gate[]): string[] {
   const header = `    ${pad('gate', GATE_ID_WIDTH)}${pad('type', GATE_TYPE_WIDTH)}${pad('human?', GATE_HUMAN_WIDTH)}`
 
-  return [`${header}how the kickoff handles it`, ...gates.map(gateRow)]
+  return [t('detect.report.gateRows', { header }), ...gates.map(gateRow)]
 }
 
 /** The autonomy lines of one adapter: one per setting proposal, or the note that says why it needs no settings. */
@@ -122,7 +124,7 @@ function autonomyLines(adapter: FrameworkAdapter): string[] {
   return adapter.autonomy.map(proposal => {
     const requirement = proposal.isRequired ? 'required' : 'optional'
 
-    return `    ${proposal.key} -> ${proposal.to} (${requirement}): ${proposal.why}`
+    return t('detect.report.autonomyLines', { key: proposal.key, to: proposal.to, requirement, why: proposal.why })
   })
 }
 
@@ -135,21 +137,21 @@ function autonomyLines(adapter: FrameworkAdapter): string[] {
 function adapterBlock(adapter: FrameworkAdapter): string[] {
   const kickoff = adapter.kickoffText({ title: 'BE', roleId: 'be', specPath: null }).split('\n')
   const { artifact, check } = adapter.doneSignal
-  const done = `${artifact}: ${check}; then a line that starts with AUTOPILOT_DONE`
+  const done = t('detect.report.adapterBlock', { artifact, check })
 
   return [
-    `${adapter.name} (${adapter.id})`,
-    `  detect:       ${adapter.detectRule}`,
-    `  start work:   ${adapter.startWork.join('; ')}`,
-    `  spec files:   ${adapter.locations.spec.join('; ')}`,
-    `  plan files:   ${adapter.locations.plan.join('; ')}`,
-    `  verify:       ${adapter.verify.join('; ')}`,
-    `  done signal:  ${done}`,
-    '  autonomy:',
+    t('detect.report.adapterBlock2', { name: adapter.name, id: adapter.id }),
+    t('detect.report.adapterBlock3', { detectRule: adapter.detectRule }),
+    t('detect.report.adapterBlock4', { startWork: adapter.startWork.join('; ') }),
+    t('detect.report.adapterBlock5', { spec: adapter.locations.spec.join('; ') }),
+    t('detect.report.adapterBlock6', { plan: adapter.locations.plan.join('; ') }),
+    t('detect.report.adapterBlock7', { verify: adapter.verify.join('; ') }),
+    t('detect.report.adapterBlock8', { done }),
+    t('detect.report.adapterBlock9'),
     ...autonomyLines(adapter),
-    '  kickoff (example for role BE):',
+    t('detect.report.adapterBlock10'),
     ...kickoff.map(line => (line === '' ? '' : `      ${line}`)),
-    '  human gates:',
+    t('detect.report.adapterBlock11'),
     ...gateRows(adapter.humanGates),
   ]
 }
@@ -175,7 +177,7 @@ export function adaptersReportLines(adapters: readonly FrameworkAdapter[]): stri
 export function detectText(facts: Facts, isAdapters: boolean): string {
   const report = detectReportLines(facts)
   if (!isAdapters) return report.join('\n')
-  const contract = ['', 'Adapter contract (the same fields for every adapter):', ...adaptersReportLines(ADAPTERS)]
+  const contract = ['', t('detect.report.detectText'), ...adaptersReportLines(ADAPTERS)]
 
   return [...report, ...contract].join('\n')
 }
