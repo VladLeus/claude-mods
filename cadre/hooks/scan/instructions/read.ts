@@ -504,13 +504,14 @@ function scanOf(state: ReadState, memories: readonly MemoryItem[]): InstructionS
  * read; parts past the 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
  * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
  * folder inside the repo is not used: the read drops it, so nothing is read from it as the config folder (02-GAPS-B2
- * N10). The text is held in memory for this run; it is never logged, shown, asked or put in a reply; a repo part a
- * role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (roleClaudeMdText); originals are never
+ * N10). An ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not repeated here
+ * (D-238, WF-S3). The text is held in memory for this run; it is never logged, shown, asked or put in a reply; a repo
+ * part a role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (roleClaudeMdText); originals are never
  * edited.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
   const warnings: string[] = []
-  const userDir = userDirOf(sources, sources.root, warnings)
+  const userDir = userDirOf(sources, sources.root, [])
   const state: ReadState = {
     io,
     sources,

@@ -260,7 +260,8 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
 /**
  * The launching user's facts (D-98), gathered in the root session through the ports:
  * - the repo root as resolved and as given, the home folder, and the user folder (CLAUDE_CONFIG_DIR, else
- *   `<home>/.claude`);
+ *   `<home>/.claude`); an ignored CLAUDE_CONFIG_DIR is warned about by the setup scan of the same run, so it is not
+ *   repeated here (D-238, WF-S3);
  * - the git common dir from GIT_COMMON_DIR_ARGV run at the root, as the realpath of its stat when the host resolves
  *   it, else as git gave it, with its SHA-256 (gitCommonDirOf): they name the role memory folders (roleMemoryDir,
  *   D-20, D-91); and, for a root that lies below the main checkout of its git common dir (mainCheckoutOf), that
@@ -297,8 +298,7 @@ export async function gatherLaunchUser(
 ): Promise<LaunchUserRead> {
   const { locations } = input
   const { home } = locations
-  const warnings: string[] = []
-  const userDir = userDirOf(locations, locations.root, warnings)
+  const userDir = userDirOf(locations, locations.root, [])
   if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
@@ -336,10 +336,10 @@ export async function gatherLaunchUser(
     codeDirs: input.codeDirs,
     linkedMemories: [],
   }
-  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings, memories: NO_MEMORY_LINKS }
+  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
   const linked = await linkedMemoriesOf(io, user, input.role.id)
   const { memories } = linked
   const linkedMemories = memories.links.map(link => link.path)
 
-  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: [...warnings, ...linked.warnings], memories }
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: linked.warnings, memories }
 }
