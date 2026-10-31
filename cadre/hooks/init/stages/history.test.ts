@@ -175,11 +175,11 @@ describe('refusal re-ask (G-02-6b)', () => {
 })
 
 /**
- * What the history step reads today when CLAUDE_CONFIG_DIR is relative or inside the repo (A8): the value is the user
- * folder as given, so the session folder below it is listed and its transcripts are read there, with no warning. D-238
- * makes such a value warn and fall back to ~/.claude in one behaviour commit, which changes these specs.
+ * What the history step reads when CLAUDE_CONFIG_DIR is relative or inside the repo (D-238): the value is ignored, so
+ * the session folder below <home>/.claude is listed and read. The stage logs no warning of its own: the scan warnings
+ * before it already name the ignored value.
  */
-describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
+describe('unsafe CLAUDE_CONFIG_DIR (D-238)', () => {
   /** The scan of one EXAMPLE transcript: its three kept names, once each. */
   const scanned: HistoryScan = {
     counts: [
@@ -194,8 +194,8 @@ describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
     isPartial: false,
   }
 
-  test('a relative value: the session folder below it is listed and read as given, with no warning', async () => {
-    const dir = '.claude-alt/projects/-repo'
+  test('a relative value: the session folder below <home>/.claude is listed and read', async () => {
+    const dir = DIR
     const world = memWorld({ dirs: { [dir]: [transcript('a.jsonl', 1)] }, files: { [`${dir}/a.jsonl`]: EXAMPLE } })
     const run = memIo(world, [])
     const at = historyAt({ ...DEFAULT_LOCATIONS, configDir: '.claude-alt' })
@@ -205,8 +205,8 @@ describe('safety net: unsafe CLAUDE_CONFIG_DIR today (A8, D-238 later)', () => {
     expect(drive.state.draft.hints).toEqual(historyHints(scanned))
   })
 
-  test('an inside-repo value: the session folder below it is listed and read as given, with no warning', async () => {
-    const dir = '/repo/.claude-alt/projects/-repo'
+  test('an inside-repo value: the session folder below <home>/.claude is listed and read', async () => {
+    const dir = DIR
     const world = memWorld({ dirs: { [dir]: [transcript('a.jsonl', 1)] }, files: { [`${dir}/a.jsonl`]: EXAMPLE } })
     const run = memIo(world, [])
     const at = historyAt({ ...DEFAULT_LOCATIONS, configDir: '/repo/.claude-alt' })

@@ -144,6 +144,21 @@ describe('status discovery (D-131)', () => {
     expect(status.lines.slice(1, 3)).toEqual(['state: done', 'session: s-be (found by its name cadre-be)'])
   })
 
+  test('a relative or inside-repo CLAUDE_CONFIG_DIR searches transcripts under <home>/.claude (D-238)', async () => {
+    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+      const world = statusWorld({
+        locations: { ...DEFAULT_LOCATIONS, configDir },
+        dirs: { [TRANSCRIPTS]: [entryAt('s-be.jsonl', 'file', 10)] },
+        files: doneFiles('s-be'),
+      })
+      const status = await statusBe(world, [titled(`${TRANSCRIPTS}/s-be.jsonl`, 'cadre-be')])
+      expect([status.greps, status.lines[2]]).toEqual([
+        [`${TRANSCRIPTS}/s-be.jsonl`],
+        'session: s-be (found by its name cadre-be)',
+      ])
+    }
+  })
+
   test('a dir start searches the transcripts of its own folder under the user folder (RESEARCH 1.5)', async () => {
     const folder = '/home/u/.claude/projects/-repo-apps-web'
     const world = statusWorld({

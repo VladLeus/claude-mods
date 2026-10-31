@@ -10,13 +10,14 @@ import {
   launcherPath,
   markdownFileNames,
   memoryFolderOf,
+  memoryFoldersOf,
   pathFromDisplay,
   projectFolderOf,
   relativeTo,
   resolvedPath,
   trimSlash,
 } from './paths'
-import { BACKSLASH, BIDI_OVERRIDE, entry } from './testkit'
+import { BACKSLASH, BIDI_OVERRIDE, DEFAULT_LOCATIONS, entry } from './testkit'
 
 describe('isSafeConfigDir', () => {
   test('an absolute path with no .. segment is safe', () => {
@@ -129,6 +130,14 @@ describe('projectFolderOf', () => {
   test('projectFolderOf: <userDir>/projects/<the root mangled>, with the user folder as given (no trim)', () => {
     expect(projectFolderOf('/home/u/.claude', '/repo')).toBe('/home/u/.claude/projects/-repo')
     expect(projectFolderOf('/cfg/', '/a b')).toBe('/cfg//projects/-a-b')
+  })
+})
+
+describe('memoryFoldersOf (D-238)', () => {
+  test('a relative or inside-repo CLAUDE_CONFIG_DIR gives the memory folder under <home>/.claude', () => {
+    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+      expect(memoryFoldersOf({ ...DEFAULT_LOCATIONS, configDir })).toEqual(['/home/u/.claude/projects/-repo/memory'])
+    }
   })
 })
 

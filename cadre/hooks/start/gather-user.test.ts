@@ -5,6 +5,7 @@ import { sha256Hex } from '../core/hash'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import type { LaunchUser } from '../launch/links'
 import { launchPlan } from '../launch/plan'
+import { t } from '../locales/t'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { compileScope } from '../scope/compile'
 import {
@@ -170,6 +171,17 @@ describe('gatherLaunchUser (D-98)', () => {
     })
     const unresolved = userOf((await gather(memWorld({}), [GIT_OK])).read)
     expect([unresolved.gitCommonDir, unresolved.commonDirHash]).toEqual(['/repo/.git', await sha256Hex('/repo/.git')])
+  })
+
+  test('a relative or inside-repo CLAUDE_CONFIG_DIR warns once; the user folder is ~/.claude (D-238)', async () => {
+    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+      const { read } = await gather(repoWorld(), [GIT_OK], { ...DEFAULT_LOCATIONS, configDir })
+
+      expect(read.kind === 'ok' ? [read.user.userDir, read.warnings] : read).toEqual([
+        '/home/u/.claude',
+        [t('paths.configDirWarning')],
+      ])
+    }
   })
 
   test('two roles of one repo get their own memory folders under the repo slug (D-20, D-91, ISO-03)', async () => {

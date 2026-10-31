@@ -27,6 +27,15 @@ describe('side-read loops', () => {
     ])
   })
 
+  test('recordPlacesOf: a relative or inside-repo CLAUDE_CONFIG_DIR gives <home>/.claude (D-238)', () => {
+    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+      const places = recordPlacesOf({ ...DEFAULT_LOCATIONS, configDir }, emptySetupScan())
+
+      const memory = ['/home/u/.claude/projects/-repo/memory']
+      expect([places.userDir, places.memoryFolders]).toEqual(['/home/u/.claude', memory])
+    }
+  })
+
   test('privateSideRead keeps the side as it is, with its warning, when a recorded file cannot be read', async () => {
     const record = { parts: [partRecordAt('~/.claude/CLAUDE.md', 'Security')], partsNotGiven: [], memories: [] }
     const run = memIo(memWorld({ unknownPaths: ['/home/u/.claude/CLAUDE.md'] }), {})

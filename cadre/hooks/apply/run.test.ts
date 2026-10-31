@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { DesiredFile } from '../../types'
+import { sha256Hex } from '../core/hash'
 import { attendedNote } from '../framework/gsd/hunks'
 import { untrackedPartsWarning } from '../generate/gittrack'
+import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { planWithManifest } from '../plan/plan'
 import { DEFAULT_LOCATIONS, hostWorld, memHost, memIo, memWorld, outcomeOf, USER_DIR_LISTED } from '../testkit'
 import { hunkFailureLine } from './hunks'
@@ -15,6 +17,7 @@ import {
   appliedLines,
   MANIFEST_SKIPPED_NOTE,
   NEXT_STEP_NOTE,
+  roleFoldersOf,
   writeImproved,
   writeSteps,
   writeWithImprover,
@@ -206,5 +209,18 @@ describe('init apply (D-105)', () => {
       `warning: ${MANIFEST_SKIPPED_NOTE}`,
       NEXT_STEP_NOTE,
     ])
+  })
+})
+
+describe('roleFoldersOf (D-238)', () => {
+  test('a relative or inside-repo CLAUDE_CONFIG_DIR names role folders under <home>/.claude', async () => {
+    const git = { argv: GIT_COMMON_DIR_ARGV, result: { exitCode: 0, stdout: '/repo/.git\n', stderr: '' } }
+    const slug = `repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
+    for (const configDir of ['.claude-alt', '/repo/.claude-alt']) {
+      const host = memHost(hostWorld({ runs: [git] })).io
+      const folderOf = await roleFoldersOf(memIo(memWorld({}), {}).io, host, { ...DEFAULT_LOCATIONS, configDir })
+
+      expect(folderOf?.('be')).toBe(`/home/u/.claude/cadre/${slug}/be`)
+    }
   })
 })
