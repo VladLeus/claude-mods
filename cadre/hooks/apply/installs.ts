@@ -6,6 +6,7 @@
  */
 import type { HostRun, SetupScan } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { t, tn } from '../locales/t'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 
 /**
@@ -43,10 +44,10 @@ export const MARKETPLACE_ADD_ARGV: readonly string[] = Object.freeze([
  */
 export function installFailureText(key: string, isMarketplaceFailed: boolean): string {
   const shown = reportText(key)
-  const install = `claude plugin install ${shown}`
-  const add = ` (if the claude-plugins-official marketplace is missing, first run: ${MARKETPLACE_ADD_ARGV.join(' ')})`
+  const install = t('apply.installs.installFailureText', { shown })
+  const add = t('apply.installs.installFailureText2', { marketplaceAddArgv: MARKETPLACE_ADD_ARGV.join(' ') })
 
-  return `could not install ${shown}: run it yourself: ${install}${isMarketplaceFailed ? add : ''}`
+  return t('apply.installs.installFailureText3', { shown, install, value: isMarketplaceFailed ? add : '' })
 }
 
 /**
@@ -54,9 +55,9 @@ export function installFailureText(key: string, isMarketplaceFailed: boolean): s
  * the session that ran init. Each key is cleaned and capped as a report cell is.
  */
 export function installedLine(keys: readonly string[]): string {
-  const them = keys.length === 1 ? 'it' : 'them'
+  const names = keys.map(reportText).join(t('apply.installs.namesJoin'))
 
-  return `Installed ${keys.map(reportText).join(' and ')}: run /reload-plugins to load ${them} in this session.`
+  return tn('apply.installs.installed', keys.length, { names })
 }
 
 /** The version line python3 prints, `Python <major>.<minor>...`, with the major and minor version (decision #39). */
@@ -72,18 +73,18 @@ const PYTHON_VERSION_LINE = /^Python (\d+)\.(\d+)/
  */
 export function pythonProblem(run: HostRun | null): string | null {
   const needs = (why: string): string =>
-    `claude-security was not installed: it needs Python 3.9 or newer on PATH (${why}): install it, then run: ` +
+    t('apply.installs.pythonProblem', { why }) +
     pluginInstallArgv(CLAUDE_SECURITY_PLUGIN).join(' ')
-  if (run === null || run.exitCode !== 0) return needs('python3 was not found')
+  if (run === null || run.exitCode !== 0) return needs(t('apply.installs.pythonProblem2'))
   const firstLine = (text: string): string | undefined => text.split(/\r?\n/).find(line => line.trim() !== '')
   const line = firstLine(run.stdout) ?? firstLine(run.stderr)
-  if (line === undefined) return needs('python3 --version says nothing')
+  if (line === undefined) return needs(t('apply.installs.pythonProblem3'))
   const match = PYTHON_VERSION_LINE.exec(line)
   const major = Number(match?.[1])
   const minor = Number(match?.[2])
   if (major > 3 || (major === 3 && minor >= 9)) return null
 
-  return needs(`python3 --version says ${reportText(line)}`)
+  return needs(t('apply.installs.pythonProblem4', { line: reportText(line) }))
 }
 
 /**
@@ -95,8 +96,9 @@ export function noHomeInstallText(key: string): string {
   const shown = reportText(key)
 
   return (
-    `could not install ${shown}: no home folder is known to run it from: run it yourself: ` +
-    `claude plugin install ${shown}`
+    t('apply.installs.noHomeInstallText', {
+      shown,
+    })
   )
 }
 

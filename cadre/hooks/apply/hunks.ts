@@ -9,6 +9,7 @@ import { reportText } from '../core/text'
 import { resolveToolCommand } from '../framework/gsd/tools'
 import type { GsdToolContext } from '../framework/gsd/tools'
 import { ADAPTERS } from '../framework/registry'
+import { t } from '../locales/t'
 
 /** One framework command apply runs for an accepted hunk: the hunk's key and file, the argv, and its display form. */
 export type HunkRun = {
@@ -72,7 +73,7 @@ export function hunksAfterRuns(hunks: readonly HunkOp[], failed: ReadonlySet<str
  * command in display form for the person to run themselves. Every value is cleaned and capped as a report cell is.
  */
 export function hunkFailureLine(run: HunkRun): string {
-  const change = `the ${reportText(run.file)} change ${reportText(run.key)}`
+  const change = t('apply.hunks.hunkFailureLine', { file: reportText(run.file), key: reportText(run.key) })
 
-  return `${change} failed: run it yourself: ${reportText(run.display)}`
+  return t('apply.hunks.hunkFailureLine2', { change, display: reportText(run.display) })
 }

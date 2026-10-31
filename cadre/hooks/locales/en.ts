@@ -469,6 +469,75 @@ export const EN = Object.freeze({
 
   'ui.cards.statusLabelInUse': 'in use',
   'ui.cards.statusLabelNotFound': 'not found',
+
+  'apply.conflict.keepMine': 'Keep mine',
+  'apply.conflict.takeNew': 'Take new',
+  'apply.conflict.question':
+    '{shown} was changed outside cadre. Keep your version, or take the new one (yours is then overwritten)?',
+  'apply.conflict.unreadLine': 'Your version could not be read, so no diff is shown.',
+  'apply.conflict.contextTitle': 'Conflict: {path}',
+  'apply.conflict.takeNewCounts.one': 'Take new: {count} line added, {removed} removed',
+  'apply.conflict.takeNewCounts.other': 'Take new: {count} lines added, {removed} removed',
+
+  'apply.improver.unguardedRunReason': 'its folder has a path a permission rule cannot hold',
+  'apply.improver.accept': 'Accept',
+  'apply.improver.keepOriginal': 'Keep original',
+  'apply.improver.diffCounts.one': '{count} line added, {removed} removed',
+  'apply.improver.diffCounts.other': '{count} lines added, {removed} removed',
+  'apply.improver.improverQuestion': "Accept the improver's changes to {path}?",
+  'apply.improver.improverContextLine': '{diffCounts}; the pane shows the diff.',
+  'apply.improver.improverBlockLines': '{path}: {diffCounts}',
+  'apply.improver.improverContext': 'Improver: {path}',
+  'apply.improver.improverNoChangeNote': 'the improver made no change to {path}',
+  'apply.improver.improverFailedNote': 'the improver did not run for {path} ({reason}): the file stays as built',
+  'apply.improver.improverUnreadableNote': 'the improver left {path} unreadable: it is written back as built',
+  'apply.improver.improverDismissedWarning': 'the improver question for {path} was dismissed: the file stays as built',
+  'apply.improver.changedBeforeRunWarning': '{path} changed before its improver run: it is written back as built',
+  'apply.improver.otherFilesLines': 'Other files changed by the improver in {folder}:',
+  'apply.improver.improverFailure': 'it exited with {exitCode}',
+  'apply.improver.improverFailure2': 'it timed out',
+  'apply.improver.improverFailure3': 'it could not start',
+  'apply.improver.improverLine': 'Improver: {changed} of {total} built files changed and accepted.',
+
+  'apply.run.appliedNoneNote': 'Applied: nothing to write; every file is up to date.',
+  'apply.run.nextStepNote': 'Next: run /cadre start <id> to launch a role.',
+  'apply.run.manifestSkippedStart': '.cadre/manifest.json was not written because a file above was not written: run ',
+  'apply.run.manifestSkippedNote': '{manifestSkippedStart}/cadre init again.',
+  'apply.run.regenManifestSkippedNote': '{manifestSkippedStart}/cadre regen {id} again.',
+  'apply.run.privateFoldersUnknownWarning':
+    `the private files of {map} were not written: their role memory folders are unknown (no home folder, ${
+    ''}or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)`,
+  'apply.run.writePrivate': 'could not write {locations}',
+  'apply.run.appliedLines': 'could not write {path}',
+  'apply.run.appliedLines2': 'could not make {pathText} executable: run chmod 755 {pathText}',
+  'apply.run.appliedLines3': 'warning: {warning}',
+
+  'apply.installs.installFailureText': 'claude plugin install {shown}',
+  'apply.installs.installFailureText2':
+    ' (if the claude-plugins-official marketplace is missing, first run: {marketplaceAddArgv})',
+  'apply.installs.installFailureText3': 'could not install {shown}: run it yourself: {install}{value}',
+  'apply.installs.pythonProblem':
+    'claude-security was not installed: it needs Python 3.9 or newer on PATH ({why}): install it, then run: ',
+  'apply.installs.pythonProblem2': 'python3 was not found',
+  'apply.installs.pythonProblem3': 'python3 --version says nothing',
+  'apply.installs.pythonProblem4': 'python3 --version says {line}',
+  'apply.installs.noHomeInstallText':
+    'could not install {shown}: no home folder is known to run it from: run it yourself: claude plugin install {shown}',
+
+  'apply.hunks.hunkFailureLine': 'the {file} change {key}',
+  'apply.hunks.hunkFailureLine2': '{change} failed: run it yourself: {display}',
+  'apply.improver.otherListed': '{named}, +{rest} more',
+  'apply.improver.otherChanges.one':
+    'the improver also changed {count} other file in {folder}: {listed}; review them (listed above)',
+  'apply.improver.otherChanges.other':
+    'the improver also changed {count} other files in {folder}: {listed}; review them (listed above)',
+  'apply.improver.unchecked.one': '{count} file in {folder} was not checked',
+  'apply.improver.unchecked.other': '{count} files in {folder} were not checked',
+  'apply.run.applied.one': 'Applied: wrote {count} file ({executable} executable).',
+  'apply.run.applied.other': 'Applied: wrote {count} files ({executable} executable).',
+  'apply.installs.namesJoin': ' and ',
+  'apply.installs.installed.one': 'Installed {names}: run /reload-plugins to load it in this session.',
+  'apply.installs.installed.other': 'Installed {names}: run /reload-plugins to load them in this session.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

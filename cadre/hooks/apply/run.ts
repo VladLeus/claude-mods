@@ -10,6 +10,7 @@ import { reportText } from '../core/text'
 import { attendedNote } from '../framework/gsd/hunks'
 import { gitCommonDirOf } from '../git/common-dir'
 import { hasRunFailed, isStepDone, privateModeArgv } from '../host/steps'
+import { t, tn } from '../locales/t'
 import { displayPath, roleMemoryDir, trimSlash, userDirOf } from '../paths'
 import { CLAUDE_SECURITY_PLUGIN } from '../roles/infra'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -41,23 +42,25 @@ import {
 import { applySteps } from './steps'
 
 /** The first applied line when an apply had no step to run: every planned file is already on the disk (D-105). */
-export const APPLIED_NONE_NOTE = 'Applied: nothing to write; every file is up to date.'
+export const APPLIED_NONE_NOTE = t('apply.run.appliedNoneNote')
 
 /** The last line of a plain init or regen reply: what to run next to launch a role from the files written. */
-export const NEXT_STEP_NOTE = 'Next: run /cadre start <id> to launch a role.'
+export const NEXT_STEP_NOTE = t('apply.run.nextStepNote')
 
 /** The start of the manifest-skipped warning; init and regen end it with the command to run again. */
-const MANIFEST_SKIPPED_START = '.cadre/manifest.json was not written because a file above was not written: run '
+const MANIFEST_SKIPPED_START = t('apply.run.manifestSkippedStart')
 
 /**
  * The warning in an init reply when apply did not write the manifest because a file write before it failed or was
  * refused, so the manifest never claims a file that is not on the disk (LNCH-01, T-03-18).
  */
-export const MANIFEST_SKIPPED_NOTE = `${MANIFEST_SKIPPED_START}/cadre init again.`
+export const MANIFEST_SKIPPED_NOTE = t('apply.run.manifestSkippedNote', {
+  manifestSkippedStart: MANIFEST_SKIPPED_START,
+})
 
 /** The manifest-skipped warning of a regen reply: re-running regen of the role is the narrower fix (A4). */
 export function regenManifestSkippedNote(id: string): string {
-  return `${MANIFEST_SKIPPED_START}/cadre regen ${reportText(id)} again.`
+  return t('apply.run.regenManifestSkippedNote', { manifestSkippedStart: MANIFEST_SKIPPED_START, id: reportText(id) })
 }
 
 /**
@@ -67,8 +70,9 @@ export function regenManifestSkippedNote(id: string): string {
  */
 export function privateFoldersUnknownWarning(ids: readonly string[]): string {
   return (
-    `the private files of ${ids.map(reportText).join(', ')} were not written: their role memory folders are unknown ` +
-    '(no home folder, or git rev-parse failed or gave no absolute path; git 2.31 or newer is needed)'
+    t('apply.run.privateFoldersUnknownWarning', {
+      map: ids.map(reportText).join(', '),
+    })
   )
 }
 
@@ -214,7 +218,7 @@ export async function writePrivate(
   const tried = step.files.filter((_, index) => refusals[index] === null)
   if (tried.length === 0) return { written: [], problems }
   const notWritten = (file: PrivateFile): string =>
-    `could not write ${shownPath(locations, { kind: 'private', path: file.path })}`
+    t('apply.run.writePrivate', { locations: shownPath(locations, { kind: 'private', path: file.path }) })
   if (!(await isPrivateFolderMade(host, step.path, tried))) {
     return { written: [], problems: [...problems, ...tried.map(notWritten)] }
   }
@@ -422,16 +426,15 @@ export async function writeWithImprover(
 export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIFEST_SKIPPED_NOTE): string[] {
   const { written, executable, failed, refused } = outcome
   const isNothing = written.length === 0 && failed.length === 0 && refused.length === 0
-  const noun = written.length === 1 ? 'file' : 'files'
-  const counted = `Applied: wrote ${written.length} ${noun} (${executable.length} executable).`
+  const counted = tn('apply.run.applied', written.length, { count: written.length, executable: executable.length })
   const warnings = [
     ...refused,
-    ...failed.map(path => `could not write ${reportText(path)}`),
+    ...failed.map(path => t('apply.run.appliedLines', { path: reportText(path) })),
     ...outcome.chmodRefusals,
     ...outcome.notExecutable.map(path => {
       const pathText = reportText(path)
 
-      return `could not make ${pathText} executable: run chmod 755 ${pathText}`
+      return t('apply.run.appliedLines2', { pathText })
     }),
     ...outcome.hunkFailures.map(hunkFailureLine),
     ...(outcome.attended.length > 0 ? [attendedNote(outcome.attended)] : []),
@@ -446,7 +449,7 @@ export function appliedLines(outcome: ApplyOutcome, manifestNote: string = MANIF
 
   return [
     isNothing ? APPLIED_NONE_NOTE : counted,
-    ...warnings.map(warning => `warning: ${warning}`),
+    ...warnings.map(warning => t('apply.run.appliedLines3', { warning })),
     ...installed,
     ...improved,
     NEXT_STEP_NOTE,

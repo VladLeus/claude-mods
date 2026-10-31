@@ -8,10 +8,14 @@
  */
 import type { AskContext, HostIo, HostRun, InitIo, InitLocations, PortRead } from '../../types'
 import { sha256Hex } from '../core/hash'
+import { labelled } from '../core/labelled'
+import type { Labelled } from '../core/labelled'
 import { redactSecrets } from '../core/redact'
-import { compareText, countedNoun, reportText, sortedUnique } from '../core/text'
+import { compareText, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { editWriteRules } from '../launch/deny'
+import { PROMPTS } from '../locales/prompts'
+import { fill, t, tn } from '../locales/t'
 import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
@@ -39,7 +43,7 @@ export function improverArgv(path: string, flags: readonly string[] = []): reado
     'acceptEdits',
     ...flags,
     '--',
-    `Use the claude-md-management:claude-md-improver skill to improve the file ${path} only.`,
+    fill(PROMPTS.improverPrompt, { path }),
   ]
 }
 
@@ -47,7 +51,7 @@ export function improverArgv(path: string, flags: readonly string[] = []): reado
  * Why a repo file's improver run is not started (02-GAPS-B3 M1 c): its .runtime folder has a path no exact deny rule
  * can hold.
  */
-export const UNGUARDED_RUN_REASON = 'its folder has a path a permission rule cannot hold'
+export const UNGUARDED_RUN_REASON = t('apply.improver.unguardedRunReason')
 
 /**
  * The flags of a repo file's improver run (02-GAPS-B3 M1 a): settings that deny Edit and Write on
@@ -135,34 +139,36 @@ export function restoreSteps(files: readonly BuiltFile[]): ApplyStep[] {
   })
 }
 
+/** Each answer to the per-file improver question with its choice (D-141, D-225): one EN key draws and parses it. */
+const IMPROVER_LABELS: readonly Labelled<ImproverChoice>[] = Object.freeze([
+  { label: t('apply.improver.accept'), value: 'accept' },
+  { label: t('apply.improver.keepOriginal'), value: 'keep' },
+])
+
 /** The answers to the per-file improver question, Accept first (D-141). */
-export const IMPROVER_OPTIONS: readonly string[] = Object.freeze(['Accept', 'Keep original'])
+export const IMPROVER_OPTIONS: readonly string[] = Object.freeze(IMPROVER_LABELS.map(entry => entry.label))
 
 /** What the person chose for one improved file: the improver's text, or the text cadre built. */
 type ImproverChoice = 'accept' | 'keep'
 
 /** The answer to the per-file improver question: Accept or Keep original, trimmed and in any case; else null. */
 function parseImproverAnswer(answer: string): ImproverChoice | null {
-  const wanted = answer.trim().toLowerCase()
-  if (wanted === 'accept') return 'accept'
-  if (wanted === 'keep original') return 'keep'
-
-  return null
+  return labelled(IMPROVER_LABELS, answer)
 }
 
 /** How many lines a diff adds and removes, as the improver block and question say it (D-141). */
 function diffCounts(diff: LineDiff): string {
-  return `${countedNoun(diff.added, 'line', 'lines')} added, ${diff.removed} removed`
+  return tn('apply.improver.diffCounts', diff.added, { count: diff.added, removed: diff.removed })
 }
 
 /** The per-file improver question (D-141): whether to keep the improver's changes to the file at the shown path. */
 export function improverQuestion(path: string): string {
-  return `Accept the improver's changes to ${path}?`
+  return t('apply.improver.improverQuestion', { path })
 }
 
 /** The context line of the per-file improver question (D-136, D-141): the size of the change, and where its diff is. */
 export function improverContextLine(diff: LineDiff): string {
-  return `${diffCounts(diff)}; the pane shows the diff.`
+  return t('apply.improver.improverContextLine', { diffCounts: diffCounts(diff) })
 }
 
 /**
@@ -171,7 +177,10 @@ export function improverContextLine(diff: LineDiff): string {
  * never the text the improver left or cadre writes back).
  */
 export function improverBlockLines(path: string, diff: LineDiff): string[] {
-  return [`${path}: ${diffCounts(diff)}`, ...diffLines(diff).map(line => redactSecrets(line))]
+  return [t('apply.improver.improverBlockLines', {
+    path,
+    diffCounts: diffCounts(diff),
+  }), ...diffLines(diff).map(line => redactSecrets(line))]
 }
 
 /**
@@ -181,17 +190,17 @@ export function improverBlockLines(path: string, diff: LineDiff): string[] {
 export function improverContext(path: string, diff: LineDiff, otherLines: readonly string[]): AskContext {
   const lines = [...improverBlockLines(path, diff), ...otherLines]
 
-  return { title: `Improver: ${reportText(path)}`, lines, kind: 'improver' }
+  return { title: t('apply.improver.improverContext', { path: reportText(path) }), lines, kind: 'improver' }
 }
 
 /** The note for a built file the improver ran on and did not change (D-141). */
 export function improverNoChangeNote(path: string): string {
-  return `the improver made no change to ${path}`
+  return t('apply.improver.improverNoChangeNote', { path })
 }
 
 /** The note for a built file whose improver run failed (D-141, T-02-77): why, and that the file stays as built. */
 export function improverFailedNote(path: string, reason: string): string {
-  return `the improver did not run for ${path} (${reason}): the file stays as built`
+  return t('apply.improver.improverFailedNote', { path, reason })
 }
 
 /**
@@ -199,12 +208,12 @@ export function improverFailedNote(path: string, reason: string): string {
  * regular file, over the read cap or unreadable (D-141, T-02-76); it is written back as built.
  */
 export function improverUnreadableNote(path: string): string {
-  return `the improver left ${path} unreadable: it is written back as built`
+  return t('apply.improver.improverUnreadableNote', { path })
 }
 
 /** The reply warning for a per-file improver question that got no usable answer (D-141): the file stays as built. */
 export function improverDismissedWarning(path: string): string {
-  return `the improver question for ${path} was dismissed: the file stays as built`
+  return t('apply.improver.improverDismissedWarning', { path })
 }
 
 /**
@@ -212,7 +221,7 @@ export function improverDismissedWarning(path: string): string {
  * an earlier run changed or removed it; it gets no run and is written back as built.
  */
 export function changedBeforeRunWarning(path: string): string {
-  return `${path} changed before its improver run: it is written back as built`
+  return t('apply.improver.changedBeforeRunWarning', { path })
 }
 
 /** The most other files the reply warning of one improver run names; the improver block names them all (D-141). */
@@ -227,10 +236,9 @@ const MAX_NAMED_OTHERS = 3
 export function otherChangesWarning(folder: string, paths: readonly string[]): string {
   const named = paths.slice(0, MAX_NAMED_OTHERS)
   const rest = paths.length - named.length
-  const listed = rest === 0 ? named.join(', ') : `${named.join(', ')}, +${rest} more`
-  const count = countedNoun(paths.length, 'other file', 'other files')
+  const listed = rest === 0 ? named.join(', ') : t('apply.improver.otherListed', { named: named.join(', '), rest })
 
-  return `the improver also changed ${count} in ${folder}: ${listed}; review them (listed above)`
+  return tn('apply.improver.otherChanges', paths.length, { count: paths.length, folder, listed })
 }
 
 /**
@@ -240,7 +248,7 @@ export function otherChangesWarning(folder: string, paths: readonly string[]): s
 export function otherFilesLines(folder: string, paths: readonly string[]): string[] {
   if (paths.length === 0) return []
 
-  return [`Other files changed by the improver in ${folder}:`, ...paths.map(path => `  ${path}`)]
+  return [t('apply.improver.otherFilesLines', { folder }), ...paths.map(path => `  ${path}`)]
 }
 
 /**
@@ -248,7 +256,7 @@ export function otherFilesLines(folder: string, paths: readonly string[]): strin
  * files a change of was not checked.
  */
 export function uncheckedFilesWarning(count: number, folder: string): string {
-  return `${countedNoun(count, 'file', 'files')} in ${folder} ${count === 1 ? 'was' : 'were'} not checked`
+  return tn('apply.improver.unchecked', count, { count, folder })
 }
 
 /**
@@ -258,10 +266,10 @@ export function uncheckedFilesWarning(count: number, folder: string): string {
  * read.
  */
 export function improverFailure(run: HostRun | null, elapsedMs: number | null): string | null {
-  if (run !== null) return run.exitCode === 0 ? null : `it exited with ${run.exitCode}`
-  if (elapsedMs !== null && elapsedMs >= IMPROVER_TIMEOUT_MS) return 'it timed out'
+  if (run !== null) return run.exitCode === 0 ? null : t('apply.improver.improverFailure', { exitCode: run.exitCode })
+  if (elapsedMs !== null && elapsedMs >= IMPROVER_TIMEOUT_MS) return t('apply.improver.improverFailure2')
 
-  return 'it could not start'
+  return t('apply.improver.improverFailure3')
 }
 
 /** How many built files the improver changed and the person accepted, of how many the pass ran for (D-141). */
@@ -272,7 +280,7 @@ export type ImproverTally = {
 
 /** The reply line of an improver pass (D-141), which comes right after the applied lines. */
 export function improverLine(tally: ImproverTally): string {
-  return `Improver: ${tally.changed} of ${tally.total} built files changed and accepted.`
+  return t('apply.improver.improverLine', { changed: tally.changed, total: tally.total })
 }
 
 /** What the improver pass did (G-02-1f, D-141), with its tally. */

@@ -76,6 +76,8 @@ export const PROMPTS = Object.freeze({
   epicWorkerLine: 'You are {title} (cadre role {id}) on epic {key}. Read .cadre/{id}/ROLE.md, then {wait}',
   // The prompt of the probe's one short turn (generate/launcher, D-112).
   probe: 'Reply with OK.',
+  // The prompt of one claude-md-improver run on a built role file (apply/improver improverArgv, D-141).
+  improverPrompt: 'Use the claude-md-management:claude-md-improver skill to improve the file {path} only.',
 }) satisfies Record<string, string>
 
 /** The system prompt of the roles proposal (suggest/propose PROPOSE_SYSTEM), at most `maxRoles` roles. */
