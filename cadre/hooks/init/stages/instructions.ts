@@ -146,9 +146,12 @@ export const HANDOUT_DISMISSED_REASON = t('init.instructions.handoutDismissedRea
 /** The most sources a topic's context line names before it counts the rest. */
 const MAX_SHOWN_SOURCES = 3
 
-/** The question of one topic (G-02-1f Part by part): which roles get it, by its title. */
+/**
+ * The question of one topic (G-02-1f Part by part): which roles get it, by its title, the title's secret-like spans
+ * hidden (redactedText, E1, PR-S3).
+ */
 export function topicQuestion(topic: InstructionTopic): string {
-  return t('init.instructions.topicQuestion', { title: topic.title })
+  return t('init.instructions.topicQuestion', { title: redactedText(topic.title) })
 }
 
 /**

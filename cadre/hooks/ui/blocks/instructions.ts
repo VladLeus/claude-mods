@@ -70,12 +70,12 @@ function isFileGrouping(scan: InstructionScan, topics: readonly InstructionTopic
 }
 
 /**
- * One topic's rows in the instructions block: title and summary, the summary's secret-like spans hidden (redactedText,
- * E1, #163), each source on its own row, the recommended roles.
+ * One topic's rows in the instructions block: title and summary, their secret-like spans hidden (redactedText, E1,
+ * #163, PR-S3), each source on its own row, the recommended roles.
  */
 function topicRows(topic: InstructionTopic, parts: readonly InstructionPart[], ids: readonly string[]): string[] {
   return [
-    t('ui.instructions.topicRows', { title: topic.title, summary: redactedText(topic.summary) }),
+    t('ui.instructions.topicRows', { title: redactedText(topic.title), summary: redactedText(topic.summary) }),
     ...topicParts(topic, parts).map(part => t('ui.instructions.topicRows2', { source: sourceText(part) })),
     t('ui.instructions.topicRows3', { ids: idsOrNone(ids, SCREEN_LIST_WORDS.none) }),
   ]

@@ -220,8 +220,8 @@ export function instructionPartsContext(
 }
 
 /**
- * The context of one topic's question (D-236): that topic only, its title and summary, the summary's secret-like spans
- * hidden (redactedText, E1, #163), the file and heading of each of its parts (never their text) and the roles
+ * The context of one topic's question (D-236): that topic only, its title and summary, their secret-like spans hidden
+ * (redactedText, E1, #163, PR-S3), the file and heading of each of its parts (never their text) and the roles
  * recommended for it, titled by its place among the topics.
  */
 export function topicContext(
@@ -232,7 +232,10 @@ export function topicContext(
   count: number,
 ): AskContext {
   const lines = [
-    clean(t('ui.context.topicContext', { title: topic.title, summary: redactedText(topic.summary) }), UNCUT),
+    clean(t('ui.context.topicContext', {
+      title: redactedText(topic.title),
+      summary: redactedText(topic.summary),
+    }), UNCUT),
     ...topicParts(topic, parts).map(part => clean(t('ui.context.topicContext2', { source: sourceText(part) }), UNCUT)),
     t('ui.context.topicContext3', { roleIds: roleIdsText(recommended) }),
   ]
