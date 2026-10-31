@@ -1190,7 +1190,6 @@ export const EN = Object.freeze({
   'framework.none.adapter.builtinAdapterCheck': 'the file exists and says what was done and how it was verified',
   'framework.none.adapter.builtinAdapterAutonomyNote':
     'No framework config: autonomy comes from the kickoff text alone.',
-  'framework.none.adapter.builtinAdapter5': 'the plan in .cadre/{roleId}/.runtime/plan.md',
 
   'scope.lint.denyProblems': 'deny entry {entry} would block an infra tool',
   'scope.lint.denyProblems2': 'deny entry {entry} names the infra plugin {key}',

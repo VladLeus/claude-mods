@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Facts } from '../types'
+import type { Facts, FrameworkId } from '../types'
 import { helpText, USAGE_LINES } from './command/usage'
 import { REPLY_ERRORS_INTRO } from './core/reply'
 import { detectText } from './detect/report'
 import { ADAPTERS } from './framework/registry'
+import { desiredFiles } from './generate/files'
 import { GOLDEN_DETECT } from './golden/detect'
 import { GOLDEN_EPIC } from './golden/epic'
 import { GOLDEN_START } from './golden/start'
 import { GOLDEN_STATUS } from './golden/status'
+import { inputOf, TEMPLATE_ROLES } from './golden/worlds'
 import { MODEL_EFFORT_OPTIONS } from './init/answers'
 import { runInit } from './init/run'
 import { ROLES_QUESTION } from './init/stages/roles'
@@ -142,6 +144,21 @@ function runTexts(run: MemRun, reply: string): string[] {
   ]
 }
 
+/**
+ * The static pieces of the EN texts, 12 characters or more once trimmed, that no ARTIFACT, PROMPTS or CONTRACTS text
+ * holds. Generated text is ARTIFACT or PROMPTS (D-221), so an EN text in a hashed file breaks on the first translation
+ * (WE-M1).
+ */
+const EN_ONLY_PIECES: readonly string[] = Object.values(EN)
+  .flatMap(template => template.split(/\{[a-zA-Z]+\}/))
+  .map(piece => piece.trim())
+  .filter(piece => piece.length >= 12)
+  .filter(piece => {
+    const tables = [ARTIFACT, PROMPTS, CONTRACTS]
+
+    return !tables.some(table => Object.values(table).some(text => text.includes(piece)))
+  })
+
 describe('user text names no internal phase (G-02-3b)', () => {
   test('a phase name is the word Phase and a number, as in (Phase 3.1) or the Phase 2 repo scan', () => {
     const texts = ['(Phase 3.1)', 'the Phase 2 repo scan', 'phase 2', 'Phase two', 'Phases']
@@ -234,5 +251,20 @@ describe('user text names no internal phase (G-02-3b)', () => {
     expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
     const lines = runTexts(run, reply).flatMap(text => text.split('\n'))
     expect(PRIVATE_FRAGMENTS.filter(fragment => !lines.some(line => line.includes(fragment)))).toEqual([])
+  })
+})
+
+describe('generated files hold no screen text (D-221)', () => {
+  test('no generated file of the golden teams holds an EN-only text (WE-M1)', () => {
+    const frameworks: readonly FrameworkId[] = ['none', 'gsd']
+    const found = frameworks.flatMap(framework =>
+      desiredFiles(inputOf(TEMPLATE_ROLES, framework)).flatMap(file => {
+        const pieces = EN_ONLY_PIECES.filter(piece => file.content.includes(piece))
+
+        return pieces.map(piece => `${framework} ${file.path}: ${piece}`)
+      }),
+    )
+
+    expect(found).toEqual([])
   })
 })

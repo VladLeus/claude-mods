@@ -7,6 +7,7 @@ import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from '../../core/kickoff-text'
 import { isRoleId } from '../../core/role-id'
 import { ARTIFACT } from '../../locales/artifact'
+import { PROMPTS } from '../../locales/prompts'
 import { fill, t } from '../../locales/t'
 
 /**
@@ -130,7 +131,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   agentPrefix: null,
   needsBash: false,
   /** The role's plan file, which the built-in kickoff asks the role to write first. */
-  roleStart: (roleId: string) => t('framework.none.adapter.builtinAdapter5', { roleId }),
+  roleStart: (roleId: string) => fill(PROMPTS.builtinRoleStart, { roleId }),
   install: null,
   factsHeading: null,
 })

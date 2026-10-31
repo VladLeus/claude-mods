@@ -67,6 +67,8 @@ export const PROMPTS = Object.freeze({
   // The kickoff sentences of a role (generate/kickoff) and of an epic role (epic/kickoff).
   kickoffIntro: 'You are the {title} role of this repo (cadre role {id}).',
   kickoffNext: 'Read .cadre/{id}/ROLE.md, check your inbox, then start with {start}.',
+  // The built-in framework's start (framework/none roleStart): the {start} of kickoffNext.
+  builtinRoleStart: 'the plan in .cadre/{roleId}/.runtime/plan.md',
   epicFeedRoles: 'your roles',
   epicPmNext: `Read .cadre/{id}/ROLE.md and your inbox, fetch the epic with your tracker MCP, resolve its gaps ${
     ''}(decide or ask the user), then feed {target} ticket by ticket.`,
