@@ -3,9 +3,10 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionHandout, Plan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
+import { recommend } from '../../roles/recommend'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
-import { scopesFor } from '../../team'
+import { resolvedFramework, scopesFor } from '../../team'
 import {
   cardOf,
   DEFAULT_LOCATIONS,
@@ -15,6 +16,7 @@ import {
   gitWorld,
   memIo,
   repoScan,
+  SECURITY_KEY,
   session,
   stateAt,
   templateRole,
@@ -22,8 +24,10 @@ import {
 } from '../../testkit'
 import { contextText, MAX_ASKS, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { proposalLines } from '../../ui/blocks/context'
+import { recommendationLines } from '../../ui/blocks/recommendations'
 import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
+import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult } from '../draft'
 import { initReplyText } from '../initapply'
 import { nextStage, STAGES } from '../machine'
@@ -406,6 +410,75 @@ describe('review redaction (WD-S5, #163)', () => {
     const row = `  Lead token=${REDACTED} (${first?.id})`
     expect([shown.includes(row), context.includes(row)]).toEqual([true, true])
     expect(JSON.stringify([shown, context, asking.openQuestion?.question])).not.toContain('ab12cd34ef56')
+  })
+})
+
+describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
+  /** REVIEW_DRAFT with a scan warning and the roles given: the review lines then sit between the two. */
+  function draftWith(roles: Draft['roles']): Draft {
+    const repo = repoScan({ warnings: ['could not list src'] })
+
+    return { ...REVIEW_DRAFT, roles, gathered: { ...REVIEW_DRAFT.gathered, repo }, pluginInstalls: [SECURITY_KEY] }
+  }
+
+  /** The recommendation lines the security stage shows for a draft: recommend over the same inputs (ROLE-03). */
+  function recommendedLines(draft: Draft): string[] {
+    const frameworks = draft.roles.map(role => resolvedFramework(role, draft.repoDefault))
+    const { roles, gathered } = draft
+
+    return recommendationLines(recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup }), roles)
+  }
+
+  /** The review block of a draft asked on `surface`, and the context of every page, paged with Next page (D-233). */
+  async function reviewed(
+    draft: Draft,
+    surface: Surface,
+  ): Promise<{ readonly lines: readonly string[]; readonly pages: readonly (readonly string[])[] }> {
+    const entered = reviewStage.enter(stateAt('review', draft, { surface }))
+    let state = nextStage(entered, planAnswer(await plannedFor(entered)))
+    const lines = state.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const pages: (readonly string[])[] = [state.openQuestion?.spec.context?.lines ?? []]
+    while (state.openQuestion?.spec.options.includes('Next page') === true) {
+      state = nextStage(state, { kind: 'answer', text: 'Next page' })
+      pages.push(state.openQuestion?.spec.context?.lines ?? [])
+    }
+
+    return { lines, pages }
+  }
+
+  test('an FE team on no framework: the recommendations after the scan warnings, before the installs', async () => {
+    const fe = templateRole('fe')
+    const draft = draftWith([...REVIEW_DRAFT.roles, fe])
+    const shown = recommendedLines(draft)
+    const { lines } = await reviewed(draft, 'pane')
+    const at = lines.indexOf(shown[0] ?? '')
+    expect(lines.slice(at - 1, at + shown.length + 1)).toEqual([
+      'warning: could not list src',
+      ...shown,
+      `Plugins to install after Confirm (a --dry-run installs nothing): ${SECURITY_KEY}`,
+    ])
+    const playwright = `- Playwright MCP for ${fe.title}: the FE role has no E2E setup to check its work in a browser`
+    const run = '    run: claude mcp add playwright -- npx @playwright/mcp@latest'
+    expect(shown.slice(shown.indexOf(playwright), shown.indexOf(playwright) + 2)).toEqual([playwright, run])
+  })
+
+  test('a team with nothing to recommend shows the one line the security stage shows for none', async () => {
+    const draft = draftWith([withFramework(templateRole('pm'), 'superpowers')])
+    const { lines } = await reviewed(draft, 'pane')
+    expect(recommendedLines(draft)).toEqual(['Recommendations: none'])
+    const at = lines.indexOf('Recommendations: none')
+    expect(lines.slice(at - 1, at + 1)).toEqual(['warning: could not list src', 'Recommendations: none'])
+  })
+
+  test('the paged review reaches the recommendations on some page before Confirm, on each surface', async () => {
+    const draft = draftWith([...REVIEW_DRAFT.roles, templateRole('fe')])
+    const shown = recommendedLines(draft)
+    for (const surface of ['pane', 'tui-default'] satisfies Surface[]) {
+      const { lines, pages } = await reviewed(draft, surface)
+      const flat = pages.flat()
+      const at = flat.indexOf(shown[0] ?? '')
+      expect([surface, flat, flat.slice(at, at + shown.length)]).toEqual([surface, lines, shown])
+    }
   })
 })
 
