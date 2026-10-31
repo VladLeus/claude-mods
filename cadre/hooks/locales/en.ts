@@ -910,11 +910,11 @@ export const EN = Object.freeze({
     'cadre {command} could not read the session root, so it stopped before reading anything.',
 
   'guard.refusals.homeRootReply':
-    `cadre detect needs a repo root other than your home folder. Open the session in a repo and run ${
-    ''}/cadre detect again.`,
+    `cadre {command} needs a repo root other than your home folder. Open the session in a repo and run ${
+    ''}/cadre {command} again.`,
   'guard.refusals.fileSystemRootReply':
-    `cadre detect needs a repo root other than the file system root (/). Open the session in a repo and ${
-    ''}run /cadre detect again.`,
+    `cadre {command} needs a repo root other than the file system root (/). Open the session in a repo and ${
+    ''}run /cadre {command} again.`,
 
   'team.noStateReply': 'cadre {command} needs .cadre/cadre.json from /cadre init: run /cadre init first.',
   'team.regenBadState': '.cadre/cadre.json is not valid: fix it, or run /cadre init again.',

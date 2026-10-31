@@ -5,9 +5,8 @@ import { INIT_CANCELLED } from '../init/replies'
 import { autopilotReply } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { BIDI_OVERRIDE, DEFAULT_LOCATIONS, gitWorld, memIo, memWorld, STATUS_PATH, withStats } from '../testkit'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from './refusals'
+import { fileSystemRootReply, HOME_ROOT_REPLY, homeRootReply } from './refusals'
 import {
-  commandRefusal,
   gitRootRefusal,
   initGuard,
   NOT_INTERACTIVE_REPLY,
@@ -37,8 +36,8 @@ describe('initGuard', () => {
 
   test('the home folder and the file system root are refused in init wording, before any stat or read', async () => {
     const cases = [
-      { root: '/home/u', text: commandRefusal(HOME_ROOT_REPLY, 'init') },
-      { root: '/', text: commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init') },
+      { root: '/home/u', text: homeRootReply('init') },
+      { root: '/', text: fileSystemRootReply('init') },
     ]
     for (const { root, text } of cases) {
       const run = memIo(gitWorld({ locations: { ...DEFAULT_LOCATIONS, root, givenRoot: root } }), {})
@@ -122,7 +121,7 @@ describe('initGuard', () => {
     const home = memIo(gitWorld({ locations: { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' } }), {})
     expect(await initGuard(home.io, 'regen')).toEqual({
       kind: 'refuse',
-      text: commandRefusal(HOME_ROOT_REPLY, 'regen'),
+      text: homeRootReply('regen'),
     })
     const noRoot = memIo(gitWorld({ locations: null }), {})
     expect(await initGuard(noRoot.io, 'regen')).toEqual({
@@ -149,7 +148,7 @@ describe('repoGuard', () => {
     const home = withStats(memIo(memWorld({ locations: { ...DEFAULT_LOCATIONS, root: '/home/u' } }), {}))
     expect(await repoGuard(home.io, 'start')).toEqual({
       kind: 'refuse',
-      text: commandRefusal(HOME_ROOT_REPLY, 'start'),
+      text: homeRootReply('start'),
     })
     expect(home.stats).toEqual([])
     const noGit = memIo(memWorld({}), {})
@@ -218,16 +217,16 @@ describe('gitRootRefusal and notGitRepoReply', () => {
 })
 
 describe('init helpers', () => {
-  test('commandRefusal names the given command wherever a detect refusal names detect', () => {
-    expect(commandRefusal(HOME_ROOT_REPLY, 'init')).toBe(
+  test("the root refusals name the given command where detect's name detect", () => {
+    expect(homeRootReply('init')).toBe(
       'cadre init needs a repo root other than your home folder. ' +
         'Open the session in a repo and run /cadre init again.',
     )
-    expect(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'regen')).toBe(
+    expect(fileSystemRootReply('regen')).toBe(
       'cadre regen needs a repo root other than the file system root (/). ' +
         'Open the session in a repo and run /cadre regen again.',
     )
-    expect(commandRefusal('no command is named here', 'init')).toBe('no command is named here')
+    expect(HOME_ROOT_REPLY).toContain('cadre detect')
   })
 
   test('the non-interactive and cancelled replies state what happened and that nothing was written', () => {

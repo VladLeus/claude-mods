@@ -7,18 +7,18 @@
  * is pure and imports core and guards; init.ts reads it.
  */
 import { reportText } from '../core/text'
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from '../guards/refusals'
-import { commandRefusal, rootUnknownReply } from '../guards/repo'
+import { fileSystemRootReply, homeRootReply } from '../guards/refusals'
+import { rootUnknownReply } from '../guards/repo'
 import { t } from '../locales/t'
 
 /** The reply when the session root cannot be read: init stops before it reads anything. */
 const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')
 
 /** The home-folder refusal as init words it (D-36, Pitfall 10). */
-const INIT_HOME_ROOT_REPLY = commandRefusal(HOME_ROOT_REPLY, 'init')
+const INIT_HOME_ROOT_REPLY = homeRootReply('init')
 
 /** The file-system-root refusal as init words it (D-36, Pitfall 10). */
-const INIT_FILE_SYSTEM_ROOT_REPLY = commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init')
+const INIT_FILE_SYSTEM_ROOT_REPLY = fileSystemRootReply('init')
 
 /**
  * The start of the reply when a dialog is dismissed or never answered with a listed choice: nothing was written

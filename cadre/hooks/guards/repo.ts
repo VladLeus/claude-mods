@@ -42,14 +42,6 @@ export function rootUnknownReply(command: CommandWord): string {
   return t('guard.repo.rootUnknownReply', { command })
 }
 
-/**
- * The text of a `/cadre detect` refusal with every `cadre detect` named for `command` instead, so the refusal reads
- * right for init, regen, start or status while detect keeps its own constants byte for byte (Pitfall 10).
- */
-export function commandRefusal(refusal: string, command: CommandWord): string {
-  return refusal.replaceAll('cadre detect', `cadre ${command}`)
-}
-
 /** What the guard decided: refuse with this text, or go on with the session's locations. */
 export type GuardResult =
   | { readonly kind: 'refuse'; readonly text: string }
@@ -104,8 +96,9 @@ export async function repoGuard(io: InitIo, command: CommandWord): Promise<Guard
   const locations = await io.locations()
   if (locations === null) return refuse(rootUnknownReply(command))
 
-  const rootRefusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
-  if (rootRefusal !== null) return refuse(commandRefusal(rootRefusal, command))
+  const roots = [locations.givenRoot, locations.root]
+  const rootRefusal = detectRefusal(roots, [locations.givenHome, locations.home], command)
+  if (rootRefusal !== null) return refuse(rootRefusal)
 
   const gitRefusal = await gitTopRefusal(io, locations.root, command)
   if (gitRefusal !== null) return refuse(gitRefusal)

@@ -24,8 +24,8 @@ import { isObject, stableJson } from '../core/json'
 import { compareText } from '../core/text'
 import { cadreJsonText, roleClaudeMdText, roleJsonText } from '../generate/docs'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { HOME_ROOT_REPLY } from '../guards/refusals'
-import { commandRefusal, NOT_INTERACTIVE_REPLY } from '../guards/repo'
+import { homeRootReply } from '../guards/refusals'
+import { NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import { runInit } from '../init/run'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../roles/infra'
@@ -300,7 +300,7 @@ describe('runRegen', () => {
     const run = memIo({ ...world, locations: { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' } }, {})
     const host = memHost(hostWorld({}))
     expect(await runRegen(run.io, { id: 'be', dryRun: false, host: host.io })).toBe(
-      commandRefusal(HOME_ROOT_REPLY, 'regen'),
+      homeRootReply('regen'),
     )
     expect([host.writes, host.calls]).toEqual([[], []])
     expect(run.reads).toEqual([])

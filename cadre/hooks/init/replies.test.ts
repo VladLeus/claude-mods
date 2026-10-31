@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from '../guards/refusals'
-import { commandRefusal } from '../guards/repo'
+import { FILE_SYSTEM_ROOT_REPLY, fileSystemRootReply, HOME_ROOT_REPLY, homeRootReply } from '../guards/refusals'
 import { NO_USABLE_ANSWER_REASON } from '../ui/ask'
 import { cancelledReply } from './replies'
 
@@ -16,8 +15,8 @@ describe('cancel reply (S1)', () => {
 
 describe('init helpers', () => {
   test('the init refusals use the init wording and the detect refusals keep their own, byte for byte', () => {
-    expect(commandRefusal(HOME_ROOT_REPLY, 'init')).not.toContain('detect')
-    expect(commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init')).not.toContain('detect')
+    expect(homeRootReply('init')).not.toContain('detect')
+    expect(fileSystemRootReply('init')).not.toContain('detect')
     expect(HOME_ROOT_REPLY).toBe(
       'cadre detect needs a repo root other than your home folder. ' +
         'Open the session in a repo and run /cadre detect again.',

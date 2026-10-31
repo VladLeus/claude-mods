@@ -55,8 +55,7 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { HOME_ROOT_REPLY } from '../guards/refusals'
-import { commandRefusal } from '../guards/repo'
+import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths } from '../plan/plan'
@@ -4069,7 +4068,7 @@ describe('init apply (D-105)', () => {
     const locations = { ...DEFAULT_LOCATIONS, root: '/home/u', givenRoot: '/home/u' }
     const refused = memHost(hostWorld({}))
     const home = memIo(gitWorld({ locations }), INIT_ANSWERS)
-    expect(await runInit(home.io, { dryRun: false, host: refused.io })).toBe(commandRefusal(HOME_ROOT_REPLY, 'init'))
+    expect(await runInit(home.io, { dryRun: false, host: refused.io })).toBe(homeRootReply('init'))
     const cancelled = memHost(hostWorld({}))
     const dismissed = memIo(gitWorld(), answersWithout('Review the plan'))
     const reply = await runInit(dismissed.io, { dryRun: false, host: cancelled.io })
