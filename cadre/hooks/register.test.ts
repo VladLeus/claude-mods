@@ -37,7 +37,7 @@ import {
 } from './testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from './ui/ask'
 import { paneRows } from './ui/pane'
-import { OWN_ANSWER_HINT, PREVIEW_ROWS } from './ui/preview'
+import { NOTE_WORDING, OTHER_WORDING, OWN_ANSWER_HINT, PREVIEW_ROWS } from './ui/preview'
 
 /** The `on` registrar a test callback receives, which answers the host ops a plugin calls. */
 type HostOn = Parameters<Parameters<typeof test>[1]>[1]
@@ -2447,6 +2447,48 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, manySkillsWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.logs.includes('Your own skills')).toBe(false)
+  })
+
+  /**
+   * The dialog text of the first question starting `prefix` in an init run over initWorld with `answers`, on a pane
+   * surface that previews nothing and then on the TUI default (WD-M1); '' where the run never asks it.
+   */
+  async function typedDialogs(
+    $: Engine,
+    on: HostOn,
+    answers: Readonly<Record<string, string>>,
+    prefix: string,
+  ): Promise<readonly [string, string]> {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers }), log)
+    await $.command.run({ command: 'cadre', args: 'init --dry-run' })
+    const pane = log.asks.find(ask => ask.startsWith(`ask ${prefix}`)) ?? ''
+    const at = log.asks.length
+    await $.command.run(TUI_RUN)
+    const tui = log.asks.slice(at).find(ask => ask.startsWith(`ask ${prefix}`)) ?? ''
+
+    return [pane, tui]
+  }
+
+  test('the Adjust dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
+    const answers = { ...INIT_ANSWERS, [ROLES_QUESTION]: 'Adjust them' }
+    const [pane, tui] = await typedDialogs($, on, answers, 'Adjust the roles')
+    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
+  })
+
+  test('the Describe dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
+    const answers = { ...INIT_ANSWERS, [ROLES_QUESTION]: 'Describe my own structure' }
+    const [pane, tui] = await typedDialogs($, on, answers, 'Describe your role structure')
+    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
+  })
+
+  test('the launcher folder dialog says where to type, as a note on the TUI default (WD-M1)', async ($, on) => {
+    const answers = { ...INIT_ANSWERS, 'Where should the role launchers start': 'Another folder in this repo' }
+    const [pane, tui] = await typedDialogs($, on, answers, 'Type the folder the launchers start in')
+    const wording = [pane.includes(OTHER_WORDING), tui.includes(NOTE_WORDING), tui.includes(OTHER_WORDING)]
+    expect([pane !== '', tui !== '', ...wording]).toEqual([true, true, true, true, false])
   })
 
   test('golden: the TUI-default init dry run: panes, statuses, logs, asks, reply (D-208, D-219)', async ($, on) => {
