@@ -509,13 +509,14 @@ function scanOf(state: ReadState, memories: readonly MemoryItem[]): InstructionS
  * edited.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
-  const userDir = userDirOf(sources)
+  const warnings: string[] = []
+  const userDir = userDirOf(sources, sources.root, warnings)
   const state: ReadState = {
     io,
     sources,
     userDir: userDir !== null && relativeTo(userDir, sources.root) === null ? userDir : null,
     parts: [],
-    warnings: [],
+    warnings,
     seen: new Set(),
     sizes: [],
     unread: [],

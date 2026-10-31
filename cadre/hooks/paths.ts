@@ -205,12 +205,19 @@ export function mangledProjectDir(path: string): string {
 }
 
 /**
- * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, else
- * `<home>/.claude`; null when there is neither. The setup scan and the history scan both take it from here, so the two
- * never disagree on it (IN-02).
+ * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, an
+ * absolute path with no empty, `.` or `..` segment and outside the repo at `root` (the rule userFolderOf uses), else
+ * `<home>/.claude`; null when there is neither. A value that is set but fails the rule is not used and adds
+ * CONFIG_DIR_WARNING to `warnings` (D-238). Every caller takes the user folder from here, so none disagree on it
+ * (IN-02).
  */
-export function userDirOf(ctx: { readonly configDir: string | null; readonly home: string | null }): string | null {
-  if (ctx.configDir !== null) return ctx.configDir
+export function userDirOf(
+  ctx: { readonly configDir: string | null; readonly home: string | null },
+  root: string,
+  warnings: string[],
+): string | null {
+  const configDir = usableConfigDir({ root, home: ctx.home, configDir: ctx.configDir }, warnings)
+  if (configDir !== null) return configDir
 
   return ctx.home === null ? null : `${ctx.home}/.claude`
 }
@@ -481,10 +488,11 @@ export function parentOf(path: string): string {
 /**
  * The auto-memory folders of this repo (G-02-1f Memories), as the setup scan lists them: the `memory` folder of the
  * project folder under `<user folder>/projects` (memoryFolderOf), for the root as resolved, then as given, once each;
- * none with no user folder.
+ * none with no user folder. The user folder follows userDirOf; an ignored CLAUDE_CONFIG_DIR is warned about by the
+ * scan of the same run, so its warning is not repeated here (D-238).
  */
 export function memoryFoldersOf(locations: InitLocations): string[] {
-  const userDir = userDirOf(locations)
+  const userDir = userDirOf(locations, locations.root, [])
   if (userDir === null) return []
 
   return Array.from(new Set([locations.root, locations.givenRoot].map(root => memoryFolderOf(userDir, root))))

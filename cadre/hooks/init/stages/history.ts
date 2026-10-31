@@ -110,10 +110,13 @@ export function historyLines(scan: HistoryScan): string[] {
   return [HISTORY_HEADING, ...(rows.length === 0 ? [t('init.history.noneRow')] : rows), ...noteLines(scan)]
 }
 
-/** The session folder of this repo in the user folder (historyDir), or null when no user folder is known. */
+/**
+ * The session folder of this repo in the user folder (historyDir), or null when no user folder is known. The user
+ * folder follows userDirOf; an ignored CLAUDE_CONFIG_DIR is already named in the scan warnings before this stage.
+ */
 function historyDirOf(state: InitState): string | null {
   const { locations } = state.draft
-  const userDir = locations === undefined ? null : userDirOf(locations)
+  const userDir = locations === undefined ? null : userDirOf(locations, locations.root, [])
   if (locations === undefined || userDir === null) return null
 
   return historyDir(userDir, locations.root)

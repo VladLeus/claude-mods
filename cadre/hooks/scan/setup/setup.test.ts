@@ -774,10 +774,10 @@ describe('setup consent and instructions', () => {
   })
 
   test('userDirOf is CLAUDE_CONFIG_DIR when it is set, else <home>/.claude, and null with neither (IN-02)', () => {
-    expect(userDirOf({ ...CTX, configDir: '/cfg' })).toBe('/cfg')
-    expect(userDirOf({ ...CTX, configDir: '/cfg', home: null })).toBe('/cfg')
-    expect(userDirOf(CTX)).toBe('/home/u/.claude')
-    expect(userDirOf({ ...CTX, home: null })).toBeNull()
+    expect(userDirOf({ ...CTX, configDir: '/cfg' }, CTX.root, [])).toBe('/cfg')
+    expect(userDirOf({ ...CTX, configDir: '/cfg', home: null }, CTX.root, [])).toBe('/cfg')
+    expect(userDirOf(CTX, CTX.root, [])).toBe('/home/u/.claude')
+    expect(userDirOf({ ...CTX, home: null }, CTX.root, [])).toBeNull()
   })
 
   test('memoryFiles are the .md files of the memory folder of this repo, sorted, with their extension', async () => {

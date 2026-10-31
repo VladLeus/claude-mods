@@ -297,7 +297,8 @@ export async function gatherLaunchUser(
 ): Promise<LaunchUserRead> {
   const { locations } = input
   const { home } = locations
-  const userDir = userDirOf(locations)
+  const warnings: string[] = []
+  const userDir = userDirOf(locations, locations.root, warnings)
   if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
@@ -335,9 +336,10 @@ export async function gatherLaunchUser(
     codeDirs: input.codeDirs,
     linkedMemories: [],
   }
-  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings: [], memories: NO_MEMORY_LINKS }
-  const { memories, warnings } = await linkedMemoriesOf(io, user, input.role.id)
+  if (!isPartsFlowRole(input.role)) return { kind: 'ok', user, warnings, memories: NO_MEMORY_LINKS }
+  const linked = await linkedMemoriesOf(io, user, input.role.id)
+  const { memories } = linked
   const linkedMemories = memories.links.map(link => link.path)
 
-  return { kind: 'ok', user: { ...user, linkedMemories }, warnings, memories }
+  return { kind: 'ok', user: { ...user, linkedMemories }, warnings: [...warnings, ...linked.warnings], memories }
 }

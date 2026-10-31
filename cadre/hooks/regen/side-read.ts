@@ -182,7 +182,8 @@ export type RecordPlaces = {
 export function recordPlacesOf(locations: InitLocations, setup: SetupScan): RecordPlaces {
   const { root, home, configDir } = locations
   const sources = { root, home, configDir }
-  const userDir = userDirOf(locations)
+  // An ignored CLAUDE_CONFIG_DIR is named in regen's scan warnings, so its warning is not repeated here (D-238).
+  const userDir = userDirOf(locations, root, [])
   const folder = userDir === null || relativeTo(userDir, root) !== null ? '' : trimSlash(userDir)
   const chain = setup.claudeMd.map(shown => pathFromDisplay(shown, sources))
 

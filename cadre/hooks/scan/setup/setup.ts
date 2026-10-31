@@ -33,7 +33,7 @@ const NO_USER_DIR_WARNING = t('scan.setup.setup.noUserDirWarning')
  */
 export async function scanSetup(io: InitIo, ctx: SetupContext, isClaudeJsonAllowed: boolean): Promise<SetupScan> {
   const warnings: string[] = []
-  const userDir = userDirOf(ctx)
+  const userDir = userDirOf(ctx, ctx.root, warnings)
   if (userDir === null) warnings.push(NO_USER_DIR_WARNING)
   const sources = await readSettings(io, warnings)
   const settings = projectSettings(sources)
