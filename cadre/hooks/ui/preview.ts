@@ -8,6 +8,7 @@
 import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { clean } from '../core/text'
+import { t } from '../locales/t'
 import { UNCUT, wrapLine } from './pane'
 import type { Surface } from './surface'
 
@@ -87,7 +88,7 @@ export function fitPreview(context: AskContext, rows: number): FittedPreview {
   if (context.kind === 'review' || lines.length <= rows || rows < 2) return { lines, isOverflow: false }
   const shown = lines.slice(0, rows - 1)
 
-  return { lines: [...shown, `+${lines.length - shown.length} more above`], isOverflow: true }
+  return { lines: [...shown, t('ui.preview.moreAbove', { value: lines.length - shown.length })], isOverflow: true }
 }
 
 /**
@@ -260,28 +261,28 @@ export function withPreviews(questions: unknown, previewOf: (header: unknown) =>
  * of their own (A2, R3): beside a preview the engine draws no Other row, so the person picks it, or presses `n`, and
  * types the answer in the dialog's notes.
  */
-export const DESCRIBE_OWN_LABEL = 'Describe your own'
+export const DESCRIBE_OWN_LABEL = t('ui.preview.describeOwnLabel')
 
 /** What the Describe your own option says under its label (A2): how to type an answer of one's own. */
-export const DESCRIBE_OWN_DESCRIPTION = 'Press n, type your answer, then Enter'
+export const DESCRIBE_OWN_DESCRIPTION = t('ui.preview.describeOwnDescription')
 
 /**
  * The last line of every previewed single-select question (R3), with or without room for the Describe your own
  * option: how to type an answer of one's own.
  */
-export const OWN_ANSWER_HINT = 'Or press n, type your own answer, then Enter.'
+export const OWN_ANSWER_HINT = t('ui.preview.ownAnswerHint')
 
 /**
  * The words a question uses for an answer typed in the engine's Other row (R4): beside a preview the engine draws no
  * Other row, so a previewed question says NOTE_WORDING in their place.
  */
-export const OTHER_WORDING = 'under Other'
+export const OTHER_WORDING = t('ui.preview.otherWording')
 
 /**
  * What a previewed question says in place of OTHER_WORDING (R4): beside a preview the engine draws no Other row, and
  * the notes field, opened with n, is where a typed answer goes.
  */
-export const NOTE_WORDING = 'as a note (press n)'
+export const NOTE_WORDING = t('ui.preview.noteWording')
 
 /** The most options an AskUserQuestion question may have: the tool's schema allows 2 to 4 (A2). */
 const MAX_DIALOG_OPTIONS = 4

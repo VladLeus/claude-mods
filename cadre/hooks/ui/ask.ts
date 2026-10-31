@@ -7,6 +7,7 @@
  */
 import type { AskSpec, InitIo, PaneKey } from '../../types'
 import { clean, reportText } from '../core/text'
+import { t } from '../locales/t'
 import { UNCUT } from './pane'
 
 /** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
@@ -16,7 +17,7 @@ export const MAX_ASKS = 3
  * Why init cancels when one question got MAX_ASKS answers it could not read (D-136). Esc keeps the question's own
  * dismissed reason (D-45); both cancel, and nothing is written (A1).
  */
-export const NO_USABLE_ANSWER_REASON = `No usable answer after ${MAX_ASKS} tries.`
+export const NO_USABLE_ANSWER_REASON = t('ui.ask.noUsableAnswer', { maxAsks: MAX_ASKS })
 
 /**
  * The chip set of G-02-3c (D-136): the header chip of each kind of init question, a name of 12 characters at most (the
@@ -24,26 +25,26 @@ export const NO_USABLE_ANSWER_REASON = `No usable answer after ${MAX_ASKS} tries
  * `Hunk i of n` chip (hunkQuestion).
  */
 export const ASK_HEADERS = Object.freeze({
-  claudeJson: 'claude.json',
-  history: 'History',
-  roles: 'Roles',
-  adjust: 'Adjust',
-  describe: 'Describe',
-  framework: 'Framework',
-  security: 'Security',
-  duration: 'Duration',
-  model: 'Model',
-  mcp: 'MCP',
-  skills: 'Skills',
-  memory: 'Memory',
-  instructions: 'Instructions',
-  env: 'Env',
-  launch: 'Launch',
-  launchDir: 'Launch dir',
-  gitPolicy: 'Git policy',
-  review: 'Review',
-  conflict: 'Conflict',
-  improver: 'Improver',
+  claudeJson: t('ui.chip.claudeJson'),
+  history: t('ui.chip.history'),
+  roles: t('ui.chip.roles'),
+  adjust: t('ui.chip.adjust'),
+  describe: t('ui.chip.describe'),
+  framework: t('ui.chip.framework'),
+  security: t('ui.chip.security'),
+  duration: t('ui.chip.duration'),
+  model: t('ui.chip.model'),
+  mcp: t('ui.chip.mcp'),
+  skills: t('ui.chip.skills'),
+  memory: t('ui.chip.memory'),
+  instructions: t('ui.chip.instructions'),
+  env: t('ui.chip.env'),
+  launch: t('ui.chip.launch'),
+  launchDir: t('ui.chip.launchDir'),
+  gitPolicy: t('ui.chip.gitPolicy'),
+  review: t('ui.chip.review'),
+  conflict: t('ui.chip.conflict'),
+  improver: t('ui.chip.improver'),
 })
 
 /** The most code points the engine shows in a question's chip. */
@@ -51,7 +52,7 @@ export const MAX_CHIP_CHARS = 12
 
 /** A counted chip (G-02-3c): `<word> <i>/<n>`, or just the word when that would be over MAX_CHIP_CHARS code points. */
 export function countedChip(word: string, position: number, count: number): string {
-  const chip = `${word} ${position}/${count}`
+  const chip = t('ui.ask.countedChip', { word, position, count })
 
   return Array.from(chip).length > MAX_CHIP_CHARS ? word : chip
 }
@@ -118,9 +119,9 @@ const MAX_REFUSED_CHARS = 40
  */
 export function refusalLine(answer: string, accepts: string): string {
   const typed = clean(answer.trim(), MAX_REFUSED_CHARS)
-  if (typed === '') return `An empty answer isn't one of: ${accepts}.`
+  if (typed === '') return t('ui.ask.refusalEmpty', { accepts })
 
-  return `'${typed}' isn't one of: ${accepts}.`
+  return t('ui.ask.refusalTyped', { typed, accepts })
 }
 
 /** Option labels as a refusal lists them (D-136): each in double quotes, joined with `, `. */
@@ -234,16 +235,16 @@ export async function noteLine(io: InitIo, line: string): Promise<void> {
  * the cadre init pane shows.
  */
 export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
-  scan: 'Scan',
-  history: 'Session history',
-  roles: 'Roles',
-  recommendations: 'Recommendations',
-  review: 'Review',
-  env: 'Env variables',
-  notes: 'Notes',
-  instructions: 'Instruction parts',
-  skills: 'Your own skills',
-  improver: 'Improver changes',
+  scan: t('ui.paneTitle.scan'),
+  history: t('ui.paneTitle.history'),
+  roles: t('ui.paneTitle.roles'),
+  recommendations: t('ui.paneTitle.recommendations'),
+  review: t('ui.paneTitle.review'),
+  env: t('ui.paneTitle.env'),
+  notes: t('ui.paneTitle.notes'),
+  instructions: t('ui.paneTitle.instructions'),
+  skills: t('ui.paneTitle.skills'),
+  improver: t('ui.paneTitle.improver'),
 })
 
 /**
