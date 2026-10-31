@@ -266,6 +266,38 @@ export const EN = Object.freeze({
   'init.launch.launchStartAccepts': '{quotedLabels} (or type git root, in here or other)',
   'init.launch.dirRefused': 'Cannot use {answer}: {problem}.',
 
+  'init.review.reviewQuestion':
+    'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
+  'init.review.reviewTypeHint': 'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
+  'init.review.reviewContextLine': '{planSummary}; {policy}; {launch}',
+  'init.review.confirm': 'Confirm',
+  'init.review.changeSomething': 'Change something…',
+  'init.review.nextPage': 'Next page',
+  'init.review.previousPage': 'Previous page',
+  'init.review.itemWords': 'roles, git policy, launcher start, or duration, model, assignments, memory, env, hunks',
+  'init.review.changeRefusal':
+    'Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, ' +
+    'assignments, memory, env or hunks.',
+  'init.review.reviewDismissedReason': 'The review question was dismissed or not answered.',
+  'init.review.reviewRoundsReason':
+    'The review question was asked {maxReviewRounds} times without "Confirm": nothing was chosen.',
+  'init.review.linkedMemoriesRow':
+    '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)',
+  'init.review.privateFilesRow':
+    `    private files: {memoryPattern}{id}/instructions/CLAUDE.md and instructions.json (outside the ${
+    ''}repo, never committed)`,
+  'init.review.privateFilesHeading': 'Private files per role (written after Confirm):',
+  'init.review.reviewLines': 'Plugins to install after Confirm (a --dry-run installs nothing): {keys}',
+  'init.review.rolesHeading': 'Roles:',
+  'init.review.roleRow': '  {title} ({id})',
+  'init.review.title': 'Review',
+  'init.review.pagedTitle': 'Review (page {number} of {count})',
+  'init.review.improverRun.one':
+    `After Confirm, claude-md-improver runs on up to {count} built file ${
+    ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
+  'init.review.improverRun.other':
+    `After Confirm, claude-md-improver runs on up to {count} built files ${
+    ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

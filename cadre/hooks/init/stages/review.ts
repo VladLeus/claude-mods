@@ -14,8 +14,9 @@ import { setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
-import { countedNoun, reportText } from '../../core/text'
+import { reportText } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
+import { t, tn } from '../../locales/t'
 import { planSummary, renderPlan } from '../../plan/text'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
 import { recommend } from '../../roles/recommend'
@@ -55,8 +56,7 @@ export function cardLines(roles: readonly RoleSpec[], scopes: ReadonlyMap<string
  * The first line of the final review question (D-43, D-134): the person confirms the plan the side pane shows, or goes
  * back to change one item. reviewQuestion gives the whole question text.
  */
-export const REVIEW_QUESTION =
-  'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.'
+export const REVIEW_QUESTION = t('init.review.reviewQuestion')
 
 /**
  * The last line of the review question (D-134): how to change an item that has no button of its own, by typing its
@@ -64,7 +64,7 @@ export const REVIEW_QUESTION =
  * pane for it. This reverses 02-13 user decision 2, which kept the question text unchanged and put the hint under the
  * review summary instead.
  */
-export const REVIEW_TYPE_HINT = 'Use a button, or type duration, model, assignments, memory, env or hunks under Other.'
+export const REVIEW_TYPE_HINT = t('init.review.reviewTypeHint')
 
 /**
  * The review question as the dialog shows it (D-134): REVIEW_QUESTION, then the context line on its own line when there
@@ -81,7 +81,11 @@ export function reviewQuestion(context: string | null): string {
  * (planSummary), the git policy line and where the launchers start, so the question reads on its own.
  */
 export function reviewContextLine(plan: Plan, policy: GitPolicy, start: LaunchStart): string {
-  return `${planSummary(plan)}; ${policyLine(policy)}; ${launchLine(start)}`
+  return t('init.review.reviewContextLine', {
+    planSummary: planSummary(plan),
+    policy: policyLine(policy),
+    launch: launchLine(start),
+  })
 }
 
 /** What an option of a page of the paged review stands for (D-233): an item, a page move, or Change something…. */
@@ -91,13 +95,13 @@ type PageOption = ReviewItem | 'next' | 'previous' | 'change'
 type ReviewChoice = Exclude<PageOption, 'change'>
 
 /** The one answer that confirms the paged review: its Confirm option, as the dialog gives it (T-02.1-78). */
-const CONFIRM_LABEL = 'Confirm'
+const CONFIRM_LABEL = t('init.review.confirm')
 
 /**
  * The label of the review's typed choice (D-233, ASKED #4): the item to change is named in a note. On a pane surface
  * register maps that note to the answer for the open cadre question that offers it (ASKED #24).
  */
-export const CHANGE_SOMETHING_LABEL = 'Change something…'
+export const CHANGE_SOMETHING_LABEL = t('init.review.changeSomething')
 
 /**
  * The review's own options on every surface (D-233, ASKED #4, #19, #23), in the order a page shows them, one label
@@ -105,22 +109,20 @@ export const CHANGE_SOMETHING_LABEL = 'Change something…'
  * choice whose item word goes in a note.
  */
 const REVIEW_PAGE_CHOICES: readonly Labelled<PageOption>[] = Object.freeze([
-  { label: 'Next page', value: 'next' },
-  { label: 'Previous page', value: 'previous' },
+  { label: t('init.review.nextPage'), value: 'next' },
+  { label: t('init.review.previousPage'), value: 'previous' },
   { label: CONFIRM_LABEL, value: 'confirm' },
   { label: CHANGE_SOMETHING_LABEL, value: 'change' },
 ])
 
 /** The item words of the paged review as its refusals list them, after the page's options (D-233). */
-const REVIEW_ITEM_WORDS = 'roles, git policy, launcher start, or duration, model, assignments, memory, env, hunks'
+const REVIEW_ITEM_WORDS = t('init.review.itemWords')
 
 /**
  * The first line of the paged review asked again after Change something… with no item named (ASKED #4, DECIDED #22):
  * where the item goes and the item words.
  */
-const CHANGE_REFUSAL =
-  'Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, assignments, ' +
-  'memory, env or hunks.'
+const CHANGE_REFUSAL = t('init.review.changeRefusal')
 
 /**
  * Every option a page of the review may show, in their order (D-233, ASKED #23): Next page, Previous page, Confirm and
@@ -210,18 +212,17 @@ function pageChoice(choices: readonly Labelled<PageOption>[], answer: string): R
 }
 
 /** Why init cancels when the review question is dismissed (A1, D-45); unread answers give NO_USABLE_ANSWER_REASON. */
-export const REVIEW_DISMISSED_REASON = 'The review question was dismissed or not answered.'
+export const REVIEW_DISMISSED_REASON = t('init.review.reviewDismissedReason')
 
 /** Why init cancels once the review question was asked MAX_REVIEW_ROUNDS times without Confirm (A1). */
 export const REVIEW_ROUNDS_REASON =
-  `The review question was asked ${MAX_REVIEW_ROUNDS} times without "Confirm": nothing was chosen.`
+  t('init.review.reviewRoundsReason', { maxReviewRounds: MAX_REVIEW_ROUNDS })
 
 /**
  * The review row under a role given at least one memory (G-02-1f, T-02-73): its memories are linked read-only, as far
  * as the deny of its settings reaches (linkedMemoryDeny).
  */
-export const LINKED_MEMORIES_ROW =
-  '    memories are linked read-only (best effort: Edit and Write are denied; a Bash write is not blocked)'
+export const LINKED_MEMORIES_ROW = t('init.review.linkedMemoriesRow')
 
 /**
  * The review row of a role's private files (02-GAPS-B3 S4), in the scope card's memory folder form, so a dry run needs
@@ -229,25 +230,22 @@ export const LINKED_MEMORIES_ROW =
  */
 export function privateFilesRow(id: string): string {
   return (
-    `    private files: ${MEMORY_PATTERN}${id}/instructions/CLAUDE.md and instructions.json ` +
-    '(outside the repo, never committed)'
+    t('init.review.privateFilesRow', {
+      memoryPattern: MEMORY_PATTERN,
+      id,
+    })
   )
 }
 
 /** The heading of the private-files rows outside the parts flow and in the --dry-run reply (02-GAPS-B3 S4). */
-export const PRIVATE_FILES_HEADING = 'Private files per role (written after Confirm):'
+export const PRIVATE_FILES_HEADING = t('init.review.privateFilesHeading')
 
 /**
  * The line that announces the improver pass (02-GAPS-B3 S4): at most this many built files, since the git check and
  * the record compare run after Confirm.
  */
 export function improverRunLine(count: number): string {
-  const files = countedNoun(count, 'built file', 'built files')
-
-  return (
-    `After Confirm, claude-md-improver runs on up to ${files} (claude -p, acceptEdits, up to 5 minutes each); ` +
-    'you accept or keep each change.'
-  )
+  return tn('init.review.improverRun', count, { count })
 }
 
 /**
@@ -300,7 +298,7 @@ function handoutLines(draft: Draft): string[] {
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
-  const installLine = `Plugins to install after Confirm (a --dry-run installs nothing): ${keys}`
+  const installLine = t('init.review.reviewLines', { keys })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
   const privateRows = draft.instructions.kind === 'parts' ? [] : [PRIVATE_FILES_HEADING, ...rows]
   const count = improverRunCount(draft, plan)
@@ -311,8 +309,8 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
   const recommendations = recommend({ roles: draft.roles, frameworks, scan: repo, setup })
 
   return [
-    'Roles:',
-    ...draft.roles.map(role => `  ${role.title} (${role.id})`),
+    t('init.review.rolesHeading'),
+    ...draft.roles.map(role => t('init.review.roleRow', { title: role.title, id: role.id })),
     ...cardLines(draft.roles, scopes),
     ...handoutLines(draft),
     ...privateRows,
@@ -375,7 +373,8 @@ function pagedAsk(
   const at = Math.min(Math.max(0, page), pages.length - 1)
   const choices = pageChoices(at, pages.length)
   const labels = choices.map(choice => choice.label)
-  const title = pages.length === 1 ? 'Review' : `Review (page ${at + 1} of ${pages.length})`
+  const title =
+    pages.length === 1 ? t('init.review.title') : t('init.review.pagedTitle', { number: at + 1, count: pages.length })
   const accepts = `${quotedLabels(labels)}, ${REVIEW_ITEM_WORDS}`
 
   return {
