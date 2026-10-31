@@ -22,6 +22,7 @@ import { appliedLines, privatePaths, regenManifestSkippedNote, writeWithImprover
 import type { ApplyOutcome } from '../apply/run'
 import { applySteps } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
+import { withoutUnprovenUserWarning } from '../framework/gsd/identity'
 import { desiredFiles } from '../generate/files'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { t } from '../locales/t'
@@ -129,7 +130,10 @@ export async function regenPlan(
     hunks: [],
     cadreVersion: recordedCadreVersion(await io.cadreVersion()),
   })
-  const warnings = [...scanWarnings(locations, scans.gathered), ...handed.warnings]
+  const warnings = [
+    ...scanWarnings(locations, { ...scans.gathered, facts: withoutUnprovenUserWarning(scans.gathered.facts) }),
+    ...handed.warnings,
+  ]
 
   return { plan: planned.plan, warnings, dropped: handed.dropped, desired, manifest: planned.manifest }
 }

@@ -6,6 +6,7 @@
  * generate/files, guards/repo, scan/gather, team, ui and the start modules; register and the goldens run it.
  */
 import type { HostIo, InitIo, TerminalChoice } from '../../types'
+import { withoutUnprovenUserWarning } from '../framework/gsd/identity'
 import { desiredFiles } from '../generate/files'
 import { repoGuard } from '../guards/repo'
 import { t, tn } from '../locales/t'
@@ -115,7 +116,7 @@ export async function runStart(
   const render = await renderRole(io, host, { locations, state, role, scope, codeDirs, mcpRoots, epic: null })
   if (render.kind === 'refuse') return render.text
   const drift = launcherDrift(id, launcher.value, desiredFiles({ roles, scopes, state, only: id }))
-  const scan = scanWarnings(locations, gathered)
+  const scan = scanWarnings(locations, { ...gathered, facts: withoutUnprovenUserWarning(gathered.facts) })
   const warnings = [...scan, ...drift, ...render.warnings]
   const command = launcherCommand(locations.root, id)
   const copy = clipboardRun(command)

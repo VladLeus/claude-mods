@@ -232,6 +232,11 @@ function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
   return t('scan.unknown', { what: prefix })
 }
 
+/** Whether `warning` is the warning unprovenWarning gives for the install at `dir`, in any of its forms. */
+function isUnprovenWarningOf(warning: string, dir: string): boolean {
+  return warning.startsWith(t('framework.gsd.identity.unprovenWarning', { dir }))
+}
+
 /**
  * One GSD candidate as a fact. The version is the VERSION text, else the manifest, else the runtime identity.
  * A present install that nothing proves adds a warning, which names the install by its cleaned display path and the
@@ -285,11 +290,25 @@ export function withGsdIdentity(
   if (probed === undefined || probed.location !== 'user' || old === undefined) return initFacts
   const added: string[] = []
   const fact = gsdFactOf(probed, display, display.configDir, added)
-  const unproven = t('framework.gsd.identity.unprovenWarning', { dir: old.dir })
-  const warnings = [...facts.warnings.filter(warning => !warning.startsWith(unproven)), ...added]
+  const warnings = [...facts.warnings.filter(warning => !isUnprovenWarningOf(warning, old.dir)), ...added]
   const gsd = facts.gsd.map(each => (each === old ? fact : each))
 
   return { ...initFacts, facts: { ...facts, gsd, warnings } }
+}
+
+/**
+ * The facts as /cadre start and /cadre regen show their warnings (WF-S1, AUTO-PICK #93): without the warning of a
+ * user-level GSD install found but not proven. Start and regen never ask GSD's own check and never use GSD's identity,
+ * so that warning names nothing they can act on; init and detect keep it, as D-243 asks there. A repo-local install is
+ * never run (D-28), so its warning stays.
+ */
+export function withoutUnprovenUserWarning(initFacts: InitFacts): InitFacts {
+  const { facts } = initFacts
+  const dirs = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown').map(fact => fact.dir)
+  if (dirs.length === 0) return initFacts
+  const warnings = facts.warnings.filter(warning => !dirs.some(dir => isUnprovenWarningOf(warning, dir)))
+
+  return { ...initFacts, facts: { ...facts, warnings } }
 }
 
 /**
