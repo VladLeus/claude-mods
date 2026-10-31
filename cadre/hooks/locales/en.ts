@@ -589,6 +589,32 @@ export const EN = Object.freeze({
   'status.report.stateUnknown': 'unknown',
   'status.report.latestHandoff': 'latest handoff: {handoff}',
   'status.report.noHandoff': 'none yet',
+
+  'command.usage.usageRows': '/cadre detect',
+  'command.usage.usageRows2': 'show which dev framework this repo uses, with evidence (read-only)',
+  'command.usage.usageRows3': '/cadre detect --adapters',
+  'command.usage.usageRows4': 'also show the contract cadre would drive each framework with',
+  'command.usage.usageRows5': '/cadre init',
+  'command.usage.usageRows6': 'guided setup: scan, propose roles, review the file plan, then write it',
+  'command.usage.usageRows7': '/cadre init --dry-run',
+  'command.usage.usageRows8': 'the same guided flow; prints the plan and writes nothing',
+  'command.usage.usageRows9': '/cadre regen <id>',
+  'command.usage.usageRows10': 're-render one role from its role.json and write its files',
+  'command.usage.usageRows11': '/cadre regen <id> --dry-run',
+  'command.usage.usageRows12': "print that role's plan and write nothing",
+  'command.usage.usageRows13': '/cadre start <id>',
+  'command.usage.usageRows14': "render a role's runtime files, then print and copy its launcher command",
+  'command.usage.usageRowsCommand': '/cadre start <id> --terminal',
+  'command.usage.usageRowsText': 'also open it in a new Terminal window, iTerm tab or tmux window (macOS)',
+  'command.usage.usageRowsCommand2': '/cadre status <id>',
+  'command.usage.usageRowsText2':
+    "show from disk whether a role's autopilot run is done, running, stopped, not started or unknown",
+  'command.usage.usageRows15': '/cadre epic <KEY> [title]',
+  'command.usage.usageRows16': "create or reuse the epic's worktree and open its roles there",
+  'command.usage.usageRows17': '/cadre epic done <KEY>',
+  'command.usage.usageRows18': "remove a finished epic's worktree (clean, merged, no role running)",
+  'command.usage.usageLines': 'cadre commands:',
+  'command.usage.helpText': 'Unknown subcommand: {unknown}',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
