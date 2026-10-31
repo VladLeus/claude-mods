@@ -618,6 +618,19 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
   })
 
+  test(
+    'an epic role never takes a CLAUDE_CONFIG_DIR inside the main checkout as its user folder (WF-S4, D-238)',
+    async () => {
+      const locations = { ...DEFAULT_LOCATIONS, configDir: '/repo/.claude-alt' }
+      const run = await epic({ ...(await renderWorld()), locations }, RENDER_RULES, 'PROJ-1', '')
+      const paths = run.writes.map(write => write.path)
+      const touched = [...paths, ...run.calls.flatMap(call => call.argv)]
+
+      expect(paths).toContain(`${BARE_WORKTREE}/.cadre/be/.runtime/stamp`)
+      expect(touched.filter(path => path.startsWith('/repo/.claude-alt'))).toEqual([])
+    },
+  )
+
   test('an epic writes the PM kickoff, with the key, into the worktree right before its stamp (D-158)', async () => {
     const run = await epic(await renderWorld(), RENDER_RULES, 'PROJ-1', '')
     const runtime = `${BARE_WORKTREE}/.cadre/pm/.runtime`

@@ -184,6 +184,17 @@ describe('gatherLaunchUser (D-98)', () => {
     },
   )
 
+  test(
+    'in a worktree nested in the main checkout, a CLAUDE_CONFIG_DIR inside main is ignored (WF-S4, D-238)',
+    async () => {
+      const WT = '/repo/.claude/worktrees/proj-1'
+      const locations = { ...DEFAULT_LOCATIONS, root: WT, givenRoot: WT, configDir: '/repo/.claude-alt' }
+      const user = userOf((await gather(repoWorld(), [GIT_OK], locations)).read)
+
+      expect([user.userDir, user.mainRoot]).toEqual(['/home/u/.claude', '/repo'])
+    },
+  )
+
   test('two roles of one repo get their own memory folders under the repo slug (D-20, D-91, ISO-03)', async () => {
     const gathered = userOf((await gather(repoWorld(), [GIT_OK])).read)
     const slug = `repo-${(await sha256Hex('/repo/.git')).slice(0, 8)}`
