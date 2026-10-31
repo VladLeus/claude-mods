@@ -15,6 +15,19 @@ export const EN = Object.freeze({
 
   'init.answers.skillUses.one': '{count} time in the last {sessions} sessions',
   'init.answers.skillUses.other': '{count} times in the last {sessions} sessions',
+
+  'init.policy.question': 'Git policy for .cadre/?',
+  'init.policy.option.definitions': 'Commit definitions (default)',
+  'init.policy.option.all': 'Commit all',
+  'init.policy.option.ignore': 'Ignore all of .cadre/',
+  'init.policy.commits.definitions': 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+  'init.policy.commits.all': 'Commit all: only per-user files are ignored.',
+  'init.policy.commits.ignore': 'Ignore all: nothing in .cadre/ is committed.',
+  'init.policy.contextTitle': 'Git policy',
+  'init.policy.dismissed': 'The git policy question was dismissed or not answered.',
+  'init.policy.line.definitions': 'Git policy: commit definitions (.cadre/*/.runtime/ ignored)',
+  'init.policy.line.all': 'Git policy: commit all (only per-user rendered files in .cadre/*/.runtime/ ignored)',
+  'init.policy.line.ignore': 'Git policy: ignore all of .cadre/',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

@@ -9,12 +9,13 @@
 import type { AskContext, GitPolicy } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 
 /** The git policy question (D-65). */
-export const GIT_POLICY_QUESTION = 'Git policy for .cadre/?'
+export const GIT_POLICY_QUESTION = t('init.policy.question')
 
 /**
  * Each git policy with its dialog label, the word a person may type under "Other" (D-65), and the sentence that says
@@ -30,17 +31,17 @@ type GitPolicyEntry = {
 const GIT_POLICIES: readonly GitPolicyEntry[] =
   Object.freeze([
     {
-      label: 'Commit definitions (default)',
+      label: t('init.policy.option.definitions'),
       word: 'definitions',
       policy: 'definitions',
-      commits: 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.',
+      commits: t('init.policy.commits.definitions'),
     },
-    { label: 'Commit all', word: 'all', policy: 'all', commits: 'Commit all: only per-user files are ignored.' },
+    { label: t('init.policy.option.all'), word: 'all', policy: 'all', commits: t('init.policy.commits.all') },
     {
-      label: 'Ignore all of .cadre/',
+      label: t('init.policy.option.ignore'),
       word: 'ignore',
       policy: 'ignore',
-      commits: 'Ignore all: nothing in .cadre/ is committed.',
+      commits: t('init.policy.commits.ignore'),
     },
   ])
 
@@ -49,7 +50,7 @@ export const GIT_POLICY_CONTEXT = GIT_POLICIES.map(entry => entry.commits).join(
 
 /** The git policy question's own context (D-203, D-229): what each policy commits, one line per policy. */
 const GIT_POLICY_ASK_CONTEXT: AskContext = Object.freeze({
-  title: 'Git policy',
+  title: t('init.policy.contextTitle'),
   lines: Object.freeze(GIT_POLICIES.map(entry => entry.commits)),
   kind: 'git-policy',
 })
@@ -80,7 +81,7 @@ export function parseGitPolicy(answer: string): GitPolicy | null {
 }
 
 /** Why init cancels when the git policy question is dismissed or not answered (A1, D-45). */
-export const GIT_POLICY_DISMISSED_REASON = 'The git policy question was dismissed or not answered.'
+export const GIT_POLICY_DISMISSED_REASON = t('init.policy.dismissed')
 
 /** What the git policy question takes, as its refusal lists it: the policy words (D-65, D-136). */
 const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
@@ -124,9 +125,9 @@ export const policyStage: StageDef = Object.freeze({
 
 /** The line that states each git policy and what stays out of git under it (D-65, D-90). */
 const POLICY_LINES: Readonly<Record<GitPolicy, string>> = Object.freeze({
-  definitions: 'Git policy: commit definitions (.cadre/*/.runtime/ ignored)',
-  all: 'Git policy: commit all (only per-user rendered files in .cadre/*/.runtime/ ignored)',
-  ignore: 'Git policy: ignore all of .cadre/',
+  definitions: t('init.policy.line.definitions'),
+  all: t('init.policy.line.all'),
+  ignore: t('init.policy.line.ignore'),
 })
 
 /** The one line that states a git policy and what stays out of git under it. */
