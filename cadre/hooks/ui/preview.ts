@@ -5,10 +5,11 @@
  * notes (A3). It imports core, the line wrap of ui/pane and the types, so register's AskUserQuestion hook reads it
  * here.
  */
-import type { AskContext, ShownBlock } from '../../types'
+import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { clean } from '../core/text'
 import { UNCUT, wrapLine } from './pane'
+import type { Surface } from './surface'
 
 /**
  * The most characters, by String length, the preview of a dialog option holds (D3): the engine replaces a preview
@@ -318,6 +319,27 @@ export function askRewrite(
   )
 
   return { questions: pairs.map(({ question, shown }) => shown ?? question), asked }
+}
+
+/**
+ * The dialog register's AskUserQuestion hook gives the open question (WD-S2): the questions it shows, null to pass
+ * them as asked, and the questions whose notes become the answer.
+ */
+export type DialogPlan = {
+  readonly questions: Record<string, unknown>[] | null
+  readonly notes: readonly AskedQuestion[]
+}
+
+/** The dialog plan of an AskUserQuestion call (WD-S2 stub until its GREEN): none yet. */
+export function dialogPlan(
+  raw: unknown,
+  open: OpenQuestion,
+  surface: Surface,
+  placement: 'dock' | 'inline' | null,
+  columns: number | null,
+  changeLabel: string,
+): DialogPlan | null {
+  return null
 }
 
 /** Whether a value is the answers of an AskUserQuestion result (A3): an object, not an array, of strings only. */

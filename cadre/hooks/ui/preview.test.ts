@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, PaneKey, ShownBlock } from '../../types'
+import type { AskContext, OpenQuestion, PaneKey, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
 import { BIDI_OVERRIDE } from '../testkit'
 import { wrapLine } from './pane'
 import {
   answersFromNotes,
   askRewrite,
+  dialogPlan,
   fitPreview,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
@@ -17,6 +18,7 @@ import {
   withPreviews,
 } from './preview'
 import type { AskedQuestion, CheckedQuestion } from './preview'
+import type { Surface } from './surface'
 
 /** A block of the side pane with this key, title and lines, for the preview tests (D3). */
 function shownBlock(key: PaneKey, title: string, lines: readonly string[]): ShownBlock {
@@ -549,5 +551,68 @@ describe('answersFromNotes (A3)', () => {
     expect(answers).toEqual({ 'Other?': 'X', 'Q?': 'mine' })
     expect(JSON.stringify(result)).toBe(before)
     expect(answers === result.answers).toBe(false)
+  })
+})
+
+describe('dialogPlan (WD-S2)', () => {
+  /** The label of the option that offers a change, as register passes CHANGE_SOMETHING_LABEL (ASKED #24). */
+  const CHANGE_LABEL = 'Change it'
+  /** The open question's own context (D-203). */
+  const CONTEXT: AskContext = { title: 'Roles', lines: ['BE (be)', 'FE (fe)'], kind: 'roles' }
+  /** A multi-select question asked after the open one; it is never previewed and has no note. */
+  const MULTI = { ...PICK_QUESTION, question: 'Which ones? Type more under Other.', multiSelect: true }
+  /**
+   * What each surface and pane seat does with the open question's dialog (D-208, D-234, ASKED #24): preview it (the
+   * TUI default, or a pane seated inline), map a note typed in it (a docked or unknown pane seat), or nothing.
+   */
+  const SEATS: readonly (readonly [Surface, 'dock' | 'inline' | null, 'preview' | 'note' | 'none'])[] = [
+    ['tui-default', null, 'preview'],
+    ['tui-default', 'dock', 'preview'],
+    ['tui-default', 'inline', 'preview'],
+    ['pane', 'inline', 'preview'],
+    ['pane', 'dock', 'note'],
+    ['pane', null, 'note'],
+    ['none', null, 'none'],
+    ['none', 'dock', 'none'],
+    ['none', 'inline', 'none'],
+  ]
+  /** Every context, typed-answer flag, change option and multi-select question a seat is asked with. */
+  const CASES = [null, CONTEXT].flatMap(context =>
+    [false, true].flatMap(acceptsTyped =>
+      [false, true].flatMap(offersChange =>
+        [false, true].map(hasMulti => ({ context, acceptsTyped, offersChange, hasMulti })),
+      ),
+    ),
+  )
+
+  test('the plan of each surface, seat, context, typed answer, change option and multi-select (D-239)', () => {
+    for (const [surface, placement, seat] of SEATS) {
+      for (const { context, acceptsTyped, offersChange, hasMulti } of CASES) {
+        const first = offersChange ? pickWith(CHANGE_LABEL) : PICK_QUESTION
+        const raw = hasMulti ? [first, MULTI] : [first]
+        const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped }
+        const rewrite = askRewrite(raw, context, acceptsTyped, 40, surface === 'tui-default' ? PREVIEW_ROWS : null)
+        const previewed = rewrite === null ? null : { questions: rewrite.questions, notes: rewrite.asked }
+        const noted = offersChange ? { questions: null, notes: [{ question: 'Pick one?', asked: 'Pick one?' }] } : null
+        const expected = { preview: previewed, note: noted, none: null }[seat]
+        expect(dialogPlan(raw, open, surface, placement, 40, CHANGE_LABEL)).toEqual(expected)
+        const other = [{ ...first, question: 'Another?' }]
+        expect(dialogPlan(other, open, surface, placement, 40, CHANGE_LABEL)).toBe(null)
+      }
+    }
+  })
+
+  test('a call whose first question is not the open question, by its exact text, gets no plan (D-239)', () => {
+    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context: CONTEXT, acceptsTyped: true }
+    for (const raw of [null, [], [{ question: 3, options: [] }], [{ ...PICK_QUESTION, question: 'Pick one? ' }]]) {
+      expect(dialogPlan(raw, open, 'tui-default', null, null, CHANGE_LABEL)).toBe(null)
+    }
+  })
+
+  test('a multi-select question is copied unchanged and has no note', () => {
+    const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context: CONTEXT, acceptsTyped: true }
+    const plan = dialogPlan([PICK_QUESTION, MULTI], open, 'pane', 'inline', null, CHANGE_LABEL)
+    expect(plan?.questions?.[1]).toEqual(MULTI)
+    expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
   })
 })
