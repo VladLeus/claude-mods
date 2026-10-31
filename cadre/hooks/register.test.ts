@@ -21,6 +21,7 @@ import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, p
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
+import { fill } from './locales/t'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -1205,6 +1206,16 @@ describe('register with a faked host', () => {
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
     expect(out.text).toContain('gsd-core 1.16.0 at $CLAUDE_CONFIG_DIR/gsd-core')
     expect(out.text).not.toContain('/opt/cfg')
+  })
+
+  test('a locale slot with no value goes to the debug log the session set at start (D-224)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, ambiguousWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    // @ts-expect-error the template has a slot zz the call does not pass
+    expect(fill('{a} {zz}', { a: 1 })).toBe('1 {zz}')
+    await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.logs.some(text => text.includes('{zz}'))).toBe(true)
   })
 })
 
