@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, RepoEntry } from '../../../types'
-import { gateProblems, missingFields } from '../contract'
+import { isDecisionType } from '../contract'
+import { adapterOf } from '../registry'
 import { BUILTIN_ADAPTER, BUILTIN_GATES, builtinKickoffText, detectBuiltin } from './adapter'
 import { emptySetupScan, facts, hasDoneLine } from '../../testkit'
 
@@ -99,7 +100,17 @@ describe('BUILTIN_GATES', () => {
   })
 
   test('the gate table has no problems under the framework gate contract', () => {
-    expect(gateProblems(BUILTIN_GATES)).toEqual([])
+    const gates = adapterOf('none').humanGates
+    const ids = gates.map(gate => gate.id)
+    const wrongType = gates.filter(gate =>
+      gate.decisionType === null ? gate.kind !== 'standing-rule' : gate.kind === 'standing-rule' ||
+        !isDecisionType(gate.decisionType),
+    )
+
+    expect(ids.filter(id => id.trim() === '')).toEqual([])
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(gates.filter(gate => gate.kickoff.trim() === '')).toEqual([])
+    expect(wrongType).toEqual([])
   })
 })
 
@@ -250,7 +261,22 @@ describe('builtinKickoffText', () => {
 
 describe('BUILTIN_ADAPTER', () => {
   test('it declares every required adapter field under the framework contract', () => {
-    expect(missingFields(BUILTIN_ADAPTER)).toEqual([])
+    const adapter = adapterOf('none')
+    const { doneSignal, locations } = adapter
+    const texts = [adapter.name, adapter.detectRule, doneSignal.artifact, doneSignal.check]
+    const lists = [adapter.startWork, locations.spec, locations.plan, adapter.verify, adapter.humanGates]
+    const calls = [adapter.detect, adapter.kickoffText, adapter.autonomyHunks, adapter.ownsSkill, adapter.roleStart]
+    const named = [...adapter.startSkills, ...adapter.pluginsToEnable]
+    const optional = [adapter.agentPrefix, adapter.install, adapter.factsHeading]
+
+    expect(adapter).toBe(BUILTIN_ADAPTER)
+    expect(texts.filter(text => text.trim() === '')).toEqual([])
+    expect(lists.filter(list => list.length === 0)).toEqual([])
+    expect(calls.every(call => typeof call === 'function')).toBe(true)
+    expect(named.every(name => typeof name === 'string')).toBe(true)
+    expect(optional.every(value => value === null || typeof value === 'string')).toBe(true)
+    expect(typeof adapter.needsBash).toBe('boolean')
+    expect(adapter.autonomy.length > 0 || (adapter.autonomyNote ?? '').trim() !== '').toBe(true)
   })
 
   test('it fills the identity, detect rule, start, locate, verify and done fields', () => {

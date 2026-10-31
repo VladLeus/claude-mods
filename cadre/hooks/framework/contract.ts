@@ -1,7 +1,7 @@
 /**
  * The adapter contract every framework fills, a layer 2 module: the decision types, the unsupported markers and their
- * detection, the framework choice, and the runtime checks of an adapter's fields and gates (DET-04). It imports only
- * core and the types, so the registry, roles, init and render import it with no cycle.
+ * detection, and the framework choice. It imports only core and the types, so the registry, roles, init and render
+ * import it with no cycle.
  */
 import type {
   Choice,
@@ -9,15 +9,11 @@ import type {
   Detection,
   DetectStatus,
   Facts,
-  FrameworkAdapter,
   FrameworkId,
-  Gate,
   RepoEntry,
   UnsupportedMarker,
 } from '../../types'
 import { SUPPORTED_IDS } from '../core/framework-id'
-import { isObject } from '../core/json'
-import { idLabel } from '../core/text'
 import { t } from '../locales/t'
 
 /**
@@ -120,176 +116,9 @@ function onlyInUse(id: FrameworkId): Choice {
   return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: t('framework.contract.onlyInUse', { id }) }
 }
 
-/**
- * The fields every adapter must declare, in the order missingFields reports them: the DET-04 fields, then the eight
- * fields D-244 moved behind the adapter (startSkills to factsHeading, E1). `claude plugin validate` does not
- * type-check, and an adapter may be untrusted at runtime, so this list and missingFields are the runtime contract
- * (DET-04).
- */
-export const REQUIRED_FIELDS: readonly (keyof FrameworkAdapter)[] = [
-  'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
-  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
-  'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
-]
-
-/** The adapter ids a framework may declare: the supported ones and the built-in fallback. */
-const ADAPTER_IDS: readonly string[] = [...SUPPORTED_IDS, 'none']
-
-/** A string with some text once trimmed. */
-function isFilledString(value: unknown): boolean {
-  return typeof value === 'string' && value.trim() !== ''
-}
-
-/** An array with at least one entry. */
-function isFilledArray(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0
-}
-
-/** `locations` has a non-empty spec list and a non-empty plan list. */
-function hasLocations(value: unknown): boolean {
-  return isObject(value) && isFilledArray(value.spec) && isFilledArray(value.plan)
-}
-
-/** `doneSignal` has a non-empty artifact and a non-empty check. */
-function hasDoneSignal(value: unknown): boolean {
-  return isObject(value) && isFilledString(value.artifact) && isFilledString(value.check)
-}
-
-/** `autonomy` is non-empty, or empty with a note that says why the framework needs no autonomy settings. */
-function hasAutonomy(adapter: Record<string, unknown>): boolean {
-  if (!Array.isArray(adapter.autonomy)) return false
-
-  return adapter.autonomy.length > 0 || isFilledString(adapter.autonomyNote)
-}
-
-/**
- * The rule each required field must pass, read from the adapter as a record. A value of the wrong shape fails its
- * rule instead of throwing, and a field with no rule is always missing.
- */
-const FIELD_RULES: Partial<Record<keyof FrameworkAdapter, (adapter: Record<string, unknown>) => boolean>> = {
-  id: adapter => ADAPTER_IDS.some(id => id === adapter.id),
-  name: adapter => isFilledString(adapter.name),
-  detectRule: adapter => isFilledString(adapter.detectRule),
-  detect: adapter => typeof adapter.detect === 'function',
-  startWork: adapter => isFilledArray(adapter.startWork),
-  locations: adapter => hasLocations(adapter.locations),
-  verify: adapter => isFilledArray(adapter.verify),
-  doneSignal: adapter => hasDoneSignal(adapter.doneSignal),
-  humanGates: adapter => isFilledArray(adapter.humanGates),
-  autonomy: hasAutonomy,
-  kickoffText: adapter => typeof adapter.kickoffText === 'function',
-  autonomyHunks: adapter => typeof adapter.autonomyHunks === 'function',
-  startSkills: adapter =>
-    Array.isArray(adapter.startSkills) && adapter.startSkills.every(entry => typeof entry === 'string'),
-  ownsSkill: adapter => typeof adapter.ownsSkill === 'function',
-  pluginsToEnable: adapter =>
-    Array.isArray(adapter.pluginsToEnable) && adapter.pluginsToEnable.every(entry => typeof entry === 'string'),
-  agentPrefix: adapter => typeof adapter.agentPrefix === 'string' || adapter.agentPrefix === null,
-  needsBash: adapter => typeof adapter.needsBash === 'boolean',
-  roleStart: adapter => typeof adapter.roleStart === 'function',
-  install: adapter => typeof adapter.install === 'string' || adapter.install === null,
-  factsHeading: adapter => typeof adapter.factsHeading === 'string' || adapter.factsHeading === null,
-}
-
-/**
- * Whether one required field of an adapter passes its rule. A field with no rule never passes, and a rule that
- * throws (a hostile getter, say) counts as a failed rule.
- */
-function fieldPasses(field: keyof FrameworkAdapter, adapter: Record<string, unknown>): boolean {
-  const rule = FIELD_RULES[field]
-  if (rule === undefined) return false
-
-  try {
-    return rule(adapter)
-  } catch {
-    return false
-  }
-}
-
-/**
- * The required fields an adapter does not declare, in REQUIRED_FIELDS order; [] when it is complete. An empty or
- * wrong-shaped field counts as missing, and a value that is not an object has no fields at all. The input is
- * untrusted, so nothing here throws.
- */
-export function missingFields(adapter: unknown): string[] {
-  const record: Record<string, unknown> = isObject(adapter) ? adapter : {}
-
-  return REQUIRED_FIELDS.filter(field => !fieldPasses(field, record))
-}
-
 /** Whether a value is one of DECISION_TYPES. A value that is not a string is never a decision type. */
 export function isDecisionType(value: unknown): value is DecisionType {
   if (typeof value !== 'string') return false
 
   return DECISION_TYPES.some(type => type === value)
-}
-
-/** The problem with a gate's decision type, or null when its kind and decision type agree. */
-function decisionTypeProblem(gate: Record<string, unknown>): string | null {
-  if (gate.kind === 'standing-rule') {
-    return gate.decisionType === null ? null : t('framework.contract.decisionTypeProblem')
-  }
-  if (gate.decisionType === null) return t('framework.contract.decisionTypeProblem2')
-  if (!isDecisionType(gate.decisionType)) return t('framework.contract.decisionTypeProblem3')
-
-  return null
-}
-
-/** The problems with one gate's own fields: its decision type against its kind, and its kickoff. */
-function gateFieldProblems(gate: Record<string, unknown>): string[] {
-  const label = t('framework.contract.gateFieldProblems', { id: idLabel(gate.id) })
-  const problems: string[] = []
-  const decisionProblem = decisionTypeProblem(gate)
-  if (decisionProblem !== null) problems.push(t('framework.contract.gateFieldProblems2', { label, decisionProblem }))
-  if (!isFilledString(gate.kickoff)) problems.push(t('framework.contract.gateFieldProblems3', { label }))
-
-  return problems
-}
-
-/**
- * The problems with one gate: not an object, no id, an id seen before (reported once), then its own fields. The id
- * is read once, so a getter cannot answer differently between the check and the use.
- */
-function oneGateProblems(gate: unknown, seen: Set<string>, repeated: Set<string>): string[] {
-  if (!isObject(gate)) return [t('framework.contract.oneGateProblems')]
-
-  const id = gate.id
-  const fieldProblems = gateFieldProblems(gate)
-  if (typeof id !== 'string' || id.trim() === '') return [t('framework.contract.oneGateProblems2'), ...fieldProblems]
-
-  const isFirstRepeat = seen.has(id) && !repeated.has(id)
-  seen.add(id)
-  if (!isFirstRepeat) return fieldProblems
-  repeated.add(id)
-
-  return [t('framework.contract.oneGateProblems3', { id: idLabel(id) }), ...fieldProblems]
-}
-
-/** The most problems gateProblems returns; when there are more, one extra line says so. */
-export const MAX_GATE_PROBLEMS = 50
-
-/**
- * The contract problems in a framework's gate table, one message per problem, in gate order, capped at
- * MAX_GATE_PROBLEMS. A gate id that repeats is reported once, and a gate with no id is not tracked for repeats. Gates
- * that share a decision type are separate rows, so they are never compared with each other. A gate's kind and
- * handling are not checked here because the Gate type and the adapters own them.
- */
-export function gateProblems(gates: unknown): string[] {
-  if (!Array.isArray(gates)) return [t('framework.contract.gateProblems')]
-
-  const problems: string[] = []
-  const seen = new Set<string>()
-  const repeated = new Set<string>()
-  for (let index = 0; index < gates.length; index++) {
-    if (problems.length > MAX_GATE_PROBLEMS) break
-    try {
-      problems.push(...oneGateProblems(gates[index], seen, repeated))
-    } catch {
-      // A gate whose fields throw when read (a getter or a proxy) is reported, never rethrown.
-      problems.push(t('framework.contract.gateProblems2'))
-    }
-  }
-  if (problems.length <= MAX_GATE_PROBLEMS) return problems
-
-  return [...problems.slice(0, MAX_GATE_PROBLEMS), t('framework.contract.gateProblems3')]
 }

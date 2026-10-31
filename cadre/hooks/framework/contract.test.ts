@@ -1,27 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type {
-  Detection,
-  DetectStatus,
-  FrameworkAdapter,
-  FrameworkId,
-  Gate,
-  RepoEntry,
-  SettingProposal,
-} from '../../types'
+import type { Detection, DetectStatus, FrameworkId, RepoEntry } from '../../types'
 import { isFrameworkId, SUPPORTED_IDS } from '../core/framework-id'
 import { facts } from '../testkit'
-import {
-  chooseFramework,
-  DECISION_TYPES,
-  detectUnsupported,
-  gateProblems,
-  isDecisionType,
-  MAX_GATE_PROBLEMS,
-  missingFields,
-  REQUIRED_FIELDS,
-  UNSUPPORTED_MARKERS,
-} from './contract'
+import { chooseFramework, DECISION_TYPES, detectUnsupported, isDecisionType, UNSUPPORTED_MARKERS } from './contract'
 
 /** A repo-root entry as the host lists it. */
 function entry(name: string, kind: RepoEntry['kind'], isLink: boolean): RepoEntry {
@@ -37,66 +19,6 @@ function detection(over: Partial<Detection>): Detection {
 function detected(id: FrameworkId, status: DetectStatus): Detection {
   return detection({ id, name: id, status })
 }
-
-/** A valid gate: a chat gate owned by Arch with a kickoff. A test overrides the field it is about. */
-function gate(over: Partial<Gate>): Gate {
-  return {
-    id: 'g',
-    where: 'w',
-    kind: 'chat',
-    decisionType: 'Arch',
-    needsHuman: false,
-    handling: 'preapprove',
-    kickoff: 'k',
-    ...over,
-  }
-}
-
-/** A complete valid adapter. A test overrides or removes the field it is about. */
-function adapter(over: Partial<FrameworkAdapter>): FrameworkAdapter {
-  return {
-    id: 'gsd',
-    name: 'X',
-    detectRule: 'r',
-    detect: () => detection({ id: 'gsd', status: 'not-found' }),
-    startWork: ['s'],
-    locations: { spec: ['a'], plan: ['b'] },
-    verify: ['v'],
-    doneSignal: { artifact: 'f', check: 'c' },
-    humanGates: [gate({ id: 'g1' })],
-    autonomy: [],
-    autonomyNote: 'none needed',
-    autonomyHunks: () => null,
-    kickoffText: () => 'k',
-    startSkills: [],
-    ownsSkill: () => false,
-    pluginsToEnable: [],
-    agentPrefix: null,
-    needsBash: false,
-    roleStart: () => 's',
-    install: null,
-    factsHeading: null,
-    ...over,
-  }
-}
-
-/** One setting change an adapter proposes for autonomy, used to make a non-empty autonomy list. */
-const SETTING: SettingProposal = {
-  kind: 'command',
-  key: 'mode',
-  file: '.planning/config.json',
-  write: { tool: 'gsd-tools', args: ['config-set', 'mode', 'yolo'] },
-  to: 'yolo',
-  why: 'autonomy needs it',
-  isRequired: true,
-}
-
-/** Every required field, in the order missingFields must report them. */
-const ALL_FIELDS = [
-  'id', 'name', 'detectRule', 'detect', 'startWork', 'locations',
-  'verify', 'doneSignal', 'humanGates', 'autonomy', 'kickoffText', 'autonomyHunks',
-  'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
-]
 
 describe('DECISION_TYPES and UNSUPPORTED_MARKERS', () => {
   test('the decision types are Product, Arch, Security and QA', () => {
@@ -300,100 +222,6 @@ describe('chooseFramework', () => {
   })
 })
 
-describe('missingFields', () => {
-  test('a complete adapter has no missing fields', () => {
-    expect(missingFields(adapter({}))).toEqual([])
-  })
-
-  test('an empty object reports every required field, in declared order', () => {
-    expect(REQUIRED_FIELDS).toEqual(ALL_FIELDS)
-    expect(missingFields({})).toEqual(ALL_FIELDS)
-  })
-
-  test('a value that is not an adapter object reports every required field and does not throw', () => {
-    expect(missingFields(null)).toEqual(ALL_FIELDS)
-    expect(missingFields([])).toEqual(ALL_FIELDS)
-  })
-
-  test('removing any one required field reports exactly that field', () => {
-    for (const field of REQUIRED_FIELDS) {
-      expect(missingFields({ ...adapter({}), [field]: undefined })).toEqual([field])
-    }
-  })
-
-  test('wrong-typed startWork, humanGates and locations each count as missing', () => {
-    const wrong = { ...adapter({}), startWork: 'x', humanGates: {}, locations: [] }
-
-    expect(missingFields(wrong)).toEqual(['startWork', 'locations', 'humanGates'])
-  })
-
-  test('an adapter whose id getter throws does not throw and reports id', () => {
-    const hostile = { ...adapter({}) }
-    Object.defineProperty(hostile, 'id', {
-      get() {
-        throw new Error('boom')
-      },
-    })
-
-    expect(missingFields(hostile)).toEqual(['id'])
-  })
-
-  test('a blank name counts as missing', () => {
-    expect(missingFields(adapter({ name: '   ' }))).toEqual(['name'])
-  })
-
-  test('an empty startWork list counts as missing', () => {
-    expect(missingFields(adapter({ startWork: [] }))).toEqual(['startWork'])
-  })
-
-  test('an id outside gsd, superpowers and none counts as missing', () => {
-    expect(missingFields(adapter({ id: 'other' as never }))).toEqual(['id'])
-  })
-
-  test('a locations object with an empty spec list counts as missing', () => {
-    expect(missingFields(adapter({ locations: { spec: [], plan: ['b'] } }))).toEqual(['locations'])
-  })
-
-  test('a doneSignal with an empty check counts as missing', () => {
-    expect(missingFields(adapter({ doneSignal: { artifact: 'f', check: '' } }))).toEqual(['doneSignal'])
-  })
-
-  test('a detect that is not a function counts as missing', () => {
-    expect(missingFields(adapter({ detect: 'x' as never }))).toEqual(['detect'])
-  })
-
-  test('an empty autonomy list with no note is missing', () => {
-    expect(missingFields(adapter({ autonomy: [], autonomyNote: null }))).toEqual(['autonomy'])
-  })
-
-  test('an empty autonomy list with a note stating why it needs no settings is complete', () => {
-    expect(missingFields(adapter({ autonomy: [], autonomyNote: 'none' }))).toEqual([])
-  })
-
-  test('a whitespace-only autonomy note does not count as a note', () => {
-    expect(missingFields(adapter({ autonomy: [], autonomyNote: '   ' }))).toEqual(['autonomy'])
-  })
-
-  test('a non-empty autonomy list is complete without a note', () => {
-    expect(missingFields(adapter({ autonomy: [SETTING], autonomyNote: null }))).toEqual([])
-  })
-
-  test('an adapter with no autonomyHunks, or one that is not a function, misses autonomyHunks (A5)', () => {
-    const without = Object.fromEntries(Object.entries(adapter({})).filter(([field]) => field !== 'autonomyHunks'))
-
-    expect(missingFields(without)).toEqual(['autonomyHunks'])
-    expect(missingFields({ ...adapter({}), autonomyHunks: null })).toEqual(['autonomyHunks'])
-    expect(missingFields({ ...adapter({}), autonomyHunks: { file: 'f', proposals: [] } })).toEqual(['autonomyHunks'])
-  })
-
-  test(
-    'REQUIRED_FIELDS has the D-244 fields after autonomyHunks, so a new field is reported after the earlier ones (A5)',
-    () => {
-      expect(REQUIRED_FIELDS.at(-9)).toBe('autonomyHunks')
-    },
-  )
-})
-
 describe('isDecisionType', () => {
   test('accepts a decision type with its exact name', () => {
     expect(isDecisionType('Arch')).toBe(true)
@@ -406,108 +234,6 @@ describe('isDecisionType', () => {
   test('rejects a value that is not a string', () => {
     expect(isDecisionType(42)).toBe(false)
     expect(isDecisionType(null)).toBe(false)
-  })
-})
-
-describe('gateProblems', () => {
-  test('two valid gates of the same decision type with different ids have no problems', () => {
-    expect(gateProblems([gate({ id: 'a' }), gate({ id: 'b' })])).toEqual([])
-  })
-
-  test('a standing-rule gate with no decision type is valid', () => {
-    expect(gateProblems([gate({ id: 'x', kind: 'standing-rule', decisionType: null })])).toEqual([])
-  })
-
-  test('a gate id that repeats is reported once, however many times it repeats', () => {
-    const repeated = [gate({ id: 'x' }), gate({ id: 'x' }), gate({ id: 'x' })]
-
-    expect(gateProblems(repeated)).toEqual(['duplicate gate id x'])
-  })
-
-  test('a chat gate with no decision type needs kind standing-rule', () => {
-    expect(gateProblems([gate({ id: 'x', kind: 'chat', decisionType: null })])).toEqual([
-      'gate x: decisionType null needs kind standing-rule',
-    ])
-  })
-
-  test('a standing-rule gate that names a decision type is reported', () => {
-    expect(gateProblems([gate({ id: 'x', kind: 'standing-rule', decisionType: 'Arch' })])).toEqual([
-      'gate x: standing-rule gate must have decisionType null',
-    ])
-  })
-
-  test('a decision type outside DECISION_TYPES is reported as unknown', () => {
-    expect(gateProblems([gate({ id: 'x', decisionType: 'Ops' as never })])).toEqual(['gate x: unknown decisionType'])
-  })
-
-  test('a blank kickoff is reported as an empty kickoff', () => {
-    expect(gateProblems([gate({ id: 'x', kickoff: '   ' })])).toEqual(['gate x: empty kickoff'])
-  })
-
-  test('a gate that is not an object is reported, and the gates after it are still checked', () => {
-    expect(gateProblems([null, gate({ id: 'x', kickoff: '' })])).toEqual([
-      'gate is not an object',
-      'gate x: empty kickoff',
-    ])
-  })
-
-  test('an array inside the gates array is reported as not an object', () => {
-    expect(gateProblems([[]])).toEqual(['gate is not an object'])
-  })
-
-  test('a gate whose field throws when read is reported and the next gate is still checked', () => {
-    const hostile = Object.defineProperty({}, 'id', {
-      get() {
-        throw new Error('boom')
-      },
-    })
-    expect(gateProblems([hostile, [], {}])).toEqual([
-      'gate could not be read',
-      'gate is not an object',
-      'gate has no id',
-      'gate <non-string id>: unknown decisionType',
-      'gate <non-string id>: empty kickoff',
-    ])
-  })
-
-  test('a gate with no id is reported, and two id-less gates are not duplicates', () => {
-    expect(gateProblems([gate({ id: undefined as never })])).toContain('gate has no id')
-    expect(gateProblems([gate({ id: '' }), gate({ id: '  ' })]).some(text => text.includes('duplicate'))).toBe(false)
-  })
-
-  test('a gate whose id is a null-prototype object does not throw and gets the fixed token', () => {
-    const hostile = gate({ id: Object.create(null) as never, kickoff: '' })
-
-    expect(gateProblems([hostile])).toEqual(['gate has no id', 'gate <non-string id>: empty kickoff'])
-  })
-
-  test('a long gate id is capped at 40 characters in the message', () => {
-    const problems = gateProblems([gate({ id: 'a'.repeat(60), kickoff: '' })])
-
-    expect(problems).toEqual([`gate ${'a'.repeat(39)}\u2026: empty kickoff`])
-  })
-
-  test('a gate id with a bidi override character is cleaned in the message', () => {
-    expect(gateProblems([gate({ id: 'a\u202Eb', kickoff: '' })])).toEqual(['gate ab: empty kickoff'])
-  })
-
-  test('60 bad gates give MAX_GATE_PROBLEMS problems and one line saying more were not shown', () => {
-    const bad = Array.from({ length: 60 }, (_, index) => gate({ id: `g${index}`, kickoff: '' }))
-    const problems = gateProblems(bad)
-
-    expect(MAX_GATE_PROBLEMS).toBe(50)
-    expect(problems.length).toBe(51)
-    expect(problems[50]).toBe('more gate problems not shown')
-  })
-
-  test('exactly MAX_GATE_PROBLEMS problems get no extra line', () => {
-    const bad = Array.from({ length: 50 }, (_, index) => gate({ id: `g${index}`, kickoff: '' }))
-
-    expect(gateProblems(bad).length).toBe(50)
-  })
-
-  test('a gate table that is not an array is reported', () => {
-    expect(gateProblems(null)).toEqual(['gates is not an array'])
   })
 })
 

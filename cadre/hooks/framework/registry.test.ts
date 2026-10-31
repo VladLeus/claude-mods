@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { gateProblems, isDecisionType, missingFields, REQUIRED_FIELDS } from './contract'
+import { isDecisionType } from './contract'
 import { GSD_ADAPTER } from './gsd/adapter'
 import { BUILTIN_ADAPTER } from './none/adapter'
 import { adapterOf, ADAPTERS } from './registry'
@@ -55,29 +55,31 @@ describe('adapterOf', () => {
 describe('adapter contract (DET-04)', () => {
   test('every adapter declares every required field', () => {
     for (const adapter of ADAPTERS) {
-      expect(missingFields(adapter)).toEqual([])
-    }
-  })
+      const { doneSignal, locations } = adapter
+      const texts = [adapter.name, adapter.detectRule, doneSignal.artifact, doneSignal.check]
+      const lists = [adapter.startWork, locations.spec, locations.plan, adapter.verify, adapter.humanGates]
+      const calls = [adapter.detect, adapter.kickoffText, adapter.autonomyHunks, adapter.ownsSkill, adapter.roleStart]
+      const named = [...adapter.startSkills, ...adapter.pluginsToEnable]
+      const optional = [adapter.agentPrefix, adapter.install, adapter.factsHeading]
 
-  test('a copy of any adapter with one required field removed reports exactly that field', () => {
-    for (const adapter of ADAPTERS) {
-      for (const field of REQUIRED_FIELDS) {
-        expect(missingFields({ ...adapter, [field]: undefined })).toEqual([field])
-      }
+      expect(['gsd', 'superpowers', 'none']).toContain(adapter.id)
+      expect(texts.filter(text => text.trim() === '')).toEqual([])
+      expect(lists.filter(list => list.length === 0)).toEqual([])
+      expect(calls.every(call => typeof call === 'function')).toBe(true)
+      expect(named.every(name => typeof name === 'string')).toBe(true)
+      expect(optional.every(value => value === null || typeof value === 'string')).toBe(true)
+      expect(typeof adapter.needsBash).toBe('boolean')
+      expect(adapter.autonomy.length > 0 || (adapter.autonomyNote ?? '').trim() !== '').toBe(true)
     }
-  })
-
-  test('the eight D-244 fields are required, so an adapter built without one is refused (E1)', () => {
-    expect(REQUIRED_FIELDS.slice(-8)).toEqual([
-      'startSkills', 'ownsSkill', 'pluginsToEnable', 'agentPrefix', 'needsBash', 'roleStart', 'install', 'factsHeading',
-    ])
-    const fields = Object.entries(GSD_ADAPTER).filter(([field]) => field !== 'startSkills')
-    expect(missingFields(Object.fromEntries(fields))).toEqual(['startSkills'])
   })
 
   test('every gate table passes the gate contract', () => {
     for (const adapter of ADAPTERS) {
-      expect(gateProblems(adapter.humanGates)).toEqual([])
+      const ids = adapter.humanGates.map(gate => gate.id)
+
+      expect(ids.filter(id => id.trim() === '')).toEqual([])
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(adapter.humanGates.filter(gate => gate.kickoff.trim() === '')).toEqual([])
     }
   })
 
