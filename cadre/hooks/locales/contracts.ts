@@ -8,21 +8,22 @@
 
 /** Every marker and template by its name (D-221). Object.freeze keeps each literal type, so slots are typed. */
 export const CONTRACTS = Object.freeze({
-  // The begin and end markers of cadre's block in a role's MEMORY.md (D-140 q3-a), as IGNORE_BEGIN and IGNORE_END.
+  // MEMORY_BLOCK_BEGIN, MEMORY_BLOCK_END (start/memory-links): cadre's block in a role's MEMORY.md (D-140 q3-a).
   memoryBlockBegin: '<!-- >>> cadre linked memories (read-only; rebuilt by /cadre start) -->',
   memoryBlockEnd: '<!-- <<< cadre linked memories -->',
-  // One linked memory in that block: a link to its file and its summary.
+  // One linked memory in that block (start/memory-links memoryBlockLine): a link to its file and its summary.
   memoryBlockLine: '- [{file}]({file}) — {summary}',
-  // The stamp a render writes last: the cadre version that rendered, on one line.
+  // The stamp a render writes last (start/render-plan stampText): the cadre version that rendered, on one line.
   stamp: 'rendered by cadre {version}\n',
-  // What a tmux window runs after a launcher that exits non-zero (RESEARCH Pitfall 7).
+  // TMUX_WAIT (ui/terminal): what a tmux window runs after a launcher that exits non-zero (RESEARCH Pitfall 7).
   tmuxWait: "{ printf '%s\\n' 'cadre: the launcher stopped; press Enter to close this window'; read -r _; }",
-  // The starts of the autopilot log lines status reads: a run ended, ended done, started, stopped by the person.
+  // FINISHED_TEXT, FINISHED_DONE_TEXT, STARTED_TEXT, STOPPED_TEXT (status/autopilot-files): the autopilot log lines
+  // status reads: a run ended, ended done, started, stopped by the person.
   autopilotFinished: 'finished (',
   autopilotFinishedDone: 'finished (done)',
   autopilotStarted: 'started: ',
   autopilotStopped: 'stopped by the person',
-  // The probe texts of a role's probe file: plain ASCII lines with no | and no \ (probe/probe).
+  // The probe texts of a role's probe file (probe/probe UNUSUAL_SUFFIX, checkLabel): ASCII with no | and no \.
   probeUnusual: ' (not checked: unusual characters)',
   probeToolAbsent: 'tool {token} absent',
   probeToolsAbsent: 'tools of {token} absent',
@@ -32,13 +33,13 @@ export const CONTRACTS = Object.freeze({
   probePermissionMode: 'permission mode {token}',
   probeChecked: '{text} [{label}]',
   probeMemoryFolder: 'Memory folder: {dir} (autoMemoryDirectory)',
-  // The begin and end markers of the cadre block in the root `.gitignore` (D-64).
+  // IGNORE_BEGIN, IGNORE_END (plan/gitignore): the cadre block in the root `.gitignore` (D-64).
   ignoreBegin: '# >>> cadre',
   ignoreEnd: '# <<< cadre',
-  // How a part with no heading is named: the text before the first heading of its file (G-02-1f).
+  // TOP_OF_FILE (records): how a part with no heading is named, the text before its file's first heading (G-02-1f).
   topOfFile: '(top of file)',
-  // The line that starts cadre's own lines in a worktree's excludes file, and the line that hides each role's own
-  // `.runtime/` there (AUTO-PICK #25, RESEARCH Pitfall 5).
+  // EXCLUDES_HEADING, RUNTIME_EXCLUDE_LINE (epic/excludes): the line that starts cadre's own lines in a worktree's
+  // excludes file, and the line that hides each role's own `.runtime/` there (AUTO-PICK #25, RESEARCH Pitfall 5).
   excludesHeading: '# cadre links (cadre epic)',
   runtimeExcludeLine: '/.cadre/*/.runtime/',
 }) satisfies Record<string, string>
