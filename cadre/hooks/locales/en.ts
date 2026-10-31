@@ -66,6 +66,33 @@ export const EN = Object.freeze({
   'init.handout.yesLabel': 'Yes',
   'init.handout.noLabel': 'No',
   'init.handout.itemAccepts': '{quotedLabels}, or role ids from: {map}',
+
+  'init.history.noHistoryNote': 'No session history for this repo.',
+  'init.history.unlistedHistoryNote': "Could not list this repo's session history, so it was not scanned.",
+  'init.history.historyDismissedReason': 'The session history question was dismissed or not answered.',
+  'init.history.historyHeading': 'Session history (names and counts only):',
+  'init.history.newest': '; the newest {count} are read',
+  'init.history.question.one':
+    `Scan this repo's session history ({count} session{newest}) for frequently used commands and skills? ${
+    ''}Only names and counts are kept.`,
+  'init.history.question.other':
+    `Scan this repo's session history ({count} sessions{newest}) for frequently used commands and skills? ${
+    ''}Only names and counts are kept.`,
+  'init.history.consentNo': 'No, skip it',
+  'init.history.consentYes': 'Yes, scan names and counts',
+  'init.history.skippedLarge.one':
+    'skipped {skipped} of {count} session over {mib} MiB (the heaviest sessions are not counted)',
+  'init.history.skippedLarge.other':
+    'skipped {skipped} of {count} sessions over {mib} MiB (the heaviest sessions are not counted)',
+  'init.history.partial.one':
+    `partial: stopped at {mib} MiB in total, {unread} of {count} session not read ${
+    ''}(the oldest sessions are not counted)`,
+  'init.history.partial.other':
+    `partial: stopped at {mib} MiB in total, {unread} of {count} sessions not read ${
+    ''}(the oldest sessions are not counted)`,
+  'init.history.skippedUnknown.one': 'skipped {skipped} of {count} session that could not be read',
+  'init.history.skippedUnknown.other': 'skipped {skipped} of {count} sessions that could not be read',
+  'init.history.noneRow': '  none',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

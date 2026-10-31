@@ -10,6 +10,7 @@
 import type { InitLocations } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { t, tn } from '../../locales/t'
 import { userDirOf } from '../../paths'
 import {
   busiestFirst,
@@ -28,45 +29,37 @@ import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from 
 import type { Answer, InitState, SessionListing, StageDef } from '../state'
 
 /** The line init prints when this repo has no session history: no session folder, or no transcript in it (SCAN-03). */
-export const NO_HISTORY_NOTE = 'No session history for this repo.'
+export const NO_HISTORY_NOTE = t('init.history.noHistoryNote')
 
 /** The line init prints when the session folder cannot be listed: unknown is never taken as no history. */
-export const UNLISTED_HISTORY_NOTE = "Could not list this repo's session history, so it was not scanned."
+export const UNLISTED_HISTORY_NOTE = t('init.history.unlistedHistoryNote')
 
 /** Why init cancels when the history question is dismissed or not answered (A1, D-45). */
-export const HISTORY_DISMISSED_REASON = 'The session history question was dismissed or not answered.'
+export const HISTORY_DISMISSED_REASON = t('init.history.historyDismissedReason')
 
 /** Bytes in one MiB, to word the caps in the notes. */
 const MIB = 1024 * 1024
 
 /** The heading of the history block. */
-const HISTORY_HEADING = 'Session history (names and counts only):'
+const HISTORY_HEADING = t('init.history.historyHeading')
 
 /** The most names the history block lists. */
 const MAX_HISTORY_ROWS = 15
-
-/** A session count as text: `1 session`, else `<n> sessions`. */
-function sessionsText(count: number): string {
-  return `${count} ${count === 1 ? 'session' : 'sessions'}`
-}
 
 /**
  * The history consent question (SCAN-03, D-59): how many sessions this repo has, asked before any is read, and that
  * only the newest HISTORY_MAX_SESSIONS are read when there are more (IN-03).
  */
 export function historyQuestion(total: number): string {
-  const newest = total > HISTORY_MAX_SESSIONS ? `; the newest ${HISTORY_MAX_SESSIONS} are read` : ''
+  const newest = total > HISTORY_MAX_SESSIONS ? t('init.history.newest', { count: HISTORY_MAX_SESSIONS }) : ''
 
-  return (
-    `Scan this repo's session history (${sessionsText(total)}${newest}) ` +
-    'for frequently used commands and skills? Only names and counts are kept.'
-  )
+  return tn('init.history.question', total, { count: total, newest })
 }
 
 /** Each history answer with what it allows, the declining one first: only the yes reads a transcript (D-59). */
 const HISTORY_CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'No, skip it', value: false },
-  { label: 'Yes, scan names and counts', value: true },
+  { label: t('init.history.consentNo'), value: false },
+  { label: t('init.history.consentYes'), value: true },
 ])
 
 /**
@@ -85,15 +78,20 @@ function parseHistoryConsent(answer: string): boolean | null {
  * read, then the stop at the 64 MiB total with the sessions it left unread.
  */
 function noteLines(scan: HistoryScan): string[] {
-  const of = sessionsText(scan.total)
+  const count = scan.total
   const unread = scan.total - scan.scanned - scan.skippedLarge - scan.skippedUnknown
-  const large = `skipped ${scan.skippedLarge} of ${of} over ${HISTORY_MAX_FILE_BYTES / MIB} MiB`
-  const partial = `partial: stopped at ${HISTORY_MAX_TOTAL_BYTES / MIB} MiB in total, ${unread} of ${of} not read`
+  const large = tn('init.history.skippedLarge', count, {
+    skipped: scan.skippedLarge,
+    count,
+    mib: HISTORY_MAX_FILE_BYTES / MIB,
+  })
+  const partial = tn('init.history.partial', count, { mib: HISTORY_MAX_TOTAL_BYTES / MIB, unread, count })
+  const unknown = tn('init.history.skippedUnknown', count, { skipped: scan.skippedUnknown, count })
 
   return [
-    ...(scan.skippedLarge > 0 ? [`${large} (the heaviest sessions are not counted)`] : []),
-    ...(scan.skippedUnknown > 0 ? [`skipped ${scan.skippedUnknown} of ${of} that could not be read`] : []),
-    ...(scan.isPartial ? [`${partial} (the oldest sessions are not counted)`] : []),
+    ...(scan.skippedLarge > 0 ? [large] : []),
+    ...(scan.skippedUnknown > 0 ? [unknown] : []),
+    ...(scan.isPartial ? [partial] : []),
   ]
 }
 
@@ -109,7 +107,7 @@ export function historyLines(scan: HistoryScan): string[] {
     .slice(0, MAX_HISTORY_ROWS)
     .map(entry => `  ${entry.name}  ${entry.count}`)
 
-  return [HISTORY_HEADING, ...(rows.length === 0 ? ['  none'] : rows), ...noteLines(scan)]
+  return [HISTORY_HEADING, ...(rows.length === 0 ? [t('init.history.noneRow')] : rows), ...noteLines(scan)]
 }
 
 /** The session folder of this repo in the user folder (historyDir), or null when no user folder is known. */
