@@ -615,6 +615,25 @@ export const EN = Object.freeze({
   'command.usage.usageRows18': "remove a finished epic's worktree (clean, merged, no role running)",
   'command.usage.usageLines': 'cadre commands:',
   'command.usage.helpText': 'Unknown subcommand: {unknown}',
+
+  'launch.deny.dotdotMessage': 'a .. segment is not allowed in an absolute pattern',
+  'launch.deny.unsafeRootWarning':
+    'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth',
+  'launch.deny.lintedDeny': '{entry} was not emitted: {message}',
+  'launch.deny.runtimeDeny': 'Code dir {dir} has an unusual name and is not denied',
+  'launch.deny.undeniedMemoryWarning': 'memory {file} has a path a permission rule cannot hold: it stays editable',
+  'launch.deny.undeniedPrivateWarning':
+    'the private instructions folder has a path a permission rule cannot hold: it stays editable',
+  'launch.deny.undeniedMemoryFolderWarning':
+    'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable',
+  'launch.deny.undeniedRecordWarning':
+    'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable',
+
+  'launch.links.unsafeMemoryNameWarning': 'memory file {name} has an unsafe name: not linked',
+  'launch.links.globalLinks': 'global file {name} has an unsafe name: not linked',
+
+  'launch.overlay.overlayGroup': '{kind} {name} has an unsafe name: not linked',
+  'launch.overlay.overlayGroup2': '{kind} {name} was not found in your user {kind}s: not linked',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

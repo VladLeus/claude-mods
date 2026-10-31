@@ -6,6 +6,7 @@
  */
 import type { RoleSpec } from '../../types'
 import { compareText, isChangedByClean, shown, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { memoryFolderOf } from '../paths'
 
 /**
@@ -125,7 +126,7 @@ export function isSafeFileName(name: string): boolean {
 
 /** The warning for a memory file whose name may not become a link name: it is not linked (T-02-46). */
 export function unsafeMemoryNameWarning(name: string): string {
-  return `memory file ${shown(name)} has an unsafe name: not linked`
+  return t('launch.links.unsafeMemoryNameWarning', { name: shown(name) })
 }
 
 /**
@@ -139,7 +140,7 @@ function globalLinks(id: string, user: LaunchUser): LinkSet {
   for (const [index, target] of user.globalClaudeMd.entries()) {
     const name = target.slice(target.lastIndexOf('/') + 1)
     if (!isCleanName(name)) {
-      warnings.push(`global file ${shown(name)} has an unsafe name: not linked`)
+      warnings.push(t('launch.links.globalLinks', { name: shown(name) }))
       continue
     }
     const number = String(index + 1).padStart(2, '0')

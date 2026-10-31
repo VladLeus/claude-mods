@@ -6,6 +6,7 @@
  */
 import type { CompiledScope, RoleSpec } from '../../types'
 import { shown, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { INSTRUCTIONS_RECORD_FILE, memoryFolderOf, privateInstructionsDir, roleMemoryDir } from '../paths'
 import { isSafeDir, lintDenyPattern, roleOwnPaths, SECRET_READ_DENY } from '../scope/lint'
 import { isPartsFlowRole } from './links'
@@ -41,11 +42,10 @@ const RELATIVE_SECRET_DENY: readonly string[] = Object.freeze(
 const ABSOLUTE_RULE = /^(?:Edit|NotebookEdit|Read|Write)\((\/\/[\s\S]*)\)$/
 
 /** The lint answer for an absolute pattern with a `..` segment. */
-const DOTDOT_MESSAGE = 'a .. segment is not allowed in an absolute pattern'
+const DOTDOT_MESSAGE = t('launch.deny.dotdotMessage')
 
 /** The warning when the repo path cannot be written into a rule, so the any-depth denies of the template stay. */
-const UNSAFE_ROOT_WARNING =
-  'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth'
+const UNSAFE_ROOT_WARNING = t('launch.deny.unsafeRootWarning')
 
 /**
  * The reason a deny pattern must not be emitted into the runtime settings, or null when it is fine. An exact absolute
@@ -73,7 +73,7 @@ function lintedDeny(entries: readonly string[], warnings: readonly string[]): De
   for (const entry of sortedUnique(entries)) {
     const message = lintRuntimeDenyPattern(entry)
     if (message === null) deny.push(entry)
-    else refused.push(`${shown(entry)} was not emitted: ${message}`)
+    else refused.push(t('launch.deny.lintedDeny', { entry: shown(entry), message }))
   }
 
   return { deny, warnings: [...warnings, ...refused] }
@@ -130,7 +130,7 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
     .flatMap(dir => [`Read(//${user.root.slice(1)}/${dir}/**)`, `Edit(//${user.root.slice(1)}/${dir}/**)`])
   const unusual = dirs
     .filter(dir => !isSafeDir(dir))
-    .map(dir => `Code dir ${shown(dir)} has an unusual name and is not denied`)
+    .map(dir => t('launch.deny.runtimeDeny', { dir: shown(dir) }))
 
   return lintedDeny(
     [
@@ -144,26 +144,23 @@ export function runtimeDeny(role: RoleSpec, scope: CompiledScope, user: LaunchUs
 
 /** The warning for a linked memory whose path no exact rule can hold (G-02-1f, T-02-73): it gets no deny. */
 export function undeniedMemoryWarning(file: string): string {
-  return `memory ${shown(file)} has a path a permission rule cannot hold: it stays editable`
+  return t('launch.deny.undeniedMemoryWarning', { file: shown(file) })
 }
 
 /** The warning for a private instructions folder whose path no exact rule can hold (02-GAPS-B2 S3): it gets no deny. */
-export const UNDENIED_PRIVATE_WARNING =
-  'the private instructions folder has a path a permission rule cannot hold: it stays editable'
+export const UNDENIED_PRIVATE_WARNING = t('launch.deny.undeniedPrivateWarning')
 
 /**
  * The warning for a memory folder of the repo whose path no exact rule can hold (02-GAPS-B3 C2): it gets no deny, so
  * a role could still edit the memories there, through a link or not.
  */
-export const UNDENIED_MEMORY_FOLDER_WARNING =
-  'the memory folder of this repo has a path a permission rule cannot hold: its memories stay editable'
+export const UNDENIED_MEMORY_FOLDER_WARNING = t('launch.deny.undeniedMemoryFolderWarning')
 
 /**
  * The warning for a hand-out record whose path no exact rule can hold (02-GAPS-B3 C3): it gets no deny, so a role
  * could still rewrite which memories its next start links.
  */
-export const UNDENIED_RECORD_WARNING =
-  'the hand-out record instructions.json has a path a permission rule cannot hold: it stays editable'
+export const UNDENIED_RECORD_WARNING = t('launch.deny.undeniedRecordWarning')
 
 /**
  * The exact Edit and Write rules of an absolute path, with `suffix` after it (`/**` for a whole folder); null when an

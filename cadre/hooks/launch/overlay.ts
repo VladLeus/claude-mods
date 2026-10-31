@@ -5,6 +5,7 @@
  */
 import type { CompiledScope } from '../../types'
 import { shown, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { runtimeDir, sortedLinks } from './links'
 import type { LaunchUser, LinkSet, OverlayLink } from './links'
 
@@ -36,11 +37,11 @@ function overlayGroup(
   const warnings: string[] = []
   for (const name of sortedUnique(names)) {
     if (!isSafeOverlayName(name)) {
-      warnings.push(`${kind} ${shown(name)} has an unsafe name: not linked`)
+      warnings.push(t('launch.overlay.overlayGroup', { kind, name: shown(name) }))
       continue
     }
     if (!have.includes(name)) {
-      warnings.push(`${kind} ${name} was not found in your user ${kind}s: not linked`)
+      warnings.push(t('launch.overlay.overlayGroup2', { kind, name }))
       continue
     }
     links.push({ path: `${linkDir}/${name}${extension}`, target: `${targetDir}/${name}${extension}` })
