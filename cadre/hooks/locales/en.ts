@@ -662,7 +662,7 @@ export const EN = Object.freeze({
   'launch.deny.unsafeRootWarning':
     'the repo path holds characters a permission rule cannot hold: code-dir denies stay any-depth',
   'launch.deny.lintedDeny': '{entry} was not emitted: {message}',
-  'launch.deny.runtimeDeny': 'Code dir {dir} has an unusual name and is not denied',
+  'launch.deny.runtimeDeny': 'code dir {dir} has an unusual name and is not denied',
   'launch.deny.undeniedMemoryWarning': 'memory {file} has a path a permission rule cannot hold: it stays editable',
   'launch.deny.undeniedPrivateWarning':
     'the private instructions folder has a path a permission rule cannot hold: it stays editable',
@@ -1107,10 +1107,10 @@ export const EN = Object.freeze({
   'plan.plan.staleNote': 'no longer generated (kept; cadre deletes nothing)',
   'plan.plan.unreadableManifestNote':
     "could not read it (treated as changed): kept as is, so no role's entries are dropped; it is not written",
-  'plan.plan.refusalWarning': 'refused to plan {path}: not a .cadre/ path or .gitignore (PLAN-06)',
+  'plan.plan.refusalWarning': 'refused to plan {path}: not a .cadre/ path or .gitignore',
   'plan.plan.twiceWarning': 'refused to plan {path} twice: only the first is kept',
   'plan.plan.acceptFiles': 'refused to plan {path}: cadre plans it itself',
-  'plan.plan.hunkPart': 'refused hunk for {file}: not a known framework config (PLAN-06)',
+  'plan.plan.hunkPart': 'refused hunk for {file}: not a known framework config',
 
   'plan.text.fileRows': ' (executable)',
   'plan.text.hunkRows': '{key}: {before} -> {after}',

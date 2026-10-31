@@ -57,7 +57,7 @@ export const ARTIFACT = Object.freeze({
   cardOwnDirs: 'Reads and edits under {dirs} are never denied (own folders)',
   cardSkippedDirs: `Reads and edits under {dirs} are not denied in the committed template: ${
     ''}those names match the role's own folders at any depth (exact denies are rendered at launch)`,
-  cardUnusualDir: 'Code dir {dir} has an unusual name and is not denied',
+  cardUnusualDir: 'code dir {dir} has an unusual name and is not denied',
   cardSecrets: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied',
   cardNoMcpToDeny: 'No other scanned MCP servers to deny',
   cardDeniedMcp: 'Scanned MCP servers not given are denied: {servers}',
@@ -218,7 +218,7 @@ export const ARTIFACT = Object.freeze({
   builtinHumanGates: 'Human gates:',
   builtinGateLine: '- {where}: {kickoff}',
   // scope/lint.ts
-  lintSingleSlash: 'single leading / matches nothing (P13)',
+  lintSingleSlash: 'single leading / matches nothing',
   lintAbsolute: 'absolute // patterns belong only in .runtime (D-84)',
-  lintInfra: 'would block an infra tool (ISO-04)',
+  lintInfra: 'would block an infra tool',
 }) satisfies Record<string, string>
