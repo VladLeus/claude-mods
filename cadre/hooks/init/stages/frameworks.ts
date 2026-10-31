@@ -2,21 +2,26 @@
  * The framework stage of init (DET-03, D-07, D-17, D-73, D-86, D-136, D-230), a layer 10 module: the framework labels
  * and questions, why each question is asked (frameworkReason), and frameworksStage, the pure stage that asks nothing
  * when exactly one framework is in use, else asks once for every role or per role, with the team's role ids on the
- * question's second line, and gives each role the framework it picked (withFramework). Pure: it gives states and never
- * performs an effect, imports core, detect, ui/ask, init/state and init/stages/model (the answer modes and
+ * question's second line, and gives each role the framework it picked (withFramework). Before that it asks the GSD
+ * check when a user-level GSD is found but not proven (D-243, ASKED #20). Pure: it gives states and never performs an
+ * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
  * teamContextLine), and never imports init/machine or init/run.
  */
-import type { Choice, FrameworkId, RoleSpec } from '../../../types'
+import type { Choice, Facts, FrameworkId, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
+import { labelled } from '../../core/labelled'
+import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
+import { chooseFramework } from '../../framework/contract'
+import { needsGsdCheck, withGsdIdentity } from '../../framework/gsd/identity'
 import { detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { detectionContext } from '../../ui/blocks/context'
-import { askedWithContext, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
-import type { Answer, EachCursor, InitState, StageDef } from '../state'
+import { askedWithContext, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import type { Answer, EachCursor, InitState, IoResult, StageDef } from '../state'
 import { ANSWER_MODE_OPTIONS, parseAnswerMode, teamContextLine } from './model'
 import type { AnswerMode } from './model'
 
@@ -195,31 +200,125 @@ function frameworkAnswer(state: InitState, answer: Answer): InitState {
   }
 }
 
+/** The GSD check question (D-243): it names the command it runs, before anything runs. */
+export const GSD_CHECK_QUESTION = t('init.frameworks.gsdCheckQuestion')
+
+/** Each GSD check answer with whether it runs the check, the declining one first (D-58, D-243). */
+const GSD_CHECK_ANSWERS: readonly Labelled<boolean>[] = Object.freeze([
+  { label: t('init.frameworks.gsdCheckNo'), value: false },
+  { label: t('init.frameworks.gsdCheckYes'), value: true },
+])
+
+/** Why init cancels when the GSD check question is dismissed or not answered (A1, D-45). */
+export const GSD_CHECK_DISMISSED_REASON = t('init.frameworks.gsdCheckDismissedReason')
+
 /**
- * The framework stage (DET-03, D-73, D-17, D-230). With exactly one framework in use nothing is asked: the roles keep
- * `framework` absent (an Adjust override stays) and that framework is the repo default. An ambiguous or installed-only
- * choice is asked (frameworkAnswer), so every role stores its framework and there is no repo default. Unsupported and
- * none ask nothing and give the built-in default; unsupported notes what was found.
+ * The GSD check as init and detect ask it (D-243): GSD_CHECK_QUESTION, `No, skip the check` first, then `Yes, run the
+ * check`, with the GSD check chip, and as its context (kind `detection`) each user-level GSD install found but not
+ * proven, by its display path. It takes no typed answer.
+ */
+export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  const unproven = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown')
+  const options = GSD_CHECK_ANSWERS.map(answer => answer.label)
+  const lines = unproven.map(fact => t('init.frameworks.gsdCheckLine', { dir: fact.dir }))
+
+  return {
+    question: GSD_CHECK_QUESTION,
+    spec: {
+      options,
+      header: t('init.frameworks.gsdCheckChip'),
+      context: { title: t('init.frameworks.gsdCheckTitle'), lines, kind: 'detection' },
+    },
+    parse: (answer: string): boolean | null => labelled(GSD_CHECK_ANSWERS, answer),
+    accepts: quotedLabels(options),
+    dismissedReason: GSD_CHECK_DISMISSED_REASON,
+  }
+}
+
+/** The GSD check asked `tries` times so far; `question` is its text after a refusal. */
+function gsdCheckAsked(state: InitState, facts: Facts, tries: number, question: string | null): InitState {
+  const ask = gsdCheckAsk(facts)
+
+  const sub: InitState['sub'] = { kind: 'ask', tries }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
+}
+
+/**
+ * The framework step once the GSD check, if any, is behind it. With exactly one framework in use nothing is asked: the
+ * roles keep `framework` absent (an Adjust override stays) and that framework is the repo default. An ambiguous or
+ * installed-only choice is asked (frameworkAnswer), so every role stores its framework and there is no repo default.
+ * Unsupported and none ask nothing and give the built-in default; unsupported notes what was found.
+ */
+function frameworkStep(state: InitState): InitState {
+  const { choice, roles } = state.draft
+  if (choice === undefined || roles === undefined) return stageFailed(state)
+  switch (choice.kind) {
+    case 'chosen':
+      return framedDone(state, roles, choice.id)
+    case 'ambiguous':
+    case 'installed-only':
+      return asked(state, { kind: 'mode', tries: 1 }, modeAsk(choice, roles), null)
+    case 'unsupported':
+      return framedDone(withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]), roles, 'none')
+    case 'none':
+      return framedDone(state, roles, 'none')
+    default: {
+      const unreachable: never = choice
+      return unreachable
+    }
+  }
+}
+
+/**
+ * The answer to the GSD check (choiceAnswer): No goes on to the framework step with the facts as they are; Yes hands
+ * the runner the `gsd-identity` io effect, which runs GSD's own check through io.gsdIdentity. An answer that is not
+ * offered is asked again; a dismissal cancels with GSD_CHECK_DISMISSED_REASON (A1).
+ */
+function gsdCheckAnswer(state: InitState, answer: Answer): InitState {
+  const { gathered, locations } = state.draft
+  const { sub } = state
+  if (answer.kind !== 'answer' || sub.kind !== 'ask' || gathered === undefined || locations === undefined) {
+    return stageFailed(state)
+  }
+  const ask = gsdCheckAsk(gathered.facts.facts)
+  const next = choiceAnswer(ask, sub, answer.text)
+  if (next.kind === 'again') return gsdCheckAsked(state, gathered.facts.facts, next.sub.tries, next.question)
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (!next.value) return frameworkStep(state)
+
+  return withEffect({ ...state, sub: { kind: 'start' } }, { kind: 'io', call: { id: 'gsd-identity', locations } })
+}
+
+/**
+ * The result of GSD's own check, merged into the facts (withGsdIdentity) before the framework step, which then reads
+ * the framework choice again from the merged facts, so a GSD install the check proved counts for the framework
+ * question (D-243).
+ */
+function gsdChecked(state: InitState, result: IoResult): InitState {
+  const { gathered, locations } = state.draft
+  if (result.id !== 'gsd-identity' || gathered === undefined || locations === undefined) return stageFailed(state)
+  const facts = withGsdIdentity(gathered.facts, result.result, locations)
+  const choice = chooseFramework(detectAll(facts.facts), null)
+
+  return frameworkStep({ ...state, draft: { ...state.draft, gathered: { ...gathered, facts }, choice } })
+}
+
+/**
+ * The framework stage (DET-03, D-73, D-17, D-230): the GSD check first when the scan found a user-level GSD that is not
+ * proven (D-243, ASKED #20), then the framework step (frameworkStep, frameworkAnswer).
  */
 export const frameworksStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
-    const { choice, roles } = state.draft
-    if (choice === undefined || roles === undefined) return stageFailed(state)
-    switch (choice.kind) {
-      case 'chosen':
-        return framedDone(state, roles, choice.id)
-      case 'ambiguous':
-      case 'installed-only':
-        return asked(state, { kind: 'mode', tries: 1 }, modeAsk(choice, roles), null)
-      case 'unsupported':
-        return framedDone(withOutputs(state, [{ kind: 'note', line: choiceLine(choice) }]), roles, 'none')
-      case 'none':
-        return framedDone(state, roles, 'none')
-      default: {
-        const unreachable: never = choice
-        return unreachable
-      }
-    }
+    const facts = state.draft.gathered?.facts.facts
+    if (facts === undefined || !needsGsdCheck(facts)) return frameworkStep(state)
+
+    return gsdCheckAsked(state, facts, 1, null)
   },
-  answer: frameworkAnswer,
+  answer: (state: InitState, answer: Answer): InitState => {
+    if (answer.kind === 'io') return gsdChecked(state, answer.result)
+    if (state.sub.kind === 'ask') return gsdCheckAnswer(state, answer)
+
+    return frameworkAnswer(state, answer)
+  },
 })

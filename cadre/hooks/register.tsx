@@ -6,7 +6,9 @@ import type {
   FactsPort,
   HostIo,
   IdentityRunResult,
+  InitFacts,
   InitIo,
+  InitLocations,
   OpenQuestion,
   PortRead,
   ShownBlock,
@@ -17,15 +19,16 @@ import { isObject } from './core/json'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
-import { isRuntimeIdentityArgv } from './framework/gsd/identity'
+import { isRuntimeIdentityArgv, needsGsdCheck, withGsdIdentity } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
 import { runInit } from './init/run'
 import type { InitOptions } from './init/run'
+import { gsdCheckAsk } from './init/stages/frameworks'
 import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
 import { setMissingSlotSink, t } from './locales/t'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
-import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collect'
+import { collectFacts, collectGsdIdentity, locationsOf, rootUnknownFacts } from './scan/facts/collect'
 import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
@@ -106,11 +109,27 @@ async function identityRun($: EngineInterface, argv: readonly string[], cwd: str
 }
 
 /**
+ * The GSD check of `/cadre detect` (D-243): asked through the same spec as init's (gsdCheckAsk) only when the facts
+ * hold a user-level GSD found but not proven and someone can be asked; on Yes GSD's own check runs through
+ * io.gsdIdentity (collectGsdIdentity) and is merged (withGsdIdentity). Any other answer, a dismissal or `claude -p`
+ * leaves the facts as they are, so the identity call never runs without a Yes.
+ */
+async function consentedGsdCheck(io: InitIo, initFacts: InitFacts, locations: InitLocations): Promise<InitFacts> {
+  if (!needsGsdCheck(initFacts.facts) || (await io.isInteractive()) !== true) return initFacts
+  const ask = gsdCheckAsk(initFacts.facts)
+  const answer = await io.ask(ask.question, ask.spec).catch(() => null)
+  if (answer === null || ask.parse(answer) !== true) return initFacts
+
+  return withGsdIdentity(initFacts, await io.gsdIdentity(locations), locations)
+}
+
+/**
  * The `/cadre detect` reply. The locations are resolved first (D-39), then the refusal runs before any listing, read,
  * settings or process call (D-36): the file system root is always refused, and every root form, as given and as
- * resolved, is checked against every home form (WR-06).
+ * resolved, is checked against every home form (WR-06). A GSD install found but not proven is asked about before its
+ * own check runs (consentedGsdCheck, D-243).
  */
-async function detectReply($: EngineInterface, isAdapters: boolean): Promise<string> {
+async function detectReply($: EngineInterface, isAdapters: boolean, io: InitIo): Promise<string> {
   const sessionRoot = await $.session.root().catch(() => null)
   if (sessionRoot === null) {
     const unknown = rootUnknownFacts()
@@ -121,9 +140,11 @@ async function detectReply($: EngineInterface, isAdapters: boolean): Promise<str
   const refusal = detectRefusal([locations.givenRoot, locations.root], [locations.givenHome, locations.home])
   if (refusal !== null) return refusal
 
-  const { raw } = await collectFacts(factsPortOf($), locations)
+  const { raw, gsdUserDir } = await collectFacts(factsPortOf($), locations)
+  const collected = { facts: normalizeFacts(raw, locations.configDir, locations.givenRoot), gsdUserDir }
+  const checked = await consentedGsdCheck(io, collected, locations)
 
-  return detectText(normalizeFacts(raw, locations.configDir, locations.givenRoot), isAdapters)
+  return detectText(checked.facts, isAdapters)
 }
 
 /**
@@ -253,7 +274,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
 
       return { facts: normalizeFacts(raw, locations.configDir, locations.givenRoot), gsdUserDir }
     },
-    gsdIdentity: async () => null,
+    gsdIdentity: locations => collectGsdIdentity(factsPortOf($), locations).catch(() => null),
     sessionId: () => $.session.id().catch(() => null),
     now: () => $.clock.now().catch(() => null),
     cadreVersion: async () => {
@@ -313,8 +334,9 @@ function factsPortOf($: EngineInterface): FactsPort {
 /**
  * The write and run port apply and `/cadre start` run through, beside InitIo: plain closures over `$`, built only for
  * plain init, plain regen, /cadre start and /cadre status, which takes its run member only (runStatus is typed
- * `Pick<HostIo, 'run'>`, #63 A3). InitIo never gets these members, so a path that is given only an InitIo (detect,
- * every --dry-run, every refusal and cancel) cannot write or run (T-03-01).
+ * `Pick<HostIo, 'run'>`, #63 A3). InitIo never gets these members, so the paths given only an InitIo (detect, every
+ * --dry-run, every refusal and cancel) get no HostIo write or run port; the only run they can make is the gated GSD
+ * runtime identity call, and only after the user said Yes (D-243, T-03-01).
  * Every member maps a host failure to false or null and never reads an error text. A run passes its cwd, stdin and env
  * only when given; the env names are string literals, as the host reads only literal names.
  */
@@ -356,7 +378,7 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
     case 'help':
       return { text: helpText(command.unknown) }
     case 'detect':
-      return { text: await detectReply($, command.adapters) }
+      return { text: await detectReply($, command.adapters, initIoOf($, pane)) }
     case 'init': {
       const { surface } = pane
       const options: InitOptions = command.dryRun

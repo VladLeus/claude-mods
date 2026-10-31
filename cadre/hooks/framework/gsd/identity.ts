@@ -4,7 +4,7 @@
  * facts detection reports, and the proven user-level dir init may run a write through (D-72). It imports core, paths
  * and the types, so facts, init and register.tsx read GSD's identity here.
  */
-import type { GsdFact, GsdLocation, GsdReadTarget, InitFacts, RawFacts, RawGsdCandidate } from '../../../types'
+import type { Facts, GsdFact, GsdLocation, GsdReadTarget, InitFacts, RawFacts, RawGsdCandidate } from '../../../types'
 import { isObject } from '../../core/json'
 import { clean } from '../../core/text'
 import { t } from '../../locales/t'
@@ -239,7 +239,7 @@ function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
  */
 export function gsdFactOf(
   candidate: ProbedGsdCandidate,
-  raw: RawFacts,
+  raw: Pick<RawFacts, 'home' | 'root'>,
   configDir: string | null,
   warnings: string[],
 ): GsdFact {
@@ -258,6 +258,38 @@ export function gsdFactOf(
     identity,
     runtimeIdentityTried: candidate.runtimeTried,
   }
+}
+
+/**
+ * Whether init and detect ask before GSD's own check (D-243): the facts hold a user-level GSD install that is found
+ * but not proven. A repo-local candidate is never run (D-28), so it is never asked about.
+ */
+export function needsGsdCheck(facts: Facts): boolean {
+  return facts.gsd.some(fact => fact.location === 'user' && fact.identity === 'unknown')
+}
+
+/**
+ * The facts once GSD's own check ran for the user-level install (D-243): its GsdFact is replaced by the one gsdFactOf
+ * makes of the probed candidate, its path shown against `display` as the detect run shows it, and the warning of the
+ * unproven fact gives way to the warnings of the new one. No probed user-level candidate, or no user-level fact to
+ * replace, leaves the facts as they are.
+ */
+export function withGsdIdentity(
+  initFacts: InitFacts,
+  candidate: RawGsdCandidate | null,
+  display: { readonly root: string; readonly home: string | null; readonly configDir: string | null },
+): InitFacts {
+  const [probed] = usableCandidates([candidate])
+  const { facts } = initFacts
+  const old = facts.gsd.find(fact => fact.location === 'user')
+  if (probed === undefined || probed.location !== 'user' || old === undefined) return initFacts
+  const added: string[] = []
+  const fact = gsdFactOf(probed, display, display.configDir, added)
+  const unproven = t('framework.gsd.identity.unprovenWarning', { dir: old.dir })
+  const warnings = [...facts.warnings.filter(warning => !warning.startsWith(unproven)), ...added]
+  const gsd = facts.gsd.map(each => (each === old ? fact : each))
+
+  return { ...initFacts, facts: { ...facts, gsd, warnings } }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, GsdFact, RepoEntry, RoleSpec } from '../../../types'
+import type { Choice, GsdFact, RawGsdCandidate, RepoEntry, RoleSpec } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
@@ -289,6 +289,25 @@ describe('the GSD check (D-243)', () => {
     const yes = nextStage(gsdAt([UNPROVEN]), { kind: 'answer', text: 'Yes, run the check' })
 
     expect(yes.effect).toEqual({ kind: 'io', call: { id: 'gsd-identity', locations: DEFAULT_LOCATIONS } })
+  })
+
+  test('the check result is merged before the framework step, which reads the choice again from it', () => {
+    const yes = nextStage(gsdAt([UNPROVEN]), { kind: 'answer', text: 'Yes, run the check' })
+    const probed: RawGsdCandidate = {
+      location: 'user',
+      dir: '/home/u/.claude/gsd-core',
+      isPresent: true,
+      versionText: null,
+      identityText: null,
+      manifest: null,
+      runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+      runtimeTried: true,
+    }
+    const merged = nextStage(yes, { kind: 'io', result: { id: 'gsd-identity', result: probed } })
+
+    expect(merged.draft.gathered?.facts.facts.gsd.map(fact => fact.identity)).toEqual(['proven'])
+    const installedOnly = { kind: 'installed-only', ids: ['gsd'] }
+    expect([merged.draft.choice, merged.sub]).toEqual([installedOnly, { kind: 'mode', tries: 1 }])
   })
 
   test('no GSD candidate, or a proven one, is never asked about', () => {

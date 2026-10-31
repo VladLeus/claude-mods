@@ -2,8 +2,9 @@
  * The facts collector, a layer 3 module: the locations one run starts from, the host reads for one repo root in the
  * order factReadPlan names them, and the raw facts of a root that cannot be read. Every read goes through the
  * FactsPort register.tsx builds, so this module never sees the host, and the one process call it may ask for is the
- * gated runtime identity call (MUST 18, D-28, WR-01). It imports core, GSD's identity, paths, the other facts modules
- * and the types, so register.tsx collects the detect facts here.
+ * gated runtime identity call (MUST 18, D-28, WR-01), which only collectGsdIdentity asks for, after the user said Yes
+ * (D-243). It imports core, GSD's identity, paths, the other facts modules and the types, so register.tsx collects
+ * the detect facts here.
  */
 import type {
   FactsPort,
@@ -176,14 +177,16 @@ async function settingsOf(port: FactsPort, read: ReadContext): Promise<RawFacts[
 }
 
 /**
- * One GSD candidate as the host reads it: its folder, its three static files, and the runtime identity stdout when
- * runtimeIdentityArgv allows the call, which is the user-level install with a built runtime only (D-28, WR-01). The
- * repo-local candidate's files are read only as regular files inside the repo (WR-02).
+ * One GSD candidate as the host reads it: its folder, its three static files, and, only when `isRunAllowed`, the
+ * runtime identity stdout when runtimeIdentityArgv allows the call, which is the user-level install with a built
+ * runtime only (D-28, WR-01, D-243). The repo-local candidate's files are read only as regular files inside the repo
+ * (WR-02).
  */
 async function gsdCandidateOf(
   port: FactsPort,
   read: ReadContext,
   target: GsdReadTarget,
+  isRunAllowed: boolean,
 ): Promise<ProbedGsdCandidate> {
   const isRepoFile = target.location === 'project'
   const isUser = target.location === 'user'
@@ -193,7 +196,7 @@ async function gsdCandidateOf(
   const manifest = await readJson(port, read, target.manifestPath, isRepoFile)
   // The built probe fails closed (a refusal means not built), the present probe above fails open; both on purpose.
   const isBuilt = isUser && ((await port.exists(runtimeBuiltPath(target))) ?? false)
-  const argv = runtimeIdentityArgv(target, identityText, isPresent, isBuilt)
+  const argv = isRunAllowed ? runtimeIdentityArgv(target, identityText, isPresent, isBuilt) : null
   const run = argv === null ? NO_RUN : await port.runIdentity(argv, target.dir)
 
   return {
@@ -216,9 +219,10 @@ export type Collected = {
 }
 
 /**
- * The host reads for one repo root, in the order factReadPlan names them, and nothing else. The locations arrive
- * resolved and already past the home-folder refusal. A read that fails is recorded as a warning, never thrown. The
- * user-level GSD folder comes back beside the facts so no caller plans the reads a second time.
+ * The host reads for one repo root, in the order factReadPlan names them, and nothing else: it never runs the runtime
+ * identity call, so a GSD install found but not proven stays unproven (D-243). The locations arrive resolved and
+ * already past the home-folder refusal. A read that fails is recorded as a warning, never thrown. The user-level GSD
+ * folder comes back beside the facts so no caller plans the reads a second time.
  */
 export async function collectFacts(port: FactsPort, locations: InitLocations): Promise<Collected> {
   const { root, home, configDir } = locations
@@ -233,12 +237,28 @@ export async function collectFacts(port: FactsPort, locations: InitLocations): P
     plan.installedPluginsPath === null ? null : await readJson(port, read, plan.installedPluginsPath, false)
   const gsd: RawGsdCandidate[] = []
   for (const target of plan.gsd) {
-    gsd.push(await gsdCandidateOf(port, read, target))
+    gsd.push(await gsdCandidateOf(port, read, target, false))
   }
 
   const raw = { root, home, repoEntries, docsEntries, settings, installedPlugins, gsd, warnings: read.warnings }
 
   return { raw, gsdUserDir: plan.gsd.find(target => target.location === 'user')?.dir ?? null }
+}
+
+/**
+ * GSD's own check (D-243): the user-level GSD candidate of factReadPlan read again with the gated runtime identity call
+ * allowed, as gsdCandidateOf reads it, its warnings dropped (the facts of the same run hold them); null when the plan
+ * has no user-level candidate. Called only after the user said Yes to the GSD check.
+ */
+export async function collectGsdIdentity(
+  port: FactsPort,
+  locations: InitLocations,
+): Promise<ProbedGsdCandidate | null> {
+  const { root, home, configDir } = locations
+  const target = factReadPlan({ root, home, configDir }).gsd.find(candidate => candidate.location === 'user')
+  if (target === undefined) return null
+
+  return gsdCandidateOf(port, { root, home, configDir, warnings: [] }, target, true)
 }
 
 /** The raw facts of a session whose root cannot be read: nothing is read, and the report says so. */

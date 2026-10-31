@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { FactsPort, IdentityRunResult, SettingsSource } from '../../../types'
 import { DEFAULT_LOCATIONS } from '../../testkit'
-import { collectFacts } from './collect'
+import { collectFacts, collectGsdIdentity } from './collect'
 
 /** One runtime identity call the fake port was asked for. */
 type IdentityCall = {
@@ -63,6 +63,19 @@ describe('collectFacts', () => {
     const { raw } = await collectFacts(fakePort([], [], { exists }), DEFAULT_LOCATIONS)
 
     expect(raw.warnings).toContain('could not read ~/.claude/gsd-core/VERSION (treated as unknown)')
+  })
+
+  test('collectGsdIdentity runs only a built user-level candidate, in its GSD folder (D-243)', async () => {
+    const built = [USER_GSD, `${USER_GSD}/bin/lib/cli-exit.cjs`, PROJECT_GSD, `${PROJECT_GSD}/bin/lib/cli-exit.cjs`]
+    const calls: IdentityCall[] = []
+    const probed = await collectGsdIdentity(fakePort(built, calls), DEFAULT_LOCATIONS)
+    const argv = ['node', `${USER_GSD}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
+    const unbuilt: IdentityCall[] = []
+    const skipped = await collectGsdIdentity(fakePort([USER_GSD], unbuilt), DEFAULT_LOCATIONS)
+    const homeless = await collectGsdIdentity(fakePort(built, []), { ...DEFAULT_LOCATIONS, home: null })
+
+    expect([calls, probed?.location, probed?.runtimeTried]).toEqual([[{ argv, cwd: USER_GSD }], 'user', true])
+    expect([unbuilt, skipped?.runtimeTried, skipped?.runtimeProblem, homeless]).toEqual([[], false, 'not-built', null])
   })
 
   test('a GSD folder whose probe the port cannot answer counts as present', async () => {

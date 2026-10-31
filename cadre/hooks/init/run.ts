@@ -370,7 +370,8 @@ function withToolsOnce(io: InitIo): InitIo {
  * Performs one host operation of a stage (D-230): the guard (initGuard), the scans (gatherScans) with the session's
  * tool list read once, shared with the scans, for the MCP server questions' contexts (D-211, #163), the listing of the
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
- * the review's plan (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
+ * GSD's own check after the user said Yes (io.gsdIdentity, D-243, the only init caller of it), the review's plan
+ * (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
  * hold, so it gives none there. The scans and the history scan first set their status line (D-232).
  */
 async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promise<IoResult> {
@@ -398,6 +399,8 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'read-instruction-files', result: await readInstructionFiles(io, call.sources) }
     case 'launch-dir-check':
       return { id: 'launch-dir-check', result: await isRepoFolder(io, call.root, call.path) }
+    case 'gsd-identity':
+      return { id: 'gsd-identity', result: await io.gsdIdentity(call.locations) }
     case 'plan':
       return { id: 'plan', result: await planStep(io, call.input) }
     case 'apply':

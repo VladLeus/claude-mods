@@ -141,6 +141,14 @@ export const EN = Object.freeze({
   'init.frameworks.reasonUnsupported': 'only frameworks cadre does not support were found',
   'init.frameworks.reasonNone': 'no framework was found',
   'init.frameworks.frameworkDismissedReason': 'A framework question was dismissed or not answered.',
+  'init.frameworks.gsdCheckQuestion':
+    "Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)",
+  'init.frameworks.gsdCheckNo': 'No, skip the check',
+  'init.frameworks.gsdCheckYes': 'Yes, run the check',
+  'init.frameworks.gsdCheckChip': 'GSD check',
+  'init.frameworks.gsdCheckTitle': 'GSD install',
+  'init.frameworks.gsdCheckLine': '{dir}: found, not proven',
+  'init.frameworks.gsdCheckDismissedReason': 'The GSD check question was dismissed or not answered.',
   'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
   'init.frameworks.frameworkAskAccepts': '{map} - a role runs one framework',
 

@@ -21,6 +21,7 @@ import type {
   PaneKey,
   PortEntry,
   PortRead,
+  RawGsdCandidate,
   RoleChange,
   RoleSpec,
   SkillRef,
@@ -108,7 +109,8 @@ export type SessionListing = {
  * (listSessions), the history scan of the listed sessions (scanHistory), the read of a config file the hunks change
  * (readRepoFile), the names of the repo's rule files and AGENTS.md (repoInstructionNames), the read of the instruction
  * files after the content consent (readInstructionFiles), the check that a typed launcher folder is a folder inside
- * the repo (isRepoFolder), the review's plan (planStep) and Confirm's apply (applyConfirmed).
+ * the repo (isRepoFolder), GSD's own check after a Yes (io.gsdIdentity, D-243), the review's plan (planStep) and
+ * Confirm's apply (applyConfirmed).
  */
 export type IoCall =
   | { readonly id: 'guard' }
@@ -119,6 +121,7 @@ export type IoCall =
   | { readonly id: 'repo-instruction-names'; readonly root: string }
   | { readonly id: 'read-instruction-files'; readonly sources: InstructionSources }
   | { readonly id: 'launch-dir-check'; readonly root: string; readonly path: string }
+  | { readonly id: 'gsd-identity'; readonly locations: InitLocations }
   | { readonly id: 'plan'; readonly input: PlanStepInput }
   | { readonly id: 'apply'; readonly reviewed: Reviewed }
 
@@ -137,6 +140,7 @@ export type IoResult =
   | { readonly id: 'repo-instruction-names'; readonly result: RepoNames }
   | { readonly id: 'read-instruction-files'; readonly result: InstructionScan }
   | { readonly id: 'launch-dir-check'; readonly result: boolean }
+  | { readonly id: 'gsd-identity'; readonly result: RawGsdCandidate | null }
   | { readonly id: 'plan'; readonly result: PlanResult }
   | { readonly id: 'apply'; readonly result: StepResult<Applied> | null }
 

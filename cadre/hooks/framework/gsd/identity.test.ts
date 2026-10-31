@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
-import type { GsdFact, GsdReadTarget } from '../../../types'
+import type { GsdFact, GsdReadTarget, RawGsdCandidate } from '../../../types'
 import { EMPTY_FACTS, PROVEN_FACTS, PROVEN_USER_GSD } from '../../testkit'
 import {
   isGsdIdentitySource,
   isRuntimeCallAllowed,
   isRuntimeIdentityArgv,
+  needsGsdCheck,
   parseGsdManifest,
   parseRuntimeIdentity,
   parseVersionText,
@@ -12,6 +13,7 @@ import {
   runtimeBuiltPath,
   runtimeIdentityArgv,
   runtimeSkipProblem,
+  withGsdIdentity,
 } from './identity'
 
 /** The user-level GSD install under /home/u, as the host reads it. */
@@ -189,5 +191,40 @@ describe('provenUserDir', () => {
     expect(provenUserDir({ ...PROVEN_FACTS, facts: { ...EMPTY_FACTS, gsd: [repoCopy] } })).toBeNull()
     expect(provenUserDir({ ...PROVEN_FACTS, gsdUserDir: null })).toBeNull()
     expect(provenUserDir({ facts: EMPTY_FACTS, gsdUserDir: '/home/u/.claude/gsd-core' })).toBeNull()
+  })
+})
+
+describe('the GSD check (D-243)', () => {
+  /** A user-level GSD found but not proven, with the warning normalizeFacts gives it. */
+  const UNPROVEN: GsdFact = { ...PROVEN_USER_GSD, version: null, identity: 'unknown' }
+  const WARNING = 'could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'
+  /** The user-level candidate as GSD's own check reads it, its runtime identity answered. */
+  const PROBED: RawGsdCandidate = {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+    runtimeTried: true,
+  }
+  const DISPLAY = { root: '/repo', home: '/home/u', configDir: null }
+
+  test('needsGsdCheck: a user-level GSD found but not proven, never a proven or a repo-local one', () => {
+    expect(needsGsdCheck({ ...EMPTY_FACTS, gsd: [UNPROVEN] })).toBe(true)
+    expect(needsGsdCheck({ ...EMPTY_FACTS, gsd: [PROVEN_USER_GSD] })).toBe(false)
+    expect(needsGsdCheck({ ...EMPTY_FACTS, gsd: [{ ...UNPROVEN, location: 'project' }] })).toBe(false)
+    expect(needsGsdCheck(EMPTY_FACTS)).toBe(false)
+  })
+
+  test('withGsdIdentity puts the probed fact in place of the unproven one and drops its warning', () => {
+    const before = { facts: { ...EMPTY_FACTS, gsd: [UNPROVEN], warnings: ['other', WARNING] }, gsdUserDir: '/x' }
+    const after = withGsdIdentity(before, PROBED, DISPLAY)
+
+    const proven = { ...UNPROVEN, version: '1.16.0', identity: 'proven', runtimeIdentityTried: true }
+    expect(after.facts.gsd).toEqual([proven])
+    expect([after.facts.warnings, after.gsdUserDir]).toEqual([['other'], '/x'])
+    expect(withGsdIdentity(before, null, DISPLAY)).toBe(before)
   })
 })
