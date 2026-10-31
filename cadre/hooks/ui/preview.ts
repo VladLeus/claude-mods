@@ -7,7 +7,7 @@
  */
 import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
-import { clean, reportText } from '../core/text'
+import { clean } from '../core/text'
 import { UNCUT, wrapLine } from './pane'
 import type { Surface } from './surface'
 
@@ -81,11 +81,24 @@ export function fitPreview(context: AskContext, rows: number): FittedPreview {
   return { lines: [...shown, `+${lines.length - shown.length} more above`], isOverflow: true }
 }
 
-/** The transcript rows the TUI default prints above a dialog (WD-S4 stub until its GREEN): the old rows. */
+/**
+ * The transcript rows the TUI default prints right above a dialog (D-228, WD-S4): for a context too long for the
+ * preview (fitPreview at PREVIEW_LINE_ROWS), its title and then every line, each cleaned with no cap (T-02.1-79), so
+ * the full text above holds whole what the preview leaves out; none for a context that fits, for the Review (it is
+ * paged), for no context, and for a context with the same title and the same lines, in order, as `printed`, the one
+ * printed last, so a question asked again prints its context once.
+ */
 export function tuiTranscriptRows(context: AskContext | null, printed: AskContext | null): readonly string[] {
   if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS).isOverflow) return []
+  const { title, lines } = context
+  const isPrinted =
+    printed !== null &&
+    printed.title === title &&
+    printed.lines.length === lines.length &&
+    printed.lines.every((line, at) => line === lines[at])
+  if (isPrinted) return []
 
-  return [context.title, ...context.lines].map(line => reportText(line))
+  return [title, ...lines].map(line => clean(line, UNCUT))
 }
 
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */

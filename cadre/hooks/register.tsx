@@ -14,7 +14,6 @@ import type {
 import { parseCommand } from './command/command'
 import { helpText } from './command/usage'
 import { isObject } from './core/json'
-import { reportText } from './core/text'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
@@ -39,7 +38,7 @@ import {
   questionPaneBlocks,
   questionScroll,
 } from './ui/pane'
-import { answersFromNotes, dialogPlan, fitPreview, previewColumns, PREVIEW_LINE_ROWS } from './ui/preview'
+import { answersFromNotes, dialogPlan, previewColumns, tuiTranscriptRows } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -136,23 +135,29 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 }
 
 /**
- * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
- * the preview (fitPreview) as transcript rows right above the dialog, its title first, each cleaned as a report cell
- * (D-228); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
- */
-function beforeTuiDialog($: EngineInterface, context: AskContext | null): void {
-  $.ui.status(undefined)
-  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS).isOverflow) return
-  for (const line of [context.title, ...context.lines]) $.ui.log(reportText(line))
-}
-
-/**
  * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first show and read once
- * the run settles, and where the run shows its context (D-208), decided before anything opens.
+ * the run settles, where the run shows its context (D-208), decided before anything opens, and the context the TUI
+ * default printed last.
  */
 type PaneRun = {
   isOpened: boolean
   readonly surface: Surface
+  /** The context the TUI default last printed above a dialog this run (WD-S4); null before any. */
+  printed: AskContext | null
+}
+
+/**
+ * What the TUI default does as a dialog opens: it clears the status line (D-232), then prints a context too long for
+ * the preview as transcript rows right above the dialog, its title first, each line cleaned and uncut, once per
+ * question: a question asked again with the context the run printed last prints nothing (tuiTranscriptRows, D-228,
+ * WD-S4); the preview ends with how many lines it left out. A context that fits, and the Review, print nothing.
+ */
+function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext | null): void {
+  $.ui.status(undefined)
+  const rows = tuiTranscriptRows(context, pane.printed)
+  if (rows.length === 0) return
+  for (const row of rows) $.ui.log(row)
+  pane.printed = context
 }
 
 /**
@@ -184,7 +189,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
       if (scroll !== null) await $.ui.scroll(scroll).catch(() => undefined)
-      if (pane.surface === 'tui-default') beforeTuiDialog($, open.context)
+      if (pane.surface === 'tui-default') beforeTuiDialog($, pane, open.context)
       try {
         const dialog = {
           options,
@@ -408,7 +413,7 @@ export const register: Register = on => {
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
     runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
-    const pane: PaneRun = { isOpened: false, surface: runSurface }
+    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null }
     try {
       return await commandReply($, e.args, pane)
     } finally {
