@@ -42,6 +42,7 @@ import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
+import { t } from '../locales/t'
 import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths, planWithManifest } from '../plan/plan'
@@ -93,17 +94,17 @@ export type InitOptions = ({ readonly dryRun: true } | { readonly dryRun: false;
 }
 
 /** The status line the TUI default shows while the repo scans run (D-232). */
-export const SCAN_PROGRESS = 'cadre: scanning the repo…'
+export const SCAN_PROGRESS = t('init.status.scan')
 
 /** The status line the TUI default shows while the history scan reads the session transcripts (D-232). */
-export const HISTORY_PROGRESS = 'cadre: reading session history…'
+export const HISTORY_PROGRESS = t('init.status.history')
 
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
-  'describe-roles': 'cadre: reading your structure…',
-  skills: 'cadre: recommending skills…',
-  topics: 'cadre: grouping instructions…',
-  parts: 'cadre: recommending instruction parts…',
+  'describe-roles': t('init.status.describeRoles'),
+  skills: t('init.status.skills'),
+  topics: t('init.status.topics'),
+  parts: t('init.status.parts'),
 })
 
 /**

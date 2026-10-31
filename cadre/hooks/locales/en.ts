@@ -303,6 +303,13 @@ export const EN = Object.freeze({
   'init.reply.head': 'cadre init',
   'init.conflict.dismissed': 'A Keep mine or Take new question was dismissed or not answered.',
   'init.conflict.context': 'Keep mine leaves your edited file as it is; Take new writes the new version over it.',
+
+  'init.status.scan': 'cadre: scanning the repo…',
+  'init.status.history': 'cadre: reading session history…',
+  'init.status.describeRoles': 'cadre: reading your structure…',
+  'init.status.skills': 'cadre: recommending skills…',
+  'init.status.topics': 'cadre: grouping instructions…',
+  'init.status.parts': 'cadre: recommending instruction parts…',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
