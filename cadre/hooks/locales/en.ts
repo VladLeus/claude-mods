@@ -634,6 +634,73 @@ export const EN = Object.freeze({
 
   'launch.overlay.overlayGroup': '{kind} {name} has an unsafe name: not linked',
   'launch.overlay.overlayGroup2': '{kind} {name} was not found in your user {kind}s: not linked',
+
+  'start.renderPlan.roleFolderRefusal': '.cadre/{role} is not a folder inside this repo: run /cadre regen {role}',
+  'start.renderPlan.runtimeRefusal': '.cadre/{role}/.runtime/ or a folder in it is a link or not a folder',
+  'start.renderPlan.runtimeRefusal2': '{what}: remove it and run /cadre start {role} again',
+  'start.renderPlan.unstatedLinkRefusal': '.cadre/{role}/.runtime/{name} is a link /cadre start could not check',
+  'start.renderPlan.unstatedLinkRefusal2': '{what}: remove it and run /cadre start {role} again',
+  'start.renderPlan.privateLinkRefusal':
+    '.cadre/{role}/.runtime/{privateInstructionsLink} is a real file or folder, not a link',
+  'start.renderPlan.privateLinkRefusal2': '{what}: remove it and run /cadre start {role} again',
+  'start.renderPlan.notReplacedWarning': '{repoRelative} is a real file or folder, not a link: not replaced',
+
+  'start.gatherUser.startNoHome': 'cadre start needs HOME to render the role files, so it stopped.',
+  'start.gatherUser.startNoGitDir':
+    'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; git ' +
+    '2.31 or newer is needed), so it stopped.',
+  'start.gatherUser.privateFolderRefusal': 'cadre start stopped: {path}',
+  'start.gatherUser.privateFolderRefusal2': 'cadre does not write through it',
+  'start.gatherUser.privateFolderRefusal3': '{stopped} is a link; {end}',
+  'start.gatherUser.privateFolderRefusal4': '{stopped} is not a folder; {end}',
+  'start.gatherUser.privateFolderRefusal5': '{stopped} could not be checked for links; {end}',
+
+  'start.memoryLinks.memoryChangedWarning':
+    'memory {file} changed since init: linked as it is now; run /cadre regen {role} to hand it out again',
+  'start.memoryLinks.memoryGoneWarning': 'memory {file} is gone: not linked',
+  'start.memoryLinks.openMemoryBlockWarning':
+    'the MEMORY.md block of {id} has no end marker: fix it by hand; linked memories are not indexed',
+  'start.memoryLinks.unreadableRecordWarning':
+    `could not read the hand-out record of {id} ({instructionsRecordFile}): no memory is linked; run ${
+    ''}/cadre init to hand the memories out again`,
+  'start.memoryLinks.unreadableMemoryIndexWarning':
+    'could not read the {memoryIndexFile} of {id}: linked memories are not indexed',
+  'start.memoryLinks.memoryIndexLinkWarning':
+    'the {memoryIndexFile} of {id} is a link: linked memories are not indexed',
+
+  'start.mcpConfig.mcpNotReadWarning':
+    '~/.claude.json was not read (no consent at init), so the user-scope MCP servers of this role are not rendered',
+  'start.mcpConfig.mcpNotInFileWarning':
+    `MCP server {name} is not in ~/.claude.json: the role gets it only from the repo .mcp.json or a ${
+    ''}claude.ai connector`,
+
+  'start.claudeVersion.startNoClaude':
+    'cadre start could not run claude --version, so it stopped: install Claude Code {minClaudeVersionText} or newer.',
+  'start.claudeVersion.claudeTooOldReply':
+    'cadre start needs claude {minClaudeVersionText} or newer on PATH; claude --version gave: {shown}',
+
+  'start.launcherCheck.startNoManifest':
+    '.cadre/manifest.json is missing or not valid, so cadre cannot check the launcher: run /cadre init again.',
+  'start.launcherCheck.launcherMissingReply':
+    '.cadre/bin/{role} is missing or not in .cadre/manifest.json: run /cadre regen {role}.',
+  'start.launcherCheck.launcherChangedReply':
+    `{launcher} was changed outside cadre: restore it, or run /cadre init and answer Take new for it, or ${
+    ''}run /cadre regen {role}, move {launcher}.cadre-new over it, chmod 755 it and run /cadre regen ${
+    ''}{role} again.`,
+  'start.launcherCheck.renderFailedReply':
+    `cadre start could not render .cadre/{role}/.runtime/ ({path} failed), so the launcher will refuse ${
+    ''}to start: fix it and run /cadre start {role} again.`,
+  'start.launcherCheck.launcherOutdatedWarning':
+    `.cadre/bin/{role} is not the launcher this cadre writes today (written by an older cadre or for ${
+    ''}another setup): run /cadre regen {role} to update it`,
+
+  'start.run.terminalLine': 'Opened it in a new {name}.',
+  'start.run.terminalLine2': 'Could not open a new {name}: run the command above yourself.',
+  'start.run.startReplyText': 'cadre start {id}',
+  'start.run.startReplyText2': 'warning: {warning}',
+  'start.run.startReplyText3': 'Run this in a terminal to start role {id}:',
+  'start.run.rendered.one': 'Rendered .cadre/{id}/.runtime/ ({count} link).',
+  'start.run.rendered.other': 'Rendered .cadre/{id}/.runtime/ ({count} links).',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

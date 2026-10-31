@@ -9,6 +9,7 @@
 import type { DesiredFile, InitIo } from '../../types'
 import { sha256Hex } from '../core/hash'
 import { reportText } from '../core/text'
+import { t } from '../locales/t'
 import { launcherPath } from '../paths'
 import { MANIFEST_PATH } from '../plan/classify'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -20,14 +21,13 @@ import type { RegenRead } from '../team'
  * The refusal when `.cadre/manifest.json` is missing, cannot be read or is not a valid manifest: without it the
  * launcher cannot be checked (LNCH-04).
  */
-export const START_NO_MANIFEST =
-  '.cadre/manifest.json is missing or not valid, so cadre cannot check the launcher: run /cadre init again.'
+export const START_NO_MANIFEST = t('start.launcherCheck.startNoManifest')
 
 /** The refusal when a role's launcher is missing, or the manifest holds no entry for it (LNCH-04). */
 export function launcherMissingReply(id: string): string {
   const role = reportText(id)
 
-  return `.cadre/bin/${role} is missing or not in .cadre/manifest.json: run /cadre regen ${role}.`
+  return t('start.launcherCheck.launcherMissingReply', { role })
 }
 
 /**
@@ -42,9 +42,10 @@ export function launcherChangedReply(id: string): string {
   const launcher = launcherPath(role)
 
   return (
-    `${launcher} was changed outside cadre: restore it, or run /cadre init and answer Take new for it, ` +
-    `or run /cadre regen ${role}, move ${launcher}.cadre-new over it, chmod 755 it ` +
-    `and run /cadre regen ${role} again.`
+    t('start.launcherCheck.launcherChangedReply', {
+      launcher,
+      role,
+    })
   )
 }
 
@@ -56,8 +57,10 @@ export function renderFailedReply(id: string, path: string): string {
   const role = reportText(id)
 
   return (
-    `cadre start could not render .cadre/${role}/.runtime/ (${reportText(path)} failed), ` +
-    `so the launcher will refuse to start: fix it and run /cadre start ${role} again.`
+    t('start.launcherCheck.renderFailedReply', {
+      role,
+      path: reportText(path),
+    })
   )
 }
 
@@ -92,8 +95,9 @@ function launcherOutdatedWarning(id: string): string {
   const role = reportText(id)
 
   return (
-    `.cadre/bin/${role} is not the launcher this cadre writes today (written by an older cadre or for another ` +
-    `setup): run /cadre regen ${role} to update it`
+    t('start.launcherCheck.launcherOutdatedWarning', {
+      role,
+    })
   )
 }
 

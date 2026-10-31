@@ -8,18 +8,19 @@
 import type { InitIo, InitLocations, RoleSpec } from '../../types'
 import { isObject, parseJsonValue, stableJson } from '../core/json'
 import { reportText, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { claudeJsonPathOf, trimSlash } from '../paths'
 import { CLAUDE_JSON_MAX_BYTES } from '../scan/setup/mcp'
 
 /** The warning for a role given MCP servers when cadre.json records no consent to read ~/.claude.json (D-58). */
-const MCP_NOT_READ_WARNING =
-  '~/.claude.json was not read (no consent at init), so the user-scope MCP servers of this role are not rendered'
+const MCP_NOT_READ_WARNING = t('start.mcpConfig.mcpNotReadWarning')
 
 /** The warning for a server a role is given that ~/.claude.json does not hold; the name is shown cleaned. */
 function mcpNotInFileWarning(name: string): string {
   return (
-    `MCP server ${reportText(name)} is not in ~/.claude.json: ` +
-    'the role gets it only from the repo .mcp.json or a claude.ai connector'
+    t('start.mcpConfig.mcpNotInFileWarning', {
+      name: reportText(name),
+    })
   )
 }
 

@@ -22,6 +22,7 @@ import { sortedUnique } from '../core/text'
 import { gitCommonDirOf, mainCheckoutOf } from '../git/common-dir'
 import { isPartsFlowRole } from '../launch/links'
 import type { LaunchUser } from '../launch/links'
+import { t } from '../locales/t'
 import {
   displayPath,
   MARKDOWN_EXTENSION,
@@ -42,24 +43,22 @@ import { isPlainName, NO_MEMORY_LINKS } from './render-plan'
 import type { MemoryLinks } from './render-plan'
 
 /** The refusal when there is no HOME: the role files are rendered from the user's own folder (D-98). */
-export const START_NO_HOME = 'cadre start needs HOME to render the role files, so it stopped.'
+export const START_NO_HOME = t('start.gatherUser.startNoHome')
 
 /**
  * The refusal when git gives no common dir, which names the role memory folders (D-91): the run failed, or it gave no
  * absolute path, as a git older than 2.31 does with `--path-format=absolute` (#72 A4).
  */
-export const START_NO_GIT_DIR =
-  'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; ' +
-  'git 2.31 or newer is needed), so it stopped.'
+export const START_NO_GIT_DIR = t('start.gatherUser.startNoGitDir')
 
 /** The /cadre start refusal for a role memory folder level it would write through (02-GAPS-B3 C5). */
 export function privateFolderRefusal(path: string, reason: 'link' | 'not-folder' | 'unchecked'): string {
-  const stopped = `cadre start stopped: ${path}`
-  const end = 'cadre does not write through it'
-  if (reason === 'link') return `${stopped} is a link; ${end}`
-  if (reason === 'not-folder') return `${stopped} is not a folder; ${end}`
+  const stopped = t('start.gatherUser.privateFolderRefusal', { path })
+  const end = t('start.gatherUser.privateFolderRefusal2')
+  if (reason === 'link') return t('start.gatherUser.privateFolderRefusal3', { stopped, end })
+  if (reason === 'not-folder') return t('start.gatherUser.privateFolderRefusal4', { stopped, end })
 
-  return `${stopped} could not be checked for links; ${end}`
+  return t('start.gatherUser.privateFolderRefusal5', { stopped, end })
 }
 
 /**

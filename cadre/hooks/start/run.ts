@@ -8,6 +8,7 @@
 import type { HostIo, InitIo, TerminalChoice } from '../../types'
 import { desiredFiles } from '../generate/files'
 import { repoGuard } from '../guards/repo'
+import { t, tn } from '../locales/t'
 import { scanWarnings } from '../scan/gather'
 import { compileTeam, readTeam, regenBadRole } from '../team'
 import { terminalHostOf } from '../ui/open'
@@ -42,9 +43,9 @@ async function terminalLine(
   const plan = terminalPlan({ ...input, tmux, termProgram, isMacOs })
   if (plan.kind === 'refuse') return plan.text
   const open = await host.run(plan.argv, { timeoutMs: TERMINAL_OPEN_TIMEOUT_MS })
-  if (open !== null && open.exitCode === 0) return `Opened it in a new ${plan.name}.`
+  if (open !== null && open.exitCode === 0) return t('start.run.terminalLine', { name: plan.name })
 
-  return `Could not open a new ${plan.name}: run the command above yourself.`
+  return t('start.run.terminalLine2', { name: plan.name })
 }
 
 /**
@@ -61,10 +62,10 @@ function startReplyText(
   after: readonly string[],
 ): string {
   return [
-    `cadre start ${id}`,
-    `Rendered .cadre/${id}/.runtime/ (${links} ${links === 1 ? 'link' : 'links'}).`,
-    ...warnings.map(warning => `warning: ${warning}`),
-    `Run this in a terminal to start role ${id}:`,
+    t('start.run.startReplyText', { id }),
+    tn('start.run.rendered', links, { id, count: links }),
+    ...warnings.map(warning => t('start.run.startReplyText2', { warning })),
+    t('start.run.startReplyText3', { id }),
     `  ${command}`,
     ...after,
   ].join('\n')

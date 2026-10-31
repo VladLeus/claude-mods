@@ -14,7 +14,7 @@ import { reportText, shown, sortedUnique } from '../core/text'
 import { isSafeFileName, unsafeMemoryNameWarning } from '../launch/links'
 import type { LaunchUser, OverlayLink } from '../launch/links'
 import { CONTRACTS } from '../locales/contracts'
-import { fill } from '../locales/t'
+import { fill, t } from '../locales/t'
 import { displayPath, INSTRUCTIONS_RECORD_FILE, MARKDOWN_EXTENSION, memoryFolderOf, roleMemoryDir } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { isMemoryIndexName, MEMORY_INDEX_FILE } from '../scan/instructions/memories'
@@ -105,17 +105,17 @@ function memoryBlockFiles(text: string): string[] {
 export function memoryChangedWarning(file: string, id: string): string {
   const role = reportText(id)
 
-  return `memory ${shown(file)} changed since init: linked as it is now; run /cadre regen ${role} to hand it out again`
+  return t('start.memoryLinks.memoryChangedWarning', { file: shown(file), role })
 }
 
 /** The warning for a memory whose original is no longer in the memory folder of the repo (G-02-1f): not linked. */
 export function memoryGoneWarning(file: string): string {
-  return `memory ${shown(file)} is gone: not linked`
+  return t('start.memoryLinks.memoryGoneWarning', { file: shown(file) })
 }
 
 /** The warning for a MEMORY.md whose cadre block has no end marker (D-140 q3-a): nothing is written to it. */
 export function openMemoryBlockWarning(id: string): string {
-  return `the MEMORY.md block of ${reportText(id)} has no end marker: fix it by hand; linked memories are not indexed`
+  return t('start.memoryLinks.openMemoryBlockWarning', { id: reportText(id) })
 }
 
 /**
@@ -124,14 +124,16 @@ export function openMemoryBlockWarning(id: string): string {
  */
 export function unreadableRecordWarning(id: string): string {
   return (
-    `could not read the hand-out record of ${reportText(id)} (${INSTRUCTIONS_RECORD_FILE}): no memory is linked; ` +
-    'run /cadre init to hand the memories out again'
+    t('start.memoryLinks.unreadableRecordWarning', {
+      id: reportText(id),
+      instructionsRecordFile: INSTRUCTIONS_RECORD_FILE,
+    })
   )
 }
 
 /** The warning for a role's MEMORY.md that is there but cannot be read (D-140 q3-a): nothing is written to it. */
 export function unreadableMemoryIndexWarning(id: string): string {
-  return `could not read the ${MEMORY_INDEX_FILE} of ${reportText(id)}: linked memories are not indexed`
+  return t('start.memoryLinks.unreadableMemoryIndexWarning', { memoryIndexFile: MEMORY_INDEX_FILE, id: reportText(id) })
 }
 
 /**
@@ -139,7 +141,7 @@ export function unreadableMemoryIndexWarning(id: string): string {
  * there cannot make /cadre start write the block into the file it points at.
  */
 export function memoryIndexLinkWarning(id: string): string {
-  return `the ${MEMORY_INDEX_FILE} of ${reportText(id)} is a link: linked memories are not indexed`
+  return t('start.memoryLinks.memoryIndexLinkWarning', { memoryIndexFile: MEMORY_INDEX_FILE, id: reportText(id) })
 }
 
 /**

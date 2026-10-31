@@ -8,6 +8,7 @@
 import type { HostIo } from '../../types'
 import { clean } from '../core/text'
 import { MIN_CLAUDE_VERSION, MIN_CLAUDE_VERSION_TEXT } from '../generate/launcher'
+import { t } from '../locales/t'
 
 /**
  * A line of `claude --version` that gives a version: it starts with three runs of digits joined by dots, whatever
@@ -46,9 +47,7 @@ export function isSupportedClaude(version: readonly [number, number, number]): b
 const CLAUDE_VERSION_TIMEOUT_MS = 10_000
 
 /** The refusal when `claude --version` cannot run or exits non-zero (D-107). */
-export const START_NO_CLAUDE = `cadre start could not run claude --version, so it stopped: install Claude Code ${
-  MIN_CLAUDE_VERSION_TEXT
-} or newer.` satisfies `${string}${typeof MIN_CLAUDE_VERSION_TEXT}${string}`
+export const START_NO_CLAUDE = t('start.claudeVersion.startNoClaude', { minClaudeVersionText: MIN_CLAUDE_VERSION_TEXT })
 
 /** The most characters of what `claude --version` gave that a refusal shows. */
 const VERSION_SHOWN_CHARS = 40
@@ -61,7 +60,7 @@ const VERSION_SHOWN_CHARS = 40
 export function claudeTooOldReply(versionText: string): string {
   const shown = clean(versionText, VERSION_SHOWN_CHARS)
 
-  return `cadre start needs claude ${MIN_CLAUDE_VERSION_TEXT} or newer on PATH; claude --version gave: ${shown}`
+  return t('start.claudeVersion.claudeTooOldReply', { minClaudeVersionText: MIN_CLAUDE_VERSION_TEXT, shown })
 }
 
 /**

@@ -16,7 +16,7 @@ import type { RenderStep } from '../host/steps'
 import type { OverlayLink } from '../launch/links'
 import type { LaunchPlan } from '../launch/plan'
 import { CONTRACTS } from '../locales/contracts'
-import { fill } from '../locales/t'
+import { fill, t } from '../locales/t'
 import {
   INBOX_FILE,
   isDirInsideRoot,
@@ -213,15 +213,15 @@ export function isRealEntry(stat: PortStat | null): boolean {
 function roleFolderRefusal(id: string): string {
   const role = reportText(id)
 
-  return `.cadre/${role} is not a folder inside this repo: run /cadre regen ${role}`
+  return t('start.renderPlan.roleFolderRefusal', { role })
 }
 
 /** The refusal when `.runtime`, a folder in it, or a file a render writes is a link or not what the render needs. */
 function runtimeRefusal(id: string): string {
   const role = reportText(id)
-  const what = `.cadre/${role}/.runtime/ or a folder in it is a link or not a folder`
+  const what = t('start.renderPlan.runtimeRefusal', { role })
 
-  return `${what}: remove it and run /cadre start ${role} again`
+  return t('start.renderPlan.runtimeRefusal2', { what, role })
 }
 
 /**
@@ -230,9 +230,9 @@ function runtimeRefusal(id: string): string {
  */
 function unstatedLinkRefusal(id: string, name: string): string {
   const role = reportText(id)
-  const what = `.cadre/${role}/.runtime/${name} is a link /cadre start could not check`
+  const what = t('start.renderPlan.unstatedLinkRefusal', { role, name })
 
-  return `${what}: remove it and run /cadre start ${role} again`
+  return t('start.renderPlan.unstatedLinkRefusal2', { what, role })
 }
 
 /**
@@ -241,9 +241,9 @@ function unstatedLinkRefusal(id: string, name: string): string {
  */
 export function privateLinkRefusal(id: string): string {
   const role = reportText(id)
-  const what = `.cadre/${role}/.runtime/${PRIVATE_INSTRUCTIONS_LINK} is a real file or folder, not a link`
+  const what = t('start.renderPlan.privateLinkRefusal', { role, privateInstructionsLink: PRIVATE_INSTRUCTIONS_LINK })
 
-  return `${what}: remove it and run /cadre start ${role} again`
+  return t('start.renderPlan.privateLinkRefusal2', { what, role })
 }
 
 /** Whether `.runtime` lists a file a render writes as a link while the stat of that file shows no link (#72 A2). */
@@ -331,7 +331,7 @@ export function repoRelative(root: string, path: string): string {
 
 /** The warning for a planned link path that holds a real file or folder, which a render keeps (Pitfall 2). */
 export function notReplacedWarning(root: string, path: string): string {
-  return `${reportText(repoRelative(root, path))} is a real file or folder, not a link: not replaced`
+  return t('start.renderPlan.notReplacedWarning', { repoRelative: reportText(repoRelative(root, path)) })
 }
 
 /** A step that removes a path. */
