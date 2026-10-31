@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  GsdFact,
   HostIo,
   HostRun,
+  InitFacts,
   InitIo,
   InitLocations,
   InstructionPart,
@@ -31,6 +33,7 @@ import { compileTeam, readTeam } from '../team'
 import {
   BIDI_OVERRIDE,
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
   entry,
   hostWorld,
   leaks,
@@ -775,7 +778,37 @@ describe('runStart refusals (LNCH-04, D-107)', () => {
 /** The line of the reply that hands over the launcher command. */
 const RUN_LINE = 'Run this in a terminal to start role be:'
 
+/** A user-level GSD install found but not proven (WF-S1, D-243). */
+const UNPROVEN_USER: GsdFact = {
+  location: 'user',
+  dir: '~/.claude/gsd-core',
+  version: null,
+  identity: 'unknown',
+  runtimeIdentityTried: false,
+}
+
+/** A repo-local GSD install found but not proven, which is never run (WF-S1, D-28). */
+const UNPROVEN_LOCAL: GsdFact = { ...UNPROVEN_USER, location: 'project', dir: '<repo>/.claude/gsd-core' }
+
+/** The warning of UNPROVEN_USER as the user reads it (WF-S1). */
+const USER_LINE = 'could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'
+
+/** The warning of UNPROVEN_LOCAL as the user reads it (WF-S1). */
+const LOCAL_LINE = 'could not prove the GSD install at <repo>/.claude/gsd-core (treated as unknown)'
+
+/** Facts holding UNPROVEN_USER and UNPROVEN_LOCAL, each with its warning (WF-S1). */
+const UNPROVEN_FACTS: InitFacts = {
+  facts: { ...EMPTY_FACTS, gsd: [UNPROVEN_USER, UNPROVEN_LOCAL], warnings: [USER_LINE, LOCAL_LINE] },
+  gsdUserDir: '/home/u/.claude/gsd-core',
+}
+
 describe('runStart warnings and links (D-102)', () => {
+  test('start leaves out the unproven user-level GSD line; a repo-local one stays (WF-S1, D-243)', async () => {
+    const { reply } = await startBe({ ...(await appliedWorld()), facts: UNPROVEN_FACTS })
+
+    expect([reply.includes(USER_LINE), reply.includes(LOCAL_LINE)]).toEqual([false, true])
+  })
+
   test('the scan warnings are printed as regen prints them: an unreadable settings source is named', async () => {
     const world = { ...(await appliedWorld()), settings: { project: {}, local: {} } }
     const start = await startBe(world)

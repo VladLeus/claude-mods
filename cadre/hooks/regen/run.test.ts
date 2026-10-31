@@ -4,8 +4,10 @@ import type {
   CadreState,
   DesiredFile,
   FileOp,
+  GsdFact,
   HostIo,
   HostRun,
+  InitFacts,
   InstructionPart,
   LaunchStart,
   MemoryItem,
@@ -40,6 +42,7 @@ import {
   BUILT_RULE,
   builtWorld,
   DEFAULT_LOCATIONS,
+  EMPTY_FACTS,
   entry,
   firstLines,
   FULL_DIRS,
@@ -200,6 +203,30 @@ const REGEN_PART_PREFIX = 'Should be get'
 
 /** The installed_plugins.json of the fixture user, whose home is /home/u (DEFAULT_LOCATIONS). */
 const INSTALLED_PLUGINS_PATH = '/home/u/.claude/plugins/installed_plugins.json'
+
+/** A user-level GSD install found but not proven (WF-S1, D-243). */
+const UNPROVEN_USER: GsdFact = {
+  location: 'user',
+  dir: '~/.claude/gsd-core',
+  version: null,
+  identity: 'unknown',
+  runtimeIdentityTried: false,
+}
+
+/** A repo-local GSD install found but not proven, which is never run (WF-S1, D-28). */
+const UNPROVEN_LOCAL: GsdFact = { ...UNPROVEN_USER, location: 'project', dir: '<repo>/.claude/gsd-core' }
+
+/** The warning of UNPROVEN_USER as the user reads it (WF-S1). */
+const USER_LINE = 'could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)'
+
+/** The warning of UNPROVEN_LOCAL as the user reads it (WF-S1). */
+const LOCAL_LINE = 'could not prove the GSD install at <repo>/.claude/gsd-core (treated as unknown)'
+
+/** Facts holding UNPROVEN_USER and UNPROVEN_LOCAL, each with its warning (WF-S1). */
+const UNPROVEN_FACTS: InitFacts = {
+  facts: { ...EMPTY_FACTS, gsd: [UNPROVEN_USER, UNPROVEN_LOCAL], warnings: [USER_LINE, LOCAL_LINE] },
+  gsdUserDir: '/home/u/.claude/gsd-core',
+}
 
 describe('runRegen', () => {
   /** BE and PM on the repo default, in the order cadre.json lists them. */
@@ -508,6 +535,17 @@ describe('runRegen', () => {
     expect(run.asked).toEqual([])
     expect(run.logged).toEqual([])
   })
+
+  test(
+    'regen --dry-run leaves out the unproven user-level GSD line; a repo-local one stays (WF-S1, D-243)',
+    async () => {
+      const world = await regenWorld(team, {}, listedWorld({ facts: UNPROVEN_FACTS }))
+      const run = memIo(world, {})
+      const reply = await runRegen(run.io, { id: 'be', dryRun: true })
+
+      expect([reply.includes(USER_LINE), reply.includes(LOCAL_LINE)]).toEqual([false, true])
+    },
+  )
 
   test('a guard only in local settings adds no warning: the reply ends with the note (A4, D-103)', async () => {
     const local = listedWorld({ settings: { user: {}, project: {}, local: GUARD_SETTINGS } })
