@@ -131,3 +131,17 @@ describe('skill contexts (D-211)', () => {
     })
   })
 })
+
+describe('own skill lines and their caps (#163)', () => {
+  test('the own-skills context keeps a line whole, never cut at 240 code points', () => {
+    const wide = 'w'.repeat(300)
+    expect(ownSkillsContext([wide]).lines).toEqual([wide])
+  })
+
+  test('a purpose is redacted before its 120 cap: a key across the cap shows no prefix of it', () => {
+    const key = ['sk', 'FAKE0123456789abcdef'].join('-')
+    const skill: SkillLine = { name: 'deploy', purpose: `${'x'.repeat(110)} ${key} tail`, uses: '', recommended: [] }
+    const [line = ''] = skillContext(skill, 1, 1).lines
+    expect([line.includes(key.slice(0, 8)), line.includes('[hidden]')]).toEqual([false, true])
+  })
+})

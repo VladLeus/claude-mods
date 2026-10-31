@@ -277,3 +277,25 @@ describe('context redaction (WD-S5, #163)', () => {
     expect(row).toBe(`  BE token=${REDACTED} (be)  Owns token=${REDACTED} rotation.`)
   })
 })
+
+describe('context lines kept whole (#163)', () => {
+  test('each context line is cleaned and kept whole, never cut at 240 code points', () => {
+    const wide = 'w'.repeat(300)
+    const repo = repoScan({ warnings: [wide] })
+    const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
+    const detection: Detection = { id: 'gsd', name: 'GSD', status: 'in-use', version: null, evidence: [wide] }
+    const topic = { ...SECURITY_TOPIC, summary: wide }
+    const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [], warnings: [] }
+    const contexts = [
+      scanContext(DEFAULT_LOCATIONS, gathered),
+      rolesContext([templateRole('be', { purpose: wide })], []),
+      detectionContext([detection]),
+      securityContext([wide]),
+      instructionPartsContext(scan, [topic], RECOMMENDED),
+      topicContext(topic, [PART], [], 1, 1),
+      memoryContext(memory('M1', 'squad.md', wide), [], 1, 1),
+      reviewContext([wide]),
+    ]
+    expect(contexts.map(context => context.lines.some(line => line.includes(wide)))).toEqual(contexts.map(() => true))
+  })
+})
