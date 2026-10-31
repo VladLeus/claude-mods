@@ -11,6 +11,7 @@ import { SUPPORTED_IDS } from '../../core/framework-id'
 import { redactedText } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { detectAll } from '../../framework/registry'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { detectionContext } from '../../ui/blocks/context'
@@ -23,21 +24,21 @@ import type { AnswerMode } from './model'
 export const FRAMEWORK_LABELS: Readonly<Record<FrameworkId, string>> = Object.freeze({
   gsd: 'GSD',
   superpowers: 'superpowers',
-  none: 'none (built-in)',
+  none: t('init.frameworks.frameworkLabelsNone'),
 })
 
 /** The start of DET-03's framework question; the reason it is asked follows in brackets (D-73). */
-export const FRAMEWORK_QUESTION_PREFIX = 'Which framework do the roles use?'
+export const FRAMEWORK_QUESTION_PREFIX = t('init.frameworks.frameworkQuestionPrefix')
 
 /** The one follow-up question after `Same for all roles` (D-86). */
-export const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
+export const FRAMEWORK_ALL_QUESTION = t('init.frameworks.frameworkAllQuestion')
 
 /**
  * The framework question for one role after `Per role` (D-73): its title, its secret-like spans hidden (redactedText,
  * E1, #163), and its id, since the id tells apart roles with the same title (A6).
  */
 export function frameworkRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
-  return `Framework for ${redactedText(role.title)} (${role.id})?`
+  return t('init.frameworks.frameworkRoleQuestion', { title: redactedText(role.title), id: role.id })
 }
 
 /**
@@ -47,15 +48,15 @@ export function frameworkRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): str
 export function frameworkReason(choice: Choice): string {
   switch (choice.kind) {
     case 'ambiguous':
-      return 'more than one framework is in use'
+      return t('init.frameworks.reasonMany')
     case 'installed-only':
-      return 'none is in use here, but some are installed for you'
+      return t('init.frameworks.reasonInstalled')
     case 'chosen':
       return choice.reason
     case 'unsupported':
-      return 'only frameworks cadre does not support were found'
+      return t('init.frameworks.reasonUnsupported')
     case 'none':
-      return 'no framework was found'
+      return t('init.frameworks.reasonNone')
   }
 }
 
@@ -72,7 +73,7 @@ function withFramework(role: RoleSpec, framework: FrameworkId): RoleSpec {
 }
 
 /** Why init cancels when a framework question is dismissed or not answered (A1, D-45). */
-export const FRAMEWORK_DISMISSED_REASON = 'A framework question was dismissed or not answered.'
+export const FRAMEWORK_DISMISSED_REASON = t('init.frameworks.frameworkDismissedReason')
 
 /** Each framework as the refusal of a framework question names it: the word a person may type for it (D-136). */
 const FRAMEWORK_WORDS: Readonly<Record<FrameworkId, string>> = Object.freeze({
@@ -92,7 +93,10 @@ type FrameworkAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
  * line, then `Same for all roles` or `Per role`.
  */
 function modeAsk(choice: AskedChoice, roles: readonly RoleSpec[]): FrameworkAsk<AnswerMode> {
-  const question = `${FRAMEWORK_QUESTION_PREFIX} (asked because ${frameworkReason(choice)})`
+  const question = t('init.frameworks.modeAsk', {
+    frameworkQuestionPrefix: FRAMEWORK_QUESTION_PREFIX,
+    frameworkReason: frameworkReason(choice),
+  })
 
   return {
     question: withContext(question, teamContextLine(roles)),
@@ -116,7 +120,7 @@ function frameworkAsk(choice: AskedChoice, question: string, roles: readonly Rol
     question: withContext(question, teamContextLine(roles)),
     spec: { options: allowed.map(id => FRAMEWORK_LABELS[id]), header: ASK_HEADERS.framework, acceptsTyped: true },
     parse: (answer: string): FrameworkId | null => parseFramework(answer, allowed),
-    accepts: `${allowed.map(id => FRAMEWORK_WORDS[id]).join(', ')} - a role runs one framework`,
+    accepts: t('init.frameworks.frameworkAskAccepts', { map: allowed.map(id => FRAMEWORK_WORDS[id]).join(', ') }),
     dismissedReason: FRAMEWORK_DISMISSED_REASON,
   }
 }

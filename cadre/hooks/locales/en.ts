@@ -131,6 +131,18 @@ export const EN = Object.freeze({
   'init.roles.proposed': 'Proposed: {roles}.',
   'init.roles.proposedChanges.one': 'Proposed: {roles}; {count} change from the scan.',
   'init.roles.proposedChanges.other': 'Proposed: {roles}; {count} changes from the scan.',
+
+  'init.frameworks.frameworkLabelsNone': 'none (built-in)',
+  'init.frameworks.frameworkQuestionPrefix': 'Which framework do the roles use?',
+  'init.frameworks.frameworkAllQuestion': 'Framework for all roles?',
+  'init.frameworks.frameworkRoleQuestion': 'Framework for {title} ({id})?',
+  'init.frameworks.reasonMany': 'more than one framework is in use',
+  'init.frameworks.reasonInstalled': 'none is in use here, but some are installed for you',
+  'init.frameworks.reasonUnsupported': 'only frameworks cadre does not support were found',
+  'init.frameworks.reasonNone': 'no framework was found',
+  'init.frameworks.frameworkDismissedReason': 'A framework question was dismissed or not answered.',
+  'init.frameworks.modeAsk': '{frameworkQuestionPrefix} (asked because {frameworkReason})',
+  'init.frameworks.frameworkAskAccepts': '{map} - a role runs one framework',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
