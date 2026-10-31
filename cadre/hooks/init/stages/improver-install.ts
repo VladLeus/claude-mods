@@ -8,6 +8,7 @@
  */
 import type { AskSpec, InstructionHandout } from '../../../types'
 import { labelled } from '../../core/labelled'
+import { t } from '../../locales/t'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import { improverInstallContext } from '../../ui/blocks/context'
@@ -19,19 +20,16 @@ import { INSTALL_CHOICES, INSTALL_OPTIONS } from './security'
  * The improver install question (G-02-1f, D-141), worded like the security plugins question: init asks it after that
  * question, when a role got a built file and claude-md-management is missing (improverInstallStage).
  */
-export const IMPROVER_INSTALL_QUESTION =
-  'Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver ' +
-  "tidies each role's built CLAUDE.md, and you accept or keep each change."
+export const IMPROVER_INSTALL_QUESTION = t('init.improverInstall.improverInstallQuestion')
 
 /**
  * The context line of the improver install question (D-136, D-141): what Not now leaves, and that a dry run installs
  * nothing.
  */
-export const IMPROVER_INSTALL_CONTEXT =
-  'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.'
+export const IMPROVER_INSTALL_CONTEXT = t('init.improverInstall.improverInstallContext')
 
 /** Why init cancels when the improver install question is dismissed or not answered (D-141, A1, D-45). */
-export const IMPROVER_INSTALL_DISMISSED_REASON = 'The claude-md-management question was dismissed or not answered.'
+export const IMPROVER_INSTALL_DISMISSED_REASON = t('init.improverInstall.improverInstallDismissedReason')
 
 /**
  * Whether a hand-out gives some role a built file with a part (G-02-1f, D-141): a parts hand-out with a topic that

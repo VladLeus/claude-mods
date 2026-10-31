@@ -152,6 +152,14 @@ export const EN = Object.freeze({
   'init.security.securityInstallDismissedReason': 'The security plugins question was dismissed or not answered.',
   'init.security.namesJoin': ' and ',
   'init.security.installQuestion': '{prefix} {names}? {notes}',
+
+  'init.improverInstall.improverInstallQuestion':
+    'Install claude-md-management from claude-plugins-official after you confirm the plan? Its ' +
+    "claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",
+  'init.improverInstall.improverInstallContext':
+    'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
+  'init.improverInstall.improverInstallDismissedReason':
+    'The claude-md-management question was dismissed or not answered.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
