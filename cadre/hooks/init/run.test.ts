@@ -3233,7 +3233,7 @@ describe('init plan', () => {
   /** PM on the repo default, Team Lead on superpowers by its own framework, BE on the repo default. */
   const roles = [templateRole('pm'), withFramework(templateRole('tl'), 'superpowers'), templateRole('be')]
 
-  test('init --dry-run replies with the plan of desiredFiles and buildPlan, the policy, start and note', async () => {
+  test('init --dry-run replies with the file plan of desiredFiles, the policy, start and note', async () => {
     const reply = await runInit(memIo(gitWorld(), INIT_ANSWERS).io, { dryRun: true })
     const files = await plannedFiles(gitWorld(), await defaultRoles(gitWorld()))
     const plan = await emptyDiskPlan(files, 'definitions', [], GIT_TEAM_HAS_SECURITY)

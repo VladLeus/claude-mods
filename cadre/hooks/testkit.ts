@@ -63,7 +63,7 @@ import type { LaunchPlan } from './launch/plan'
 import { RUNTIME_SETTINGS_KEYS } from './launch/settings'
 import { DONE_MARKER_LINE } from './locales/contracts'
 import { gitignoreLines } from './plan/gitignore'
-import { buildPlan } from './plan/plan'
+import { planWithManifest } from './plan/plan'
 import type { PlanInput } from './plan/plan'
 import type { PartRecord } from './regen/part-changes'
 import { INFRA_SKILLS } from './roles/infra'
@@ -1071,9 +1071,9 @@ export const PM = role('pm', 'pm')
 export const TL = role('tl', 'tl', { title: 'Team Lead' })
 
 /**
- * The plan buildPlan gives for these files when the disk holds nothing, with the ignore block of `policy` and, for a
- * team with a Security role, the security reports line, as init plans the block (decision #39). The `.gitignore` op
- * shows the block lines (PLAN-03), so a block planned without that line would differ.
+ * The plan planWithManifest gives for these files when the disk holds nothing, with the ignore block of `policy`
+ * and, for a team with a Security role, the security reports line, as init plans the block (decision #39). The
+ * `.gitignore` op shows the block lines (PLAN-03), so a block planned without that line would differ.
  */
 export async function emptyDiskPlan(
   desired: readonly DesiredFile[],
@@ -1081,7 +1081,7 @@ export async function emptyDiskPlan(
   hunks: readonly HunkOp[] = [],
   hasSecurityRole = false,
 ): Promise<Plan> {
-  return buildPlan({
+  const planned = await planWithManifest({
     desired,
     disk: new Map(),
     manifest: null,
@@ -1091,6 +1091,8 @@ export async function emptyDiskPlan(
     hunks,
     cadreVersion: '0.2.0',
   })
+
+  return planned.plan
 }
 
 /** The manifest text a run that generated these files records: their hashes and modes in path order. */

@@ -7,13 +7,15 @@ import type {
   FileOp,
   FrameworkId,
   InstructionPart,
+  Plan,
   RoleSpec,
   ScopeContext,
   SetupScan,
 } from '../../types'
 import { isObject } from '../core/json'
 import { compareText } from '../core/text'
-import { buildPlan, isSafeOpPath } from '../plan/plan'
+import { isSafeOpPath, planWithManifest } from '../plan/plan'
+import type { PlanInput } from '../plan/plan'
 import { infraViolations } from '../scope/lint'
 import {
   ABSOLUTE_PATH_MARKERS,
@@ -33,6 +35,11 @@ import { desiredFiles } from './files'
 import type { GenerateInput } from './files'
 import { kickoffText } from './kickoff'
 import { launcherText } from './launcher'
+
+/** The file plan planWithManifest gives for this input. */
+async function planFrom(input: PlanInput): Promise<Plan> {
+  return (await planWithManifest(input)).plan
+}
 
 /** The repo state of a team on one framework: what init writes as .cadre/cadre.json. */
 function stateOf(team: readonly RoleSpec[], framework: FrameworkId): CadreState {
@@ -464,9 +471,9 @@ describe('generated file properties', () => {
     expect(worldProblems(settingsFilesCheck)).toEqual([])
   })
 
-  test('buildPlan creates every generated file on an empty disk, the launchers executable, no warning', async () => {
+  test('planWithManifest creates every generated file on an empty disk, launchers executable, no warning', async () => {
     const files = desiredFiles(worldInput('gsd', role => role, {}))
-    const plan = await buildPlan({
+    const plan = await planFrom({
       desired: files,
       disk: new Map(),
       manifest: null,

@@ -15,7 +15,7 @@ import type { ConflictChoice } from './conflict'
 import { privateSteps } from './private'
 import type { ApplyInput, ApplyStep } from './private'
 
-/** The desired files by path; of two with the same path the first is kept, as buildPlan keeps it. */
+/** The desired files by path; of two with the same path the first is kept. */
 function desiredByPath(desired: readonly DesiredFile[]): ReadonlyMap<string, DesiredFile> {
   const files = new Map<string, DesiredFile>()
   for (const file of desired) {

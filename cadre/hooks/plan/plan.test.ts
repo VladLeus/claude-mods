@@ -8,12 +8,18 @@ import { parseManifest } from '../state/cadre-files'
 import { BIDI_OVERRIDE, file, GSD_TOOLS, HUNK, input, ROLE, text, VERSION } from '../testkit'
 import { MANIFEST_PATH } from './classify'
 import { gitignoreLines, mergeIgnoreBlock } from './gitignore'
-import { buildPlan, HUNK_FILES, isSafeOpPath, planReadPaths, planWithManifest } from './plan'
+import { HUNK_FILES, isSafeOpPath, planReadPaths, planWithManifest } from './plan'
+import type { PlanInput } from './plan'
 import { renderPlan } from './text'
 
 const INDEX = '.cadre/INDEX.md'
 
-/** The disk as buildPlan takes it: reads keyed by repo-relative path. */
+/** The file plan planWithManifest gives for this input. */
+async function planFrom(input: PlanInput): Promise<Plan> {
+  return (await planWithManifest(input)).plan
+}
+
+/** The disk as planWithManifest takes it: reads keyed by repo-relative path. */
 function diskOf(reads: Readonly<Record<string, PortRead>>): ReadonlyMap<string, PortRead> {
   return new Map(Object.entries(reads))
 }
@@ -66,9 +72,9 @@ const MANIFEST_NOTE =
 /** The plan warning for a manifest that could not be read (A6). */
 const MANIFEST_WARNING = 'could not read .cadre/manifest.json (treated as unknown): it is kept as is and not written'
 
-describe('buildPlan', () => {
+describe('the file plan of planWithManifest', () => {
   test('one new file gives a create op for it and one for the manifest, in path order', async () => {
-    const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')] }))
+    const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')] }))
 
     expect(plan.ops).toEqual([
       { kind: 'create', path: ROLE, mode: 'file', note: null },
@@ -87,7 +93,7 @@ describe('buildPlan', () => {
       cadreVersion: VERSION,
       files: [{ path: ROLE, sha256, mode: 'file' }],
     })
-    const plan = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(expected) }) }))
+    const plan = await planFrom(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(expected) }) }))
 
     expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
   })
@@ -97,10 +103,10 @@ describe('buildPlan', () => {
     const planned = manifestTextOf(await entriesOf(files))
     const compactText = JSON.stringify(JSON.parse(planned))
 
-    const none = await buildPlan(input({ desired: files }))
-    const equal = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
-    const spaced = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(`${planned} `) }) }))
-    const compact = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(compactText) }) }))
+    const none = await planFrom(input({ desired: files }))
+    const equal = await planFrom(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
+    const spaced = await planFrom(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(`${planned} `) }) }))
+    const compact = await planFrom(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(compactText) }) }))
 
     expect(kindOf(none, MANIFEST_PATH)).toBe('create')
     expect(kindOf(equal, MANIFEST_PATH)).toBe('leave')
@@ -113,7 +119,7 @@ describe('buildPlan', () => {
     const reads: PortRead[] = [{ state: 'unknown' }, { state: 'too-large', bytes: 300_000 }]
 
     for (const read of reads) {
-      const plan = await buildPlan(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: read }) }))
+      const plan = await planFrom(input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: read }) }))
 
       expect(fileOps(plan).find(planned => planned.path === MANIFEST_PATH)).toEqual({
         kind: 'conflict',
@@ -128,8 +134,8 @@ describe('buildPlan', () => {
   test('a manifest whose state is unknown is a conflict, even when the disk holds the planned text', async () => {
     const files = [file(ROLE, '{}\n')]
     const planned = manifestTextOf(await entriesOf(files))
-    const unread = await buildPlan(input({ desired: files, manifestState: 'unknown' }))
-    const equal = await buildPlan(
+    const unread = await planFrom(input({ desired: files, manifestState: 'unknown' }))
+    const equal = await planFrom(
       input({ desired: files, manifestState: 'unknown', disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }),
     )
 
@@ -144,12 +150,12 @@ describe('buildPlan', () => {
     const manifest = parseManifest(planned)
     const kinds: (string | undefined)[] = []
     for (const read of [text(planned), text(`${planned} `)]) {
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({ desired: files, manifest, manifestState: 'present', disk: diskOf({ [MANIFEST_PATH]: read }) }),
       )
       kinds.push(kindOf(plan, MANIFEST_PATH))
     }
-    kinds.push(kindOf(await buildPlan(input({ desired: files, manifestState: 'absent' })), MANIFEST_PATH))
+    kinds.push(kindOf(await planFrom(input({ desired: files, manifestState: 'absent' })), MANIFEST_PATH))
 
     expect(kinds).toEqual(['leave', 'change', 'create'])
   })
@@ -157,7 +163,7 @@ describe('buildPlan', () => {
   test('a new version of cadre plans a changed manifest and nothing else', async () => {
     const files = [file(ROLE, '{}\n')]
     const old = manifestTextOf(await entriesOf(files), '0.1.0')
-    const plan = await buildPlan(
+    const plan = await planFrom(
       input({ desired: files, disk: diskOf({ [ROLE]: text('{}\n'), [MANIFEST_PATH]: text(old) }) }),
     )
 
@@ -168,7 +174,7 @@ describe('buildPlan', () => {
     const files = [file(ROLE, '{}\n'), file(INDEX, '# Roles\n')]
     const planned = manifestTextOf(await entriesOf(files))
     const disk = diskOf({ [ROLE]: text('{}\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(planned) })
-    const plan = await buildPlan(input({ desired: files, disk }))
+    const plan = await planFrom(input({ desired: files, disk }))
 
     expect(summary(plan)).toEqual([`leave ${INDEX}`, `leave ${ROLE}`, `leave ${MANIFEST_PATH}`])
   })
@@ -179,7 +185,7 @@ describe('buildPlan', () => {
     const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
     const planned = manifestTextOf(await entriesOf([next]))
     const disk = diskOf({ [ROLE]: text('old\n'), [MANIFEST_PATH]: text(planned) })
-    const plan = await buildPlan(input({ desired: [next], disk, manifest, manifestState: 'present' }))
+    const plan = await planFrom(input({ desired: [next], disk, manifest, manifestState: 'present' }))
 
     expect(summary(plan)).toEqual([`change ${ROLE}`, `leave ${MANIFEST_PATH}`])
   })
@@ -187,7 +193,7 @@ describe('buildPlan', () => {
   test('a file that holds other text than the manifest and the desired content says is a conflict', async () => {
     const old = file(ROLE, 'old\n')
     const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
-    const edited = await buildPlan(
+    const edited = await planFrom(
       input({
         desired: [file(ROLE, 'new\n')],
         disk: diskOf({ [ROLE]: text('edited by hand\n') }),
@@ -195,7 +201,7 @@ describe('buildPlan', () => {
         manifestState: 'present',
       }),
     )
-    const untracked = await buildPlan(
+    const untracked = await planFrom(
       input({ desired: [file(ROLE, 'new\n')], disk: diskOf({ [ROLE]: text('edited by hand\n') }) }),
     )
 
@@ -205,8 +211,8 @@ describe('buildPlan', () => {
 
   test('a disk read that is unknown or too large is a conflict, never absent', async () => {
     const files = [file(ROLE, '{}\n')]
-    const unknown = await buildPlan(input({ desired: files, disk: diskOf({ [ROLE]: { state: 'unknown' } }) }))
-    const large = await buildPlan(
+    const unknown = await planFrom(input({ desired: files, disk: diskOf({ [ROLE]: { state: 'unknown' } }) }))
+    const large = await planFrom(
       input({ desired: files, disk: diskOf({ [ROLE]: { state: 'too-large', bytes: 300_000 } }) }),
     )
 
@@ -215,14 +221,14 @@ describe('buildPlan', () => {
   })
 
   test('an untracked file that already holds the desired content is left', async () => {
-    const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], disk: diskOf({ [ROLE]: text('{}\n') }) }))
+    const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')], disk: diskOf({ [ROLE]: text('{}\n') }) }))
 
     expect(kindOf(plan, ROLE)).toBe('leave')
   })
 
   test('ops come in path order, whatever order the files were given in', async () => {
     const files = [file('.cadre/z.md', 'z'), file('.cadre/a.md', 'a'), file('.cadre/bin/be', '#!/bin/sh\n', 'exec')]
-    const plan = await buildPlan(input({ desired: files }))
+    const plan = await planFrom(input({ desired: files }))
 
     expect(summary(plan)).toEqual([
       'create .cadre/a.md',
@@ -235,7 +241,7 @@ describe('buildPlan', () => {
   test('an executable file keeps its mode in its op and in the manifest', async () => {
     const launcher = file('.cadre/bin/be', '#!/bin/sh\n', 'exec')
     const planned = manifestTextOf(await entriesOf([launcher]))
-    const plan = await buildPlan(input({ desired: [launcher], disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
+    const plan = await planFrom(input({ desired: [launcher], disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
 
     expect(fileOps(plan)[0]).toEqual({ kind: 'create', path: '.cadre/bin/be', mode: 'exec', note: null })
     expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
@@ -244,28 +250,28 @@ describe('buildPlan', () => {
 
   test('the hash is of the content: one newline more is a different file', async () => {
     const disk = diskOf({ [ROLE]: text('{}') })
-    const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], disk }))
+    const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')], disk }))
 
     expect(kindOf(plan, ROLE)).toBe('conflict')
   })
 
   test('the same input gives the same plan twice', async () => {
     const files = [file(ROLE, '{}\n'), file(INDEX, '# Roles\n')]
-    const first = await buildPlan(input({ desired: files }))
-    const second = await buildPlan(input({ desired: files }))
+    const first = await planFrom(input({ desired: files }))
+    const second = await planFrom(input({ desired: files }))
 
     expect(second).toEqual(first)
   })
 
   test('with nothing desired the plan holds only the manifest', async () => {
-    const plan = await buildPlan(input())
+    const plan = await planFrom(input())
 
     expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
   })
 })
 
 describe('planWithManifest', () => {
-  test('gives the plan of buildPlan and the manifest of every entry that plan records, sorted by path', async () => {
+  test('gives the same plan each call and the manifest of every entry that plan records, sorted by path', async () => {
     const desired = [file(INDEX, '# Roles v2\n'), file(ROLE, '{}\n'), file('.cadre/bin/be', '#!/bin/sh\n', 'exec')]
     const oldEntries = await entriesOf([file(INDEX, '# Roles v1\n'), file('.cadre/old.md', 'old\n')])
     const carried = await entriesOf([file('.cadre/pm/role.json', 'pm\n')])
@@ -276,9 +282,9 @@ describe('planWithManifest', () => {
     const planned = await planWithManifest(base)
     const files = [...oldEntries, ...carried, ...fresh].sort((a, b) => compareText(a.path, b.path))
     const recordedText = stableJson(planned.manifest)
-    const again = await buildPlan({ ...base, disk: diskOf({ ...edited, [MANIFEST_PATH]: text(recordedText) }) })
+    const again = await planFrom({ ...base, disk: diskOf({ ...edited, [MANIFEST_PATH]: text(recordedText) }) })
 
-    expect(planned.plan).toEqual(await buildPlan(base))
+    expect(planned.plan).toEqual(await planFrom(base))
     expect(planned.manifest).toEqual({ schema: 1, cadreVersion: VERSION, files })
     expect(kindOf(again, MANIFEST_PATH)).toBe('leave')
   })
@@ -334,7 +340,7 @@ describe('plan conflicts and limits', () => {
     test('a file edited since cadre wrote it is a conflict, kept as is, with the new version beside it', async () => {
       const old = file(ROLE, 'old\n')
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({
           desired: [file(ROLE, 'new\n')],
           disk: diskOf({ [ROLE]: text('edited by hand\n') }),
@@ -352,7 +358,7 @@ describe('plan conflicts and limits', () => {
     })
 
     test('an untracked file that differs is a conflict with the new version beside it', async () => {
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({ desired: [file(ROLE, 'new\n')], disk: diskOf({ [ROLE]: text('somebody wrote this\n') }) }),
       )
 
@@ -362,8 +368,8 @@ describe('plan conflicts and limits', () => {
     test('a file that cannot be read is a conflict with its own note, and so is one that is too large', async () => {
       const unreadable = diskOf({ [ROLE]: { state: 'unknown' } })
       const tooLarge = diskOf({ [ROLE]: { state: 'too-large', bytes: 300_000 } })
-      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk: unreadable }))
-      const large = await buildPlan(input({ desired: [NEW_ROLE], disk: tooLarge }))
+      const unknown = await planFrom(input({ desired: [NEW_ROLE], disk: unreadable }))
+      const large = await planFrom(input({ desired: [NEW_ROLE], disk: tooLarge }))
 
       expect(fileOps(unknown)[0]).toEqual({ kind: 'conflict', path: ROLE, mode: 'file', note: UNREADABLE_NOTE })
       expect(fileOps(large)[0]).toEqual({ kind: 'conflict', path: ROLE, mode: 'file', note: UNREADABLE_NOTE })
@@ -377,7 +383,7 @@ describe('plan conflicts and limits', () => {
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
       const planned = manifestTextOf([...(await entriesOf([old])), ...(await entriesOf([other]))])
       const disk = diskOf({ [ROLE]: text('edited\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(planned) })
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({ desired: [file(ROLE, 'new\n'), other], disk, manifest, manifestState: 'present' }),
       )
 
@@ -388,7 +394,7 @@ describe('plan conflicts and limits', () => {
       const other = file(INDEX, '# Roles\n')
       const planned = manifestTextOf(await entriesOf([other]))
       const disk = diskOf({ [ROLE]: text('edited\n'), [INDEX]: text('# Roles\n'), [MANIFEST_PATH]: text(planned) })
-      const plan = await buildPlan(input({ desired: [file(ROLE, 'new\n'), other], disk }))
+      const plan = await planFrom(input({ desired: [file(ROLE, 'new\n'), other], disk }))
 
       expect(kindOf(plan, ROLE)).toBe('conflict')
       expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
@@ -396,7 +402,7 @@ describe('plan conflicts and limits', () => {
 
     test('the new version beside a launcher keeps the launcher mode', async () => {
       const launcher = file('.cadre/bin/be', '#!/bin/sh\nnew\n', 'exec')
-      const plan = await buildPlan(input({ desired: [launcher], disk: diskOf({ [launcher.path]: text('mine\n') }) }))
+      const plan = await planFrom(input({ desired: [launcher], disk: diskOf({ [launcher.path]: text('mine\n') }) }))
 
       expect(fileOps(plan).slice(0, 2)).toEqual([
         { kind: 'conflict', path: '.cadre/bin/be', mode: 'exec', note: CONFLICT_NOTE },
@@ -408,9 +414,9 @@ describe('plan conflicts and limits', () => {
       const old = file(ROLE, 'old\n')
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: await entriesOf([old]) }
       const disk = diskOf({ [ROLE]: text('old\n') })
-      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'unknown' }))
-      const absent = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'absent' }))
-      const equal = await buildPlan(
+      const unknown = await planFrom(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'unknown' }))
+      const absent = await planFrom(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'absent' }))
+      const equal = await planFrom(
         input({ desired: [NEW_ROLE], disk: diskOf({ [ROLE]: text('new\n') }), manifestState: 'unknown' }),
       )
 
@@ -424,9 +430,9 @@ describe('plan conflicts and limits', () => {
       const withBeside = (read: PortRead): ReadonlyMap<string, PortRead> => {
         return diskOf({ [ROLE]: text('mine\n'), [beside]: read })
       }
-      const same = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside(text('new\n')) }))
-      const other = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside(text('older\n')) }))
-      const unknown = await buildPlan(input({ desired: [NEW_ROLE], disk: withBeside({ state: 'unknown' }) }))
+      const same = await planFrom(input({ desired: [NEW_ROLE], disk: withBeside(text('new\n')) }))
+      const other = await planFrom(input({ desired: [NEW_ROLE], disk: withBeside(text('older\n')) }))
+      const unknown = await planFrom(input({ desired: [NEW_ROLE], disk: withBeside({ state: 'unknown' }) }))
 
       expect(fileOps(same)[1]).toEqual({ kind: 'leave', path: beside, mode: 'file', note: NEW_VERSION_NOTE })
       expect(fileOps(other)[1]).toEqual({ kind: 'conflict', path: beside, mode: 'file', note: OCCUPIED_NOTE })
@@ -435,7 +441,7 @@ describe('plan conflicts and limits', () => {
 
     test('a desired file named like the new version beside a conflict is planned once', async () => {
       const desired = [file(ROLE, 'new\n'), file(`${ROLE}.cadre-new`, 'mine\n')]
-      const plan = await buildPlan(input({ desired, disk: diskOf({ [ROLE]: text('edited\n') }) }))
+      const plan = await planFrom(input({ desired, disk: diskOf({ [ROLE]: text('edited\n') }) }))
 
       expect(summary(plan)).toEqual([`conflict ${ROLE}`, `create ${ROLE}.cadre-new`, `create ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([`refused to plan ${ROLE}.cadre-new twice: only the first is kept`])
@@ -449,8 +455,8 @@ describe('plan conflicts and limits', () => {
 
       for (const read of reads) {
         const disk = diskOf({ [ROLE]: read })
-        const tracked = await buildPlan(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'present' }))
-        const untracked = await buildPlan(input({ desired: [NEW_ROLE], disk }))
+        const tracked = await planFrom(input({ desired: [NEW_ROLE], disk, manifest, manifestState: 'present' }))
+        const untracked = await planFrom(input({ desired: [NEW_ROLE], disk }))
         for (const plan of [tracked, untracked]) {
           const targets = fileOps(plan).filter(planned => planned.kind === 'create' || planned.kind === 'change')
           writes.push(targets.map(planned => planned.path))
@@ -469,7 +475,7 @@ describe('plan conflicts and limits', () => {
       const entries = await entriesOf([keep, gone, launcher])
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
       const disk = diskOf({ [keep.path]: text('a\n'), [MANIFEST_PATH]: text(manifestTextOf(entries)) })
-      const plan = await buildPlan(input({ desired: [keep], disk, manifest, manifestState: 'present' }))
+      const plan = await planFrom(input({ desired: [keep], disk, manifest, manifestState: 'present' }))
 
       expect(fileOps(plan)).toEqual([
         { kind: 'leave', path: '.cadre/a.md', mode: 'file', note: null },
@@ -483,7 +489,7 @@ describe('plan conflicts and limits', () => {
       const keep = file('.cadre/a.md', 'a\n')
       const entries = await entriesOf([keep, file('.cadre/b.md', 'b\n')])
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
-      const plan = await buildPlan(input({ desired: [keep], manifest, manifestState: 'unknown' }))
+      const plan = await planFrom(input({ desired: [keep], manifest, manifestState: 'unknown' }))
 
       expect(summary(plan)).toEqual(['create .cadre/a.md', `conflict ${MANIFEST_PATH}`])
     })
@@ -494,7 +500,7 @@ describe('plan conflicts and limits', () => {
       const carried = await entriesOf(others)
       const planned = manifestTextOf([...(await entriesOf([mine])), ...carried])
       const disk = diskOf({ [MANIFEST_PATH]: text(planned) })
-      const plan = await buildPlan(input({ desired: [mine], carried, disk }))
+      const plan = await planFrom(input({ desired: [mine], carried, disk }))
 
       expect(summary(plan)).toEqual(['create .cadre/be/role.json', `leave ${MANIFEST_PATH}`])
     })
@@ -503,7 +509,7 @@ describe('plan conflicts and limits', () => {
       const carried: ManifestEntry[] = [{ path: ROLE, sha256: 'a'.repeat(64), mode: 'file' }]
       const planned = manifestTextOf(await entriesOf([NEW_ROLE]))
       const disk = diskOf({ [MANIFEST_PATH]: text(planned) })
-      const plan = await buildPlan(input({ desired: [NEW_ROLE], carried, disk }))
+      const plan = await planFrom(input({ desired: [NEW_ROLE], carried, disk }))
 
       expect(kindOf(plan, MANIFEST_PATH)).toBe('leave')
     })
@@ -515,7 +521,7 @@ describe('plan conflicts and limits', () => {
       ]
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: entries }
       const disk = diskOf({ [MANIFEST_PATH]: text(manifestTextOf([])) })
-      const plan = await buildPlan(input({ carried: entries, disk, manifest, manifestState: 'present' }))
+      const plan = await planFrom(input({ carried: entries, disk, manifest, manifestState: 'present' }))
 
       expect(summary(plan)).toEqual([`leave ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([])
@@ -527,7 +533,7 @@ describe('plan conflicts and limits', () => {
       const carriedEntry: ManifestEntry = { path: runtimePath, sha256: 'b'.repeat(64), mode: 'file' }
       const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: [staleEntry] }
       const disk = diskOf({ [MANIFEST_PATH]: text(manifestTextOf([])) })
-      const plan = await buildPlan(input({ carried: [carriedEntry], disk, manifest, manifestState: 'present' }))
+      const plan = await planFrom(input({ carried: [carriedEntry], disk, manifest, manifestState: 'present' }))
 
       expect(summary(plan)).toEqual([`leave ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([refusal(runtimePath), refusal('CLAUDE.md')])
@@ -586,14 +592,14 @@ describe('plan conflicts and limits', () => {
       const runtimePath = '.cadre/be/.runtime/settings.json'
       const desired = [file('CLAUDE.md', 'x'), file(ROLE, '{}\n'), file(runtimePath, 'x'), file('../x', 'x')]
       const planned = manifestTextOf(await entriesOf([file(ROLE, '{}\n')]))
-      const plan = await buildPlan(input({ desired, disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
+      const plan = await planFrom(input({ desired, disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }))
 
       expect(summary(plan)).toEqual([`create ${ROLE}`, `leave ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([refusal('CLAUDE.md'), refusal(runtimePath), refusal('../x')])
     })
 
     test('the path in a warning is cleaned, so a hidden character or a line break cannot reach a line', async () => {
-      const plan = await buildPlan(input({ desired: [file(`a${BIDI_OVERRIDE}\nb`, 'x')] }))
+      const plan = await planFrom(input({ desired: [file(`a${BIDI_OVERRIDE}\nb`, 'x')] }))
 
       expect(plan.warnings).toEqual([refusal('ab')])
     })
@@ -601,7 +607,7 @@ describe('plan conflicts and limits', () => {
     test('a path asked for twice is planned once, the first wins, and the manifest records the first', async () => {
       const first = file(ROLE, 'first\n')
       const planned = manifestTextOf(await entriesOf([first]))
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({ desired: [first, file(ROLE, 'second\n')], disk: diskOf({ [MANIFEST_PATH]: text(planned) }) }),
       )
 
@@ -610,7 +616,7 @@ describe('plan conflicts and limits', () => {
     })
 
     test('the manifest and the .gitignore are planned by cadre itself, never as desired files', async () => {
-      const plan = await buildPlan(input({ desired: [file(MANIFEST_PATH, 'x'), file('.gitignore', 'x')] }))
+      const plan = await planFrom(input({ desired: [file(MANIFEST_PATH, 'x'), file('.gitignore', 'x')] }))
 
       expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([
@@ -620,14 +626,14 @@ describe('plan conflicts and limits', () => {
     })
 
     test('the manifest named in another letter case is still planned by cadre itself (B10)', async () => {
-      const plan = await buildPlan(input({ desired: [file('.cadre/Manifest.json', 'x')] }))
+      const plan = await planFrom(input({ desired: [file('.cadre/Manifest.json', 'x')] }))
 
       expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual(['refused to plan .cadre/Manifest.json: cadre plans it itself'])
     })
 
     test('a path named again in another letter case is planned once: the first wins, the second is not', async () => {
-      const plan = await buildPlan(input({ desired: [file('.cadre/pm/ROLE.md', 'a'), file('.cadre/pm/role.md', 'b')] }))
+      const plan = await planFrom(input({ desired: [file('.cadre/pm/ROLE.md', 'a'), file('.cadre/pm/role.md', 'b')] }))
 
       expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`, 'create .cadre/pm/ROLE.md'])
       expect(plan.warnings).toEqual(['refused to plan .cadre/pm/role.md twice: only the first is kept'])
@@ -641,7 +647,7 @@ describe('plan conflicts and limits', () => {
         file('.planning/config.json', 'x'),
         file('.planning/phases/x.md', 'x'),
       ]
-      const plan = await buildPlan(input({ desired: [...hostile, file(ROLE, '{}\n')] }))
+      const plan = await planFrom(input({ desired: [...hostile, file(ROLE, '{}\n')] }))
       const paths = fileOps(plan).map(planned => planned.path)
 
       expect(paths.filter(path => /^(CLAUDE\.md|\.claude\/|\.planning\/)/.test(path))).toEqual([])
@@ -667,7 +673,7 @@ describe('plan conflicts and limits', () => {
     })
 
     test('hunks come after every file op, in the order they were given, as given', async () => {
-      const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], hunks: [TEXT_MODE, HUNK] }))
+      const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')], hunks: [TEXT_MODE, HUNK] }))
 
       expect(plan.ops).toEqual([
         { kind: 'create', path: ROLE, mode: 'file', note: null },
@@ -681,7 +687,7 @@ describe('plan conflicts and limits', () => {
     test('a hunk for a file that is not a known framework config is skipped with the warning', async () => {
       const claude: HunkOp = { ...HUNK, file: '.claude/settings.json' }
       const outside: HunkOp = { ...HUNK, file: '../config.json' }
-      const plan = await buildPlan(input({ hunks: [claude, HUNK, outside] }))
+      const plan = await planFrom(input({ hunks: [claude, HUNK, outside] }))
 
       expect(hunkOps(plan)).toEqual([HUNK])
       expect(plan.warnings).toEqual([
@@ -691,13 +697,13 @@ describe('plan conflicts and limits', () => {
     })
 
     test('the file in a hunk warning is cleaned', async () => {
-      const plan = await buildPlan(input({ hunks: [{ ...HUNK, file: `x${BIDI_OVERRIDE}\ny` }] }))
+      const plan = await planFrom(input({ hunks: [{ ...HUNK, file: `x${BIDI_OVERRIDE}\ny` }] }))
 
       expect(plan.warnings).toEqual(['refused hunk for xy: not a known framework config (PLAN-06)'])
     })
 
     test('a plan with hunks prints them after the files and counts the accepted ones', async () => {
-      const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], hunks: [HUNK, TEXT_MODE] }))
+      const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')], hunks: [HUNK, TEXT_MODE] }))
       const lines = renderPlan(plan)
 
       expect(lines.slice(-5)).toEqual([
@@ -752,10 +758,10 @@ describe('planReadPaths', () => {
     expect(planReadPaths([])).toEqual([MANIFEST_PATH])
   })
 
-  test('buildPlan looks up no disk path that planReadPaths leaves out, conflicts included', async () => {
+  test('planWithManifest looks up no disk path that planReadPaths leaves out, conflicts included', async () => {
     const desired = [file(ROLE, 'new\n'), file(INDEX, '# Roles\n'), file('CLAUDE.md', 'x')]
     const { disk, asked } = recordingDisk({ [ROLE]: text('edited\n'), [INDEX]: { state: 'unknown' } })
-    const plan = await buildPlan(input({ desired, disk }))
+    const plan = await planFrom(input({ desired, disk }))
     const wanted = planReadPaths(desired)
 
     expect(summary(plan)).toEqual([
@@ -813,7 +819,7 @@ describe('plan properties', () => {
       for (const read of reads) {
         const entry: ManifestEntry = { path, sha256: HASH, mode: 'file' }
         const manifest: Manifest = { schema: 1, cadreVersion: '0.1.0', files: [entry] }
-        const plan = await buildPlan(
+        const plan = await planFrom(
           input({
             desired: [file(path, 'same'), file(ROLE, '{}\n')],
             disk: diskOf({ [path]: read }),
@@ -842,10 +848,10 @@ describe('plan properties', () => {
     for (const policy of policies) {
       const lines = gitignoreLines(policy, 'node_modules\n')
       const merged = mergeIgnoreBlock('node_modules\n', lines) ?? ''
-      const first = await buildPlan(input({ desired: files, gitignore: { disk: text('node_modules\n'), lines } }))
+      const first = await planFrom(input({ desired: files, gitignore: { disk: text('node_modules\n'), lines } }))
       const manifestText = manifestTextOf(await entriesOf(files))
       const disk = appliedDisk(files, manifestText, { '.gitignore': text(merged) })
-      const again = await buildPlan(
+      const again = await planFrom(
         input({
           desired: files,
           disk,
@@ -866,9 +872,9 @@ describe('plan properties', () => {
     const files = [...roleFiles('tl'), ...roleFiles('qa'), file(INDEX, '# Roles\n')]
     const lines = gitignoreLines('all', null)
     const base = input({ desired: files, gitignore: { disk: { state: 'absent' }, lines }, hunks: [HUNK] })
-    const first = renderPlan(await buildPlan(base)).join('\n')
-    const second = renderPlan(await buildPlan(base)).join('\n')
-    const reversed = renderPlan(await buildPlan({ ...base, desired: [...files].reverse() })).join('\n')
+    const first = renderPlan(await planFrom(base)).join('\n')
+    const second = renderPlan(await planFrom(base)).join('\n')
+    const reversed = renderPlan(await planFrom({ ...base, desired: [...files].reverse() })).join('\n')
 
     expect(second).toBe(first)
     expect(reversed).toBe(first)
@@ -894,7 +900,7 @@ describe('plan properties', () => {
     const carried = await entriesOf([...pm, ...fe])
     const newIndex = file(INDEX, '# Roles v2\n')
     const newBe = [file('.cadre/be/role.json', '{"id":"be","v":2}\n'), ...be.slice(1)]
-    const plan = await buildPlan(
+    const plan = await planFrom(
       input({
         desired: [...newBe, newIndex],
         carried,

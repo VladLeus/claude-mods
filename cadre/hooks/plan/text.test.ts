@@ -2,8 +2,14 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { FileOp, HunkOp, Op, Plan } from '../../types'
 import { BIDI_OVERRIDE, file, GSD_TOOLS, HUNK, input, ROLE } from '../testkit'
-import { buildPlan } from './plan'
+import { planWithManifest } from './plan'
+import type { PlanInput } from './plan'
 import { planSummary, renderPlan } from './text'
+
+/** The file plan planWithManifest gives for this input. */
+async function planFrom(input: PlanInput): Promise<Plan> {
+  return (await planWithManifest(input)).plan
+}
 
 /** A file op built by hand, for the render tests. */
 function op(kind: FileOp['kind'], path: string, over: Partial<FileOp> = {}): FileOp {
@@ -17,7 +23,7 @@ function planOf(ops: readonly Op[], warnings: readonly string[] = []): Plan {
 
 describe('renderPlan', () => {
   test('lists each op under File plan: with the kind padded to 10, then a summary line', async () => {
-    const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')] }))
+    const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')] }))
 
     expect(renderPlan(plan)).toEqual([
       'File plan:',
@@ -28,7 +34,7 @@ describe('renderPlan', () => {
   })
 
   test('an executable file shows (executable) after its path', async () => {
-    const plan = await buildPlan(input({ desired: [file('.cadre/bin/be', '#!/bin/sh\n', 'exec')] }))
+    const plan = await planFrom(input({ desired: [file('.cadre/bin/be', '#!/bin/sh\n', 'exec')] }))
 
     expect(renderPlan(plan)[1]).toBe('  create    .cadre/bin/be (executable)')
   })
@@ -148,7 +154,7 @@ describe('planSummary', () => {
   })
 
   test('renderPlan ends with planSummary, so the review question and the plan give the same line', async () => {
-    const built = await buildPlan(input({ desired: [file(ROLE, '{}\n')] }))
+    const built = await planFrom(input({ desired: [file(ROLE, '{}\n')] }))
     const plans = [built, planOf([op('create', ROLE), HUNK], ['w']), planOf([])]
 
     for (const plan of plans) expect(renderPlan(plan).at(-1)).toBe(planSummary(plan))

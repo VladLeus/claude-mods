@@ -16,13 +16,18 @@ import {
   mergeIgnoreBlock,
   SECURITY_REPORTS_LINE,
 } from './gitignore'
-import { buildPlan } from './plan'
+import { planWithManifest } from './plan'
 import type { PlanInput } from './plan'
 import { renderPlan } from './text'
 
 const INDEX = '.cadre/INDEX.md'
 
-/** The disk as buildPlan takes it: reads keyed by repo-relative path. */
+/** The file plan planWithManifest gives for this input. */
+async function planFrom(input: PlanInput): Promise<Plan> {
+  return (await planWithManifest(input)).plan
+}
+
+/** The disk as planWithManifest takes it: reads keyed by repo-relative path. */
 function diskOf(reads: Readonly<Record<string, PortRead>>): ReadonlyMap<string, PortRead> {
   return new Map(Object.entries(reads))
 }
@@ -303,7 +308,7 @@ describe('ignore block', () => {
     }
 
     test('no .gitignore on disk plans a create op that sorts after the .cadre ops', async () => {
-      const plan = await buildPlan(input({ desired: [file(ROLE, '{}\n')], gitignore: withIgnore({ state: 'absent' }) }))
+      const plan = await planFrom(input({ desired: [file(ROLE, '{}\n')], gitignore: withIgnore({ state: 'absent' }) }))
       const detail = [IGNORE_BEGIN, ...LINES, IGNORE_END]
 
       expect(summary(plan)).toEqual([`create ${ROLE}`, `create ${MANIFEST_PATH}`, 'create .gitignore'])
@@ -312,32 +317,32 @@ describe('ignore block', () => {
     })
 
     test('a .gitignore that already holds the block is left', async () => {
-      const plan = await buildPlan(input({ gitignore: withIgnore(text(MERGED)) }))
+      const plan = await planFrom(input({ gitignore: withIgnore(text(MERGED)) }))
 
       expect(kindOf(plan, '.gitignore')).toBe('leave')
     })
 
     test('a .gitignore without the block is changed', async () => {
-      const plan = await buildPlan(input({ gitignore: withIgnore(text('node_modules\n')) }))
+      const plan = await planFrom(input({ gitignore: withIgnore(text('node_modules\n')) }))
 
       expect(kindOf(plan, '.gitignore')).toBe('change')
     })
 
     test('a .gitignore with a block of other lines is changed', async () => {
-      const plan = await buildPlan(input({ gitignore: withIgnore(text('# >>> cadre\nold\n# <<< cadre\n')) }))
+      const plan = await planFrom(input({ gitignore: withIgnore(text('# >>> cadre\nold\n# <<< cadre\n')) }))
 
       expect(kindOf(plan, '.gitignore')).toBe('change')
     })
 
     test('an empty .gitignore is changed, since the file is there', async () => {
-      const plan = await buildPlan(input({ gitignore: withIgnore(text('')) }))
+      const plan = await planFrom(input({ gitignore: withIgnore(text('')) }))
 
       expect(kindOf(plan, '.gitignore')).toBe('change')
     })
 
     test('a .gitignore that is unknown or too large plans no op and warns', async () => {
-      const unknown = await buildPlan(input({ gitignore: withIgnore({ state: 'unknown' }) }))
-      const large = await buildPlan(input({ gitignore: withIgnore({ state: 'too-large', bytes: 300_000 }) }))
+      const unknown = await planFrom(input({ gitignore: withIgnore({ state: 'unknown' }) }))
+      const large = await planFrom(input({ gitignore: withIgnore({ state: 'too-large', bytes: 300_000 }) }))
 
       expect(kindOf(unknown, '.gitignore')).toBeUndefined()
       expect(unknown.warnings).toEqual([UNREADABLE])
@@ -346,14 +351,14 @@ describe('ignore block', () => {
     })
 
     test('a block with no end marker plans no op and asks for a fix by hand', async () => {
-      const plan = await buildPlan(input({ gitignore: withIgnore(text('a\n# >>> cadre\nx\n')) }))
+      const plan = await planFrom(input({ gitignore: withIgnore(text('a\n# >>> cadre\nx\n')) }))
 
       expect(kindOf(plan, '.gitignore')).toBeUndefined()
       expect(plan.warnings).toEqual([NO_END])
     })
 
     test('with no gitignore input there is no .gitignore op and no warning', async () => {
-      const plan = await buildPlan(input({ gitignore: null }))
+      const plan = await planFrom(input({ gitignore: null }))
 
       expect(summary(plan)).toEqual([`create ${MANIFEST_PATH}`])
       expect(plan.warnings).toEqual([])
@@ -362,7 +367,7 @@ describe('ignore block', () => {
     test('the .gitignore is not in the manifest, which records the generated files alone', async () => {
       const files = [file(ROLE, '{}\n')]
       const planned = manifestTextOf(await entriesOf(files))
-      const plan = await buildPlan(
+      const plan = await planFrom(
         input({ desired: files, disk: diskOf({ [MANIFEST_PATH]: text(planned) }), gitignore: withIgnore(text('')) }),
       )
 
@@ -372,7 +377,7 @@ describe('ignore block', () => {
     test('a re-run with the planned .gitignore text on disk leaves it', async () => {
       const lines = gitignoreLines('definitions', 'node_modules\n')
       const planned = mergeIgnoreBlock('node_modules\n', lines) ?? ''
-      const plan = await buildPlan(input({ gitignore: { disk: text(planned), lines } }))
+      const plan = await planFrom(input({ gitignore: { disk: text(planned), lines } }))
 
       expect(kindOf(plan, '.gitignore')).toBe('leave')
     })
@@ -393,7 +398,7 @@ describe('gitignore block rows (G-02-3)', () => {
       [text(mergeIgnoreBlock(null, LINES) ?? ''), 'leave'],
     ]
     for (const [disk, kind] of reads) {
-      const plan = await buildPlan(input({ gitignore: { disk, lines: LINES } }))
+      const plan = await planFrom(input({ gitignore: { disk, lines: LINES } }))
       const ignore = fileOps(plan).find(planned => planned.path === '.gitignore')
 
       expect([kind, ignore]).toEqual([kind, { kind, path: '.gitignore', mode: 'file', note: null, detail: DETAIL }])
@@ -402,7 +407,7 @@ describe('gitignore block rows (G-02-3)', () => {
 
   test('only the .gitignore op has detail rows: no create, conflict, copy, stale file or manifest op', async () => {
     const stale: ManifestEntry = { path: '.cadre/old.json', sha256: 'x', mode: 'file' }
-    const plan = await buildPlan(
+    const plan = await planFrom(
       input({
         desired: [file(ROLE, 'new\n'), file(INDEX, '# index\n')],
         disk: diskOf({ [ROLE]: text('mine\n') }),
@@ -425,7 +430,7 @@ describe('gitignore block rows (G-02-3)', () => {
   })
 
   test('renderPlan shows each block line on its own row under the .gitignore row, indented like a note', async () => {
-    const plan = await buildPlan(input({ gitignore: { disk: { state: 'absent' }, lines: LINES } }))
+    const plan = await planFrom(input({ gitignore: { disk: { state: 'absent' }, lines: LINES } }))
 
     expect(LINES).toEqual(['thoughts/', '.cadre/*/.runtime/', '.cadre/**/*.cadre-new'])
     expect(renderPlan(plan)).toEqual([
