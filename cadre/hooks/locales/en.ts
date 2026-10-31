@@ -298,6 +298,11 @@ export const EN = Object.freeze({
   'init.review.improverRun.other':
     `After Confirm, claude-md-improver runs on up to {count} built files ${
     ''}(claude -p, acceptEdits, up to 5 minutes each); you accept or keep each change.`,
+
+  'init.reply.dryRunHead': 'cadre init --dry-run',
+  'init.reply.head': 'cadre init',
+  'init.conflict.dismissed': 'A Keep mine or Take new question was dismissed or not answered.',
+  'init.conflict.context': 'Keep mine leaves your edited file as it is; Take new writes the new version over it.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

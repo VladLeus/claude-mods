@@ -7,6 +7,7 @@
 import type { GitPolicy, LaunchStart, Plan } from '../../types'
 import { appliedLines } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
+import { t } from '../locales/t'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
 import { IGNORE_ALL_NOTE } from './replies'
 import { launchLine } from './stages/launch'
@@ -28,7 +29,7 @@ export function initReplyText(
   confirmLines: readonly string[] = [],
 ): string {
   return [
-    applied === null ? 'cadre init --dry-run' : 'cadre init',
+    applied === null ? t('init.reply.dryRunHead') : t('init.reply.head'),
     ...renderPlan(plan),
     policyLine(policy),
     launchLine(start),
@@ -42,7 +43,7 @@ export function initReplyText(
 export const HUNK_TIMEOUT_MS = 30_000
 
 /** Why init cancels when a Keep mine or Take new question is dismissed or not answered (D-67, A1). */
-export const CONFLICT_DISMISSED_REASON = 'A Keep mine or Take new question was dismissed or not answered.'
+export const CONFLICT_DISMISSED_REASON = t('init.conflict.dismissed')
 
 /** The context line of each Keep mine or Take new question (D-136): what each answer does with the edited file. */
-export const CONFLICT_CONTEXT = 'Keep mine leaves your edited file as it is; Take new writes the new version over it.'
+export const CONFLICT_CONTEXT = t('init.conflict.context')
