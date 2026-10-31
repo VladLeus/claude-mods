@@ -9,6 +9,7 @@
 import type { HostIo, InitIo, InitLocations, LaunchStart, PortRead } from '../../types'
 import { clean } from '../core/text'
 import { CONTRACTS } from '../locales/contracts'
+import { t } from '../locales/t'
 import { autopilotLogPath, autopilotRunState, autopilotStatusPath } from '../scan/autopilot'
 import type { RunState } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -49,7 +50,7 @@ const STOPPED_TEXT = CONTRACTS.autopilotStopped
 const LOG_LINE = /^(\S+) {2}(.*)$/s
 
 /** What the report says in place of autopilot's last log line when the log gave none. */
-export const NO_LOG_LINE = 'no log line'
+export const NO_LOG_LINE = t('status.autopilotFiles.noLogLine')
 
 /** The texts of an autopilot log's lines, in order, after their stamps; a line not `<stamp>  <text>` has none. */
 function logTexts(log: string): string[] {

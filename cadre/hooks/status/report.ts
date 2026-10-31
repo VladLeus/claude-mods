@@ -6,6 +6,7 @@
  */
 import type { InitIo, PortEntry } from '../../types'
 import { reportText } from '../core/text'
+import { t } from '../locales/t'
 import { handoffFolderOf, trimSlash } from '../paths'
 import { NO_LOG_LINE } from './autopilot-files'
 import type { StatusState } from './autopilot-files'
@@ -32,7 +33,19 @@ export type StatusReport = {
 const HANDOFF_SUFFIX = '.md'
 
 /** The report's line when the built-in DONE.md marker is there, and when it is not (D-17). */
-const DONE_MARKER_LINES = Object.freeze({ present: 'DONE.md: present', absent: 'DONE.md: not written yet' })
+const DONE_MARKER_LINES = Object.freeze({
+  present: t('status.report.donePresent'),
+  absent: t('status.report.doneAbsent'),
+})
+
+/** Each status state as the report shows it (D-111): the state names stay protocol values, the words are EN texts. */
+const STATE_WORDS: Readonly<Record<StatusState, string>> = Object.freeze({
+  done: t('status.report.stateDone'),
+  running: t('status.report.stateRunning'),
+  'not started': t('status.report.stateNotStarted'),
+  stopped: t('status.report.stateStopped'),
+  unknown: t('status.report.stateUnknown'),
+})
 
 /**
  * The newest handoff a role's handoff folder lists: the name of its newest regular `.md` file, never a link, by
@@ -69,10 +82,12 @@ export async function hasDoneMarker(io: InitIo, root: string, id: string): Promi
 /** The report's session line: the session and how it was found, or that none was found under the role's name. */
 function sessionLine(report: StatusReport): string {
   const { id, sessionId, foundBy } = report
-  if (sessionId === null || foundBy === null) return `session: none found for ${sessionName(id)}`
-  const how = foundBy === 'title' ? `its name ${sessionName(id)}` : 'its fleet beat'
+  if (sessionId === null || foundBy === null) return t('status.report.sessionNone', { sessionName: sessionName(id) })
+  const how = foundBy === 'title' ? t('status.report.foundByName', {
+    sessionName: sessionName(id),
+  }) : t('status.report.foundByBeat')
 
-  return `session: ${sessionId} (found by ${how})`
+  return t('status.report.session', { sessionId, how })
 }
 
 /** The report's DONE.md line for a role on the built-in framework; none for a role on another framework (D-17). */
@@ -89,11 +104,13 @@ function doneMarkerLines(doneMarker: boolean | null): string[] {
  */
 export function statusReportText(report: StatusReport): string {
   return [
-    `cadre status ${report.id}`,
-    `state: ${report.state}`,
+    t('status.report.head', { id: report.id }),
+    t('status.report.state', { state: STATE_WORDS[report.state] }),
     sessionLine(report),
-    `autopilot: ${report.lastLog ?? NO_LOG_LINE}`,
-    `latest handoff: ${report.handoff === null ? 'none yet' : reportText(report.handoff)}`,
+    t('status.report.autopilot', { value: report.lastLog ?? NO_LOG_LINE }),
+    t('status.report.latestHandoff', {
+      handoff: report.handoff === null ? t('status.report.noHandoff') : reportText(report.handoff),
+    }),
     ...doneMarkerLines(report.doneMarker),
   ].join('\n')
 }

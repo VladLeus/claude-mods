@@ -570,6 +570,25 @@ export const EN = Object.freeze({
 
   'regen.run.cancelled': 'regen cancelled, nothing written',
   'regen.run.cancelledReply': '{regenCancelled}: {reason}',
+
+  'status.report.donePresent': 'DONE.md: present',
+  'status.report.doneAbsent': 'DONE.md: not written yet',
+  'status.report.sessionNone': 'session: none found for {sessionName}',
+  'status.report.foundByName': 'its name {sessionName}',
+  'status.report.foundByBeat': 'its fleet beat',
+  'status.report.session': 'session: {sessionId} (found by {how})',
+  'status.report.head': 'cadre status {id}',
+  'status.report.state': 'state: {state}',
+  'status.report.autopilot': 'autopilot: {value}',
+
+  'status.autopilotFiles.noLogLine': 'no log line',
+  'status.report.stateDone': 'done',
+  'status.report.stateRunning': 'running',
+  'status.report.stateNotStarted': 'not started',
+  'status.report.stateStopped': 'stopped',
+  'status.report.stateUnknown': 'unknown',
+  'status.report.latestHandoff': 'latest handoff: {handoff}',
+  'status.report.noHandoff': 'none yet',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
