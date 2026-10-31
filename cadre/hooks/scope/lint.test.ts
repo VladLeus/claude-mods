@@ -96,8 +96,8 @@ describe('lintDenyPattern', () => {
   })
 
   test('a single leading slash is refused, because it matches nothing (P13)', () => {
-    expect(lintDenyPattern('Read(/src/**)')).toBe('single leading / matches nothing (P13)')
-    expect(lintDenyPattern('Edit(/x)')).toBe('single leading / matches nothing (P13)')
+    expect(lintDenyPattern('Read(/src/**)')).toBe('single leading / matches nothing')
+    expect(lintDenyPattern('Edit(/x)')).toBe('single leading / matches nothing')
   })
 
   test('an absolute // pattern is refused, because it belongs only in .runtime (D-84)', () => {
@@ -106,7 +106,7 @@ describe('lintDenyPattern', () => {
   })
 
   test('an infra tool or server, or a glob whose literal start begins one, is refused (ISO-04)', () => {
-    const message = 'would block an infra tool (ISO-04)'
+    const message = 'would block an infra tool'
     const refused = [
       'mcp__*',
       'mcp__autopilot',
@@ -131,7 +131,7 @@ describe('lintDenyPattern', () => {
   })
 
   test('a rule on an infra tool with an argument, or on a handoff skill, is refused too', () => {
-    const message = 'would block an infra tool (ISO-04)'
+    const message = 'would block an infra tool'
     const refused = [
       'PushNotification(*)',
       'mcp__autopilot__wait_for(*)',
@@ -406,8 +406,8 @@ describe('ISO-04', () => {
     const literal = 'mcp__autopilot__wait'
 
     expect(refused.map(pattern => lintDenyPattern(pattern))).toEqual([
-      'would block an infra tool (ISO-04)',
-      'would block an infra tool (ISO-04)',
+      'would block an infra tool',
+      'would block an infra tool',
     ])
     expect(refused.filter(pattern => infraViolations(withDeny(base, pattern), 'gsd').length === 0)).toEqual([])
     expect(lintDenyPattern(literal)).toBeNull()

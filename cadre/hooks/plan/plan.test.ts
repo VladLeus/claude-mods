@@ -301,7 +301,7 @@ const STALE_NOTE = 'no longer generated (kept; cadre deletes nothing)'
 
 /** The reason a path is refused: PLAN-06 allows only `.cadre/` and the `.gitignore`. */
 function refusal(path: string): string {
-  return `refused to plan ${path}: not a .cadre/ path or .gitignore (PLAN-06)`
+  return `refused to plan ${path}: not a .cadre/ path or .gitignore`
 }
 
 /** A role's three generated files, as the generator plans them: the definition, the role file and the launcher. */
@@ -691,15 +691,15 @@ describe('plan conflicts and limits', () => {
 
       expect(hunkOps(plan)).toEqual([HUNK])
       expect(plan.warnings).toEqual([
-        'refused hunk for .claude/settings.json: not a known framework config (PLAN-06)',
-        'refused hunk for ../config.json: not a known framework config (PLAN-06)',
+        'refused hunk for .claude/settings.json: not a known framework config',
+        'refused hunk for ../config.json: not a known framework config',
       ])
     })
 
     test('the file in a hunk warning is cleaned', async () => {
       const plan = await planFrom(input({ hunks: [{ ...HUNK, file: `x${BIDI_OVERRIDE}\ny` }] }))
 
-      expect(plan.warnings).toEqual(['refused hunk for xy: not a known framework config (PLAN-06)'])
+      expect(plan.warnings).toEqual(['refused hunk for xy: not a known framework config'])
     })
 
     test('a plan with hunks prints them after the files and counts the accepted ones', async () => {

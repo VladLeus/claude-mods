@@ -244,9 +244,9 @@ describe('runtimeDeny', () => {
   })
 
   test('lintRuntimeDenyPattern refuses a single leading slash and an infra tool, as the committed lint does', () => {
-    expect(lintRuntimeDenyPattern('Read(/repo/x/**)')).toBe('single leading / matches nothing (P13)')
-    expect(lintRuntimeDenyPattern('mcp__autopilot')).toBe('would block an infra tool (ISO-04)')
-    expect(lintRuntimeDenyPattern('Skill')).toBe('would block an infra tool (ISO-04)')
+    expect(lintRuntimeDenyPattern('Read(/repo/x/**)')).toBe('single leading / matches nothing')
+    expect(lintRuntimeDenyPattern('mcp__autopilot')).toBe('would block an infra tool')
+    expect(lintRuntimeDenyPattern('Skill')).toBe('would block an infra tool')
   })
 
   test('lintRuntimeDenyPattern answers every other pattern as the committed lint does', () => {
@@ -406,10 +406,10 @@ describe('runtimeDeny', () => {
 
     expect(coveredPrefixes(result.deny)).toEqual(['/repo/src/', '/repo/src/'])
     expect(result.warnings).toEqual([
-      'Code dir * has an unusual name and is not denied',
-      'Code dir .. has an unusual name and is not denied',
-      'Code dir a b has an unusual name and is not denied',
-      'Code dir x) has an unusual name and is not denied',
+      'code dir * has an unusual name and is not denied',
+      'code dir .. has an unusual name and is not denied',
+      'code dir a b has an unusual name and is not denied',
+      'code dir x) has an unusual name and is not denied',
     ])
   })
 
@@ -421,8 +421,8 @@ describe('runtimeDeny', () => {
 
     expect(result.deny).toEqual(runtimeDeny(role, base, user({ codeDirs: ['src'] })).deny)
     expect(result.warnings).toEqual([
-      'Read(/repo/x/**) was not emitted: single leading / matches nothing (P13)',
-      'mcp__autopilot was not emitted: would block an infra tool (ISO-04)',
+      'Read(/repo/x/**) was not emitted: single leading / matches nothing',
+      'mcp__autopilot was not emitted: would block an infra tool',
     ])
   })
 

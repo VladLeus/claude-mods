@@ -827,7 +827,7 @@ describe('launch properties', () => {
     const single = launchProblems(withDenyEntry(plan, 'Read(/repo/src/**)'), role, scope, 'gsd')
     const dotdot = launchProblems(withDenyEntry(plan, 'Read(//repo/../src/**)'), role, scope, 'gsd')
 
-    expect(single).toEqual(['deny Read(/repo/src/**) fails the lint: single leading / matches nothing (P13)'])
+    expect(single).toEqual(['deny Read(/repo/src/**) fails the lint: single leading / matches nothing'])
     expect(dotdot).toEqual([
       'deny Read(//repo/../src/**) fails the lint: a .. segment is not allowed in an absolute pattern',
     ])

@@ -95,7 +95,7 @@ describe('renderPlan', () => {
   })
 
   test('warnings are listed after the ops and before the summary', () => {
-    const warning = 'refused to plan CLAUDE.md: not a .cadre/ path or .gitignore (PLAN-06)'
+    const warning = 'refused to plan CLAUDE.md: not a .cadre/ path or .gitignore'
     const lines = renderPlan(planOf([op('create', ROLE)], [warning]))
 
     expect(lines).toEqual([

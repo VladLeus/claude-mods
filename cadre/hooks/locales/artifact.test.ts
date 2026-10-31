@@ -4,6 +4,7 @@ import type { InstructionPart } from '../../types'
 import { privateClaudeMdText } from '../apply/private'
 import { indexMdText, partsBody, roleClaudeMdText } from '../generate/docs'
 import { ARTIFACT } from './artifact'
+import { EN } from './en'
 
 /** Printable ASCII and the newline only: no byte above 0x7E and no control character but the newline. */
 function isArtifactAscii(text: string): boolean {
@@ -30,6 +31,13 @@ describe('locales/artifact (D-221)', () => {
     const bad = Object.entries(ARTIFACT).filter(([, text]) => !isArtifactAscii(text))
 
     expect(bad).toEqual([])
+  })
+
+  test('no EN or ARTIFACT text names an internal id, and code dir is written like its siblings (D-227)', () => {
+    const texts: readonly string[] = [...Object.values(EN), ...Object.values(ARTIFACT)]
+
+    expect(texts.filter(text => /\((P13|ISO-04|PLAN-06)\)/.test(text))).toEqual([])
+    expect(texts.filter(text => text.startsWith('Code dir'))).toEqual([])
   })
 
   test('every ARTIFACT template has only well-formed slots', () => {

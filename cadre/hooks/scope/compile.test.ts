@@ -734,7 +734,7 @@ describe('scope rules', () => {
   test('a deny the lint refuses is dropped and the card names it, so a bug cannot ship a broken deny', () => {
     const scanned = emptySetupScan({ mcp: [session('autopilot__wait_for'), session('jira')] })
     const scope = compileScope(templateRole('pm'), context({ setup: scanned }))
-    const wait = 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)'
+    const wait = 'mcp__autopilot__wait_for was not emitted: would block an infra tool'
 
     expect(scope.settings.permissions.deny.filter(entry => entry.startsWith('mcp__'))).toEqual(['mcp__jira'])
     expect(ruleOf(scope, wait)).toEqual({ text: wait, enforcement: 'none' })
@@ -887,7 +887,7 @@ describe('scope rules', () => {
     const dirs = ['*', 'a b', '..', 'x)', 'src', `ev${BIDI_OVERRIDE}il`]
     const scope = compileScope(templateRole('pm'), context({ codeDirs: dirs }))
     const absent = ['*', 'a b', '..', 'x)', 'evil'].filter(name => {
-      const text = `Code dir ${name} has an unusual name and is not denied`
+      const text = `code dir ${name} has an unusual name and is not denied`
 
       return ruleOf(scope, text)?.enforcement !== 'none'
     })
@@ -907,7 +907,7 @@ describe('scope rules', () => {
       { text: 'No Bash tool (denied)', enforcement: 'hard', checks: [{ kind: 'tool-absent', token: 'Bash' }] },
       { text: 'Reads and edits under cadre are denied; the patterns match at any depth', enforcement: 'best-effort' },
       { text: skippedRule('pm'), enforcement: 'best-effort' },
-      { text: 'Code dir * has an unusual name and is not denied', enforcement: 'none' },
+      { text: 'code dir * has an unusual name and is not denied', enforcement: 'none' },
       { text: 'Reads of .env, .env.*, ~/.ssh and ~/.aws are denied', enforcement: 'best-effort' },
       {
         text: 'Scanned MCP servers not given are denied: jira, my.server',
@@ -918,7 +918,7 @@ describe('scope rules', () => {
         ],
       },
       {
-        text: 'mcp__autopilot__wait_for was not emitted: would block an infra tool (ISO-04)',
+        text: 'mcp__autopilot__wait_for was not emitted: would block an infra tool',
         enforcement: 'none',
       },
       { text: 'Skills: only the listed skills are linked', enforcement: 'best-effort' },

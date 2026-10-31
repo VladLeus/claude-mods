@@ -195,7 +195,7 @@ describe('overlayLinks', () => {
       `${OVERLAY}/skills/resume-handoff-doc`,
     ])
     expect(plan.warnings).toEqual([
-      'Code dir * has an unusual name and is not denied',
+      'code dir * has an unusual name and is not denied',
       'memory file .bad.md has an unsafe name: not linked',
       ...sortedUnique(adapterOf('gsd').startSkills).map(notFound),
     ])
@@ -210,8 +210,8 @@ describe('overlayLinks', () => {
     const plan = launchPlan(role, scope, launcher)
 
     expect(plan.warnings).toEqual([
-      `Code dir ${shown} has an unusual name and is not denied`,
-      `Read(/ab${'x'.repeat(101)}… was not emitted: single leading / matches nothing (P13)`,
+      `code dir ${shown} has an unusual name and is not denied`,
+      `Read(/ab${'x'.repeat(101)}… was not emitted: single leading / matches nothing`,
       `global file ${shown} has an unsafe name: not linked`,
       `memory file ${shown} has an unsafe name: not linked`,
       `skill ${shown} has an unsafe name: not linked`,
