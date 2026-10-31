@@ -160,6 +160,11 @@ export const EN = Object.freeze({
     'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
   'init.improverInstall.improverInstallDismissedReason':
     'The claude-md-management question was dismissed or not answered.',
+
+  'init.duration.durationQuestion': 'Autopilot duration for roles?',
+  'init.duration.durationContextLine': 'Applies to every role: {ids}.',
+  'init.duration.durationDismissedReason': 'The autopilot duration question was dismissed or not answered.',
+  'init.duration.durationAccepts': 'a duration such as 4h, 90m or 1h30m, at most 168h',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

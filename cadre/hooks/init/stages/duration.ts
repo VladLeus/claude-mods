@@ -7,6 +7,7 @@
  * init/machine or init/run.
  */
 import type { RoleChange, RoleSpec } from '../../../types'
+import { t } from '../../locales/t'
 import { isAutopilotDuration } from '../../roles/validate'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
@@ -20,18 +21,18 @@ export function idsOf(roles: readonly RoleSpec[]): string {
 }
 
 /** The question init asks once for every role: how long each autopilot run lasts (D-51). */
-export const DURATION_QUESTION = 'Autopilot duration for roles?'
+export const DURATION_QUESTION = t('init.duration.durationQuestion')
 
 /** The context line of the duration question (D-136): the answer applies to every role, named by its id. */
 export function durationContextLine(roles: readonly RoleSpec[]): string {
-  return `Applies to every role: ${idsOf(roles)}.`
+  return t('init.duration.durationContextLine', { ids: idsOf(roles) })
 }
 
 /** The duration buttons, 4h first; any other duration is typed under "Other" (D-51). */
 export const DURATION_OPTIONS: readonly string[] = Object.freeze(['4h', '2h', '8h'])
 
 /** Why init cancels when the duration question is dismissed (A1, D-45); unread answers give NO_USABLE_ANSWER_REASON. */
-export const DURATION_DISMISSED_REASON = 'The autopilot duration question was dismissed or not answered.'
+export const DURATION_DISMISSED_REASON = t('init.duration.durationDismissedReason')
 
 /** A duration answer, trimmed and lowercased, when it is in autopilot's grammar (isAutopilotDuration); else null. */
 function parseDuration(answer: string): string | null {
@@ -41,7 +42,7 @@ function parseDuration(answer: string): string | null {
 }
 
 /** What the duration question takes, as its refusal lists it (D-51, D-136). */
-const DURATION_ACCEPTS = 'a duration such as 4h, 90m or 1h30m, at most 168h'
+const DURATION_ACCEPTS = t('init.duration.durationAccepts')
 
 /**
  * The duration question as the stage asks it (D-51, D-136): DURATION_QUESTION with the ids of `roles` on its second
