@@ -601,7 +601,7 @@ describe('improver other changes (G-02-1f, D-141)', () => {
     const others = ['.cadre/be/ROLE.md', '.cadre/be/notes.md', '.cadre/be/role.json']
     expect(outcome.warnings).toEqual([
       'the improver also changed 3 other files in .cadre/be: .cadre/be/ROLE.md, .cadre/be/notes.md, ' +
-        '.cadre/be/role.json; review them (listed in the pane)',
+        '.cadre/be/role.json; review them (listed above)',
     ])
     expect(outcome.warnings).toEqual([otherChangesWarning('.cadre/be', others)])
     expect(otherRows(run)).toEqual(otherFilesLines('.cadre/be', others))
@@ -625,11 +625,11 @@ describe('improver other changes (G-02-1f, D-141)', () => {
     const outcome = await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
     expect(outcome.warnings).toEqual([
       'the improver also changed 5 other files in .cadre/be: .cadre/be/a.md, .cadre/be/b.md, .cadre/be/c.md, ' +
-        '+2 more; review them (listed in the pane)',
+        '+2 more; review them (listed above)',
     ])
     expect(otherRows(run)).toHaveLength(6)
     expect(otherChangesWarning('.cadre/be', ['.cadre/be/a.md'])).toBe(
-      'the improver also changed 1 other file in .cadre/be: .cadre/be/a.md; review them (listed in the pane)',
+      'the improver also changed 1 other file in .cadre/be: .cadre/be/a.md; review them (listed above)',
     )
     expect(otherFilesLines('.cadre/be', [])).toEqual([])
   })
@@ -737,6 +737,27 @@ describe('improver other changes (G-02-1f, D-141)', () => {
     const outcome = await improveBuiltFiles(diskIo(disk).io, io, [SECURITY_BUILT_FILE], DEFAULT_LOCATIONS)
     const folder = '~/.claude/cadre/repo-1a2b3c4d/security/instructions'
     expect(outcome.warnings).toEqual([otherChangesWarning(folder, [`${folder}/notes.md`])])
+  })
+
+  test("the improver question's context holds the other changed files after the diff (WD-M3, T-02-75)", async () => {
+    const disk = roleFolderDisk()
+    const edits = { [BE_BUILT_PATH]: BE_IMPROVED, [beFile('role.json')]: '{"id":"be","edited":true}\n' }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
+    await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const diff = improverBlockLines(BE_BUILT_REPO_PATH, lineDiff(BE_BUILT, BE_IMPROVED))
+    const others = otherFilesLines('.cadre/be', ['.cadre/be/role.json'])
+    expect(run.specs.map(spec => spec.context?.lines)).toEqual([[...diff, ...others]])
+  })
+
+  test('a run that changed only other files logs each other-file row, for the TUI default (WD-M3)', async () => {
+    const disk = roleFolderDisk()
+    const edits = { [beFile('role.json')]: '{"id":"be","edited":true}\n' }
+    const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, edits]]))
+    const run = diskIo(disk)
+    await improveBuiltFiles(run.io, io, [BE_BUILT_FILE], DEFAULT_LOCATIONS)
+    const rows = otherFilesLines('.cadre/be', ['.cadre/be/role.json'])
+    expect(run.logged.slice(-rows.length)).toEqual(rows)
   })
 
   test('a run with no other change adds no warning and no other-files rows', async () => {
