@@ -116,7 +116,7 @@ export function historyLines(scan: HistoryScan): string[] {
  */
 function historyDirOf(state: InitState): string | null {
   const { locations } = state.draft
-  const userDir = locations === undefined ? null : userDirOf(locations, locations.root, [])
+  const userDir = locations === undefined ? null : userDirOf(locations, [locations.root], [])
   if (locations === undefined || userDir === null) return null
 
   return historyDir(userDir, locations.root)

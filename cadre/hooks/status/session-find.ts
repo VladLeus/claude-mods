@@ -263,7 +263,7 @@ export async function sessionOf(
 ): Promise<FoundSession | null> {
   const { locations, id, startFolder } = input
   // The status reply has no warning lines, so an ignored CLAUDE_CONFIG_DIR only falls back here (D-238).
-  const userDir = userDirOf(locations, locations.root, [])
+  const userDir = userDirOf(locations, [locations.root], [])
   const titled = await titledSession(io, host, transcriptFolderOf(userDir, startFolder), id)
   if (titled !== null) return { sessionId: titled, foundBy: 'title', folder: startFolder }
   const home = locations.givenHome

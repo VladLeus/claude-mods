@@ -529,7 +529,7 @@ export async function roleFoldersOf(
   locations: InitLocations,
 ): Promise<((id: string) => string) | null> {
   // An ignored CLAUDE_CONFIG_DIR is named in init's scan warnings, so its warning is not repeated here (D-238).
-  const userDir = userDirOf(locations, locations.root, [])
+  const userDir = userDirOf(locations, [locations.root], [])
   if (userDir === null) return null
   const common = await gitCommonDirOf(io, host, locations.root)
   if (common === null) return null

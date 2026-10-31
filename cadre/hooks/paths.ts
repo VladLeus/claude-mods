@@ -163,13 +163,12 @@ export function resolvedPath(given: string, realPath: string | undefined, label:
 }
 
 /**
- * CLAUDE_CONFIG_DIR when it is set, safe and outside the repo; null when unset,
+ * CLAUDE_CONFIG_DIR when it is set, safe and outside every root in `roots`; null when unset,
  * and null with a warning when unusable.
  */
-function usableConfigDir(env: ReadEnv, warnings: string[]): string | null {
-  const { root, configDir } = env
+function usableConfigDir(configDir: string | null, roots: readonly string[], warnings: string[]): string | null {
   if (configDir === null) return null
-  if (isSafeConfigDir(configDir) && relativeTo(configDir, root) === null) return configDir
+  if (isSafeConfigDir(configDir) && roots.every(root => relativeTo(configDir, root) === null)) return configDir
   warnings.push(CONFIG_DIR_WARNING)
 
   return null
@@ -182,7 +181,7 @@ function usableConfigDir(env: ReadEnv, warnings: string[]): string | null {
  */
 export function userFolderOf(env: ReadEnv, warnings: string[]): string | null {
   const { root, home } = env
-  const configDir = usableConfigDir(env, warnings)
+  const configDir = usableConfigDir(env.configDir, [env.root], warnings)
   if (configDir !== null) return configDir
   const homeFolder = home !== null && home !== '' && isSafeConfigDir(home) ? `${home}/.claude` : null
   if (homeFolder !== null && relativeTo(homeFolder, root) === null) return homeFolder
@@ -206,17 +205,18 @@ export function mangledProjectDir(path: string): string {
 
 /**
  * The user folder, where the user-level sources and the session history live: CLAUDE_CONFIG_DIR when it is set, an
- * absolute path with no empty, `.` or `..` segment and outside the repo at `root` (the rule userFolderOf uses), else
+ * absolute path with no empty, `.` or `..` segment and outside every root in `roots` (the repo root, and for a launch
+ * also the root as given and the main checkout a worktree is nested in, WF-S4; the rule userFolderOf uses), else
  * `<home>/.claude`; null when there is neither. A value that is set but fails the rule is not used and adds
  * CONFIG_DIR_WARNING to `warnings` (D-238). Every caller takes the user folder from here, so none disagree on it
  * (IN-02).
  */
 export function userDirOf(
   ctx: { readonly configDir: string | null; readonly home: string | null },
-  root: string,
+  roots: readonly string[],
   warnings: string[],
 ): string | null {
-  const configDir = usableConfigDir({ root, home: ctx.home, configDir: ctx.configDir }, warnings)
+  const configDir = usableConfigDir(ctx.configDir, roots, warnings)
   if (configDir !== null) return configDir
 
   return ctx.home === null ? null : `${ctx.home}/.claude`
@@ -509,7 +509,7 @@ export function parentOf(path: string): string {
  * scan of the same run, so its warning is not repeated here (D-238).
  */
 export function memoryFoldersOf(locations: InitLocations): string[] {
-  const userDir = userDirOf(locations, locations.root, [])
+  const userDir = userDirOf(locations, [locations.root], [])
   if (userDir === null) return []
 
   return Array.from(new Set([locations.root, locations.givenRoot].map(root => memoryFolderOf(userDir, root))))

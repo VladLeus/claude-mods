@@ -278,12 +278,13 @@ async function roleClaudeMdsOf(io: InitIo, root: string): Promise<string[]> {
  *   linkedMemories, and the links, removals and MEMORY.md write go to the render (`memories`) with their warnings. A
  *   whole-files role gets none, as its memories are linked under `.runtime/instructions/` (instructionPlan).
  * A listing or read that fails counts as empty. It refuses with START_NO_HOME when there is no home folder, before
- * any run, and with START_NO_GIT_DIR when git gives no absolute path. Then each level of the role memory folder
- * (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its instructions/ subfolder) is
- * stat'ed, and `<userDir>` and each level but the last listed, and it refuses with privateFolderRefusal when
- * privateLevelsProblem finds a level that is a link, is not a folder, or whose parent could not be listed (02-GAPS-B3
- * C5), before any step runs; `<userDir>` itself is never checked, as a linked config folder is common. No setting
- * value, hook command or file text is ever part of a refusal or a warning.
+ * any run, and with START_NO_GIT_DIR when git gives no absolute path; only then is the user folder taken, with
+ * CLAUDE_CONFIG_DIR checked against the root, the root as given and the main checkout (D-238, WF-S4). Then each level
+ * of the role memory folder (roleFolderLevels: `<userDir>/cadre`, `<repo>-<hash8>`, the role memory folder and its
+ * instructions/ subfolder) is stat'ed, and `<userDir>` and each level but the last listed, and it refuses with
+ * privateFolderRefusal when privateLevelsProblem finds a level that is a link, is not a folder, or whose parent could
+ * not be listed (02-GAPS-B3 C5), before any step runs; `<userDir>` itself is never checked, as a linked config folder
+ * is common. No setting value, hook command or file text is ever part of a refusal or a warning.
  */
 export async function gatherLaunchUser(
   io: InitIo,
@@ -298,10 +299,13 @@ export async function gatherLaunchUser(
 ): Promise<LaunchUserRead> {
   const { locations } = input
   const { home } = locations
-  const userDir = userDirOf(locations, locations.root, [])
-  if (home === null || userDir === null) return { kind: 'refuse', text: START_NO_HOME }
+  if (home === null) return { kind: 'refuse', text: START_NO_HOME }
   const commonDir = await gitCommonDirOf(io, host, locations.root)
   if (commonDir === null) return { kind: 'refuse', text: START_NO_GIT_DIR }
+  const main = mainCheckoutOf(commonDir.gitCommonDir, locations.root)
+  const userDir = userDirOf(locations, [locations.root, locations.givenRoot, ...(main === null ? [] : [main])], [])
+  // Fail closed: with a home, userDirOf always gives a folder.
+  if (userDir === null) return { kind: 'refuse', text: START_NO_HOME }
   const levels = roleFolderLevels(roleMemoryDir({ userDir, ...commonDir }, input.role.id))
   const stats = new Map<string, PortStat | null>()
   for (const level of levels) stats.set(level, await io.stat(level))
@@ -315,7 +319,6 @@ export async function gatherLaunchUser(
   }
   const hooks: LaunchHook[] = []
   for (const source of hookSourcesFor(input.launchStart)) hooks.push(...launchHooksOf(await io.settings(source)))
-  const main = mainCheckoutOf(commonDir.gitCommonDir, locations.root)
   const user: LaunchUser = {
     root: locations.root,
     givenRoot: locations.givenRoot,
