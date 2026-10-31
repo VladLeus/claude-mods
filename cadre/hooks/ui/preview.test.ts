@@ -616,3 +616,24 @@ describe('dialogPlan (WD-S2)', () => {
     expect(plan?.notes.map(note => note.question)).toEqual(['Pick one?'])
   })
 })
+
+describe('the TUI-default preview rows (WD-S3)', () => {
+  /** A context of `count` lines `line 1`, `line 2`, ...: an own-skills list. */
+  function linesContext(count: number): AskContext {
+    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind: 'skills' }
+  }
+
+  test('a 22-line context shows 20 lines and +2 more above, the title on the 22nd row; 21 lines fit whole', () => {
+    const cases: readonly (readonly [number, readonly string[]])[] = [
+      [22, [...linesContext(20).lines, '+2 more above']],
+      [21, linesContext(21).lines],
+    ]
+    for (const [count, shown] of cases) {
+      const context = linesContext(count)
+      const open: OpenQuestion = { question: 'Pick one?', header: 'Pick', context, acceptsTyped: false }
+      const plan = dialogPlan([PICK_QUESTION], open, 'tui-default', null, null, 'Change it')
+      const [previews = []] = optionPreviews(plan?.questions ?? undefined)
+      expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
+    }
+  })
+})

@@ -2439,7 +2439,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.logs.some(line => line.includes(BIDI_OVERRIDE))).toBe(false)
     const [preview] = log.askPreviews[log.asks.findIndex(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))] ?? []
     const marker = typeof preview === 'string' ? preview.split('\n').at(-2) : null
-    expect(marker).toBe(`+${rows.length - PREVIEW_ROWS} more above`)
+    expect(marker).toBe(`+${rows.length - (PREVIEW_ROWS - 1)} more above`)
   })
 
   test('a pane surface prints no context as transcript rows, however long (D-228)', async ($, on) => {
