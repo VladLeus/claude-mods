@@ -80,7 +80,7 @@ import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
-import type { Answer, Effect, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
+import type { Answer, Effect, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -511,6 +511,14 @@ export async function perform(
       return unreachable
     }
   }
+}
+
+/** A state's effect performed (WD-S1 stub until its GREEN): the effect through perform, and null for the end. */
+export async function performState(io: InitIo, options: InitOptions, state: InitState): Promise<Answer | null> {
+  const { effect } = state
+  if (effect.kind === 'end') return null
+
+  return perform(io, options, effect)
 }
 
 /**

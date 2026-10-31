@@ -158,7 +158,7 @@ import { diffLines, lineDiff } from '../ui/diff'
 import { PANE_PAGE_ROWS } from '../ui/pane'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
-import { HISTORY_PROGRESS, MODEL_PROGRESS, planStep, runInit, SCAN_PROGRESS } from './run'
+import { HISTORY_PROGRESS, MODEL_PROGRESS, perform, performState, planStep, runInit, SCAN_PROGRESS } from './run'
 import type { InitOptions } from './run'
 import { assignStage } from './stages/assign'
 import { carryStage, ENV_DISMISSED_REASON } from './stages/carry'
@@ -226,7 +226,7 @@ import {
   rolesStage,
 } from './stages/roles'
 import { SECURITY_INSTALL_DISMISSED_REASON, SECURITY_INSTALL_PREFIX, securityStage } from './stages/security'
-import type { Answer, InitState } from './state'
+import type { Answer, Effect, InitState } from './state'
 
 /**
  * What a --dry-run reply of the INIT_ANSWERS team (pm, tl, security) says Confirm writes outside the repo, right
@@ -5307,5 +5307,37 @@ describe('question contexts (D-211, D-236)', () => {
       lines: ['Source: session', 'Tools: 1 (issues)', 'Recommended: none'],
       kind: 'mcp-server',
     })
+  })
+})
+
+describe('performState (WD-S1)', () => {
+  const OPTIONS: InitOptions = { dryRun: true }
+  const EFFECT_SPEC: AskSpec = { options: ['Effect A', 'Effect B'], header: 'Effect' }
+  const OPEN_SPEC: AskSpec = { options: ['Open A', 'Open B'], header: 'Open' }
+  const EFFECT_ASK = { kind: 'ask', question: 'The effect copy?', spec: EFFECT_SPEC } satisfies Effect
+
+  test("an ask asks the state's open question with its spec, never the effect's copy (D-204, D-230)", async () => {
+    const openQuestion = { question: 'The open question?', spec: OPEN_SPEC }
+    const run = memIo(memWorld({}), ['Open A'])
+    const answer = await performState(run.io, OPTIONS, stateAt('roles', {}, { effect: EFFECT_ASK, openQuestion }))
+    expect(answer).toEqual({ kind: 'answer', text: 'Open A' })
+    expect([run.asked, run.specs]).toEqual([['The open question?'], [OPEN_SPEC]])
+  })
+
+  test('an ask with no open question, or the end, gives null and asks nothing (fail closed)', async () => {
+    const run = memIo(memWorld({}), ['Effect A'])
+    expect(await performState(run.io, OPTIONS, stateAt('roles', {}, { effect: EFFECT_ASK }))).toBeNull()
+    expect(await performState(run.io, OPTIONS, stateAt('roles'))).toBeNull()
+    expect(run.asked).toEqual([])
+  })
+
+  test('a host operation or a model call gives what perform gives', async () => {
+    const listing = { kind: 'io', call: { id: 'list-sessions', dir: '/repo/sessions' } } satisfies Effect
+    const scan = { parts: [], files: [], memories: [], warnings: [] }
+    const grouping = { kind: 'model', call: { id: 'topics', scan } } satisfies Effect
+    for (const effect of [listing, grouping]) {
+      const given = await performState(memIo(memWorld({}), []).io, OPTIONS, stateAt('history', {}, { effect }))
+      expect(given).toEqual(await perform(memIo(memWorld({}), []).io, OPTIONS, effect))
+    }
   })
 })
