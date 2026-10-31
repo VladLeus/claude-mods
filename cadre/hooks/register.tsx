@@ -253,6 +253,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
 
       return { facts: normalizeFacts(raw, locations.configDir, locations.givenRoot), gsdUserDir }
     },
+    gsdIdentity: async () => null,
     sessionId: () => $.session.id().catch(() => null),
     now: () => $.clock.now().catch(() => null),
     cadreVersion: async () => {

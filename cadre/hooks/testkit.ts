@@ -297,6 +297,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     isInteractive: async () => world.interactive,
     locations: async () => world.locations,
     facts: async () => world.facts,
+    gsdIdentity: async () => null,
     sessionId: async () => world.sessionId,
     now: async () => world.now,
     cadreVersion: async () => world.cadreVersion,

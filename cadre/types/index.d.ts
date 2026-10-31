@@ -573,8 +573,17 @@ export type InitIo = {
   readonly isInteractive: () => Promise<boolean | null>
   /** Null when the session root cannot be read. */
   readonly locations: () => Promise<InitLocations | null>
-  /** The detect pipeline (the one GSD runtime identity call included) for these locations. */
+  /**
+   * The detect pipeline for these locations. It never runs GSD's runtime identity call, so a GSD install found but not
+   * proven stays unproven here; only gsdIdentity runs that call, after the user said Yes (D-243).
+   */
   readonly facts: (locations: InitLocations) => Promise<InitFacts>
+  /**
+   * Runs GSD's own runtime-identity check for the user-level install and gives that candidate as read with the call
+   * allowed: argv-only, with the GSD folder as its working folder (WR-01); null when there is no user-level candidate.
+   * Called only after the user said Yes to the GSD check (D-243). Never rejects.
+   */
+  readonly gsdIdentity: (locations: InitLocations) => Promise<RawGsdCandidate | null>
   readonly sessionId: () => Promise<string | null>
   readonly now: () => Promise<number | null>
   /** The version in cadre's own plugin.json; null when it cannot be read. */
@@ -622,8 +631,9 @@ export type HostEnvName = 'TMUX' | 'TERM_PROGRAM'
 /**
  * The write and run port apply and `/cadre start` run through, beside InitIo; `/cadre status` is given its run member
  * only (`Pick<HostIo, 'run'>`, #63 A3), so it cannot write. register.tsx builds it from closures over `$`. InitIo never
- * gets these members, so a path that is given only an InitIo (detect, every --dry-run, every refusal and cancel)
- * cannot write or run (T-03-01). Every member maps a host failure to false or null and never reads an error text.
+ * gets these members, so the paths given only an InitIo (detect, every --dry-run, every refusal and cancel) get no
+ * HostIo write or run port; the only run they can make is the gated GSD runtime identity call, and only after the user
+ * said Yes (D-243, T-03-01). Every member maps a host failure to false or null and never reads an error text.
  */
 export type HostIo = {
   /** Writes the text to an absolute path, creating its parent folders; false when the host refused or failed. */
@@ -645,9 +655,10 @@ export type IdentityRunResult = {
 
 /**
  * The read port the facts collector goes through (MUST 18). register.tsx builds it from closures over `$`, so
- * scan/facts/collect never sees `$`; collectFacts and locationsOf are the only ones it is given to. Every member but
- * runIdentity maps a host throw to null and never reads an error text. It reads, and runs the one gated runtime
- * identity call, nothing else: it has no general run, write or spawn member (T-02.1-26).
+ * scan/facts/collect never sees `$`; collectFacts, collectGsdIdentity and locationsOf are the only ones it is given to
+ * (collectGsdIdentity only after the user said Yes to the GSD check, D-243). Every member but runIdentity maps a host
+ * throw to null and never reads an error text. It reads, and runs the one gated runtime identity call, nothing else:
+ * it has no general run, write or spawn member (T-02.1-26).
  */
 export type FactsPort = {
   /** Whether the path exists; null when the host could not say. */
