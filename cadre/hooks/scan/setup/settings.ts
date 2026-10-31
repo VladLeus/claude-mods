@@ -9,6 +9,7 @@ import type { CarryFacts, HookScript, InitIo, SettingsSource, SetupScan } from '
 import { fieldKeysOf, isObject, keysOf } from '../../core/json'
 import { ENV_NAME_PATTERN, MAX_HOOK_NAME_CHARS } from '../../core/names'
 import { isChangedByClean, sortedUnique } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts/normalize'
 import {
   foldEnabledPlugins,
@@ -58,7 +59,7 @@ export function stableNames(names: readonly string[], maxChars: number): string[
 export function unfitNameWarnings(count: number, noun: string, source: string): string[] {
   if (count === 0) return []
 
-  return [`ignored ${count} ${noun} ${count === 1 ? 'name' : 'names'} from ${source} that a role.json cannot hold`]
+  return [tn('scan.settings.unfitNames', count, { count, noun, source })]
 }
 
 /** Whether a hook script basename fits the role.json cap, so a role can carry it (D-62). */
@@ -98,7 +99,9 @@ export function hookNameWarnings(sources: readonly SettingsEntry[]): string[] {
     const scripts = hookScriptsMatching(entry.value, entry.source, HOOK_SCRIPT_PATTERN).map(hook => hook.script)
     const tooLong = new Set(scripts.filter(script => !fitsHookCap(script)))
 
-    return unfitNameWarnings(tooLong.size, 'hook script', `the ${entry.source} settings`)
+    const source = t('scan.setup.settings.hookNameWarnings2', { source: entry.source })
+
+    return unfitNameWarnings(tooLong.size, t('scan.setup.settings.hookNameWarnings'), source)
   })
 }
 
@@ -155,10 +158,14 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
 /** One warning per settings key and enabledPlugins key that clean would change, as the Facts report them. */
 export function settingsNameWarnings(sources: readonly SettingsEntry[]): string[] {
   return [
-    ...hiddenNameWarnings(sources.flatMap(entry => keysOf(entry.value)), 'settings key', MAX_KEY_CHARS),
+    ...hiddenNameWarnings(
+      sources.flatMap(entry => keysOf(entry.value)),
+      t('scan.setup.settings.settingsNameWarnings'),
+      MAX_KEY_CHARS,
+    ),
     ...hiddenNameWarnings(
       sources.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
-      'enabledPlugins key',
+      t('scan.setup.settings.settingsNameWarnings2'),
       MAX_KEY_CHARS,
     ),
   ]
@@ -170,7 +177,7 @@ export async function readSettings(io: InitIo, warnings: string[]): Promise<Sett
   for (const source of SOURCE_ORDER) {
     const value = await io.settings(source)
     if (!isObject(value)) {
-      warnings.push(`could not read ${source} settings (treated as unknown)`)
+      warnings.push(t('scan.unknown', { what: t('scan.couldNotReadSettings', { source: source }) }))
       continue
     }
     read.push({ source, value })
@@ -191,7 +198,8 @@ export async function installedPluginKeys(
 ): Promise<string[]> {
   if (userDir === null) return []
   const value = await readJson(io, ctx, `${userDir}/plugins/installed_plugins.json`, MAX_READ_BYTES, warnings)
-  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), 'installed plugin key', MAX_KEY_CHARS))
+  const noun = t('scan.setup.settings.installedPluginKeys')
+  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), noun, MAX_KEY_CHARS))
 
   return parseInstalledPlugins(value, ctx.root, ctx.givenRoot).map(plugin => plugin.key)
 }

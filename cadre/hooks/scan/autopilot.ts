@@ -6,6 +6,7 @@
  */
 import type { PortRead } from '../../types'
 import { isObject, parseJsonValue } from '../core/json'
+import { t } from '../locales/t'
 import { trimSlash } from '../paths'
 
 /**
@@ -73,14 +74,8 @@ export function autopilotRunState(read: PortRead, now: number): RunState {
 export function autopilotReply(state: RunState, command: 'init' | 'regen'): string | null {
   if (state === 'none') return null
   if (state === 'active') {
-    return (
-      `cadre ${command} does not run inside an active autopilot run in this session. ` +
-      `Stop it with /autopilot stop, or run /cadre ${command} in another session.`
-    )
+    return t('scan.autopilot.autopilotReply', { command })
   }
 
-  return (
-    `cadre ${command} can't tell whether autopilot is running in this session ` +
-    '(its status file could not be read), so it stopped.'
-  )
+  return t('scan.autopilot.autopilotReply2', { command })
 }

@@ -10,6 +10,7 @@
 import type { InitIo, InstructionPart, InstructionScan, MemoryItem, PartSource } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { clean, countedNoun, sortedUnique, utf8Bytes } from '../../core/text'
+import { t } from '../../locales/t'
 import {
   displayPath,
   isDirInsideRoot,
@@ -129,19 +130,19 @@ const MAX_PARTS = 120
 const MAX_REFERENCED_DOCS = 20
 
 /** The warning when `.claude/rules` could not be listed before the consent (G-02-1f Sources): no rule file is read. */
-export const RULES_UNLISTED_WARNING = 'could not list .claude/rules (treated as unknown)'
+export const RULES_UNLISTED_WARNING = t('scan.unknown', { what: t('scan.rulesUnlisted') })
 
 /**
  * The warning for the docs past MAX_REFERENCED_DOCS that the read repo files link to (G-02-1f Sources): not read, so
  * no role gets them (02-GAPS-B2 S2).
  */
 export function moreDocsWarning(count: number): string {
-  return `${count} more referenced docs were not read: no role gets them`
+  return t('scan.instructions.read.moreDocsWarning', { count })
 }
 
 /** The warning for a file over the read cap (G-02-1f): it is not split, so no role gets it (02-GAPS-B2 S2). */
 export function overSizeWarning(file: string): string {
-  return `${file} is over ${MAX_READ_BYTES / 1024} KiB, not split: no role gets it`
+  return t('scan.instructions.read.overSizeWarning', { file, value: MAX_READ_BYTES / 1024 })
 }
 
 /**
@@ -149,7 +150,7 @@ export function overSizeWarning(file: string): string {
  * (02-GAPS-B2 S2).
  */
 export function outsideWarning(file: string): string {
-  return `${file} is outside the repo and your config folder, not read: no role gets it`
+  return t('scan.instructions.read.outsideWarning', { file })
 }
 
 /**
@@ -158,7 +159,7 @@ export function outsideWarning(file: string): string {
  * it (02-GAPS-B2 S2).
  */
 export function repoImportWarning(file: string): string {
-  return `${file} is imported by a repo file and is outside the repo, not read: no role gets it`
+  return t('scan.instructions.read.repoImportWarning', { file })
 }
 
 /**
@@ -166,7 +167,7 @@ export function repoImportWarning(file: string): string {
  * M3): it is not read.
  */
 export function unfollowedImportWarning(file: string): string {
-  return `${file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it`
+  return t('scan.instructions.read.unfollowedImportWarning', { file })
 }
 
 /**
@@ -174,10 +175,7 @@ export function unfollowedImportWarning(file: string): string {
  * under projects/, cadre/ or plugins/ (isReadableConfigFile); it is not read, so no role gets it.
  */
 export function configFileWarning(file: string): string {
-  return (
-    `${file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or plugins/), ` +
-    'not read: no role gets it'
-  )
+  return t('scan.instructions.read.configFileWarning', { file })
 }
 
 /**
@@ -188,12 +186,12 @@ export function totalCapWarning(count: number): string {
   const files = countedNoun(count, 'file', 'files')
   const which = count === 1 ? 'it' : 'them'
 
-  return `stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB in total, ${files} not read: no role gets ${which}`
+  return t('scan.instructions.read.totalCapWarning', { value: MAX_TOTAL_BYTES / 1024, files, which })
 }
 
 /** The warning for the parts past MAX_PARTS (G-02-1f Part unit): not offered, they stay with the root session. */
 export function morePartsWarning(count: number): string {
-  return `${count} more parts were not offered: they stay with the root session`
+  return t('scan.instructions.read.morePartsWarning', { count })
 }
 
 /** Where a path lies for the read: in the repo (with its repo-relative path), in the config folder, or elsewhere. */

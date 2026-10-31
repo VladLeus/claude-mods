@@ -6,6 +6,7 @@
  */
 import type { InitIo, PortEntry } from '../../../types'
 import { parseJsonValue } from '../../core/json'
+import { t } from '../../locales/t'
 import { displayPath } from '../../paths'
 import { listingState, missingState } from '../port-read'
 
@@ -28,7 +29,7 @@ export function shownPath(ctx: SetupContext, path: string): string {
 
 /** The warning for a path the scan could not read: its display form, never the path itself (D-57). */
 export function unreadablePathWarning(ctx: SetupContext, path: string): string {
-  return `could not read ${shownPath(ctx, path)} (treated as unknown)`
+  return t('scan.unknown', { what: t('scan.couldNotRead', { what: shownPath(ctx, path) }) })
 }
 
 /** A JSON file as the port read it: not there, unknown (unreadable, over the cap or not JSON), or its parsed value. */

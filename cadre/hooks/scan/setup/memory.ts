@@ -5,6 +5,7 @@
  */
 import type { InitIo } from '../../../types'
 import { sortedUnique } from '../../core/text'
+import { t } from '../../locales/t'
 import { markdownFileNames, MAX_FILE_NAME_CHARS, memoryFolderOf } from '../../paths'
 import { hiddenNameWarnings } from '../facts/normalize'
 import { listFolder } from './read'
@@ -26,7 +27,7 @@ export async function memoryFileNames(
   const folders = new Set([ctx.root, ctx.givenRoot].map(root => memoryFolderOf(userDir, root)))
   const names: string[] = []
   for (const folder of folders) names.push(...markdownFileNames(await listFolder(io, ctx, folder, warnings)))
-  warnings.push(...hiddenNameWarnings(names, 'memory file name', MAX_FILE_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, t('scan.setup.memory.memoryFileNames'), MAX_FILE_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_FILE_NAME_CHARS))
 }

@@ -8,6 +8,7 @@
 import type { InitIo, InstructionScan, MemoryItem } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { clean, compareText, isChangedByClean } from '../../core/text'
+import { t } from '../../locales/t'
 import { joinedPath, markdownFileNames, MAX_FILE_NAME_CHARS } from '../../paths'
 import { MAX_READ_BYTES } from '../facts/normalize'
 import { listingState } from '../port-read'
@@ -33,22 +34,22 @@ export function isMemoryIndexName(name: string): boolean {
 }
 
 /** The summary of a memory MEMORY.md has no index line for (G-02-1f Memories). */
-export const NO_MEMORY_SUMMARY = 'No summary in MEMORY.md.'
+export const NO_MEMORY_SUMMARY = t('scan.instructions.memories.noMemorySummary')
 
 /** The warning when an auto-memory folder could not be listed (G-02-1f Memories): its memories are not offered. */
-export const MEMORY_UNLISTED_WARNING = 'could not list the memory folder (treated as unknown)'
+export const MEMORY_UNLISTED_WARNING = t('scan.unknown', { what: t('scan.memoryFolderUnlisted') })
 
 /**
  * The warning for a file the port could not read (G-02-1f): its display form, never its path; no role gets it
  * (02-GAPS-B2 S2).
  */
 export function unreadableWarning(file: string): string {
-  return `could not read ${file}: no role gets it`
+  return t('scan.instructions.memories.unreadableWarning', { file })
 }
 
 /** The warning for a memory or MEMORY.md over the read cap (G-02-1f Memories; AUTO-PICK #6): it is not offered. */
 export function memoryOverSizeWarning(file: string): string {
-  return `${file} is over ${MAX_READ_BYTES / 1024} KiB: not offered`
+  return t('scan.instructions.memories.memoryOverSizeWarning', { file, value: MAX_READ_BYTES / 1024 })
 }
 
 /** An index line of MEMORY.md: `- [<title>](<file>)`, then whatever follows the link. */

@@ -5,6 +5,7 @@
  */
 import type { GsdReadTarget, ReadPlan } from '../../../types'
 import { gsdTarget } from '../../framework/gsd/identity'
+import { t } from '../../locales/t'
 import { trimSlash, userFolderOf } from '../../paths'
 import type { ReadEnv } from '../../paths'
 

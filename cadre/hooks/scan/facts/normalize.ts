@@ -8,6 +8,7 @@ import type { EntryKind, Facts, RawFacts, RepoEntry } from '../../../types'
 import { fieldKeysOf, isObject } from '../../core/json'
 import { clean, isChangedByClean } from '../../core/text'
 import { gsdFactOf, usableCandidates } from '../../framework/gsd/identity'
+import { t } from '../../locales/t'
 import { MAX_WARNING_CHARS, safeWarnings } from '../../paths'
 import {
   foldEnabledPlugins,
@@ -42,12 +43,12 @@ export function hiddenNameWarnings(names: readonly string[], kind: string, maxCh
   const named = changed.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(name => {
     const shown = clean(name, MAX_HIDDEN_NAME_CHARS)
 
-    return clean(`ignored ${kind} "${shown}": its name has hidden characters or is too long`, MAX_WARNING_CHARS)
+    return clean(t('scan.facts.normalize.hiddenNameWarnings', { kind, shown }), MAX_WARNING_CHARS)
   })
   const rest = changed.length - named.length
   if (rest === 0) return named
 
-  return [...named, `ignored ${rest} more ${kind} names that have hidden characters or are too long`]
+  return [...named, t('scan.facts.normalize.hiddenNameWarnings2', { rest, kind })]
 }
 
 function isEntryKind(value: unknown): value is EntryKind {
@@ -88,14 +89,18 @@ export function normalizeFacts(raw: RawFacts, configDir: string | null, givenRoo
   const gsdWarnings: string[] = []
   const gsd = usableCandidates(raw.gsd).map(candidate => gsdFactOf(candidate, raw, configDir, gsdWarnings))
   const hiddenWarnings = [
-    ...hiddenNameWarnings(entryNames(raw.repoEntries), 'repo entry', MAX_NAME_CHARS),
-    ...hiddenNameWarnings(entryNames(raw.docsEntries), 'docs/ entry', MAX_NAME_CHARS),
+    ...hiddenNameWarnings(entryNames(raw.repoEntries), t('scan.facts.normalize.normalizeFacts'), MAX_NAME_CHARS),
+    ...hiddenNameWarnings(entryNames(raw.docsEntries), t('scan.facts.normalize.normalizeFacts2'), MAX_NAME_CHARS),
     ...hiddenNameWarnings(
       settings.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
-      'enabledPlugins key',
+      t('scan.facts.normalize.normalizeFacts3'),
       MAX_KEY_CHARS,
     ),
-    ...hiddenNameWarnings(fieldKeysOf(raw.installedPlugins, 'plugins'), 'installed plugin key', MAX_KEY_CHARS),
+    ...hiddenNameWarnings(
+      fieldKeysOf(raw.installedPlugins, 'plugins'),
+      t('scan.facts.normalize.normalizeFacts4'),
+      MAX_KEY_CHARS,
+    ),
   ]
 
   return {

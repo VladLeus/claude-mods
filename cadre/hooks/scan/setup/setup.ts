@@ -5,6 +5,7 @@
  */
 import type { InitIo, SetupScan } from '../../../types'
 import { sortedUnique } from '../../core/text'
+import { t } from '../../locales/t'
 import { userDirOf } from '../../paths'
 import { agentNames } from './agents'
 import { claudeMdChain, isGlobalClaudeMdThere } from './claude-md'
@@ -15,7 +16,7 @@ import { hookNameWarnings, installedPluginKeys, projectSettings, readSettings, s
 import { commandRefs } from './skills'
 
 /** The warning when there is neither a CLAUDE_CONFIG_DIR nor a home folder to find the user-level sources in. */
-const NO_USER_DIR_WARNING = 'HOME is unset: user-level setup was not scanned'
+const NO_USER_DIR_WARNING = t('scan.setup.setup.noUserDirWarning')
 
 /**
  * The user-setup scan (SCAN-02, D-57): every source is read through the port and projected at once to names, counts and

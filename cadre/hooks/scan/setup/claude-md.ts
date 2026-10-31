@@ -6,6 +6,7 @@
  */
 import type { InitIo } from '../../../types'
 import { isObject } from '../../core/json'
+import { t } from '../../locales/t'
 import { displayPath, trimSlash } from '../../paths'
 import { missingState } from '../port-read'
 import { unreadablePathWarning } from './read'
@@ -14,7 +15,7 @@ import type { SetupContext } from './read'
 /** The file names the host is asked for in each folder from the file system root down to the repo (D-57). */
 const CLAUDE_MD_NAMES: readonly string[] = ['CLAUDE.md', '.claude/CLAUDE.md']
 /** The warning when the host cannot list the CLAUDE.md files above the repo. */
-const CHAIN_WARNING = 'could not read the CLAUDE.md chain (treated as unknown)'
+const CHAIN_WARNING = t('scan.unknown', { what: t('scan.chainUnread') })
 
 /**
  * The CLAUDE.md files of a `$.fs.ancestors` answer as absolute paths, in the order the host gave them (the file system

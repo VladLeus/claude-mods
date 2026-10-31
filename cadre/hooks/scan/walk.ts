@@ -5,6 +5,7 @@
  */
 import type { EntryKind, InitIo, PortEntry } from '../../types'
 import { compareText, isChangedByClean, shown } from '../core/text'
+import { t } from '../locales/t'
 
 /** Code points a repo entry name keeps; a longer name is skipped, as the detection skips it (WR-03). */
 export const MAX_ENTRY_NAME_CHARS = 255
@@ -105,9 +106,9 @@ function isWalkable(entry: PortEntry): boolean {
 
 /** The warning for a folder the host could not list; the root is named as the repo root. */
 function listWarning(path: string): string {
-  if (path === '') return 'could not list the repo root (treated as unknown)'
+  if (path === '') return t('scan.unknown', { what: t('scan.repoRootUnlisted') })
 
-  return `could not list ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
+  return t('scan.unknown', { what: t('scan.couldNotList', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
 }
 
 /**

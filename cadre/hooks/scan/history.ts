@@ -6,6 +6,7 @@
  */
 import type { InitIo, PortEntry } from '../../types'
 import { asciiLower, compareText } from '../core/text'
+import { t } from '../locales/t'
 import { projectFolderOf } from '../paths'
 import { listingState } from './port-read'
 

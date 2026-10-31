@@ -7,6 +7,7 @@
  */
 import type { InitIo, ReadState, RepoScan, ScanFinding, ScanKind } from '../../types'
 import { compareText } from '../core/text'
+import { t } from '../locales/t'
 import { trimSlash } from '../paths'
 import { parseCadreState, parseManifest } from '../state/cadre-files'
 import { hiddenNameWarnings, MAX_READ_BYTES } from './facts/normalize'
@@ -39,14 +40,14 @@ async function readCadreFile<T>(
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
   if (read.state === 'absent') return { state: 'absent', value: null }
   if (read.state !== 'text') {
-    warnings.push(`could not read ${path} (treated as unknown)`)
+    warnings.push(t('scan.unknown', { what: t('scan.couldNotRead', { what: path }) }))
 
     return { state: 'unknown', value: null }
   }
 
   const value = parse(read.text)
   if (value === null) {
-    warnings.push(`ignored ${path}: not a valid cadre ${noun} (treated as unknown)`)
+    warnings.push(t('scan.unknown', { what: t('scan.notValidCadre', { what: path, noun: noun }) }))
 
     return { state: 'unknown', value: null }
   }
@@ -70,7 +71,7 @@ async function cadreDirState(io: InitIo, root: string): Promise<ReadState> {
 async function readCadre(io: InitIo, root: string, warnings: string[]): Promise<RepoScan['cadre']> {
   const dir = await cadreDirState(io, root)
   if (dir === 'absent') return { dir, manifest: null, manifestState: 'absent', state: null, stateState: 'absent' }
-  if (dir === 'unknown') warnings.push('could not list .cadre (treated as unknown)')
+  if (dir === 'unknown') warnings.push(t('scan.unknown', { what: t('scan.cadreUnlisted') }))
 
   const manifest = await readCadreFile(io, root, 'manifest.json', parseManifest, 'manifest', warnings)
   const state = await readCadreFile(io, root, 'cadre.json', parseCadreState, 'state', warnings)
@@ -132,7 +133,8 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, trimSlash(root))
   const found: Findings = new Map()
   addMarkers(found, walked.seen)
-  const warnings = [...walked.warnings, ...hiddenNameWarnings(walked.hidden, 'repo entry', MAX_ENTRY_NAME_CHARS)]
+  const hidden = hiddenNameWarnings(walked.hidden, t('scan.repo.scanRepo'), MAX_ENTRY_NAME_CHARS)
+  const warnings = [...walked.warnings, ...hidden]
   // One file at a time and in walk order, so the first path that names a dependency is always the same one.
   for (const path of packageFilesOf(walked.seen)) {
     const problem = await readDependencies(found, io, root, path)

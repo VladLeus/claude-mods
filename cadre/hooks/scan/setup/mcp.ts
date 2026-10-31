@@ -9,6 +9,7 @@ import type { InitIo, McpRef, McpSource } from '../../../types'
 import { fieldKeysOf, isObject } from '../../core/json'
 import { NAME_PATTERN } from '../../core/names'
 import { compareText, sortedUnique } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { claudeJsonPathOf, isFileInsideRoot, trimSlash } from '../../paths'
 import { hiddenNameWarnings, MAX_READ_BYTES } from '../facts/normalize'
 import { isInsideRepo, readJson, readJsonFile, shownPath } from './read'
@@ -41,7 +42,7 @@ const CONNECTOR_PREFIX = 'claude_ai_'
 const MAX_CONNECTOR_NAMES = 100
 
 /** The warning when the host cannot list the session tools. */
-const TOOLS_WARNING = 'could not list session tools (treated as unknown)'
+const TOOLS_WARNING = t('scan.unknown', { what: t('scan.sessionToolsUnlisted') })
 
 /**
  * MCP servers of one source: the names that clean leaves unchanged and that fit the role.json name rule (NAME_PATTERN),
@@ -58,7 +59,7 @@ function mcpRefsOf(names: readonly string[], source: McpSource): McpRef[] {
 function unfitMcpWarnings(names: readonly string[], source: string): string[] {
   const unfit = stableNames(names, MAX_REF_NAME_CHARS).filter(name => !NAME_PATTERN.test(name))
 
-  return unfitNameWarnings(unfit.length, 'MCP server', source)
+  return unfitNameWarnings(unfit.length, t('scan.setup.mcp.unfitMcpWarnings'), source)
 }
 
 /**
@@ -76,9 +77,7 @@ export function isDesktopConnectorName(name: string): boolean {
  */
 function desktopConnectorWarnings(count: number): string[] {
   if (count === 0) return []
-  const reason = '(role sessions run in the terminal, where connectors are claude_ai_* servers)'
-
-  return [`left out ${count} desktop app ${count === 1 ? 'connector' : 'connectors'} ${reason}`]
+  return [tn('scan.mcp.desktopLeftOut', count, { count })]
 }
 
 /** The MCP servers a scan kept from one source, and whether it could not see every server there (A4). */
@@ -202,8 +201,8 @@ export async function sessionMcpScan(io: InitIo, warnings: string[]): Promise<Mc
   const names = toolServerNames(value)
   const connectors = new Set(names.filter(isDesktopConnectorName))
   const kept = names.filter(name => !isDesktopConnectorName(name))
-  warnings.push(...hiddenNameWarnings(kept, 'MCP server name', MAX_REF_NAME_CHARS))
-  warnings.push(...unfitMcpWarnings(kept, 'the session tools'))
+  warnings.push(...hiddenNameWarnings(kept, t('scan.setup.mcp.sessionMcpScan'), MAX_REF_NAME_CHARS))
+  warnings.push(...unfitMcpWarnings(kept, t('scan.setup.mcp.sessionMcpScan2')))
   warnings.push(...desktopConnectorWarnings(connectors.size))
 
   return mcpScanOf(projectToolServers(value), kept)
@@ -219,7 +218,7 @@ export async function projectMcpScan(io: InitIo, ctx: SetupContext, warnings: st
   if (!(await isInsideRepo(io, ctx, path, isFileInsideRoot, warnings))) return NO_MCP
   const value = await readJson(io, ctx, path, MAX_READ_BYTES, warnings)
   const names = mcpServerNames(value)
-  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, t('scan.setup.mcp.projectMcpScan'), MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
   return mcpScanOf(projectMcpJson(value), names)
@@ -245,7 +244,7 @@ export async function userConfigMcpScan(
   const value = read.state === 'parsed' ? read.value : null
   const roots = [ctx.root, ctx.givenRoot]
   const names = claudeJsonNames(value, roots)
-  warnings.push(...hiddenNameWarnings(names, 'MCP server name', MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, t('scan.setup.mcp.userConfigMcpScan'), MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
   return mcpScanOf(projectClaudeJson(value, roots), names)

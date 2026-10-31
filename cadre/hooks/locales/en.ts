@@ -899,6 +899,110 @@ export const EN = Object.freeze({
   'team.regenNeedsFramework':
     `role {id} has no framework and this repo has no default: set "framework" in .cadre/{id}/role.json ${
     ''}to gsd, superpowers or none, then run /cadre regen {id} again.`,
+
+  'scan.autopilot.autopilotReply':
+    `cadre {command} does not run inside an active autopilot run in this session. Stop it with ${
+    ''}/autopilot stop, or run /cadre {command} in another session.`,
+  'scan.autopilot.autopilotReply2':
+    `cadre {command} can't tell whether autopilot is running in this session (its status file could not ${
+    ''}be read), so it stopped.`,
+
+  'scan.facts.collect.locationsOf': 'the repo root',
+  'scan.facts.collect.locationsOf2': 'the home folder',
+
+  'scan.facts.normalize.hiddenNameWarnings': 'ignored {kind} "{shown}": its name has hidden characters or is too long',
+  'scan.facts.normalize.hiddenNameWarnings2':
+    'ignored {rest} more {kind} names that have hidden characters or are too long',
+  'scan.facts.normalize.normalizeFacts': 'repo entry',
+  'scan.facts.normalize.normalizeFacts2': 'docs/ entry',
+  'scan.facts.normalize.normalizeFacts3': 'enabledPlugins key',
+  'scan.facts.normalize.normalizeFacts4': 'installed plugin key',
+
+  'scan.instructions.memories.noMemorySummary': 'No summary in MEMORY.md.',
+  'scan.instructions.memories.unreadableWarning': 'could not read {file}: no role gets it',
+  'scan.instructions.memories.memoryOverSizeWarning': '{file} is over {value} KiB: not offered',
+
+  'scan.instructions.read.moreDocsWarning': '{count} more referenced docs were not read: no role gets them',
+  'scan.instructions.read.overSizeWarning': '{file} is over {value} KiB, not split: no role gets it',
+  'scan.instructions.read.outsideWarning':
+    '{file} is outside the repo and your config folder, not read: no role gets it',
+  'scan.instructions.read.repoImportWarning':
+    '{file} is imported by a repo file and is outside the repo, not read: no role gets it',
+  'scan.instructions.read.unfollowedImportWarning':
+    '{file} is linked from a repo file and is a dotfile, under .git/ or not a .md file, not read: no role gets it',
+  'scan.instructions.read.configFileWarning':
+    `{file} is not a plain .md file of your config folder (no dot name, not under projects/, cadre/ or ${
+    ''}plugins/), not read: no role gets it`,
+  'scan.instructions.read.totalCapWarning':
+    'stopped reading at {value} KiB in total, {files} not read: no role gets {which}',
+  'scan.instructions.read.morePartsWarning': '{count} more parts were not offered: they stay with the root session',
+
+  'scan.markers.markerRows': 'JavaScript/TypeScript (package.json)',
+  'scan.markers.markerRows2': 'Ruby (Gemfile)',
+  'scan.markers.markerRows3': 'Go (go.mod)',
+  'scan.markers.markerRows4': 'Python (pyproject.toml)',
+  'scan.markers.markerRows5': 'Rust (Cargo.toml)',
+  'scan.markers.markerRows6': 'Jest config',
+  'scan.markers.markerRows7': 'Vitest config',
+  'scan.markers.markerRows8': 'RSpec config',
+  'scan.markers.markerRows9': 'pytest config',
+  'scan.markers.markerRows10': 'pytest conftest',
+  'scan.markers.markerRows11': 'JS/TS test files',
+  'scan.markers.markerRows12': 'Go test files',
+  'scan.markers.markerRows13': 'RSpec spec files',
+  'scan.markers.markerRows14': 'pytest test files',
+  'scan.markers.markerRows15': 'Playwright config',
+  'scan.markers.markerRows16': 'Cypress config',
+  'scan.markers.markerRows17': 'Cypress folder',
+  'scan.markers.markerRows18': 'Rails system specs',
+  'scan.markers.markerRows19': 'Rails system tests',
+  'scan.markers.markerRows20': 'Cucumber features',
+
+  'scan.repo.scanRepo': 'repo entry',
+
+  'scan.setup.agents.agentNames': 'agent name',
+
+  'scan.setup.mcp.unfitMcpWarnings': 'MCP server',
+  'scan.setup.mcp.sessionMcpScan': 'MCP server name',
+  'scan.setup.mcp.sessionMcpScan2': 'the session tools',
+  'scan.setup.mcp.projectMcpScan': 'MCP server name',
+  'scan.setup.mcp.userConfigMcpScan': 'MCP server name',
+
+  'scan.setup.memory.memoryFileNames': 'memory file name',
+
+  'scan.setup.settings.hookNameWarnings': 'hook script',
+  'scan.setup.settings.hookNameWarnings2': 'the {source} settings',
+  'scan.setup.settings.settingsNameWarnings': 'settings key',
+  'scan.setup.settings.settingsNameWarnings2': 'enabledPlugins key',
+  'scan.setup.settings.installedPluginKeys': 'installed plugin key',
+
+  'scan.setup.setup.noUserDirWarning': 'HOME is unset: user-level setup was not scanned',
+
+  'scan.setup.skills.commandRefs': 'command or plugin name',
+  'scan.unknown': '{what} (treated as unknown)',
+  'scan.couldNotRead': 'could not read {what}',
+  'scan.couldNotParse': 'could not parse {what} as JSON',
+  'scan.couldNotList': 'could not list {what}',
+  'scan.couldNotReadSettings': 'could not read {source} settings',
+  'scan.notRegularFile': 'skipped {what}: not a regular file inside the repo',
+  'scan.notValidCadre': 'ignored {what}: not a valid cadre {noun}',
+  'scan.repoRootUnlisted': 'could not list the repo root',
+  'scan.docsUnlisted': 'could not list docs/',
+  'scan.sessionRootUnread': 'could not read the session root',
+  'scan.cadreUnlisted': 'could not list .cadre',
+  'scan.rulesUnlisted': 'could not list .claude/rules',
+  'scan.memoryFolderUnlisted': 'could not list the memory folder',
+  'scan.sessionToolsUnlisted': 'could not list session tools',
+  'scan.commandsUnlisted': 'could not list commands and skills',
+  'scan.chainUnread': 'could not read the CLAUDE.md chain',
+  'scan.mcp.desktopLeftOut.one':
+    `left out {count} desktop app connector ${
+    ''}(role sessions run in the terminal, where connectors are claude_ai_* servers)`,
+  'scan.mcp.desktopLeftOut.other':
+    `left out {count} desktop app connectors ${
+    ''}(role sessions run in the terminal, where connectors are claude_ai_* servers)`,
+  'scan.settings.unfitNames.one': 'ignored {count} {noun} name from {source} that a role.json cannot hold',
+  'scan.settings.unfitNames.other': 'ignored {count} {noun} names from {source} that a role.json cannot hold',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

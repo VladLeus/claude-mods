@@ -6,6 +6,7 @@
  */
 import type { InitIo, PortEntry } from '../../../types'
 import { sortedUnique } from '../../core/text'
+import { t } from '../../locales/t'
 import { isDirInsideRoot, MARKDOWN_EXTENSION, markdownFileNames } from '../../paths'
 import { hiddenNameWarnings } from '../facts/normalize'
 import { MAX_REF_NAME_CHARS } from './mcp'
@@ -35,7 +36,7 @@ export async function agentNames(
   const userEntries = userDir === null ? [] : await listFolder(io, ctx, `${userDir}/agents`, warnings)
   const entries = [...userEntries, ...(await repoAgentEntries(io, ctx, warnings))]
   const names = markdownFileNames(entries).map(name => name.slice(0, -MARKDOWN_EXTENSION.length))
-  warnings.push(...hiddenNameWarnings(names, 'agent name', MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, t('scan.setup.agents.agentNames'), MAX_REF_NAME_CHARS))
 
   return sortedUnique(stableNames(names, MAX_REF_NAME_CHARS))
 }

@@ -7,6 +7,7 @@
 import type { InitIo } from '../../types'
 import { fieldKeysOf, isObject, keysOf, parseJsonValue } from '../core/json'
 import { shown } from '../core/text'
+import { t } from '../locales/t'
 import { MAX_READ_BYTES } from './facts/normalize'
 import { addFinding, MANIFEST_FILES, MARKER_ROWS } from './markers'
 import type { Findings, ManifestKind } from './markers'
@@ -40,10 +41,14 @@ export async function readDependencies(
   path: string,
 ): Promise<string | null> {
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (read.state !== 'text') return `could not read ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
+  if (read.state !== 'text') {
+    return t('scan.unknown', { what: t('scan.couldNotRead', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+  }
 
   const value = parseJsonValue(read.text)?.value
-  if (!isObject(value)) return `could not parse ${shown(path, MAX_WARNING_PATH_CHARS)} as JSON (treated as unknown)`
+  if (!isObject(value)) {
+    return t('scan.unknown', { what: t('scan.couldNotParse', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+  }
 
   const names = new Set(DEPENDENCY_GROUPS.flatMap(group => keysOf(value[group])))
   for (const row of MARKER_ROWS) {
@@ -325,9 +330,13 @@ export async function readManifest(
 ): Promise<string | null> {
   const path = MANIFEST_FILES[kind]
   const read = await readRepoFile(io, root, path, MAX_READ_BYTES)
-  if (read.state !== 'text') return `could not read ${shown(path, MAX_WARNING_PATH_CHARS)} (treated as unknown)`
+  if (read.state !== 'text') {
+    return t('scan.unknown', { what: t('scan.couldNotRead', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+  }
   const listed = manifestNames(kind, read.text)
-  if (listed === null) return `could not parse ${shown(path, MAX_WARNING_PATH_CHARS)} as JSON (treated as unknown)`
+  if (listed === null) {
+    return t('scan.unknown', { what: t('scan.couldNotParse', { what: shown(path, MAX_WARNING_PATH_CHARS) }) })
+  }
 
   const names = new Set(listed)
   for (const row of MARKER_ROWS) {

@@ -6,6 +6,7 @@
  */
 import type { ScanFinding, ScanKind } from '../../types'
 import { freezeRows } from '../core/freeze'
+import { t } from '../locales/t'
 import type { Seen } from './walk'
 
 /** The language, by display name, of each source file extension; an extension that is not here is not source (D-55). */
@@ -131,27 +132,27 @@ export const MARKER_ROWS: readonly MarkerRow[] = freezeRows([
   manifestRow('e2e', 'capybara', 'gemfile', 'capybara'),
   manifestRow('e2e', 'selenium-webdriver', 'gemfile', 'selenium-webdriver'),
   manifestRow('e2e', 'cuprite', 'gemfile', 'cuprite'),
-  fileRow('lang', 'JavaScript/TypeScript (package.json)', /^package\.json$/),
-  fileRow('lang', 'Ruby (Gemfile)', /^Gemfile$/),
-  fileRow('lang', 'Go (go.mod)', /^go\.mod$/),
-  fileRow('lang', 'Python (pyproject.toml)', /^pyproject\.toml$/),
-  fileRow('lang', 'Rust (Cargo.toml)', /^Cargo\.toml$/),
-  fileRow('test', 'Jest config', /^jest\.config\./),
-  fileRow('test', 'Vitest config', /^vitest\.config\./),
-  fileRow('test', 'RSpec config', /^\.rspec$/),
-  fileRow('test', 'pytest config', /^pytest\.ini$/),
-  fileRow('test', 'pytest conftest', /^conftest\.py$/),
-  fileRow('test', 'JS/TS test files', /\.(test|spec)\.[cm]?[jt]sx?$/),
-  fileRow('test', 'Go test files', /_test\.go$/),
-  fileRow('test', 'RSpec spec files', /_spec\.rb$/),
-  fileRow('test', 'pytest test files', /^test_.+\.py$/),
-  fileRow('e2e', 'Playwright config', /^playwright\.config\./),
-  fileRow('e2e', 'Cypress config', /^cypress\.config\./),
-  dirRow('e2e', 'Cypress folder', 'cypress'),
+  fileRow('lang', t('scan.markers.markerRows'), /^package\.json$/),
+  fileRow('lang', t('scan.markers.markerRows2'), /^Gemfile$/),
+  fileRow('lang', t('scan.markers.markerRows3'), /^go\.mod$/),
+  fileRow('lang', t('scan.markers.markerRows4'), /^pyproject\.toml$/),
+  fileRow('lang', t('scan.markers.markerRows5'), /^Cargo\.toml$/),
+  fileRow('test', t('scan.markers.markerRows6'), /^jest\.config\./),
+  fileRow('test', t('scan.markers.markerRows7'), /^vitest\.config\./),
+  fileRow('test', t('scan.markers.markerRows8'), /^\.rspec$/),
+  fileRow('test', t('scan.markers.markerRows9'), /^pytest\.ini$/),
+  fileRow('test', t('scan.markers.markerRows10'), /^conftest\.py$/),
+  fileRow('test', t('scan.markers.markerRows11'), /\.(test|spec)\.[cm]?[jt]sx?$/),
+  fileRow('test', t('scan.markers.markerRows12'), /_test\.go$/),
+  fileRow('test', t('scan.markers.markerRows13'), /_spec\.rb$/),
+  fileRow('test', t('scan.markers.markerRows14'), /^test_.+\.py$/),
+  fileRow('e2e', t('scan.markers.markerRows15'), /^playwright\.config\./),
+  fileRow('e2e', t('scan.markers.markerRows16'), /^cypress\.config\./),
+  dirRow('e2e', t('scan.markers.markerRows17'), 'cypress'),
   pathRow('be', 'rails', 'file', /^config\/application\.rb$/),
-  pathRow('e2e', 'Rails system specs', 'dir', /^spec\/system$/),
-  pathRow('e2e', 'Rails system tests', 'dir', /^test\/system$/),
-  pathRow('e2e', 'Cucumber features', 'file', /^features\/(?:[^/]+\/)?[^/]+\.feature$/),
+  pathRow('e2e', t('scan.markers.markerRows18'), 'dir', /^spec\/system$/),
+  pathRow('e2e', t('scan.markers.markerRows19'), 'dir', /^test\/system$/),
+  pathRow('e2e', t('scan.markers.markerRows20'), 'file', /^features\/(?:[^/]+\/)?[^/]+\.feature$/),
 ])
 
 /** The findings so far, one per kind and label. */

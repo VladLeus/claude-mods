@@ -17,6 +17,7 @@ import type {
 import { utf8Bytes } from '../../core/text'
 import { runtimeBuiltPath, runtimeIdentityArgv, runtimeSkipProblem } from '../../framework/gsd/identity'
 import type { ProbedGsdCandidate } from '../../framework/gsd/identity'
+import { t } from '../../locales/t'
 import { displayPath, HOME_UNUSABLE_WARNING, isFileInsideRoot, resolvedPath } from '../../paths'
 import { MAX_READ_BYTES, parseRepoEntries } from './normalize'
 import { factReadPlan } from './plan'
@@ -71,10 +72,11 @@ async function resolvedOf(port: FactsPort, given: string, label: string, warning
  */
 export async function locationsOf(port: FactsPort, sessionRoot: string): Promise<InitLocations> {
   const warnings: string[] = []
-  const root = await resolvedOf(port, sessionRoot, 'the repo root', warnings)
+  const root = await resolvedOf(port, sessionRoot, t('scan.facts.collect.locationsOf'), warnings)
   const home = await homeFolder(port)
   if (home === null) warnings.push(HOME_UNUSABLE_WARNING)
-  const resolvedHome = home === null ? null : await resolvedOf(port, home, 'the home folder', warnings)
+  const homeLabel = t('scan.facts.collect.locationsOf2')
+  const resolvedHome = home === null ? null : await resolvedOf(port, home, homeLabel, warnings)
   const given = { givenRoot: sessionRoot, givenHome: home }
   const configDir = await configDirOf(port)
   if (configDir === null || !configDir.startsWith('/')) {
@@ -115,13 +117,13 @@ async function readText(
   const isThere = (await port.exists(path)) ?? true
   if (!isThere) return null
   if (isRepoFile && !(await isSafeRepoFile(port, read, path))) {
-    read.warnings.push(`skipped ${warningPath(read, path)}: not a regular file inside the repo (treated as unknown)`)
+    read.warnings.push(t('scan.unknown', { what: t('scan.notRegularFile', { what: warningPath(read, path) }) }))
 
     return null
   }
   const text = await port.read(path)
   if (typeof text !== 'string' || utf8Bytes(text) > MAX_READ_BYTES) {
-    read.warnings.push(`could not read ${warningPath(read, path)} (treated as unknown)`)
+    read.warnings.push(t('scan.unknown', { what: t('scan.couldNotRead', { what: warningPath(read, path) }) }))
 
     return null
   }
@@ -139,7 +141,7 @@ async function readJson(port: FactsPort, read: ReadContext, path: string, isRepo
   try {
     return JSON.parse(text)
   } catch {
-    read.warnings.push(`could not parse ${warningPath(read, path)} as JSON (treated as unknown)`)
+    read.warnings.push(t('scan.unknown', { what: t('scan.couldNotParse', { what: warningPath(read, path) }) }))
 
     return null
   }
@@ -164,7 +166,7 @@ async function settingsOf(port: FactsPort, read: ReadContext): Promise<RawFacts[
   for (const source of SETTINGS_SOURCES) {
     const value = await port.settings(source)
     if (value === null) {
-      read.warnings.push(`could not read ${source} settings (treated as unknown)`)
+      read.warnings.push(t('scan.unknown', { what: t('scan.couldNotReadSettings', { source: source }) }))
       continue
     }
     found.push({ source, value })
@@ -222,9 +224,9 @@ export async function collectFacts(port: FactsPort, locations: InitLocations): P
   const { root, home, configDir } = locations
   const plan = factReadPlan({ root, home, configDir })
   const read: ReadContext = { root, home, configDir, warnings: [...locations.warnings, ...plan.warnings] }
-  const repoEntries = await listFolder(port, read, root, 'could not list the repo root (treated as unknown)')
+  const repoEntries = await listFolder(port, read, root, t('scan.unknown', { what: t('scan.repoRootUnlisted') }))
   const docsEntries = hasDocsFolder(repoEntries)
-    ? await listFolder(port, read, `${root}/docs`, 'could not list docs/ (treated as unknown)')
+    ? await listFolder(port, read, `${root}/docs`, t('scan.unknown', { what: t('scan.docsUnlisted') }))
     : []
   const settings = await settingsOf(port, read)
   const installedPlugins =
@@ -249,6 +251,6 @@ export function rootUnknownFacts(): RawFacts {
     settings: [],
     installedPlugins: null,
     gsd: [],
-    warnings: ['could not read the session root (treated as unknown)'],
+    warnings: [t('scan.unknown', { what: t('scan.sessionRootUnread') })],
   }
 }

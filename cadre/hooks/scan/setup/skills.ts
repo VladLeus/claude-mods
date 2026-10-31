@@ -8,6 +8,7 @@ import type { InitIo, SkillRef } from '../../../types'
 import { isObject } from '../../core/json'
 import { NAME_PATTERN } from '../../core/names'
 import { clean, compareText } from '../../core/text'
+import { t } from '../../locales/t'
 import { hiddenNameWarnings } from '../facts/normalize'
 import { MAX_REF_NAME_CHARS } from './mcp'
 
@@ -17,7 +18,7 @@ const MAX_SKILL_PURPOSE_CHARS = 120
 /** Command sources a scan does not name: the host ships its built-in commands, and an MCP server adds its prompts. */
 const UNNAMED_SOURCES: readonly string[] = ['builtin', 'mcp']
 /** The warning when the host cannot list the commands and skills. */
-const COMMANDS_WARNING = 'could not list commands and skills (treated as unknown)'
+const COMMANDS_WARNING = t('scan.unknown', { what: t('scan.commandsUnlisted') })
 
 /** Whether a command name, or the plugin that adds a command, is a plain ASCII name of at most 100 characters. */
 function isCommandName(value: unknown): value is string {
@@ -100,7 +101,7 @@ export async function commandRefs(io: InitIo, warnings: string[]): Promise<Skill
 
     return []
   }
-  warnings.push(...hiddenNameWarnings(skillNames(value), 'command or plugin name', MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(skillNames(value), t('scan.setup.skills.commandRefs'), MAX_REF_NAME_CHARS))
 
   return projectCommands(value)
 }
