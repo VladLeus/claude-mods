@@ -45,6 +45,11 @@ export function previewColumns(presentationColumns: unknown): number | null {
   return columns
 }
 
+/** The preview's columns at each ask (#163 stub until its GREEN): the command's (previewColumns). */
+export function latestColumns(viewportColumns: unknown, presentationColumns: unknown): number | null {
+  return previewColumns(presentationColumns)
+}
+
 /**
  * The rows of context lines a dialog option's preview shows on the TUI default (D-228): the rows the spike measured
  * on the terminal main screen at 48 rows (`rows - 26`). The engine hides a preview's rows past its box, and the

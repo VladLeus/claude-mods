@@ -9,6 +9,7 @@ import {
   askRewrite,
   dialogPlan,
   fitPreview,
+  latestColumns,
   MAX_PREVIEW_CHARS,
   OWN_ANSWER_HINT,
   previewColumns,
@@ -668,5 +669,24 @@ describe('tuiTranscriptRows (WD-S4)', () => {
     expect(tuiTranscriptRows(rebuilt, printed)).toEqual([])
     expect(tuiTranscriptRows(changed, printed)).toEqual(['Lines', ...changed.lines])
     expect(tuiTranscriptRows(retitled, printed)).toEqual(['Other', ...printed.lines])
+  })
+})
+
+describe('latestColumns (#163)', () => {
+  test('a valid width a terminal drawing reported wins; else the command columns; neither valid gives none', () => {
+    const cases: readonly (readonly [unknown, unknown, number | null])[] = [
+      [100, 80, 62],
+      [160, null, 122],
+      [null, 80, 42],
+      [undefined, 80, 42],
+      ['100', 80, 42],
+      [30, 80, 42],
+      [100.5, 80, 42],
+      [null, null, null],
+      [10, 'x', null],
+    ]
+    for (const [viewport, presentation, columns] of cases) {
+      expect([viewport, presentation, latestColumns(viewport, presentation)]).toEqual([viewport, presentation, columns])
+    }
   })
 })

@@ -1978,6 +1978,27 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     expect([rows.every(row => Array.from(row).length <= 42), rows.join(' '), rows.length]).toEqual([true, line, 3])
   })
 
+  /** The preview rows of the next AskUserQuestion call of PICK_QUESTION, between its fences (D-231). */
+  async function pickPreviewRows($: Engine, log: HostLog): Promise<string[]> {
+    const before = log.askPreviews.length
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [PICK_QUESTION] }).catch(() => null)
+    const [preview] = log.askPreviews.slice(before)[0] ?? []
+
+    return typeof preview === 'string' ? preview.split('\n').slice(2, -1) : []
+  }
+
+  test('each option follows a terminal resize: the width the pane render reported less 38 (#163)', async ($, on) => {
+    const log = newLog()
+    const line = Array.from({ length: 20 }, () => 'word').join(' ')
+    openAsCadre(on, PICK_QUESTION.question, { title: 'Wide', lines: [line], kind: 'review' })
+    fakeHost(on, initWorld(), log)
+    const presentation = { isFullscreen: false, columns: 80 }
+    await $.command.run({ command: 'cadre', args: 'init --dry-run', origin: { kind: 'composer' }, presentation })
+    await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE, viewport: { columns: 100, rows: 48 } })
+    const rows = await pickPreviewRows($, log)
+    expect([rows.every(row => Array.from(row).length <= 62), rows.join(' '), rows.length]).toEqual([true, line, 2])
+  })
+
   test('a note typed in the dialog is what $.ui.ask resolves to, trimmed (A3)', WITH_ASKER, async ($, on) => {
     const log = newLog()
     openAsCadre(on, PICK_QUESTION.question)
