@@ -2,7 +2,8 @@
  * The line diff, a layer 8 module: the changed lines of two texts, kept by their longest common subsequence, and the
  * pane rows that show them, capped (G-02-1f, D-141). It imports core, so the improver block of apply reads it here.
  */
-import { reportText } from '../core/text'
+import { redactedText } from '../core/redact'
+import { MAX_REPORT_CHARS } from '../core/text'
 import { tn } from '../locales/t'
 
 /** One changed line of a line diff (G-02-1f, D-141): a line only the new text has, or one only the old text had. */
@@ -101,12 +102,13 @@ const MAX_DIFF_ROWS = 200
 
 /**
  * The pane rows of a line diff (G-02-1f, D-141): `+ <line>` for an added line and `- <line>` for a removed one, in text
- * order, each line cleaned and capped as a report cell is (reportText); past MAX_DIFF_ROWS rows the first ones, then
+ * order, each line cleaned, its secret-like spans hidden and only then capped at a report cell's length (redactedText,
+ * E1, PR-S1), so no cap cuts a secret into a visible prefix; past MAX_DIFF_ROWS rows the first ones, then
  * `... <n> more changed lines`.
  */
 export function diffLines(diff: LineDiff): string[] {
   const kept = diff.rows.slice(0, MAX_DIFF_ROWS)
-  const lines = kept.map(row => `${row.kind === 'added' ? '+' : '-'} ${reportText(row.line)}`)
+  const lines = kept.map(row => `${row.kind === 'added' ? '+' : '-'} ${redactedText(row.line, MAX_REPORT_CHARS)}`)
   const rest = diff.rows.length - kept.length
   if (rest === 0) return lines
 

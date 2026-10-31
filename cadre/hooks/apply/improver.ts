@@ -10,7 +10,6 @@ import type { AskContext, HostIo, HostRun, InitIo, InitLocations, PortRead } fro
 import { sha256Hex } from '../core/hash'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
-import { redactSecrets } from '../core/redact'
 import { compareText, reportText, sortedUnique } from '../core/text'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { editWriteRules } from '../launch/deny'
@@ -173,14 +172,14 @@ export function improverContextLine(diff: LineDiff): string {
 
 /**
  * The improver block of one file (G-02-1f, D-141): its shown path with how many lines the improver added and removed,
- * then the changed lines (diffLines) with their secret-like spans hidden (redactSecrets, E1; only the shown lines,
- * never the text the improver left or cadre writes back).
+ * then the changed lines as diffLines shows them, their secret-like spans hidden before the cap (E1, PR-S1; only the
+ * shown lines, never the text the improver left or cadre writes back).
  */
 export function improverBlockLines(path: string, diff: LineDiff): string[] {
   return [t('apply.improver.improverBlockLines', {
     path,
     diffCounts: diffCounts(diff),
-  }), ...diffLines(diff).map(line => redactSecrets(line))]
+  }), ...diffLines(diff)]
 }
 
 /**

@@ -101,7 +101,7 @@ export function utf8Bytes(text: string): number {
  * The most code points one report cell keeps, the ellipsis included. It is the same cap facts.ts gives a host warning,
  * so no untrusted text reaches the report longer than a warning may be.
  */
-const MAX_REPORT_CHARS = 240
+export const MAX_REPORT_CHARS = 240
 
 /** The most code points of a scanned name that a card rule or a warning shows. A scanned name is data, not trusted. */
 const MAX_SHOWN_CHARS = 110
