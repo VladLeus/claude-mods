@@ -3179,7 +3179,7 @@ describe('Phase 2 faked-host matrix', () => {
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
     expect(paneLines(log, 'scan').join('\n')).toContain('MCP servers: datadog, linear, sentry')
-    expect(paneLines(log, 'scan').join('\n')).toContain('CLAUDE.md files: <repo>/CLAUDE.md')
+    expect(paneLines(log, 'scan').join('\n')).toContain('CLAUDE.md files: repo/CLAUDE.md')
     expect(log.ops).toContain(`fs.read ${HISTORY_DIR}/${token}.jsonl`)
     expect(paneLines(log, 'history')).toEqual([
       'Session history (names and counts only):',

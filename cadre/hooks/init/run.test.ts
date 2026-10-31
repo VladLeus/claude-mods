@@ -2673,10 +2673,18 @@ describe('carryStep', () => {
       CONTENT_QUESTION,
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
       'Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)',
-      'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
+      'Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
     expect(asked[modelAt + 8]).toBe(GIT_POLICY_QUESTION)
+  })
+
+  test('the instruction consent context names the repo by its folder name, not <repo> (D-226)', async () => {
+    const run = memIo(secretWorld(), PARTS_DECLINED)
+    await runInit(run.io, { dryRun: true })
+    const lines = run.specs[firstLines(run.asked).indexOf(CONTENT_QUESTION)]?.context?.lines ?? []
+
+    expect([lines.includes('  repo/CLAUDE.md'), lines.includes('  <repo>/CLAUDE.md')]).toEqual([true, false])
   })
 
   test('no env, settings or file value of the secret world reaches a question, log or pane (T-02-34)', async () => {
