@@ -9,34 +9,34 @@
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
 import { clean, idsOrNone, moreLine, sortedUnique } from '../core/text'
-import { tn } from '../locales/t'
+import { t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
 import type { NameAssignment, SkillGroup } from './assign-rules'
 
 /** The dialog button that gives an item to no role. A typed answer of the same words counts the same, in any case. */
-export const NONE_OPTION = 'None'
+export const NONE_OPTION = t('init.answers.noneOption')
 
 /** The dialog button that gives an item to every role. A typed answer of the same words, or `all`, counts the same. */
-export const ALL_OPTION = 'All roles'
+export const ALL_OPTION = t('init.answers.allOption')
 
 /** The most code points of a scanned name that a question shows. A scanned name is data, not text to trust. */
 const MAX_SHOWN_NAME_CHARS = 60
 
 /** The hint that ends every question whose answer is a list of roles. */
-const ROLE_ANSWER_HINT = '(e.g. BE, QA, or none)'
+const ROLE_ANSWER_HINT = t('init.answers.roleAnswerHint')
 
 /** The question for an MCP server the table does not decide. The name is cleaned and cut to 60 code points. */
 export function mcpQuestion(name: string): string {
-  return `Which roles get the ${clean(name, MAX_SHOWN_NAME_CHARS)} MCP server? ${ROLE_ANSWER_HINT}`
+  return t('init.answers.mcpQuestion', { name: clean(name, MAX_SHOWN_NAME_CHARS), roleAnswerHint: ROLE_ANSWER_HINT })
 }
 
 /** How often a skill group was used, as the question shows it: ` (used <n> times in recent sessions)`, or nothing. */
 function usesText(uses: number | undefined): string {
   if (uses === undefined || uses === 0) return ''
 
-  return ` (used ${uses} ${uses === 1 ? 'time' : 'times'} in recent sessions)`
+  return tn('init.answers.uses', uses, { count: uses })
 }
 
 /**
@@ -47,11 +47,16 @@ function usesText(uses: number | undefined): string {
 export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
   const label = clean(group.label, MAX_SHOWN_NAME_CHARS)
 
-  return `Which roles get ${label} skills (${group.names.length})?${usesText(uses)} ${ROLE_ANSWER_HINT}`
+  return t('init.answers.skillGroupQuestion', {
+    label,
+    count: group.names.length,
+    uses: usesText(uses),
+    roleAnswerHint: ROLE_ANSWER_HINT,
+  })
 }
 
 /** What a skill's purpose reads when the engine gave the skill no description (D-139, G-02-1b). */
-export const NO_SKILL_PURPOSE = 'No description.'
+export const NO_SKILL_PURPOSE = t('init.answers.noSkillPurpose')
 
 /**
  * How often the history scan saw one skill, as the own-skills block and questions say it (G-02-1b): `<n> time(s) in
@@ -62,11 +67,10 @@ export function skillUsesText(count: number): string {
 }
 
 /** The first row of the own-skills block (G-02-1b): which skills it lists, and what giving one to a role means. */
-const OWN_SKILLS_HEADING =
-  'Skills with no plugin (a role given a skill can run it in its session; a role not given it cannot):'
+const OWN_SKILLS_HEADING = t('init.answers.ownSkillsHeading')
 
 /** The last row of the own-skills block when the model gave no usable recommendation (G-02-1b). */
-const NO_SKILL_RECOMMENDATION_ROW = 'The model gave no usable recommendation: no role gets a skill unless you pick one.'
+const NO_SKILL_RECOMMENDATION_ROW = t('init.answers.noSkillRecommendationRow')
 
 /** The ids the recommendation gives the own skills (G-02-1b): S1, S2, ... by their places in the list. */
 export function ownSkillIds(skills: readonly SkillRef[]): string[] {
@@ -78,10 +82,13 @@ export function ownSkillIds(skills: readonly SkillRef[]): string[] {
  * then its own use count (left out at 0) and the roles recommended for it.
  */
 function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): string[] {
-  const used = count === 0 ? '' : `used ${skillUsesText(count)}; `
+  const used = count === 0 ? '' : t('init.answers.ownSkillUsed', { skillUses: skillUsesText(count) })
   const purpose = redactSecrets(skill.purpose ?? NO_SKILL_PURPOSE)
 
-  return [`  ${skill.name}: ${purpose}`, `    ${used}recommended: ${idsOrNone(ids)}`]
+  return [
+    t('init.answers.ownSkillRow', { name: skill.name, purpose }),
+    t('init.answers.ownSkillRecommended', { used, ids: idsOrNone(ids) }),
+  ]
 }
 
 /**
@@ -218,10 +225,10 @@ export const MODEL_EFFORT_OPTIONS: readonly string[] = Object.freeze([
 ])
 
 /** The button that asks a question once and applies the answer to every role (D-86). */
-export const SAME_FOR_ALL = 'Same for all roles'
+export const SAME_FOR_ALL = t('init.answers.sameForAll')
 
 /** The button that asks the question for each role in turn (D-86). */
-export const PER_ROLE = 'Per role'
+export const PER_ROLE = t('init.answers.perRole')
 
 /** The effort levels `claude --effort` takes on 2.1.295, lowest first (P18); roles.ts owns the list. */
 export { EFFORTS }
@@ -258,13 +265,16 @@ export function modelEffortRefusal(answer: string): string {
   const typed = clean(answer.trim(), MAX_SHOWN_NAME_CHARS)
 
   return (
-    `Cannot use ${typed}: type a model and an effort, such as opus + high. ` +
-    `Models: ${MODEL_ALIASES.join(', ')}. Efforts: ${EFFORTS.join(', ')}.`
+    t('init.answers.modelEffortRefusal', {
+      typed,
+      modelAliases: MODEL_ALIASES.join(', '),
+      efforts: EFFORTS.join(', '),
+    })
   )
 }
 
 /** The button that carries every scanned env variable name. A typed answer of the same words, or `all`, counts too. */
-export const ALL_ENV_OPTION = 'All of them'
+export const ALL_ENV_OPTION = t('init.answers.allEnvOption')
 
 /**
  * Reads a typed answer to "which env variables do roles carry?" into names (D-60). Only names from the scanned list
@@ -314,24 +324,24 @@ export function cappedNames(names: readonly string[]): string {
 export function envQuestion(names: readonly string[]): string {
   const shown = cappedNames(names)
 
-  return `Which env variables do roles carry? Names: ${shown} (values are never stored; e.g. API_KEY, or none)`
+  return t('init.answers.envQuestion', { shown })
 }
 
 /** What each instruction group is called in a question (D-63). Only the group is named; no content is ever shown. */
 export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Object.freeze({
-  'global-claude-md': 'your global ~/.claude/CLAUDE.md and the files it imports',
-  'auto-memory': 'the auto-memories for this repo',
-  'project-claude-md': 'the project CLAUDE.md',
+  'global-claude-md': t('init.answers.instructionLabelsGlobalClaudeMd'),
+  'auto-memory': t('init.answers.instructionLabelsAutoMemory'),
+  'project-claude-md': t('init.answers.instructionLabelsProjectClaudeMd'),
 })
 
 /** The hint that ends a memory question. */
-const MEMORY_ANSWER_HINT = '(e.g. PM, TL, or none)'
+const MEMORY_ANSWER_HINT = t('init.answers.memoryAnswerHint')
 
 /** The names a memory question shows, in brackets, as cappedNames gives them. Empty with no name. */
 function shownNames(names: readonly string[]): string {
   if (names.length === 0) return ''
 
-  return ` (${cappedNames(names)})`
+  return t('init.answers.shownNames', { cappedNames: cappedNames(names) })
 }
 
 /**
@@ -340,5 +350,9 @@ function shownNames(names: readonly string[]): string {
  * the rest counted; the content is never shown.
  */
 export function memoryQuestion(group: InstructionGroup, names: readonly string[]): string {
-  return `Which roles get ${INSTRUCTION_LABELS[group]}${shownNames(names)}? ${MEMORY_ANSWER_HINT}`
+  return t('init.answers.memoryQuestion', {
+    instructionLabels: INSTRUCTION_LABELS[group],
+    shownNames: shownNames(names),
+    memoryAnswerHint: MEMORY_ANSWER_HINT,
+  })
 }
