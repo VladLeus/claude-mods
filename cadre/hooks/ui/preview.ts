@@ -53,6 +53,12 @@ export function previewColumns(presentationColumns: unknown): number | null {
 export const PREVIEW_ROWS = 22
 
 /**
+ * The context lines a TUI-default preview holds (D-228, WD-S3): PREVIEW_ROWS less the row its bold title takes, the
+ * rows reviewPages pages the Review by too.
+ */
+export const PREVIEW_LINE_ROWS = PREVIEW_ROWS - 1
+
+/**
  * What the TUI-default preview shows of a context (D-228): the lines it draws, and whether the context holds more lines
  * than that, so register prints the whole context as transcript rows right above the dialog.
  */
@@ -337,13 +343,13 @@ export type DialogPlan = {
  * default, where no pane opens (D-208), or while the terminal main screen seats the pane inline (`placement`), where
  * the engine hides it behind a dialog, and only for an open question with a context of its own: each single-select
  * question gets that context as the preview of every option (D3, D-203), wrapped to `columns` (D-231) and on the TUI
- * default fitted to PREVIEW_ROWS (D-228), and, when it takes a typed answer (D-234), a Describe your own option or the
- * hint line (A2), and its notes are the questions the rewrite paired, so notes typed in the dialog become the answer
- * under the question's text as asked (A3). A question with no context (a hunk, the claude.json consent) keeps its
- * dialog as asked, Other row included: null. On a pane surface that previews nothing, the dialog of the open question
- * that offers an option labelled `changeLabel` (the review's Change something…, D-233) is passed through as asked
- * (questions null) and its one note pairs the open question with itself, so a note typed in it becomes its answer
- * (ASKED #24). Every other call gets null.
+ * default fitted to PREVIEW_LINE_ROWS (D-228, WD-S3), and, when it takes a typed answer (D-234), a Describe your own
+ * option or the hint line (A2), and its notes are the questions the rewrite paired, so notes typed in the dialog
+ * become the answer under the question's text as asked (A3). A question with no context (a hunk, the claude.json
+ * consent) keeps its dialog as asked, Other row included: null. On a pane surface that previews nothing, the dialog of
+ * the open question that offers an option labelled `changeLabel` (the review's Change something…, D-233) is passed
+ * through as asked (questions null) and its one note pairs the open question with itself, so a note typed in it
+ * becomes its answer (ASKED #24). Every other call gets null.
  */
 export function dialogPlan(
   raw: unknown,
@@ -357,7 +363,7 @@ export function dialogPlan(
   const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
   if (asked !== open.question) return null
   const isPreviewed = surface === 'tui-default' || (surface === 'pane' && placement === 'inline')
-  const rows = surface === 'tui-default' ? PREVIEW_ROWS : null
+  const rows = surface === 'tui-default' ? PREVIEW_LINE_ROWS : null
   const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, columns, rows) : null
   const options: unknown = isObject(first) ? first.options : null
   const isChange = (option: unknown): boolean => isObject(option) && option.label === changeLabel

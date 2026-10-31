@@ -39,7 +39,7 @@ import {
   questionPaneBlocks,
   questionScroll,
 } from './ui/pane'
-import { answersFromNotes, dialogPlan, fitPreview, previewColumns, PREVIEW_ROWS } from './ui/preview'
+import { answersFromNotes, dialogPlan, fitPreview, previewColumns, PREVIEW_LINE_ROWS } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -142,7 +142,7 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
  */
 function beforeTuiDialog($: EngineInterface, context: AskContext | null): void {
   $.ui.status(undefined)
-  if (context === null || !fitPreview(context, PREVIEW_ROWS).isOverflow) return
+  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS).isOverflow) return
   for (const line of [context.title, ...context.lines]) $.ui.log(reportText(line))
 }
 
