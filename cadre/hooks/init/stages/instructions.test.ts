@@ -11,6 +11,7 @@ import type {
   SetupScan,
 } from '../../../types'
 import { sha256Hex } from '../../core/hash'
+import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
 import {
@@ -248,6 +249,16 @@ describe('instruction questions (G-02-1f)', () => {
     expect(NO_MEMORY_SUMMARY).toBe('No summary in MEMORY.md.')
     const deploy = memory('M3', 'deploy.md', 'Deploy the app')
     expect(memoryItemContextLine(deploy, [])).toBe('Deploy the app. Recommended: none.')
+  })
+
+  test('a secret-like span of a topic or memory summary is hidden in its question context line (WD-S5)', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topic = { ...SECURITY_TOPIC, summary: `Uses ${secret} on staging` }
+    expect(topicContextLine(topic, PARTS, [])).toBe(
+      `Uses token=${REDACTED} on staging. Recommended: none. From: ~/.claude/CLAUDE.md > Security.`,
+    )
+    const squad = memory('M1', 'squad.md', `Deploy with ${secret}`)
+    expect(memoryItemContextLine(squad, [])).toBe(`Deploy with token=${REDACTED}. Recommended: none.`)
   })
 
   test('the memory chip is Memory i/n, and just Memory when that is over 12 characters', () => {

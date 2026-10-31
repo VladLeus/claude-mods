@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionHandout, Plan, RoleChange } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import type { Gathered } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
@@ -390,6 +391,21 @@ describe('the review stage (D-230)', () => {
     const ended = nextStage({ ...asking, outputs: [] }, { kind: 'answer', text: 'Change git policy' })
     expect(ended.effect).toEqual({ kind: 'end', reply: cancelledReply(REVIEW_ROUNDS_REASON) })
     expect(ended.outputs).toEqual([{ kind: 'log', text: REVIEW_ROUNDS_REASON }])
+  })
+})
+
+describe('review redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a review line is hidden in the review block and its paged context', async () => {
+    const [first] = REVIEW_DRAFT.roles
+    const title = `Lead ${['token', 'ab12cd34ef56'].join('=')}`
+    const roles = REVIEW_DRAFT.roles.map((role, at) => (at === 0 ? { ...role, title } : role))
+    const state = reviewAt({ roles })
+    const asking = nextStage(state, planAnswer(await plannedFor(state)))
+    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const context = asking.openQuestion?.spec.context?.lines ?? []
+    const row = `  Lead token=${REDACTED} (${first?.id})`
+    expect([shown.includes(row), context.includes(row)]).toEqual([true, true])
+    expect(JSON.stringify([shown, context, asking.openQuestion?.question])).not.toContain('ab12cd34ef56')
   })
 })
 

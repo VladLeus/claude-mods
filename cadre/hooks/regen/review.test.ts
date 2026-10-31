@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart } from '../../types'
+import { REDACTED } from '../core/redact'
 import { memory } from '../testkit'
-import { regenPartContext } from './review'
+import { regenMemoryContextLine, regenPartContext, regenPartQuestion } from './review'
 import type { RegenAsk } from './review'
 
 /** A part of the repo's CLAUDE.md: the Git section. */
@@ -43,5 +44,26 @@ describe('regen question context (D-236)', () => {
       kind: 'regen-part',
     })
     expect(context.lines.join('\n')).not.toContain(squad.folder)
+  })
+})
+
+describe('regen redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a part heading or a memory summary is hidden in the question and its context', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const part = { ...GIT_PART, heading: `Deploy ${secret}` }
+    const changed = { kind: 'part', part, change: 'changed' } satisfies RegenAsk
+    const squad = memory('M1', 'squad.md', `Uses ${secret}`)
+    const remembered = { kind: 'memory', memory: squad, change: 'changed' } satisfies RegenAsk
+    expect([
+      regenPartQuestion('be', part),
+      regenPartContext(changed, true, { position: 1, count: 2 }).lines[0],
+      regenMemoryContextLine(squad, 'changed', false),
+      regenPartContext(remembered, false, { position: 2, count: 2 }).lines[0],
+    ]).toEqual([
+      `Should be get "Deploy token=${REDACTED}" from CLAUDE.md?`,
+      `CLAUDE.md > Deploy token=${REDACTED}`,
+      `Uses token=${REDACTED}. Changed since init. Recommended: no.`,
+      `memory squad.md: Uses token=${REDACTED}`,
+    ])
   })
 })

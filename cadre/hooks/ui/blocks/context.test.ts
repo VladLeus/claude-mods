@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { rolesFromProposal } from '../../suggest/propose'
 import {
@@ -253,5 +254,26 @@ describe('question contexts (D-203, D-236)', () => {
       lines: ['Plan:', '  create .cadre/be/role.json'],
       kind: 'review',
     })
+  })
+})
+
+describe('context redaction (WD-S5, #163)', () => {
+  test('secret-like spans of summaries, role titles and purposes are hidden; a title beside them stays whole', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topic = { ...SECURITY_TOPIC, title: 'API key', summary: `Rotate ${secret} monthly` }
+    const plain = { ...topic, summary: '90-day rotation of the deploy keys' }
+    const squad = memory('M1', 'squad.md', `Uses ${secret}`)
+    expect([
+      topicContext(topic, [PART], [], 1, 1).lines[0],
+      topicContext(plain, [PART], [], 1, 1).lines[0],
+      memoryContext(squad, [], 1, 1).lines[0],
+    ]).toEqual([
+      `API key: Rotate token=${REDACTED} monthly`,
+      'API key: 90-day rotation of the deploy keys',
+      `squad.md: Uses token=${REDACTED}`,
+    ])
+    const role = templateRole('be', { title: `BE ${secret}`, purpose: `Owns ${secret} rotation.` })
+    const [, row] = rolesContext([role], []).lines
+    expect(row).toBe(`  BE token=${REDACTED} (be)  Owns token=${REDACTED} rotation.`)
   })
 })

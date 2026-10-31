@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { leaks, SECRET_FIXTURES } from '../testkit'
-import { REDACTED, redactSecrets } from './redact'
+import { leaks, SECRET_FIXTURES, ZERO_WIDTH_SPACE } from '../testkit'
+import { REDACTED, redactedText, redactSecrets } from './redact'
 
 /** A base64-like run of exactly 40 characters with digits and letters of both cases. */
 const BASE64_RUN = 'QWxhZGRpbjpvcGVuIHNlc2FtZQ0123456789abcd'
@@ -78,5 +78,21 @@ describe('redactSecrets (E1)', () => {
     expect(hidden).toBe('[hidden] Bearer [hidden] --key [hidden] SECRET=[hidden]')
     expect(leaks(hidden, SECRET_FIXTURES)).toEqual([])
     expect(redactSecrets(hidden)).toBe(hidden)
+  })
+})
+
+describe('redactedText (#163)', () => {
+  /** An `sk-` key built at run time, so secret scanners do not flag the source. */
+  const KEY = ['sk', 'FAKE0123456789abcdef'].join('-')
+
+  test('unsafe characters are stripped before the redaction, so a key split by a zero-width space is hidden', () => {
+    const split = `${KEY.slice(0, 8)}${ZERO_WIDTH_SPACE}${KEY.slice(8)}`
+    expect(redactedText(`use ${split} here`)).toBe(`use ${REDACTED} here`)
+  })
+
+  test('the cap comes after the redaction: a key across the cap is hidden, never cut into a visible prefix', () => {
+    const text = `${'x'.repeat(10)} ${KEY} and more words after it`
+    expect(redactedText(text, 20)).toBe(`${'x'.repeat(10)} ${REDACTED}…`)
+    expect(redactedText(text)).toBe(`${'x'.repeat(10)} ${REDACTED} and more words after it`)
   })
 })

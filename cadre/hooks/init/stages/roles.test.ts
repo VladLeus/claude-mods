@@ -10,6 +10,7 @@ import type {
   RoleSpec,
   UnsupportedId,
 } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { detectAll } from '../../framework/registry'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
@@ -566,6 +567,13 @@ describe('question context lines (G-02-1)', () => {
       `${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
       `no role "zz"\n${ADJUST_QUESTION}\nRoles now: pm, tl, be, qa, security.`,
     ])
+  })
+})
+
+describe('role title redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a role title is hidden in the roles question context line', () => {
+    const role = templateRole('be', { title: `BE ${['token', 'ab12cd34ef56'].join('=')}` })
+    expect(rolesContextLine([role], [])).toBe(`Proposed: BE token=${REDACTED} (be).`)
   })
 })
 

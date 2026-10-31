@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleChange, RoleSpec } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { proposeRoles } from '../../roles/propose'
 import { AUTOPILOT_THRESHOLD } from '../../roles/template'
 import { driven, roleIn, SOURCE_SCAN, stateAt, templateRole } from '../../testkit'
@@ -183,5 +184,17 @@ describe('the model stage (D-230)', () => {
     expect(run.state.draft.roles?.map(role => [role.id, role.model, role.effort])).toEqual(
       roles.map(role => [role.id, 'sonnet', 'high']),
     )
+  })
+})
+
+describe('role title redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a role title is hidden in its model question and the roles context', () => {
+    const roles = proposeRoles(SOURCE_SCAN).roles
+    const [first] = roles
+    const title = `Lead ${['token', 'ab12cd34ef56'].join('=')}`
+    const titled = roles.map((role, at) => (at === 0 ? { ...role, title } : role))
+    const run = driven(modelStage.enter(stateAt('model', { roles: titled })), ['Per role'])
+    expect(run.asked[1]?.split('\n')[0]).toBe(`Model and effort for Lead token=${REDACTED} (${first?.id})?`)
+    expect(JSON.stringify([run.asked, run.specs])).not.toContain('ab12cd34ef56')
   })
 })

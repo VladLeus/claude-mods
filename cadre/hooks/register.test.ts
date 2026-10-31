@@ -3128,7 +3128,9 @@ describe('Phase 2 faked-host matrix', () => {
     const asked = JSON.stringify([log.questionWrites, log.askPreviews])
     expect(asked).toContain('codex:rescue: ')
     expect(log.askPreviews.flat().some(preview => typeof preview === 'string')).toBe(true)
-    const shown = [out.text, ...log.logs, pane, asked, ...log.asks, ...log.askOptions.flat()].join('\n')
+    // The dialog texts as the tool call gave them, each question's second line included (WD-S5).
+    const dialogs = JSON.stringify(log.askQuestions)
+    const shown = [out.text, ...log.logs, pane, asked, dialogs, ...log.asks, ...log.askOptions.flat()].join('\n')
     expect(leaks(shown, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })

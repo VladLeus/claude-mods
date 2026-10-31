@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { fallbackTopics } from '../../suggest/topics'
-import { MEMORIES, MEMORY, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
+import { MEMORIES, MEMORY, memory, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
 import { instructionLines, instructionReviewLines } from './instructions'
 
 /**
@@ -85,6 +86,23 @@ describe('instructionLines', () => {
     const lines = instructionLines({ ...MEMORY_SCAN, parts: [], files: [] }, [], new Map())
     expect(lines.at(-1)).toBe('The model gave no usable recommendation: no role gets a part unless you pick one.')
     expect([lines.join('\n').includes(MEMORY), lines.join('\n').includes('hash of')]).toEqual([false, false])
+  })
+})
+
+describe('instructionLines redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a summary is hidden in its row; a title beside a plain summary stays whole', () => {
+    const secret = ['token', 'ab12cd34ef56'].join('=')
+    const topics = [
+      { id: 'T1', title: 'API key', summary: `Rotate ${secret} monthly`, partIds: ['P1'] },
+      { id: 'T2', title: 'API key', summary: '90-day rotation of the deploy keys', partIds: ['P2'] },
+    ]
+    const scan = { ...SCAN, memories: [memory('M1', 'squad.md', `Uses ${secret}`)] }
+    const lines = instructionLines(scan, topics, new Map())
+    expect(lines.filter(line => line.startsWith('  API key: ') || line.startsWith('  squad.md: '))).toEqual([
+      `  API key: Rotate token=${REDACTED} monthly`,
+      '  API key: 90-day rotation of the deploy keys',
+      `  squad.md: Uses token=${REDACTED}`,
+    ])
   })
 })
 

@@ -7,6 +7,11 @@
 /** What a hidden span of secret-like text reads as (E1). */
 export const REDACTED = '[hidden]'
 
+/** `text` with secret-like spans hidden before any cap (#163 stub until its GREEN): the text as given. */
+export function redactedText(text: string, maxChars: number = Number.POSITIVE_INFINITY): string {
+  return text
+}
+
 /**
  * A Bearer token: the word Bearer in any case and its spaces (group 1), then 8 or more token characters with a digit.
  */

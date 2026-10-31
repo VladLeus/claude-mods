@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Choice, RepoEntry, RoleSpec } from '../../../types'
+import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
@@ -186,6 +187,13 @@ describe('question context lines (G-02-1)', () => {
     const ambiguous: Choice = { kind: 'ambiguous', ids: ['gsd', 'superpowers'] }
     const run = driven(frameworksAt(ambiguous, proposeRoles(repoScan()).roles), ['Same for all roles', 'GSD'])
     expect(run.asked[1]).toBe(`${FRAMEWORK_ALL_QUESTION}\nRoles: ${TEAM}.`)
+  })
+})
+
+describe('role title redaction (WD-S5, #163)', () => {
+  test('a secret-like span of a role title is hidden in its framework question', () => {
+    const role = { id: 'be', title: `BE ${['token', 'ab12cd34ef56'].join('=')}` }
+    expect(frameworkRoleQuestion(role)).toBe(`Framework for BE token=${REDACTED} (be)?`)
   })
 })
 
