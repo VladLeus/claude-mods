@@ -207,8 +207,8 @@ describe('describeStep', () => {
     expect(Object.isFrozen(DESCRIBE_OPTIONS)).toBe(true)
   })
 
-  test('the describe question says to type the structure in the text field', () => {
-    expect(DESCRIBE_QUESTION).toBe('Describe your role structure in your own words (type it in the text field).')
+  test('the describe question says to type the structure under Other', () => {
+    expect(DESCRIBE_QUESTION).toBe('Describe your role structure in your own words: type it under Other.')
   })
 })
 
@@ -354,8 +354,8 @@ describe('adjustLoop', () => {
 
   test('the adjust question gives an example of each change', () => {
     expect(ADJUST_QUESTION).toBe(
-      'Adjust the roles: type one change, for example add docs "Docs writer", drop fe, rename be api "API", ' +
-        'or framework qa gsd.',
+      'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, ' +
+        'rename be api "API", or framework qa gsd.',
     )
     expect(ADJUST_OPTIONS).toEqual(['Done adjusting', 'Show the roles'])
     expect(Object.isFrozen(ADJUST_OPTIONS)).toBe(true)

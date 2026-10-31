@@ -60,7 +60,7 @@ const LAUNCH_START_WORDS: readonly Labelled<LaunchChoice>[] = Object.freeze(
 
 /** The free-text question for the folder the launchers start in, after `Another folder in this repo` (A2). */
 export const LAUNCH_DIR_QUESTION =
-  'Type the folder the launchers start in, relative to the repo root (for example apps/web).'
+  'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).'
 
 /** The context line of the launcher folder question (D-136): which folders can be used. */
 export const LAUNCH_DIR_CONTEXT = 'It must be a folder inside this repo; a link that leads out is refused.'

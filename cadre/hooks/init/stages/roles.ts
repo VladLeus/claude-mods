@@ -41,7 +41,7 @@ const ROLES_CHOICES: readonly Labelled<RolesChoice>[] = Object.freeze([
 export const ROLES_OPTIONS: readonly string[] = Object.freeze(ROLES_CHOICES.map(entry => entry.label))
 
 /** The free-text question for the person's own role structure (ROLE-02); its answer is all the model sees (D-83). */
-export const DESCRIBE_QUESTION = 'Describe your role structure in your own words (type it in the text field).'
+export const DESCRIBE_QUESTION = 'Describe your role structure in your own words: type it under Other.'
 
 /** The context line of the describe question (D-136): an example of a structure in a person's own words. */
 export const DESCRIBE_CONTEXT = 'For example: a PM, one full-stack developer, and a QA who also covers security.'
@@ -63,7 +63,7 @@ const DESCRIBE_ACCEPTS = `a description of your roles, ${quotedLabels(DESCRIBE_O
 
 /** The Adjust question (D-47): one typed change per answer, with an example of each of the four changes. */
 export const ADJUST_QUESTION =
-  'Adjust the roles: type one change, for example add docs "Docs writer", drop fe, rename be api "API", ' +
+  'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename be api "API", ' +
   'or framework qa gsd.'
 
 /** What a button of the Adjust question does: end the loop, or show the roles as they are now in the side pane. */

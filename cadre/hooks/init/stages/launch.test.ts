@@ -112,7 +112,7 @@ describe('launchStartStep', () => {
     ])
     expect(Object.isFrozen(LAUNCH_START_OPTIONS)).toBe(true)
     expect(LAUNCH_DIR_QUESTION).toBe(
-      'Type the folder the launchers start in, relative to the repo root (for example apps/web).',
+      'Type the folder the launchers start in under Other, relative to the repo root (for example apps/web).',
     )
     expect(LAUNCH_DIR_OPTIONS).toEqual(['Cancel init'])
     expect(Object.isFrozen(LAUNCH_DIR_OPTIONS)).toBe(true)
