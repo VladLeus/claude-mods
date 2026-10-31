@@ -215,13 +215,11 @@ export type Answer =
 
 /**
  * The model results a review go-back reuses instead of calling the model again (D-235, ASKED #14): the roles
- * recommended for the own skills, null until that call answered; the topics of the instruction read with the roles
- * recommended for them and the memories, both kept when the parts call answered (ASKED #137), null until then; and
- * the ids of the roles they were made for. The roles stage drops them when a go-back changes a role's id, title or
- * purpose (ASKED #137).
+ * recommended for the own skills, null until that call answered; and the topics of the instruction read with the roles
+ * recommended for them and the memories, both kept when the parts call answered (ASKED #137), null until then. The
+ * roles stage drops them when a go-back changes the team: a role's id, title or purpose (ASKED #137).
  */
 export type Kept = {
-  readonly roleIds: readonly string[]
   readonly ownSkills: ReadonlyMap<string, readonly string[]> | null
   readonly topics: readonly InstructionTopic[] | null
   readonly parts: ReadonlyMap<string, readonly string[]> | null

@@ -464,7 +464,6 @@ describe('the instructions stage (D-230)', () => {
 
 describe('instruction parts on a go-back (D-235)', () => {
   const roles = proposeRoles(repoScan()).roles
-  const roleIds = roles.map(role => role.id)
 
   /** The instructions stage on a Change roles go-back with `kept`, once the files are read again as `scan`. */
   function readAgain(kept: Kept, scan: InstructionScan): InitState {
@@ -481,14 +480,14 @@ describe('instruction parts on a go-back (D-235)', () => {
   }
 
   test('a Change roles go-back reuses the kept topics and recommendation: the hand-out with no model call', () => {
-    const entry = readAgain({ roleIds, ownSkills: null, topics: TOPICS, parts: RECOMMENDED }, SCAN)
+    const entry = readAgain({ ownSkills: null, topics: TOPICS, parts: RECOMMENDED }, SCAN)
     expect(entry.effect.kind).toBe('ask')
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(INSTRUCTIONS_ENTRY_QUESTION)
   })
 
   test('a read again with other part ids calls the topics and parts models, as a first pass (ASKED #137)', () => {
     const security = new Map([['T1', ['security']]])
-    const grouping = readAgain({ roleIds, ownSkills: null, topics: [SECURITY_TOPIC], parts: security }, SCAN)
+    const grouping = readAgain({ ownSkills: null, topics: [SECURITY_TOPIC], parts: security }, SCAN)
     expect(grouping.effect).toEqual({ kind: 'model', call: { id: 'topics', scan: SCAN } })
     const recommending = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     const call = { id: 'parts', roles, topics: TOPICS, memories: [] }
@@ -497,11 +496,11 @@ describe('instruction parts on a go-back (D-235)', () => {
 
   test('a read again that gained or lost every part calls the model again (ASKED #137)', () => {
     const memoriesOnly = { parts: [], files: [], memories: MEMORIES, warnings: [] }
-    const gained = readAgain({ roleIds, ownSkills: null, topics: null, parts: new Map([['M1', ['pm']]]) }, SCAN)
+    const gained = readAgain({ ownSkills: null, topics: null, parts: new Map([['M1', ['pm']]]) }, SCAN)
     expect(gained.effect).toEqual({ kind: 'model', call: { id: 'topics', scan: SCAN } })
     const recommending = nextStage(gained, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     expect(recommending.effect).toEqual({ kind: 'model', call: { id: 'parts', roles, topics: TOPICS, memories: [] } })
-    const lost = readAgain({ roleIds, ownSkills: null, topics: TOPICS, parts: RECOMMENDED }, memoriesOnly)
+    const lost = readAgain({ ownSkills: null, topics: TOPICS, parts: RECOMMENDED }, memoriesOnly)
     expect(lost.effect).toEqual({ kind: 'model', call: { id: 'parts', roles, topics: [], memories: MEMORIES } })
   })
 })
