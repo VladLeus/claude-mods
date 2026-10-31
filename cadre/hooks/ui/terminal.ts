@@ -7,6 +7,7 @@ import type { RunOptions, TerminalChoice } from '../../types'
 import { reportText } from '../core/text'
 import { shQuote } from '../generate/launcher'
 import { CONTRACTS, ITERM_LINES, TERMINAL_APP_LINES } from '../locales/contracts'
+import { t } from '../locales/t'
 import { launcherPath } from '../paths'
 
 /** The command that starts a role: the absolute path of its launcher `<root>/.cadre/bin/<id>`, as one shell word. */
@@ -18,13 +19,13 @@ export function launcherCommand(root: string, id: string): string {
 const CLIPBOARD_TIMEOUT_MS = 5_000
 
 /** The line below the launcher command when pbcopy copied it (D-110). */
-export const COPIED_LINE = 'Copied to the clipboard.'
+export const COPIED_LINE = t('ui.terminal.copiedLine')
 
 /**
  * The line below the launcher command when it could not be copied (D-110, D-132): pbcopy is macOS only, and a host
  * without it, or a copy that fails, still has the command printed above, so this is not an error.
  */
-export const NOT_COPIED_LINE = 'Could not copy it to the clipboard (pbcopy is macOS only): copy the line above.'
+export const NOT_COPIED_LINE = t('ui.terminal.notCopiedLine')
 
 /**
  * The run that copies the launcher command to the clipboard (D-110): `/usr/bin/pbcopy`, absolute and with no shell,
@@ -40,10 +41,10 @@ export function clipboardRun(command: string): { readonly argv: readonly string[
 }
 
 /** The refusal of `--terminal` on a host that is not macOS (D-132): the command is printed and copied all the same. */
-export const TERMINAL_MAC_ONLY = '--terminal works on macOS only: run the command above in a terminal yourself.'
+export const TERMINAL_MAC_ONLY = t('ui.terminal.terminalMacOnly')
 
 /** The refusal of `--terminal` with a value it does not take, or the switch given twice (D-109). */
-const TERMINAL_INVALID = '--terminal takes terminal, iterm or tmux: run the command above yourself.'
+const TERMINAL_INVALID = t('ui.terminal.terminalInvalid')
 
 /**
  * The refusal of a bare `--terminal` outside tmux when TERM_PROGRAM names no terminal cadre opens (D-109): it names
@@ -53,8 +54,9 @@ function terminalUnknownText(termProgram: string | null): string {
   const shown = termProgram === null ? 'unset' : reportText(termProgram)
 
   return (
-    `--terminal could not tell this terminal (TERM_PROGRAM=${shown}): ` +
-    'use --terminal=terminal, --terminal=iterm or --terminal=tmux, or run the command above yourself.'
+    t('ui.terminal.terminalUnknownText', {
+      shown,
+    })
   )
 }
 
@@ -68,7 +70,7 @@ const TMUX_WAIT = CONTRACTS.tmuxWait
  * What the reply names an iTerm open: ITERM_LINES make a tab in the current window, or a window when none is open,
  * and do not say which, so the name covers both (#63).
  */
-const ITERM_NAME = 'iTerm tab or window'
+const ITERM_NAME = t('ui.terminal.itermName')
 
 /**
  * The osascript argv that runs these AppleScript lines, each as one `-e` value, with the shell text as the last argv
@@ -134,11 +136,11 @@ export function terminalPlan(input: {
   if (choice === 'invalid') return { kind: 'refuse', text: TERMINAL_INVALID }
   const terminal = choice === 'auto' ? detectedTerminal(tmux, termProgram) : choice
   if (terminal === null) return { kind: 'refuse', text: terminalUnknownText(termProgram) }
-  if (terminal === 'tmux') return { kind: 'open', name: 'tmux window', argv: tmuxArgv(id, root, command) }
+  if (terminal === 'tmux') return { kind: 'open', name: t('ui.terminal.tmuxName'), argv: tmuxArgv(id, root, command) }
   const shellText = `cd -- ${shQuote(root)} && ${command}`
   if (terminal === 'iterm') return { kind: 'open', name: ITERM_NAME, argv: osascriptArgv(ITERM_LINES, shellText) }
 
-  return { kind: 'open', name: 'Terminal window', argv: osascriptArgv(TERMINAL_APP_LINES, shellText) }
+  return { kind: 'open', name: t('ui.terminal.terminalName'), argv: osascriptArgv(TERMINAL_APP_LINES, shellText) }
 }
 
 /** How long `uname -s` may run before it is given up. */

@@ -471,6 +471,17 @@ export const EN = Object.freeze({
   'ui.cards.statusLabelInUse': 'in use',
   'ui.cards.statusLabelNotFound': 'not found',
 
+  'ui.terminal.copiedLine': 'Copied to the clipboard.',
+  'ui.terminal.notCopiedLine': 'Could not copy it to the clipboard (pbcopy is macOS only): copy the line above.',
+  'ui.terminal.terminalMacOnly': '--terminal works on macOS only: run the command above in a terminal yourself.',
+  'ui.terminal.terminalInvalid': '--terminal takes terminal, iterm or tmux: run the command above yourself.',
+  'ui.terminal.terminalUnknownText':
+    `--terminal could not tell this terminal (TERM_PROGRAM={shown}): use --terminal=terminal, ${
+    ''}--terminal=iterm or --terminal=tmux, or run the command above yourself.`,
+  'ui.terminal.itermName': 'iTerm tab or window',
+  'ui.terminal.tmuxName': 'tmux window',
+  'ui.terminal.terminalName': 'Terminal window',
+
   'apply.conflict.keepMine': 'Keep mine',
   'apply.conflict.takeNew': 'Take new',
   'apply.conflict.question':
@@ -701,6 +712,8 @@ export const EN = Object.freeze({
   'start.run.startReplyText3': 'Run this in a terminal to start role {id}:',
   'start.run.rendered.one': 'Rendered .cadre/{id}/.runtime/ ({count} link).',
   'start.run.rendered.other': 'Rendered .cadre/{id}/.runtime/ ({count} links).',
+  'ui.diff.more.one': '... {count} more changed line',
+  'ui.diff.more.other': '... {count} more changed lines',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

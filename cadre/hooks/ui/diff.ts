@@ -2,7 +2,8 @@
  * The line diff, a layer 8 module: the changed lines of two texts, kept by their longest common subsequence, and the
  * pane rows that show them, capped (G-02-1f, D-141). It imports core, so the improver block of apply reads it here.
  */
-import { countedNoun, reportText } from '../core/text'
+import { reportText } from '../core/text'
+import { tn } from '../locales/t'
 
 /** One changed line of a line diff (G-02-1f, D-141): a line only the new text has, or one only the old text had. */
 export type DiffRow = {
@@ -109,5 +110,5 @@ export function diffLines(diff: LineDiff): string[] {
   const rest = diff.rows.length - kept.length
   if (rest === 0) return lines
 
-  return [...lines, `... ${countedNoun(rest, 'more changed line', 'more changed lines')}`]
+  return [...lines, tn('ui.diff.more', rest, { count: rest })]
 }
