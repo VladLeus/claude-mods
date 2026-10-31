@@ -22,6 +22,7 @@ import type {
   MemoryItem,
   Plan,
   PortEntry,
+  RawGsdCandidate,
   RoleSpec,
   SetupScan,
   TemplateRoleId,
@@ -158,7 +159,16 @@ import { diffLines, lineDiff } from '../ui/diff'
 import { PANE_PAGE_ROWS } from '../ui/pane'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
-import { HISTORY_PROGRESS, MODEL_PROGRESS, perform, performState, planStep, runInit, SCAN_PROGRESS } from './run'
+import {
+  consentedGsdCheck,
+  HISTORY_PROGRESS,
+  MODEL_PROGRESS,
+  perform,
+  performState,
+  planStep,
+  runInit,
+  SCAN_PROGRESS,
+} from './run'
 import type { InitOptions } from './run'
 import { assignStage } from './stages/assign'
 import { carryStage, ENV_DISMISSED_REASON } from './stages/carry'
@@ -3570,6 +3580,65 @@ const UNPROVEN: GsdFact = {
   identity: 'unknown',
   runtimeIdentityTried: false,
 }
+
+describe('consentedGsdCheck (D-243, WF-S6)', () => {
+  /** What /cadre detect collected: a user-level GSD found but not proven. */
+  const FACTS: InitFacts = { facts: { ...EMPTY_FACTS, gsd: [UNPROVEN] }, gsdUserDir: '/home/u/.claude/gsd-core' }
+  /** The user-level candidate as GSD's own check reads it: its runtime identity proves it. */
+  const PROBED: RawGsdCandidate = {
+    location: 'user',
+    dir: '/home/u/.claude/gsd-core',
+    isPresent: true,
+    versionText: null,
+    identityText: null,
+    manifest: null,
+    runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+    runtimeTried: true,
+  }
+  /** The start of the GSD check question, as the answers name it. */
+  const CHECK = "Run GSD's own check"
+
+  /** A port of a session whose dialog state is `interactive` and whose check reads PROBED, answering `answers`. */
+  function checkRun(interactive: boolean | null, answers: Readonly<Record<string, string>>): MemRun {
+    return memIo(memWorld({ interactive, probedGsd: PROBED }), answers)
+  }
+
+  test('No gives the facts back and runs no check', async () => {
+    const run = checkRun(true, { [CHECK]: 'No, skip the check' })
+    const facts = await consentedGsdCheck(run.io, FACTS, DEFAULT_LOCATIONS)
+
+    expect([facts, run.gsdIdentityCalls, run.asked.length]).toEqual([FACTS, [], 1])
+  })
+
+  test('a dismissal gives the facts back and runs no check', async () => {
+    const run = checkRun(true, {})
+    const facts = await consentedGsdCheck(run.io, FACTS, DEFAULT_LOCATIONS)
+
+    expect([facts, run.gsdIdentityCalls, run.asked.length]).toEqual([FACTS, [], 1])
+  })
+
+  test('an answer it cannot read gives the facts back and runs no check', async () => {
+    const run = checkRun(true, { [CHECK]: 'Maybe' })
+    const facts = await consentedGsdCheck(run.io, FACTS, DEFAULT_LOCATIONS)
+
+    expect([facts, run.gsdIdentityCalls, run.asked.length]).toEqual([FACTS, [], 1])
+  })
+
+  test('with no one to ask (isInteractive null) it asks nothing and runs no check, even with a Yes ready', async () => {
+    const run = checkRun(null, { [CHECK]: 'Yes, run the check' })
+    const facts = await consentedGsdCheck(run.io, FACTS, DEFAULT_LOCATIONS)
+
+    expect([facts, run.gsdIdentityCalls, run.asked.length]).toEqual([FACTS, [], 0])
+  })
+
+  test('Yes runs the check once with the locations and merges the user-level fact it proves', async () => {
+    const run = checkRun(true, { [CHECK]: 'Yes, run the check' })
+    const facts = await consentedGsdCheck(run.io, FACTS, DEFAULT_LOCATIONS)
+    const identities = facts.facts.gsd.filter(fact => fact.location === 'user').map(fact => fact.identity)
+
+    expect([identities, run.gsdIdentityCalls, run.asked.length]).toEqual([['proven'], [DEFAULT_LOCATIONS], 1])
+  })
+})
 
 describe('reviewStep', () => {
   test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {

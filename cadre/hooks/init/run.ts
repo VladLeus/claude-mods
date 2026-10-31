@@ -10,7 +10,9 @@ import type {
   CadreState,
   DesiredFile,
   HostIo,
+  InitFacts,
   InitIo,
+  InitLocations,
   InstructionPartRecord,
   InstructionScan,
   InstructionTopic,
@@ -36,7 +38,7 @@ import { installPlugins, privatePlanOf, writeWithImprover } from '../apply/run'
 import type { ApplyOutcome } from '../apply/run'
 import { applySteps } from '../apply/steps'
 import { sha256Hex } from '../core/hash'
-import { provenUserDir } from '../framework/gsd/identity'
+import { needsGsdCheck, provenUserDir, withGsdIdentity } from '../framework/gsd/identity'
 import { desiredFiles } from '../generate/files'
 import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
@@ -82,6 +84,7 @@ import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
 import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
+import { gsdCheckAsk } from './stages/frameworks'
 import type { Answer, Effect, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
@@ -410,6 +413,25 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return unreachable
     }
   }
+}
+
+/**
+ * The GSD check of `/cadre detect`, the one I/O runner beside performIo (D-230, D-243, WF-S6): asked through the same
+ * spec as init's (gsdCheckAsk) only when the facts hold a user-level GSD found but not proven and someone can be asked;
+ * on Yes GSD's own check runs through io.gsdIdentity (collectGsdIdentity) and is merged (withGsdIdentity). Any other
+ * answer, a dismissal or `claude -p` leaves the facts as they are, so the identity call never runs without a Yes.
+ */
+export async function consentedGsdCheck(
+  io: InitIo,
+  initFacts: InitFacts,
+  locations: InitLocations,
+): Promise<InitFacts> {
+  if (!needsGsdCheck(initFacts.facts) || (await io.isInteractive()) !== true) return initFacts
+  const ask = gsdCheckAsk(initFacts.facts)
+  const answer = await io.ask(ask.question, ask.spec).catch(() => null)
+  if (answer === null || ask.parse(answer) !== true) return initFacts
+
+  return withGsdIdentity(initFacts, await io.gsdIdentity(locations), locations)
 }
 
 /**

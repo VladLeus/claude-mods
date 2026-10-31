@@ -6,9 +6,7 @@ import type {
   FactsPort,
   HostIo,
   IdentityRunResult,
-  InitFacts,
   InitIo,
-  InitLocations,
   OpenQuestion,
   PortRead,
   ShownBlock,
@@ -19,11 +17,10 @@ import { isObject } from './core/json'
 import { detectText } from './detect/report'
 import { runEpic } from './epic/create'
 import { runEpicDone } from './epic/done'
-import { isRuntimeIdentityArgv, needsGsdCheck, withGsdIdentity } from './framework/gsd/identity'
+import { isRuntimeIdentityArgv } from './framework/gsd/identity'
 import { detectRefusal } from './guards/refusals'
-import { runInit } from './init/run'
+import { consentedGsdCheck, runInit } from './init/run'
 import type { InitOptions } from './init/run'
-import { gsdCheckAsk } from './init/stages/frameworks'
 import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
 import { setMissingSlotSink, t } from './locales/t'
 import { runRegen } from './regen/run'
@@ -106,21 +103,6 @@ async function identityRun($: EngineInterface, argv: readonly string[], cwd: str
   } catch {
     return { stdout: null, problem: 'could-not-run' }
   }
-}
-
-/**
- * The GSD check of `/cadre detect` (D-243): asked through the same spec as init's (gsdCheckAsk) only when the facts
- * hold a user-level GSD found but not proven and someone can be asked; on Yes GSD's own check runs through
- * io.gsdIdentity (collectGsdIdentity) and is merged (withGsdIdentity). Any other answer, a dismissal or `claude -p`
- * leaves the facts as they are, so the identity call never runs without a Yes.
- */
-async function consentedGsdCheck(io: InitIo, initFacts: InitFacts, locations: InitLocations): Promise<InitFacts> {
-  if (!needsGsdCheck(initFacts.facts) || (await io.isInteractive()) !== true) return initFacts
-  const ask = gsdCheckAsk(initFacts.facts)
-  const answer = await io.ask(ask.question, ask.spec).catch(() => null)
-  if (answer === null || ask.parse(answer) !== true) return initFacts
-
-  return withGsdIdentity(initFacts, await io.gsdIdentity(locations), locations)
 }
 
 /**
