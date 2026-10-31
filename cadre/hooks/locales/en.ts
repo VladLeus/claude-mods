@@ -4,14 +4,14 @@
  * is a `.one` / `.other` pair (D-223); a slot is a `{name}` of letters. Text written into generated files, model
  * prompts and on-disk or protocol markers live in locales/artifact, locales/prompts and locales/contracts and are never
  * translated. Object.freeze keeps each text's literal type, so the slots of a template are typed (locales/t Slots); a
- * text too long for one line is a `+` chain of single-line literals and takes no slot.
+ * text too long for one line breaks inside an empty `${''}`, so it keeps its literal type and its typed slots.
  */
 
 /** Every EN screen text by its key (D-207, D-216). */
 export const EN = Object.freeze({
   'init.notInteractive':
-    'cadre init needs an interactive session to ask its questions. ' +
-    'Run /cadre init in a terminal session, not with claude -p.',
+    `cadre init needs an interactive session to ask its questions. ${
+    ''}Run /cadre init in a terminal session, not with claude -p.`,
 
   'init.answers.skillUses.one': '{count} time in the last {sessions} sessions',
   'init.answers.skillUses.other': '{count} times in the last {sessions} sessions',
@@ -112,8 +112,8 @@ export const EN = Object.freeze({
   'init.roles.describeCancel': 'Cancel init',
   'init.roles.describeAccepts': 'a description of your roles, {quotedLabels}',
   'init.roles.adjustQuestion':
-    'Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename ' +
-    'be api "API", or framework qa gsd.',
+    `Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename ${
+    ''}be api "API", or framework qa gsd.`,
   'init.roles.adjustDone': 'Done adjusting',
   'init.roles.adjustShow': 'Show the roles',
   'init.roles.adjustContextLine': 'Roles now: {ids}.',
@@ -154,8 +154,8 @@ export const EN = Object.freeze({
   'init.security.installQuestion': '{prefix} {names}? {notes}',
 
   'init.improverInstall.improverInstallQuestion':
-    'Install claude-md-management from claude-plugins-official after you confirm the plan? Its ' +
-    "claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.",
+    `Install claude-md-management from claude-plugins-official after you confirm the plan? Its ${
+    ''}claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.`,
   'init.improverInstall.improverInstallContext':
     'Without it the built files stay as cadre wrote them; a --dry-run installs nothing.',
   'init.improverInstall.improverInstallDismissedReason':
@@ -197,8 +197,8 @@ export const EN = Object.freeze({
   'init.memory.memoryContextLine': '{teamContext} Their content is never shown or committed.',
 
   'init.instructions.contentQuestion':
-    'Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each ' +
-    'role? Nothing from your global files or memories is committed, and originals are never edited.',
+    `Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each ${
+    ''}role? Nothing from your global files or memories is committed, and originals are never edited.`,
   'init.instructions.consentNo': 'No, skip it',
   'init.instructions.consentYes': 'Yes, read them',
   'init.instructions.contentDismissedReason': 'The instruction files question was dismissed or not answered.',
@@ -276,8 +276,8 @@ export const EN = Object.freeze({
   'init.review.previousPage': 'Previous page',
   'init.review.itemWords': 'roles, git policy, launcher start, or duration, model, assignments, memory, env, hunks',
   'init.review.changeRefusal':
-    'Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, ' +
-    'assignments, memory, env or hunks.',
+    `Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, ${
+    ''}assignments, memory, env or hunks.`,
   'init.review.reviewDismissedReason': 'The review question was dismissed or not answered.',
   'init.review.reviewRoundsReason':
     'The review question was asked {maxReviewRounds} times without "Confirm": nothing was chosen.',
@@ -429,8 +429,8 @@ export const EN = Object.freeze({
   'ui.context.proposalLines2': 'Changes from the scan:',
   'ui.context.envPaneHeading': 'Env variable names in your settings (values are never read):',
   'ui.context.securityPluginNotes':
-    'claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or ' +
-    'newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+    `claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or ${
+    ''}newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.`,
   'ui.context.securityPluginNotes2': 'security-guidance adds hooks that warn about risky edits.',
   'ui.context.scanContext': 'Scan',
   'ui.context.rolesContext': 'Roles',
@@ -682,8 +682,8 @@ export const EN = Object.freeze({
 
   'start.gatherUser.startNoHome': 'cadre start needs HOME to render the role files, so it stopped.',
   'start.gatherUser.startNoGitDir':
-    'cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; git ' +
-    '2.31 or newer is needed), so it stopped.',
+    `cadre start could not read the git common dir (git rev-parse failed or gave no absolute path; git ${
+    ''}2.31 or newer is needed), so it stopped.`,
   'start.gatherUser.privateFolderRefusal': 'cadre start stopped: {path}',
   'start.gatherUser.privateFolderRefusal2': 'cadre does not write through it',
   'start.gatherUser.privateFolderRefusal3': '{stopped} is a link; {end}',
@@ -777,8 +777,8 @@ export const EN = Object.freeze({
   'epic.done.mergedProblems3':
     'git could not tell whether {name} is merged into {into}: check that {into} exists, then merge into it',
   'epic.done.roleProblems':
-    'role states unknown: cadre could not read the team in .cadre/, so it cannot tell whether a role ' +
-    'still runs in the worktree: fix the team, or stop every role and use --force',
+    `role states unknown: cadre could not read the team in .cadre/, so it cannot tell whether a role ${
+    ''}still runs in the worktree: fix the team, or stop every role and use --force`,
   'epic.done.epicDoneRefusal':
     `cadre epic done kept the worktree of the epic {name} and removed nothing: fix what is below, or run ${
     ''}/cadre epic done {name} --force to remove it anyway after one question.`,
@@ -910,11 +910,11 @@ export const EN = Object.freeze({
     'cadre {command} could not read the session root, so it stopped before reading anything.',
 
   'guard.refusals.homeRootReply':
-    'cadre detect needs a repo root other than your home folder. Open the session in a repo and run ' +
-    '/cadre detect again.',
+    `cadre detect needs a repo root other than your home folder. Open the session in a repo and run ${
+    ''}/cadre detect again.`,
   'guard.refusals.fileSystemRootReply':
-    'cadre detect needs a repo root other than the file system root (/). Open the session in a repo and ' +
-    'run /cadre detect again.',
+    `cadre detect needs a repo root other than the file system root (/). Open the session in a repo and ${
+    ''}run /cadre detect again.`,
 
   'team.noStateReply': 'cadre {command} needs .cadre/cadre.json from /cadre init: run /cadre init first.',
   'team.regenBadState': '.cadre/cadre.json is not valid: fix it, or run /cadre init again.',
@@ -1112,8 +1112,8 @@ export const EN = Object.freeze({
   'framework.gsd.tools.refusedDisplay': 'refused: an argument is not a plain word',
 
   'framework.contract.unsupportedMarkers':
-    'every stage after Initialization ends in a recorded human approval gate, so autonomous roles would ' +
-    'block; no cadre adapter in v1',
+    `every stage after Initialization ends in a recorded human approval gate, so autonomous roles would ${
+    ''}block; no cadre adapter in v1`,
   'framework.contract.unsupportedMarkersReason':
     'persona and workflow method with its own gates and _bmad/ runtime; no cadre adapter in v1',
   'framework.contract.unsupportedMarkersReason2': 'spec-driven command set under .specify/; no cadre adapter in v1',
@@ -1154,9 +1154,9 @@ export const EN = Object.freeze({
   'framework.gsd.adapter.gsdAutonomy':
     'only when gsd-statusline is the statusline: gsd-context-monitor warnings conflict with the autopilot handoff',
   'framework.gsd.adapter.gsdAdapter':
-    'in use: .planning/ at the repo root (dir or symlink); installed: gsd-core identity proven at ' +
-    '~/.claude/gsd-core (or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or ' +
-    '<repo>/.claude/gsd-core',
+    `in use: .planning/ at the repo root (dir or symlink); installed: gsd-core identity proven at ${
+    ''}~/.claude/gsd-core (or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or ${
+    ''}<repo>/.claude/gsd-core`,
   'framework.gsd.adapter.gsdAdapter2': '/gsd-autonomous --only N',
   'framework.gsd.adapter.gsdAdapter3': '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
   'framework.gsd.adapter.gsdAdapter4': '/gsd-new-project (no .planning/ yet)',
@@ -1170,16 +1170,16 @@ export const EN = Object.freeze({
   'framework.superpowers.adapter.detectSuperpowers2': 'no enabled superpowers@ plugin',
   'framework.superpowers.adapter.installedEvidence': 'enabledPlugins["{key}"]=true ({source})',
   'framework.superpowers.adapter.superpowersAdapter':
-    'in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key ' +
-    'starting superpowers@ set to true',
+    `in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key ${
+    ''}starting superpowers@ set to true`,
   'framework.superpowers.adapter.superpowersAdapter2': 'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
   'framework.superpowers.adapter.superpowersAdapter3': 'superpowers:brainstorming (TL/PM)',
   'framework.superpowers.adapter.superpowersAdapter4': "the project's test command",
   'framework.superpowers.adapter.superpowersAdapterArtifact': '.superpowers/sdd/<plan workspace>/progress.md',
   'framework.superpowers.adapter.superpowersAdapterCheck': 'every task has a "Task <N>: complete" line',
   'framework.superpowers.adapter.superpowersAdapter5':
-    'No config file: autonomy comes only from the kickoff text. Chat gates end a turn with no tool call, ' +
-    'and autopilot pauses after 2 such turns, so the kickoff pre-answers every gate.',
+    `No config file: autonomy comes only from the kickoff text. Chat gates end a turn with no tool call, ${
+    ''}and autopilot pauses after 2 such turns, so the kickoff pre-answers every gate.`,
 
   'framework.none.adapter.detectBuiltin': 'built into cadre',
   'framework.none.adapter.builtinAdapterDetectRule': 'always available inside cadre; used when no framework is chosen',

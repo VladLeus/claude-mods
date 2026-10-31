@@ -4,9 +4,23 @@ import { sha256Hex } from '../core/hash'
 import { NOT_INTERACTIVE_REPLY } from '../guards/repo'
 import { skillUsesText } from '../init/answers'
 import { ARTIFACT } from './artifact'
+import { CONTRACTS } from './contracts'
 import { EN } from './en'
 import { PROMPTS } from './prompts'
 import { fill, setMissingSlotSink, t, templateSlots, tn } from './t'
+
+/** The keys of a table whose value's type widened to string, so its slots are no longer typed. */
+type Widened<T> = { [K in keyof T]: string extends T[K] ? K : never }[keyof T]
+
+/**
+ * True only while no EN, ARTIFACT, PROMPTS or CONTRACTS value widens to string (WE-S6): a widened value would let a
+ * slot compile unfilled (D-224), so a table value that widens fails the type check here.
+ */
+const NO_WIDENED: [
+  Widened<typeof EN> | Widened<typeof ARTIFACT> | Widened<typeof PROMPTS> | Widened<typeof CONTRACTS>,
+] extends [never]
+  ? true
+  : never = true
 
 /**
  * The 24 table values that were `+` chains of single-line literals (WE-S6), as [table, key]: the EN keys, then the
@@ -136,6 +150,10 @@ describe('long table values (D-224, WE-S6)', () => {
     const values = CHAINED.map(([table, key]) => table[key])
 
     expect(await sha256Hex(values.join('\n'))).toBe('e6ad1d960b474519381abe97b3d31082a801c9a3bd8f8fcec3278759166055f0')
+  })
+
+  test('no table value widens to string (WE-S6)', () => {
+    expect(NO_WIDENED).toBe(true)
   })
 })
 

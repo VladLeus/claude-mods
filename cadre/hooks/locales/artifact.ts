@@ -26,8 +26,8 @@ export const ARTIFACT = Object.freeze({
   roleMdInboxLine: `Your inbox is .cadre/{id}/.runtime/inbox.md, a path from the git root. ${
     ''}Read it when you start and after every restart.`,
   roleMdNoteLine:
-    'To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ' +
-    '(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.',
+    `To leave a note for another role, append one dated line to .cadre/<role id>/.runtime/inbox.md of that role ${
+    ''}(the role ids are in .cadre/INDEX.md); never edit or delete a line that is there.`,
   roleMdScope: '## Scope',
   // The marker above a part in a built role file (generate/docs partMarker), and the first line of the built and of
   // the private role CLAUDE.md (generate/docs roleClaudeMdText, apply/private privateClaudeMdText).
@@ -141,12 +141,12 @@ export const ARTIFACT = Object.freeze({
     'Answer "Verify all open threats"; never accept a risk: accepting risk is always queued for the human.',
   gsdGateBlockerWhere: 'STATE.md "Needs Human" blocker',
   gsdGateBlocker:
-    'Route the blocker by its content, by default as an Arch decision to TL; TL decides reversible calls ' +
-    'and queues the rest for the human.',
+    `Route the blocker by its content, by default as an Arch decision to TL; TL decides reversible calls ${
+    ''}and queues the rest for the human.`,
   gsdGateShipWhere: '/gsd-ship, branch finish, merge or PR',
   gsdGateShip:
-    'Never merge, push or release. Hand the finished branch to TL as an Arch decision; merge, push and ' +
-    'release are always queued for the human.',
+    `Never merge, push or release. Hand the finished branch to TL as an Arch decision; merge, push and ${
+    ''}release are always queued for the human.`,
   gsdGateScopeWhere: 'scope or acceptance questions in discuss and plan',
   gsdGateScope: 'Send scope or acceptance questions as a Product decision to PM.',
   gsdDoneLine:
@@ -154,8 +154,8 @@ export const ARTIFACT = Object.freeze({
   gsdApprovedSpec: 'Approved spec: {cleaned}',
   gsdKickoffIntro: 'You are the {title} role. This repo uses GSD: drive the work with its own commands.',
   gsdKickoffStart:
-    'Start: /gsd-autonomous --only N for the phase you own, or step by step /gsd-discuss-phase N --auto, ' +
-    '/gsd-plan-phase N --auto, /gsd-execute-phase N.',
+    `Start: /gsd-autonomous --only N for the phase you own, or step by step /gsd-discuss-phase N --auto, ${
+    ''}/gsd-plan-phase N --auto, /gsd-execute-phase N.`,
   gsdKickoffSpecs: 'Specs and plans live under .planning/phases/<NN-slug>/.',
   gsdKickoffVerify: 'Verify with /gsd-validate-phase N and /gsd-code-review N.',
   gsdHumanGates: 'Human gates:',
@@ -163,8 +163,8 @@ export const ARTIFACT = Object.freeze({
   // framework/superpowers/adapter.ts
   spGateBrainstormWhere: 'superpowers:brainstorming hard gate',
   spGateBrainstorm:
-    'With a TL-approved spec, start at superpowers:writing-plans; the spec is the standing approval. A ' +
-    'new design question goes to TL as an Arch decision.',
+    `With a TL-approved spec, start at superpowers:writing-plans; the spec is the standing approval. A ${
+    ''}new design question goes to TL as an Arch decision.`,
   spGatePlansWhere: 'superpowers:writing-plans execution choice',
   spGatePlans: 'The execution method is already chosen: subagent-driven.',
   spGateFinishWhere: 'superpowers:finishing-a-development-branch menu',
@@ -174,8 +174,8 @@ export const ARTIFACT = Object.freeze({
     'Stop the step and send it to Security as a Security decision; accepting a risk is always queued for the human.',
   spGateOutwardWhere: 'superpowers:subagent-driven-development irreversible or outward stop',
   spGateOutward:
-    'Stop the step and send it to TL as an Arch decision; irreversible or outward actions are always ' +
-    'queued for the human.',
+    `Stop the step and send it to TL as an Arch decision; irreversible or outward actions are always ${
+    ''}queued for the human.`,
   spGateWorktreeWhere: 'superpowers:using-git-worktrees consent',
   spGateWorktree: 'You are already in your epic worktree: do not create another worktree.',
   spGateMainWhere: 'superpowers:subagent-driven-development main-branch consent',
@@ -183,8 +183,8 @@ export const ARTIFACT = Object.freeze({
   spGateQuestionsWhere: 'superpowers:brainstorming clarifying questions',
   spGateQuestions: 'Send scope or acceptance questions as a Product decision to PM.',
   spDoneLine:
-    'When every task in .superpowers/sdd/<plan workspace>/progress.md has a "Task <N>: complete" line, ' +
-    'answer with a line that starts with AUTOPILOT_DONE.',
+    `When every task in .superpowers/sdd/<plan workspace>/progress.md has a "Task <N>: complete" line, ${
+    ''}answer with a line that starts with AUTOPILOT_DONE.`,
   spSpecStart: 'Start: superpowers:writing-plans with that spec.',
   spNoSpecStart:
     'Start: superpowers:brainstorming (TL/PM), or superpowers:writing-plans <spec path> once TL gives you a spec.',
@@ -192,8 +192,8 @@ export const ARTIFACT = Object.freeze({
   spKickoffIntro: 'You are the {kickoffTitle} role. This repo uses superpowers: follow its skills.',
   spKickoffMethod: 'Execution method: subagent-driven.',
   spKickoffNoQuestion:
-    'Never end a turn with a question in chat: autopilot pauses after 2 turns with no tool call. Send ' +
-    'questions to their owner role instead.',
+    `Never end a turn with a question in chat: autopilot pauses after 2 turns with no tool call. Send ${
+    ''}questions to their owner role instead.`,
   spHumanGates: 'Human gates:',
   spGateLine: '- {where}: {kickoff}',
   // framework/none/adapter.ts
@@ -201,8 +201,8 @@ export const ARTIFACT = Object.freeze({
   builtinGateExit: 'Never call ExitPlanMode (it waits for a human); write the plan file instead.',
   builtinGateQuestionWhere: 'any open question',
   builtinGateQuestion:
-    'Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
-    'Security); do not ask the human directly.',
+    `Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ${
+    ''}Security); do not ask the human directly.`,
   builtinSpec: 'Spec: {cleaned}',
   builtinDoneLine:
     `Write .cadre/{folder}/.runtime/DONE.md with what you did and how you verified it, then answer with ${
