@@ -13,7 +13,9 @@ import {
   OWN_ANSWER_HINT,
   previewColumns,
   previewMarkdown,
+  PREVIEW_LINE_ROWS,
   PREVIEW_ROWS,
+  tuiTranscriptRows,
   withDescribeOwn,
   withPreviews,
 } from './preview'
@@ -635,5 +637,36 @@ describe('the TUI-default preview rows (WD-S3)', () => {
       const [previews = []] = optionPreviews(plan?.questions ?? undefined)
       expect([count, previews[0]]).toEqual([count, previewMarkdown([{ ...context, lines: shown }])])
     }
+  })
+})
+
+describe('tuiTranscriptRows (WD-S4)', () => {
+  /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
+  function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
+    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind }
+  }
+
+  test('an overflowing context gives its title and every line, cleaned and never cut at 240 code points', () => {
+    const wide = 'x'.repeat(300)
+    const rest = linesContext(PREVIEW_LINE_ROWS).lines
+    const lines = [wide, `a${BIDI_OVERRIDE}b`, ...rest]
+    const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills' }
+    expect(tuiTranscriptRows(context, null)).toEqual(['Long list', wide, 'ab', ...rest])
+  })
+
+  test('a context that fits the preview, the Review and no context give no rows', () => {
+    expect(tuiTranscriptRows(linesContext(PREVIEW_LINE_ROWS), null)).toEqual([])
+    expect(tuiTranscriptRows(linesContext(40, 'review'), null)).toEqual([])
+    expect(tuiTranscriptRows(null, linesContext(30))).toEqual([])
+  })
+
+  test('the context printed last, by its title and lines, gives no rows; a changed one gives them all', () => {
+    const printed = linesContext(30)
+    const rebuilt = { ...printed, lines: [...printed.lines] }
+    const changed = { ...printed, lines: [...printed.lines.slice(0, -1), 'line X'] }
+    const retitled = { ...printed, title: 'Other' }
+    expect(tuiTranscriptRows(rebuilt, printed)).toEqual([])
+    expect(tuiTranscriptRows(changed, printed)).toEqual(['Lines', ...changed.lines])
+    expect(tuiTranscriptRows(retitled, printed)).toEqual(['Other', ...printed.lines])
   })
 })

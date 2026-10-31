@@ -7,7 +7,7 @@
  */
 import type { AskContext, OpenQuestion, ShownBlock } from '../../types'
 import { isObject } from '../core/json'
-import { clean } from '../core/text'
+import { clean, reportText } from '../core/text'
 import { UNCUT, wrapLine } from './pane'
 import type { Surface } from './surface'
 
@@ -79,6 +79,13 @@ export function fitPreview(context: AskContext, rows: number): FittedPreview {
   const shown = lines.slice(0, rows - 1)
 
   return { lines: [...shown, `+${lines.length - shown.length} more above`], isOverflow: true }
+}
+
+/** The transcript rows the TUI default prints above a dialog (WD-S4 stub until its GREEN): the old rows. */
+export function tuiTranscriptRows(context: AskContext | null, printed: AskContext | null): readonly string[] {
+  if (context === null || !fitPreview(context, PREVIEW_LINE_ROWS).isOverflow) return []
+
+  return [context.title, ...context.lines].map(line => reportText(line))
 }
 
 /** The parts of one block in a preview (D3): its title line, the fence around its lines, and its lines. */

@@ -2442,6 +2442,19 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(marker).toBe(`+${rows.length - (PREVIEW_ROWS - 1)} more above`)
   })
 
+  test('a refused answer is asked again and its long context is printed above it once (WD-S4)', async ($, on) => {
+    const log = newLog()
+    const answers = {
+      ...INIT_ANSWERS,
+      [OWN_SKILLS_ENTRY_PREFIX]: 'Nonsense',
+      "'Nonsense' isn't one of": 'Accept recommendations',
+    }
+    fakeHost(on, { ...manySkillsWorld(), answers }, log)
+    await $.command.run(TUI_RUN)
+    const asked = log.asks.filter(ask => ask.includes(OWN_SKILLS_ENTRY_PREFIX))
+    expect([asked.length, log.logs.filter(line => line === 'Your own skills').length]).toEqual([2, 1])
+  })
+
   test('a pane surface prints no context as transcript rows, however long (D-228)', async ($, on) => {
     const log = newLog()
     fakeHost(on, manySkillsWorld(), log)
