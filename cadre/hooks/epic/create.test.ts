@@ -499,6 +499,18 @@ describe("the user's global excludes and the reuse mirror (D-147, D-163, D-164)"
     }
   })
 
+  test('a mirror that fails after a warning replies with the failure, then that warning line (D-240)', async () => {
+    const world = await teamWorld()
+    const failed = rule(EXCLUDES_CONFIG_ARGV(BARE_WORKTREE, BARE_EXCLUDES), 1)
+    const rules = [GLOBAL_RULE, failed, ...NODE_MODULES_RULES]
+    const run = await epic({ ...world, unknownPaths: [GLOBAL_EXCLUDES] }, rules, 'PROJ-1', '')
+
+    expect(run.reply.split('\n')).toEqual([
+      ...epicExcludesFailedReply('PROJ-1').split('\n'),
+      `warning: ${globalExcludesWarning(GLOBAL_EXCLUDES)}`,
+    ])
+  })
+
   test('a reuse links only what is missing, and its excludes file and record keep what was recorded', async () => {
     const recorded = { ...RECORD, slug: 'proj-1-x', branch: 'epic/proj-1-x', links: ['node_modules'], copies: ['.env'] }
     const kept = await keptWorld(epicRecordText(recorded))
