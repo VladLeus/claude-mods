@@ -3550,6 +3550,15 @@ function firstPageSpec(lines: readonly string[]): AskSpec {
   return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context }
 }
 
+/** A user-level GSD install found but not proven, as in the D-243 spec of runInit (WF-S2). */
+const UNPROVEN: GsdFact = {
+  location: 'user',
+  dir: '~/.claude/gsd-core',
+  version: null,
+  identity: 'unknown',
+  runtimeIdentityTried: false,
+}
+
 describe('reviewStep', () => {
   test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
@@ -3743,6 +3752,25 @@ describe('reviewStep', () => {
     expect(proposals.at(-1)).toEqual(proposals[0])
     expect(proposals[0]?.lines.slice(-1)).not.toEqual(['  none'])
   })
+
+  test(
+    'a Change roles round never asks the GSD check again, after No or after a Yes that proved nothing (WF-S2, D-243)',
+    async () => {
+      const facts = { facts: { ...EMPTY_FACTS, gsd: [UNPROVEN] }, gsdUserDir: '/home/u/.claude/gsd-core' }
+      const cases: readonly (readonly [string, number])[] = [['No, skip the check', 0], ['Yes, run the check', 1]]
+      for (const [answer, runs] of cases) {
+        const run = queuedIo(gitWorld({ facts }), {
+          ...INIT_ANSWERS,
+          "Run GSD's own check": answer,
+          'Review the plan': ['Change roles', 'Confirm'],
+        })
+        await runInit(run.io, { dryRun: true })
+        const asks = run.asked.filter(question => question.startsWith("Run GSD's own check")).length
+
+        expect([asks, run.gsdIdentityCalls.length]).toEqual([1, runs])
+      }
+    },
+  )
 
   test('Change launcher start, or typing launcher start, re-asks where launchers start (A2)', async () => {
     for (const word of ['Change launcher start', 'launcher start']) {
