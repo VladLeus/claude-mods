@@ -573,7 +573,7 @@ export type InitIo = {
   readonly isInteractive: () => Promise<boolean | null>
   /** Null when the session root cannot be read. */
   readonly locations: () => Promise<InitLocations | null>
-  /** The detect pipeline (the one Phase 1 identity call included) for these locations. */
+  /** The detect pipeline (the one GSD runtime identity call included) for these locations. */
   readonly facts: (locations: InitLocations) => Promise<InitFacts>
   readonly sessionId: () => Promise<string | null>
   readonly now: () => Promise<number | null>

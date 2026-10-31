@@ -121,8 +121,8 @@ export type ReadEnv = {
 }
 
 /**
- * Whether a host stat answer shows a regular file whose real path lies inside the root (WR-02). register.tsx reads a
- * repo file only then, so a symlink to a file outside the repo, a device, a FIFO or a folder is never read. A stat
+ * Whether a host stat answer shows a regular file whose real path lies inside the root (WR-02). cadre reads a repo
+ * file only then, so a symlink to a file outside the repo, a device, a FIFO or a folder is never read. A stat
  * without a realPath, or one that lands on the root itself, does not count.
  */
 export function isFileInsideRoot(stat: unknown, root: string): boolean {

@@ -15,8 +15,7 @@ const BREAK_CHARS = /[\p{Cc}\p{Zl}\p{Zp}]/gu
 
 /**
  * Takes every `--name` switch (no value) out of the arguments, ignoring case; whether there was one. A switch is a
- * whole word, so `--dry-runner` is not `--dry-run`. Init answer parsing and the regen grammar reuse it, so every
- * command reads a switch the same way.
+ * whole word, so `--dry-runner` is not `--dry-run`; every command reads a switch this way.
  */
 export function takeSwitch(text: string, name: string): { isOn: boolean; rest: string } {
   const pattern = new RegExp(`\\s--${name}(?=\\s|$)`, 'gi')
@@ -26,8 +25,8 @@ export function takeSwitch(text: string, name: string): { isOn: boolean; rest: s
 }
 
 /**
- * Removes INVISIBLE_CHARS, turns BREAK_CHARS into spaces, collapses runs of whitespace to one space, trims. Init answer
- * parsing and the plan and card renderers reuse it, so no reply echoes a hidden or line-breaking character.
+ * Removes INVISIBLE_CHARS, turns BREAK_CHARS into spaces, collapses runs of whitespace to one space, trims, so no
+ * reply echoes a hidden or line-breaking character.
  */
 export function visibleText(raw: string): string {
   return raw.replace(INVISIBLE_CHARS, '').replace(BREAK_CHARS, ' ').replace(/\s+/g, ' ').trim()

@@ -503,9 +503,10 @@ function scanOf(state: ReadState, memories: readonly MemoryItem[]): InstructionS
  * with MAX_READ_BYTES and one over it is not split; the read stops at 512 KiB in all and counts the files it did not
  * read; parts past the 120th are not offered. A missing file is quiet, and one the port could not read is a warning.
  * Last come the auto-memories of this repo, each an item of its own (readMemories), with their warnings. A config
- * folder inside the repo is not used, as userFolderOf never uses one (02-GAPS-B2 N10). The text is held in memory for
- * this run; it is never logged, shown, asked or put in a reply; a repo part a role is given is written to its
- * `.cadre/<id>/CLAUDE.md` after Confirm (generate.ts); originals are never edited.
+ * folder inside the repo is not used: the read drops it, so nothing is read from it as the config folder (02-GAPS-B2
+ * N10). The text is held in memory for this run; it is never logged, shown, asked or put in a reply; a repo part a
+ * role is given is written to its `.cadre/<id>/CLAUDE.md` after Confirm (roleClaudeMdText); originals are never
+ * edited.
  */
 export async function readInstructionFiles(io: InitIo, sources: InstructionSources): Promise<InstructionScan> {
   const userDir = userDirOf(sources)

@@ -75,8 +75,8 @@ function launchStartOf(value: unknown): LaunchStart | null {
  * version, a framework that is gsd, superpowers, none or null, a git policy, a list of role ids that are each a
  * usable role id (isRoleId: a slug, not reserved) and are not listed twice, a launch start (launchStartOf), and
  * whether init may read ~/.claude.json (a boolean; missing or any other value makes the state null, fail closed, A1).
- * A missing or invalid launch start makes the state null (fail closed: no cadre.json is in the wild yet, Phase 3
- * writes the first). A field the contract does not name is dropped.
+ * A missing or invalid launch start makes the state null (fail closed). A field the contract does not name is
+ * dropped.
  */
 export function parseCadreState(text: string): CadreState | null {
   const value = parseJsonValue(text)?.value

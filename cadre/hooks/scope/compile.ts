@@ -149,7 +149,7 @@ function flagsFor(role: RoleSpec, ctx: ScopeContext): string[] {
 
 /**
  * Compiles the whole scope of one role from one computation (D-80): the committed settings template, the MCP file,
- * the launcher flags, the skill overlay and the card cannot drift apart, and Phase 3's probe checks against the same
+ * the launcher flags, the skill overlay and the card cannot drift apart, and the probe checks against the same
  * value. The settings hold only the portable keys `enabledPlugins`, `permissions` and `sandbox` (D-84); every
  * per-user value is rendered at launch. Every deny entry passes lintDenyPattern, and one that does not is dropped and
  * named on the card. Every list is sorted and without repeats, so the template hashes stably, and nothing is kept

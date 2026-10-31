@@ -25,7 +25,7 @@ import type { DiskHash } from './classify'
 import { IGNORE_BEGIN, IGNORE_END, mergeIgnoreBlock, OPEN_BLOCK_WARNING } from './gitignore'
 
 /**
- * The framework config files a hunk may target (PLAN-06). Phase 2 knows one, GSD's `.planning/config.json`; workstream
+ * The framework config files a hunk may target (PLAN-06). cadre knows one, GSD's `.planning/config.json`; workstream
  * configs are not read. A hunk for any other file is refused.
  */
 export const HUNK_FILES: readonly string[] = Object.freeze(['.planning/config.json'])

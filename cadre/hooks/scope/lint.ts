@@ -26,7 +26,7 @@ export const SECRET_READ_DENY: readonly string[] = Object.freeze([
 ])
 
 /**
- * The memory folder pattern a card shows (D-91). Phase 3 renders the real folder at launch: `<config dir>` is
+ * The memory folder pattern a card shows (D-91). renderRole renders the real folder at launch: `<config dir>` is
  * CLAUDE_CONFIG_DIR when it is set, else ~/.claude, `<repo>` is the repo's folder name and `<hash8>` the first 8 hex
  * characters of the SHA-256 of its git common dir.
  */
@@ -181,8 +181,9 @@ export type Refusal = {
 }
 
 /**
- * Whether a top-level code folder name is safe to write into a path rule: `*`, spaces and `..` are not. Plan 02-16
- * checks every `user.codeDirs` entry with it before it builds a `Read(//<root>/<d>/**)` rule (B2).
+ * Whether a top-level code folder name is safe to write into a path rule: `*`, spaces and `..` are not. runtimeDeny
+ * checks every code folder with it before it builds a `Read(//<root>/<d>/**)` rule, and denyFor lists the folders it
+ * fails as unusual (B2).
  */
 export function isSafeDir(name: string): boolean {
   return SAFE_DIR_PATTERN.test(name) && name !== '.' && name !== '..'

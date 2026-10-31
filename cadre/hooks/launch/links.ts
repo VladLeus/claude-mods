@@ -10,8 +10,8 @@ import { t } from '../locales/t'
 import { memoryFolderOf } from '../paths'
 
 /**
- * The facts about the launching user that the launch half needs (D-98). Phase 3 gathers them at launch and passes them
- * in; this module reads nothing from disk and nothing here is ever committed (PLAN-05). Every path is absolute.
+ * The facts about the launching user that the launch half needs (D-98). renderRole gathers them at launch and passes
+ * them in; this module reads nothing from disk and nothing here is ever committed (PLAN-05). Every path is absolute.
  */
 export type LaunchUser = {
   /** The git top level, as a realpath. */
@@ -60,7 +60,7 @@ export type LaunchUser = {
   readonly userSkills: readonly string[]
   /** File names without `.md` in `<userDir>/agents`. */
   readonly userAgents: readonly string[]
-  /** The top-level code dirs to deny with exact patterns; Phase 3 passes the repo scan's at launch. */
+  /** The top-level code dirs to deny with exact patterns; renderRole passes the repo scan's at launch. */
   readonly codeDirs: readonly string[]
   /**
    * The absolute link paths in the role memory folder of the memories /cadre start links for the role (G-02-1f, D-140
@@ -76,7 +76,7 @@ export type LaunchUser = {
   readonly mainRoot?: string
 }
 
-/** One symlink the launch plans: `path` is where Phase 3 creates it, `target` is what it points at. Both absolute. */
+/** One symlink the launch plans: `path` is where renderRole makes it, `target` is what it points at. Both absolute. */
 export type OverlayLink = {
   readonly path: string
   readonly target: string
@@ -213,7 +213,7 @@ function claudeMdExcludesOf(role: RoleSpec, user: LaunchUser): string[] {
  * does, and so do the rule files (P11): the excludes of claudeMdExcludesOf keep a role to what it was given. The
  * global CLAUDE.md with its imports is linked into `.runtime/instructions/global/` only for 'global-claude-md', and
  * this repo's memory files into `.runtime/instructions/memory/` only for 'auto-memory': a role is narrow by default,
- * whatever exists on disk. Delivering the linked files into the session is Phase 3 wiring (D-100).
+ * whatever exists on disk. Nothing here makes a link: renderRole makes them under `.runtime/` (D-100).
  */
 export function instructionPlan(
   role: RoleSpec,

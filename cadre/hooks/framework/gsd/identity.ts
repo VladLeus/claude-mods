@@ -95,12 +95,12 @@ export function parseGsdManifest(value: unknown): { version: string } | null {
 /**
  * Why the runtime identity check gave no answer, when cadre knows: `not-built` when the compiled runtime
  * (`bin/lib/cli-exit.cjs`) is missing, so the call was not made (WR-01); `could-not-run` when the call threw, which
- * covers node missing from PATH and a timeout alike (IN-05). It is local to the detect modules, so the shared types
- * file stays as it is.
+ * covers node missing from PATH and a timeout alike (IN-05). It is not a shared type: only the GSD identity and the
+ * facts collector read it.
  */
 export type RuntimeProblem = 'not-built' | 'could-not-run'
 
-/** A GSD candidate as register.tsx reads it: the shared raw shape plus the runtime problem, when one is known. */
+/** A GSD candidate as the facts collector reads it: the shared raw shape plus the runtime problem, when known. */
 export type ProbedGsdCandidate = RawGsdCandidate & { readonly runtimeProblem: RuntimeProblem | null }
 
 /** The runtime problems a candidate may carry; any other value counts as no known problem. */

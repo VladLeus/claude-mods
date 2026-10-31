@@ -126,8 +126,8 @@ export function settingsFor(
 }
 
 /**
- * The runtime settings of a role: the launch half of D-66. Phase 3 writes the result to
- * `.cadre/<id>/.runtime/settings.json`; Phase 2 never writes it. It holds the template's plugins and sandbox, the
+ * The runtime settings of a role: the launch half of D-66. renderRole writes the result to
+ * `.cadre/<id>/.runtime/settings.json`; init never writes it. It holds the template's plugins and sandbox, the
  * permissions with the deny list of `settingsDeny` (runtimeDeny's, the private instructions folder's and, for a
  * parts-flow role, the linked memories', G-02-1f), the absolute memory folder of the role (D-91), the given CLAUDE.md
  * excludes, the scanned servers its tool denies cover as deniedMcpServers (D-124), and the values the role carries from

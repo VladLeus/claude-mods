@@ -25,9 +25,10 @@ export type GenerateInput = {
   readonly only: string | null
   /**
    * The instruction parts each role was given, by role id, in read order (G-02-1f Storage split): only those read from
-   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Whenever init passes repoParts every role gets its built
-   * file, the header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1).
-   * Absent for regen and /cadre start, which then build no such file.
+   * the repo go into the role's `.cadre/<id>/CLAUDE.md`. Whenever repoParts is passed every role gets its built
+   * file, the header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1). Init
+   * always passes it and regen when the role's repo parts changed; absent (/cadre start, a regen that keeps the
+   * parts), no such file is built.
    */
   readonly repoParts?: ReadonlyMap<string, readonly InstructionPart[]>
 }
@@ -37,10 +38,10 @@ const INDEX_PATH = '.cadre/INDEX.md'
 
 /**
  * The built instructions of one role (G-02-1f Storage split): `.cadre/<id>/CLAUDE.md` from the parts it was given that
- * were read from the repo (roleClaudeMdText). Whenever init passes repoParts every role gets its built file, the
+ * were read from the repo (roleClaudeMdText). Whenever repoParts is passed every role gets its built file, the
  * header alone with no repo part, so a later hand-out always replaces stale content (02-GAPS-B2 S1); null parts, as
- * regen and /cadre start pass, give none. A part of the global CLAUDE.md is dropped here, so it never reaches a file in
- * the repo (T-02-69).
+ * /cadre start and a regen that keeps the parts pass, give none. A part of the global CLAUDE.md is dropped here, so
+ * it never reaches a file in the repo (T-02-69).
  */
 function builtFiles(id: string, parts: readonly InstructionPart[] | null): DesiredFile[] {
   if (parts === null) return []
@@ -50,7 +51,7 @@ function builtFiles(id: string, parts: readonly InstructionPart[] | null): Desir
 }
 
 /**
- * The files of one role: the five in its folder, its built CLAUDE.md (builtFiles: whenever init passes repoParts every
+ * The files of one role: the five in its folder, its built CLAUDE.md (builtFiles: whenever repoParts is passed every
  * role gets its built file, the header alone with no repo part, so a later hand-out always replaces stale content,
  * 02-GAPS-B2 S1; none for null parts), and its launcher, each with the framework its scope was compiled for, the
  * launcher starting where `start` says. A role with no scope gives none, so nothing is generated from a half-known
@@ -79,11 +80,12 @@ function roleFiles(
  * Every committed file the plan wants (PLAN-01, D-66), sorted by path: for each role its role.json, ROLE.md,
  * kickoff.txt, settings.json and mcp.json under `.cadre/<id>/`, its built `.cadre/<id>/CLAUDE.md` from the parts
  * `repoParts` gives it that were read from the repo (G-02-1f), and its launcher `.cadre/bin/<id>`, which starts where
- * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. Whenever init passes
- * repoParts every role gets its built file, the header alone with no repo part, so a later hand-out always replaces
- * stale content (02-GAPS-B2 S1); with repoParts absent (regen, /cadre start) no role gets one. With `only` set (regen,
- * D-68) just that role's files and the index are given, since the index lists every role. Generation is pure: it holds
- * no state between calls, so two runs cannot interleave, and it never changes its input.
+ * `state.launchStart` says, then `.cadre/INDEX.md` and, for init only, `.cadre/cadre.json`. Whenever repoParts is
+ * passed every role gets its built file, the header alone with no repo part, so a later hand-out always replaces
+ * stale content (02-GAPS-B2 S1); with repoParts absent (/cadre start, a regen that keeps the parts) no role gets
+ * one. With `only` set (regen, D-68) just that role's files and the index are given, since the index lists every
+ * role. Generation is pure: it holds no state between calls, so two runs cannot interleave, and it never changes its
+ * input.
  */
 export function desiredFiles(input: GenerateInput): DesiredFile[] {
   const { roles, scopes, state, only } = input
