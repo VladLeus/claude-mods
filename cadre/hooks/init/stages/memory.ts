@@ -8,6 +8,7 @@
  * and the duration and model stages, and never imports init/machine or init/run.
  */
 import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
+import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { memoryGroupContext } from '../../ui/blocks/context'
@@ -21,7 +22,7 @@ export const ROLE_LIST_OPTIONS: readonly string[] = Object.freeze([NONE_OPTION, 
 
 /** What a question on which roles get an item takes, as its refusal lists it: a button or the team's ids (D-136). */
 export function roleListAccepts(roles: readonly RoleSpec[]): string {
-  return `${quotedLabels(ROLE_LIST_OPTIONS)}, or role ids from: ${idsOf(roles)}`
+  return t('init.memory.roleListAccepts', { quotedLabels: quotedLabels(ROLE_LIST_OPTIONS), ids: idsOf(roles) })
 }
 
 /** The instruction groups in the order init asks about them and a role stores them (D-63). */
@@ -32,12 +33,11 @@ const INSTRUCTION_ORDER: readonly InstructionGroup[] = Object.freeze([
 ])
 
 /** Why init cancels when a question on which roles get instructions or memories is dismissed or not answered (A1). */
-export const MEMORY_DISMISSED_REASON =
-  'A question on which roles get instructions or memories was dismissed or not answered.'
+export const MEMORY_DISMISSED_REASON = t('init.memory.memoryDismissedReason')
 
 /** The context line of an instruction or memory question (D-136): the team's role ids, and that no content is shown. */
 export function memoryContextLine(roles: readonly RoleSpec[]): string {
-  return `${teamContextLine(roles)} Their content is never shown or committed.`
+  return t('init.memory.memoryContextLine', { teamContext: teamContextLine(roles) })
 }
 
 /**

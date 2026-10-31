@@ -190,6 +190,11 @@ export const EN = Object.freeze({
     '{count} skill with no plugin; the pane shows what each does and the roles it is recommended for.',
   'init.ownSkills.noPlugin.other':
     '{count} skills with no plugin; the pane shows what each does and the roles it is recommended for.',
+
+  'init.memory.roleListAccepts': '{quotedLabels}, or role ids from: {ids}',
+  'init.memory.memoryDismissedReason':
+    'A question on which roles get instructions or memories was dismissed or not answered.',
+  'init.memory.memoryContextLine': '{teamContext} Their content is never shown or committed.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
