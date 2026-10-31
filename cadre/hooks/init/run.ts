@@ -351,8 +351,23 @@ export async function showOutput(io: InitIo, output: Output): Promise<void> {
 }
 
 /**
+ * The same port whose `tools` reads the host's list once and answers every later call with that first read (#163), so
+ * one scan reads the session tool list once.
+ */
+function withToolsOnce(io: InitIo): InitIo {
+  let read: Promise<unknown> | null = null
+  const tools = (): Promise<unknown> => {
+    if (read === null) read = io.tools()
+
+    return read
+  }
+
+  return { ...io, tools }
+}
+
+/**
  * Performs one host operation of a stage (D-230): the guard (initGuard), the scans (gatherScans) with the session's
- * tool list read once more after them for the MCP server questions' contexts (D-211), the listing of the
+ * tool list read once, shared with the scans, for the MCP server questions' contexts (D-211, #163), the listing of the
  * session folder (listSessions), the history scan (scanHistory), the check of a typed launcher folder (isRepoFolder),
  * the review's plan (planStep), or Confirm's apply through the run's host (applyConfirmed), which a --dry-run does not
  * hold, so it gives none there. The scans and the history scan first set their status line (D-232).
@@ -363,9 +378,10 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
       return { id: 'guard', result: await initGuard(io, 'init') }
     case 'scan': {
       await io.progress(SCAN_PROGRESS)
-      const result = await gatherScans(io, call.locations, call.readUserMcp)
+      const scanIo = withToolsOnce(io)
+      const result = await gatherScans(scanIo, call.locations, call.readUserMcp)
 
-      return { id: 'scan', result, tools: await io.tools() }
+      return { id: 'scan', result, tools: await scanIo.tools() }
     }
     case 'list-sessions':
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
