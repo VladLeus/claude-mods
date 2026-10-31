@@ -4,6 +4,7 @@
  * It imports paths and the types, so init and apply resolve GSD tool calls here.
  */
 import type { ToolCommand } from '../../../types'
+import { t } from '../../locales/t'
 import { displayPath, isSafeConfigDir, trimSlash } from '../../paths'
 
 /** What resolveToolCommand needs: the raw user-level GSD dir, and the folders a path is shown relative to. */
@@ -27,7 +28,7 @@ const REPO_GSD_DIR = '.claude/gsd-core'
 const PLAIN_WORD = /^[A-Za-z0-9._-]+$/
 
 /** The display of a command that was refused because an argument is not a plain word. */
-const REFUSED_DISPLAY = 'refused: an argument is not a plain word'
+const REFUSED_DISPLAY = t('framework.gsd.tools.refusedDisplay')
 
 /**
  * The real command for a logical tool call (D-71). Only a user-level GSD dir becomes an argv, `node <dir>/<script>

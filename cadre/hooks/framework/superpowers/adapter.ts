@@ -15,6 +15,8 @@ import type {
 } from '../../../types'
 import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
+import { ARTIFACT } from '../../locales/artifact'
+import { fill, t } from '../../locales/t'
 
 /**
  * Superpowers' detection from the normalised Facts. A `docs/superpowers/` directory or a `.superpowers` entry at the
@@ -50,7 +52,10 @@ export function detectSuperpowers(facts: Facts): Detection {
     name: 'superpowers',
     status: 'not-found',
     version: null,
-    evidence: ['no docs/superpowers/ or .superpowers/', 'no enabled superpowers@ plugin'],
+    evidence: [
+      t('framework.superpowers.adapter.detectSuperpowers'),
+      t('framework.superpowers.adapter.detectSuperpowers2'),
+    ],
   }
 }
 
@@ -66,7 +71,7 @@ function isEnabledSuperpowers(flag: PluginFlag): boolean {
 
 /** The evidence for one enabled key: the key, its value and the settings file it came from. */
 function installedEvidence(flag: PluginFlag): string {
-  return `enabledPlugins["${flag.key}"]=true (${flag.source})`
+  return t('framework.superpowers.adapter.installedEvidence', { key: flag.key, source: flag.source })
 }
 
 /** The installed version recorded for one key, or null when installed_plugins has no entry for that key. */
@@ -84,95 +89,89 @@ function versionOf(key: string, versions: readonly PluginVersion[]): string | nu
 export const SUPERPOWERS_GATES: readonly Gate[] = freezeRows([
   {
     id: 'brainstorm-hard-gate',
-    where: 'superpowers:brainstorming hard gate',
+    where: ARTIFACT.spGateBrainstormWhere,
     kind: 'chat',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'preapprove',
     kickoff:
-      'With a TL-approved spec, start at superpowers:writing-plans; the spec is the standing approval. ' +
-      'A new design question goes to TL as an Arch decision.',
+      ARTIFACT.spGateBrainstorm,
   },
   {
     id: 'execution-method',
-    where: 'superpowers:writing-plans execution choice',
+    where: ARTIFACT.spGatePlansWhere,
     kind: 'chat',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'preapprove',
-    kickoff: 'The execution method is already chosen: subagent-driven.',
+    kickoff: ARTIFACT.spGatePlans,
   },
   {
     id: 'finish-branch-menu',
-    where: 'superpowers:finishing-a-development-branch menu',
+    where: ARTIFACT.spGateFinishWhere,
     kind: 'chat',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'preapprove',
-    kickoff: 'Choose "keep as-is". TL owns merge and PR; merge and push are always queued for the human.',
+    kickoff: ARTIFACT.spGateFinish,
   },
   {
     id: 'sdd-hard-stop-security',
-    where: 'superpowers:subagent-driven-development security-sensitive stop',
+    where: ARTIFACT.spGateSecurityWhere,
     kind: 'chat',
     decisionType: 'Security',
     needsHuman: true,
     handling: 'escalate',
     kickoff:
-      'Stop the step and send it to Security as a Security decision; ' +
-      'accepting a risk is always queued for the human.',
+      ARTIFACT.spGateSecurity,
   },
   {
     id: 'sdd-hard-stop-irreversible',
-    where: 'superpowers:subagent-driven-development irreversible or outward stop',
+    where: ARTIFACT.spGateOutwardWhere,
     kind: 'chat',
     decisionType: 'Arch',
     needsHuman: true,
     handling: 'escalate',
     kickoff:
-      'Stop the step and send it to TL as an Arch decision; ' +
-      'irreversible or outward actions are always queued for the human.',
+      ARTIFACT.spGateOutward,
   },
   {
     id: 'worktree-consent',
-    where: 'superpowers:using-git-worktrees consent',
+    where: ARTIFACT.spGateWorktreeWhere,
     kind: 'standing-rule',
     decisionType: null,
     needsHuman: false,
     handling: 'standing-rule',
-    kickoff: 'You are already in your epic worktree: do not create another worktree.',
+    kickoff: ARTIFACT.spGateWorktree,
   },
   {
     id: 'main-branch-consent',
-    where: 'superpowers:subagent-driven-development main-branch consent',
+    where: ARTIFACT.spGateMainWhere,
     kind: 'standing-rule',
     decisionType: null,
     needsHuman: false,
     handling: 'standing-rule',
-    kickoff: 'Work on the current epic branch; never implement on main or master.',
+    kickoff: ARTIFACT.spGateMain,
   },
   {
     id: 'clarifying-questions',
-    where: 'superpowers:brainstorming clarifying questions',
+    where: ARTIFACT.spGateQuestionsWhere,
     kind: 'chat',
     decisionType: 'Product',
     needsHuman: false,
     handling: 'escalate',
-    kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
+    kickoff: ARTIFACT.spGateQuestions,
   },
 ])
 
 /** The last line of every superpowers kickoff: the done answer autopilot waits for once every task is complete. */
-const DONE_LINE =
-  'When every task in .superpowers/sdd/<plan workspace>/progress.md has a "Task <N>: complete" line, ' +
-  'answer with a line that starts with AUTOPILOT_DONE.'
+const DONE_LINE = ARTIFACT.spDoneLine
 
 /** The start line for a role with a standing spec: writing-plans with that spec. */
-const SPEC_START_LINE = 'Start: superpowers:writing-plans with that spec.'
+const SPEC_START_LINE = ARTIFACT.spSpecStart
 
 /** The start line for a role with no spec yet: brainstorming, or writing-plans once TL gives a spec. */
-const NO_SPEC_START_LINE =
-  'Start: superpowers:brainstorming (TL/PM), or superpowers:writing-plans <spec path> once TL gives you a spec.'
+const NO_SPEC_START_LINE = ARTIFACT.spNoSpecStart
 
 /**
  * The Approved spec line, which is the standing approval for a spec TL wrote or approved (D-16). A role with no spec,
@@ -183,7 +182,7 @@ function approvedSpecLines(specPath: string | null): string[] {
   const cleaned = cleanKickoffTextOr(specPath, MAX_SPEC_PATH_CHARS, null)
   if (cleaned === null) return []
 
-  return [`Approved spec (standing approval from TL): ${cleaned}`]
+  return [fill(ARTIFACT.spApprovedSpec, { cleaned })]
 }
 
 /**
@@ -197,14 +196,13 @@ export function superpowersKickoffText(ctx: KickoffContext): string {
   const start = approved.length > 0 ? SPEC_START_LINE : NO_SPEC_START_LINE
 
   return [
-    `You are the ${kickoffTitle(ctx)} role. This repo uses superpowers: follow its skills.`,
+    fill(ARTIFACT.spKickoffIntro, { kickoffTitle: kickoffTitle(ctx) }),
     ...approved,
     start,
-    'Execution method: subagent-driven.',
-    'Never end a turn with a question in chat: autopilot pauses after 2 turns with no tool call. ' +
-      'Send questions to their owner role instead.',
-    'Human gates:',
-    ...SUPERPOWERS_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`),
+    ARTIFACT.spKickoffMethod,
+    ARTIFACT.spKickoffNoQuestion,
+    ARTIFACT.spHumanGates,
+    ...SUPERPOWERS_GATES.map(gate => fill(ARTIFACT.spGateLine, { where: gate.where, kickoff: gate.kickoff })),
     DONE_LINE,
   ].join('\n')
 }
@@ -218,12 +216,11 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   id: 'superpowers',
   name: 'superpowers',
   detectRule:
-    'in use: docs/superpowers/ or .superpowers/ at the repo root; ' +
-    'installed: an enabledPlugins key starting superpowers@ set to true',
+    t('framework.superpowers.adapter.superpowersAdapter'),
   detect: detectSuperpowers,
   startWork: Object.freeze([
-    'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
-    'superpowers:brainstorming (TL/PM)',
+    t('framework.superpowers.adapter.superpowersAdapter2'),
+    t('framework.superpowers.adapter.superpowersAdapter3'),
   ]),
   locations: Object.freeze({
     spec: Object.freeze(['docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md']),
@@ -232,18 +229,16 @@ export const SUPERPOWERS_ADAPTER: FrameworkAdapter = Object.freeze({
   verify: Object.freeze([
     'superpowers:requesting-code-review',
     'superpowers:verification-before-completion',
-    "the project's test command",
+    t('framework.superpowers.adapter.superpowersAdapter4'),
   ]),
   doneSignal: Object.freeze({
-    artifact: '.superpowers/sdd/<plan workspace>/progress.md',
-    check: 'every task has a "Task <N>: complete" line',
+    artifact: t('framework.superpowers.adapter.superpowersAdapterArtifact'),
+    check: t('framework.superpowers.adapter.superpowersAdapterCheck'),
   }),
   humanGates: SUPERPOWERS_GATES,
   autonomy: Object.freeze([]),
   autonomyNote:
-    'No config file: autonomy comes only from the kickoff text. ' +
-    'Chat gates end a turn with no tool call, and autopilot pauses after 2 such turns, ' +
-    'so the kickoff pre-answers every gate.',
+    t('framework.superpowers.adapter.superpowersAdapter5'),
   /** superpowers has no config file to change, so it offers no autonomy hunks (A5). */
   autonomyHunks: () => null,
   kickoffText: superpowersKickoffText,

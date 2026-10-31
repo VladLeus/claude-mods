@@ -7,13 +7,14 @@
 import type { HunkOp, PortRead, SettingProposal } from '../../../types'
 import { isObject, parseJsonValue } from '../../core/json'
 import { clean, reportText } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { GSD_CONFIG_FILE } from './adapter'
 
 /** The before text of a key the config does not set: GSD then uses its own default (D-70). */
-export const NOT_SET_TEXT = 'not set (GSD default)'
+export const NOT_SET_TEXT = t('framework.gsd.hunks.notSetText')
 
 /** The before text when GSD_CONFIG_FILE cannot be read or is not a JSON object: the value is not known. */
-export const UNKNOWN_CONFIG_TEXT = `unknown (could not read ${GSD_CONFIG_FILE})`
+export const UNKNOWN_CONFIG_TEXT = t('framework.gsd.hunks.unknownConfigText', { gsdConfigFile: GSD_CONFIG_FILE })
 
 /** Code points of a config value that a hunk shows; a longer value is cut with an ellipsis (T-02-22). */
 const MAX_VALUE_CHARS = 80
@@ -189,7 +190,7 @@ function sentenceList(names: readonly string[]): string {
   const last = names.slice(-1).join('')
   if (head.length === 0) return last
 
-  return `${head.join(', ')} and ${last}`
+  return t('framework.gsd.hunks.sentenceList', { head: head.join(', '), last })
 }
 
 /**
@@ -198,7 +199,7 @@ function sentenceList(names: readonly string[]): string {
  */
 export function attendedNote(keys: readonly string[]): string {
   const shown = keys.map(reportText)
-  const what = shown.length === 0 ? 'its settings' : sentenceList(shown)
+  const what = shown.length === 0 ? t('framework.gsd.hunks.itsSettings') : sentenceList(shown)
 
-  return `attended: GSD needs a person until ${what} ${shown.length === 1 ? 'is' : 'are'} set as proposed`
+  return tn('framework.gsd.hunks.attended', shown.length, { what })
 }

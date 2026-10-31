@@ -6,6 +6,7 @@
  */
 import type { TemplateRoleId } from '../../types'
 import { freezeRows } from '../core/freeze'
+import { t } from '../locales/t'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
@@ -62,9 +63,13 @@ function frozenRoles(...ids: TemplateRoleId[]): readonly TemplateRoleId[] {
  * except `playwright|devtools`, which also match inside a longer word.
  */
 export const MCP_ROLE_ROWS: readonly NameRow[] = freezeRows([
-  { pattern: /(^|[-_])(jira|linear|notion)([-_]|$)/i, roles: frozenRoles('pm', 'tl'), label: 'Jira, Linear or Notion' },
-  { pattern: /(playwright|devtools)/i, roles: frozenRoles('fe', 'qa'), label: 'Playwright or DevTools' },
-  { pattern: /(^|[-_])github([-_]|$)/i, roles: frozenRoles('tl'), label: 'GitHub' },
+  {
+    pattern: /(^|[-_])(jira|linear|notion)([-_]|$)/i,
+    roles: frozenRoles('pm', 'tl'),
+    label: t('roles.infra.mcpRoleRows'),
+  },
+  { pattern: /(playwright|devtools)/i, roles: frozenRoles('fe', 'qa'), label: t('roles.infra.mcpRoleRows2') },
+  { pattern: /(^|[-_])github([-_]|$)/i, roles: frozenRoles('tl'), label: t('roles.infra.mcpRoleRows3') },
 ])
 
 /**
@@ -95,7 +100,7 @@ export const SKILL_ROLE_ROWS: readonly NameRow[] = freezeRows([
   {
     pattern: /(^|[-:])(frontend-design|frontend|design|ui-ux|ui-design)([-:]|$)/i,
     roles: frozenRoles('fe'),
-    label: 'frontend and design skills',
+    label: t('roles.infra.skillRoleRowsLabel'),
   },
 ])
 

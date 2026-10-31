@@ -1003,6 +1003,170 @@ export const EN = Object.freeze({
     ''}(role sessions run in the terminal, where connectors are claude_ai_* servers)`,
   'scan.settings.unfitNames.one': 'ignored {count} {noun} name from {source} that a role.json cannot hold',
   'scan.settings.unfitNames.other': 'ignored {count} {noun} names from {source} that a role.json cannot hold',
+
+  'roles.adjust.customPurpose': 'A custom role added by the person running init.',
+  'roles.adjust.noRole': 'no role "{id}"',
+  'roles.adjust.usedId': 'role id "{id}" is already used',
+  'roles.adjust.noTitle': 'role "{id}" has no title',
+  'roles.adjust.addRole': 'at most {maxRoles} roles',
+  'roles.adjust.dropRole': 'keep at least one role',
+
+  'roles.infra.mcpRoleRows': 'Jira, Linear or Notion',
+  'roles.infra.mcpRoleRows2': 'Playwright or DevTools',
+  'roles.infra.mcpRoleRows3': 'GitHub',
+  'roles.infra.skillRoleRowsLabel': 'frontend and design skills',
+
+  'roles.propose.languageText': 'unknown language',
+  'roles.propose.backendChange': 'no backend framework',
+  'roles.propose.backendChange2': 'no UI framework',
+  'roles.propose.backendChangeReason': 'source code found ({language}), {missing}',
+
+  'roles.recommend.noFrameworkWhy': 'no dev framework is in use; roles run the built-in plan, execute, verify loop',
+  'roles.recommend.recommendTool': 'Playwright MCP',
+  'roles.recommend.recommendWhy': 'the FE role has no E2E setup to check its work in a browser',
+  'roles.recommend.recommendTool2': 'DevTools MCP',
+  'roles.recommend.recommendWhy2': 'the FE role cannot inspect the running page',
+  'roles.recommend.recommendWhy3':
+    "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+  'roles.recommend.recommendWhy4': 'no hooks warn the Security role about risky edits',
+
+  'roles.template.noFrontendReason': 'no frontend framework found (react, vue, next, svelte, angular)',
+  'roles.template.noTestsReason': 'no tests or E2E setup found',
+  'roles.template.noSourceReason': 'no source code found',
+
+  'roles.validate.slugRule': 'a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most',
+  'roles.validate.validateRoleId': 'role id "bin" is reserved: it is the launcher folder .cadre/bin/',
+  'roles.validate.validateRoleId2': 'role id "{id}" is reserved: all and none are answer words in init questions',
+  'roles.validate.validateRoleId3': 'role id "{id}" must be {slugRule}',
+  'roles.validate.idProblems': 'duplicate role id "{id}"',
+  'roles.validate.validateRoles': 'no roles: describe at least one role',
+  'roles.validate.validateRoles2': 'at most {maxRoles} roles (got {count})',
+  'roles.validate.validateRoles3': 'role "{id}" has no title',
+
+  'plan.plan.conflictNote': 'changed outside cadre: kept as is; the new version is planned beside it',
+  'plan.plan.unreadableNote':
+    'could not read it (treated as changed): kept as is; the new version is planned beside it',
+  'plan.plan.newVersionNote': 'the new version, for diffing; init asks Keep mine or Take new for the file',
+  'plan.plan.occupiedNote': 'a different file is already there: kept as is',
+  'plan.plan.staleNote': 'no longer generated (kept; cadre deletes nothing)',
+  'plan.plan.unreadableManifestNote':
+    "could not read it (treated as changed): kept as is, so no role's entries are dropped; it is not written",
+  'plan.plan.refusalWarning': 'refused to plan {path}: not a .cadre/ path or .gitignore (PLAN-06)',
+  'plan.plan.twiceWarning': 'refused to plan {path} twice: only the first is kept',
+  'plan.plan.acceptFiles': 'refused to plan {path}: cadre plans it itself',
+  'plan.plan.hunkPart': 'refused hunk for {file}: not a known framework config (PLAN-06)',
+
+  'plan.text.fileRows': ' (executable)',
+  'plan.text.hunkRows': '{key}: {before} -> {after}',
+  'plan.text.hunkRows2': '  {pad}{file}  {change}  ({flags})',
+  'plan.text.hunkRows3': '{detailIndent}run: {command}',
+  'plan.text.planSummary': '0 hunks',
+  'plan.text.planSummary2': '{hunks} hunks ({accepted} accepted)',
+  'plan.text.planSummary3': '{create} create, {change} change, {leave} leave, {conflict} conflict',
+  'plan.text.planSummary4': 'Summary: {kinds}, {hunkCount}',
+  'plan.text.renderPlan': 'warning: {warning}',
+  'plan.text.renderPlan2': 'File plan:',
+  'plan.text.dryRunNote': 'Dry run: nothing was written.',
+
+  'plan.gitignore.openBlockWarning':
+    'the cadre block in .gitignore has no end marker: fix it by hand; the ignore block is not planned',
+  'plan.plan.manifestKept': '{what}: it is kept as is and not written',
+  'plan.plan.ignoreNotPlanned': '{what}: the ignore block is not planned',
+  'framework.gsd.identity.notBuilt': '{prefix}: runtime not built',
+  'framework.gsd.identity.couldNotRun':
+    '{prefix}: the identity call could not run (node missing or timed out); treated as unknown',
+  'framework.gsd.hunks.itsSettings': 'its settings',
+  'framework.gsd.hunks.attended.one': 'attended: GSD needs a person until {what} is set as proposed',
+  'framework.gsd.hunks.attended.other': 'attended: GSD needs a person until {what} are set as proposed',
+
+  'framework.gsd.identity.unprovenWarning': 'could not prove the GSD install at {dir}',
+
+  'framework.gsd.hunks.notSetText': 'not set (GSD default)',
+  'framework.gsd.hunks.unknownConfigText': 'unknown (could not read {gsdConfigFile})',
+  'framework.gsd.hunks.sentenceList': '{head} and {last}',
+
+  'framework.gsd.tools.refusedDisplay': 'refused: an argument is not a plain word',
+
+  'framework.contract.unsupportedMarkers':
+    'every stage after Initialization ends in a recorded human approval gate, so autonomous roles would ' +
+    'block; no cadre adapter in v1',
+  'framework.contract.unsupportedMarkersReason':
+    'persona and workflow method with its own gates and _bmad/ runtime; no cadre adapter in v1',
+  'framework.contract.unsupportedMarkersReason2': 'spec-driven command set under .specify/; no cadre adapter in v1',
+  'framework.contract.detectUnsupported': 'no {marker}/',
+  'framework.contract.detectUnsupported2': '{marker}/ present',
+  'framework.contract.detectUnsupported3': 'detected but unsupported: {reason}',
+  'framework.contract.pickedByUser': 'picked by the user',
+  'framework.contract.onlyInUse': 'only {id} is in use in this repo',
+  'framework.contract.decisionTypeProblem': 'standing-rule gate must have decisionType null',
+  'framework.contract.decisionTypeProblem2': 'decisionType null needs kind standing-rule',
+  'framework.contract.decisionTypeProblem3': 'unknown decisionType',
+  'framework.contract.gateFieldProblems': 'gate {id}',
+  'framework.contract.gateFieldProblems2': '{label}: {decisionProblem}',
+  'framework.contract.gateFieldProblems3': '{label}: empty kickoff',
+  'framework.contract.oneGateProblems': 'gate is not an object',
+  'framework.contract.oneGateProblems2': 'gate has no id',
+  'framework.contract.oneGateProblems3': 'duplicate gate id {id}',
+  'framework.contract.gateProblems': 'gates is not an array',
+  'framework.contract.gateProblems2': 'gate could not be read',
+  'framework.contract.gateProblems3': 'more gate problems not shown',
+
+  'framework.gsd.adapter.gsdHookNotes': 'conflicts with the autopilot handoff',
+  'framework.gsd.adapter.gsdHookNotes2': 'useful for Security',
+  'framework.gsd.adapter.gsdHookNotesNote':
+    'rejects non-Conventional commit messages when enabled (this repo uses (type): Subject)',
+  'framework.gsd.adapter.gsdHookNotes3': 'advisory nag when enabled',
+  'framework.gsd.adapter.detectGsd': 'no .planning/',
+  'framework.gsd.adapter.detectGsd2': 'no gsd-core install proven',
+  'framework.gsd.adapter.planningEvidence': '.planning/ (symlink)',
+  'framework.gsd.adapter.planningEvidence2': '.planning/ (dir)',
+  'framework.gsd.adapter.installEvidence': 'gsd-core (version unknown)',
+  'framework.gsd.adapter.installEvidence2': 'gsd-core {version}',
+  'framework.gsd.adapter.installEvidence3': '{label} at {dir}',
+  'framework.gsd.adapter.gsdAutonomyWhy':
+    'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
+  'framework.gsd.adapter.gsdAutonomyWhy2':
+    'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
+  'framework.gsd.adapter.gsdAutonomy':
+    'only when gsd-statusline is the statusline: gsd-context-monitor warnings conflict with the autopilot handoff',
+  'framework.gsd.adapter.gsdAdapter':
+    'in use: .planning/ at the repo root (dir or symlink); installed: gsd-core identity proven at ' +
+    '~/.claude/gsd-core (or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or ' +
+    '<repo>/.claude/gsd-core',
+  'framework.gsd.adapter.gsdAdapter2': '/gsd-autonomous --only N',
+  'framework.gsd.adapter.gsdAdapter3': '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
+  'framework.gsd.adapter.gsdAdapter4': '/gsd-new-project (no .planning/ yet)',
+  'framework.gsd.adapter.gsdAdapter5': '/gsd-validate-phase N',
+  'framework.gsd.adapter.gsdAdapter6': '/gsd-code-review N',
+  'framework.gsd.adapter.gsdAdapter7': 'the verifier inside /gsd-execute-phase',
+  'framework.gsd.adapter.gsdAdapterCheck': 'frontmatter status: passed',
+  'framework.gsd.adapter.gsdAdapterFactsHeading': 'GSD hooks registered (activation depends on GSD config)',
+
+  'framework.superpowers.adapter.detectSuperpowers': 'no docs/superpowers/ or .superpowers/',
+  'framework.superpowers.adapter.detectSuperpowers2': 'no enabled superpowers@ plugin',
+  'framework.superpowers.adapter.installedEvidence': 'enabledPlugins["{key}"]=true ({source})',
+  'framework.superpowers.adapter.superpowersAdapter':
+    'in use: docs/superpowers/ or .superpowers/ at the repo root; installed: an enabledPlugins key ' +
+    'starting superpowers@ set to true',
+  'framework.superpowers.adapter.superpowersAdapter2': 'superpowers:writing-plans <spec path> (BE/FE with a TL spec)',
+  'framework.superpowers.adapter.superpowersAdapter3': 'superpowers:brainstorming (TL/PM)',
+  'framework.superpowers.adapter.superpowersAdapter4': "the project's test command",
+  'framework.superpowers.adapter.superpowersAdapterArtifact': '.superpowers/sdd/<plan workspace>/progress.md',
+  'framework.superpowers.adapter.superpowersAdapterCheck': 'every task has a "Task <N>: complete" line',
+  'framework.superpowers.adapter.superpowersAdapter5':
+    'No config file: autonomy comes only from the kickoff text. Chat gates end a turn with no tool call, ' +
+    'and autopilot pauses after 2 such turns, so the kickoff pre-answers every gate.',
+
+  'framework.none.adapter.detectBuiltin': 'built into cadre',
+  'framework.none.adapter.builtinAdapterDetectRule': 'always available inside cadre; used when no framework is chosen',
+  'framework.none.adapter.builtinAdapter': 'write the plan to .cadre/<role>/.runtime/plan.md (never ExitPlanMode)',
+  'framework.none.adapter.builtinAdapter2': 'execute the plan with subagents',
+  'framework.none.adapter.builtinAdapter3': "the project's test and lint commands (from the repo scan)",
+  'framework.none.adapter.builtinAdapter4': 'a reviewer subagent',
+  'framework.none.adapter.builtinAdapterCheck': 'the file exists and says what was done and how it was verified',
+  'framework.none.adapter.builtinAdapterAutonomyNote':
+    'No framework config: autonomy comes from the kickoff text alone.',
+  'framework.none.adapter.builtinAdapter5': 'the plan in .cadre/{roleId}/.runtime/plan.md',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

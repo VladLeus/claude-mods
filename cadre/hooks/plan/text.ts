@@ -6,6 +6,7 @@
  */
 import type { FileOp, FileOpKind, HunkOp, Plan } from '../../types'
 import { pad, reportText } from '../core/text'
+import { t } from '../locales/t'
 
 /** Code points the kind column of the plan table takes; a hunk row uses the same column. */
 const KIND_WIDTH = 10
@@ -18,7 +19,7 @@ const DETAIL_INDENT = ' '.repeat(2 + KIND_WIDTH)
  * detail line (the `.gitignore` block, PLAN-03), each indented like the note and cleaned as a report cell.
  */
 function fileRows(op: FileOp): string[] {
-  const flag = op.mode === 'exec' ? ' (executable)' : ''
+  const flag = op.mode === 'exec' ? t('plan.text.fileRows') : ''
   const rows = [`  ${pad(op.kind, KIND_WIDTH)}${reportText(op.path)}${flag}`]
   const note = op.note === null ? '' : reportText(op.note)
   if (note !== '') rows.push(`${DETAIL_INDENT}${note}`)
@@ -29,12 +30,16 @@ function fileRows(op: FileOp): string[] {
 
 /** The rows of one hunk: the file, the key before and after with its flags, and the command under it. */
 function hunkRows(op: HunkOp): string[] {
-  const change = `${reportText(op.key)}: ${reportText(op.before)} -> ${reportText(op.after)}`
+  const change = t('plan.text.hunkRows', {
+    key: reportText(op.key),
+    before: reportText(op.before),
+    after: reportText(op.after),
+  })
   const flags = `${op.isRequired ? 'required' : 'optional'}, ${op.isAccepted ? 'accepted' : 'declined'}`
 
   return [
-    `  ${pad('hunk', KIND_WIDTH)}${reportText(op.file)}  ${change}  (${flags})`,
-    `${DETAIL_INDENT}run: ${reportText(op.command)}`,
+    t('plan.text.hunkRows2', { pad: pad('hunk', KIND_WIDTH), file: reportText(op.file), change, flags }),
+    t('plan.text.hunkRows3', { detailIndent: DETAIL_INDENT, command: reportText(op.command) }),
   ]
 }
 
@@ -54,10 +59,15 @@ export function planSummary(plan: Plan): string {
     }
     counts[op.kind] += 1
   }
-  const hunkCount = hunks === 0 ? '0 hunks' : `${hunks} hunks (${accepted} accepted)`
-  const kinds = `${counts.create} create, ${counts.change} change, ${counts.leave} leave, ${counts.conflict} conflict`
+  const hunkCount = hunks === 0 ? t('plan.text.planSummary') : t('plan.text.planSummary2', { hunks, accepted })
+  const kinds = t('plan.text.planSummary3', {
+    create: counts.create,
+    change: counts.change,
+    leave: counts.leave,
+    conflict: counts.conflict,
+  })
 
-  return `Summary: ${kinds}, ${hunkCount}`
+  return t('plan.text.planSummary4', { kinds, hunkCount })
 }
 
 /**
@@ -68,10 +78,10 @@ export function planSummary(plan: Plan): string {
  */
 export function renderPlan(plan: Plan): string[] {
   const rows = plan.ops.flatMap(op => (op.kind === 'hunk' ? hunkRows(op) : fileRows(op)))
-  const warnings = plan.warnings.map(warning => `warning: ${reportText(warning)}`)
+  const warnings = plan.warnings.map(warning => t('plan.text.renderPlan', { warning: reportText(warning) }))
 
-  return ['File plan:', ...rows, ...warnings, planSummary(plan)]
+  return [t('plan.text.renderPlan2'), ...rows, ...warnings, planSummary(plan)]
 }
 
 /** The last line of the dry-run reply (PLAN-02). */
-export const DRY_RUN_NOTE = 'Dry run: nothing was written.'
+export const DRY_RUN_NOTE = t('plan.text.dryRunNote')

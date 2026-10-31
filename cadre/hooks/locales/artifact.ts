@@ -119,4 +119,98 @@ export const ARTIFACT = Object.freeze({
   launcherOlder: ' is older than the role files',
   launcherNoJsonCheck: 'cadre: (JSON not re-checked: no jq or node)',
   launcherExpectationsMissing: '{file} is missing',
+  // roles/template.ts
+  templatePmPurpose: 'Owns product decisions: scope, requirements and acceptance.',
+  templateTlTitle: 'Team Lead',
+  templateTlPurpose: 'Owns architecture and QA decisions; reviews and merges the work.',
+  templateBePurpose: 'Implements the backend and core code.',
+  templateFePurpose: 'Implements the frontend.',
+  templateQaPurpose: 'Owns tests and end-to-end checks.',
+  templateSecurityTitle: 'Security',
+  templateSecurityPurpose: 'Owns security decisions and reviews.',
+  chainHumanFallback: 'human (queue_question)',
+  chainLine: '{decision}: {decisionChain}',
+  // framework/gsd/adapter.ts
+  gsdGateMenusWhere: 'AskUserQuestion menus inside GSD workflows',
+  gsdGateMenus:
+    'Autopilot answers GSD menus with "decide yourself": take the recommended option and log it in decisions.md.',
+  gsdGateTextModeWhere: '.planning/config.json workflow.text_mode',
+  gsdGateTextMode: 'Needs workflow.text_mode false (an autonomy setting); with it true the role is attended.',
+  gsdGateUat: 'Do not run /gsd-verify-work. Send human UAT as a QA decision to TL, which queues it for the human.',
+  gsdGateThreats:
+    'Answer "Verify all open threats"; never accept a risk: accepting risk is always queued for the human.',
+  gsdGateBlockerWhere: 'STATE.md "Needs Human" blocker',
+  gsdGateBlocker:
+    'Route the blocker by its content, by default as an Arch decision to TL; TL decides reversible calls ' +
+    'and queues the rest for the human.',
+  gsdGateShipWhere: '/gsd-ship, branch finish, merge or PR',
+  gsdGateShip:
+    'Never merge, push or release. Hand the finished branch to TL as an Arch decision; merge, push and ' +
+    'release are always queued for the human.',
+  gsdGateScopeWhere: 'scope or acceptance questions in discuss and plan',
+  gsdGateScope: 'Send scope or acceptance questions as a Product decision to PM.',
+  gsdDoneLine:
+    'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.',
+  gsdApprovedSpec: 'Approved spec: {cleaned}',
+  gsdKickoffIntro: 'You are the {title} role. This repo uses GSD: drive the work with its own commands.',
+  gsdKickoffStart:
+    'Start: /gsd-autonomous --only N for the phase you own, or step by step /gsd-discuss-phase N --auto, ' +
+    '/gsd-plan-phase N --auto, /gsd-execute-phase N.',
+  gsdKickoffSpecs: 'Specs and plans live under .planning/phases/<NN-slug>/.',
+  gsdKickoffVerify: 'Verify with /gsd-validate-phase N and /gsd-code-review N.',
+  gsdHumanGates: 'Human gates:',
+  gsdGateLine: '- {where}: {kickoff}',
+  // framework/superpowers/adapter.ts
+  spGateBrainstormWhere: 'superpowers:brainstorming hard gate',
+  spGateBrainstorm:
+    'With a TL-approved spec, start at superpowers:writing-plans; the spec is the standing approval. A ' +
+    'new design question goes to TL as an Arch decision.',
+  spGatePlansWhere: 'superpowers:writing-plans execution choice',
+  spGatePlans: 'The execution method is already chosen: subagent-driven.',
+  spGateFinishWhere: 'superpowers:finishing-a-development-branch menu',
+  spGateFinish: 'Choose "keep as-is". TL owns merge and PR; merge and push are always queued for the human.',
+  spGateSecurityWhere: 'superpowers:subagent-driven-development security-sensitive stop',
+  spGateSecurity:
+    'Stop the step and send it to Security as a Security decision; accepting a risk is always queued for the human.',
+  spGateOutwardWhere: 'superpowers:subagent-driven-development irreversible or outward stop',
+  spGateOutward:
+    'Stop the step and send it to TL as an Arch decision; irreversible or outward actions are always ' +
+    'queued for the human.',
+  spGateWorktreeWhere: 'superpowers:using-git-worktrees consent',
+  spGateWorktree: 'You are already in your epic worktree: do not create another worktree.',
+  spGateMainWhere: 'superpowers:subagent-driven-development main-branch consent',
+  spGateMain: 'Work on the current epic branch; never implement on main or master.',
+  spGateQuestionsWhere: 'superpowers:brainstorming clarifying questions',
+  spGateQuestions: 'Send scope or acceptance questions as a Product decision to PM.',
+  spDoneLine:
+    'When every task in .superpowers/sdd/<plan workspace>/progress.md has a "Task <N>: complete" line, ' +
+    'answer with a line that starts with AUTOPILOT_DONE.',
+  spSpecStart: 'Start: superpowers:writing-plans with that spec.',
+  spNoSpecStart:
+    'Start: superpowers:brainstorming (TL/PM), or superpowers:writing-plans <spec path> once TL gives you a spec.',
+  spApprovedSpec: 'Approved spec (standing approval from TL): {cleaned}',
+  spKickoffIntro: 'You are the {kickoffTitle} role. This repo uses superpowers: follow its skills.',
+  spKickoffMethod: 'Execution method: subagent-driven.',
+  spKickoffNoQuestion:
+    'Never end a turn with a question in chat: autopilot pauses after 2 turns with no tool call. Send ' +
+    'questions to their owner role instead.',
+  spHumanGates: 'Human gates:',
+  spGateLine: '- {where}: {kickoff}',
+  // framework/none/adapter.ts
+  builtinGateExitWhere: 'ExitPlanMode',
+  builtinGateExit: 'Never call ExitPlanMode (it waits for a human); write the plan file instead.',
+  builtinGateQuestionWhere: 'any open question',
+  builtinGateQuestion:
+    'Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to ' +
+    'Security); do not ask the human directly.',
+  builtinSpec: 'Spec: {cleaned}',
+  builtinDoneLine:
+    `Write .cadre/{folder}/.runtime/DONE.md with what you did and how you verified it, then answer with ${
+    ''}a line that starts with AUTOPILOT_DONE.`,
+  builtinKickoffIntro:
+    'You are the {title} role. This repo has no dev framework: work in plan, execute, verify steps.',
+  builtinKickoffPlan: 'Write your plan to .cadre/{folder}/.runtime/plan.md, then execute it with subagents.',
+  builtinKickoffVerify: "Verify with the project's own test and lint commands and a reviewer subagent.",
+  builtinHumanGates: 'Human gates:',
+  builtinGateLine: '- {where}: {kickoff}',
 }) satisfies Record<string, string>

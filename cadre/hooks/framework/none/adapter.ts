@@ -6,6 +6,8 @@ import type { Detection, Facts, FrameworkAdapter, Gate, KickoffContext } from '.
 import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS, UNNAMED_ROLE } from '../../core/kickoff-text'
 import { isRoleId } from '../../core/role-id'
+import { ARTIFACT } from '../../locales/artifact'
+import { fill, t } from '../../locales/t'
 
 /**
  * The built-in fallback's detection. It ignores the repo: the built-in adapter is always available inside cadre and is
@@ -13,7 +15,9 @@ import { isRoleId } from '../../core/role-id'
  * adapter contract and are never read.
  */
 export function detectBuiltin(_facts: Facts): Detection {
-  return { id: 'none', name: 'built-in', status: 'installed', version: null, evidence: ['built into cadre'] }
+  const evidence = [t('framework.none.adapter.detectBuiltin')]
+
+  return { id: 'none', name: 'built-in', status: 'installed', version: null, evidence }
 }
 
 /**
@@ -23,23 +27,22 @@ export function detectBuiltin(_facts: Facts): Detection {
 export const BUILTIN_GATES: readonly Gate[] = freezeRows([
   {
     id: 'exit-plan-mode',
-    where: 'ExitPlanMode',
+    where: ARTIFACT.builtinGateExitWhere,
     kind: 'standing-rule',
     decisionType: null,
     needsHuman: false,
     handling: 'standing-rule',
-    kickoff: 'Never call ExitPlanMode (it waits for a human); write the plan file instead.',
+    kickoff: ARTIFACT.builtinGateExit,
   },
   {
     id: 'role-questions',
-    where: 'any open question',
+    where: ARTIFACT.builtinGateQuestionWhere,
     kind: 'chat',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'escalate',
     kickoff:
-      'Send each question to its owner role by type (Product to PM, Arch and QA to TL, Security to Security); ' +
-      'do not ask the human directly.',
+      ARTIFACT.builtinGateQuestion,
   },
 ])
 
@@ -61,15 +64,12 @@ function specLines(specPath: string | null): string[] {
   const cleaned = cleanKickoffTextOr(specPath, MAX_SPEC_PATH_CHARS, null)
   if (cleaned === null) return []
 
-  return [`Spec: ${cleaned}`]
+  return [fill(ARTIFACT.builtinSpec, { cleaned })]
 }
 
 /** The last line of every built-in kickoff: the DONE.md marker written before the AUTOPILOT_DONE answer (D-17). */
 function doneLine(folder: string): string {
-  return (
-    `Write .cadre/${folder}/.runtime/DONE.md with what you did and how you verified it, ` +
-    'then answer with a line that starts with AUTOPILOT_DONE.'
-  )
+  return fill(ARTIFACT.builtinDoneLine, { folder })
 }
 
 /**
@@ -84,12 +84,12 @@ export function builtinKickoffText(ctx: KickoffContext): string {
   const folder = roleFolder(ctx.roleId)
 
   return [
-    `You are the ${title} role. This repo has no dev framework: work in plan, execute, verify steps.`,
+    fill(ARTIFACT.builtinKickoffIntro, { title }),
     ...specLines(ctx.specPath),
-    `Write your plan to .cadre/${folder}/.runtime/plan.md, then execute it with subagents.`,
-    "Verify with the project's own test and lint commands and a reviewer subagent.",
-    'Human gates:',
-    ...BUILTIN_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`),
+    fill(ARTIFACT.builtinKickoffPlan, { folder }),
+    ARTIFACT.builtinKickoffVerify,
+    ARTIFACT.builtinHumanGates,
+    ...BUILTIN_GATES.map(gate => fill(ARTIFACT.builtinGateLine, { where: gate.where, kickoff: gate.kickoff })),
     doneLine(folder),
   ].join('\n')
 }
@@ -102,24 +102,24 @@ export function builtinKickoffText(ctx: KickoffContext): string {
 export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   id: 'none',
   name: 'built-in',
-  detectRule: 'always available inside cadre; used when no framework is chosen',
+  detectRule: t('framework.none.adapter.builtinAdapterDetectRule'),
   detect: detectBuiltin,
   startWork: Object.freeze([
-    'write the plan to .cadre/<role>/.runtime/plan.md (never ExitPlanMode)',
-    'execute the plan with subagents',
+    t('framework.none.adapter.builtinAdapter'),
+    t('framework.none.adapter.builtinAdapter2'),
   ]),
   locations: Object.freeze({
     spec: Object.freeze(['.cadre/<role>/.runtime/spec.md']),
     plan: Object.freeze(['.cadre/<role>/.runtime/plan.md']),
   }),
-  verify: Object.freeze(["the project's test and lint commands (from the repo scan)", 'a reviewer subagent']),
+  verify: Object.freeze([t('framework.none.adapter.builtinAdapter3'), t('framework.none.adapter.builtinAdapter4')]),
   doneSignal: Object.freeze({
     artifact: '.cadre/<role>/.runtime/DONE.md',
-    check: 'the file exists and says what was done and how it was verified',
+    check: t('framework.none.adapter.builtinAdapterCheck'),
   }),
   humanGates: BUILTIN_GATES,
   autonomy: Object.freeze([]),
-  autonomyNote: 'No framework config: autonomy comes from the kickoff text alone.',
+  autonomyNote: t('framework.none.adapter.builtinAdapterAutonomyNote'),
   /** The built-in fallback has no config file to change, so it offers no autonomy hunks (A5). */
   autonomyHunks: () => null,
   kickoffText: builtinKickoffText,
@@ -130,7 +130,7 @@ export const BUILTIN_ADAPTER: FrameworkAdapter = Object.freeze({
   agentPrefix: null,
   needsBash: false,
   /** The role's plan file, which the built-in kickoff asks the role to write first. */
-  roleStart: (roleId: string) => `the plan in .cadre/${roleId}/.runtime/plan.md`,
+  roleStart: (roleId: string) => t('framework.none.adapter.builtinAdapter5', { roleId }),
   install: null,
   factsHeading: null,
 })

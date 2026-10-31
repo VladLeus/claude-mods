@@ -15,6 +15,8 @@ import type {
 } from '../../types'
 import { freezeRows } from '../core/freeze'
 import { DECISION_TYPES } from '../framework/contract'
+import { ARTIFACT } from '../locales/artifact'
+import { fill, t } from '../locales/t'
 
 /**
  * One row of the role template (D-54), the team every repo starts from. PM has no Bash (ROLE-05), and PM, TL and
@@ -36,24 +38,24 @@ export const ROLE_TEMPLATE: readonly TemplateRole[] = freezeRows([
   {
     id: 'pm',
     title: 'PM',
-    purpose: 'Owns product decisions: scope, requirements and acceptance.',
+    purpose: ARTIFACT.templatePmPurpose,
     hasBash: false,
     askUser: true,
   },
   {
     id: 'tl',
-    title: 'Team Lead',
-    purpose: 'Owns architecture and QA decisions; reviews and merges the work.',
+    title: ARTIFACT.templateTlTitle,
+    purpose: ARTIFACT.templateTlPurpose,
     hasBash: true,
     askUser: true,
   },
-  { id: 'be', title: 'BE', purpose: 'Implements the backend and core code.', hasBash: true, askUser: false },
-  { id: 'fe', title: 'FE', purpose: 'Implements the frontend.', hasBash: true, askUser: false },
-  { id: 'qa', title: 'QA', purpose: 'Owns tests and end-to-end checks.', hasBash: true, askUser: false },
+  { id: 'be', title: 'BE', purpose: ARTIFACT.templateBePurpose, hasBash: true, askUser: false },
+  { id: 'fe', title: 'FE', purpose: ARTIFACT.templateFePurpose, hasBash: true, askUser: false },
+  { id: 'qa', title: 'QA', purpose: ARTIFACT.templateQaPurpose, hasBash: true, askUser: false },
   {
     id: 'security',
-    title: 'Security',
-    purpose: 'Owns security decisions and reviews.',
+    title: ARTIFACT.templateSecurityTitle,
+    purpose: ARTIFACT.templateSecurityPurpose,
     hasBash: true,
     askUser: true,
   },
@@ -83,7 +85,7 @@ export const EMPTY_CARRY: RoleCarry = Object.freeze({
 })
 
 /** The last link of every decision chain: the person, reached through autopilot's `queue_question` (D-12, D-54). */
-export const HUMAN_FALLBACK = 'human (queue_question)'
+export const HUMAN_FALLBACK = ARTIFACT.chainHumanFallback
 
 /** Which role owns each decision type (D-54). A gate whose type has no owner here falls back along the chain. */
 export const DECISION_OWNERS: Readonly<Record<DecisionType, TemplateRoleId>> = Object.freeze({
@@ -97,13 +99,13 @@ export const DECISION_OWNERS: Readonly<Record<DecisionType, TemplateRoleId>> = O
 const FALLBACK_OWNER: TemplateRoleId = 'tl'
 
 /** Why FE is dropped (D-49): the scan found none of the frameworks it looks for. */
-export const NO_FRONTEND_REASON = 'no frontend framework found (react, vue, next, svelte, angular)'
+export const NO_FRONTEND_REASON = t('roles.template.noFrontendReason')
 
 /** Why QA is dropped (D-49): the scan found neither a test nor an E2E marker. */
-export const NO_TESTS_REASON = 'no tests or E2E setup found'
+export const NO_TESTS_REASON = t('roles.template.noTestsReason')
 
 /** Why BE is dropped (D-85): no source file at all. */
-export const NO_SOURCE_REASON = 'no source code found'
+export const NO_SOURCE_REASON = t('roles.template.noSourceReason')
 
 /** What a role's base decides: whether it has Bash and whether it asks the person. */
 export type RoleTraits = {
@@ -175,5 +177,8 @@ export function decisionChain(decision: DecisionType, roles: readonly ChainRole[
 
 /** One line per decision type in DECISION_TYPES order, naming its chain for this team: `Arch: tl -> human (...)`. */
 export function chainLines(roles: readonly ChainRole[]): string[] {
-  return DECISION_TYPES.map(decision => `${decision}: ${decisionChain(decision, roles).join(' -> ')}`)
+  return DECISION_TYPES.map(decision => fill(ARTIFACT.chainLine, {
+    decision,
+    decisionChain: decisionChain(decision, roles).join(' -> '),
+  }))
 }

@@ -5,6 +5,7 @@
  */
 import type { GitPolicy } from '../../types'
 import { CONTRACTS } from '../locales/contracts'
+import { t } from '../locales/t'
 import { RUNTIME_RENDERED } from '../paths'
 
 /**
@@ -113,5 +114,4 @@ export function mergeIgnoreBlock(existing: string | null, lines: readonly string
 }
 
 /** The warning when the cadre block in the `.gitignore` has a begin marker and no end marker. */
-export const OPEN_BLOCK_WARNING =
-  'the cadre block in .gitignore has no end marker: fix it by hand; the ignore block is not planned'
+export const OPEN_BLOCK_WARNING = t('plan.gitignore.openBlockWarning')

@@ -4,6 +4,7 @@
  * role template and the types, so init proposes the roles here.
  */
 import type { RepoScan, RoleChange, RoleProposal, RoleSpec, ScanFinding, ScanKind, TemplateRoleId } from '../../types'
+import { t } from '../locales/t'
 import { NO_FRONTEND_REASON, NO_SOURCE_REASON, NO_TESTS_REASON, ROLE_TEMPLATE, roleFromTemplate } from './template'
 
 /** The most evidence paths one change lists. */
@@ -21,7 +22,7 @@ function hasFinding(scan: RepoScan, kinds: readonly ScanKind[]): boolean {
 
 /** The scanned languages as a sentence part, or `unknown language` when the scan named none. */
 function languageText(scan: RepoScan): string {
-  if (scan.languages.length === 0) return 'unknown language'
+  if (scan.languages.length === 0) return t('roles.propose.languageText')
 
   return scan.languages.join(', ')
 }
@@ -56,12 +57,12 @@ function dropped(roleId: TemplateRoleId, reason: string): RoleChange {
 function backendChange(scan: RepoScan): RoleChange | null {
   if (!scan.hasSource) return dropped('be', NO_SOURCE_REASON)
   if (hasFinding(scan, ['be'])) return null
-  const missing = hasFinding(scan, ['fe']) ? 'no backend framework' : 'no UI framework'
+  const missing = hasFinding(scan, ['fe']) ? t('roles.propose.backendChange') : t('roles.propose.backendChange2')
 
   return {
     roleId: 'be',
     change: 'kept',
-    reason: `source code found (${languageText(scan)}), ${missing}`,
+    reason: t('roles.propose.backendChangeReason', { language: languageText(scan), missing }),
     evidence: evidencePaths(findingsOf(scan, ['lang'])),
   }
 }

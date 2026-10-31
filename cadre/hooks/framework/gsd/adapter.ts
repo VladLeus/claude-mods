@@ -19,19 +19,21 @@ import type {
 } from '../../../types'
 import { freezeRows } from '../../core/freeze'
 import { cleanKickoffTextOr, kickoffTitle, MAX_SPEC_PATH_CHARS } from '../../core/kickoff-text'
+import { ARTIFACT } from '../../locales/artifact'
+import { fill, t } from '../../locales/t'
 
 /**
  * The GSD hooks a role cares about, in the order the report lists them, each with the note that says what it does to
  * the role. A hook is listed only when settings register it (D-05).
  */
 export const GSD_HOOK_NOTES: readonly AdapterFact[] = freezeRows([
-  { name: 'gsd-context-monitor', note: 'conflicts with the autopilot handoff' },
-  { name: 'gsd-secret-read-guard', note: 'useful for Security' },
+  { name: 'gsd-context-monitor', note: t('framework.gsd.adapter.gsdHookNotes') },
+  { name: 'gsd-secret-read-guard', note: t('framework.gsd.adapter.gsdHookNotes2') },
   {
     name: 'gsd-validate-commit',
-    note: 'rejects non-Conventional commit messages when enabled (this repo uses (type): Subject)',
+    note: t('framework.gsd.adapter.gsdHookNotesNote'),
   },
-  { name: 'gsd-workflow-guard', note: 'advisory nag when enabled' },
+  { name: 'gsd-workflow-guard', note: t('framework.gsd.adapter.gsdHookNotes3') },
 ])
 
 /** The script extensions a GSD hook file may carry. A hook is matched by its name without one of them. */
@@ -68,7 +70,7 @@ export function detectGsd(facts: Facts): Detection {
     name: 'GSD',
     status: 'not-found',
     version: null,
-    evidence: ['no .planning/', 'no gsd-core install proven'],
+    evidence: [t('framework.gsd.adapter.detectGsd'), t('framework.gsd.adapter.detectGsd2')],
   }
 }
 
@@ -79,14 +81,17 @@ function isPlanningEntry(entry: RepoEntry): boolean {
 
 /** The evidence for the `.planning/` entry. A symlink is named as one, whatever it points at. */
 function planningEvidence(entry: RepoEntry): string {
-  return entry.isLink ? '.planning/ (symlink)' : '.planning/ (dir)'
+  return entry.isLink ? t('framework.gsd.adapter.planningEvidence') : t('framework.gsd.adapter.planningEvidence2')
 }
 
 /** The evidence for one proven install: its version when one could be read, then its display dir. */
 function installEvidence(fact: GsdFact): string {
-  const label = fact.version === null ? 'gsd-core (version unknown)' : `gsd-core ${fact.version}`
+  const label =
+    fact.version === null
+      ? t('framework.gsd.adapter.installEvidence')
+      : t('framework.gsd.adapter.installEvidence2', { version: fact.version })
 
-  return `${label} at ${fact.dir}`
+  return t('framework.gsd.adapter.installEvidence3', { label, dir: fact.dir })
 }
 
 /** A hook script's name without its extension, or null when the script has none of the known extensions. */
@@ -114,23 +119,22 @@ export function gsdHookFacts(facts: Facts): readonly AdapterFact[] {
 export const GSD_GATES: readonly Gate[] = freezeRows([
   {
     id: 'auq-menus',
-    where: 'AskUserQuestion menus inside GSD workflows',
+    where: ARTIFACT.gsdGateMenusWhere,
     kind: 'auq',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'autopilot-denies',
     kickoff:
-      'Autopilot answers GSD menus with "decide yourself": ' +
-      'take the recommended option and log it in decisions.md.',
+      ARTIFACT.gsdGateMenus,
   },
   {
     id: 'text-mode',
-    where: '.planning/config.json workflow.text_mode',
+    where: ARTIFACT.gsdGateTextModeWhere,
     kind: 'plaintext',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'config-required',
-    kickoff: 'Needs workflow.text_mode false (an autonomy setting); with it true the role is attended.',
+    kickoff: ARTIFACT.gsdGateTextMode,
   },
   {
     id: 'verify-work-uat',
@@ -140,8 +144,7 @@ export const GSD_GATES: readonly Gate[] = freezeRows([
     needsHuman: true,
     handling: 'escalate',
     kickoff:
-      'Do not run /gsd-verify-work. Send human UAT as a QA decision to TL, ' +
-      'which queues it for the human.',
+      ARTIFACT.gsdGateUat,
   },
   {
     id: 'secure-phase-accept-risk',
@@ -151,39 +154,36 @@ export const GSD_GATES: readonly Gate[] = freezeRows([
     needsHuman: true,
     handling: 'preapprove',
     kickoff:
-      'Answer "Verify all open threats"; never accept a risk: ' +
-      'accepting risk is always queued for the human.',
+      ARTIFACT.gsdGateThreats,
   },
   {
     id: 'needs-human-blocker',
-    where: 'STATE.md "Needs Human" blocker',
+    where: ARTIFACT.gsdGateBlockerWhere,
     kind: 'plaintext',
     decisionType: 'Arch',
     needsHuman: false,
     handling: 'escalate',
     kickoff:
-      'Route the blocker by its content, by default as an Arch decision to TL; ' +
-      'TL decides reversible calls and queues the rest for the human.',
+      ARTIFACT.gsdGateBlocker,
   },
   {
     id: 'ship-merge-pr',
-    where: '/gsd-ship, branch finish, merge or PR',
+    where: ARTIFACT.gsdGateShipWhere,
     kind: 'auq',
     decisionType: 'Arch',
     needsHuman: true,
     handling: 'escalate',
     kickoff:
-      'Never merge, push or release. Hand the finished branch to TL as an Arch decision; ' +
-      'merge, push and release are always queued for the human.',
+      ARTIFACT.gsdGateShip,
   },
   {
     id: 'scope-acceptance',
-    where: 'scope or acceptance questions in discuss and plan',
+    where: ARTIFACT.gsdGateScopeWhere,
     kind: 'chat',
     decisionType: 'Product',
     needsHuman: false,
     handling: 'escalate',
-    kickoff: 'Send scope or acceptance questions as a Product decision to PM.',
+    kickoff: ARTIFACT.gsdGateScope,
   },
 ])
 
@@ -206,7 +206,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
       args: Object.freeze(['config-set', 'mode', 'yolo']),
     }),
     to: 'yolo',
-    why: 'interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended',
+    why: t('framework.gsd.adapter.gsdAutonomyWhy'),
     isRequired: true,
   },
   {
@@ -218,7 +218,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
       args: Object.freeze(['config-set', 'workflow.text_mode', 'false']),
     }),
     to: 'false',
-    why: 'text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall',
+    why: t('framework.gsd.adapter.gsdAutonomyWhy2'),
     isRequired: true,
   },
   {
@@ -231,8 +231,7 @@ export const GSD_AUTONOMY: readonly SettingProposal[] = freezeRows([
     }),
     to: 'false',
     why:
-      'only when gsd-statusline is the statusline: ' +
-      'gsd-context-monitor warnings conflict with the autopilot handoff',
+      t('framework.gsd.adapter.gsdAutonomy'),
     isRequired: false,
   },
 ])
@@ -253,8 +252,7 @@ export function gsdAutonomyHunks(setup: SetupScan): AutonomyHunks {
 }
 
 /** The last line of every GSD kickoff: the done answer autopilot waits for once the phase verifies. */
-const DONE_LINE =
-  'When the phase VERIFICATION.md has status: passed, answer with a line that starts with AUTOPILOT_DONE.'
+const DONE_LINE = ARTIFACT.gsdDoneLine
 
 /** The Approved spec line when the role has a spec; no line when it has none yet or the path cleans to empty. */
 function approvedSpecLines(specPath: string | null): string[] {
@@ -262,7 +260,7 @@ function approvedSpecLines(specPath: string | null): string[] {
   const cleaned = cleanKickoffTextOr(specPath, MAX_SPEC_PATH_CHARS, null)
   if (cleaned === null) return []
 
-  return [`Approved spec: ${cleaned}`]
+  return [fill(ARTIFACT.gsdApprovedSpec, { cleaned })]
 }
 
 /**
@@ -274,14 +272,13 @@ export function gsdKickoffText(ctx: KickoffContext): string {
   const title = kickoffTitle(ctx)
 
   return [
-    `You are the ${title} role. This repo uses GSD: drive the work with its own commands.`,
+    fill(ARTIFACT.gsdKickoffIntro, { title }),
     ...approvedSpecLines(ctx.specPath),
-    'Start: /gsd-autonomous --only N for the phase you own, or step by step ' +
-      '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N.',
-    'Specs and plans live under .planning/phases/<NN-slug>/.',
-    'Verify with /gsd-validate-phase N and /gsd-code-review N.',
-    'Human gates:',
-    ...GSD_GATES.map(gate => `- ${gate.where}: ${gate.kickoff}`),
+    ARTIFACT.gsdKickoffStart,
+    ARTIFACT.gsdKickoffSpecs,
+    ARTIFACT.gsdKickoffVerify,
+    ARTIFACT.gsdHumanGates,
+    ...GSD_GATES.map(gate => fill(ARTIFACT.gsdGateLine, { where: gate.where, kickoff: gate.kickoff })),
     DONE_LINE,
   ].join('\n')
 }
@@ -294,14 +291,12 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   id: 'gsd',
   name: 'GSD',
   detectRule:
-    'in use: .planning/ at the repo root (dir or symlink); ' +
-    'installed: gsd-core identity proven at ~/.claude/gsd-core ' +
-    '(or $CLAUDE_CONFIG_DIR/gsd-core when it is set and safe) or <repo>/.claude/gsd-core',
+    t('framework.gsd.adapter.gsdAdapter'),
   detect: detectGsd,
   startWork: Object.freeze([
-    '/gsd-autonomous --only N',
-    '/gsd-discuss-phase N --auto, /gsd-plan-phase N --auto, /gsd-execute-phase N',
-    '/gsd-new-project (no .planning/ yet)',
+    t('framework.gsd.adapter.gsdAdapter2'),
+    t('framework.gsd.adapter.gsdAdapter3'),
+    t('framework.gsd.adapter.gsdAdapter4'),
   ]),
   locations: Object.freeze({
     spec: Object.freeze([
@@ -311,10 +306,14 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
     ]),
     plan: Object.freeze(['.planning/phases/<NN-slug>/*-PLAN.md']),
   }),
-  verify: Object.freeze(['/gsd-validate-phase N', '/gsd-code-review N', 'the verifier inside /gsd-execute-phase']),
+  verify: Object.freeze([
+    t('framework.gsd.adapter.gsdAdapter5'),
+    t('framework.gsd.adapter.gsdAdapter6'),
+    t('framework.gsd.adapter.gsdAdapter7'),
+  ]),
   doneSignal: Object.freeze({
     artifact: '.planning/phases/<NN-slug>/*-VERIFICATION.md',
-    check: 'frontmatter status: passed',
+    check: t('framework.gsd.adapter.gsdAdapterCheck'),
   }),
   humanGates: GSD_GATES,
   autonomy: GSD_AUTONOMY,
@@ -337,7 +336,7 @@ export const GSD_ADAPTER: FrameworkAdapter = Object.freeze({
   needsBash: true,
   roleStart: () => '/gsd-autonomous',
   install: 'npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global',
-  factsHeading: 'GSD hooks registered (activation depends on GSD config)',
+  factsHeading: t('framework.gsd.adapter.gsdAdapterFactsHeading'),
 })
 
 /** The basename of the GSD secret read guard: the one user hook every role carries when settings register it (D-62). */

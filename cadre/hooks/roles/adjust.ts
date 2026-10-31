@@ -6,11 +6,12 @@
 import type { FrameworkId, RoleSpec } from '../../types'
 import { FRAMEWORK_IDS } from '../core/framework-id'
 import { idLabel } from '../core/text'
+import { t } from '../locales/t'
 import { roleOf } from './template'
 import { CUSTOM_TRAITS, MAX_ROLES, titleOf, validateRoleId } from './validate'
 
 /** The purpose of a role added by the Adjust grammar, which gives no purpose. */
-export const CUSTOM_PURPOSE = 'A custom role added by the person running init.'
+export const CUSTOM_PURPOSE = t('roles.adjust.customPurpose')
 
 /**
  * One change to the proposed roles that the person typed (D-47). The grammar is `add <id> <title>`, `drop <id>`,
@@ -108,22 +109,22 @@ function hasRole(roles: readonly RoleSpec[], id: string): boolean {
 
 /** The refusal for an id no role has. */
 function noRole(id: string): AdjustResult {
-  return refused(`no role "${idLabel(id)}"`)
+  return refused(t('roles.adjust.noRole', { id: idLabel(id) }))
 }
 
 /** The refusal for an id another role already has. */
 function usedId(id: string): AdjustResult {
-  return refused(`role id "${idLabel(id)}" is already used`)
+  return refused(t('roles.adjust.usedId', { id: idLabel(id) }))
 }
 
 /** The refusal for a title that cleans to nothing. */
 function noTitle(id: string): AdjustResult {
-  return refused(`role "${idLabel(id)}" has no title`)
+  return refused(t('roles.adjust.noTitle', { id: idLabel(id) }))
 }
 
 /** Appends a custom role, TL-like with no base (D-92); refused when the team is full or the id or title is unusable. */
 function addRole(roles: readonly RoleSpec[], id: string, rawTitle: string): AdjustResult {
-  if (roles.length >= MAX_ROLES) return refused(`at most ${MAX_ROLES} roles`)
+  if (roles.length >= MAX_ROLES) return refused(t('roles.adjust.addRole', { maxRoles: MAX_ROLES }))
   const idProblem = validateRoleId(id)
   if (idProblem !== null) return refused(idProblem)
   if (hasRole(roles, id)) return usedId(id)
@@ -136,7 +137,7 @@ function addRole(roles: readonly RoleSpec[], id: string, rawTitle: string): Adju
 /** Removes a role; refused for an unknown id, and for the last role, because a team needs one. */
 function dropRole(roles: readonly RoleSpec[], id: string): AdjustResult {
   if (!hasRole(roles, id)) return noRole(id)
-  if (roles.length === 1) return refused('keep at least one role')
+  if (roles.length === 1) return refused(t('roles.adjust.dropRole'))
 
   return { kind: 'ok', roles: roles.filter(role => role.id !== id) }
 }

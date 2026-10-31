@@ -7,6 +7,7 @@
 import type { GsdFact, GsdLocation, GsdReadTarget, InitFacts, RawFacts, RawGsdCandidate } from '../../../types'
 import { isObject } from '../../core/json'
 import { clean } from '../../core/text'
+import { t } from '../../locales/t'
 import { displayPath, MAX_WARNING_CHARS } from '../../paths'
 
 /** Code points a version text keeps; longer text is not a version. */
@@ -224,13 +225,11 @@ export function usableCandidates(value: unknown): ProbedGsdCandidate[] {
 
 /** The warning for a candidate nothing proves, with the known runtime problem when there is one (WR-01, IN-05). */
 function unprovenWarning(dir: string, problem: RuntimeProblem | null): string {
-  const prefix = `could not prove the GSD install at ${dir}`
-  if (problem === 'not-built') return `${prefix}: runtime not built (treated as unknown)`
-  if (problem === 'could-not-run') {
-    return `${prefix}: the identity call could not run (node missing or timed out); treated as unknown`
-  }
+  const prefix = t('framework.gsd.identity.unprovenWarning', { dir })
+  if (problem === 'not-built') return t('scan.unknown', { what: t('framework.gsd.identity.notBuilt', { prefix }) })
+  if (problem === 'could-not-run') return t('framework.gsd.identity.couldNotRun', { prefix })
 
-  return `${prefix} (treated as unknown)`
+  return t('scan.unknown', { what: prefix })
 }
 
 /**

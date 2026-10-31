@@ -18,6 +18,7 @@ import type {
 import { sha256Hex } from '../core/hash'
 import { stableJson } from '../core/json'
 import { compareText, reportText, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import { BESIDE_SUFFIX, GITIGNORE_FILE, isSafeRelativePath } from '../paths'
 import { classifyFile, MANIFEST_PATH } from './classify'
 import type { DiskHash } from './classify'
@@ -46,19 +47,19 @@ export function isSafeOpPath(path: string): boolean {
 const OWN_PATHS: readonly string[] = [MANIFEST_PATH, GITIGNORE_FILE]
 
 /** The note under a conflict: the file is the user's now, and the new version goes beside it. */
-const CONFLICT_NOTE = 'changed outside cadre: kept as is; the new version is planned beside it'
+const CONFLICT_NOTE = t('plan.plan.conflictNote')
 
 /** The note under a conflict whose file cannot be read: it counts as edited, never as absent or equal. */
-const UNREADABLE_NOTE = 'could not read it (treated as changed): kept as is; the new version is planned beside it'
+const UNREADABLE_NOTE = t('plan.plan.unreadableNote')
 
 /** The note under the `.cadre-new` copy. */
-const NEW_VERSION_NOTE = 'the new version, for diffing; init asks Keep mine or Take new for the file'
+const NEW_VERSION_NOTE = t('plan.plan.newVersionNote')
 
 /** The note under a `.cadre-new` path that already holds something else: it is kept as it is too. */
-const OCCUPIED_NOTE = 'a different file is already there: kept as is'
+const OCCUPIED_NOTE = t('plan.plan.occupiedNote')
 
 /** The note under a file the last manifest lists and this plan no longer generates. */
-const STALE_NOTE = 'no longer generated (kept; cadre deletes nothing)'
+const STALE_NOTE = t('plan.plan.staleNote')
 
 /**
  * What buildPlan reads, all of it gathered before the call so that planning itself touches nothing. `disk` is keyed by
@@ -110,12 +111,12 @@ function byPath(a: { readonly path: string }, b: { readonly path: string }): num
 }
 
 /** The note under a manifest that could not be read: kept as it is, so the entries of other roles survive (A6). */
-const UNREADABLE_MANIFEST_NOTE =
-  "could not read it (treated as changed): kept as is, so no role's entries are dropped; it is not written"
+const UNREADABLE_MANIFEST_NOTE = t('plan.plan.unreadableManifestNote')
 
 /** The warning for a manifest that could not be read (A6, Pitfall 6: unknown is never absent). */
-const UNREADABLE_MANIFEST_WARNING =
-  'could not read .cadre/manifest.json (treated as unknown): it is kept as is and not written'
+const UNREADABLE_MANIFEST_WARNING = t('plan.plan.manifestKept', {
+  what: t('scan.unknown', { what: t('scan.couldNotRead', { what: MANIFEST_PATH }) }),
+})
 
 /**
  * The op for the manifest file, and the manifest the plan records: schema 1, the cadre version and the entries sorted
@@ -145,7 +146,9 @@ function manifestOp(
 type Part = { readonly ops: readonly FileOp[]; readonly warnings: readonly string[] }
 
 /** The warning when the `.gitignore` is there but cadre could not read it (Pitfall 6: unknown is never absent). */
-const UNREADABLE_IGNORE_WARNING = 'could not read .gitignore (treated as unknown): the ignore block is not planned'
+const UNREADABLE_IGNORE_WARNING = t('plan.plan.ignoreNotPlanned', {
+  what: t('scan.unknown', { what: t('scan.couldNotRead', { what: GITIGNORE_FILE }) }),
+})
 
 /**
  * The `.gitignore` op: the marked block merged into what is there. A file that is not there is created; one that
@@ -175,12 +178,12 @@ function ignorePart(gitignore: PlanInput['gitignore']): Part {
 
 /** The warning for a path the plan will not touch: PLAN-06 allows only `.cadre/` and the root `.gitignore`. */
 function refusalWarning(path: string): string {
-  return `refused to plan ${reportText(path)}: not a .cadre/ path or .gitignore (PLAN-06)`
+  return t('plan.plan.refusalWarning', { path: reportText(path) })
 }
 
 /** The warning for a path that would be planned a second time: the first one is kept, so one path has one op. */
 function twiceWarning(path: string): string {
-  return `refused to plan ${reportText(path)} twice: only the first is kept`
+  return t('plan.plan.twiceWarning', { path: reportText(path) })
 }
 
 /**
@@ -202,7 +205,7 @@ function acceptFiles(desired: readonly DesiredFile[]): {
       continue
     }
     if (OWN_PATHS.some(own => own.toLowerCase() === key)) {
-      warnings.push(`refused to plan ${reportText(file.path)}: cadre plans it itself`)
+      warnings.push(t('plan.plan.acceptFiles', { path: reportText(file.path) }))
       continue
     }
     if (seen.has(key)) {
@@ -302,7 +305,7 @@ function hunkPart(hunks: readonly HunkOp[]): { readonly ops: readonly HunkOp[]; 
   const warnings: string[] = []
   for (const hunk of hunks) {
     if (!HUNK_FILES.includes(hunk.file)) {
-      warnings.push(`refused hunk for ${reportText(hunk.file)}: not a known framework config (PLAN-06)`)
+      warnings.push(t('plan.plan.hunkPart', { file: reportText(hunk.file) }))
       continue
     }
     ops.push(hunk)

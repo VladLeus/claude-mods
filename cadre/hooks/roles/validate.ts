@@ -11,6 +11,7 @@ import { MAX_HOOK_NAME_CHARS } from '../core/names'
 import { MAX_REPLY_ERRORS } from '../core/reply'
 import { isRoleId, RESERVED_ROLE_IDS } from '../core/role-id'
 import { clean, idLabel } from '../core/text'
+import { t } from '../locales/t'
 import { ROLE_TEMPLATE } from './template'
 import type { RoleTraits } from './template'
 
@@ -30,7 +31,7 @@ export const MAX_DESCRIPTION_CHARS = 4000
 export const MAX_PROPOSAL_ERRORS = MAX_REPLY_ERRORS
 
 /** What a role id must be, as the messages say it. */
-const SLUG_RULE = 'a lowercase slug: a letter, then letters, digits or dashes, 24 characters at most'
+const SLUG_RULE = t('roles.validate.slugRule')
 
 /** The template role ids in template order: the values `basedOn` may take besides null. */
 export const TEMPLATE_IDS: readonly TemplateRoleId[] = ROLE_TEMPLATE.map(row => row.id)
@@ -55,13 +56,13 @@ export function purposeOf(raw: string): string | null {
  * no case folding; `bin` is taken by the launcher folder `.cadre/bin/`, and `all` and `none` by the answer words.
  */
 export function validateRoleId(id: string): string | null {
-  if (id === 'bin') return 'role id "bin" is reserved: it is the launcher folder .cadre/bin/'
+  if (id === 'bin') return t('roles.validate.validateRoleId')
   if (RESERVED_ROLE_IDS.includes(id)) {
-    return `role id "${idLabel(id)}" is reserved: all and none are answer words in init questions`
+    return t('roles.validate.validateRoleId2', { id: idLabel(id) })
   }
   if (isRoleId(id)) return null
 
-  return `role id "${idLabel(id)}" must be ${SLUG_RULE}`
+  return t('roles.validate.validateRoleId3', { id: idLabel(id), slugRule: SLUG_RULE })
 }
 
 /** The problems with one id: not usable, or (once per id) a repeat of an id seen before. */
@@ -73,7 +74,7 @@ function idProblems(id: string, seen: Set<string>, repeated: Set<string>): strin
   if (!isFirstRepeat) return []
   repeated.add(id)
 
-  return [`duplicate role id "${id}"`]
+  return [t('roles.validate.idProblems', { id })]
 }
 
 /**
@@ -82,15 +83,18 @@ function idProblems(id: string, seen: Set<string>, repeated: Set<string>): strin
  * repeat.
  */
 export function validateRoles(roles: readonly { readonly id: string; readonly title: string }[]): string[] {
-  if (roles.length === 0) return ['no roles: describe at least one role']
+  if (roles.length === 0) return [t('roles.validate.validateRoles')]
 
   const problems: string[] = []
-  if (roles.length > MAX_ROLES) problems.push(`at most ${MAX_ROLES} roles (got ${roles.length})`)
+  if (roles.length > MAX_ROLES) problems.push(t('roles.validate.validateRoles2', {
+    maxRoles: MAX_ROLES,
+    count: roles.length,
+  }))
   const seen = new Set<string>()
   const repeated = new Set<string>()
   for (const role of roles) {
     problems.push(...idProblems(role.id, seen, repeated))
-    if (titleOf(role.title) === null) problems.push(`role "${idLabel(role.id)}" has no title`)
+    if (titleOf(role.title) === null) problems.push(t('roles.validate.validateRoles3', { id: idLabel(role.id) }))
   }
 
   return problems

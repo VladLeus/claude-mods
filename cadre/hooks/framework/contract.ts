@@ -18,6 +18,7 @@ import type {
 import { SUPPORTED_IDS } from '../core/framework-id'
 import { isObject } from '../core/json'
 import { idLabel } from '../core/text'
+import { t } from '../locales/t'
 
 /**
  * The decision types a gate can carry. Which role owns each type is role data added in Phase 2 (D-15), so this
@@ -35,20 +36,19 @@ export const UNSUPPORTED_MARKERS: readonly UnsupportedMarker[] = [
     id: 'aidlc',
     name: 'AI-DLC',
     reason:
-      'every stage after Initialization ends in a recorded human approval gate, so autonomous roles would block; ' +
-      'no cadre adapter in v1',
+      t('framework.contract.unsupportedMarkers'),
   },
   {
     marker: '_bmad',
     id: 'bmad',
     name: 'BMAD',
-    reason: 'persona and workflow method with its own gates and _bmad/ runtime; no cadre adapter in v1',
+    reason: t('framework.contract.unsupportedMarkersReason'),
   },
   {
     marker: '.specify',
     id: 'spec-kit',
     name: 'spec-kit',
-    reason: 'spec-driven command set under .specify/; no cadre adapter in v1',
+    reason: t('framework.contract.unsupportedMarkersReason2'),
   },
 ]
 
@@ -60,7 +60,9 @@ export const UNSUPPORTED_MARKERS: readonly UnsupportedMarker[] = [
 export function detectUnsupported(facts: Facts): Detection[] {
   return UNSUPPORTED_MARKERS.map((row): Detection => {
     if (!hasDirOrLink(facts.repoEntries, row.marker)) {
-      return { id: row.id, name: row.name, status: 'not-found', version: null, evidence: [`no ${row.marker}/`] }
+      const evidence = [t('framework.contract.detectUnsupported', { marker: row.marker })]
+
+      return { id: row.id, name: row.name, status: 'not-found', version: null, evidence }
     }
 
     return {
@@ -68,7 +70,9 @@ export function detectUnsupported(facts: Facts): Detection[] {
       name: row.name,
       status: 'unsupported',
       version: null,
-      evidence: [`${row.marker}/ present`, `detected but unsupported: ${row.reason}`],
+      evidence: [t('framework.contract.detectUnsupported2', {
+        marker: row.marker,
+      }), t('framework.contract.detectUnsupported3', { reason: row.reason })],
     }
   })
 }
@@ -108,12 +112,12 @@ function hasStatus(detections: readonly Detection[], id: string, status: DetectS
 
 /** A choice the person made, with the reason the report shows for it. */
 function pickedByUser(id: FrameworkId): Choice {
-  return { kind: 'chosen', id, pickedBy: 'user', reason: 'picked by the user' }
+  return { kind: 'chosen', id, pickedBy: 'user', reason: t('framework.contract.pickedByUser') }
 }
 
 /** The choice when exactly one supported framework is in use. */
 function onlyInUse(id: FrameworkId): Choice {
-  return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: `only ${id} is in use in this repo` }
+  return { kind: 'chosen', id, pickedBy: 'only-one-in-use', reason: t('framework.contract.onlyInUse', { id }) }
 }
 
 /**
@@ -223,21 +227,21 @@ export function isDecisionType(value: unknown): value is DecisionType {
 /** The problem with a gate's decision type, or null when its kind and decision type agree. */
 function decisionTypeProblem(gate: Record<string, unknown>): string | null {
   if (gate.kind === 'standing-rule') {
-    return gate.decisionType === null ? null : 'standing-rule gate must have decisionType null'
+    return gate.decisionType === null ? null : t('framework.contract.decisionTypeProblem')
   }
-  if (gate.decisionType === null) return 'decisionType null needs kind standing-rule'
-  if (!isDecisionType(gate.decisionType)) return 'unknown decisionType'
+  if (gate.decisionType === null) return t('framework.contract.decisionTypeProblem2')
+  if (!isDecisionType(gate.decisionType)) return t('framework.contract.decisionTypeProblem3')
 
   return null
 }
 
 /** The problems with one gate's own fields: its decision type against its kind, and its kickoff. */
 function gateFieldProblems(gate: Record<string, unknown>): string[] {
-  const label = `gate ${idLabel(gate.id)}`
+  const label = t('framework.contract.gateFieldProblems', { id: idLabel(gate.id) })
   const problems: string[] = []
   const decisionProblem = decisionTypeProblem(gate)
-  if (decisionProblem !== null) problems.push(`${label}: ${decisionProblem}`)
-  if (!isFilledString(gate.kickoff)) problems.push(`${label}: empty kickoff`)
+  if (decisionProblem !== null) problems.push(t('framework.contract.gateFieldProblems2', { label, decisionProblem }))
+  if (!isFilledString(gate.kickoff)) problems.push(t('framework.contract.gateFieldProblems3', { label }))
 
   return problems
 }
@@ -247,18 +251,18 @@ function gateFieldProblems(gate: Record<string, unknown>): string[] {
  * is read once, so a getter cannot answer differently between the check and the use.
  */
 function oneGateProblems(gate: unknown, seen: Set<string>, repeated: Set<string>): string[] {
-  if (!isObject(gate)) return ['gate is not an object']
+  if (!isObject(gate)) return [t('framework.contract.oneGateProblems')]
 
   const id = gate.id
   const fieldProblems = gateFieldProblems(gate)
-  if (typeof id !== 'string' || id.trim() === '') return ['gate has no id', ...fieldProblems]
+  if (typeof id !== 'string' || id.trim() === '') return [t('framework.contract.oneGateProblems2'), ...fieldProblems]
 
   const isFirstRepeat = seen.has(id) && !repeated.has(id)
   seen.add(id)
   if (!isFirstRepeat) return fieldProblems
   repeated.add(id)
 
-  return [`duplicate gate id ${idLabel(id)}`, ...fieldProblems]
+  return [t('framework.contract.oneGateProblems3', { id: idLabel(id) }), ...fieldProblems]
 }
 
 /** The most problems gateProblems returns; when there are more, one extra line says so. */
@@ -271,7 +275,7 @@ export const MAX_GATE_PROBLEMS = 50
  * handling are not checked here because the Gate type and the adapters own them.
  */
 export function gateProblems(gates: unknown): string[] {
-  if (!Array.isArray(gates)) return ['gates is not an array']
+  if (!Array.isArray(gates)) return [t('framework.contract.gateProblems')]
 
   const problems: string[] = []
   const seen = new Set<string>()
@@ -282,10 +286,10 @@ export function gateProblems(gates: unknown): string[] {
       problems.push(...oneGateProblems(gates[index], seen, repeated))
     } catch {
       // A gate whose fields throw when read (a getter or a proxy) is reported, never rethrown.
-      problems.push('gate could not be read')
+      problems.push(t('framework.contract.gateProblems2'))
     }
   }
   if (problems.length <= MAX_GATE_PROBLEMS) return problems
 
-  return [...problems.slice(0, MAX_GATE_PROBLEMS), 'more gate problems not shown']
+  return [...problems.slice(0, MAX_GATE_PROBLEMS), t('framework.contract.gateProblems3')]
 }

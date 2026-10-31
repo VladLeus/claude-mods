@@ -6,6 +6,7 @@
  */
 import type { FrameworkId, Recommendation, RepoScan, RoleSpec, SetupScan, TemplateRoleId } from '../../types'
 import { adapterOf } from '../framework/registry'
+import { t } from '../locales/t'
 import { CLAUDE_SECURITY_PLUGIN, SECURITY_GUIDANCE_PLUGIN, SECURITY_PLUGINS } from './infra'
 import { standsFor } from './template'
 
@@ -32,7 +33,7 @@ export const INSTALL_COMMANDS: Readonly<{
 })
 
 /** Why GSD and superpowers are recommended: no role of the team uses a framework (D-17, D-74). */
-const NO_FRAMEWORK_WHY = 'no dev framework is in use; roles run the built-in plan, execute, verify loop'
+const NO_FRAMEWORK_WHY = t('roles.recommend.noFrameworkWhy')
 
 /** An MCP server name that already gives the FE role a browser to check its work in, in any case (D-74). */
 const PLAYWRIGHT_NAME = /playwright/i
@@ -93,23 +94,23 @@ export function recommend(input: {
   return [
     ...frameworkRecommendations(frameworks),
     ...forTemplateRole(roles, 'fe', !hasE2e(scan) && !hasMcp(setup, PLAYWRIGHT_NAME), {
-      tool: 'Playwright MCP',
-      why: 'the FE role has no E2E setup to check its work in a browser',
+      tool: t('roles.recommend.recommendTool'),
+      why: t('roles.recommend.recommendWhy'),
       install: INSTALL_COMMANDS.playwright,
     }),
     ...forTemplateRole(roles, 'fe', !hasMcp(setup, DEVTOOLS_NAME), {
-      tool: 'DevTools MCP',
-      why: 'the FE role cannot inspect the running page',
+      tool: t('roles.recommend.recommendTool2'),
+      why: t('roles.recommend.recommendWhy2'),
       install: INSTALL_COMMANDS.devtools,
     }),
     ...forTemplateRole(roles, 'security', missing.includes(CLAUDE_SECURITY_PLUGIN), {
       tool: 'claude-security',
-      why: "claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+      why: t('roles.recommend.recommendWhy3'),
       install: INSTALL_COMMANDS.claudeSecurity,
     }),
     ...forTemplateRole(roles, 'security', missing.includes(SECURITY_GUIDANCE_PLUGIN), {
       tool: 'security-guidance',
-      why: 'no hooks warn the Security role about risky edits',
+      why: t('roles.recommend.recommendWhy4'),
       install: INSTALL_COMMANDS.securityGuidance,
     }),
   ]
