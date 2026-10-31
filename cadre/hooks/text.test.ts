@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Facts } from '../types'
+import { helpText, USAGE_LINES } from './command/usage'
+import { REPLY_ERRORS_INTRO } from './core/reply'
+import { detectText } from './detect/report'
+import { ADAPTERS } from './framework/registry'
+import { GOLDEN_DETECT } from './golden/detect'
+import { GOLDEN_EPIC } from './golden/epic'
+import { GOLDEN_START } from './golden/start'
+import { GOLDEN_STATUS } from './golden/status'
+import { MODEL_EFFORT_OPTIONS } from './init/answers'
 import { runInit } from './init/run'
 import { ROLES_QUESTION } from './init/stages/roles'
 import { ARTIFACT } from './locales/artifact'
@@ -8,6 +17,7 @@ import { CONTRACTS, ITERM_LINES, TERMINAL_APP_LINES } from './locales/contracts'
 import { EN } from './locales/en'
 import { PROMPTS, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM, SKILLS_SYSTEM } from './locales/prompts'
 import { DRY_RUN_NOTE } from './plan/text'
+import { INSTALL_COMMANDS } from './roles/recommend'
 import { PROPOSE_SYSTEM } from './suggest/propose'
 import { TOPICS_SYSTEM } from './suggest/topics'
 import { EMPTY_FACTS, entry, INIT_ANSWERS, memIo, memWorld } from './testkit'
@@ -42,9 +52,9 @@ function stringsOf(value: unknown, depth = 0): string[] {
 }
 
 /**
- * Every locale table, one row each (D-207, D-221): the screen texts, the generated-file texts, the model prompts with
- * the five system prompts, and the on-disk and protocol markers with the AppleScript lines. Each holds every text of
- * its kind, so walking the four walks every text cadre shows, writes, prompts with or reads back.
+ * Every table text and the listed survivors (D-207, D-221): one row per locale table (the screen texts, the
+ * generated-file texts, the model prompts with the five system prompts, and the on-disk and protocol markers with the
+ * AppleScript lines), then a fifth row of the texts kept outside the tables.
  */
 const TEXTS: readonly (readonly [string, string, unknown])[] = [
   ['locales/en', 'EN', EN],
@@ -55,6 +65,23 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
     [PROMPTS, PROPOSE_SYSTEM, TOPICS_SYSTEM, SKILLS_SYSTEM, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM],
   ],
   ['locales/contracts', 'CONTRACTS', [CONTRACTS, TERMINAL_APP_LINES, ITERM_LINES]],
+  // The texts kept outside the tables (WE-S7). The walk skips functions, so each adapter's roleStart is walked as
+  // called. register.tsx's argument hint is not walked: register.tsx imports the engine, which typecheck:cadre cannot
+  // load.
+  [
+    'outside locales',
+    'kept',
+    [
+      REPLY_ERRORS_INTRO,
+      ADAPTERS,
+      ADAPTERS.map(adapter => adapter.roleStart('x')),
+      INSTALL_COMMANDS,
+      MODEL_EFFORT_OPTIONS,
+      USAGE_LINES,
+      helpText('x'),
+      detectText(EMPTY_FACTS, true),
+    ],
+  ],
 ]
 
 /** A git repo at /repo, which init runs in; `over` changes the fields it names. */
@@ -140,6 +167,17 @@ describe('user text names no internal phase (G-02-3b)', () => {
         .filter(line => PHASE_NAME.test(line))
         .map(line => `${module} ${name}: ${line}`),
     )
+    expect(named).toEqual([])
+  })
+
+  test('every start, status, epic and detect golden names no phase', () => {
+    const goldens: readonly (readonly [string, unknown])[] = [
+      ...Object.entries(GOLDEN_START),
+      ...Object.entries(GOLDEN_STATUS),
+      ...Object.entries(GOLDEN_EPIC),
+      ...Object.entries(GOLDEN_DETECT),
+    ]
+    const named = goldens.filter(([, value]) => PHASE_NAME.test(JSON.stringify(value))).map(([name]) => name)
     expect(named).toEqual([])
   })
 
