@@ -9,6 +9,7 @@
 import { reportText } from '../core/text'
 import { FILE_SYSTEM_ROOT_REPLY, HOME_ROOT_REPLY } from '../guards/refusals'
 import { commandRefusal, rootUnknownReply } from '../guards/repo'
+import { t } from '../locales/t'
 
 /** The reply when the session root cannot be read: init stops before it reads anything. */
 const INIT_ROOT_UNKNOWN_REPLY = rootUnknownReply('init')
@@ -23,15 +24,15 @@ const INIT_FILE_SYSTEM_ROOT_REPLY = commandRefusal(FILE_SYSTEM_ROOT_REPLY, 'init
  * The start of the reply when a dialog is dismissed or never answered with a listed choice: nothing was written
  * (D-45); cancelledReply adds the reason.
  */
-export const INIT_CANCELLED = 'init cancelled, nothing written'
+export const INIT_CANCELLED = t('init.replies.initCancelled')
 
 /**
  * The reply of a cancelled init (D-45, batch-1 review S1): INIT_CANCELLED, a colon and the step's reason cleaned as a
  * report cell, so every surface shows why init stopped.
  */
 export function cancelledReply(reason: string): string {
-  return `${INIT_CANCELLED}: ${reportText(reason)}`
+  return t('init.replies.cancelledReply', { initCancelled: INIT_CANCELLED, reason: reportText(reason) })
 }
 
 /** The line added when the person ignores all of `.cadre/`: a linked worktree would not have the definitions (D-65). */
-export const IGNORE_ALL_NOTE = "role definitions won't exist in new worktrees"
+export const IGNORE_ALL_NOTE = t('init.replies.ignoreAllNote')

@@ -28,6 +28,10 @@ export const EN = Object.freeze({
   'init.policy.line.definitions': 'Git policy: commit definitions (.cadre/*/.runtime/ ignored)',
   'init.policy.line.all': 'Git policy: commit all (only per-user rendered files in .cadre/*/.runtime/ ignored)',
   'init.policy.line.ignore': 'Git policy: ignore all of .cadre/',
+
+  'init.replies.initCancelled': 'init cancelled, nothing written',
+  'init.replies.cancelledReply': '{initCancelled}: {reason}',
+  'init.replies.ignoreAllNote': "role definitions won't exist in new worktrees",
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
