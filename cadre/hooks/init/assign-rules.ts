@@ -8,6 +8,7 @@
 import type { McpRef, RoleSpec, SkillRef } from '../../types'
 import { asciiLower, compareText, sortedUnique } from '../core/text'
 import { ADAPTERS } from '../framework/registry'
+import { t } from '../locales/t'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS, MCP_ROLE_ROWS, SKILL_ROLE_ROWS } from '../roles/infra'
 import type { NameRow } from '../roles/infra'
 import { standsFor } from '../roles/template'
@@ -29,7 +30,7 @@ export type SkillGroup = {
 }
 
 /** The label of the skill group that holds the user's own skills and the project's, which no plugin adds. */
-const OWN_SKILLS_LABEL = 'your own'
+const OWN_SKILLS_LABEL = t('init.assignRules.ownSkillsLabel')
 
 /**
  * The ids of the present roles of the first row that matches the name, sorted. Empty when no row matches, and also when

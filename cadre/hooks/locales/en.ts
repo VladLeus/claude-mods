@@ -310,6 +310,8 @@ export const EN = Object.freeze({
   'init.status.skills': 'cadre: recommending skills…',
   'init.status.topics': 'cadre: grouping instructions…',
   'init.status.parts': 'cadre: recommending instruction parts…',
+
+  'init.assignRules.ownSkillsLabel': 'your own',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
