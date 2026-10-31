@@ -6,6 +6,8 @@
  */
 import type { EpicRecord, RoleSpec } from '../../types'
 import { asciiLine, autopilotCommand, budgetedRoleLine, ROLE_LINE_MAX } from '../generate/kickoff'
+import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 
 /** The epic worktree as runEpic hands it to its mirror stage once git has made or found it (D-147, D-164). */
 export type EpicWorktree = {
@@ -24,7 +26,7 @@ export type EpicWorktree = {
  * Whom PM feeds the epic's tickets (D-144): the TL's session `cadre-<tl id>` when the team has a TL, else its roles.
  */
 function feedTarget(tlId: string | null): string {
-  return tlId === null ? 'your roles' : `cadre-${tlId}`
+  return tlId === null ? PROMPTS.epicFeedRoles : `cadre-${tlId}`
 }
 
 /** What stands between the epic key and its title in PM's epic kickoff line (D-158). */
@@ -37,11 +39,9 @@ const TITLE_SEPARATOR = ': '
  */
 function pmEpicSentence(id: string, key: string, title: string, target: string): string {
   const epic = title === '' ? key : `${key}${TITLE_SEPARATOR}${title}`
-  const next =
-    `Read .cadre/${id}/ROLE.md and your inbox, fetch the epic with your tracker MCP, resolve its gaps ` +
-    `(decide or ask the user), then feed ${target} ticket by ticket.`
+  const next = fill(PROMPTS.epicPmNext, { id, target })
 
-  return `You are the PM of epic ${epic}. ${next}`
+  return fill(PROMPTS.epicPmLine, { epic, next })
 }
 
 /**
@@ -50,10 +50,10 @@ function pmEpicSentence(id: string, key: string, title: string, target: string):
  * named it waits with no `from`, so it never names a session that is not its parent.
  */
 function workerEpicSentence(id: string, key: string, title: string, parent: string | null): string {
-  const from = parent === null ? '' : ` from cadre-${parent}`
-  const wait = `wait for your parent: wait_for reason session-answer${from}, then work what it sends.`
+  const from = parent === null ? '' : fill(PROMPTS.epicFrom, { parent })
+  const wait = fill(PROMPTS.epicWait, { from })
 
-  return `You are ${title} (cadre role ${id}) on epic ${key}. Read .cadre/${id}/ROLE.md, then ${wait}`
+  return fill(PROMPTS.epicWorkerLine, { title, id, key, wait })
 }
 
 /**

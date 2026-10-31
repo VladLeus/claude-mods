@@ -5,6 +5,8 @@
  */
 import type { FrameworkId, RoleSpec } from '../../types'
 import { adapterOf } from '../framework/registry'
+import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 
 /**
  * The most characters the role line of a kickoff may have (D-79; 240 since the inbox sentence of D-114,
@@ -37,8 +39,8 @@ function startText(roleId: string, framework: FrameworkId): string {
  * ROLE.md and checks its inbox before it starts (D-114: text only, no new command).
  */
 function roleSentence(role: RoleSpec, framework: FrameworkId, title: string): string {
-  const intro = `You are the ${title} role of this repo (cadre role ${role.id}).`
-  const next = `Read .cadre/${role.id}/ROLE.md, check your inbox, then start with ${startText(role.id, framework)}.`
+  const intro = fill(PROMPTS.kickoffIntro, { title, id: role.id })
+  const next = fill(PROMPTS.kickoffNext, { id: role.id, start: startText(role.id, framework) })
 
   return `${intro} ${next}`
 }

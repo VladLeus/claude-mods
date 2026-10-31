@@ -6,12 +6,14 @@
 import type { InitIo } from '../../types'
 import { cappedErrors } from '../core/reply'
 import { idLabel } from '../core/text'
+import { PROMPTS } from '../locales/prompts'
+import { fill } from '../locales/t'
 
 /** The most model calls one description gets: the first try and two retries with the exact errors (D-46, D-83). */
 export const MAX_PROPOSE_ATTEMPTS = 3
 
 /** The error the next prompt and the fallback line give when the model answered with no text. */
-const NO_TEXT_ERROR = 'the model gave no text'
+const NO_TEXT_ERROR = PROMPTS.noTextError
 
 /** A model reply as a reply check of checkedCompletion takes it: the value it gives, or every error found. */
 export type Checked<T> =
@@ -45,7 +47,7 @@ export async function checkedCompletion<T>(
 }
 
 /** The error every reply check gives a model reply that is not JSON. */
-export const NOT_JSON_ERROR = 'the reply is not JSON'
+export const NOT_JSON_ERROR = PROMPTS.notJsonError
 
 /** A failed reply check with its errors, capped as every reply check caps them (cappedErrors). */
 export function invalidReply(
@@ -55,7 +57,7 @@ export function invalidReply(
 }
 
 /** The line that introduces the roles in the skills and the recommendation prompts. */
-export const ROLES_INTRO = 'The roles of the team, one per line: id | title | purpose.'
+export const ROLES_INTRO = PROMPTS.rolesIntro
 
 /**
  * One role map of a model reply, whose keys are `kind` ids (skill, topic or memory) and whose values list role ids:
@@ -69,11 +71,11 @@ export function roleMapOf(
   roleIds: readonly string[],
 ): { readonly errors: readonly string[]; readonly roles: readonly [string, readonly string[]][] } {
   const errors = Object.entries(named).flatMap(([key, value]) => {
-    if (!ids.includes(key)) return [`unknown ${kind} "${idLabel(key)}"`]
-    if (!Array.isArray(value)) return [`${kind} ${key} is not a list of role ids`]
+    if (!ids.includes(key)) return [fill(PROMPTS.unknownKind, { kind, id: idLabel(key) })]
+    if (!Array.isArray(value)) return [fill(PROMPTS.notRoleList, { kind, key })]
     const unknown = value.filter((id: unknown) => typeof id !== 'string' || !roleIds.includes(id))
 
-    return unknown.map((id: unknown) => `${kind} ${key} names an unknown role "${idLabel(id)}"`)
+    return unknown.map((id: unknown) => fill(PROMPTS.unknownRole, { kind, key, id: idLabel(id) }))
   })
   const roles = ids.map((id): [string, readonly string[]] => {
     const value: unknown = Object.hasOwn(named, id) ? named[id] : []

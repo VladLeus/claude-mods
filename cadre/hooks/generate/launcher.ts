@@ -6,6 +6,7 @@
  */
 import type { CompiledScope, LaunchStart, RoleSpec } from '../../types'
 import { clean } from '../core/text'
+import { PROMPTS } from '../locales/prompts'
 import { cadreStatePath, PROBE_EXPECTATIONS_FILE, roleJsonPath, RUNTIME_STAMP_FILE } from '../paths'
 
 /** A word a shell reads as itself without quotes: letters, digits and `_ . / = : @ + -`. */
@@ -127,7 +128,7 @@ const VERSION_CHECK_LINES: readonly string[] = Object.freeze([
  * The prompt of the probe's one short turn (D-112). It is never the kickoff: a kickoff starts a real autopilot run,
  * which on 2.1.295 can overrun --max-turns (RESEARCH 1.3).
  */
-export const PROBE_PROMPT = 'Reply with OK.'
+export const PROBE_PROMPT = PROMPTS.probe
 
 /**
  * The refusal of --probe when the init line does not hold one tools, skills and slash_commands list each (D-130,
