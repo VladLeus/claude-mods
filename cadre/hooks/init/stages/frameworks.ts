@@ -13,8 +13,8 @@ import { detectAll } from '../../framework/registry'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { detectionContext } from '../../ui/blocks/context'
-import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, StageDef } from '../state'
+import { askedWithContext, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
+import type { Answer, EachCursor, InitState, StageDef } from '../state'
 import { ANSWER_MODE_OPTIONS, parseAnswerMode, teamContextLine } from './model'
 import type { AnswerMode } from './model'
 
@@ -127,21 +127,13 @@ function frameworkAsk(choice: AskedChoice, question: string, roles: readonly Rol
 function asked<T>(state: InitState, sub: InitState['sub'], ask: FrameworkAsk<T>, question: string | null): InitState {
   const { gathered } = state.draft
   if (gathered === undefined) return stageFailed(state)
-  const spec = { ...ask.spec, context: detectionContext(detectAll(gathered.facts.facts)) }
 
-  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec })
+  return askedWithContext(state, sub, ask, question, detectionContext(detectAll(gathered.facts.facts)))
 }
 
 /** The stage done with the roles framed and the repo default. */
 function framedDone(state: InitState, roles: readonly RoleSpec[], repoDefault: FrameworkId | null): InitState {
   return stageDone({ ...state, draft: { ...state.draft, roles, repoDefault } })
-}
-
-/** Where the per-role framework questions are: the role asked, how often, and the roles framed before it. */
-type EachCursor = {
-  readonly tries: number
-  readonly index: number
-  readonly done: readonly RoleSpec[]
 }
 
 /** The framework question of the role at `index`, asked `tries` times so far, with the roles framed before it. */

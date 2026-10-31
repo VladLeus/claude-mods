@@ -9,6 +9,7 @@
  * and init/run reads its types.
  */
 import type {
+  AskContext,
   AskSpec,
   HunkOp,
   InitLocations,
@@ -238,6 +239,13 @@ export type MemoryCursor = {
   readonly given: ReadonlyMap<InstructionGroup, readonly string[]>
 }
 
+/** Where a per-role question loop is: the role asked, how often, and the roles done before it. */
+export type EachCursor = {
+  readonly tries: number
+  readonly index: number
+  readonly done: readonly RoleSpec[]
+}
+
 /**
  * Where a stage is inside itself (D-230):
  * - `start`: just entered; a stage with one effect waits here for its answer.
@@ -285,7 +293,7 @@ export type StageSub =
   | { readonly kind: 'back'; readonly to: InitStage }
   | { readonly kind: 'mode'; readonly tries: number }
   | { readonly kind: 'all'; readonly tries: number }
-  | { readonly kind: 'each'; readonly tries: number; readonly index: number; readonly done: readonly RoleSpec[] }
+  | ({ readonly kind: 'each' } & EachCursor)
   | {
       readonly kind: 'roles'
       readonly tries: number
@@ -397,6 +405,23 @@ export function withEffect(state: InitState, effect: Effect): InitState {
 /** The state asking `question` with `spec`, the question asked `tries` times so far (StageSub `ask`). */
 export function asking(state: InitState, question: string, spec: AskSpec, tries: number): InitState {
   return withEffect({ ...state, sub: { kind: 'ask', tries } }, { kind: 'ask', question, spec })
+}
+
+/**
+ * The state with the cursor `sub` asking `ask` with `context` as the question's own context (D-236): the ask's
+ * question, or `question` when it is the refusal text a refused answer is asked again with, and the ask's spec with
+ * that context.
+ */
+export function askedWithContext(
+  state: InitState,
+  sub: StageSub,
+  ask: { readonly question: string; readonly spec: AskSpec },
+  question: string | null,
+  context: AskContext,
+): InitState {
+  const spec = { ...ask.spec, context }
+
+  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec })
 }
 
 /** The state with `outputs` shown after the ones it already has. */

@@ -15,8 +15,8 @@ import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/a
 import type { ChoiceAsk } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from '../answers'
-import { stageCancelled, stageDone, stageFailed, withEffect } from '../state'
-import type { Answer, InitState, StageDef } from '../state'
+import { askedWithContext, stageCancelled, stageDone, stageFailed } from '../state'
+import type { Answer, EachCursor, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
 
 /** The context line of the framework questions and of the first model question (D-136): the team's role ids. */
@@ -103,21 +103,13 @@ function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'ef
 function asked<T>(state: InitState, sub: InitState['sub'], ask: ModelAsk<T>, question: string | null): InitState {
   const { roles, changes } = state.draft
   if (roles === undefined) return stageFailed(state)
-  const spec = { ...ask.spec, context: rolesContext(roles, changes ?? []) }
 
-  return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec })
+  return askedWithContext(state, sub, ask, question, rolesContext(roles, changes ?? []))
 }
 
 /** The stage done with the roles modelled. */
 function modelledDone(state: InitState, roles: readonly RoleSpec[]): InitState {
   return stageDone({ ...state, draft: { ...state.draft, roles } })
-}
-
-/** Where the per-role model questions are: the role asked, how often, and the roles modelled before it. */
-type EachCursor = {
-  readonly tries: number
-  readonly index: number
-  readonly done: readonly RoleSpec[]
 }
 
 /** The model question of the role at `index`, asked `tries` times so far, with the roles modelled before it. */
