@@ -359,6 +359,15 @@ describe('improver pass (G-02-1f)', () => {
     expect([outcome.accepted, disk.files[BE_BUILT_PATH]]).toEqual([new Map([[BE_BUILT_REPO_PATH, improved]]), improved])
   })
 
+  test('a secret-like span across the 240 cut of a diff line is hidden in the block, no prefix shows (PR-S1)', () => {
+    const words = 'word '.repeat(46)
+    const line = `${words}${'a1b2c3d4e5'.repeat(4)}`
+    expect(improverBlockLines(BE_BUILT_REPO_PATH, lineDiff('', `${line}\n`))).toEqual([
+      '.cadre/be/CLAUDE.md: 1 line added, 0 removed',
+      `+ ${words}[hidden]`,
+    ])
+  })
+
   test('Keep original, typed in any case, gives the file back to be written as built; none is accepted', async () => {
     const disk = builtDisk()
     const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))

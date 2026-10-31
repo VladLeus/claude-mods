@@ -25,6 +25,15 @@ describe('conflict question context (D-236)', () => {
     expect(diff.rows.map(row => row.line)).toContain('    "API_KEY": "sk-FAKE-SECRET-0123456789"')
   })
 
+  test('a secret-like span across the 240 cut of a changed line is hidden, not shown as a prefix (PR-S1)', () => {
+    const words = 'word '.repeat(46)
+    const line = `${words}${'a1b2c3d4e5'.repeat(4)}`
+    expect(conflictContext('.cadre/be/ROLE.md', lineDiff(`${line}\n`, '')).lines).toEqual([
+      'Take new: 0 lines added, 1 removed',
+      `- ${words}[hidden]`,
+    ])
+  })
+
   test('a file cadre could not read says so; the path is cleaned (T-02.1-71)', () => {
     const bidi = String.fromCodePoint(0x202e)
     expect(conflictContext(`.cadre/be/RO${bidi}LE.md`, null)).toEqual({

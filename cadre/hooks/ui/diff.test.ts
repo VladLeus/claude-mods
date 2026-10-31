@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { REDACTED } from '../core/redact'
 import { reportText } from '../core/text'
 import { BIDI_OVERRIDE } from '../testkit'
 import { diffLines, lineDiff } from './diff'
@@ -108,5 +109,11 @@ describe('diffLines', () => {
     expect(many.at(-1)).toBe('... 5 more changed lines')
     expect(diffLines(lineDiff('', numberedLines(201))).at(-1)).toBe('... 1 more changed line')
     expect(diffLines(lineDiff('', numberedLines(200)))).toHaveLength(200)
+  })
+
+  test('a secret-like span across the 240 cut is hidden before the cap, so no prefix of it shows (PR-S1)', () => {
+    const words = 'word '.repeat(46)
+    const line = `${words}${'a1b2c3d4e5'.repeat(4)}`
+    expect(diffLines(lineDiff('', `${line}\n`))).toEqual([`+ ${words}${REDACTED}`])
   })
 })
