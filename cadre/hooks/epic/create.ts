@@ -148,9 +148,10 @@ async function openedRole(host: HostIo, plan: TerminalPlan, command: string): Pr
  * the `--terminal` choice (auto-detected when bare, forced by terminal, iterm or tmux), the worktree as its root and
  * launcherCommand rooted there (openedRole). One line per role, two spaces in: `<id>: opened in a new <name>`; for a
  * role it could not open, its command `cd -- <worktree> && <launcher>`; for a role that cannot open, the line the
- * render stage gave it. The first refusal of terminalPlan is printed once above the role lines. When any command was
- * printed, the commands are copied through the host with clipboardRun, one per line, and COPIED_LINE or
- * NOT_COPIED_LINE ends the lines. It never runs a launcher and never starts a background session (D-108, D-167).
+ * render stage gave it. When any command was printed, the commands are copied through the host with clipboardRun,
+ * one per line, and COPIED_LINE or NOT_COPIED_LINE follows the role lines. The first refusal of terminalPlan is
+ * printed once last, below the role lines and the copy line, so its "the command above" points at the commands
+ * (D-237). It never runs a launcher and never starts a background session (D-108, D-167).
  */
 async function openedLines(
   host: HostIo,
@@ -174,12 +175,12 @@ async function openedLines(
     if (opened.command !== null) commands.push(opened.command)
     if (opened.refusal !== null) refusals.push(opened.refusal)
   }
-  const head = refusals.slice(0, 1)
-  if (commands.length === 0) return [...head, ...lines]
+  const refusal = refusals.slice(0, 1)
+  if (commands.length === 0) return [...lines, ...refusal]
   const copy = clipboardRun(commands.join('\n'))
   const copied = await host.run(copy.argv, copy.options)
 
-  return [...head, ...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE]
+  return [...lines, copied !== null && copied.exitCode === 0 ? COPIED_LINE : NOT_COPIED_LINE, ...refusal]
 }
 
 /**

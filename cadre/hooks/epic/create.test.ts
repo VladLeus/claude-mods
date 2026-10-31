@@ -581,10 +581,11 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/pm/.runtime/settings.json`)
     expect(paths).toContain(`${BARE_WORKTREE}/.cadre/be/.runtime/stamp`)
     expect(paths.filter(path => path.startsWith('/repo/.cadre/'))).toEqual([])
-    expect(run.reply.split('\n').slice(-3)).toEqual([
+    expect(run.reply.split('\n').slice(-4)).toEqual([
       `  pm: ${epicCommand('pm')}`,
       `  be: ${epicCommand('be')}`,
       COPIED_LINE,
+      TERMINAL_MAC_ONLY,
     ])
     expect(copiedTexts(run)).toEqual([`${epicCommand('pm')}\n${epicCommand('be')}`])
   })
@@ -595,10 +596,11 @@ describe('rendering each role into the epic worktree (D-157, D-102)', () => {
     const realPaths = { [runtime]: '/repo/.cadre/be/.runtime' }
     const run = await epic({ ...world, dirs: { ...world.dirs, [runtime]: [] }, realPaths }, RENDER_RULES, 'PROJ-1', '')
 
-    expect(run.reply.split('\n').slice(-3)).toEqual([
+    expect(run.reply.split('\n').slice(-4)).toEqual([
       `  pm: ${epicCommand('pm')}`,
       `  be: ${BE_RUNTIME_REFUSAL}`,
       COPIED_LINE,
+      TERMINAL_MAC_ONLY,
     ])
     expect(run.writes.filter(write => write.path.startsWith(`${runtime}/`))).toEqual([])
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
@@ -646,10 +648,11 @@ describe('the epic kickoff of each role (D-158 to D-160)', () => {
     }
     const run = await epic({ ...world, files }, RENDER_RULES, 'PROJ-1', '')
 
-    expect(run.reply.split('\n').slice(-3)).toEqual([
+    expect(run.reply.split('\n').slice(-4)).toEqual([
       `  pm: ${epicCommand('pm')}`,
       `  be: ${epicWorktreeLauncherLine('be')}`,
       COPIED_LINE,
+      TERMINAL_MAC_ONLY,
     ])
     expect(copiedTexts(run)).toEqual([epicCommand('pm')])
   })

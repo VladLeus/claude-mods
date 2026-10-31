@@ -1,7 +1,7 @@
 /**
  * The golden fixtures of `/cadre epic` (D-219): create on macOS in iTerm (`create`), a reuse of a kept worktree
  * (`createReuse`), create off macOS where the TERMINAL_MAC_ONLY refusal stands in for the terminal (`createMacOnly`,
- * which D-237 will change), done on a clean, merged, idle epic (`done`) and done refused on a dirty, unmerged one
+ * in the D-237 order), done on a clean, merged, idle epic (`done`) and done refused on a dirty, unmerged one
  * (`doneRefused`), each in the world and host rules of its epic.test.ts spec. Captured from the code by a scratch run
  * and pasted as printed; epic.test.ts in this folder runs each again and compares with toEqual. Only an approved
  * behaviour-change commit may change a fixture. Only the golden modules import it.
@@ -181,10 +181,10 @@ export const GOLDEN_EPIC: Readonly<Record<string, GoldenCommand>> = {
       "warning: pm: skill resume-handoff-doc was not found in your user skills: not linked",
       "warning: be: skill create-handoff-doc was not found in your user skills: not linked",
       "warning: be: skill resume-handoff-doc was not found in your user skills: not linked",
-      "--terminal works on macOS only: run the command above in a terminal yourself.",
       "  pm: cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/pm",
       "  be: cd -- /repo/.claude/worktrees/proj-1 && /repo/.claude/worktrees/proj-1/.cadre/bin/be",
-      "Copied to the clipboard."
+      "Copied to the clipboard.",
+      "--terminal works on macOS only: run the command above in a terminal yourself."
     ],
     "writes": [
       {
