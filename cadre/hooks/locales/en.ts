@@ -233,6 +233,17 @@ export const EN = Object.freeze({
   'init.carry.envAccepts': '{quotedLabels}, or names from the list, typed exactly',
   'init.carry.envContextLine': '{teamContext} Every role carries the same names; values are filled in at launch.',
   'init.carry.envDismissedReason': 'The env variables question was dismissed or not answered.',
+
+  'init.hunks.acceptOption': 'Accept',
+  'init.hunks.declineOption': 'Decline',
+  'init.hunks.requiredNote': 'Required for unattended GSD roles.',
+  'init.hunks.optionalNote': 'Optional.',
+  'init.hunks.keyLine': '{file}: {key}',
+  'init.hunks.before': '  before: {before}',
+  'init.hunks.after': '  after:  {target}',
+  'init.hunks.why': 'Why: {why}',
+  'init.hunks.chip': 'Hunk {index} of {total}',
+  'init.hunks.hunkDismissedReason': 'A hunk question was dismissed or not answered.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

@@ -16,6 +16,7 @@ import { provenUserDir } from '../../framework/gsd/identity'
 import { resolveToolCommand } from '../../framework/gsd/tools'
 import type { GsdToolContext } from '../../framework/gsd/tools'
 import { ADAPTERS } from '../../framework/registry'
+import { t } from '../../locales/t'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
 import { resolvedFramework } from '../../team'
 import { choiceAnswer, quotedLabels } from '../../ui/ask'
@@ -24,10 +25,10 @@ import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from 
 import type { Answer, InitState, StageDef } from '../state'
 
 /** The dialog button that accepts a hunk; a typed answer of the same word counts the same, in any case. */
-const ACCEPT_OPTION = 'Accept'
+const ACCEPT_OPTION = t('init.hunks.acceptOption')
 
 /** The dialog button that declines a hunk; a typed answer of the same word counts the same, in any case. */
-const DECLINE_OPTION = 'Decline'
+const DECLINE_OPTION = t('init.hunks.declineOption')
 
 /** The buttons of a hunk question, in this order: the dialog focuses the first option; the order is fixed. */
 const HUNK_OPTIONS: readonly string[] = Object.freeze([ACCEPT_OPTION, DECLINE_OPTION])
@@ -39,10 +40,10 @@ const HUNK_ANSWERS: readonly Labelled<boolean>[] = Object.freeze([
 ])
 
 /** The last line of a hunk question for a change autonomy cannot work without. */
-const REQUIRED_NOTE = 'Required for unattended GSD roles.'
+const REQUIRED_NOTE = t('init.hunks.requiredNote')
 
 /** The last line of a hunk question for a change that only helps. */
-const OPTIONAL_NOTE = 'Optional.'
+const OPTIONAL_NOTE = t('init.hunks.optionalNote')
 
 /**
  * The dialog for one hunk (ROLE-04): the file and key, the before and after values, why, and whether autonomy requires
@@ -57,14 +58,14 @@ export function hunkQuestion(
 ): { readonly question: string; readonly spec: AskSpec } {
   const { proposal, before } = candidate
   const question = [
-    `${reportText(proposal.file)}: ${reportText(proposal.key)}`,
-    `  before: ${reportText(before)}`,
-    `  after:  ${reportText(targetText(proposal))}`,
-    `Why: ${reportText(proposal.why)}`,
+    t('init.hunks.keyLine', { file: reportText(proposal.file), key: reportText(proposal.key) }),
+    t('init.hunks.before', { before: reportText(before) }),
+    t('init.hunks.after', { target: reportText(targetText(proposal)) }),
+    t('init.hunks.why', { why: reportText(proposal.why) }),
     proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE,
   ].join('\n')
 
-  return { question, spec: { options: HUNK_OPTIONS, header: `Hunk ${index} of ${total}` } }
+  return { question, spec: { options: HUNK_OPTIONS, header: t('init.hunks.chip', { index, total }) } }
 }
 
 /**
@@ -76,7 +77,7 @@ export function parseHunkAnswer(answer: string): boolean | null {
 }
 
 /** Why init cancels when a hunk question is dismissed (A1, ROLE-04); unread answers give NO_USABLE_ANSWER_REASON. */
-export const HUNK_DISMISSED_REASON = 'A hunk question was dismissed or not answered.'
+export const HUNK_DISMISSED_REASON = t('init.hunks.hunkDismissedReason')
 
 /**
  * The config file and the proposals each framework adapter offers for the team (A5): for each adapter in ADAPTERS
