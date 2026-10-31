@@ -5,6 +5,7 @@
  * read it here.
  */
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
+import { redactedText } from '../../core/redact'
 import { clean, countedNoun, idsOrNone, moreLine } from '../../core/text'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
@@ -65,10 +66,13 @@ function isFileGrouping(scan: InstructionScan, topics: readonly InstructionTopic
   return topics.length === fallback.length && topics.every((topic, index) => isSameTopic(topic, fallback[index]))
 }
 
-/** One topic's rows in the instructions block: title and summary, each source on its own row, the recommended roles. */
+/**
+ * One topic's rows in the instructions block: title and summary, the summary's secret-like spans hidden (redactedText,
+ * E1, #163), each source on its own row, the recommended roles.
+ */
 function topicRows(topic: InstructionTopic, parts: readonly InstructionPart[], ids: readonly string[]): string[] {
   return [
-    `  ${topic.title}: ${topic.summary}`,
+    `  ${topic.title}: ${redactedText(topic.summary)}`,
     ...topicParts(topic, parts).map(part => `    from: ${sourceText(part)}`),
     `    recommended: ${idsOrNone(ids)}`,
   ]
@@ -77,9 +81,12 @@ function topicRows(topic: InstructionTopic, parts: readonly InstructionPart[], i
 /** The row that heads the memories in the instructions block (G-02-1f Memories). */
 const MEMORIES_HEADING = 'Memories (each linked, never copied, when a role gets it):'
 
-/** One memory's rows in the instructions block: its file and summary, then the recommended roles; never its text. */
+/**
+ * One memory's rows in the instructions block: its file and summary, the summary's secret-like spans hidden
+ * (redactedText, E1, #163), then the recommended roles; never its text.
+ */
 function memoryRows(memory: MemoryItem, ids: readonly string[]): string[] {
-  return [`  ${memory.file}: ${memory.summary}`, `    recommended: ${idsOrNone(ids)}`]
+  return [`  ${memory.file}: ${redactedText(memory.summary)}`, `    recommended: ${idsOrNone(ids)}`]
 }
 
 /**

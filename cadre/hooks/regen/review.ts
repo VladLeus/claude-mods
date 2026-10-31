@@ -20,6 +20,7 @@ import type { PrivateRole } from '../apply/private'
 import { repoNameOf } from '../apply/run'
 import { labelled } from '../core/labelled'
 import type { Labelled } from '../core/labelled'
+import { redactedText } from '../core/redact'
 import { asSentence, clean, reportText } from '../core/text'
 import { GIT_TRACKING_UNKNOWN_WARNING, trackedParts } from '../generate/gittrack'
 import { partRecord, TOP_OF_FILE, withPartRecords } from '../records'
@@ -64,11 +65,12 @@ function headingText(heading: string): string {
 }
 
 /**
- * The regen question of a part (D-142): whether the role gets it, by its heading and its file, cleaned; regen makes no
- * grouping call, so a part is named by where it is, not by a topic.
+ * The regen question of a part (D-142): whether the role gets it, by its heading, its secret-like spans hidden
+ * (redactedText, E1, #163), and its file, cleaned; regen makes no grouping call, so a part is named by where it is,
+ * not by a topic.
  */
 export function regenPartQuestion(id: string, part: Pick<InstructionPart, 'file' | 'heading'>): string {
-  return `Should ${id} get "${headingText(part.heading)}" from ${clean(part.file)}?`
+  return `Should ${id} get "${redactedText(headingText(part.heading))}" from ${clean(part.file)}?`
 }
 
 /** How the context line of a regen question names each kind of item (D-142). */
@@ -88,9 +90,9 @@ export function regenMemoryQuestion(id: string, memory: Pick<MemoryItem, 'file'>
 }
 
 /**
- * The context line of a memory's regen question (D-142): the summary its record holds, or NO_MEMORY_SUMMARY, as a
- * sentence (asSentence), then what a part's context line says (regenPartContextLine). MEMORY.md is not read for it
- * (AUTO-PICK #19 Q10).
+ * The context line of a memory's regen question (D-142): the summary its record holds, or NO_MEMORY_SUMMARY, its
+ * secret-like spans hidden (redactedText, E1, #163), as a sentence (asSentence), then what a part's context line says
+ * (regenPartContextLine). MEMORY.md is not read for it (AUTO-PICK #19 Q10).
  */
 export function regenMemoryContextLine(
   memory: Pick<MemoryItem, 'summary'>,
@@ -99,7 +101,7 @@ export function regenMemoryContextLine(
 ): string {
   const summary = memory.summary === '' ? NO_MEMORY_SUMMARY : memory.summary
 
-  return `${asSentence(summary)} ${regenPartContextLine(change, isRecommended)}`
+  return `${asSentence(redactedText(summary))} ${regenPartContextLine(change, isRecommended)}`
 }
 
 /** The reply line of a part regen dropped from a role because it is gone from its file (G-02-1f Regen). */
@@ -148,8 +150,8 @@ export function regenPartContext(
   const summary = item.kind === 'memory' && item.memory.summary === '' ? NO_MEMORY_SUMMARY : null
   const where =
     item.kind === 'part'
-      ? `${clean(item.part.file)} > ${headingText(item.part.heading)}`
-      : `memory ${clean(item.memory.file)}: ${summary ?? item.memory.summary}`
+      ? `${clean(item.part.file)} > ${redactedText(headingText(item.part.heading))}`
+      : `memory ${clean(item.memory.file)}: ${redactedText(summary ?? item.memory.summary)}`
   const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], `Recommended: ${isRecommended ? 'yes' : 'no'}`]
 
   return { title: `Regen ${place.position} of ${place.count}`, lines, kind: 'regen-part' }

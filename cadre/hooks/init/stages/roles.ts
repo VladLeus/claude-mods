@@ -10,6 +10,7 @@ import type { Detection, FrameworkId, RoleChange, RoleSpec } from '../../../type
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
 import { applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
@@ -107,11 +108,12 @@ export const ADJUST_DISMISSED_REASON = 'The Adjust question was dismissed.'
 export const DESCRIBE_CANCELLED_REASON = 'The describe question was dismissed or cancelled.'
 
 /**
- * The context line of the roles question (G-02-1, D-136): every role shown by its title and id, then, when the scan
- * changed the template, how many changes it made (`1 change`, `<n> changes`).
+ * The context line of the roles question (G-02-1, D-136): every role shown by its title, its secret-like spans hidden
+ * (redactedText, E1, #163), and id, then, when the scan changed the template, how many changes it made (`1 change`,
+ * `<n> changes`).
  */
 export function rolesContextLine(roles: readonly RoleSpec[], changes: readonly RoleChange[]): string {
-  const proposed = `Proposed: ${roles.map(role => `${role.title} (${role.id})`).join(', ')}`
+  const proposed = `Proposed: ${roles.map(role => `${redactedText(role.title)} (${role.id})`).join(', ')}`
   if (changes.length === 0) return `${proposed}.`
   const noun = changes.length === 1 ? 'change' : 'changes'
 

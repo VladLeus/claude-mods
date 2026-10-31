@@ -9,6 +9,7 @@
 import type { RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
 import { EFFORTS, MODEL_ALIASES } from '../../roles/validate'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
@@ -51,11 +52,11 @@ const MODEL_ALL_QUESTION = 'Model and effort for all roles?'
 export const MODEL_EFFORT_CONTEXT = `Models: ${MODEL_ALIASES.join(', ')}; efforts: ${EFFORTS.join(', ')}.`
 
 /**
- * The model question for one role after `Per role` (D-52): its title and its id, since the id tells apart roles with
- * the same title (A6).
+ * The model question for one role after `Per role` (D-52): its title, its secret-like spans hidden (redactedText, E1,
+ * #163), and its id, since the id tells apart roles with the same title (A6).
  */
 function modelRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
-  return `Model and effort for ${role.title} (${role.id})?`
+  return `Model and effort for ${redactedText(role.title)} (${role.id})?`
 }
 
 /** Why init cancels when a model and effort question is dismissed (A1); unread answers give NO_USABLE_ANSWER_REASON. */

@@ -19,6 +19,7 @@ import type {
   SetupScan,
 } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
+import { redactedText } from '../../core/redact'
 import { cardList, idsOrNone, MAX_CARD_LIST, moreLine, pad, reportText, shown } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { launcherPath } from '../../paths'
@@ -34,9 +35,16 @@ import { scanSummaryLines, scanWarningLines } from './scan'
 /** The column, in code points, where a role's purpose starts in the proposal, after its title and id. */
 const ROLE_LABEL_WIDTH = 24
 
-/** The roles as the proposal lists them: a heading, then one line per role with its title, id and purpose. */
+/**
+ * The roles as the proposal lists them: a heading, then one line per role with its title, id and purpose, the title's
+ * and the purpose's secret-like spans hidden (redactedText, E1, #163).
+ */
 export function roleLines(roles: readonly RoleSpec[]): string[] {
-  const rows = roles.map(role => `  ${pad(`${role.title} (${role.id})`, ROLE_LABEL_WIDTH)}${role.purpose}`)
+  const rows = roles.map(role => {
+    const label = `${redactedText(role.title)} (${role.id})`
+
+    return `  ${pad(label, ROLE_LABEL_WIDTH)}${redactedText(role.purpose)}`
+  })
 
   return ['Proposed roles:', ...rows]
 }
@@ -188,8 +196,9 @@ export function instructionPartsContext(
 }
 
 /**
- * The context of one topic's question (D-236): that topic only, its title and summary, the file and heading of each
- * of its parts (never their text) and the roles recommended for it, titled by its place among the topics.
+ * The context of one topic's question (D-236): that topic only, its title and summary, the summary's secret-like spans
+ * hidden (redactedText, E1, #163), the file and heading of each of its parts (never their text) and the roles
+ * recommended for it, titled by its place among the topics.
  */
 export function topicContext(
   topic: InstructionTopic,
@@ -199,7 +208,7 @@ export function topicContext(
   count: number,
 ): AskContext {
   const lines = [
-    reportText(`${topic.title}: ${topic.summary}`),
+    reportText(`${topic.title}: ${redactedText(topic.summary)}`),
     ...topicParts(topic, parts).map(part => reportText(`  from: ${sourceText(part)}`)),
     `  recommended: ${roleIdsText(recommended)}`,
   ]
@@ -208,8 +217,9 @@ export function topicContext(
 }
 
 /**
- * The context of one memory's question (D-236): that memory only, its file and summary and the roles recommended for
- * it, never its folder or text, titled by its place among the memories.
+ * The context of one memory's question (D-236): that memory only, its file and summary, the summary's secret-like
+ * spans hidden (redactedText, E1, #163), and the roles recommended for it, never its folder or text, titled by its
+ * place among the memories.
  */
 export function memoryContext(
   memory: MemoryItem,
@@ -217,7 +227,10 @@ export function memoryContext(
   position: number,
   count: number,
 ): AskContext {
-  const lines = [reportText(`${memory.file}: ${memory.summary}`), `  recommended: ${roleIdsText(recommended)}`]
+  const lines = [
+    reportText(`${memory.file}: ${redactedText(memory.summary)}`),
+    `  recommended: ${roleIdsText(recommended)}`,
+  ]
 
   return { title: `Memory ${position} of ${count}`, lines, kind: 'memory' }
 }

@@ -8,6 +8,7 @@
  */
 import type { Choice, FrameworkId, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
+import { redactedText } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { detectAll } from '../../framework/registry'
 import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
@@ -32,11 +33,11 @@ export const FRAMEWORK_QUESTION_PREFIX = 'Which framework do the roles use?'
 export const FRAMEWORK_ALL_QUESTION = 'Framework for all roles?'
 
 /**
- * The framework question for one role after `Per role` (D-73): its title and its id, since the id tells apart roles
- * with the same title (A6).
+ * The framework question for one role after `Per role` (D-73): its title, its secret-like spans hidden (redactedText,
+ * E1, #163), and its id, since the id tells apart roles with the same title (A6).
  */
 export function frameworkRoleQuestion(role: Pick<RoleSpec, 'id' | 'title'>): string {
-  return `Framework for ${role.title} (${role.id})?`
+  return `Framework for ${redactedText(role.title)} (${role.id})?`
 }
 
 /**

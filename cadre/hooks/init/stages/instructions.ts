@@ -19,6 +19,7 @@ import type {
 } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { redactedText } from '../../core/redact'
 import { asSentence, countedNoun, idsOrNone, shown } from '../../core/text'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
@@ -150,10 +151,10 @@ export function topicQuestion(topic: InstructionTopic): string {
 }
 
 /**
- * The context line of a topic's question (G-02-1f Part by part, D-136): its summary as a sentence (asSentence,
- * 02-GAPS-B2 N1), the roles the model recommended for it, or none, then the file and heading of its first three parts,
- * each cut as shown text, and how many more. The roles come before the sources, so the context cap can only cut the
- * sources (02-GAPS-B2 S5).
+ * The context line of a topic's question (G-02-1f Part by part, D-136): its summary, its secret-like spans hidden
+ * (redactedText, E1, #163), as a sentence (asSentence, 02-GAPS-B2 N1), the roles the model recommended for it, or
+ * none, then the file and heading of its first three parts, each cut as shown text, and how many more. The roles come
+ * before the sources, so the context cap can only cut the sources (02-GAPS-B2 S5).
  */
 export function topicContextLine(
   topic: InstructionTopic,
@@ -162,7 +163,7 @@ export function topicContextLine(
 ): string {
   const sources = cappedList(topicParts(topic, parts).map(part => shown(sourceText(part))), MAX_SHOWN_SOURCES)
 
-  return `${asSentence(topic.summary)} Recommended: ${idsOrNone(recommended)}. From: ${sources}.`
+  return `${asSentence(redactedText(topic.summary))} Recommended: ${idsOrNone(recommended)}. From: ${sources}.`
 }
 
 /**
@@ -202,11 +203,12 @@ export function memoryItemQuestion(memory: MemoryItem): string {
 }
 
 /**
- * The context line of a memory's question (G-02-1f Memories, D-136): its MEMORY.md summary, or NO_MEMORY_SUMMARY, as a
- * sentence (asSentence, 02-GAPS-B2 N1), and the roles the model recommended for it, or none.
+ * The context line of a memory's question (G-02-1f Memories, D-136): its MEMORY.md summary, or NO_MEMORY_SUMMARY, its
+ * secret-like spans hidden (redactedText, E1, #163), as a sentence (asSentence, 02-GAPS-B2 N1), and the roles the
+ * model recommended for it, or none.
  */
 export function memoryItemContextLine(memory: MemoryItem, recommended: readonly string[]): string {
-  return `${asSentence(memory.summary)} Recommended: ${idsOrNone(recommended)}.`
+  return `${asSentence(redactedText(memory.summary))} Recommended: ${idsOrNone(recommended)}.`
 }
 
 /**

@@ -1,16 +1,12 @@
 /**
  * Secret-like text hidden from what cadre shows, a layer 0 module (E1): free text the engine or a person supplied, such
- * as a skill's description, is shown with each span that looks like a credential replaced by REDACTED. It imports no
- * other module, so every layer can import it.
+ * as a skill's description, is shown with each span that looks like a credential replaced by REDACTED. It imports
+ * core/text only, so every layer can import it.
  */
+import { clean } from './text'
 
 /** What a hidden span of secret-like text reads as (E1). */
 export const REDACTED = '[hidden]'
-
-/** `text` with secret-like spans hidden before any cap (#163 stub until its GREEN): the text as given. */
-export function redactedText(text: string, maxChars: number = Number.POSITIVE_INFINITY): string {
-  return text
-}
 
 /**
  * A Bearer token: the word Bearer in any case and its spaces (group 1), then 8 or more token characters with a digit.
@@ -85,4 +81,13 @@ export function redactSecrets(text: string): string {
     .replace(AWS_KEY_ID, REDACTED)
     .replace(HEX_RUN, REDACTED)
     .replace(BASE64_RUN, base64Text)
+}
+
+/**
+ * One free-text field as cadre shows it (E1, #163): its unsafe characters stripped (clean, no cap), then each
+ * secret-like span hidden (redactSecrets), then capped at `maxChars` code points, none by default; so no cap cuts a
+ * secret into a visible prefix and no stripped character splits one.
+ */
+export function redactedText(text: string, maxChars: number = Number.POSITIVE_INFINITY): string {
+  return clean(redactSecrets(clean(text, Number.POSITIVE_INFINITY)), maxChars)
 }

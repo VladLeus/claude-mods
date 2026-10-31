@@ -13,6 +13,7 @@ import type { CompiledScope, GitPolicy, LaunchStart, Plan, RoleSpec } from '../.
 import { setupAfterInstalls } from '../../apply/installs'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
+import { redactedText } from '../../core/redact'
 import { countedNoun, reportText } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { planSummary, renderPlan } from '../../plan/text'
@@ -289,7 +290,8 @@ function handoutLines(draft: Draft): string[] {
  * warnings of the run, kept for this review, the plugins Confirm installs when the person answered Install for any (the
  * security plugins, decision #39, and claude-md-management, D-141), each key cleaned and capped as a report cell is
  * (decision #69 B7), and last, when claude-md-management is installed or answered Install and the improver has a
- * built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
+ * built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4). Every line has its secret-like spans hidden
+ * (redactedText, E1, #163), so the review block and each page of its context show none.
  */
 function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
@@ -313,7 +315,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
     ...scanWarningLines(scanWarnings(draft.locations, draft.gathered)),
     ...(draft.pluginInstalls.length === 0 ? [] : [installLine]),
     ...improver,
-  ]
+  ].map(line => redactedText(line))
 }
 
 /**
