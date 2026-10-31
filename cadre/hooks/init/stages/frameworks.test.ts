@@ -1,11 +1,21 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Choice, RepoEntry, RoleSpec } from '../../../types'
+import type { Choice, GsdFact, RepoEntry, RoleSpec } from '../../../types'
 import { REDACTED } from '../../core/redact'
 import { choiceLine } from '../../detect/report'
 import { proposeRoles } from '../../roles/propose'
 import { resolvedFramework } from '../../team'
-import { driven, emptySetupScan, facts, firstLines, repoScan, stateAt, wholeDraft, withFramework } from '../../testkit'
+import {
+  DEFAULT_LOCATIONS,
+  driven,
+  emptySetupScan,
+  facts,
+  firstLines,
+  repoScan,
+  stateAt,
+  wholeDraft,
+  withFramework,
+} from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import { nextStage } from '../machine'
 import { cancelledReply } from '../replies'
@@ -231,5 +241,62 @@ describe('the frameworks stage (D-230)', () => {
     expect(state.openQuestion).toEqual(ask)
     const all = nextStage(state, { kind: 'answer', text: 'Same for all roles' })
     expect(all.openQuestion?.question).toBe(withContext(FRAMEWORK_ALL_QUESTION, 'Roles: pm, tl, security.'))
+  })
+})
+
+describe('the GSD check (D-243)', () => {
+  /** PM, Team Lead and Security: the template roles a repo with no source keeps. */
+  const roles = proposeRoles(repoScan()).roles
+  /** A user-level GSD found but not proven, as facts gives it: facts never runs GSD's own check. */
+  const UNPROVEN: GsdFact = {
+    location: 'user',
+    dir: '~/.claude/gsd-core',
+    version: null,
+    identity: 'unknown',
+    runtimeIdentityTried: false,
+  }
+  /** The GSD check question, word for word. */
+  const QUESTION = "Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)"
+
+  /** The frameworks stage entered for a repo with nothing in use whose GSD facts are `gsd`. */
+  function gsdAt(gsd: readonly GsdFact[]): InitState {
+    const gathered = {
+      facts: { facts: facts({ gsd }), gsdUserDir: '/home/u/.claude/gsd-core' },
+      repo: repoScan(),
+      setup: emptySetupScan(),
+    }
+
+    return frameworksStage.enter(stateAt('frameworks', wholeDraft({ gathered, choice: { kind: 'none' }, roles })))
+  }
+
+  test('a found, unproven GSD is asked about first, the decline first; No goes on as with no check', () => {
+    const asked = gsdAt([UNPROVEN])
+    const effect = asked.effect.kind === 'ask' ? asked.effect : null
+    const no = nextStage(asked, { kind: 'answer', text: 'No, skip the check' })
+
+    expect([effect?.question, effect?.spec.options, effect?.spec.header, effect?.spec.context?.kind]).toEqual([
+      QUESTION,
+      ['No, skip the check', 'Yes, run the check'],
+      'GSD check',
+      'detection',
+    ])
+    expect(effect?.spec.context?.lines.join('\n')).toContain('~/.claude/gsd-core')
+    const after = [no.stage, no.draft.repoDefault, no.draft.gathered?.facts.facts.gsd]
+    expect(after).toEqual(['security', 'none', [UNPROVEN]])
+  })
+
+  test('Yes asks the runner for the check with the locations, as an io effect', () => {
+    const yes = nextStage(gsdAt([UNPROVEN]), { kind: 'answer', text: 'Yes, run the check' })
+
+    expect(yes.effect).toEqual({ kind: 'io', call: { id: 'gsd-identity', locations: DEFAULT_LOCATIONS } })
+  })
+
+  test('no GSD candidate, or a proven one, is never asked about', () => {
+    const proven: GsdFact = { ...UNPROVEN, identity: 'proven' }
+    const local: GsdFact = { ...UNPROVEN, location: 'project' }
+    const cases: readonly (readonly GsdFact[])[] = [[], [proven], [local]]
+    for (const gsd of cases) {
+      expect(gsdAt(gsd).sub).toEqual({ kind: 'done' })
+    }
   })
 })

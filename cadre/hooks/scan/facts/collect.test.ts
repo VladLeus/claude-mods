@@ -44,19 +44,17 @@ describe('collectFacts', () => {
     expect(raw.warnings).toContain('could not list the repo root (treated as unknown)')
   })
 
-  test('only the user-level candidate with a built runtime is run, with its GSD folder as cwd', async () => {
+  test('collectFacts never runs the identity call, not even for a built user-level candidate (D-243)', async () => {
     const built = [USER_GSD, `${USER_GSD}/bin/lib/cli-exit.cjs`, PROJECT_GSD, `${PROJECT_GSD}/bin/lib/cli-exit.cjs`]
     const calls: IdentityCall[] = []
 
-    await collectFacts(fakePort(built, calls), DEFAULT_LOCATIONS)
+    const { raw } = await collectFacts(fakePort(built, calls), DEFAULT_LOCATIONS)
 
-    const argv = ['node', `${USER_GSD}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
-    expect(calls).toEqual([{ argv, cwd: USER_GSD }])
-
-    const unbuilt: IdentityCall[] = []
-    const notBuilt = [USER_GSD, PROJECT_GSD, `${PROJECT_GSD}/bin/lib/cli-exit.cjs`]
-    await collectFacts(fakePort(notBuilt, unbuilt), DEFAULT_LOCATIONS)
-    expect(unbuilt).toEqual([])
+    expect(calls).toEqual([])
+    expect(raw.gsd.map(candidate => [candidate.location, candidate.runtimeTried])).toEqual([
+      ['user', false],
+      ['project', false],
+    ])
   })
 
   test('a probe the port cannot answer counts as present, so the read is tried and warns (fail open)', async () => {
@@ -70,12 +68,10 @@ describe('collectFacts', () => {
   test('a GSD folder whose probe the port cannot answer counts as present', async () => {
     const built = `${USER_GSD}/bin/lib/cli-exit.cjs`
     const exists = async (path: string): Promise<boolean | null> => (path === USER_GSD ? null : path === built)
-    const calls: IdentityCall[] = []
 
-    await collectFacts(fakePort([], calls, { exists }), DEFAULT_LOCATIONS)
+    const { raw } = await collectFacts(fakePort([], [], { exists }), DEFAULT_LOCATIONS)
 
-    const argv = ['node', `${USER_GSD}/bin/gsd-tools.cjs`, 'runtime-identity', '--raw']
-    expect(calls).toEqual([{ argv, cwd: USER_GSD }])
+    expect(raw.gsd.find(candidate => candidate.location === 'user')?.isPresent).toBe(true)
   })
 
   test('a settings source that throws is skipped with a warning', async () => {

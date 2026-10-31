@@ -285,6 +285,9 @@ function ambiguousWorld(over: Partial<World> = {}): World {
   }
 }
 
+/** The answer that lets GSD's own check run: the GSD check asks before the identity call runs (D-243). */
+const GSD_CHECK_YES: Readonly<Record<string, string>> = { "Run GSD's own check": 'Yes, run the check' }
+
 /** The INIT_ANSWERS without the answer for one question prefix, so that question is dismissed. */
 function answersWithout(prefix: string): Readonly<Record<string, string>> {
   return Object.fromEntries(Object.entries(INIT_ANSWERS).filter(([key]) => key !== prefix))
@@ -709,6 +712,7 @@ describe('register with a faked host', () => {
     const userDenied = {
       ...ambiguousWorld(),
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, userDenied, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -734,6 +738,39 @@ describe('register with a faked host', () => {
     },
   )
 
+  test('an interactive detect asks the GSD check; No runs nothing and leaves GSD unproven (D-243)', async ($, on) => {
+    const log = newLog()
+    const unproven = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+      answers: { "Run GSD's own check": 'No, skip the check' },
+    }
+    fakeHost(on, unproven, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect(log.asks).toEqual([
+      "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)",
+    ])
+    expect(log.askOptions).toEqual([['No, skip the check', 'Yes, run the check']])
+    expect(log.runs).toEqual([])
+    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+  })
+
+  test('detect in claude -p never asks the GSD check and never runs the identity call (D-243)', async ($, on) => {
+    const log = newLog()
+    const unproven = {
+      ...ambiguousWorld(),
+      denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
+      runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+      answers: GSD_CHECK_YES,
+      surfaces: [],
+    }
+    fakeHost(on, unproven, log)
+    const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    expect([log.asks, log.runs]).toEqual([[], []])
+    expect(out.text).toContain('Warning: could not prove the GSD install at ~/.claude/gsd-core (treated as unknown)')
+  })
+
   test('a runtime identity answer for another package never makes the GSD row installed', async ($, on) => {
     const log = newLog()
     const decoy = {
@@ -741,6 +778,7 @@ describe('register with a faked host', () => {
       listings: { '/repo': [entry('docs', 'dir')], '/repo/docs': [entry('superpowers', 'dir')] },
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
       runtime: { exitCode: 0, stdout: '{"packageName":"get-shit-done-cc","note":"@opengsd/gsd-core"}' },
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, decoy, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -984,6 +1022,7 @@ describe('register with a faked host', () => {
       ...ambiguousWorld(),
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
       runtime: { exitCode: 1, stdout: '' },
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, failed, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -1015,6 +1054,7 @@ describe('register with a faked host', () => {
       ...ambiguousWorld(),
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
       runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, userDenied, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -1027,6 +1067,7 @@ describe('register with a faked host', () => {
       ...ambiguousWorld(),
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
       runtimeDeny: 'SENTINEL_HOST_TEXT',
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, refused, newLog())
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -1043,6 +1084,7 @@ describe('register with a faked host', () => {
       ...ambiguousWorld(),
       denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
       runtime: { exitCode: 1, stdout: '' },
+      answers: GSD_CHECK_YES,
     }
     fakeHost(on, failed, newLog())
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
@@ -2915,6 +2957,7 @@ describe('Phase 2 faked-host matrix', () => {
       const world = gsdOnlyWorld({
         denyPaths: ['/home/u/.claude/gsd-core/VERSION', '/home/u/.claude/gsd-core/bin/lib/package-identity.cjs'],
         runtime: { exitCode: 0, stdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}' },
+        answers: { ...INIT_ANSWERS, ...GSD_CHECK_YES },
       })
       fakeHost(on, world, log)
       const dry = (await $.command.run({ command: 'cadre', args: 'init --dry-run' })).text

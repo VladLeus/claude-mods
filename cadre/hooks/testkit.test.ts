@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, ShownBlock, TemplateRoleId } from '../types'
+import type { AskSpec, RawGsdCandidate, ShownBlock, TemplateRoleId } from '../types'
 import { ROLE_TEMPLATE, roleFromTemplate } from './roles/template'
 import { scanSetup } from './scan/setup/setup'
 import {
@@ -69,6 +69,25 @@ describe('testkit', () => {
     expect(world.commands).toEqual([])
     expect(world.tools).toEqual([])
     expect(world.replies).toEqual([])
+  })
+
+  test('gsdIdentity records each call and gives the probed candidate of the world, else null (D-243)', async () => {
+    const probed: RawGsdCandidate = {
+      location: 'user',
+      dir: '/home/u/.claude/gsd-core',
+      isPresent: true,
+      versionText: null,
+      identityText: null,
+      manifest: null,
+      runtimeStdout: '{"packageName":"@opengsd/gsd-core","version":"1.16.0"}',
+      runtimeTried: true,
+    }
+    const none = memIo(memWorld({}), {})
+    const found = memIo(memWorld({ probedGsd: probed }), {})
+
+    expect([await none.io.gsdIdentity(DEFAULT_LOCATIONS), none.gsdIdentityCalls]).toEqual([null, [DEFAULT_LOCATIONS]])
+    const gave = await found.io.gsdIdentity(DEFAULT_LOCATIONS)
+    expect([gave, found.gsdIdentityCalls]).toEqual([probed, [DEFAULT_LOCATIONS]])
   })
 
   test('memWorld keeps an override and leaves every other field at its default', () => {
@@ -401,8 +420,9 @@ describe('shared fixtures', () => {
       'Where should the role launchers start': 'Git root of this repo',
       'Review the plan': 'Confirm',
       "Scan this repo's session history": 'No, skip it',
+      "Run GSD's own check": 'No, skip the check',
     })
-    expect(Object.keys(INIT_ANSWERS)).toHaveLength(15)
+    expect(Object.keys(INIT_ANSWERS)).toHaveLength(16)
     expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
   })
 

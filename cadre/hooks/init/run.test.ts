@@ -572,6 +572,29 @@ describe('runInit framework and recommendations', () => {
     expect(recommended).not.toContain('- superpowers for all roles')
   })
 
+  test("an unproven GSD: the dry run asks GSD's own check first; No never runs it, Yes once (D-243)", async () => {
+    const unproven: GsdFact = {
+      location: 'user',
+      dir: '~/.claude/gsd-core',
+      version: null,
+      identity: 'unknown',
+      runtimeIdentityTried: false,
+    }
+    const facts = { facts: { ...AMBIGUOUS_FACTS, gsd: [unproven] }, gsdUserDir: '/home/u/.claude/gsd-core' }
+    const check = "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)"
+    const framework = 'ask Which framework do the roles use? (asked because more than one framework is in use)'
+    const cases: readonly (readonly [string, number])[] = [['No, skip the check', 0], ['Yes, run the check', 1]]
+    for (const [answer, runs] of cases) {
+      const run = memIo(gitWorld({ facts }), { ...INIT_ANSWERS, "Run GSD's own check": answer })
+      const { io, events } = withEvents(run)
+      await runInit(io, { dryRun: true })
+      const checkAt = events.indexOf(check)
+
+      const order = [checkAt >= 0, checkAt < events.indexOf(framework)]
+      expect([...order, run.gsdIdentityCalls.length]).toEqual([true, true, runs])
+    }
+  })
+
   test('in init an Adjust framework that the repo does not have installed is refused (A5)', async () => {
     const gsdOnly: Facts = { ...EMPTY_FACTS, repoEntries: [{ name: '.planning', kind: 'dir', isLink: false }] }
     const answers = [

@@ -27,6 +27,7 @@ import type {
   PortEntry,
   PortRead,
   PortStat,
+  RawGsdCandidate,
   RepoScan,
   RoleSpec,
   RunOptions,
@@ -145,6 +146,8 @@ export type MemWorld = {
   readonly tools: unknown
   /** The model's replies in order. Once they run out, or at a null entry, the model gave no text. */
   readonly replies: readonly (string | null)[]
+  /** What gsdIdentity gives: the user-level GSD candidate as read with the identity call allowed (D-243). */
+  readonly probedGsd: RawGsdCandidate | null
 }
 
 /**
@@ -168,6 +171,7 @@ export function memWorld(over: Partial<MemWorld>): MemWorld {
     commands: [],
     tools: [],
     replies: [],
+    probedGsd: null,
     ...over,
   }
 }
@@ -191,6 +195,8 @@ export type MemRun = {
   readonly reads: string[]
   /** Every folder path listed, in order. */
   readonly listed: string[]
+  /** The locations of every gsdIdentity call, in order: each one is a run of GSD's own check (D-243). */
+  readonly gsdIdentityCalls: InitLocations[]
 }
 
 /** Whether scripted answers are given in order, rather than by question prefix. */
@@ -263,6 +269,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   const prompts: string[] = []
   const reads: string[] = []
   const listed: string[] = []
+  const gsdIdentityCalls: InitLocations[] = []
   let nextAnswer = 0
   let nextReply = 0
 
@@ -297,7 +304,11 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     isInteractive: async () => world.interactive,
     locations: async () => world.locations,
     facts: async () => world.facts,
-    gsdIdentity: async () => null,
+    gsdIdentity: async locations => {
+      gsdIdentityCalls.push(locations)
+
+      return world.probedGsd
+    },
     sessionId: async () => world.sessionId,
     now: async () => world.now,
     cadreVersion: async () => world.cadreVersion,
@@ -323,7 +334,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     tools: async () => world.tools,
   }
 
-  return { io, asked, specs, logged, shown, progress, prompts, reads, listed }
+  return { io, asked, specs, logged, shown, progress, prompts, reads, listed, gsdIdentityCalls }
 }
 
 /**
@@ -530,6 +541,7 @@ export const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Where should the role launchers start': 'Git root of this repo',
   'Review the plan': 'Confirm',
   "Scan this repo's session history": 'No, skip it',
+  "Run GSD's own check": 'No, skip the check',
 })
 
 /**
