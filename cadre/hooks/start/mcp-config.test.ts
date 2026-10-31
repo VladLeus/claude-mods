@@ -12,6 +12,10 @@ const CLAUDE_JSON = '/home/u/.claude.json'
 /** The config of the user's redmine server, with a token that may only ever reach the runtime file. */
 const REDMINE = { command: 'r', env: { TOKEN: 'sk-FAKE-SECRET-0123456789' } }
 
+/** CLAUDE_CONFIG_DIR values the D-238 rule ignores: relative, with a `..`, `.` or empty segment, inside the repo. */
+const UNSAFE_CONFIG_DIRS = ['.claude-alt', '/cfg/../repo/.claude-alt', '/repo/./.claude-alt', '/repo//.claude-alt',
+  '/repo/.claude-alt']
+
 /** The MCP config of a role that gets no server (LNCH-02). */
 const NO_SERVERS = stableJson({ mcpServers: {} })
 
@@ -49,6 +53,15 @@ describe('runtime MCP config (D-93)', () => {
     const configured = memIo(memWorld({ files: { '/cfg/.claude.json': '{"a":1}', [CLAUDE_JSON]: '{"b":2}' } }), {})
     expect(await readClaudeJson(configured.io, { ...DEFAULT_LOCATIONS, configDir: '/cfg' }, true)).toEqual({ a: 1 })
     expect(configured.reads).toEqual(['/cfg/.claude.json'])
+  })
+
+  test('readClaudeJson reads ~/.claude.json for a relative, dotted or inside-repo config dir (SR-1)', async () => {
+    const files = { '/repo/.claude-alt/.claude.json': '{"repo":1}', [CLAUDE_JSON]: '{"home":2}' }
+    for (const configDir of UNSAFE_CONFIG_DIRS) {
+      const run = memIo(memWorld({ files }), {})
+      const value = await readClaudeJson(run.io, { ...DEFAULT_LOCATIONS, configDir }, true)
+      expect([configDir, value, run.reads]).toEqual([configDir, { home: 2 }, [CLAUDE_JSON]])
+    }
   })
 
   test('readClaudeJson gives null for a file that is absent, unreadable, too large or not JSON', async () => {

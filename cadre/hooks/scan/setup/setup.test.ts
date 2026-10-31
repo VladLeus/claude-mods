@@ -896,8 +896,8 @@ describe('launch exports', () => {
 
 /**
  * What the setup scan reads when CLAUDE_CONFIG_DIR is relative or inside the repo (D-238): the value is ignored with
- * the CLAUDE_CONFIG_DIR warning, once, and every user-level source is read below <home>/.claude instead. The
- * `.claude.json` path still follows the value as given (claudeJsonPathOf, not a user-folder caller).
+ * the CLAUDE_CONFIG_DIR warning, once, and every user-level source is read below <home>/.claude instead, and
+ * `.claude.json` from the home folder (claudeJsonPathOf follows the same rule, SR-1).
  */
 describe('unsafe CLAUDE_CONFIG_DIR (D-238)', () => {
   /** A user folder under the fixture home with the plugins file, one agent and an unreadable global CLAUDE.md. */
@@ -915,7 +915,7 @@ describe('unsafe CLAUDE_CONFIG_DIR (D-238)', () => {
     expect(run.reads).toEqual([
       '/home/u/.claude/plugins/installed_plugins.json',
       '/repo/.mcp.json',
-      '.claude-alt/.claude.json',
+      '/home/u/.claude.json',
       '/repo/.claude/agents',
       '/home/u/.claude/CLAUDE.md',
       '/home/u/.claude/projects/-repo/memory',
@@ -934,7 +934,7 @@ describe('unsafe CLAUDE_CONFIG_DIR (D-238)', () => {
     expect(run.reads).toEqual([
       '/home/u/.claude/plugins/installed_plugins.json',
       '/repo/.mcp.json',
-      '/repo/.claude-alt/.claude.json',
+      '/home/u/.claude.json',
       '/repo/.claude/agents',
       '/home/u/.claude/CLAUDE.md',
       '/home/u/.claude/projects/-repo/memory',

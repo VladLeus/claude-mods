@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SetupScan } from '../../../types'
+import { t } from '../../locales/t'
 import { BIDI_OVERRIDE, CTX, memWorld, runOf } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import {
@@ -211,5 +212,20 @@ describe('claude.ai connectors in ~/.claude.json (R2)', () => {
     const refused = await runOf(world, false)
     expect(refused.reads).not.toContain(CLAUDE_JSON_PATH)
     expect(refused.scan.mcp).toEqual([{ name: 'claude_ai_Gmail', source: 'session' }])
+  })
+})
+
+describe('~/.claude.json under an unsafe CLAUDE_CONFIG_DIR (D-238, SR-1)', () => {
+  test('a relative, dotted or inside-repo value reads the home file; the warning shows once', async () => {
+    const hosted = JSON.stringify({ mcpServers: { hosted: { command: 'x' } } })
+    const world = memWorld({ files: { '/repo/.claude-alt/.claude.json': hosted, [CLAUDE_JSON_PATH]: CLAUDE_JSON } })
+    const values = ['.claude-alt', '/cfg/../repo/.claude-alt', '/repo/./.claude-alt', '/repo//.claude-alt',
+      '/repo/.claude-alt']
+    for (const configDir of values) {
+      const { scan, reads } = await runOf(world, true, { ...CTX, configDir })
+      const warned = scan.warnings.filter(warning => warning === t('paths.configDirWarning')).length
+      expect([configDir, reads.filter(path => path.endsWith('.claude.json')), scan.mcp.map(ref => ref.name), warned])
+        .toEqual([configDir, [CLAUDE_JSON_PATH], ['jira', 'linear'], 1])
+    }
   })
 })
