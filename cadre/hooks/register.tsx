@@ -39,7 +39,7 @@ import {
   questionPaneBlocks,
   questionScroll,
 } from './ui/pane'
-import { answersFromNotes, askRewrite, fitPreview, previewColumns, PREVIEW_ROWS } from './ui/preview'
+import { answersFromNotes, dialogPlan, fitPreview, previewColumns, PREVIEW_ROWS } from './ui/preview'
 import { surfaceOf } from './ui/surface'
 import type { Surface } from './ui/surface'
 
@@ -447,42 +447,25 @@ export const register: Register = on => {
     )
   })
 
-  // The pane draws the own context of the question cadre has open, which the init port's ask writes (R1, D-203);
-  // this hook writes no state. It acts only on the question cadre has open, the call's first question by its exact
-  // text: any other AskUserQuestion, the model's own or another plugin's, during a run or after it, passes through
-  // untouched, and so does its result (D-239). Only on the TUI default, where no pane opens (D-208), or while the
-  // terminal main screen seats the pane inline, where the engine hides it behind a dialog, and only for an open
-  // question with a context of its own: each single-select question gets that context as the preview of every option
-  // (D3, D-203), wrapped to the preview box (previewColumns, D-231) and on the TUI default fitted to its rows
-  // (PREVIEW_ROWS, D-228), and, when it takes a typed answer (D-234), a Describe your own option or the hint line
-  // (A2), and notes typed in the dialog become the answer under the question's text as asked (A3). A question with no
-  // context (a hunk, the claude.json consent) keeps its dialog as asked, Other row included. On a pane surface that
-  // previews nothing, the dialog of the open question that offers Change something… (the review, D-233) is passed
-  // through as asked and a note typed in it becomes its answer (ASKED #24). Any other call, a deny, an error and a
-  // result of another shape pass through unchanged. Apart from the read of the open question, the hook has no .catch
-  // on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe pass-through (C1).
+  // The dialog of the question cadre has open is decided by dialogPlan (WD-S2); this hook reads the open question,
+  // which the init port's ask writes, and writes no state (R1, D-203). With no open question or no plan the call
+  // passes through untouched, and so does its result (D-239). Else the dialog shows the plan's questions, or the
+  // call's own when the plan has none, and notes typed in it become the answers of the plan's notes (A3, ASKED #24).
+  // A deny, an error and a result of another shape pass through unchanged. Apart from the read of the open question,
+  // the hook has no .catch on purpose: a hook that throws is skipped and next(e) runs in its place, a fail-safe
+  // pass-through (C1).
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const raw: unknown = e.questions
     const open = await read($, openQuestion).catch(() => null)
-    const first: unknown = Array.isArray(raw) ? raw[0] : undefined
-    const asked = isObject(first) && typeof first.question === 'string' ? first.question : null
-    if (open === null || asked !== open.question) return await next(e)
-    const isPreviewed = runSurface === 'tui-default' || (runSurface === 'pane' && lastPlacement === 'inline')
-    const rows = runSurface === 'tui-default' ? PREVIEW_ROWS : null
+    if (open === null) return await next(e)
     const columns = previewColumns(presentationColumns)
-    const rewrite = isPreviewed ? askRewrite(raw, open.context, open.acceptsTyped, columns, rows) : null
-    // Elsewhere on a pane surface the dialog is passed through as asked, and only for the open question that offers
-    // Change something… a note typed in it becomes the answer, so the review's item word arrives (ASKED #24).
-    const options: unknown = isObject(first) ? first.options : null
-    const isChange = (option: unknown): boolean => isObject(option) && option.label === CHANGE_SOMETHING_LABEL
-    const offersChange = Array.isArray(options) && options.some(isChange)
-    const isPaneNote = !isPreviewed && runSurface === 'pane' && offersChange
-    const notes = rewrite?.asked ?? (isPaneNote ? [{ question: open.question, asked: open.question }] : null)
-    if (notes === null) return await next(e)
+    const plan = dialogPlan(raw, open, runSurface, lastPlacement, columns, CHANGE_SOMETHING_LABEL)
+    if (plan === null) return await next(e)
 
     // withPreviews checked the shape of the questions before it rewrote them, so this boundary cast hides no
     // mismatch.
-    const r = await next(rewrite === null ? e : { ...e, questions: rewrite.questions as typeof e.questions })
+    const { questions, notes } = plan
+    const r = await next(questions === null ? e : { ...e, questions: questions as typeof e.questions })
     if (r.deny !== undefined) return r
     if (r.isError === true) return r
     const resultValue: unknown = r.result
