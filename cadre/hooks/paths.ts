@@ -7,6 +7,7 @@
 import type { EntryKind, InitIo, InitLocations, PortEntry, RawFacts } from '../types'
 import { isObject } from './core/json'
 import { clean } from './core/text'
+import { t } from './locales/t'
 
 /** Code points a host warning keeps, the ellipsis included. */
 export const MAX_WARNING_CHARS = 240
@@ -106,13 +107,11 @@ export function trimSlash(path: string | null): string | null {
 }
 
 /** Warning when HOME is unset or not an absolute path; the home-folder check then has nothing to compare with. */
-export const HOME_UNUSABLE_WARNING = 'HOME is unset or not an absolute path: the home-folder check was skipped'
+export const HOME_UNUSABLE_WARNING = t('paths.homeUnusableWarning')
 /** Warning when CLAUDE_CONFIG_DIR is set but cannot be used; the value itself is never shown. */
-const CONFIG_DIR_WARNING =
-  'CLAUDE_CONFIG_DIR is ignored: it must be an absolute path with no .. segment, outside the repo'
+const CONFIG_DIR_WARNING = t('paths.configDirWarning')
 /** Warning when no usable CLAUDE_CONFIG_DIR and no home folder outside the repo leave a user folder to read. */
-const NO_USER_FOLDER_WARNING =
-  'user-level installs were not checked: no CLAUDE_CONFIG_DIR or home folder outside the repo'
+const NO_USER_FOLDER_WARNING = t('paths.noUserFolderWarning')
 
 /** The paths the host reads from: the repo root, the home folder, and CLAUDE_CONFIG_DIR when it is set. */
 export type ReadEnv = {
@@ -160,7 +159,7 @@ export type ResolvedPath = { readonly path: string; readonly warning: string | n
 export function resolvedPath(given: string, realPath: string | undefined, label: string): ResolvedPath {
   if (realPath !== undefined && realPath !== '') return { path: realPath, warning: null }
 
-  return { path: given, warning: `could not resolve ${label} (used as given)` }
+  return { path: given, warning: t('paths.resolvedPath', { label }) }
 }
 
 /**

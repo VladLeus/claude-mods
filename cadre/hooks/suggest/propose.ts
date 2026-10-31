@@ -9,7 +9,7 @@ import { isObject, parseJsonValue } from '../core/json'
 import { cappedErrors, unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { PROMPTS, proposeSystemText } from '../locales/prompts'
-import { fill } from '../locales/t'
+import { fill, t } from '../locales/t'
 import { ROLE_TEMPLATE, roleOf } from '../roles/template'
 import type { RoleTraits } from '../roles/template'
 import {
@@ -133,7 +133,7 @@ export function rolesFromProposal(proposed: readonly ProposedRole[]): RoleSpec[]
 const MAX_FALLBACK_ERROR_CHARS = 120
 
 /** The sentence that ends the fallback line. */
-const FALLBACK_NOTE = 'Using the template proposal; you can still adjust it.'
+const FALLBACK_NOTE = t('suggest.propose.fallbackNote')
 
 /** What proposeFromText gives: the described roles, or the fallback line and why the roles could not be used. */
 export type Proposed =
@@ -144,7 +144,7 @@ export type Proposed =
 function fallbackMessage(errors: readonly string[]): string {
   const reason = clean(errors.join('; '), MAX_FALLBACK_ERROR_CHARS)
 
-  return `Could not use the described structure: ${reason}. ${FALLBACK_NOTE}`
+  return t('suggest.propose.fallbackMessage', { reason, fallbackNote: FALLBACK_NOTE })
 }
 
 /**

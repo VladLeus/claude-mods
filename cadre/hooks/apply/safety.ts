@@ -6,6 +6,7 @@
  */
 import type { InitLocations, PortEntry, PortStat, WriteStat } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 import {
   displayPath,
   foldersAbove,
@@ -37,13 +38,13 @@ export function applyStatPaths(steps: readonly ApplyStep[]): string[] {
  * Why a write is refused when its target or a folder above it is a link, not the kind it must be, or outside the
  * repo.
  */
-const LINK_REASON = 'it or a folder above it is a link, or not inside the repo'
+const LINK_REASON = t('apply.safety.linkReason')
 
 /** Why a write is refused when its target is a real folder (A5). */
-const FOLDER_REASON = 'it is a folder'
+const FOLDER_REASON = t('apply.safety.folderReason')
 
 /** Why a write is refused when the stat of its target or of a folder above it failed or was not asked (#44). */
-const STAT_FAILED_REASON = 'it or a folder above it could not be checked (a stat failed)'
+const STAT_FAILED_REASON = t('apply.safety.statFailedReason')
 
 /**
  * Whether a folder above a write lets it through: not there yet, or a real folder strictly inside the root; a failed
@@ -78,7 +79,7 @@ export function writeProblem(
 ): string | null {
   const target = stats.get(path) ?? 'failed'
   const above = foldersAbove(path).map(folder => stats.get(folder) ?? 'failed')
-  const refused = `refused to write ${reportText(path)}: `
+  const refused = t('apply.safety.writeProblem', { path: reportText(path) })
   if (target === 'failed' || above.includes('failed')) return `${refused}${STAT_FAILED_REASON}`
   if (!above.every(stat => isSafeFolder(stat, root))) return `${refused}${LINK_REASON}`
   if (target !== 'absent' && !target.isLink && target.kind === 'dir') return `${refused}${FOLDER_REASON}`
@@ -97,10 +98,10 @@ export function applyListPaths(steps: readonly ApplyStep[]): string[] {
 }
 
 /** Why a write is refused when the folder that holds it, or one that holds a folder above it, lists it as a link. */
-const LISTED_LINK_REASON = 'it or a folder above it is listed as a link'
+const LISTED_LINK_REASON = t('apply.safety.listedLinkReason')
 
 /** Why a write is refused when the folder that holds it or a folder above it is there but could not be listed. */
-const LIST_FAILED_REASON = 'it or a folder above it could not be checked (a folder listing failed)'
+const LIST_FAILED_REASON = t('apply.safety.listFailedReason')
 
 /** The folder that holds a repo-relative path, '' for a path at the root. */
 function folderOf(path: string): string {
@@ -125,7 +126,7 @@ export function listedLinkProblem(
   stats: ReadonlyMap<string, WriteStat>,
   listings: ReadonlyMap<string, readonly PortEntry[] | null>,
 ): string | null {
-  const refused = `refused to write ${reportText(path)}: `
+  const refused = t('apply.safety.listedLinkProblem', { path: reportText(path) })
   for (const entryPath of [...foldersAbove(path), path]) {
     const folder = folderOf(entryPath)
     const entries = listings.get(folder) ?? null
@@ -148,7 +149,7 @@ export function listedLinkProblem(
 export function chmodProblem(path: string, written: ReadonlySet<string>): string | null {
   if (written.has(path)) return null
 
-  return `${reportText(path)} was not made executable: its write was refused or failed`
+  return t('apply.safety.chmodProblem', { path: reportText(path) })
 }
 
 /** The argv that makes a written launcher executable: `/bin/chmod 755` on its absolute path under the root. */
@@ -225,7 +226,7 @@ export type PrivateWriteCheck = {
 }
 
 /** Why a write is refused when its path is outside the repo and is not a private file of a confirmed role (T-02-72). */
-const OUTSIDE_REASON = 'outside the repo and the role memory folders'
+const OUTSIDE_REASON = t('apply.safety.outsideReason')
 
 /**
  * The role memory folder of a private file: the folder that holds a hand-out record, or the one above the
@@ -271,7 +272,7 @@ function privateListingProblem(way: readonly string[], check: PrivateWriteCheck)
  */
 export function privateWriteProblem(path: string, check: PrivateWriteCheck): string | null {
   const { home, root, configDir } = check.locations
-  const refused = `refused to write ${displayPath(path, home, root, configDir)}: `
+  const refused = t('apply.safety.privateWriteProblem', { path: displayPath(path, home, root, configDir) })
   const folder = privateFolderOf(path)
   if (folder === null || !check.allowed.has(path)) return `${refused}${OUTSIDE_REASON}`
   const way = privateWay(folder, path)

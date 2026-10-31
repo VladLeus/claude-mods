@@ -9,6 +9,8 @@ import type { CompiledScope, Enforcement, FrameworkId, ProbeCheck, ScopeRule } f
 import { freezeRows } from '../core/freeze'
 import { compareText, shown, sortedUnique } from '../core/text'
 import { adapterOf } from '../framework/registry'
+import { ARTIFACT } from '../locales/artifact'
+import { t } from '../locales/t'
 import { handoffFolderOf } from '../paths'
 import { INFRA_MCP_SERVERS, INFRA_PLUGINS, INFRA_SKILLS, INFRA_TOOLS } from '../roles/infra'
 
@@ -51,13 +53,13 @@ const PATH_RULE = /^(?:Edit|NotebookEdit|Read|Write)\(([\s\S]*)\)$/
 const GLOB_CHARS = /[*?\[]/
 
 /** The lint answer for a single leading `/`: the pattern is anchored at the settings file and matches nothing. */
-const SINGLE_SLASH_MESSAGE = 'single leading / matches nothing (P13)'
+const SINGLE_SLASH_MESSAGE = ARTIFACT.lintSingleSlash
 
 /** The lint answer for an absolute `//` pattern, which the committed template must not hold. */
-const ABSOLUTE_MESSAGE = 'absolute // patterns belong only in .runtime (D-84)'
+const ABSOLUTE_MESSAGE = ARTIFACT.lintAbsolute
 
 /** The lint answer for a pattern that is, or covers, an infra tool. */
-const INFRA_MESSAGE = 'would block an infra tool (ISO-04)'
+const INFRA_MESSAGE = ARTIFACT.lintInfra
 
 /**
  * What no deny pattern may cover (ISO-04, D-77): the infra tools, the infra MCP servers by name, and the handoff
@@ -210,9 +212,9 @@ function isEnabled(plugins: Readonly<Record<string, boolean>>, key: string): boo
 function denyProblems(deny: readonly string[]): string[] {
   const problems: string[] = []
   for (const entry of sortedUnique(deny)) {
-    if (blocksInfra(entry)) problems.push(`deny entry ${shown(entry)} would block an infra tool`)
+    if (blocksInfra(entry)) problems.push(t('scope.lint.denyProblems', { entry: shown(entry) }))
     const key = INFRA_PLUGINS.find(candidate => entry.includes(candidate))
-    if (key !== undefined) problems.push(`deny entry ${shown(entry)} names the infra plugin ${key}`)
+    if (key !== undefined) problems.push(t('scope.lint.denyProblems2', { entry: shown(entry), key }))
   }
 
   return problems
@@ -225,12 +227,12 @@ function denyProblems(deny: readonly string[]): string[] {
 function startSkillProblem(name: string, scope: CompiledScope, framework: FrameworkId): string | null {
   const plugin = skillPlugin(name)
   if (plugin === null) {
-    return scope.overlay.skills.includes(name) ? null : `start skill ${name} of ${framework} is not in the overlay`
+    return scope.overlay.skills.includes(name) ? null : t('scope.lint.startSkillProblem', { name, framework })
   }
   const plugins = scope.settings.enabledPlugins
   const isPresent = Object.keys(plugins).some(key => pluginName(key) === plugin && isEnabled(plugins, key))
 
-  return isPresent ? null : `start skill ${name} of ${framework} needs the plugin ${plugin}, which is not enabled`
+  return isPresent ? null : t('scope.lint.startSkillProblem2', { name, framework, plugin })
 }
 
 /**
@@ -247,15 +249,15 @@ export function infraViolations(scope: CompiledScope, framework: FrameworkId): s
 
   return [
     ...denyProblems(scope.settings.permissions.deny),
-    ...INFRA_PLUGINS.filter(key => !isEnabled(plugins, key)).map(key => `infra plugin ${key} is not enabled`),
+    ...INFRA_PLUGINS.filter(key => !isEnabled(plugins, key)).map(key => t('scope.lint.infraViolations', { key })),
     ...INFRA_SKILLS.filter(name => !scope.overlay.skills.includes(name)).map(
-      name => `handoff skill ${name} is not in the overlay`,
+      name => t('scope.lint.infraViolations2', { name }),
     ),
     ...adapterOf(framework).startSkills
       .map(name => startSkillProblem(name, scope, framework))
       .filter((problem): problem is string => problem !== null),
     ...scope.flags
       .filter(flag => flag === DISABLE_SLASH_FLAG || flag.startsWith(`${DISABLE_SLASH_FLAG}=`))
-      .map(flag => `flag ${shown(flag)} would turn off the handoff skills`),
+      .map(flag => t('scope.lint.infraViolations3', { flag: shown(flag) })),
   ]
 }

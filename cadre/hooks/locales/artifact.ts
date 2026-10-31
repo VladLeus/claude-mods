@@ -213,4 +213,8 @@ export const ARTIFACT = Object.freeze({
   builtinKickoffVerify: "Verify with the project's own test and lint commands and a reviewer subagent.",
   builtinHumanGates: 'Human gates:',
   builtinGateLine: '- {where}: {kickoff}',
+  // scope/lint.ts
+  lintSingleSlash: 'single leading / matches nothing (P13)',
+  lintAbsolute: 'absolute // patterns belong only in .runtime (D-84)',
+  lintInfra: 'would block an infra tool (ISO-04)',
 }) satisfies Record<string, string>

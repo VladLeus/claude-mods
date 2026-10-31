@@ -9,7 +9,7 @@ import { isObject, parseJsonValue } from '../core/json'
 import { unfenced, withReplyErrors } from '../core/reply'
 import { clean, idLabel } from '../core/text'
 import { PROMPTS, topicsSystemText } from '../locales/prompts'
-import { fill } from '../locales/t'
+import { fill, t } from '../locales/t'
 import { TOP_OF_FILE } from '../records'
 import { LINE_BREAKS, MAX_SUMMARY_CHARS } from '../scan/instructions/memories'
 import { invalidReply, NOT_JSON_ERROR } from './checked'
@@ -135,7 +135,7 @@ export function fallbackTopics(scan: InstructionScan): InstructionTopic[] {
   return scan.files.map((file, index) => ({
     id: `T${index + 1}`,
     title: clean(file, MAX_TITLE_CHARS),
-    summary: clean(`All of ${file}`, MAX_SUMMARY_CHARS),
+    summary: clean(t('suggest.topics.fallbackTopics', { file }), MAX_SUMMARY_CHARS),
     partIds: scan.parts.filter(part => part.file === file).map(part => part.id),
   }))
 }

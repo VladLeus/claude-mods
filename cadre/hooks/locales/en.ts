@@ -551,6 +551,17 @@ export const EN = Object.freeze({
   'apply.installs.installed.one': 'Installed {names}: run /reload-plugins to load it in this session.',
   'apply.installs.installed.other': 'Installed {names}: run /reload-plugins to load them in this session.',
 
+  'apply.safety.linkReason': 'it or a folder above it is a link, or not inside the repo',
+  'apply.safety.folderReason': 'it is a folder',
+  'apply.safety.statFailedReason': 'it or a folder above it could not be checked (a stat failed)',
+  'apply.safety.writeProblem': 'refused to write {path}: ',
+  'apply.safety.listedLinkReason': 'it or a folder above it is listed as a link',
+  'apply.safety.listFailedReason': 'it or a folder above it could not be checked (a folder listing failed)',
+  'apply.safety.listedLinkProblem': 'refused to write {path}: ',
+  'apply.safety.chmodProblem': '{path} was not made executable: its write was refused or failed',
+  'apply.safety.outsideReason': 'outside the repo and the role memory folders',
+  'apply.safety.privateWriteProblem': 'refused to write {path}: ',
+
   'regen.review.yes': 'Yes',
   'regen.review.no': 'No',
   'regen.review.regenDismissedReason': 'A regen question on instruction parts was dismissed or not answered.',
@@ -581,6 +592,19 @@ export const EN = Object.freeze({
 
   'regen.run.cancelled': 'regen cancelled, nothing written',
   'regen.run.cancelledReply': '{regenCancelled}: {reason}',
+
+  'regen.sideRead.regenNoManifest':
+    ".cadre/manifest.json is missing, so regen cannot keep the other roles' files: run /cadre init again.",
+  'regen.sideRead.regenBadManifest':
+    ".cadre/manifest.json is not valid, so regen cannot keep the other roles' files: run /cadre init again.",
+  'regen.sideRead.dryRunPrivateWarning':
+    `--dry-run did not compare the global parts and memories of {id}: finding their folder runs git; a ${
+    ''}plain regen compares them`,
+  'regen.sideRead.unusableRecordWarning':
+    `could not use the hand-out record of {id} (instructions.json): its global parts and memories were ${
+    ''}not compared; run /cadre init to hand them out again`,
+  'regen.sideRead.regenTotalWarning':
+    'regen stopped reading at {value} KiB for {id}: its instruction parts were not compared',
 
   'status.report.donePresent': 'DONE.md: present',
   'status.report.doneAbsent': 'DONE.md: not written yet',
@@ -1167,6 +1191,30 @@ export const EN = Object.freeze({
   'framework.none.adapter.builtinAdapterAutonomyNote':
     'No framework config: autonomy comes from the kickoff text alone.',
   'framework.none.adapter.builtinAdapter5': 'the plan in .cadre/{roleId}/.runtime/plan.md',
+
+  'scope.lint.denyProblems': 'deny entry {entry} would block an infra tool',
+  'scope.lint.denyProblems2': 'deny entry {entry} names the infra plugin {key}',
+  'scope.lint.startSkillProblem': 'start skill {name} of {framework} is not in the overlay',
+  'scope.lint.startSkillProblem2': 'start skill {name} of {framework} needs the plugin {plugin}, which is not enabled',
+  'scope.lint.infraViolations': 'infra plugin {key} is not enabled',
+  'scope.lint.infraViolations2': 'handoff skill {name} is not in the overlay',
+  'scope.lint.infraViolations3': 'flag {flag} would turn off the handoff skills',
+
+  'generate.gittrack.untrackedPartsWarning': '{file} is not tracked by git: its parts are not written to .cadre/',
+  'generate.gittrack.gitTrackingUnknownWarning':
+    'could not ask git which instruction files it tracks: no repo part is written to .cadre/',
+
+  'suggest.propose.fallbackNote': 'Using the template proposal; you can still adjust it.',
+  'suggest.propose.fallbackMessage': 'Could not use the described structure: {reason}. {fallbackNote}',
+
+  'suggest.topics.fallbackTopics': 'All of {file}',
+
+  'paths.homeUnusableWarning': 'HOME is unset or not an absolute path: the home-folder check was skipped',
+  'paths.configDirWarning':
+    'CLAUDE_CONFIG_DIR is ignored: it must be an absolute path with no .. segment, outside the repo',
+  'paths.noUserFolderWarning':
+    'user-level installs were not checked: no CLAUDE_CONFIG_DIR or home folder outside the repo',
+  'paths.resolvedPath': 'could not resolve {label} (used as given)',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */

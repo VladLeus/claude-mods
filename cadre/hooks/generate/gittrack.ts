@@ -6,6 +6,7 @@
  */
 import type { HostIo, InstructionPart } from '../../types'
 import { reportText, sortedUnique } from '../core/text'
+import { t } from '../locales/t'
 
 /**
  * The argv that asks git which of these repo-relative files it tracks (02-GAPS-B2 M3): `git ls-files -z`, with
@@ -41,15 +42,14 @@ export function trackedRepoParts(
  * (02-GAPS-B2 M3).
  */
 export function untrackedPartsWarning(file: string): string {
-  return `${reportText(file)} is not tracked by git: its parts are not written to .cadre/`
+  return t('generate.gittrack.untrackedPartsWarning', { file: reportText(file) })
 }
 
 /**
  * The warning when git could not be asked which instruction files it tracks (02-GAPS-B2 M3): no repo part is written,
  * so the check fails closed.
  */
-export const GIT_TRACKING_UNKNOWN_WARNING =
-  'could not ask git which instruction files it tracks: no repo part is written to .cadre/'
+export const GIT_TRACKING_UNKNOWN_WARNING = t('generate.gittrack.gitTrackingUnknownWarning')
 
 /** The character `git ls-files -z` ends each name with, built at run time. */
 const NUL = String.fromCharCode(0)

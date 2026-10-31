@@ -25,6 +25,7 @@ import { privateFoldersUnknownWarning, roleFoldersOf } from '../apply/run'
 import { sha256Hex } from '../core/hash'
 import { clean, utf8Bytes } from '../core/text'
 import { isSafeFileName } from '../launch/links'
+import { t } from '../locales/t'
 import { MARKDOWN_EXTENSION, memoryFoldersOf, pathFromDisplay, relativeTo, trimSlash, userDirOf } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import type { Gathered } from '../scan/gather'
@@ -40,26 +41,21 @@ import type { MemoryRecord, RegenItems } from './part-changes'
  * The reply when `.cadre/manifest.json` is not there (A2): regen cannot keep the manifest entries of the other roles
  * without it, so it refuses; init plans every role again and rebuilds the whole manifest.
  */
-export const REGEN_NO_MANIFEST =
-  ".cadre/manifest.json is missing, so regen cannot keep the other roles' files: run /cadre init again."
+export const REGEN_NO_MANIFEST = t('regen.sideRead.regenNoManifest')
 
 /**
  * The reply when `.cadre/manifest.json` cannot be read, is too large or is not a valid manifest (A2): regen cannot keep
  * the manifest entries of the other roles from it, so it refuses; init plans every role again and rebuilds the whole
  * manifest.
  */
-export const REGEN_BAD_MANIFEST =
-  ".cadre/manifest.json is not valid, so regen cannot keep the other roles' files: run /cadre init again."
+export const REGEN_BAD_MANIFEST = t('regen.sideRead.regenBadManifest')
 
 /**
  * The warning of a --dry-run regen of a role with part records (AUTO-PICK #19 Q5): its private hand-out record is not
  * read, since naming its folder runs git and a dry run holds no host.
  */
 export function dryRunPrivateWarning(id: string): string {
-  return (
-    `--dry-run did not compare the global parts and memories of ${id}: finding their folder runs git; ` +
-    'a plain regen compares them'
-  )
+  return t('regen.sideRead.dryRunPrivateWarning', { id })
 }
 
 /**
@@ -67,10 +63,7 @@ export function dryRunPrivateWarning(id: string): string {
  * valid record, or names a file regen may not read, so its global parts and memories are not compared or rebuilt.
  */
 export function unusableRecordWarning(id: string): string {
-  return (
-    `could not use the hand-out record of ${id} (instructions.json): its global parts and memories were not ` +
-    'compared; run /cadre init to hand them out again'
-  )
+  return t('regen.sideRead.unusableRecordWarning', { id })
 }
 
 /**
@@ -78,7 +71,7 @@ export function unusableRecordWarning(id: string): string {
  * it is, its parts not compared.
  */
 export function regenTotalWarning(id: string): string {
-  return `regen stopped reading at ${MAX_TOTAL_BYTES / 1024} KiB for ${id}: its instruction parts were not compared`
+  return t('regen.sideRead.regenTotalWarning', { value: MAX_TOTAL_BYTES / 1024, id })
 }
 
 /** What a regen plans from (D-68, A2): the scans and compiled scopes of the team, and the last manifest in full. */
