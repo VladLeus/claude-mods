@@ -4,11 +4,13 @@
  * it; a skill group question lists each of its skills with what it does, how often it was used and the roles
  * recommended for it; the own-skills entry question holds the own-skills block, and one own skill's question that
  * skill alone. Every value is cleaned and capped here (D-222), and a description's secret-like spans are hidden
- * (redactSecrets, E1). It imports core and the types, so the assignment stage reads it here.
+ * (redactedText, E1) before its cap (#163). It imports core, the UNCUT rule of ui/pane and the types, so the
+ * assignment stage reads it here.
  */
 import type { AskContext, McpRef } from '../../../types'
-import { redactSecrets } from '../../core/redact'
-import { asSentence, cardList, clean, idsOrNone, reportText, shown, sortedUnique } from '../../core/text'
+import { redactedText } from '../../core/redact'
+import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
+import { UNCUT } from '../pane'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
 const CLAUDE_AI_SERVER_PREFIX = 'claude_ai_'
@@ -82,15 +84,18 @@ export type SkillLine = {
   readonly recommended: readonly string[]
 }
 
+/** The most code points of a skill's purpose in its line: the cap the purpose had, kept, now after the redaction. */
+const MAX_SKILL_PURPOSE_CHARS = 120
+
 /**
  * A skill's line (D-211): its name cut to 60 code points, then what it does as a sentence with its secret-like spans
- * hidden (redactSecrets, E1; only the description is read for them, never the name), how often it was used (left out
- * when '') and the roles recommended for it, or none; every value cleaned.
+ * hidden before the MAX_SKILL_PURPOSE_CHARS cap (redactedText, E1, #163; only the description is read for them, never
+ * the name), how often it was used (left out when '') and the roles recommended for it, or none; every value cleaned.
  */
 function skillLineText(skill: SkillLine): string {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
   const used = skill.uses === '' ? '' : ` Used ${clean(skill.uses)}.`
-  const purpose = asSentence(redactSecrets(clean(skill.purpose)))
+  const purpose = asSentence(redactedText(skill.purpose, MAX_SKILL_PURPOSE_CHARS))
 
   return `${name}: ${purpose}${used} Recommended: ${roleIdsText(skill.recommended)}.`
 }
@@ -114,8 +119,8 @@ export function skillContext(skill: SkillLine, position: number, count: number):
 
 /**
  * The context of the own-skills entry question (D-236): the own-skills block as the side pane shows it, each line
- * cleaned as a report cell.
+ * cleaned, not cut (#163).
  */
 export function ownSkillsContext(lines: readonly string[]): AskContext {
-  return { title: 'Your own skills', lines: lines.map(reportText), kind: 'skills' }
+  return { title: 'Your own skills', lines: lines.map(line => clean(line, UNCUT)), kind: 'skills' }
 }

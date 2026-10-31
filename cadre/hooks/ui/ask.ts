@@ -7,6 +7,7 @@
  */
 import type { AskSpec, InitIo, PaneKey } from '../../types'
 import { clean, reportText } from '../core/text'
+import { UNCUT } from './pane'
 
 /** The total number of asks one question gets: an answer that is not a listed choice is asked again, up to this many. */
 export const MAX_ASKS = 3
@@ -246,9 +247,9 @@ export const PANE_TITLES: Readonly<Record<PaneKey, string>> = Object.freeze({
 })
 
 /**
- * Shows lines as one side-pane block (D-133): each line cleaned as a report cell (reportText), so a scanned or typed
- * value cannot add a row or hide text.
+ * Shows lines as one side-pane block (D-133): each line cleaned, not cut (clean with UNCUT, #163), so a scanned or
+ * typed value cannot add a row or hide text, and the pane wraps a long line to its width (D-231).
  */
 export async function showBlock(io: InitIo, key: PaneKey, lines: readonly string[]): Promise<void> {
-  await io.show({ key, title: PANE_TITLES[key], lines: lines.map(reportText) })
+  await io.show({ key, title: PANE_TITLES[key], lines: lines.map(line => clean(line, UNCUT)) })
 }

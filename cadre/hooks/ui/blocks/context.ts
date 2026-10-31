@@ -2,8 +2,8 @@
  * The question contexts of init, a layer 8 module (D-203, D-236): one builder per question family whose context needs
  * new composition, from the line builders of today's pane blocks, and the lines those blocks share with their stages:
  * the roles proposal, the env heading and the security plugin notes. Every value is cleaned and capped here (D-222).
- * It imports core, paths, the scans, the scope lint's plugin names, the built-file path of generate and the other
- * block modules, so the init stages read it here.
+ * It imports core, paths, the scans, the scope lint's plugin names, the built-file path of generate, the UNCUT rule of
+ * ui/pane and the other block modules, so the init stages read it here.
  */
 import type {
   AskContext,
@@ -20,7 +20,7 @@ import type {
 } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { redactedText } from '../../core/redact'
-import { cardList, idsOrNone, MAX_CARD_LIST, moreLine, pad, reportText, shown } from '../../core/text'
+import { cardList, clean, idsOrNone, MAX_CARD_LIST, moreLine, pad, shown } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { launcherPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
@@ -28,6 +28,7 @@ import type { Gathered } from '../../scan/gather'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
 import { pluginName } from '../../scope/lint'
+import { UNCUT } from '../pane'
 import { STATUS_LABEL } from './cards'
 import { instructionLines, sourceText, topicParts } from './instructions'
 import { scanSummaryLines, scanWarningLines } from './scan'
@@ -103,7 +104,7 @@ export function scanContext(locations: InitLocations, gathered: Gathered): AskCo
     ...scanWarningLines(scanWarnings(locations, gathered)),
   ]
 
-  return { title: 'Scan', lines: lines.map(reportText), kind: 'scan' }
+  return { title: 'Scan', lines: lines.map(line => clean(line, UNCUT)), kind: 'scan' }
 }
 
 /**
@@ -111,7 +112,7 @@ export function scanContext(locations: InitLocations, gathered: Gathered): AskCo
  * and purposes, then the changes the scan made to the template (proposalLines).
  */
 export function rolesContext(roles: readonly RoleSpec[], changes: readonly RoleChange[]): AskContext {
-  return { title: 'Roles', lines: proposalLines(roles, changes).map(reportText), kind: 'roles' }
+  return { title: 'Roles', lines: proposalLines(roles, changes).map(line => clean(line, UNCUT)), kind: 'roles' }
 }
 
 /** One framework's detection as a context line: its name and status, its version when known, then its evidence. */
@@ -119,7 +120,7 @@ function detectionLine(detection: Detection): string {
   const version = detection.version === null ? '' : ` ${detection.version}`
   const evidence = detection.evidence.length === 0 ? '' : ` (${detection.evidence.join('; ')})`
 
-  return reportText(`${detection.name}: ${STATUS_LABEL[detection.status]}${version}${evidence}`)
+  return clean(`${detection.name}: ${STATUS_LABEL[detection.status]}${version}${evidence}`, UNCUT)
 }
 
 /**
@@ -139,7 +140,7 @@ export function securityContext(keys: readonly string[]): AskContext {
   const lines = keys.map(key => {
     const note = SECURITY_PLUGIN_NOTES.get(pluginName(key))
 
-    return reportText(note === undefined ? key : `${key}: ${note}`)
+    return clean(note === undefined ? key : `${key}: ${note}`, UNCUT)
   })
 
   return { title: 'Security plugins', lines, kind: 'security' }
@@ -181,7 +182,7 @@ export function instructionsContext(
 
 /**
  * The context of the entry question of the instruction hand-out (D-236): the instructions block as the side pane
- * shows it (instructionLines), each line cleaned as a report cell.
+ * shows it (instructionLines), each line cleaned, not cut (#163).
  */
 export function instructionPartsContext(
   scan: InstructionScan,
@@ -190,7 +191,7 @@ export function instructionPartsContext(
 ): AskContext {
   return {
     title: 'Instruction parts',
-    lines: instructionLines(scan, topics, recommended).map(reportText),
+    lines: instructionLines(scan, topics, recommended).map(line => clean(line, UNCUT)),
     kind: 'instructions',
   }
 }
@@ -208,8 +209,8 @@ export function topicContext(
   count: number,
 ): AskContext {
   const lines = [
-    reportText(`${topic.title}: ${redactedText(topic.summary)}`),
-    ...topicParts(topic, parts).map(part => reportText(`  from: ${sourceText(part)}`)),
+    clean(`${topic.title}: ${redactedText(topic.summary)}`, UNCUT),
+    ...topicParts(topic, parts).map(part => clean(`  from: ${sourceText(part)}`, UNCUT)),
     `  recommended: ${roleIdsText(recommended)}`,
   ]
 
@@ -228,7 +229,7 @@ export function memoryContext(
   count: number,
 ): AskContext {
   const lines = [
-    reportText(`${memory.file}: ${redactedText(memory.summary)}`),
+    clean(`${memory.file}: ${redactedText(memory.summary)}`, UNCUT),
     `  recommended: ${roleIdsText(recommended)}`,
   ]
 
@@ -299,9 +300,7 @@ export function launchDirContext(codeDirs: readonly string[]): AskContext {
   return { title: 'Launch folder', lines, kind: 'launch-dir' }
 }
 
-/**
- * The context of the review question (D-236): the review block it is asked about, each line cleaned as a report cell.
- */
+/** The context of the review question (D-236): the review block it is asked about, each line cleaned, uncut (#163). */
 export function reviewContext(lines: readonly string[]): AskContext {
-  return { title: 'Review', lines: lines.map(reportText), kind: 'review' }
+  return { title: 'Review', lines: lines.map(line => clean(line, UNCUT)), kind: 'review' }
 }
