@@ -12,7 +12,7 @@ import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
 import { t } from '../../locales/t'
 import { isSafeRelativePath } from '../../paths'
-import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
@@ -102,7 +102,10 @@ function parseLaunchChoice(answer: string): LaunchChoice | null {
 }
 
 /** What the launcher start question takes, as its refusal lists it: a button or its word (A2, D-136). */
-const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', { quotedLabels: quotedLabels(LAUNCH_START_OPTIONS) })
+const LAUNCH_START_ACCEPTS = t('init.launch.launchStartAccepts', {
+  quotedLabels: quotedLabels(LAUNCH_START_OPTIONS),
+  words: orList(LAUNCH_STARTS.map(entry => entry.word)),
+})
 
 /** The dialog of the folder question: its one button with the Launch dir chip. */
 const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK_HEADERS.launchDir })

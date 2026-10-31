@@ -25,7 +25,7 @@ export const ALL_OPTION = t('init.answers.allOption')
 const MAX_SHOWN_NAME_CHARS = 60
 
 /** The hint that ends every question whose answer is a list of roles. */
-const ROLE_ANSWER_HINT = t('init.answers.roleAnswerHint')
+const ROLE_ANSWER_HINT = t('init.answers.roleAnswerHint', { none: NONE_OPTION.toLowerCase() })
 
 /** The question for an MCP server the table does not decide. The name is cleaned and cut to 60 code points. */
 export function mcpQuestion(name: string): string {
@@ -324,7 +324,7 @@ export function cappedNames(names: readonly string[]): string {
 export function envQuestion(names: readonly string[]): string {
   const shown = cappedNames(names)
 
-  return t('init.answers.envQuestion', { shown })
+  return t('init.answers.envQuestion', { shown, none: NONE_OPTION.toLowerCase() })
 }
 
 /** What each instruction group is called in a question (D-63). Only the group is named; no content is ever shown. */
@@ -335,7 +335,7 @@ export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Ob
 })
 
 /** The hint that ends a memory question. */
-const MEMORY_ANSWER_HINT = t('init.answers.memoryAnswerHint')
+const MEMORY_ANSWER_HINT = t('init.answers.memoryAnswerHint', { none: NONE_OPTION.toLowerCase() })
 
 /** The names a memory question shows, in brackets, as cappedNames gives them. Empty with no name. */
 function shownNames(names: readonly string[]): string {

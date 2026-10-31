@@ -13,9 +13,9 @@ import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
 import { t, tn } from '../../locales/t'
-import { applyAdjust, parseAdjust } from '../../roles/adjust'
+import { ADJUST_WORDS, applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
-import { ASK_HEADERS, askedText, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, askedText, choiceAnswer, orList, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { proposalLines, roleLines, rolesContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -64,7 +64,7 @@ export const DESCRIBE_OPTIONS: readonly string[] = Object.freeze(DESCRIBE_CHOICE
 const DESCRIBE_ACCEPTS = t('init.roles.describeAccepts', { quotedLabels: quotedLabels(DESCRIBE_OPTIONS) })
 
 /** The Adjust question (D-47): one typed change per answer, with an example of each of the four changes. */
-export const ADJUST_QUESTION = t('init.roles.adjustQuestion')
+export const ADJUST_QUESTION = t('init.roles.adjustQuestion', ADJUST_WORDS)
 
 /** What a button of the Adjust question does: end the loop, or show the roles as they are now in the side pane. */
 type AdjustChoice = 'done' | 'show'
@@ -137,7 +137,7 @@ function parseDescribeAnswer(answer: string): DescribeAnswer | null {
 
 /** The message for a typed line that is none of the four changes (D-47). */
 function unreadChange(answer: string): string {
-  return t('init.roles.unreadChange', { trim: answer.trim() })
+  return t('init.roles.unreadChange', { trim: answer.trim(), verbs: orList(Object.values(ADJUST_WORDS)) })
 }
 
 /**

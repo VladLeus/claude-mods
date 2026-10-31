@@ -23,17 +23,22 @@ export type AdjustOp =
   | { readonly kind: 'rename'; readonly id: string; readonly newId: string; readonly title: string | null }
   | { readonly kind: 'framework'; readonly id: string; readonly framework: FrameworkId }
 
+/**
+ * The four keywords the Adjust grammar takes (D-47): parse tokens, kept apart from any text that names them (D-225).
+ */
+export const ADJUST_WORDS = Object.freeze({ add: 'add', drop: 'drop', rename: 'rename', framework: 'framework' })
+
 /** `add <id> <title>`: the title is the rest of the line, and a title that runs onto another line does not match. */
-const ADJUST_ADD = /^add\s+(\S+)\s+(\S[^\n]*)$/i
+const ADJUST_ADD = new RegExp(String.raw`^${ADJUST_WORDS.add}\s+(\S+)\s+(\S[^\n]*)$`, 'i')
 
 /** `drop <id>`. */
-const ADJUST_DROP = /^drop\s+(\S+)$/i
+const ADJUST_DROP = new RegExp(String.raw`^${ADJUST_WORDS.drop}\s+(\S+)$`, 'i')
 
 /** `rename <id> <new-id> [<title>]`: the title, when there is one, is the rest of the line, never another line. */
-const ADJUST_RENAME = /^rename\s+(\S+)\s+(\S+)(?:\s+(\S[^\n]*))?$/i
+const ADJUST_RENAME = new RegExp(String.raw`^${ADJUST_WORDS.rename}\s+(\S+)\s+(\S+)(?:\s+(\S[^\n]*))?$`, 'i')
 
 /** `framework <id> <gsd|superpowers|none>`. */
-const ADJUST_FRAMEWORK = /^framework\s+(\S+)\s+(\S+)$/i
+const ADJUST_FRAMEWORK = new RegExp(String.raw`^${ADJUST_WORDS.framework}\s+(\S+)\s+(\S+)$`, 'i')
 
 /** A title with one pair of double quotes around it removed; any other text is returned as it is. */
 function unquoted(text: string): string {

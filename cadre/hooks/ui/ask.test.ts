@@ -12,6 +12,7 @@ import {
   choiceAnswer,
   MAX_ASKS,
   NO_USABLE_ANSWER_REASON,
+  orList,
   PANE_TITLES,
   quotedLabels,
   refusalLine,
@@ -177,6 +178,12 @@ describe('refusal re-ask (G-02-6b)', () => {
     expect(quotedLabels(['Same for all roles', 'Per role'])).toBe('"Same for all roles", "Per role"')
     expect(quotedLabels(CLAUDE_JSON_OPTIONS)).toBe('"No, skip it", "Yes, read names only"')
     expect(quotedLabels([])).toBe('')
+  })
+
+  test('orList names one word alone, two with or, and more with commas before the or', () => {
+    expect(orList(['a'])).toBe('a')
+    expect(orList(['a', 'b'])).toBe('a or b')
+    expect(orList(['a', 'b', 'c'])).toBe('a, b or c')
   })
 
   test('running out of tries has its own reason, distinct from every dismissed reason (D-136)', () => {

@@ -129,6 +129,17 @@ export function quotedLabels(options: readonly string[]): string {
   return options.map(label => `"${label}"`).join(', ')
 }
 
+/**
+ * Words as a hint lists them for a person to type (D-225): one word alone, else the others joined with `, ` and the
+ * last after `or` (ui.ask.orList); empty for none. A hint fills them from the tokens its parser reads.
+ */
+export function orList(words: readonly string[]): string {
+  const last = words.at(-1) ?? ''
+  if (words.length <= 1) return last
+
+  return t('ui.ask.orList', { head: words.slice(0, -1).join(', '), last })
+}
+
 /** A question as it is asked (D-136): after a refusal, the refusal on its own first line, then the question. */
 export function askedText(question: string, refusal: string | null): string {
   return refusal === null ? question : `${refusal}\n${question}`

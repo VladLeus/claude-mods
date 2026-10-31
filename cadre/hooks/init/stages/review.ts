@@ -24,7 +24,7 @@ import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
 import { resolvedFramework, scopesFor } from '../../team'
-import { ASK_HEADERS, choiceAnswer, contextText, quotedLabels, refusalLine } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, contextText, orList, quotedLabels, refusalLine } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
@@ -58,13 +58,45 @@ export function cardLines(roles: readonly RoleSpec[], scopes: ReadonlyMap<string
  */
 export const REVIEW_QUESTION = t('init.review.reviewQuestion')
 
+/** The item words of the review items that had buttons of their own (D-233): roles, git policy, launcher start. */
+const BUTTON_ITEM_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'roles', value: 'roles' },
+  { label: 'git policy', value: 'policy' },
+  { label: 'launcher start', value: 'launch' },
+])
+
+/** The item words of the review items with no button, typed under "Other" or in a note (D-134, D-233). */
+const TYPED_ITEM_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'duration', value: 'duration' },
+  { label: 'model', value: 'model' },
+  { label: 'assignments', value: 'assignments' },
+  { label: 'memory', value: 'memory' },
+  { label: 'env', value: 'env' },
+  { label: 'hunks', value: 'hunks' },
+])
+
+/** The words that mean assignments too: mcp and skills (D-233). */
+const ALIAS_ITEM_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'mcp', value: 'assignments' },
+  { label: 'skills', value: 'assignments' },
+])
+
+/** The labels of the former Change buttons, which still read as their items (D-233). */
+const FORMER_LABEL_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
+  { label: 'Change roles', value: 'roles' },
+  { label: 'Change git policy', value: 'policy' },
+  { label: 'Change launcher start', value: 'launch' },
+])
+
 /**
  * The last line of the review question (D-134): how to change an item that has no button of its own, by typing its
  * word under "Other". It is part of the question itself, which every surface draws, so the dialog never depends on the
  * pane for it. This reverses 02-13 user decision 2, which kept the question text unchanged and put the hint under the
- * review summary instead.
+ * review summary instead. Its words are TYPED_ITEM_WORDS, the tokens parseReviewItem reads (D-225).
  */
-export const REVIEW_TYPE_HINT = t('init.review.reviewTypeHint')
+export const REVIEW_TYPE_HINT = t('init.review.reviewTypeHint', {
+  words: orList(TYPED_ITEM_WORDS.map(entry => entry.label)),
+})
 
 /**
  * The review question as the dialog shows it (D-134): REVIEW_QUESTION, then the context line on its own line when there
@@ -116,13 +148,18 @@ const REVIEW_PAGE_CHOICES: readonly Labelled<PageOption>[] = Object.freeze([
 ])
 
 /** The item words of the paged review as its refusals list them, after the page's options (D-233). */
-const REVIEW_ITEM_WORDS = t('init.review.itemWords')
+const REVIEW_ITEM_WORDS = t('init.review.itemWords', {
+  buttonWords: BUTTON_ITEM_WORDS.map(entry => entry.label).join(', '),
+  typedWords: TYPED_ITEM_WORDS.map(entry => entry.label).join(', '),
+})
 
 /**
  * The first line of the paged review asked again after Change something… with no item named (ASKED #4, DECIDED #22):
  * where the item goes and the item words.
  */
-const CHANGE_REFUSAL = t('init.review.changeRefusal')
+const CHANGE_REFUSAL = t('init.review.changeRefusal', {
+  words: orList([...BUTTON_ITEM_WORDS, ...TYPED_ITEM_WORDS].map(entry => entry.label)),
+})
 
 /**
  * Every option a page of the review may show, in their order (D-233, ASKED #23): Next page, Previous page, Confirm and
@@ -136,20 +173,10 @@ export const REVIEW_OPTIONS: readonly string[] = Object.freeze(REVIEW_PAGE_CHOIC
  * assignments, and the labels of the former buttons still read as their items (D-233).
  */
 const REVIEW_WORDS: readonly Labelled<ReviewItem>[] = Object.freeze([
-  { label: 'roles', value: 'roles' },
-  { label: 'git policy', value: 'policy' },
-  { label: 'launcher start', value: 'launch' },
-  { label: 'duration', value: 'duration' },
-  { label: 'model', value: 'model' },
-  { label: 'assignments', value: 'assignments' },
-  { label: 'mcp', value: 'assignments' },
-  { label: 'skills', value: 'assignments' },
-  { label: 'memory', value: 'memory' },
-  { label: 'env', value: 'env' },
-  { label: 'hunks', value: 'hunks' },
-  { label: 'Change roles', value: 'roles' },
-  { label: 'Change git policy', value: 'policy' },
-  { label: 'Change launcher start', value: 'launch' },
+  ...BUTTON_ITEM_WORDS,
+  ...TYPED_ITEM_WORDS,
+  ...ALIAS_ITEM_WORDS,
+  ...FORMER_LABEL_WORDS,
 ])
 
 /**

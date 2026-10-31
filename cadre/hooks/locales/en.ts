@@ -35,7 +35,7 @@ export const EN = Object.freeze({
 
   'init.answers.noneOption': 'None',
   'init.answers.allOption': 'All roles',
-  'init.answers.roleAnswerHint': '(e.g. BE, QA, or none)',
+  'init.answers.roleAnswerHint': '(e.g. BE, QA, or {none})',
   'init.answers.mcpQuestion': 'Which roles get the {name} MCP server? {roleAnswerHint}',
   'init.answers.uses.one': ' (used {count} time in recent sessions)',
   'init.answers.uses.other': ' (used {count} times in recent sessions)',
@@ -54,11 +54,11 @@ export const EN = Object.freeze({
     'Cannot use {typed}: type a model and an effort, such as opus + high. Models: {modelAliases}. Efforts: {efforts}.',
   'init.answers.allEnvOption': 'All of them',
   'init.answers.envQuestion':
-    'Which env variables do roles carry? Names: {shown} (values are never stored; e.g. API_KEY, or none)',
+    'Which env variables do roles carry? Names: {shown} (values are never stored; e.g. API_KEY, or {none})',
   'init.answers.instructionLabelsGlobalClaudeMd': 'your global ~/.claude/CLAUDE.md and the files it imports',
   'init.answers.instructionLabelsAutoMemory': 'the auto-memories for this repo',
   'init.answers.instructionLabelsProjectClaudeMd': 'the project CLAUDE.md',
-  'init.answers.memoryAnswerHint': '(e.g. PM, TL, or none)',
+  'init.answers.memoryAnswerHint': '(e.g. PM, TL, or {none})',
   'init.answers.shownNames': ' ({cappedNames})',
   'init.answers.memoryQuestion': 'Which roles get {instructionLabels}{shownNames}? {memoryAnswerHint}',
 
@@ -112,8 +112,8 @@ export const EN = Object.freeze({
   'init.roles.describeCancel': 'Cancel init',
   'init.roles.describeAccepts': 'a description of your roles, {quotedLabels}',
   'init.roles.adjustQuestion':
-    `Adjust the roles: type one change under Other, for example add docs "Docs writer", drop fe, rename ${
-    ''}be api "API", or framework qa gsd.`,
+    `Adjust the roles: type one change under Other, for example {add} docs "Docs writer", {drop} fe, {rename} ${
+    ''}be api "API", or {framework} qa gsd.`,
   'init.roles.adjustDone': 'Done adjusting',
   'init.roles.adjustShow': 'Show the roles',
   'init.roles.adjustContextLine': 'Roles now: {ids}.',
@@ -124,7 +124,7 @@ export const EN = Object.freeze({
   'init.roles.rolesDismissedReason': 'The roles question was dismissed or not answered.',
   'init.roles.adjustDismissedReason': 'The Adjust question was dismissed.',
   'init.roles.describeCancelledReason': 'The describe question was dismissed or cancelled.',
-  'init.roles.unreadChange': 'Could not read that change: {trim}. Use add, drop, rename or framework.',
+  'init.roles.unreadChange': 'Could not read that change: {trim}. Use {verbs}.',
   'init.roles.notInstalledMessage':
     'Cannot set {id} to {framework}: it is not installed for this repo (installed: {names}). {id} keeps its framework.',
   'init.roles.proposedRole': '{title} ({id})',
@@ -263,21 +263,19 @@ export const EN = Object.freeze({
   'init.launch.lineGitRoot': 'Launchers start in: the git root',
   'init.launch.lineHere': 'Launchers start in: the folder they are run from',
   'init.launch.lineDir': 'Launchers start in: {path}/ under the git root',
-  'init.launch.launchStartAccepts': '{quotedLabels} (or type git root, in here or other)',
+  'init.launch.launchStartAccepts': '{quotedLabels} (or type {words})',
   'init.launch.dirRefused': 'Cannot use {answer}: {problem}.',
 
   'init.review.reviewQuestion':
     'Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.',
-  'init.review.reviewTypeHint': 'Use a button, or type duration, model, assignments, memory, env or hunks under Other.',
+  'init.review.reviewTypeHint': 'Use a button, or type {words} under Other.',
   'init.review.reviewContextLine': '{planSummary}; {policy}; {launch}',
   'init.review.confirm': 'Confirm',
   'init.review.changeSomething': 'Change something…',
   'init.review.nextPage': 'Next page',
   'init.review.previousPage': 'Previous page',
-  'init.review.itemWords': 'roles, git policy, launcher start, or duration, model, assignments, memory, env, hunks',
-  'init.review.changeRefusal':
-    `Name the item to change in a note (press n): roles, git policy, launcher start, duration, model, ${
-    ''}assignments, memory, env or hunks.`,
+  'init.review.itemWords': '{buttonWords}, or {typedWords}',
+  'init.review.changeRefusal': 'Name the item to change in a note (press n): {words}.',
   'init.review.reviewDismissedReason': 'The review question was dismissed or not answered.',
   'init.review.reviewRoundsReason':
     'The review question was asked {maxReviewRounds} times without "Confirm": nothing was chosen.',
@@ -318,6 +316,7 @@ export const EN = Object.freeze({
   'ui.ask.countedChip': '{word} {position}/{count}',
   'ui.ask.refusalEmpty': "An empty answer isn't one of: {accepts}.",
   'ui.ask.refusalTyped': "'{typed}' isn't one of: {accepts}.",
+  'ui.ask.orList': '{head} or {last}',
   'ui.paneTitle.scan': 'Scan',
   'ui.paneTitle.history': 'Session history',
   'ui.paneTitle.roles': 'Roles',
