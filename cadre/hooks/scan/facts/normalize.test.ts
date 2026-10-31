@@ -178,13 +178,13 @@ describe('names that clean would change (WR-03)', () => {
 
   test('at most five changed names are named per kind, and the rest are counted', () => {
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(name => `${name}\u200B`)
-    const warnings = hiddenNameWarnings(names, 'repo entry', 255)
+    const warnings = hiddenNameWarnings(names, 'repoEntry', 255)
     expect(warnings).toHaveLength(6)
     expect(warnings[5]).toBe('ignored 2 more repo entry names that have hidden characters or are too long')
   })
 
   test('the same changed name given twice is warned about once', () => {
-    const warnings = hiddenNameWarnings(['a\u200B', 'a\u200B', 'b\u200B'], 'repo entry', 255)
+    const warnings = hiddenNameWarnings(['a\u200B', 'a\u200B', 'b\u200B'], 'repoEntry', 255)
     expect(warnings).toHaveLength(2)
   })
 
@@ -199,7 +199,7 @@ describe('names that clean would change (WR-03)', () => {
   })
 
   test('a changed name in a warning is cleaned and capped at 60 code points', () => {
-    const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}\u200B`], 'repo entry', 255)
+    const [warning] = hiddenNameWarnings([`${'x'.repeat(100)}\u200B`], 'repoEntry', 255)
     expect(warning).toBe(`ignored repo entry "${'x'.repeat(59)}\u2026": its name has hidden characters or is too long`)
     expect(String(warning)).not.toContain('\u200B')
   })

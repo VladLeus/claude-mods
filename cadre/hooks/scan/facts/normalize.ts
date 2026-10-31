@@ -8,7 +8,7 @@ import type { EntryKind, Facts, RawFacts, RepoEntry } from '../../../types'
 import { fieldKeysOf, isObject } from '../../core/json'
 import { clean, isChangedByClean } from '../../core/text'
 import { gsdFactOf, usableCandidates } from '../../framework/gsd/identity'
-import { t } from '../../locales/t'
+import { t, tn } from '../../locales/t'
 import { MAX_WARNING_CHARS, safeWarnings } from '../../paths'
 import {
   foldEnabledPlugins,
@@ -33,22 +33,80 @@ const MAX_HIDDEN_NAME_CHARS = 60
 /** The entry kinds a listing may carry; an entry of any other kind is dropped. */
 const ENTRY_KINDS: readonly EntryKind[] = ['file', 'dir', 'other']
 
+/** What the names of a hidden-name warning are: each kind has whole sentences of its own (D-223). */
+export type HiddenNameKind =
+  | 'repoEntry'
+  | 'docsEntry'
+  | 'enabledPluginsKey'
+  | 'installedPluginKey'
+  | 'settingsKey'
+  | 'mcpServerName'
+  | 'commandOrPluginName'
+  | 'memoryFileName'
+  | 'agentName'
+
+/**
+ * The two sentences of each hidden-name kind: the one that names a changed name and the counted one for the rest, each
+ * filled from its literal key, so its slots are typed (D-223, D-224).
+ */
+const HIDDEN_NAME_TEXTS: Readonly<
+  Record<HiddenNameKind, { readonly named: (shown: string) => string; readonly more: (rest: number) => string }>
+> = Object.freeze({
+  repoEntry: {
+    named: (shown: string) => t('scan.hidden.repoEntry', { shown }),
+    more: (rest: number) => tn('scan.hidden.repoEntryMore', rest, { rest }),
+  },
+  docsEntry: {
+    named: (shown: string) => t('scan.hidden.docsEntry', { shown }),
+    more: (rest: number) => tn('scan.hidden.docsEntryMore', rest, { rest }),
+  },
+  enabledPluginsKey: {
+    named: (shown: string) => t('scan.hidden.enabledPluginsKey', { shown }),
+    more: (rest: number) => tn('scan.hidden.enabledPluginsKeyMore', rest, { rest }),
+  },
+  installedPluginKey: {
+    named: (shown: string) => t('scan.hidden.installedPluginKey', { shown }),
+    more: (rest: number) => tn('scan.hidden.installedPluginKeyMore', rest, { rest }),
+  },
+  settingsKey: {
+    named: (shown: string) => t('scan.hidden.settingsKey', { shown }),
+    more: (rest: number) => tn('scan.hidden.settingsKeyMore', rest, { rest }),
+  },
+  mcpServerName: {
+    named: (shown: string) => t('scan.hidden.mcpServerName', { shown }),
+    more: (rest: number) => tn('scan.hidden.mcpServerNameMore', rest, { rest }),
+  },
+  commandOrPluginName: {
+    named: (shown: string) => t('scan.hidden.commandOrPluginName', { shown }),
+    more: (rest: number) => tn('scan.hidden.commandOrPluginNameMore', rest, { rest }),
+  },
+  memoryFileName: {
+    named: (shown: string) => t('scan.hidden.memoryFileName', { shown }),
+    more: (rest: number) => tn('scan.hidden.memoryFileNameMore', rest, { rest }),
+  },
+  agentName: {
+    named: (shown: string) => t('scan.hidden.agentName', { shown }),
+    more: (rest: number) => tn('scan.hidden.agentNameMore', rest, { rest }),
+  },
+})
+
 /**
  * One warning per name that clean would change at `maxChars`, naming its cleaned form capped at MAX_HIDDEN_NAME_CHARS,
  * at most MAX_HIDDEN_NAME_WARNINGS of them, then one warning that counts the rest. A name given twice, such as the same
- * key in two settings files, counts once. `kind` says what the names are.
+ * key in two settings files, counts once. `kind` picks the sentences that say what the names are (HiddenNameKind).
  */
-export function hiddenNameWarnings(names: readonly string[], kind: string, maxChars: number): string[] {
+export function hiddenNameWarnings(names: readonly string[], kind: HiddenNameKind, maxChars: number): string[] {
+  const texts = HIDDEN_NAME_TEXTS[kind]
   const changed = Array.from(new Set(names.filter(name => isChangedByClean(name, maxChars))))
   const named = changed.slice(0, MAX_HIDDEN_NAME_WARNINGS).map(name => {
     const shown = clean(name, MAX_HIDDEN_NAME_CHARS)
 
-    return clean(t('scan.facts.normalize.hiddenNameWarnings', { kind, shown }), MAX_WARNING_CHARS)
+    return clean(texts.named(shown), MAX_WARNING_CHARS)
   })
   const rest = changed.length - named.length
   if (rest === 0) return named
 
-  return [...named, t('scan.facts.normalize.hiddenNameWarnings2', { rest, kind })]
+  return [...named, texts.more(rest)]
 }
 
 function isEntryKind(value: unknown): value is EntryKind {
@@ -89,18 +147,14 @@ export function normalizeFacts(raw: RawFacts, configDir: string | null, givenRoo
   const gsdWarnings: string[] = []
   const gsd = usableCandidates(raw.gsd).map(candidate => gsdFactOf(candidate, raw, configDir, gsdWarnings))
   const hiddenWarnings = [
-    ...hiddenNameWarnings(entryNames(raw.repoEntries), t('scan.facts.normalize.normalizeFacts'), MAX_NAME_CHARS),
-    ...hiddenNameWarnings(entryNames(raw.docsEntries), t('scan.facts.normalize.normalizeFacts2'), MAX_NAME_CHARS),
+    ...hiddenNameWarnings(entryNames(raw.repoEntries), 'repoEntry', MAX_NAME_CHARS),
+    ...hiddenNameWarnings(entryNames(raw.docsEntries), 'docsEntry', MAX_NAME_CHARS),
     ...hiddenNameWarnings(
       settings.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
-      t('scan.facts.normalize.normalizeFacts3'),
+      'enabledPluginsKey',
       MAX_KEY_CHARS,
     ),
-    ...hiddenNameWarnings(
-      fieldKeysOf(raw.installedPlugins, 'plugins'),
-      t('scan.facts.normalize.normalizeFacts4'),
-      MAX_KEY_CHARS,
-    ),
+    ...hiddenNameWarnings(fieldKeysOf(raw.installedPlugins, 'plugins'), 'installedPluginKey', MAX_KEY_CHARS),
   ]
 
   return {

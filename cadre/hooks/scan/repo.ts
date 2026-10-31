@@ -133,7 +133,7 @@ export async function scanRepo(io: InitIo, root: string): Promise<RepoScan> {
   const walked = await walk(io, trimSlash(root))
   const found: Findings = new Map()
   addMarkers(found, walked.seen)
-  const hidden = hiddenNameWarnings(walked.hidden, t('scan.repo.scanRepo'), MAX_ENTRY_NAME_CHARS)
+  const hidden = hiddenNameWarnings(walked.hidden, 'repoEntry', MAX_ENTRY_NAME_CHARS)
   const warnings = [...walked.warnings, ...hidden]
   // One file at a time and in walk order, so the first path that names a dependency is always the same one.
   for (const path of packageFilesOf(walked.seen)) {

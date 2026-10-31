@@ -59,7 +59,7 @@ function mcpRefsOf(names: readonly string[], source: McpSource): McpRef[] {
 function unfitMcpWarnings(names: readonly string[], source: string): string[] {
   const unfit = stableNames(names, MAX_REF_NAME_CHARS).filter(name => !NAME_PATTERN.test(name))
 
-  return unfitNameWarnings(unfit.length, t('scan.setup.mcp.unfitMcpWarnings'), source)
+  return unfitNameWarnings(unfit.length, 'scan.settings.unfitMcpNames', source)
 }
 
 /**
@@ -201,7 +201,7 @@ export async function sessionMcpScan(io: InitIo, warnings: string[]): Promise<Mc
   const names = toolServerNames(value)
   const connectors = new Set(names.filter(isDesktopConnectorName))
   const kept = names.filter(name => !isDesktopConnectorName(name))
-  warnings.push(...hiddenNameWarnings(kept, t('scan.setup.mcp.sessionMcpScan'), MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(kept, 'mcpServerName', MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(kept, t('scan.setup.mcp.sessionMcpScan2')))
   warnings.push(...desktopConnectorWarnings(connectors.size))
 
@@ -218,7 +218,7 @@ export async function projectMcpScan(io: InitIo, ctx: SetupContext, warnings: st
   if (!(await isInsideRepo(io, ctx, path, isFileInsideRoot, warnings))) return NO_MCP
   const value = await readJson(io, ctx, path, MAX_READ_BYTES, warnings)
   const names = mcpServerNames(value)
-  warnings.push(...hiddenNameWarnings(names, t('scan.setup.mcp.projectMcpScan'), MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, 'mcpServerName', MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
   return mcpScanOf(projectMcpJson(value), names)
@@ -244,7 +244,7 @@ export async function userConfigMcpScan(
   const value = read.state === 'parsed' ? read.value : null
   const roots = [ctx.root, ctx.givenRoot]
   const names = claudeJsonNames(value, roots)
-  warnings.push(...hiddenNameWarnings(names, t('scan.setup.mcp.userConfigMcpScan'), MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(names, 'mcpServerName', MAX_REF_NAME_CHARS))
   warnings.push(...unfitMcpWarnings(names, shownPath(ctx, path)))
 
   return mcpScanOf(projectClaudeJson(value, roots), names)

@@ -101,7 +101,7 @@ export async function commandRefs(io: InitIo, warnings: string[]): Promise<Skill
 
     return []
   }
-  warnings.push(...hiddenNameWarnings(skillNames(value), t('scan.setup.skills.commandRefs'), MAX_REF_NAME_CHARS))
+  warnings.push(...hiddenNameWarnings(skillNames(value), 'commandOrPluginName', MAX_REF_NAME_CHARS))
 
   return projectCommands(value)
 }

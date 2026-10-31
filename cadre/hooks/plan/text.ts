@@ -6,7 +6,7 @@
  */
 import type { FileOp, FileOpKind, HunkOp, Plan } from '../../types'
 import { pad, reportText } from '../core/text'
-import { t } from '../locales/t'
+import { t, tn } from '../locales/t'
 
 /** Code points the kind column of the plan table takes; a hunk row uses the same column. */
 const KIND_WIDTH = 10
@@ -61,7 +61,7 @@ export function planSummary(plan: Plan): string {
     }
     counts[op.kind] += 1
   }
-  const hunkCount = hunks === 0 ? t('plan.text.planSummary') : t('plan.text.planSummary2', { hunks, accepted })
+  const hunkCount = hunks === 0 ? t('plan.text.planSummary') : tn('plan.text.planSummary2', hunks, { hunks, accepted })
   const kinds = t('plan.text.planSummary3', {
     create: counts.create,
     change: counts.change,

@@ -56,10 +56,14 @@ export function stableNames(names: readonly string[], maxChars: number): string[
  * The warning for names a scan dropped because a role.json could not hold them, naming the source and the count and
  * never a name; none when nothing was dropped.
  */
-export function unfitNameWarnings(count: number, noun: string, source: string): string[] {
+export function unfitNameWarnings(
+  count: number,
+  base: 'scan.settings.unfitHookNames' | 'scan.settings.unfitMcpNames',
+  source: string,
+): string[] {
   if (count === 0) return []
 
-  return [tn('scan.settings.unfitNames', count, { count, noun, source })]
+  return [tn(base, count, { count, source })]
 }
 
 /** Whether a hook script basename fits the role.json cap, so a role can carry it (D-62). */
@@ -101,7 +105,7 @@ export function hookNameWarnings(sources: readonly SettingsEntry[]): string[] {
 
     const source = t('scan.setup.settings.hookNameWarnings2', { source: entry.source })
 
-    return unfitNameWarnings(tooLong.size, t('scan.setup.settings.hookNameWarnings'), source)
+    return unfitNameWarnings(tooLong.size, 'scan.settings.unfitHookNames', source)
   })
 }
 
@@ -158,14 +162,10 @@ export function projectSettings(sources: readonly SettingsEntry[]): ProjectedSet
 /** One warning per settings key and enabledPlugins key that clean would change, as the Facts report them. */
 export function settingsNameWarnings(sources: readonly SettingsEntry[]): string[] {
   return [
-    ...hiddenNameWarnings(
-      sources.flatMap(entry => keysOf(entry.value)),
-      t('scan.setup.settings.settingsNameWarnings'),
-      MAX_KEY_CHARS,
-    ),
+    ...hiddenNameWarnings(sources.flatMap(entry => keysOf(entry.value)), 'settingsKey', MAX_KEY_CHARS),
     ...hiddenNameWarnings(
       sources.flatMap(entry => fieldKeysOf(entry.value, 'enabledPlugins')),
-      t('scan.setup.settings.settingsNameWarnings2'),
+      'enabledPluginsKey',
       MAX_KEY_CHARS,
     ),
   ]
@@ -198,8 +198,7 @@ export async function installedPluginKeys(
 ): Promise<string[]> {
   if (userDir === null) return []
   const value = await readJson(io, ctx, `${userDir}/plugins/installed_plugins.json`, MAX_READ_BYTES, warnings)
-  const noun = t('scan.setup.settings.installedPluginKeys')
-  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), noun, MAX_KEY_CHARS))
+  warnings.push(...hiddenNameWarnings(fieldKeysOf(value, 'plugins'), 'installedPluginKey', MAX_KEY_CHARS))
 
   return parseInstalledPlugins(value, ctx.root, ctx.givenRoot).map(plugin => plugin.key)
 }

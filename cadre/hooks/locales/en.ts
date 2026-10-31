@@ -935,13 +935,49 @@ export const EN = Object.freeze({
   'scan.facts.collect.locationsOf': 'the repo root',
   'scan.facts.collect.locationsOf2': 'the home folder',
 
-  'scan.facts.normalize.hiddenNameWarnings': 'ignored {kind} "{shown}": its name has hidden characters or is too long',
-  'scan.facts.normalize.hiddenNameWarnings2':
-    'ignored {rest} more {kind} names that have hidden characters or are too long',
-  'scan.facts.normalize.normalizeFacts': 'repo entry',
-  'scan.facts.normalize.normalizeFacts2': 'docs/ entry',
-  'scan.facts.normalize.normalizeFacts3': 'enabledPlugins key',
-  'scan.facts.normalize.normalizeFacts4': 'installed plugin key',
+  'scan.hidden.repoEntry': 'ignored repo entry "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.repoEntryMore.one': 'ignored {rest} more repo entry names that have hidden characters or are too long',
+  'scan.hidden.repoEntryMore.other': 'ignored {rest} more repo entry names that have hidden characters or are too long',
+  'scan.hidden.docsEntry': 'ignored docs/ entry "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.docsEntryMore.one': 'ignored {rest} more docs/ entry names that have hidden characters or are too long',
+  'scan.hidden.docsEntryMore.other':
+    'ignored {rest} more docs/ entry names that have hidden characters or are too long',
+  'scan.hidden.enabledPluginsKey':
+    'ignored enabledPlugins key "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.enabledPluginsKeyMore.one':
+    'ignored {rest} more enabledPlugins key names that have hidden characters or are too long',
+  'scan.hidden.enabledPluginsKeyMore.other':
+    'ignored {rest} more enabledPlugins key names that have hidden characters or are too long',
+  'scan.hidden.installedPluginKey':
+    'ignored installed plugin key "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.installedPluginKeyMore.one':
+    'ignored {rest} more installed plugin key names that have hidden characters or are too long',
+  'scan.hidden.installedPluginKeyMore.other':
+    'ignored {rest} more installed plugin key names that have hidden characters or are too long',
+  'scan.hidden.settingsKey': 'ignored settings key "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.settingsKeyMore.one':
+    'ignored {rest} more settings key names that have hidden characters or are too long',
+  'scan.hidden.settingsKeyMore.other':
+    'ignored {rest} more settings key names that have hidden characters or are too long',
+  'scan.hidden.mcpServerName': 'ignored MCP server name "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.mcpServerNameMore.one':
+    'ignored {rest} more MCP server name names that have hidden characters or are too long',
+  'scan.hidden.mcpServerNameMore.other':
+    'ignored {rest} more MCP server name names that have hidden characters or are too long',
+  'scan.hidden.commandOrPluginName':
+    'ignored command or plugin name "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.commandOrPluginNameMore.one':
+    'ignored {rest} more command or plugin name names that have hidden characters or are too long',
+  'scan.hidden.commandOrPluginNameMore.other':
+    'ignored {rest} more command or plugin name names that have hidden characters or are too long',
+  'scan.hidden.memoryFileName': 'ignored memory file name "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.memoryFileNameMore.one':
+    'ignored {rest} more memory file name names that have hidden characters or are too long',
+  'scan.hidden.memoryFileNameMore.other':
+    'ignored {rest} more memory file name names that have hidden characters or are too long',
+  'scan.hidden.agentName': 'ignored agent name "{shown}": its name has hidden characters or is too long',
+  'scan.hidden.agentNameMore.one': 'ignored {rest} more agent name names that have hidden characters or are too long',
+  'scan.hidden.agentNameMore.other': 'ignored {rest} more agent name names that have hidden characters or are too long',
 
   'scan.instructions.memories.noMemorySummary': 'No summary in MEMORY.md.',
   'scan.instructions.memories.unreadableWarning': 'could not read {file}: no role gets it',
@@ -985,27 +1021,12 @@ export const EN = Object.freeze({
   'scan.markers.markerRows19': 'Rails system tests',
   'scan.markers.markerRows20': 'Cucumber features',
 
-  'scan.repo.scanRepo': 'repo entry',
-
-  'scan.setup.agents.agentNames': 'agent name',
-
-  'scan.setup.mcp.unfitMcpWarnings': 'MCP server',
-  'scan.setup.mcp.sessionMcpScan': 'MCP server name',
   'scan.setup.mcp.sessionMcpScan2': 'the session tools',
-  'scan.setup.mcp.projectMcpScan': 'MCP server name',
-  'scan.setup.mcp.userConfigMcpScan': 'MCP server name',
 
-  'scan.setup.memory.memoryFileNames': 'memory file name',
-
-  'scan.setup.settings.hookNameWarnings': 'hook script',
   'scan.setup.settings.hookNameWarnings2': 'the {source} settings',
-  'scan.setup.settings.settingsNameWarnings': 'settings key',
-  'scan.setup.settings.settingsNameWarnings2': 'enabledPlugins key',
-  'scan.setup.settings.installedPluginKeys': 'installed plugin key',
 
   'scan.setup.setup.noUserDirWarning': 'HOME is unset: user-level setup was not scanned',
 
-  'scan.setup.skills.commandRefs': 'command or plugin name',
   'scan.unknown': '{what} (treated as unknown)',
   'scan.couldNotRead': 'could not read {what}',
   'scan.couldNotParse': 'could not parse {what} as JSON',
@@ -1028,8 +1049,10 @@ export const EN = Object.freeze({
   'scan.mcp.desktopLeftOut.other':
     `left out {count} desktop app connectors ${
     ''}(role sessions run in the terminal, where connectors are claude_ai_* servers)`,
-  'scan.settings.unfitNames.one': 'ignored {count} {noun} name from {source} that a role.json cannot hold',
-  'scan.settings.unfitNames.other': 'ignored {count} {noun} names from {source} that a role.json cannot hold',
+  'scan.settings.unfitHookNames.one': 'ignored {count} hook script name from {source} that a role.json cannot hold',
+  'scan.settings.unfitHookNames.other': 'ignored {count} hook script names from {source} that a role.json cannot hold',
+  'scan.settings.unfitMcpNames.one': 'ignored {count} MCP server name from {source} that a role.json cannot hold',
+  'scan.settings.unfitMcpNames.other': 'ignored {count} MCP server names from {source} that a role.json cannot hold',
 
   'roles.adjust.customPurpose': 'A custom role added by the person running init.',
   'roles.adjust.noRole': 'no role "{id}"',
@@ -1088,7 +1111,8 @@ export const EN = Object.freeze({
   'plan.text.hunkRows2': '  {pad}{file}  {change}  ({flags})',
   'plan.text.hunkRows3': '{detailIndent}run: {command}',
   'plan.text.planSummary': '0 hunks',
-  'plan.text.planSummary2': '{hunks} hunks ({accepted} accepted)',
+  'plan.text.planSummary2.one': '{hunks} hunks ({accepted} accepted)',
+  'plan.text.planSummary2.other': '{hunks} hunks ({accepted} accepted)',
   'plan.text.planSummary3': '{create} create, {change} change, {leave} leave, {conflict} conflict',
   'plan.text.planSummary4': 'Summary: {kinds}, {hunkCount}',
   'plan.text.renderPlan': 'warning: {warning}',
