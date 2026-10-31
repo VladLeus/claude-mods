@@ -7,6 +7,7 @@
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { clean, countedNoun, idsOrNone, moreLine } from '../../core/text'
+import { t } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
 
@@ -15,7 +16,10 @@ import { fallbackTopics } from '../../suggest/topics'
  * (G-02-1f; 02-GAPS-B2 N3: the file is cleaned only where it is shown).
  */
 export function sourceText(part: InstructionPart): string {
-  return `${clean(part.file)} > ${part.heading === '' ? TOP_OF_FILE : part.heading}`
+  return t('ui.instructions.sourceText', {
+    file: clean(part.file),
+    value: part.heading === '' ? TOP_OF_FILE : part.heading,
+  })
 }
 
 /** The parts a topic holds, in the topic's order; an id no part has is skipped. */
@@ -38,14 +42,13 @@ export function cappedList(items: readonly string[], max: number): string {
 }
 
 /** The first row of the instructions block (G-02-1f; AUTO-PICK #12): what a plain init writes after Confirm. */
-const READ_HEADING =
-  'Read for this run; a plain init writes the repo parts you hand out to .cadre/<role>/CLAUDE.md after Confirm:'
+const READ_HEADING = t('ui.instructions.readHeading')
 
 /** The row of the instructions block when the model gave no usable recommendation (G-02-1f Recommendation). */
-const NO_RECOMMENDATION_ROW = 'The model gave no usable recommendation: no role gets a part unless you pick one.'
+const NO_RECOMMENDATION_ROW = t('ui.instructions.noRecommendationRow')
 
 /** The row of the instructions block when the grouping fell back to one topic per file (G-02-1f Part unit). */
-const FILE_TOPICS_ROW = 'The model could not group the parts: each file is one topic.'
+const FILE_TOPICS_ROW = t('ui.instructions.fileTopicsRow')
 
 /** Whether two topics are the same: id, title, summary and parts. */
 function isSameTopic(topic: InstructionTopic, other: InstructionTopic | undefined): boolean {
@@ -72,21 +75,26 @@ function isFileGrouping(scan: InstructionScan, topics: readonly InstructionTopic
  */
 function topicRows(topic: InstructionTopic, parts: readonly InstructionPart[], ids: readonly string[]): string[] {
   return [
-    `  ${topic.title}: ${redactedText(topic.summary)}`,
-    ...topicParts(topic, parts).map(part => `    from: ${sourceText(part)}`),
-    `    recommended: ${idsOrNone(ids)}`,
+    t('ui.instructions.topicRows', { title: topic.title, summary: redactedText(topic.summary) }),
+    ...topicParts(topic, parts).map(part => t('ui.instructions.topicRows2', { source: sourceText(part) })),
+    t('ui.instructions.topicRows3', { ids: idsOrNone(ids) }),
   ]
 }
 
 /** The row that heads the memories in the instructions block (G-02-1f Memories). */
-const MEMORIES_HEADING = 'Memories (each linked, never copied, when a role gets it):'
+const MEMORIES_HEADING = t('ui.instructions.memoriesHeading')
 
 /**
  * One memory's rows in the instructions block: its file and summary, the summary's secret-like spans hidden
  * (redactedText, E1, #163), then the recommended roles; never its text.
  */
 function memoryRows(memory: MemoryItem, ids: readonly string[]): string[] {
-  return [`  ${memory.file}: ${redactedText(memory.summary)}`, `    recommended: ${idsOrNone(ids)}`]
+  return [t('ui.instructions.memoryRows', {
+    file: memory.file,
+    summary: redactedText(memory.summary),
+  }), t('ui.instructions.memoryRows2', {
+    ids: idsOrNone(ids),
+  })]
 }
 
 /**
@@ -111,7 +119,9 @@ export function instructionLines(
     ...(hasTopics && isFileGrouping(scan, topics) ? [FILE_TOPICS_ROW] : []),
   ]
 
-  return [READ_HEADING, ...rows, ...memories, ...scan.warnings.map(warning => `warning: ${warning}`), ...notes]
+  return [READ_HEADING, ...rows, ...memories, ...scan.warnings.map(warning => t('ui.instructions.instructionLines', {
+    warning,
+  })), ...notes]
 }
 
 /** The most topic titles a review row names before it counts the rest. */
@@ -122,13 +132,13 @@ const MAX_SHOWN_TITLES = 3
  * their first titles, `0 topics` with none, then how many memories.
  */
 function roleItemsLine(id: string, topics: readonly InstructionTopic[], memories: number): string {
-  if (topics.length === 0 && memories === 0) return `  ${id}: none`
+  if (topics.length === 0 && memories === 0) return t('ui.instructions.roleItemsLine', { id })
   const memoryCount = countedNoun(memories, 'memory', 'memories')
   const topicCount = countedNoun(topics.length, 'topic', 'topics')
-  if (topics.length === 0) return `  ${id}: ${topicCount}; ${memoryCount}`
+  if (topics.length === 0) return t('ui.instructions.roleItemsLine2', { id, topicCount, memoryCount })
   const titles = cappedList(topics.map(topic => topic.title), MAX_SHOWN_TITLES)
 
-  return `  ${id}: ${topicCount}: ${titles}; ${memoryCount}`
+  return t('ui.instructions.roleItemsLine3', { id, topicCount, titles, memoryCount })
 }
 
 /**
@@ -155,8 +165,8 @@ export function instructionReviewLines(
   }
 
   return [
-    'Instructions per role:',
+    t('ui.instructions.instructionReviewLines'),
     ...roles.flatMap(role => [roleLine(role.id), ...rowsAfter(role.id)]),
-    `Kept with the root session only: ${keptTopics}, ${keptMemories}`,
+    t('ui.instructions.instructionReviewLines2', { keptTopics, keptMemories }),
   ]
 }

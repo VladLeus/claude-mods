@@ -4,18 +4,19 @@
  */
 import type { Recommendation, RoleSpec } from '../../../types'
 import { reportText } from '../../core/text'
+import { t } from '../../locales/t'
 
 /**
  * The heading above the recommendation lines: the lines only print commands, and init asks before it installs any of
  * them, as it does for the security plugins (decision #69 A2).
  */
-const RECOMMENDATIONS_HEADING = 'Recommendations (print-only; init asks before it installs any):'
+const RECOMMENDATIONS_HEADING = t('ui.recommendations.recommendationsHeading')
 
 /** The one line printed when there is nothing to recommend. */
-const NO_RECOMMENDATIONS = 'Recommendations: none'
+const NO_RECOMMENDATIONS = t('ui.recommendations.noRecommendations')
 
 /** Who benefits when a recommendation names no role. */
-const ALL_ROLES = 'all roles'
+const ALL_ROLES = t('ui.recommendations.allRoles')
 
 /** The title of the role with this id; the id itself when no role has it. */
 function roleTitle(roleId: string, roles: readonly RoleSpec[]): string {
@@ -36,9 +37,13 @@ export function recommendationLines(
   const lines = [RECOMMENDATIONS_HEADING]
   for (const recommendation of recommendations) {
     const who = recommendation.roleId === null ? ALL_ROLES : roleTitle(recommendation.roleId, roles)
-    lines.push(`- ${reportText(recommendation.tool)} for ${reportText(who)}: ${reportText(recommendation.why)}`)
+    lines.push(t('ui.recommendations.recommendationLines', {
+      tool: reportText(recommendation.tool),
+      who: reportText(who),
+      why: reportText(recommendation.why),
+    }))
     if (recommendation.install === null) continue
-    lines.push(`    run: ${reportText(recommendation.install)}`)
+    lines.push(t('ui.recommendations.recommendationLines2', { install: reportText(recommendation.install) }))
   }
 
   return lines

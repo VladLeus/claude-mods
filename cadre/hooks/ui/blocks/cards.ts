@@ -3,11 +3,12 @@
  * the types, so the detect report reads the labels here.
  */
 import type { DetectStatus } from '../../../types'
+import { t } from '../../locales/t'
 
 /** The word each detection status shows in the report. */
 export const STATUS_LABEL: Readonly<Record<DetectStatus, string>> = {
-  'in-use': 'in use',
+  'in-use': t('ui.cards.statusLabelInUse'),
   installed: 'installed',
-  'not-found': 'not found',
+  'not-found': t('ui.cards.statusLabelNotFound'),
   unsupported: 'unsupported',
 }

@@ -10,6 +10,7 @@
 import type { AskContext, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
+import { t } from '../../locales/t'
 import { UNCUT } from '../pane'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
@@ -63,11 +64,18 @@ function roleIdsText(ids: readonly string[]): string {
  */
 export function mcpServerContext(ref: McpRef, sessionTools: unknown, recommended: readonly string[]): AskContext {
   const tools = mcpToolNamesOf(sessionTools, ref.name)
-  const toolsLine = tools.length === 0 ? 'Tools: none listed' : `Tools: ${tools.length} (${cardList(tools)})`
+  const toolsLine = tools.length === 0 ? t('ui.assign.mcpServerContext') : t('ui.assign.mcpServerContext2', {
+    count: tools.length,
+    tools: cardList(tools),
+  })
 
   return {
-    title: `MCP: ${shown(ref.name, MAX_CONTEXT_NAME_CHARS)}`,
-    lines: [`Source: ${mcpSourceText(ref)}`, toolsLine, `Recommended: ${roleIdsText(recommended)}`],
+    title: t('ui.assign.mcpServerContextTitle', { name: shown(ref.name, MAX_CONTEXT_NAME_CHARS) }),
+    lines: [t('ui.assign.mcpServerContext3', {
+      mcpSource: mcpSourceText(ref),
+    }), toolsLine, t('ui.assign.mcpServerContext4', {
+      roleIds: roleIdsText(recommended),
+    })],
     kind: 'mcp-server',
   }
 }
@@ -94,10 +102,10 @@ const MAX_SKILL_PURPOSE_CHARS = 120
  */
 function skillLineText(skill: SkillLine): string {
   const name = shown(skill.name, MAX_CONTEXT_NAME_CHARS)
-  const used = skill.uses === '' ? '' : ` Used ${clean(skill.uses)}.`
+  const used = skill.uses === '' ? '' : t('ui.assign.skillLineText', { uses: clean(skill.uses) })
   const purpose = asSentence(redactedText(skill.purpose, MAX_SKILL_PURPOSE_CHARS))
 
-  return `${name}: ${purpose}${used} Recommended: ${roleIdsText(skill.recommended)}.`
+  return t('ui.assign.skillLineText2', { name, purpose, used, roleIds: roleIdsText(skill.recommended) })
 }
 
 /**
@@ -106,7 +114,7 @@ function skillLineText(skill: SkillLine): string {
  */
 export function skillGroupContext(label: string, skills: readonly SkillLine[]): AskContext {
   return {
-    title: `Skills: ${shown(label, MAX_CONTEXT_NAME_CHARS)}`,
+    title: t('ui.assign.skillGroupContextTitle', { label: shown(label, MAX_CONTEXT_NAME_CHARS) }),
     lines: skills.map(skillLineText),
     kind: 'skill-group',
   }
@@ -114,7 +122,7 @@ export function skillGroupContext(label: string, skills: readonly SkillLine[]): 
 
 /** The context of one own skill's question (D-236): that skill's line alone, titled by its place among them. */
 export function skillContext(skill: SkillLine, position: number, count: number): AskContext {
-  return { title: `Skill ${position} of ${count}`, lines: [skillLineText(skill)], kind: 'skill' }
+  return { title: t('ui.assign.skillContext', { position, count }), lines: [skillLineText(skill)], kind: 'skill' }
 }
 
 /**
@@ -122,5 +130,5 @@ export function skillContext(skill: SkillLine, position: number, count: number):
  * cleaned, not cut (#163).
  */
 export function ownSkillsContext(lines: readonly string[]): AskContext {
-  return { title: 'Your own skills', lines: lines.map(line => clean(line, UNCUT)), kind: 'skills' }
+  return { title: t('ui.assign.ownSkillsContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'skills' }
 }

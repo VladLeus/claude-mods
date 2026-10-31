@@ -6,17 +6,18 @@
  */
 import type { RepoScan, ScanKind, SetupScan } from '../../../types'
 import { cardList, idsOrNone, shown } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { undecidedFacts } from '../../scan/repo'
 import { MAX_FOLDER_ENTRIES, MAX_SCAN_ENTRIES } from '../../scan/walk'
 
 /** How a partial line names a walk that stopped at its overall safety cap (D-137). */
-const SAFETY_CAP_TEXT = `the scan stopped at the ${MAX_SCAN_ENTRIES.toLocaleString('en-US')}-entry safety cap`
+const SAFETY_CAP_TEXT = t('ui.scan.safetyCap', { toLocaleString: MAX_SCAN_ENTRIES.toLocaleString('en-US') })
 
 /**
  * How a partial line ends when the safety cap stopped the walk and no fact is missing: the walk did not reach
  * everything, so nothing is called all found (D-137, batch-1 review N7).
  */
-const STOPPED_EARLY_TEXT = 'the scan stopped early; stack, tests and E2E may be incomplete'
+const STOPPED_EARLY_TEXT = t('ui.scan.stoppedEarly')
 
 /**
  * What a partial line says the scan found (D-137): the facts that may be incomplete; with none, STOPPED_EARLY_TEXT
@@ -24,20 +25,19 @@ const STOPPED_EARLY_TEXT = 'the scan stopped early; stack, tests and E2E may be 
  */
 function partialFactsText(repo: RepoScan): string {
   const facts = undecidedFacts(repo)
-  if (facts.length > 0) return `may be incomplete: ${facts.join(', ')}`
+  if (facts.length > 0) return t('ui.scan.mayBeIncomplete', { facts: facts.join(', ') })
   if (repo.isOverallCapped) return STOPPED_EARLY_TEXT
 
-  return 'stack, tests and E2E were all found'
+  return t('ui.scan.allFound')
 }
 
 /** The partial line for the deeper folders listed only in part (D-137); null when no folder was capped. */
 function folderCapLine(repo: RepoScan): string | null {
   const count = repo.cappedFolders.length
   if (count === 0) return null
-  const folders = count === 1 ? 'folder' : 'folders'
-  const listed = `${count} deeper ${folders} listed only in part (the first ${MAX_FOLDER_ENTRIES} entries each)`
+  const listed = tn('ui.scan.folderCap', count, { count, max: MAX_FOLDER_ENTRIES })
 
-  return `  partial: ${listed}; ${partialFactsText(repo)}`
+  return t('ui.scan.partialFolders', { listed, partialFacts: partialFactsText(repo) })
 }
 
 /**
@@ -49,7 +49,10 @@ function folderCapLine(repo: RepoScan): string | null {
  * (batch-1 review N7). Null when nothing was capped.
  */
 export function truncatedLine(repo: RepoScan): string | null {
-  if (repo.isOverallCapped) return `  partial: ${SAFETY_CAP_TEXT}; ${partialFactsText(repo)}`
+  if (repo.isOverallCapped) return t('ui.scan.partialCap', {
+    safetyCapText: SAFETY_CAP_TEXT,
+    partialFacts: partialFactsText(repo),
+  })
 
   return folderCapLine(repo)
 }
@@ -73,16 +76,16 @@ function findingLabels(repo: RepoScan, kind: ScanKind): string {
 
 /** What an earlier run left in `.cadre/`: `none`, or the folder's state with the state of its manifest. */
 function cadreSummary(cadre: RepoScan['cadre']): string {
-  if (cadre.dir === 'absent') return 'none'
+  if (cadre.dir === 'absent') return t('ui.scan.none')
 
-  return `${cadre.dir} (manifest ${cadre.manifestState})`
+  return t('ui.scan.cadreSummary', { dir: cadre.dir, manifestState: cadre.manifestState })
 }
 
 /** The plugin count, with their names listed as a card lists names when there are any. */
 function pluginSummary(plugins: readonly string[]): string {
   if (plugins.length === 0) return '0'
 
-  return `${plugins.length} (${cardList(plugins.map(plugin => shown(plugin)))})`
+  return t('ui.scan.pluginSummary', { count: plugins.length, map: cardList(plugins.map(plugin => shown(plugin))) })
 }
 
 /**
@@ -94,22 +97,28 @@ function pluginSummary(plugins: readonly string[]): string {
  * or warning is part of it.
  */
 export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
-  const stack = `stack: ${idsOrNone(repo.languages)}`
-  const sides = `frontend: ${findingLabels(repo, 'fe')}; backend: ${findingLabels(repo, 'be')}`
+  const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages) })
+  const sides = t('ui.scan.sides', {
+    findingLabels: findingLabels(repo, 'fe'),
+    findingLabelsB: findingLabels(repo, 'be'),
+  })
   const mcp = cardList(setup.mcp.map(server => shown(server.name)))
-  const globalMd = setup.hasGlobalClaudeMd ? 'yes' : 'no'
+  const globalMd = setup.hasGlobalClaudeMd ? t('ui.scan.yes') : t('ui.scan.no')
 
   return [
-    'Repo scan (read-only):',
-    `  ${stack}; ${sides}`,
-    `  tests: ${findingLabels(repo, 'test')}; E2E: ${findingLabels(repo, 'e2e')}`,
-    `  existing .cadre/: ${cadreSummary(repo.cadre)}`,
+    t('ui.scan.repoHeading'),
+    t('ui.scan.stackSides', { stack, sides }),
+    t('ui.scan.tests', { findingLabels: findingLabels(repo, 'test'), findingLabelsB: findingLabels(repo, 'e2e') }),
+    t('ui.scan.existingCadre', { cadreSummary: cadreSummary(repo.cadre) }),
     ...partialLines(repo),
-    'User setup (names only):',
-    `  plugins: ${pluginSummary(setup.plugins)}`,
-    `  skills: ${setup.skills.length}; agents: ${setup.agents.length}; MCP servers: ${mcp}`,
-    `  global ~/.claude/CLAUDE.md: ${globalMd}; memories: ${setup.memoryFiles.length}; ` +
-      `CLAUDE.md files: ${cardList(setup.claudeMd.map(file => shown(file)))}`,
+    t('ui.scan.setupHeading'),
+    t('ui.scan.plugins', { pluginSummary: pluginSummary(setup.plugins) }),
+    t('ui.scan.setupCounts', { count: setup.skills.length, countB: setup.agents.length, mcp }),
+    t('ui.scan.setupFiles', {
+      globalMd,
+      count: setup.memoryFiles.length,
+      map: cardList(setup.claudeMd.map(file => shown(file))),
+    }),
   ]
 }
 
@@ -118,13 +127,19 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan): string[] {
  * own: the stack, then the labels of the frontend, backend, test and E2E findings, each `none` when there is none.
  */
 export function scanContextLine(repo: RepoScan): string {
-  const sides = `frontend ${findingLabels(repo, 'fe')}; backend ${findingLabels(repo, 'be')}`
-  const checks = `tests ${findingLabels(repo, 'test')}; E2E ${findingLabels(repo, 'e2e')}`
+  const sides = t('ui.scan.contextSides', {
+    findingLabels: findingLabels(repo, 'fe'),
+    findingLabelsB: findingLabels(repo, 'be'),
+  })
+  const checks = t('ui.scan.contextChecks', {
+    findingLabels: findingLabels(repo, 'test'),
+    findingLabelsB: findingLabels(repo, 'e2e'),
+  })
 
-  return `Scan: stack ${idsOrNone(repo.languages)}; ${sides}; ${checks}.`
+  return t('ui.scan.context', { languages: idsOrNone(repo.languages), sides, checks })
 }
 
 /** The scan warnings as init shows them, one `warning: <text>` line each; nothing when there are none. */
 export function scanWarningLines(warnings: readonly string[]): string[] {
-  return warnings.map(warning => `warning: ${warning}`)
+  return warnings.map(warning => t('ui.scan.warning', { warning }))
 }
