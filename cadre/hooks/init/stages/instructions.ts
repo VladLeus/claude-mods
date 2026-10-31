@@ -20,7 +20,8 @@ import type {
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
-import { asSentence, countedNoun, idsOrNone, shown } from '../../core/text'
+import { asSentence, idsOrNone, shown } from '../../core/text'
+import { t, tn } from '../../locales/t'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
@@ -39,17 +40,15 @@ import type { MemoryNext } from './memory'
  * The content consent question (G-02-1f "Consent first", D-134): no instruction or memory text is read before a yes,
  * and the question says that the model groups what is read.
  */
-export const CONTENT_QUESTION =
-  'Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? ' +
-  'Nothing from your global files or memories is committed, and originals are never edited.'
+export const CONTENT_QUESTION = t('init.instructions.contentQuestion')
 
 /**
  * Each content consent answer, the declining one first: the engine dialog starts with its first option focused, so a
  * quick Submit declines, and option 0 never consents (G-02-1f "Consent first", D-134).
  */
 const CONTENT_CONSENTS: readonly Labelled<boolean>[] = Object.freeze([
-  { label: 'No, skip it', value: false },
-  { label: 'Yes, read them', value: true },
+  { label: t('init.instructions.consentNo'), value: false },
+  { label: t('init.instructions.consentYes'), value: true },
 ])
 
 /** The answers to the content consent question, No, skip it first (D-134). */
@@ -64,10 +63,10 @@ export function parseContentConsent(answer: string): boolean | null {
 }
 
 /** Why init cancels when the content consent is dismissed or not answered (A1, D-45). */
-export const CONTENT_DISMISSED_REASON = 'The instruction files question was dismissed or not answered.'
+export const CONTENT_DISMISSED_REASON = t('init.instructions.contentDismissedReason')
 
 /** What the last sentence of the content consent context line says: a No keeps today's questions (D-63). */
-const CONTENT_NO_TEXT = 'No keeps the whole-file questions.'
+const CONTENT_NO_TEXT = t('init.instructions.noText')
 
 /** A fact as the content consent context line says it: yes or no. */
 function yesNo(isThere: boolean): string {
@@ -86,23 +85,24 @@ export function contentContextLine(
   repo: Pick<InstructionSources, 'rules' | 'hasAgentsMd'>,
 ): string {
   const global = yesNo(setup.hasGlobalClaudeMd)
-  const chain = countedNoun(setup.claudeMd.length, 'CLAUDE.md file', 'CLAUDE.md files')
-  const rules = countedNoun(repo.rules?.length ?? 0, 'rule file', 'rule files')
+  const chain = tn('init.instructions.claudeMdFiles', setup.claudeMd.length, { count: setup.claudeMd.length })
+  const ruleCount = repo.rules?.length ?? 0
+  const rules = tn('init.instructions.ruleFiles', ruleCount, { count: ruleCount })
   const memoryCount = setup.memoryFiles.filter(name => !isMemoryIndexName(name)).length
-  const memories = countedNoun(memoryCount, 'memory', 'memories')
-  const found = `global CLAUDE.md ${global}, ${chain} in the repo chain, ${rules}, AGENTS.md ${yesNo(repo.hasAgentsMd)}`
+  const memories = tn('init.instructions.memories', memoryCount, { count: memoryCount })
+  const found = t('init.instructions.found', { global, chain, rules, agents: yesNo(repo.hasAgentsMd) })
 
-  return `Found: ${found}, ${memories}. ${CONTENT_NO_TEXT}`
+  return t('init.instructions.contentContext', { found, memories, noText: CONTENT_NO_TEXT })
 }
 
 /** The entry question of the instruction hand-out (G-02-1f Entry choices): the parts and the memories. */
-export const INSTRUCTIONS_ENTRY_QUESTION = 'How do you want to hand out the instruction parts and memories?'
+export const INSTRUCTIONS_ENTRY_QUESTION = t('init.instructions.instructionsEntryQuestion')
 
 /** The entry answer that asks each topic once (G-02-1f Part by part). */
-const PART_BY_PART_LABEL = 'Go part by part'
+const PART_BY_PART_LABEL = t('init.instructions.partByPart')
 
 /** The entry answer that keeps the whole-file questions of D-63 (G-02-1f Entry choices). */
-const WHOLE_FILES_LABEL = 'Whole files'
+const WHOLE_FILES_LABEL = t('init.instructions.wholeFiles')
 
 /** The answers to the entry question, in the order the dialog shows them (G-02-1f Entry choices). */
 export const INSTRUCTIONS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
@@ -116,11 +116,13 @@ export const INSTRUCTIONS_ENTRY_OPTIONS: readonly string[] = Object.freeze([
  * many memories there are, and that the side pane shows each with the roles it is recommended for.
  */
 export function entryContextLine(scan: InstructionScan, topics: readonly InstructionTopic[]): string {
-  const files = countedNoun(scan.files.length, 'file', 'files')
-  const topicCount = `${countedNoun(topics.length, 'topic', 'topics')} from ${files}`
-  const memoryCount = countedNoun(scan.memories.length, 'memory', 'memories')
+  const files = tn('init.instructions.files', scan.files.length, { count: scan.files.length })
+  const topicCount = tn('init.instructions.topics', topics.length, { count: topics.length })
+  const memoryCount = tn('init.instructions.memories', scan.memories.length, { count: scan.memories.length })
 
-  return `${topicCount} and ${memoryCount}; the pane shows each with the roles it is recommended for.`
+  const topicsFrom = t('init.instructions.topicsFrom', { topicCount, files })
+
+  return t('init.instructions.entryContext', { topics: topicsFrom, memoryCount })
 }
 
 /**
@@ -139,15 +141,14 @@ export function instructionsEntry(scan: InstructionScan, topics: readonly Instru
 }
 
 /** Why init cancels when a question of the instruction hand-out is dismissed or not answered (A1, D-45). */
-export const HANDOUT_DISMISSED_REASON =
-  'A question on which roles get instruction parts was dismissed or not answered.'
+export const HANDOUT_DISMISSED_REASON = t('init.instructions.handoutDismissedReason')
 
 /** The most sources a topic's context line names before it counts the rest. */
 const MAX_SHOWN_SOURCES = 3
 
 /** The question of one topic (G-02-1f Part by part): which roles get it, by its title. */
 export function topicQuestion(topic: InstructionTopic): string {
-  return `Which roles get "${topic.title}"?`
+  return t('init.instructions.topicQuestion', { title: topic.title })
 }
 
 /**
@@ -163,7 +164,11 @@ export function topicContextLine(
 ): string {
   const sources = cappedList(topicParts(topic, parts).map(part => shown(sourceText(part))), MAX_SHOWN_SOURCES)
 
-  return `${asSentence(redactedText(topic.summary))} Recommended: ${idsOrNone(recommended)}. From: ${sources}.`
+  return t('init.instructions.topicContextLine', {
+    asSentence: asSentence(redactedText(topic.summary)),
+    recommended: idsOrNone(recommended),
+    sources,
+  })
 }
 
 /**
@@ -171,7 +176,7 @@ export function topicContextLine(
  * a chip shows.
  */
 export function topicHeader(position: number, count: number): string {
-  return countedChip('Topic', position, count)
+  return countedChip(t('init.instructions.topicChip'), position, count)
 }
 
 /**
@@ -199,7 +204,7 @@ export function topicItems(
 
 /** The question of one memory (G-02-1f Memories): which roles get it, by its file name. */
 export function memoryItemQuestion(memory: MemoryItem): string {
-  return `Which roles get the memory "${memory.file}"?`
+  return t('init.instructions.memoryItemQuestion', { file: memory.file })
 }
 
 /**
@@ -208,7 +213,10 @@ export function memoryItemQuestion(memory: MemoryItem): string {
  * model recommended for it, or none.
  */
 export function memoryItemContextLine(memory: MemoryItem, recommended: readonly string[]): string {
-  return `${asSentence(redactedText(memory.summary))} Recommended: ${idsOrNone(recommended)}.`
+  return t('init.instructions.memoryItemContextLine', {
+    asSentence: asSentence(redactedText(memory.summary)),
+    recommended: idsOrNone(recommended),
+  })
 }
 
 /**
@@ -216,7 +224,7 @@ export function memoryItemContextLine(memory: MemoryItem, recommended: readonly 
  * points a chip shows.
  */
 export function memoryItemHeader(position: number, count: number): string {
-  return countedChip('Memory', position, count)
+  return countedChip(t('init.instructions.memoryChip'), position, count)
 }
 
 /**

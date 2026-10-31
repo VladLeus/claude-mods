@@ -195,6 +195,40 @@ export const EN = Object.freeze({
   'init.memory.memoryDismissedReason':
     'A question on which roles get instructions or memories was dismissed or not answered.',
   'init.memory.memoryContextLine': '{teamContext} Their content is never shown or committed.',
+
+  'init.instructions.contentQuestion':
+    'Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each ' +
+    'role? Nothing from your global files or memories is committed, and originals are never edited.',
+  'init.instructions.consentNo': 'No, skip it',
+  'init.instructions.consentYes': 'Yes, read them',
+  'init.instructions.contentDismissedReason': 'The instruction files question was dismissed or not answered.',
+  'init.instructions.noText': 'No keeps the whole-file questions.',
+  'init.instructions.instructionsEntryQuestion': 'How do you want to hand out the instruction parts and memories?',
+  'init.instructions.partByPart': 'Go part by part',
+  'init.instructions.wholeFiles': 'Whole files',
+  'init.instructions.handoutDismissedReason':
+    'A question on which roles get instruction parts was dismissed or not answered.',
+  'init.instructions.topicQuestion': 'Which roles get "{title}"?',
+  'init.instructions.topicContextLine': '{asSentence} Recommended: {recommended}. From: {sources}.',
+  'init.instructions.topicChip': 'Topic',
+  'init.instructions.memoryItemQuestion': 'Which roles get the memory "{file}"?',
+  'init.instructions.memoryItemContextLine': '{asSentence} Recommended: {recommended}.',
+  'init.instructions.memoryChip': 'Memory',
+  'init.instructions.claudeMdFiles.one': '{count} CLAUDE.md file',
+  'init.instructions.claudeMdFiles.other': '{count} CLAUDE.md files',
+  'init.instructions.ruleFiles.one': '{count} rule file',
+  'init.instructions.ruleFiles.other': '{count} rule files',
+  'init.instructions.memories.one': '{count} memory',
+  'init.instructions.memories.other': '{count} memories',
+  'init.instructions.found': 'global CLAUDE.md {global}, {chain} in the repo chain, {rules}, AGENTS.md {agents}',
+  'init.instructions.contentContext': 'Found: {found}, {memories}. {noText}',
+  'init.instructions.files.one': '{count} file',
+  'init.instructions.files.other': '{count} files',
+  'init.instructions.topics.one': '{count} topic',
+  'init.instructions.topics.other': '{count} topics',
+  'init.instructions.topicsFrom': '{topicCount} from {files}',
+  'init.instructions.entryContext':
+    '{topics} and {memoryCount}; the pane shows each with the roles it is recommended for.',
 }) satisfies Record<string, string>
 
 /** The key of an EN text (D-216). */
