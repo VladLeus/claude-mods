@@ -7,6 +7,7 @@
 import type { InitIo, InitLocations } from '../../types'
 import { clean } from '../core/text'
 import { findGitTop } from '../git/checkout'
+import { t } from '../locales/t'
 import { trimSlash } from '../paths'
 import { autopilotReply, autopilotRunState, autopilotStatusPath } from '../scan/autopilot'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
@@ -34,9 +35,7 @@ export function notGitRepoReply(command: CommandWord): string {
 }
 
 /** The reply when init runs where no one can be asked: `claude -p`, or a host that cannot say (fail closed, D-42). */
-export const NOT_INTERACTIVE_REPLY =
-  'cadre init needs an interactive session to ask its questions. ' +
-  'Run /cadre init in a terminal session, not with claude -p.'
+export const NOT_INTERACTIVE_REPLY = t('init.notInteractive')
 
 /** The reply when the session root cannot be read, worded for its command: it stops before it reads anything. */
 export function rootUnknownReply(command: CommandWord): string {

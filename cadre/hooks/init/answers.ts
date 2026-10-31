@@ -8,7 +8,8 @@
  */
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
-import { clean, countedNoun, idsOrNone, moreLine, sortedUnique } from '../core/text'
+import { clean, idsOrNone, moreLine, sortedUnique } from '../core/text'
+import { tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
@@ -57,7 +58,7 @@ export const NO_SKILL_PURPOSE = 'No description.'
  * the last 50 sessions`, the skill's own count, never a group total.
  */
 export function skillUsesText(count: number): string {
-  return `${countedNoun(count, 'time', 'times')} in the last ${HISTORY_MAX_SESSIONS} sessions`
+  return tn('init.answers.skillUses', count, { count, sessions: HISTORY_MAX_SESSIONS })
 }
 
 /** The first row of the own-skills block (G-02-1b): which skills it lists, and what giving one to a role means. */

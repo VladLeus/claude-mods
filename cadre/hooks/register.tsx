@@ -22,6 +22,7 @@ import { detectRefusal } from './guards/refusals'
 import { runInit } from './init/run'
 import type { InitOptions } from './init/run'
 import { CHANGE_SOMETHING_LABEL } from './init/stages/review'
+import { setMissingSlotSink } from './locales/t'
 import { runRegen } from './regen/run'
 import type { RegenOptions } from './regen/run'
 import { collectFacts, locationsOf, rootUnknownFacts } from './scan/facts/collect'
@@ -400,6 +401,8 @@ async function closePane($: EngineInterface): Promise<void> {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // A locale slot with no value renders as {name} and its line goes to the debug log (D-224).
+    setMissingSlotSink(text => void $.ui.log(text, { to: 'debug' }))
     await $.command.register({
       name: 'cadre',
       description: 'Split this repo into scope-limited role sessions: detect, init, regen, start, status, epic',
