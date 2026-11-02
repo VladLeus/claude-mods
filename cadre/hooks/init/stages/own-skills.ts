@@ -4,9 +4,9 @@
  * handed out through the entry question Accept recommendations, Go one by one or Whole group (ownSkillsEntry,
  * ownSkillItems, each skill with its own context, D-211); and what it shares with init/stages/assign: the AssignItem
  * questions on which roles get an item, the context line of an MCP server question (mcpContextLine), skillGroupItem
- * with its context line (skillsContextLine) and its own context, and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts and items only, imports core, suggest/skills, ui/ask,
- * ui/blocks/assign, init/answers, init/assign-rules, init/handout and the model stage, and never imports init/machine
- * or init/run.
+ * with its context line (skillsContextLine) and its own context, and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts
+ * and items only, imports core, suggest/skills, ui/ask, ui/blocks/assign, init/answers, init/assign-rules,
+ * init/handout and the model stage, and never imports init/machine or init/run.
  */
 import type { AskContext, RoleSpec, SkillRef } from '../../../types'
 import { redactSecrets } from '../../core/redact'
