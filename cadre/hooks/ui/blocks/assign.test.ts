@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { McpRef } from '../../../types'
 import {
+  mcpGroupContext,
   mcpServerContext,
   mcpSourceText,
   mcpToolNamesOf,
@@ -143,5 +144,19 @@ describe('own skill lines and their caps (#163)', () => {
     const skill: SkillLine = { name: 'deploy', purpose: `${'x'.repeat(110)} ${key} tail`, uses: '', recommended: [] }
     const [line = ''] = skillContext(skill, 1, 1).lines
     expect([line.includes(key.slice(0, 8)), line.includes('[hidden]')]).toEqual([false, true])
+  })
+})
+
+describe('mcpGroupContext (D-250)', () => {
+  test('the question for all the servers lists each with its source, its tool count and its recommended roles', () => {
+    const lines = [
+      { name: 'github', source: 'session', tools: 2, recommended: ['tl'] },
+      { name: 'sentry', source: '.mcp.json', tools: 0, recommended: [] },
+    ]
+    expect(mcpGroupContext(lines)).toEqual({
+      title: 'MCP servers',
+      lines: ['github: session, 2 tools. Recommended: tl.', 'sentry: .mcp.json, 0 tools. Recommended: none.'],
+      kind: 'mcp-server',
+    })
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, InitIo, RoleSpec, SetupScan, SkillRef } from '../../../types'
+import type { AskContext, InitIo, McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import {
   EMPTY_FACTS,
@@ -23,7 +23,14 @@ import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import type { InitState } from '../state'
 import { assignStage } from './assign'
-import { ASSIGNMENT_DISMISSED_REASON, ownSkillContextLine, skillsContextLine } from './own-skills'
+import {
+  ASSIGNMENT_DISMISSED_REASON,
+  mcpContextLine,
+  mcpEntry,
+  mcpServerItems,
+  ownSkillContextLine,
+  skillsContextLine,
+} from './own-skills'
 
 /** The first row of the own-skills block (G-02-1b). */
 const OWN_SKILLS_HEADING =
@@ -295,5 +302,40 @@ describe('own skills on a go-back (D-235)', () => {
     expect(shown).toContain('    recommended: be')
     const first = assignStage.enter(stateAt('assign', draft, { kept }))
     expect(first.effect.kind).toBe('model')
+  })
+})
+
+describe('the MCP hand-out (D-250)', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+
+  test('the entry asks which roles get the servers and how many, with the MCP chip and the shared answers', () => {
+    expect(mcpEntry(2)).toEqual({
+      question: 'Which roles get the MCP servers (2)? Pick how to hand them out.',
+      contextLine: '2 MCP servers; each question shows its source, its tools and the roles it is recommended for.',
+      header: 'MCP',
+      accept: 'Accept recommendations',
+      oneByOne: 'Go one by one',
+      whole: 'Whole group',
+    })
+    expect(mcpEntry(1).contextLine.startsWith('1 MCP server;')).toBe(true)
+  })
+
+  test('each server is an item with its question, chip, recommendation and own context', () => {
+    const servers: readonly McpRef[] = [
+      { name: 'github', source: 'session' },
+      { name: 'sentry', source: 'project' },
+    ]
+    const tools = ['mcp__github__search', 'mcp__sentry__issues']
+    const items = mcpServerItems(servers, tools, new Map([['github', ['tl']]]), roles)
+    expect(items.map(item => [item.id, item.question, item.header, item.recommended])).toEqual([
+      ['github', 'Which roles get the github MCP server? (e.g. BE, QA, or none)', 'MCP 1/2', ['tl']],
+      ['sentry', 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)', 'MCP 2/2', []],
+    ])
+    expect(items.every(item => item.contextLine === mcpContextLine(roles))).toBe(true)
+    expect(items[1]?.context).toEqual({
+      title: 'MCP: sentry',
+      lines: ['Source: .mcp.json', 'Tools: 1 (issues)', 'Recommended: none'],
+      kind: 'mcp-server',
+    })
   })
 })

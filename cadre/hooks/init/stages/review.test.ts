@@ -340,9 +340,10 @@ describe('the review stage (D-230)', () => {
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
     const going = nextStage(asking, { kind: 'answer', text: 'assignments' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['assign', 'review', 'assign'])
-    const asked = nextStage(going, { kind: 'model', result: { id: 'mcp', result: new Map() } })
-    const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
-    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+    const entry = nextStage(going, { kind: 'model', result: { id: 'mcp', result: new Map() } })
+    const asked = nextStage(entry, { kind: 'answer', text: 'Whole group' })
+    const lines = ['sentry: session, 0 tools. Recommended: none.']
+    const context = { title: 'MCP servers', lines, kind: 'mcp-server' }
     const spec = { options: ['None', 'All roles'], header: 'MCP', context, acceptsTyped: true }
     expect(asked.openQuestion?.spec).toEqual(spec)
     const back = nextStage(asked, { kind: 'answer', text: 'All roles' })

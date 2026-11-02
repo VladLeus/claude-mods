@@ -413,6 +413,7 @@ describe('shared fixtures', () => {
       'Model and effort: same': 'Same for all roles',
       'Model and effort for': 'opus + medium',
       'Which roles get': 'None',
+      'Which roles get the MCP servers': 'Whole group',
       'Which env variables': 'None',
       '.planning/config.json:': 'Accept',
       'Install from claude-plugins-official': 'Not now',
@@ -422,7 +423,7 @@ describe('shared fixtures', () => {
       "Scan this repo's session history": 'No, skip it',
       "Run GSD's own check": 'No, skip the check',
     })
-    expect(Object.keys(INIT_ANSWERS)).toHaveLength(16)
+    expect(Object.keys(INIT_ANSWERS)).toHaveLength(17)
     expect(Object.isFrozen(INIT_ANSWERS)).toBe(true)
   })
 

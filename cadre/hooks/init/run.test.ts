@@ -2694,8 +2694,9 @@ describe('carryStep', () => {
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
     const modelAt = asked.indexOf('Model and effort for all roles?')
-    expect(asked.slice(modelAt + 1, modelAt + 8)).toEqual([
-      'Which roles get the sentry MCP server? (e.g. BE, QA, or none)',
+    expect(asked.slice(modelAt + 1, modelAt + 9)).toEqual([
+      'Which roles get the MCP servers (1)? Pick how to hand them out.',
+      'Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)',
       'Which roles get codex skills (1)? (e.g. BE, QA, or none)',
       CONTENT_QUESTION,
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)',
@@ -2703,7 +2704,7 @@ describe('carryStep', () => {
       'Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)',
       ENV_QUESTION,
     ])
-    expect(asked[modelAt + 8]).toBe(GIT_POLICY_QUESTION)
+    expect(asked[modelAt + 9]).toBe(GIT_POLICY_QUESTION)
   })
 
   test('the instruction consent context names the repo by its folder name, not <repo> (D-226)', async () => {
@@ -2717,7 +2718,7 @@ describe('carryStep', () => {
   test('no env, settings or file value of the secret world reaches a question, log or pane (T-02-34)', async () => {
     const run = memIo(secretWorld(), { ...PARTS_DECLINED, 'Which env variables': 'All of them' })
     const reply = await runInit(run.io, { dryRun: true })
-    expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(6)
+    expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(7)
     const text = [...run.asked, ...run.logged, ...paneText(run), reply].join('\n')
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
@@ -2819,7 +2820,7 @@ function dismissedAt(world: MemWorld, prefix: string, question: string, reason: 
 describe('runInit cancel reasons (A1)', () => {
   test('a dismissal at each of the twelve steps cancels init and prints its reason once, last of all', async () => {
     const gsd = gitWorld({ facts: { facts: AMBIGUOUS_FACTS, gsdUserDir: null } })
-    const sentryNone = { 'Which roles get the sentry': 'None', 'Which roles get codex': 'None' }
+    const sentryNone = { 'Which roles get all the MCP servers': 'None', 'Which roles get codex': 'None' }
     const memory: CancelCase = {
       world: secretWorld(),
       answers: { ...answersWithout('Which roles get'), ...sentryNone, [CONTENT_QUESTION]: 'No, skip it' },
@@ -2832,7 +2833,7 @@ describe('runInit cancel reasons (A1)', () => {
       dismissedAt(gsd, 'Which framework do the roles use', FRAMEWORK_QUESTION_PREFIX, FRAMEWORK_DISMISSED_REASON),
       dismissedAt(gitWorld(), 'Autopilot duration', DURATION_QUESTION, DURATION_DISMISSED_REASON),
       dismissedAt(gitWorld(), 'Model and effort for', 'Model and effort for all roles?', MODEL_DISMISSED_REASON),
-      dismissedAt(secretWorld(), 'Which roles get', 'Which roles get the sentry', ASSIGNMENT_DISMISSED_REASON),
+      dismissedAt(secretWorld(), 'Which roles get', 'Which roles get all the MCP servers', ASSIGNMENT_DISMISSED_REASON),
       memory,
       {
         ...dismissedAt(secretWorld(), 'Which env variables', 'Which env variables', ENV_DISMISSED_REASON),
@@ -2923,7 +2924,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         () => driven(modelStage.enter(stateAt('model', { roles })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
       ],
-      ['mcp', () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz'], [serversNone]).asked, roleList],
+      [
+        'mcp',
+        () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz'], [serversNone]).asked,
+        '"Go one by one", "Whole group"',
+      ],
       [
         'memory',
         () => driven(instructionsStage.enter(stateAt('instructions', memoryDraft, memoryAgain)), ['zzz']).asked,
@@ -3087,7 +3092,8 @@ describe('question chips (G-02-3c)', () => {
       [runs.plain, 'Autopilot duration', 'Duration'],
       [runs.plain, 'Model and effort: same', 'Model'],
       [runs.plain, 'Model and effort for all roles?', 'Model'],
-      [runs.perRole, 'Which roles get the sentry MCP server?', 'MCP'],
+      [runs.perRole, 'Which roles get the MCP servers', 'MCP'],
+      [runs.perRole, 'Which roles get all the MCP servers', 'MCP'],
       [runs.perRole, 'Which roles get codex skills', 'Skills'],
       [runs.perRole, 'Which roles get your global', 'Memory'],
       [runs.perRole, 'Which roles get the auto-memories', 'Memory'],
@@ -3198,7 +3204,12 @@ describe('question context lines (G-02-1)', () => {
       ],
       [
         runs.perRole,
-        'Which roles get the sentry MCP server?',
+        'Which roles get the MCP servers',
+        '1 MCP server; each question shows its source, its tools and the roles it is recommended for.',
+      ],
+      [
+        runs.perRole,
+        'Which roles get all the MCP servers',
         `Roles: ${TEAM}. A role not given the server cannot use it.`,
       ],
       [
@@ -3441,7 +3452,7 @@ describe('init plan', () => {
       'Autopilot duration': '90m',
       'Model and effort: same': 'Per role',
       ...modelAnswers,
-      'Which roles get the sentry': 'be, qa',
+      'Which roles get all the MCP servers': 'be, qa',
       'Which roles get your global': 'pm, tl',
       'Which roles get the auto-memories': 'be',
       'Which roles get the project CLAUDE.md': 'All roles',
@@ -3752,7 +3763,11 @@ describe('reviewStep', () => {
     await runInit(first.io, { dryRun: true })
     const firstAsked = firstLines(first.asked)
     const firstPass = firstAsked.slice(firstAsked.indexOf(ROLES_QUESTION), firstAsked.indexOf(GIT_POLICY_QUESTION))
-    const assignments = ['Which roles get the sentry', 'Which roles get codex']
+    const assignments = [
+      'Which roles get the MCP servers',
+      'Which roles get all the MCP servers',
+      'Which roles get codex',
+    ]
     const cases: readonly (readonly [string, readonly string[]])[] = [
       ['duration', [DURATION_QUESTION]],
       ['model', ['Model and effort']],
@@ -5447,7 +5462,7 @@ describe('init plan', () => {
 describe('question contexts (D-211, D-236)', () => {
   test("the MCP server question's context lists the tools the session gave, never a description (D-211)", async () => {
     const tools = [{ name: 'mcp__sentry__issues', description: 'SENTRY-DESCRIPTION', mcp: true }]
-    const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
+    const run = memIo(gitWorld({ tools }), { ...INIT_ANSWERS, 'Which roles get the MCP servers': 'Go one by one' })
     await runInit(run.io, { dryRun: true })
     const at = run.asked.findIndex(question => question.startsWith('Which roles get the sentry MCP server?'))
     expect(run.specs[at]?.context).toEqual({
@@ -5519,6 +5534,12 @@ describe('infra plugins by name (D-252)', () => {
   })
 })
 
+/** OWN_ACCEPTED with the MCP servers handed out one by one, so each server's own question is asked (D-250). */
+const MCP_ONE_BY_ONE: Readonly<Record<string, string>> = {
+  ...OWN_ACCEPTED,
+  'Which roles get the MCP servers': 'Go one by one',
+}
+
 /** The MCP row of a role's scope card in the last review block a run showed (D-133); '' with no such card. */
 function cardMcp(run: MemRun, id: string): string {
   const review = shownBlock(run, 'review')
@@ -5532,12 +5553,12 @@ describe('table seeds (D-249, D-280)', () => {
 
   test('a dry run asks github with its recommendation; only the answer gives it', async () => {
     const replies = ['{"servers":{"M1":["tl"],"M2":[]}}']
-    const declined = memIo(tableMatchWorld({ replies }), OWN_ACCEPTED)
+    const declined = memIo(tableMatchWorld({ replies }), MCP_ONE_BY_ONE)
     await runInit(declined.io, { dryRun: true })
     const at = firstLines(declined.asked).indexOf(GITHUB_QUESTION)
     expect(declined.specs[at]?.context?.lines.at(-1)).toBe('Recommended: tl')
     expect(cardMcp(declined, 'tl')).toBe('  MCP servers: none')
-    const given = memIo(tableMatchWorld({ replies }), { ...OWN_ACCEPTED, [GITHUB_QUESTION]: 'tl' })
+    const given = memIo(tableMatchWorld({ replies }), { ...MCP_ONE_BY_ONE, [GITHUB_QUESTION]: 'tl' })
     await runInit(given.io, { dryRun: true })
     expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
   })
@@ -5562,7 +5583,7 @@ describe('the mcp call (D-248, D-253)', () => {
   const SERVERS_REPLY = '{"servers":{"M1":["tl"],"M2":["be","qa"]}}'
 
   test('one checked call recommends roles for every server before the first server question', async () => {
-    const run = memIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), OWN_ACCEPTED)
+    const run = memIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), MCP_ONE_BY_ONE)
     await runInit(run.io, { dryRun: true })
     const { system, prompt } = completionAt(run, 0)
     expect(system).toBe(MCP_SYSTEM)
@@ -5575,6 +5596,18 @@ describe('the mcp call (D-248, D-253)', () => {
     expect(run.specs[at]?.context?.lines).toEqual(['Source: session', 'Tools: 1 (issues)', 'Recommended: be, qa'])
   })
 
+  test('Accept gives each server the roles the mcp call recommended for it (D-250)', async () => {
+    const answers = { ...OWN_ACCEPTED, 'Which roles get the MCP servers': 'Accept recommendations' }
+    const run = memIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), answers)
+    await runInit(run.io, { dryRun: true })
+    expect(['tl', 'be', 'qa', 'pm'].map(id => cardMcp(run, id))).toEqual([
+      '  MCP servers: github',
+      '  MCP servers: sentry',
+      '  MCP servers: sentry',
+      '  MCP servers: none',
+    ])
+  })
+
   test('a run with no server but infra makes no mcp call', async () => {
     const tools = [{ name: 'mcp__autopilot__wait_for', description: 'Wait.', mcp: true }]
     const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
@@ -5584,7 +5617,7 @@ describe('the mcp call (D-248, D-253)', () => {
   })
 
   test('a review go-back to the assignments reuses the kept mcp result and calls the model no more', async () => {
-    const answers = { ...OWN_ACCEPTED, 'Review the plan': ['assignments', 'Confirm'] }
+    const answers = { ...MCP_ONE_BY_ONE, 'Review the plan': ['assignments', 'Confirm'] }
     const run = queuedIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), answers)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toHaveLength(1)
@@ -5596,7 +5629,7 @@ describe('the mcp call (D-248, D-253)', () => {
 
 describe('the mcp call fallback (D-254)', () => {
   test('a failed mcp call recommends the table seeds for matched servers and none for the rest', async () => {
-    const run = memIo(tableMatchWorld({ replies: ['not json', '{"servers":{"M9":[]}}', null] }), OWN_ACCEPTED)
+    const run = memIo(tableMatchWorld({ replies: ['not json', '{"servers":{"M9":[]}}', null] }), MCP_ONE_BY_ONE)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toHaveLength(MAX_PROPOSE_ATTEMPTS)
     const recommended = (question: string): string | undefined =>

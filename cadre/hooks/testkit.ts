@@ -534,6 +534,7 @@ export const INIT_ANSWERS: Readonly<Record<string, string>> = Object.freeze({
   'Model and effort: same': 'Same for all roles',
   'Model and effort for': 'opus + medium',
   'Which roles get': 'None',
+  'Which roles get the MCP servers': 'Whole group',
   'Which env variables': 'None',
   '.planning/config.json:': 'Accept',
   'Install from claude-plugins-official': 'Not now',
