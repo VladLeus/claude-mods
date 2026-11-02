@@ -5591,3 +5591,16 @@ describe('the mcp call (D-248, D-253)', () => {
     expect(asked.map(spec => spec.context?.lines.at(-1))).toEqual(['Recommended: be, qa', 'Recommended: be, qa'])
   })
 })
+
+describe('the mcp call fallback (D-254)', () => {
+  test('a failed mcp call recommends the table seeds for matched servers and none for the rest', async () => {
+    const run = memIo(tableMatchWorld({ replies: ['not json', '{"servers":{"M9":[]}}', null] }), OWN_ACCEPTED)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toHaveLength(MAX_PROPOSE_ATTEMPTS)
+    const recommended = (question: string): string | undefined =>
+      run.specs[firstLines(run.asked).indexOf(question)]?.context?.lines.at(-1)
+    expect(recommended('Which roles get the github MCP server? (e.g. BE, QA, or none)')).toBe('Recommended: tl')
+    expect(recommended('Which roles get the sentry MCP server? (e.g. BE, QA, or none)')).toBe('Recommended: none')
+    expect(cardMcp(run, 'tl')).toBe('  MCP servers: none')
+  })
+})
