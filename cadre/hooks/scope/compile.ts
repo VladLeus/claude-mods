@@ -19,7 +19,16 @@ import {
 import { standsFor } from '../roles/template'
 import { cardFor, mcpToolName, notGivenMcp } from './card'
 import type { DenyPlan } from './card'
-import { isSafeDir, lintAll, ownNames, ownRoots, pluginName, SECRET_READ_DENY, skillPlugin } from './lint'
+import {
+  isInfraPlugin,
+  isSafeDir,
+  lintAll,
+  ownNames,
+  ownRoots,
+  pluginName,
+  SECRET_READ_DENY,
+  skillPlugin,
+} from './lint'
 
 /** The enabledPlugins record of these plugin keys, every one on, with the keys inserted in sorted order. */
 function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean>> {
@@ -29,14 +38,15 @@ function enabledRecord(keys: readonly string[]): Readonly<Record<string, boolean
 }
 
 /**
- * The plugins the role session loads under the whitelist: the three infra plugins, and every scanned key of a plugin
- * that adds a skill of the role or a start skill of its framework (a skill named `plugin:skill` is present only when
- * its plugin is enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of a
- * plugin named in SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly,
- * never by its plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other
- * plugin is matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the
- * setup holds that exact key, so its hooks warn that role about risky edits (decision #39); another role enables it
- * only for a `security-guidance:` skill the person gave it (decision #69 B4).
+ * The plugins the role session loads under the whitelist: the three infra plugins, every scanned key whose name part
+ * is an infra plugin name under any marketplace (isInfraPlugin, D-281), and every scanned key of a plugin that adds a
+ * skill of the role or a start skill of its framework (a skill named `plugin:skill` is present only when its plugin is
+ * enabled). The superpowers framework also enables every scanned `superpowers@` key. A scanned key of a plugin named in
+ * SECURITY_PLUGINS (claude-security, security-guidance) is enabled only when it is that key exactly, never by its
+ * plugin name, since the scanned keys include the repo's own settings (T-03-46, T-03-47); every other plugin is
+ * matched by its name. A role that stands for Security also gets SECURITY_GUIDANCE_PLUGIN itself when the setup holds
+ * that exact key, so its hooks warn that role about risky edits (decision #39); another role enables it only for a
+ * `security-guidance:` skill the person gave it (decision #69 B4).
  */
 function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, boolean>> {
   const adapter = adapterOf(ctx.framework)
@@ -50,8 +60,9 @@ function pluginsFor(role: RoleSpec, ctx: ScopeContext): Readonly<Record<string, 
     return wanted.has(name) && (exact === undefined || key === exact)
   })
   const isGuidanceOn = standsFor(role, 'security') && ctx.setup.plugins.includes(SECURITY_GUIDANCE_PLUGIN)
+  const infra = [...INFRA_PLUGINS, ...ctx.setup.plugins.filter(isInfraPlugin)]
 
-  return enabledRecord([...INFRA_PLUGINS, ...scanned, ...(isGuidanceOn ? [SECURITY_GUIDANCE_PLUGIN] : [])])
+  return enabledRecord([...infra, ...scanned, ...(isGuidanceOn ? [SECURITY_GUIDANCE_PLUGIN] : [])])
 }
 
 /**
