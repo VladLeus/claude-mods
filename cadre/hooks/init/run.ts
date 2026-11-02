@@ -59,6 +59,7 @@ import { readPaths, readRepoFile } from '../scan/port-read'
 import { checkedCompletion } from '../suggest/checked'
 import type { Checked } from '../suggest/checked'
 import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from '../suggest/instructions'
+import { MCP_SYSTEM, mcpPrompt, parseMcpRecommendation } from '../suggest/mcp'
 import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
@@ -105,6 +106,7 @@ export const HISTORY_PROGRESS = t('init.status.history')
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
   'describe-roles': t('init.status.describeRoles'),
+  mcp: t('init.status.mcp'),
   skills: t('init.status.skills'),
   topics: t('init.status.topics'),
   parts: t('init.status.parts'),
@@ -435,6 +437,32 @@ export async function consentedGsdCheck(
 }
 
 /**
+ * The roles recommended for each MCP server (D-248): one model call reads each role's work and each server's name,
+ * source, tool names and table seed (mcpPrompt, MCP_SYSTEM). A reply parseMcpRecommendation cannot take is sent back
+ * with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no server is recommended to
+ * any role: the map is empty. The model has no tools (D-83), and only its checked server and role ids are kept, keyed
+ * by server name.
+ */
+async function recommendedServerRoles(
+  io: InitIo,
+  call: Extract<ModelCall, { readonly id: 'mcp' }>,
+  progressText: string,
+): Promise<ReadonlyMap<string, readonly string[]>> {
+  const { roles, servers } = call
+  const serverNames = servers.map(server => server.name)
+  const roleIds = roles.map(role => role.id)
+  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
+    const parsed = parseMcpRecommendation(reply, serverNames, roleIds)
+    if (parsed.kind === 'invalid') return parsed
+
+    return { kind: 'ok', value: parsed.recommended }
+  }
+  const prompt = (errors: readonly string[]): string => mcpPrompt(roles, servers, errors)
+
+  return checkedCompletion(io, progressText, MCP_SYSTEM, prompt, parse, () => new Map())
+}
+
+/**
  * The roles recommended for each of the user's own skills (G-02-1b): one model call reads each role's work and each
  * skill's name, purpose and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take
  * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no skill is
@@ -511,15 +539,18 @@ async function recommendedRoles(
 
 /**
  * Runs one model call of a stage (D-230) as today's step did, retrying through checkedCompletion and falling back as
- * it always did: the roles of a described structure (proposeFromText), the roles recommended for each own skill
- * (recommendedSkillRoles), the topics of an instruction read (groupedTopics), or the roles recommended for each topic
- * and memory (recommendedRoles), each with the status line of its ModelCall id (MODEL_PROGRESS, D-232).
+ * it always did: the roles of a described structure (proposeFromText), the roles recommended for each MCP server
+ * (recommendedServerRoles), the roles recommended for each own skill (recommendedSkillRoles), the topics of an
+ * instruction read (groupedTopics), or the roles recommended for each topic and memory (recommendedRoles), each with
+ * the status line of its ModelCall id (MODEL_PROGRESS, D-232).
  */
 async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
   const progressText = MODEL_PROGRESS[call.id]
   switch (call.id) {
     case 'describe-roles':
       return { id: 'describe-roles', result: await proposeFromText(io, call.text, progressText) }
+    case 'mcp':
+      return { id: 'mcp', result: await recommendedServerRoles(io, call, progressText) }
     case 'skills':
       return { id: 'skills', result: await recommendedSkillRoles(io, call, progressText) }
     case 'topics':

@@ -31,6 +31,7 @@ import type { GuardResult } from '../guards/repo'
 import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
 import type { InstructionSources } from '../scan/instructions/read'
+import type { McpPromptServer } from '../suggest/mcp'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
 import type { Surface } from '../ui/surface'
@@ -170,11 +171,13 @@ export type Applied = {
 /**
  * One model call a stage needs (D-230), named after what it asks the model, with plain data only; init/run runs it
  * through checkedCompletion as today's step did: the roles of a structure the person described (proposeFromText), the
- * roles recommended for each of the user's own skills with their use counts, the topics the parts of an instruction
- * read group into, and the roles recommended for each topic and memory.
+ * roles recommended for each MCP server from its name, source, tool names and table seed (D-248), the roles
+ * recommended for each of the user's own skills with their use counts, the topics the parts of an instruction read
+ * group into, and the roles recommended for each topic and memory.
  */
 export type ModelCall =
   | { readonly id: 'describe-roles'; readonly text: string }
+  | { readonly id: 'mcp'; readonly roles: readonly RoleSpec[]; readonly servers: readonly McpPromptServer[] }
   | {
       readonly id: 'skills'
       readonly roles: readonly RoleSpec[]
@@ -190,11 +193,12 @@ export type ModelCall =
     }
 
 /**
- * What a ModelCall gave, under the same id, unchanged: the recommendations are keyed S1, S2, ... by place for the
- * skills, and by topic and memory id for the parts.
+ * What a ModelCall gave, under the same id, unchanged: the recommendations are keyed by server name for the MCP
+ * servers, S1, S2, ... by place for the skills, and by topic and memory id for the parts.
  */
 export type ModelResult =
   | { readonly id: 'describe-roles'; readonly result: Proposed }
+  | { readonly id: 'mcp'; readonly result: ReadonlyMap<string, readonly string[]> }
   | { readonly id: 'skills'; readonly result: ReadonlyMap<string, readonly string[]> }
   | { readonly id: 'topics'; readonly result: readonly InstructionTopic[] }
   | { readonly id: 'parts'; readonly result: ReadonlyMap<string, readonly string[]> }
@@ -219,12 +223,14 @@ export type Answer =
   | { readonly kind: 'model'; readonly result: ModelResult }
 
 /**
- * The model results a review go-back reuses instead of calling the model again (D-235, ASKED #14): the roles
- * recommended for the own skills, null until that call answered; and the topics of the instruction read with the roles
+ * The model results a review go-back reuses instead of calling the model again (D-235, ASKED #14, D-253): the roles
+ * recommended for each MCP server by name, null until the mcp call answered; the roles recommended for the own skills,
+ * null until that call answered; and the topics of the instruction read with the roles
  * recommended for them and the memories, both kept when the parts call answered (ASKED #137), null until then. The
  * roles stage drops them when a go-back changes the team: a role's id, title or purpose (ASKED #137).
  */
 export type Kept = {
+  readonly mcp: ReadonlyMap<string, readonly string[]> | null
   readonly ownSkills: ReadonlyMap<string, readonly string[]> | null
   readonly topics: readonly InstructionTopic[] | null
   readonly parts: ReadonlyMap<string, readonly string[]> | null
@@ -268,6 +274,8 @@ export type EachCursor = {
  * - `describe`: the describe question is out, asked `tries` times so far, after proposal `rounds` of `roles` with
  *   their scan `changes`, which its context shows (D-236).
  * - `describe-model`: the model call for the described structure is out, after proposal `rounds`.
+ * - `mcp-model`: the model call that recommends roles for every MCP server is out, before the server questions, with
+ *   the names given before it (`done`, D-248).
  * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
  *   far, with the names the questions before it gave (`done`).
  * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
@@ -320,6 +328,7 @@ export type StageSub =
       readonly changes: readonly RoleChange[]
     }
   | { readonly kind: 'describe-model'; readonly rounds: number }
+  | { readonly kind: 'mcp-model'; readonly done: readonly NameAssignment[] }
   | {
       readonly kind: 'assign'
       readonly tries: number
@@ -383,7 +392,7 @@ export type InitState = {
   readonly returnAfter: InitStage | null
   /** How many review rounds ended in a go-back so far. */
   readonly rounds: number
-  /** The own-skills, topics and parts model results a review go-back reuses (D-235); null until the first one. */
+  /** The mcp, own-skills, topics and parts model results a review go-back reuses (D-235); null until the first one. */
   readonly kept: Kept | null
   /** The session's tool names as the scans read them, for the MCP server questions' contexts (D-211); none before. */
   readonly toolNames: readonly string[]

@@ -313,6 +313,7 @@ export const EN = Object.freeze({
   'init.status.scan': 'cadre: scanning the repo…',
   'init.status.history': 'cadre: reading session history…',
   'init.status.describeRoles': 'cadre: reading your structure…',
+  'init.status.mcp': 'cadre: recommending MCP servers…',
   'init.status.skills': 'cadre: recommending skills…',
   'init.status.topics': 'cadre: grouping instructions…',
   'init.status.parts': 'cadre: recommending instruction parts…',

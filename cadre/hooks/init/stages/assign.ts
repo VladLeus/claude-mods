@@ -13,7 +13,7 @@ import { t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { mcpServerContext, ownSkillsContext } from '../../ui/blocks/assign'
+import { mcpServerContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
 import { assignToRoles, mcpQuestion, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
@@ -58,8 +58,9 @@ function mcpRefOf(mcp: readonly McpRef[], name: string): McpRef {
 /**
  * The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. Every server
  * that is not infra is asked (D-249): its question carries its own context with the session's tool names
- * (mcpServerContext, D-211) and the roles the name table seeds for it as its recommendation, none without a seed; the
- * table never gives it to a role. A plugin group's skills show the roles the skill table seeds for each (D-280).
+ * (mcpServerContext, D-211) and the roles the mcp model call recommended for it (the kept result, D-248), none before
+ * that call answered; neither the table nor the model ever gives it to a role. A plugin group's skills show the roles
+ * the skill table seeds for each (D-280).
  */
 function assignPlan(state: InitState): AssignPlan | null {
   const { roles, gathered, hints } = state.draft
@@ -67,11 +68,12 @@ function assignPlan(state: InitState): AssignPlan | null {
   const { setup } = gathered
   const mcp = classifyMcp(setup.mcp, roles)
   const skills = classifySkills(setup.skills, roles)
+  const serverRoles = state.kept?.mcp ?? new Map<string, readonly string[]>()
   const serverItems = mcp.names.map(name => ({
     question: withContext(mcpQuestion(name), mcpContextLine(roles)),
     header: ASK_HEADERS.mcp,
     names: [name],
-    context: mcpServerContext(mcpRefOf(setup.mcp, name), state.toolNames, mcp.seeds.get(name) ?? []),
+    context: mcpServerContext(mcpRefOf(setup.mcp, name), state.toolNames, serverRoles.get(name) ?? []),
   }))
   const pluginGroups = skills.groups.filter(group => group.plugin !== null)
   const groupItems = orderGroupsByUse(pluginGroups, hints).map(group =>
@@ -80,6 +82,23 @@ function assignPlan(state: InitState): AssignPlan | null {
   const ownGroup = skills.groups.find(group => group.plugin === null)
 
   return { roles, setup, counts: hints, mcp, skills, items: [...serverItems, ...groupItems], ownGroup }
+}
+
+/**
+ * The mcp model effect (D-248): one call for every server to ask, each with the source word its question's context
+ * shows (mcpSourceText), the tool names the session lists for it (mcpToolNamesOf, names only, D-211) and the roles the
+ * name table seeds for it (D-249), before the first server question.
+ */
+function mcpCalled(state: InitState, plan: AssignPlan): InitState {
+  const servers = plan.mcp.names.map(name => ({
+    name,
+    source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
+    tools: mcpToolNamesOf(state.toolNames, name),
+    seed: plan.mcp.seeds.get(name) ?? [],
+  }))
+  const calling: InitState = { ...state, sub: { kind: 'mcp-model', done: [] } }
+
+  return withEffect(calling, { kind: 'model', call: { id: 'mcp', roles: plan.roles, servers } })
 }
 
 /**
@@ -263,11 +282,13 @@ function afterWhole(state: InitState, plan: AssignPlan, sub: WholeCursor, answer
   return assigned(state, plan, sub.done, item.names.map(name => ({ name, roleIds: next.value })))
 }
 
-/** The answer to the effect the assignment stage has out: a question, the hand-out, or the skills model call. */
+/** The answer to the effect the assignment stage has out: a question, the hand-out, or the mcp or skills model call. */
 function assignAnswer(state: InitState, answer: Answer): InitState {
   const plan = assignPlan(state)
   if (plan === null) return stageFailed(state)
   const { sub } = state
+  const isServersRecommended = answer.kind === 'model' && answer.result.id === 'mcp' && sub.kind === 'mcp-model'
+  if (isServersRecommended) return itemAsked(state, plan, { tries: 1, index: 0, done: sub.done }, null)
   const isRecommended = answer.kind === 'model' && answer.result.id === 'skills' && sub.kind === 'skills-model'
   if (isRecommended) return afterSkillsModel(state, plan, sub.done, answer.result.result)
   if (answer.kind !== 'answer') return stageFailed(state)
@@ -284,27 +305,32 @@ function assignAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The MCP and skill stage (D-53, ISO-04, D-230, D-249, D-280). Every MCP server and skill is asked, the roles the name
- * tables match shown as its recommendation and never given without an answer (classifyMcp, classifySkills), and infra
- * servers and handoff, infra plugin and framework skills are never asked about. Each MCP server, then each group of
- * skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
- * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
- * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
- * any other role is asked again (parseRoleList, T-02-33). Then, when the user has skills that no plugin adds, they are
- * handed out (G-02-1b): a model call recommends roles for each, the side pane shows them, and the entry question offers
- * Accept recommendations, Go one by one or Whole group. The stage decides the whole list of each name it asks about
- * (assigned, A3). With the history hints the plugin groups are asked busiest first and each group question says how
- * often its group was used, and the own skills are shown and asked busiest first; without hints, or with none that
- * count, the questions and their order are the same as without the scan (D-59). Only an answer to every question gives
- * roles: a dismissal cancels with ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question with
- * NO_USABLE_ANSWER_REASON (A1, D-136).
+ * The MCP and skill stage (D-53, ISO-04, D-230, D-248, D-249, D-253, D-280). Every MCP server and skill is asked and
+ * never given without an answer (classifyMcp, classifySkills), and infra servers and handoff, infra plugin and
+ * framework skills are never asked about. Before the first server question one checked mcp model call recommends roles
+ * for every server, from its name, source, tool names and table seed; a review go-back reuses its kept result and calls
+ * it no more (D-253). A skill shows the roles the skill table seeds as its recommendation. Each MCP server, then each
+ * group of skills by plugin, is asked once, "Which roles get ...? (e.g. BE, QA, or none)", with the team's role ids and
+ * what giving the item means on its second line (mcpContextLine, skillsContextLine, D-136), answered with None, All
+ * roles or a typed list of role ids or titles; an answer that names any other role is asked again (parseRoleList,
+ * T-02-33). Then, when the user has skills that no plugin adds, they are handed out (G-02-1b): a model call recommends
+ * roles for each, the side pane shows them, and the entry question offers Accept recommendations, Go one by one or
+ * Whole group. The stage decides the whole list of each name it asks about (assigned, A3). With the history hints the
+ * plugin groups are asked busiest first and each group question says how often its group was used, and the own skills
+ * are shown and asked busiest first; without hints, or with none that count, the questions and their order are the same
+ * as without the scan (D-59). Only an answer to every question gives roles: a dismissal cancels with
+ * ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question with NO_USABLE_ANSWER_REASON (A1,
+ * D-136).
  */
 export const assignStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const plan = assignPlan(state)
     if (plan === null) return stageFailed(state)
+    const kept = reusable(state)?.mcp ?? null
+    const isAsking = plan.mcp.names.length === 0 || kept !== null
+    if (isAsking) return itemAsked(state, plan, { tries: 1, index: 0, done: [] }, null)
 
-    return itemAsked(state, plan, { tries: 1, index: 0, done: [] }, null)
+    return mcpCalled(state, plan)
   },
   answer: assignAnswer,
 })
