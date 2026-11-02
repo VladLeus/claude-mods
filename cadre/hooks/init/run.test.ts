@@ -78,6 +78,7 @@ import { parseCadreState } from '../state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from '../suggest/checked'
 import { RECOMMEND_SYSTEM } from '../suggest/instructions'
 import { MCP_SYSTEM } from '../suggest/mcp'
+import { SKILLS_SYSTEM } from '../suggest/skills'
 import { TOPICS_SYSTEM } from '../suggest/topics'
 import { resolvedFramework, scopesFor } from '../team'
 import {
@@ -5664,5 +5665,35 @@ describe('the skills call after the MCP answers (D-248)', () => {
     const ownAt = events.findIndex(event => event.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))
     expect([sentryAt > 0, ownAt > sentryAt]).toEqual([true, true])
     expect(cardSkills(run, 'security')).toContain('security-review')
+  })
+})
+
+describe('the go-back rule of the two calls (D-253)', () => {
+  /** The replies of tableMatchWorld: the mcp call, then two skills calls, each giving security-review to security. */
+  const REPLIES = [
+    '{"servers":{"M1":[],"M2":[]}}',
+    '{"skills":{"S1":["security"]}}',
+    '{"skills":{"S1":["security"]}}',
+  ]
+
+  /** The skills prompts and mcp prompts of an assignments go-back whose MCP whole answers are `answers`. */
+  async function callsWith(answers: readonly string[]): Promise<readonly [number, number]> {
+    const run = queuedIo(tableMatchWorld({ replies: REPLIES }), {
+      ...OWN_ACCEPTED,
+      'Which roles get all the MCP servers': answers,
+      'Review the plan': ['assignments', 'Confirm'],
+    })
+    await runInit(run.io, { dryRun: true })
+    const count = (system: string): number => run.prompts.filter(text => text.startsWith(`${system}\n---\n`)).length
+
+    return [count(MCP_SYSTEM), count(SKILLS_SYSTEM)]
+  }
+
+  test('a go-back whose MCP answers stay the same reuses the kept skills result: no model call', async () => {
+    expect(await callsWith(['None', 'None'])).toEqual([1, 1])
+  })
+
+  test('a go-back with a changed MCP answer calls the skills model again; the mcp call never runs again', async () => {
+    expect(await callsWith(['None', 'be'])).toEqual([1, 2])
   })
 })

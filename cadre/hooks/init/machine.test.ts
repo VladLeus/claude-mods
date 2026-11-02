@@ -122,12 +122,13 @@ describe('kept model results (D-235)', () => {
     },
   })
 
-  test('nextStage keeps the skills, topics and parts answers', () => {
+  test('nextStage keeps the skills answer with the MCP answers of its call, the topics and the parts (D-253)', () => {
     expect(initialState(true).kept).toBeNull()
     const calling = assignStage.enter(stateAt('assign', draft))
     const skills = { own: new Map([['mine', ['pm']]]), groups: new Map(), groupSkills: new Map() }
     const recommended = nextStage(calling, { kind: 'model', result: { id: 'skills', result: skills } })
-    expect(recommended.kept).toEqual({ mcp: null, skills, mcpAssigned: null, topics: null, parts: null })
+    const mcpAssigned = new Map(draft.roles.map(role => [role.id, []]))
+    expect(recommended.kept).toEqual({ mcp: null, skills, mcpAssigned, topics: null, parts: null })
     const instructing = instructionsStage.enter(stateAt('instructions', draft, { kept: recommended.kept }))
     const repo = { rules: [], hasAgentsMd: false }
     const consent = nextStage(instructing, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
@@ -138,6 +139,6 @@ describe('kept model results (D-235)', () => {
     const grouping = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: scan } })
     const grouped = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     const parted = nextStage(grouped, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
-    expect(parted.kept).toEqual({ mcp: null, skills, mcpAssigned: null, topics: TOPICS, parts: RECOMMENDED })
+    expect(parted.kept).toEqual({ mcp: null, skills, mcpAssigned, topics: TOPICS, parts: RECOMMENDED })
   })
 })
