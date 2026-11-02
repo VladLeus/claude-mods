@@ -47,25 +47,24 @@ function presentRoleIds(rows: readonly NameRow[], name: string, roles: readonly 
 }
 
 /**
- * Splits the scanned MCP servers into the ones the table can give to roles and the names left to ask about. Infra
- * servers are skipped, a name seen twice counts once, and both lists come out sorted. A name goes to the roles of its
- * row that are on the team (a role counts by its id or its `basedOn`); a name no row matches, or whose row has no
- * role on the team, is unknown (D-53).
+ * The scanned MCP servers to ask about, and the roles the table seeds as each one's recommendation (D-249). Infra
+ * servers are skipped, a name seen twice counts once, and `names` comes out sorted: every other server is asked. A
+ * name whose row matches gets the ids of that row's roles that are on the team (a role counts by its id or its
+ * `basedOn`) in `seeds`; a name no row matches, or whose row has no role on the team, has no seed. The table only
+ * seeds the recommendation and never gives a server to a role (D-249 supersedes D-53's silent path).
  */
 export function classifyMcp(
   mcp: readonly McpRef[],
   roles: readonly RoleSpec[],
-): { readonly assigned: readonly NameAssignment[]; readonly unknown: readonly string[] } {
+): { readonly names: readonly string[]; readonly seeds: ReadonlyMap<string, readonly string[]> } {
   const names = sortedUnique(mcp.map(ref => ref.name).filter(name => !INFRA_MCP_SERVERS.includes(name)))
-  const assigned: NameAssignment[] = []
-  const unknown: string[] = []
+  const seeds = new Map<string, readonly string[]>()
   for (const name of names) {
     const roleIds = presentRoleIds(MCP_ROLE_ROWS, name, roles)
-    if (roleIds.length === 0) unknown.push(name)
-    else assigned.push({ name, roleIds })
+    if (roleIds.length > 0) seeds.set(name, roleIds)
   }
 
-  return { assigned, unknown }
+  return { names, seeds }
 }
 
 /**

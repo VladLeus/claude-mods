@@ -1,6 +1,7 @@
 /**
- * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230), a layer 10 module: which roles get each MCP
- * server and skill group the tables do not decide, with the team's role ids on each question's second line
+ * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230, D-249), a layer 10 module: which roles get
+ * each MCP server (the name table only seeds its recommendation) and each skill group the skill table does not decide,
+ * with the team's role ids on each question's second line
  * (mcpContextLine) and each question's own context (ui/blocks/assign), the plugin groups busiest first with the
  * history hints, then the own skills (init/stages/own-skills) with the roles a skills model effect recommends for
  * them; assignStage, the pure stage that gives each name to the roles its answer names and decides the whole list of
@@ -31,9 +32,10 @@ export function mcpContextLine(roles: readonly RoleSpec[]): string {
 }
 
 /**
- * What the assignment stage works from (D-53, D-59): the team, the setup scan and the history counts; the servers and
- * skills the name tables decide (classifyMcp, classifySkills); the questions in the order asked, each unknown server,
- * then each plugin group, busiest first with the hints (orderGroupsByUse); and the group of the user's own skills.
+ * What the assignment stage works from (D-53, D-59, D-249): the team, the setup scan and the history counts; the
+ * servers to ask with the table's seeds (classifyMcp) and the skills the name table decides (classifySkills); the
+ * questions in the order asked, each server, then each plugin group, busiest first with the hints (orderGroupsByUse);
+ * and the group of the user's own skills.
  */
 type AssignPlan = {
   readonly roles: readonly RoleSpec[]
@@ -54,9 +56,10 @@ function mcpRefOf(mcp: readonly McpRef[], name: string): McpRef {
 }
 
 /**
- * The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. Each server
- * question carries its own context with the session's tool names (mcpServerContext, D-211), recommended to no role,
- * since no table or model recommends an asked server; a plugin group's skills are recommended to none either.
+ * The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. Every server
+ * that is not infra is asked (D-249): its question carries its own context with the session's tool names
+ * (mcpServerContext, D-211) and the roles the name table seeds for it as its recommendation, none without a seed; the
+ * table never gives it to a role. A plugin group's skills are recommended to none.
  */
 function assignPlan(state: InitState): AssignPlan | null {
   const { roles, gathered, hints } = state.draft
@@ -64,11 +67,11 @@ function assignPlan(state: InitState): AssignPlan | null {
   const { setup } = gathered
   const mcp = classifyMcp(setup.mcp, roles)
   const skills = classifySkills(setup.skills, roles)
-  const serverItems = mcp.unknown.map(name => ({
+  const serverItems = mcp.names.map(name => ({
     question: withContext(mcpQuestion(name), mcpContextLine(roles)),
     header: ASK_HEADERS.mcp,
     names: [name],
-    context: mcpServerContext(mcpRefOf(setup.mcp, name), state.toolNames, []),
+    context: mcpServerContext(mcpRefOf(setup.mcp, name), state.toolNames, mcp.seeds.get(name) ?? []),
   }))
   const pluginGroups = skills.groups.filter(group => group.plugin !== null)
   const groupItems = orderGroupsByUse(pluginGroups, hints).map(group =>
@@ -113,8 +116,9 @@ function itemAsked(
 
 /**
  * The stage done (A3): every role first loses the names asked about, then each name joins the `mcp` or `skills` list
- * of the roles its answer named (assignToRoles), the names the tables decide included; `done` holds the server
- * answers first, one per server, then the group answers, and `own` the own skills.
+ * of the roles its answer named (assignToRoles); a server goes only where its answer sends it, never by the table's
+ * seed alone (D-249), and the skills the skill table decides are included; `done` holds the server answers first, one
+ * per server, then the group answers, and `own` the own skills.
  */
 function assigned(
   state: InitState,
@@ -123,16 +127,16 @@ function assigned(
   own: readonly NameAssignment[],
 ): InitState {
   const { mcp, skills } = plan
-  const servers = done.slice(0, mcp.unknown.length)
-  const grouped = done.slice(mcp.unknown.length)
-  const asked = new Set([...mcp.unknown])
+  const servers = done.slice(0, mcp.names.length)
+  const grouped = done.slice(mcp.names.length)
+  const asked = new Set([...mcp.names])
   const askedSkills = new Set(skills.groups.flatMap(group => group.names))
   const unasked = plan.roles.map(role => ({
     ...role,
     mcp: role.mcp.filter(name => !asked.has(name)),
     skills: role.skills.filter(name => !askedSkills.has(name)),
   }))
-  const withMcp = assignToRoles(unasked, [...mcp.assigned, ...servers], 'mcp')
+  const withMcp = assignToRoles(unasked, servers, 'mcp')
   const roles = assignToRoles(withMcp, [...skills.assigned, ...grouped, ...own], 'skills')
 
   return stageDone({ ...state, draft: { ...state.draft, roles } })
@@ -274,9 +278,10 @@ function assignAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The MCP and skill stage (D-53, ISO-04, D-230). The servers and skills the name tables decide go to their roles with
- * no question (classifyMcp, classifySkills), and infra servers and handoff and framework skills are never asked about.
- * Each unknown MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
+ * The MCP and skill stage (D-53, ISO-04, D-230, D-249). Every MCP server is asked, the roles the name table matches
+ * shown as its recommendation and never given without an answer (classifyMcp); the skills the skill table decides go
+ * to their roles with no question (classifySkills), and infra servers and handoff and framework skills are never asked
+ * about. Each MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
  * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
  * any other role is asked again (parseRoleList, T-02-33). Then, when the user has skills that no plugin adds, they are
