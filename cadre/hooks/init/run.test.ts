@@ -77,6 +77,7 @@ import { scopeCardLines } from '../scope/card'
 import { parseCadreState } from '../state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from '../suggest/checked'
 import { RECOMMEND_SYSTEM } from '../suggest/instructions'
+import { MCP_SYSTEM } from '../suggest/mcp'
 import { TOPICS_SYSTEM } from '../suggest/topics'
 import { resolvedFramework, scopesFor } from '../team'
 import {
@@ -924,6 +925,7 @@ describe('progress lines (D-232)', () => {
     expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['cadre: scanning the repo…', 'cadre: reading session history…'])
     expect(MODEL_PROGRESS).toEqual({
       'describe-roles': 'cadre: reading your structure…',
+      mcp: 'cadre: recommending MCP servers…',
       skills: 'cadre: recommending skills…',
       topics: 'cadre: grouping instructions…',
       parts: 'cadre: recommending instruction parts…',
@@ -1921,6 +1923,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
       dirs: { ...secretWorld().dirs, ...USER_DIR_LISTED },
       files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
       replies: [
+        '{"servers":{"M1":[]}}',
         '{"topics":[{"title":"Keys and rules","summary":"How keys are kept.","parts":["P1","P2"]}]}',
         '{"topics":{"T1":["tl"]},"memories":{"M1":["tl"]}}',
       ],
@@ -2883,6 +2886,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       return assignStage.enter(stateAt('assign', { roles, gathered: scans, hints: new Map() }))
     }
     const recommendedNone: Answer = { kind: 'model', result: { id: 'skills', result: new Map() } }
+    const serversNone: Answer = { kind: 'model', result: { id: 'mcp', result: new Map() } }
     const globalFile = { ...wholeDraft().gathered, setup: emptySetupScan({ hasGlobalClaudeMd: true }) }
     const memoryDraft = wholeDraft({ roles, gathered: globalFile, instructions: { kind: 'none' } })
     const memoryAgain = { returnTo: 'review', returnAfter: 'instructions' } satisfies Partial<InitState>
@@ -2917,7 +2921,7 @@ describe('refusal re-ask (G-02-6b)', () => {
         () => driven(modelStage.enter(stateAt('model', { roles })), ['zzz']).asked,
         '"Same for all roles", "Per role"',
       ],
-      ['mcp', () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz']).asked, roleList],
+      ['mcp', () => driven(assignAt({ mcp: [session('sentry')] }), ['zzz'], [serversNone]).asked, roleList],
       [
         'memory',
         () => driven(instructionsStage.enter(stateAt('instructions', memoryDraft, memoryAgain)), ['zzz']).asked,
@@ -5524,13 +5528,14 @@ function cardMcp(run: MemRun, id: string): string {
 describe('table seeds (D-249, D-280)', () => {
   const GITHUB_QUESTION = 'Which roles get the github MCP server? (e.g. BE, QA, or none)'
 
-  test('a dry run asks github with the table seed as its recommendation; only the answer gives it', async () => {
-    const declined = memIo(tableMatchWorld(), OWN_ACCEPTED)
+  test('a dry run asks github with its recommendation; only the answer gives it', async () => {
+    const replies = ['{"servers":{"M1":["tl"],"M2":[]}}']
+    const declined = memIo(tableMatchWorld({ replies }), OWN_ACCEPTED)
     await runInit(declined.io, { dryRun: true })
     const at = firstLines(declined.asked).indexOf(GITHUB_QUESTION)
     expect(declined.specs[at]?.context?.lines.at(-1)).toBe('Recommended: tl')
     expect(cardMcp(declined, 'tl')).toBe('  MCP servers: none')
-    const given = memIo(tableMatchWorld(), { ...OWN_ACCEPTED, [GITHUB_QUESTION]: 'tl' })
+    const given = memIo(tableMatchWorld({ replies }), { ...OWN_ACCEPTED, [GITHUB_QUESTION]: 'tl' })
     await runInit(given.io, { dryRun: true })
     expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
   })
@@ -5547,5 +5552,42 @@ describe('table seeds (D-249, D-280)', () => {
     ])
     expect(cardSkills(run, 'security')).toContain('security-review')
     expect(cardSkills(run, 'be')).not.toContain('security-review')
+  })
+})
+
+describe('the mcp call (D-248, D-253)', () => {
+  /** The mcp reply of tableMatchWorld: github (M1) to tl, sentry (M2) to be and qa. */
+  const SERVERS_REPLY = '{"servers":{"M1":["tl"],"M2":["be","qa"]}}'
+
+  test('one checked call recommends roles for every server before the first server question', async () => {
+    const run = memIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), OWN_ACCEPTED)
+    await runInit(run.io, { dryRun: true })
+    const { system, prompt } = completionAt(run, 0)
+    expect(system).toBe(MCP_SYSTEM)
+    expect(prompt.split('\n').slice(-2)).toEqual([
+      'M1 | github | session | tools: search | table: tl',
+      'M2 | sentry | session | tools: issues | table: none',
+    ])
+    expect(run.progress[1]).toBe(MODEL_PROGRESS.mcp)
+    const at = firstLines(run.asked).indexOf('Which roles get the sentry MCP server? (e.g. BE, QA, or none)')
+    expect(run.specs[at]?.context?.lines).toEqual(['Source: session', 'Tools: 1 (issues)', 'Recommended: be, qa'])
+  })
+
+  test('a run with no server but infra makes no mcp call', async () => {
+    const tools = [{ name: 'mcp__autopilot__wait_for', description: 'Wait.', mcp: true }]
+    const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toEqual([])
+    expect(shownBlock(run, 'review')).not.toEqual([])
+  })
+
+  test('a review go-back to the assignments reuses the kept mcp result and calls the model no more', async () => {
+    const answers = { ...OWN_ACCEPTED, 'Review the plan': ['assignments', 'Confirm'] }
+    const run = queuedIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), answers)
+    await runInit(run.io, { dryRun: true })
+    expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toHaveLength(1)
+    const sentry = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
+    const asked = run.specs.filter((_, index) => firstLines(run.asked)[index] === sentry)
+    expect(asked.map(spec => spec.context?.lines.at(-1))).toEqual(['Recommended: be, qa', 'Recommended: be, qa'])
   })
 })

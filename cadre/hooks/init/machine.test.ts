@@ -127,7 +127,7 @@ describe('kept model results (D-235)', () => {
     const calling = assignStage.enter(stateAt('assign', draft))
     const skills = new Map([['S1', ['pm']]])
     const recommended = nextStage(calling, { kind: 'model', result: { id: 'skills', result: skills } })
-    expect(recommended.kept).toEqual({ ownSkills: skills, topics: null, parts: null })
+    expect(recommended.kept).toEqual({ mcp: null, ownSkills: skills, topics: null, parts: null })
     const instructing = instructionsStage.enter(stateAt('instructions', draft, { kept: recommended.kept }))
     const repo = { rules: [], hasAgentsMd: false }
     const consent = nextStage(instructing, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
@@ -138,6 +138,6 @@ describe('kept model results (D-235)', () => {
     const grouping = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: scan } })
     const grouped = nextStage(grouping, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     const parted = nextStage(grouped, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
-    expect(parted.kept).toEqual({ ownSkills: skills, topics: TOPICS, parts: RECOMMENDED })
+    expect(parted.kept).toEqual({ mcp: null, ownSkills: skills, topics: TOPICS, parts: RECOMMENDED })
   })
 })

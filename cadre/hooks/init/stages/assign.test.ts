@@ -21,6 +21,7 @@ import {
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
+import type { Answer } from '../state'
 import { assignStage, mcpContextLine } from './assign'
 import { ASSIGNMENT_DISMISSED_REASON, skillsContextLine } from './own-skills'
 
@@ -54,10 +55,14 @@ describe('assignmentStep', () => {
   const JIRA_ASKED = withContext(JIRA_QUESTION, mcpContextLine(roles))
   const SENTRY_ASKED = withContext(SENTRY_QUESTION, mcpContextLine(roles))
   const CODEX_ASKED = withContext(CODEX_QUESTION, skillsContextLine(roles))
-  /** The own context of each question (D-211): session servers with no tool listed, and two undescribed skills. */
+  /**
+   * The own context of each question (D-211): session servers with no tool listed, and two undescribed skills. stageRun
+   * answers the stage itself, never through nextStage, so no mcp result is kept for the server questions (D-248); the
+   * runInit specs check what they recommend.
+   */
   const JIRA_CONTEXT = {
     title: 'MCP: jira',
-    lines: ['Source: session', 'Tools: none listed', 'Recommended: pm, tl'],
+    lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
     kind: 'mcp-server',
   }
   const SENTRY_CONTEXT = {
@@ -247,6 +252,9 @@ describe('history hints', () => {
   })
 })
 
+/** The mcp model call's answer that recommends no role for any server (D-248). */
+const SERVERS_NONE: Answer = { kind: 'model', result: { id: 'mcp', result: new Map() } }
+
 describe('the assign stage (D-230)', () => {
   /** PM, Team Lead, BE, FE, QA and Security. */
   const roles = proposeRoles(FULL_SCAN).roles
@@ -257,8 +265,11 @@ describe('the assign stage (D-230)', () => {
   })
   const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
 
-  test('assignStage asks each unknown server, then each skill group; the open question is the first', () => {
-    const state = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
+  test('assignStage asks each server after the mcp call, then each skill group (D-248)', () => {
+    const calling = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
+    const servers = [{ name: 'sentry', source: 'session', tools: [], seed: [] }]
+    expect(calling.effect).toEqual({ kind: 'model', call: { id: 'mcp', roles, servers } })
+    const state = nextStage(calling, SERVERS_NONE)
     const question = withContext('Which roles get the sentry MCP server? (e.g. BE, QA, or none)', mcpContextLine(roles))
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
     const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
@@ -275,10 +286,13 @@ describe('the assign stage (D-230)', () => {
     const toolNames = ['mcp__sentry__issues', 'mcp__sentry__events', 'mcp__jira__search', 'Read']
     const fromRepo: McpRef = { name: 'sentry', source: 'project' }
     const project = { ...gathered, setup: { ...setup, mcp: [fromRepo] } }
-    const state = assignStage.enter(stateAt('assign', { roles, gathered: project, hints: new Map() }, { toolNames }))
+    const calling = assignStage.enter(stateAt('assign', { roles, gathered: project, hints: new Map() }, { toolNames }))
+    const servers = [{ name: 'sentry', source: '.mcp.json', tools: ['events', 'issues'], seed: [] }]
+    expect(calling.effect).toEqual({ kind: 'model', call: { id: 'mcp', roles, servers } })
+    const state = nextStage(calling, { kind: 'model', result: { id: 'mcp', result: new Map([['sentry', ['qa']]]) } })
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'MCP: sentry',
-      lines: ['Source: .mcp.json', 'Tools: 2 (events, issues)', 'Recommended: none'],
+      lines: ['Source: .mcp.json', 'Tools: 2 (events, issues)', 'Recommended: qa'],
       kind: 'mcp-server',
     })
   })
@@ -296,7 +310,7 @@ describe('the assign stage (D-230)', () => {
   })
 
   test('the own skills are recommended by a skills model effect, then shown and handed out', () => {
-    const state = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
+    const state = nextStage(assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() })), SERVERS_NONE)
     const calling = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), { kind: 'answer', text: 'None' })
     const skills = [{ name: 'mine', plugin: null, purpose: 'Do my thing.' }]
     expect(calling.effect).toEqual({ kind: 'model', call: { id: 'skills', roles, skills, counts: new Map() } })

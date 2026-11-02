@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  MCP_SYSTEM,
   PROMPTS,
   proposeSystemText,
   RECOMMEND_SYSTEM,
@@ -26,6 +27,7 @@ describe('locales/prompts (D-221)', () => {
       proposeSystemText(8),
       topicsSystemText(60, 160),
       SKILLS_SYSTEM,
+      MCP_SYSTEM,
       RECOMMEND_SYSTEM,
       REGEN_RECOMMEND_SYSTEM,
     ]

@@ -16,7 +16,7 @@ import { ROLES_QUESTION } from './init/stages/roles'
 import { ARTIFACT } from './locales/artifact'
 import { CONTRACTS, ITERM_LINES, TERMINAL_APP_LINES } from './locales/contracts'
 import { EN } from './locales/en'
-import { PROMPTS, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM, SKILLS_SYSTEM } from './locales/prompts'
+import { MCP_SYSTEM, PROMPTS, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM, SKILLS_SYSTEM } from './locales/prompts'
 import { DRY_RUN_NOTE } from './plan/text'
 import { INSTALL_COMMANDS } from './roles/recommend'
 import { PROPOSE_SYSTEM } from './suggest/propose'
@@ -54,7 +54,7 @@ function stringsOf(value: unknown, depth = 0): string[] {
 
 /**
  * Every table text and the listed survivors (D-207, D-221): one row per locale table (the screen texts, the
- * generated-file texts, the model prompts with the five system prompts, and the on-disk and protocol markers with the
+ * generated-file texts, the model prompts with the six system prompts, and the on-disk and protocol markers with the
  * AppleScript lines), then a fifth row of the texts kept outside the tables.
  */
 const TEXTS: readonly (readonly [string, string, unknown])[] = [
@@ -63,7 +63,7 @@ const TEXTS: readonly (readonly [string, string, unknown])[] = [
   [
     'locales/prompts',
     'PROMPTS',
-    [PROMPTS, PROPOSE_SYSTEM, TOPICS_SYSTEM, SKILLS_SYSTEM, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM],
+    [PROMPTS, PROPOSE_SYSTEM, TOPICS_SYSTEM, SKILLS_SYSTEM, MCP_SYSTEM, RECOMMEND_SYSTEM, REGEN_RECOMMEND_SYSTEM],
   ],
   ['locales/contracts', 'CONTRACTS', [CONTRACTS, TERMINAL_APP_LINES, ITERM_LINES]],
   // The texts kept outside the tables (WE-S7). The walk skips functions, so each adapter's roleStart is walked as
