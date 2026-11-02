@@ -5542,7 +5542,8 @@ describe('table seeds (D-249, D-280)', () => {
     expect(shownBlock(run, 'skills')).toEqual([
       OWN_SKILLS_HEADING,
       '  security-review: Review the changes for security.',
-      '    recommended: security',
+      '    recommended: none',
+      NO_SKILL_RECOMMENDATION,
     ])
     expect(cardSkills(run, 'security')).toContain('security-review')
     expect(cardSkills(run, 'be')).not.toContain('security-review')

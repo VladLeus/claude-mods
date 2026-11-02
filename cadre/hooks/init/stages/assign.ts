@@ -228,8 +228,8 @@ function afterItem(
 /**
  * The model's recommendation for the own skills (G-02-1b): the side pane shows every own skill with what it does, its
  * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out, with that
- * block as its own context (ownSkillsContext, D-236). A skill the model's map has no entry for gets the roles the skill
- * table seeds for it as its recommendation (D-280).
+ * block as its own context (ownSkillsContext, D-236). In the hand-out items, a skill the model's map has no entry for
+ * gets the roles the skill table seeds for it as its recommendation (D-280); the side-pane lines show the model's map.
  */
 function afterSkillsModel(
   state: InitState,
@@ -244,7 +244,7 @@ function afterSkillsModel(
     const seed = plan.skills.seeds.get(skill.name)
     if (!seeded.has(ownSkillId(index)) && seed !== undefined) seeded.set(ownSkillId(index), seed)
   })
-  const lines = ownSkillLines(skills, plan.counts, seeded)
+  const lines = ownSkillLines(skills, plan.counts, recommended)
   const shown = withOutputs(state, [{ kind: 'show', block: { key: 'skills', lines } }])
   const items = ownSkillItems(skills, plan.counts, seeded)
   const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines) }
