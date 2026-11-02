@@ -32,6 +32,7 @@ import type { Gathered } from '../scan/gather'
 import type { HistoryScan } from '../scan/history'
 import type { InstructionSources } from '../scan/instructions/read'
 import type { McpPromptServer } from '../suggest/mcp'
+import type { SkillPromptGroup, SkillsRecommendation } from '../suggest/skills'
 import type { Proposed } from '../suggest/propose'
 import type { StepResult } from '../ui/ask'
 import type { Surface } from '../ui/surface'
@@ -172,7 +173,8 @@ export type Applied = {
  * One model call a stage needs (D-230), named after what it asks the model, with plain data only; init/run runs it
  * through checkedCompletion as today's step did: the roles of a structure the person described (proposeFromText), the
  * roles recommended for each MCP server from its name, source, tool names and table seed (D-248), the roles
- * recommended for each of the user's own skills with their use counts, the topics the parts of an instruction read
+ * recommended for each of the user's own skills, each plugin group and each skill in a group, with the confirmed MCP
+ * servers of each role, the use counts and the table seeds (D-248, D-251), the topics the parts of an instruction read
  * group into, and the roles recommended for each topic and memory.
  */
 export type ModelCall =
@@ -181,8 +183,11 @@ export type ModelCall =
   | {
       readonly id: 'skills'
       readonly roles: readonly RoleSpec[]
-      readonly skills: readonly SkillRef[]
+      readonly mcpByRole: ReadonlyMap<string, readonly string[]>
+      readonly own: readonly SkillRef[]
+      readonly groups: readonly SkillPromptGroup[]
       readonly counts: ReadonlyMap<string, number>
+      readonly seeds: ReadonlyMap<string, readonly string[]>
     }
   | { readonly id: 'topics'; readonly scan: InstructionScan }
   | {
@@ -194,12 +199,13 @@ export type ModelCall =
 
 /**
  * What a ModelCall gave, under the same id, unchanged: the recommendations are keyed by server name for the MCP
- * servers, S1, S2, ... by place for the skills, and by topic and memory id for the parts.
+ * servers, by own skill name, plugin and skill name for the skills (SkillsRecommendation), and by topic and memory id
+ * for the parts.
  */
 export type ModelResult =
   | { readonly id: 'describe-roles'; readonly result: Proposed }
   | { readonly id: 'mcp'; readonly result: ReadonlyMap<string, readonly string[]> }
-  | { readonly id: 'skills'; readonly result: ReadonlyMap<string, readonly string[]> }
+  | { readonly id: 'skills'; readonly result: SkillsRecommendation }
   | { readonly id: 'topics'; readonly result: readonly InstructionTopic[] }
   | { readonly id: 'parts'; readonly result: ReadonlyMap<string, readonly string[]> }
 
@@ -224,14 +230,16 @@ export type Answer =
 
 /**
  * The model results a review go-back reuses instead of calling the model again (D-235, ASKED #14, D-253): the roles
- * recommended for each MCP server by name, null until the mcp call answered; the roles recommended for the own skills,
- * null until that call answered; and the topics of the instruction read with the roles
+ * recommended for each MCP server by name, null until the mcp call answered; what the skills call recommended (own
+ * skills, plugin groups and their skills) with the MCP assignments per role its call was built from, both null until
+ * it answered; and the topics of the instruction read with the roles
  * recommended for them and the memories, both kept when the parts call answered (ASKED #137), null until then. The
  * roles stage drops them when a go-back changes the team: a role's id, title or purpose (ASKED #137).
  */
 export type Kept = {
   readonly mcp: ReadonlyMap<string, readonly string[]> | null
-  readonly ownSkills: ReadonlyMap<string, readonly string[]> | null
+  readonly skills: SkillsRecommendation | null
+  readonly mcpAssigned: ReadonlyMap<string, readonly string[]> | null
   readonly topics: readonly InstructionTopic[] | null
   readonly parts: ReadonlyMap<string, readonly string[]> | null
 }
@@ -279,11 +287,12 @@ export type EachCursor = {
  * - `mcp-handout`, `mcp-whole`: the MCP servers' hand-out at `cursor` (D-250), or the question for all the servers at
  *   once, asked `tries` times, with the roles recommended for each server by name; `done` holds the names given
  *   before them.
- * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
- *   far, with the names the questions before it gave (`done`).
- * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
- *   recommends roles for them, their hand-out at `cursor`, or the question for the whole group, asked `tries` times,
- *   with the roles recommended for each skill by name.
+ * - `assign`: the question on which roles get the plugin skill group at `index` is out, asked `tries` times so far,
+ *   with the names the questions before it gave (`done`) and what the skills call recommended (`skills`, D-248).
+ * - `skills-model`: the model call that recommends roles for the own skills and the plugin groups is out, after the
+ *   MCP hand-out, with the server answers (`done`, D-248).
+ * - `skills-handout`, `skills-whole`: the own skills after the group questions: their hand-out at `cursor`, or the
+ *   question for the whole group, asked `tries` times, with the roles recommended for each skill by name.
  * - `content`: the content consent is out, asked `tries` times so far, with what init found of the repo by name.
  * - `instruction-read`: the read of the instruction files is out.
  * - `topics`, `parts`: the model calls on `scan` are out: the grouping into topics, then the recommendation.
@@ -344,6 +353,7 @@ export type StageSub =
       readonly tries: number
       readonly index: number
       readonly done: readonly NameAssignment[]
+      readonly skills: SkillsRecommendation
     }
   | { readonly kind: 'skills-model'; readonly done: readonly NameAssignment[] }
   | { readonly kind: 'skills-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }

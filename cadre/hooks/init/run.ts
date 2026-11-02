@@ -62,6 +62,7 @@ import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from '../sugge
 import { MCP_SYSTEM, mcpPrompt, parseMcpRecommendation } from '../suggest/mcp'
 import { proposeFromText } from '../suggest/propose'
 import { parseSkillRecommendation, SKILLS_SYSTEM, skillsPrompt } from '../suggest/skills'
+import type { SkillsRecommendation } from '../suggest/skills'
 import { fallbackTopics, parseTopics, TOPICS_SYSTEM, topicsPrompt } from '../suggest/topics'
 import { attendedByConfig, compileAll, resolvedFramework } from '../team'
 import {
@@ -78,7 +79,6 @@ import {
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
 import type { Surface } from '../ui/surface'
-import { ownSkillIds } from './answers'
 import type { PlanResult, Reviewed } from './draft'
 import { CONFLICT_CONTEXT, CONFLICT_DISMISSED_REASON, HUNK_TIMEOUT_MS } from './initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from './initplan'
@@ -465,29 +465,43 @@ async function recommendedServerRoles(
 }
 
 /**
- * The roles recommended for each of the user's own skills (G-02-1b): one model call reads each role's work and each
- * skill's name, purpose and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take
- * is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no skill is
- * recommended to any role: the map is empty. The model has no tools (D-83), and only its checked skill and role ids
- * are kept.
+ * The roles recommended for each of the user's own skills, each plugin group and each skill in a group (G-02-1b,
+ * D-248, D-251): one model call reads each role's work and its confirmed MCP servers, and each skill's name, purpose
+ * and own use count (skillsPrompt, SKILLS_SYSTEM). A reply parseSkillRecommendation cannot take is sent back with its
+ * exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then each skill in a group gets the roles
+ * the skill table seeds for it (D-280) and no own skill or group is recommended. The model has no tools (D-83), and
+ * only its checked ids and role ids are kept.
  */
 async function recommendedSkillRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'skills' }>,
   progressText: string,
-): Promise<ReadonlyMap<string, readonly string[]>> {
-  const { roles, skills, counts } = call
-  const skillIds = ownSkillIds(skills)
+): Promise<SkillsRecommendation> {
+  const { roles, mcpByRole, own, groups, counts, seeds } = call
   const roleIds = roles.map(role => role.id)
-  const parse = (reply: string): Checked<ReadonlyMap<string, readonly string[]>> => {
-    const parsed = parseSkillRecommendation(reply, skillIds, roleIds)
+  const parse = (reply: string): Checked<SkillsRecommendation> => {
+    const parsed = parseSkillRecommendation(reply, own, groups, roleIds)
     if (parsed.kind === 'invalid') return parsed
 
     return { kind: 'ok', value: parsed.recommended }
   }
-  const prompt = (errors: readonly string[]): string => skillsPrompt(roles, skills, counts, errors)
+  const prompt = (errors: readonly string[]): string => skillsPrompt(roles, mcpByRole, own, groups, counts, errors)
+  const seeded = (): SkillsRecommendation => ({
+    own: new Map(),
+    groups: new Map(),
+    groupSkills: new Map(
+      groups.map((group): [string, ReadonlyMap<string, readonly string[]>] => [
+        group.plugin,
+        new Map(group.skills.flatMap(skill => {
+          const seed = seeds.get(skill.name)
 
-  return checkedCompletion(io, progressText, SKILLS_SYSTEM, prompt, parse, () => new Map())
+          return seed === undefined ? [] : [[skill.name, seed]]
+        })),
+      ]),
+    ),
+  })
+
+  return checkedCompletion(io, progressText, SKILLS_SYSTEM, prompt, parse, seeded)
 }
 
 /**
