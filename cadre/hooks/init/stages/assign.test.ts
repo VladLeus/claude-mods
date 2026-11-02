@@ -28,6 +28,9 @@ import { ASSIGNMENT_DISMISSED_REASON, mcpContextLine, skillsContextLine } from '
 /** The buttons of every question on which roles get an item. */
 const ROLE_LIST_OPTIONS = ['None', 'All roles']
 
+/** The buttons of a plugin group question with no recommendation for the group (D-251). */
+const GROUP_OPTIONS = ['Go one by one', ...ROLE_LIST_OPTIONS]
+
 /** The assign stage run over `io` for `roles`, the setup scan `setup` and the history `hints`, as a step result. */
 function assignedBy(
   io: InitIo,
@@ -80,7 +83,11 @@ describe('assignmentStep', () => {
   }
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
-    lines: ['codex:rescue: No description. Recommended: none.', 'codex:setup: No description. Recommended: none.'],
+    lines: [
+      'Recommended: none',
+      'codex:rescue: No description. Recommended: none.',
+      'codex:setup: No description. Recommended: none.',
+    ],
     kind: 'skill-group',
   }
 
@@ -94,7 +101,7 @@ describe('assignmentStep', () => {
       { options: ['Accept recommendations', 'Go one by one', 'Whole group'], header: 'MCP' },
       { options: ['Yes', 'No'], header: 'MCP 1/2', context: JIRA_CONTEXT, acceptsTyped: true },
       { options: ['Yes', 'No'], header: 'MCP 2/2', context: SENTRY_CONTEXT, acceptsTyped: true },
-      { options: ROLE_LIST_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
+      { options: GROUP_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
     ])
     expect(assigned.map(role => [role.id, role.mcp])).toEqual([
       ['pm', ['jira']],
@@ -303,10 +310,10 @@ describe('the assign stage (D-230)', () => {
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), SKILLS_NONE)
-    const codexLines = ['codex:rescue: No description. Recommended: none.']
+    const codexLines = ['Recommended: none', 'codex:rescue: No description. Recommended: none.']
     const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group' }
     const typed = { acceptsTyped: true }
-    expect(group.openQuestion?.spec).toEqual({ options: ROLE_LIST_OPTIONS, header: 'Skills', context: codex, ...typed })
+    expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
   })
 
   test('an MCP server question names its source and the tools the session lists for it (D-211)', () => {
@@ -332,7 +339,10 @@ describe('the assign stage (D-230)', () => {
     const state = nextStage(assignStage.enter(stateAt('assign', { roles, gathered: described, hints })), SKILLS_NONE)
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'Skills: codex',
-      lines: ['codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'],
+      lines: [
+        'Recommended: none',
+        'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
+      ],
       kind: 'skill-group',
     })
   })
@@ -379,9 +389,53 @@ describe('table seeds (D-280)', () => {
     const run = memIo(memWorld({}), ['None'])
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
     expect(run.specs[0]?.context?.lines).toEqual([
+      'Recommended: none',
       'frontend-design: No description. Recommended: fe.',
       'lint: No description. Recommended: none.',
     ])
     expect(assigned.flatMap(role => role.skills)).toEqual([])
+  })
+})
+
+describe('plugin skill groups (D-251)', () => {
+  const roles = proposeRoles(FULL_SCAN).roles
+  /** Two plugin groups in label order: alpha (G1) with one skill, codex (G2) with two. */
+  const setup = emptySetupScan({
+    skills: [skillRef('alpha:x', 'alpha'), skillRef('codex:rescue', 'codex'), skillRef('codex:setup', 'codex')],
+  })
+  /** The skills call's reply: alpha:x to QA and its group to none; codex to BE and QA, codex:rescue to BE. */
+  const REPLY = '{"skills":{"G1S1":["qa"],"G2S1":["be"],"G2S2":[]},"groups":{"G1":[],"G2":["be","qa"]}}'
+
+  test('Accept recommendation gives a group its roles; one by one asks each skill, then the next group', async () => {
+    const run = memIo(memWorld({ replies: [REPLY] }), ['Go one by one', 'Yes', 'Accept recommendation'])
+    const assigned = valueOf(await assignedBy(run.io, roles, setup))
+    expect(firstLines(run.asked)).toEqual([
+      'Which roles get alpha skills (1)? (e.g. BE, QA, or none)',
+      'Which roles get the skill alpha:x?',
+      'Which roles get codex skills (2)? (e.g. BE, QA, or none)',
+    ])
+    expect(run.specs.map(spec => spec.options)).toEqual([
+      ['Go one by one', 'None', 'All roles'],
+      ['Yes', 'No'],
+      ['Accept recommendation', 'Go one by one', 'None', 'All roles'],
+    ])
+    expect(run.specs[1]?.header).toBe('Skill 1/1')
+    expect(run.asked[1]?.split('\n')[1]).toBe('No description. Recommended: qa.')
+    expect(run.specs[2]?.context?.lines).toEqual([
+      'Recommended: be, qa',
+      'codex:rescue: No description. Recommended: be.',
+      'codex:setup: No description. Recommended: none.',
+    ])
+    expect(roleIn(assigned, 'qa').skills).toEqual(['alpha:x', 'codex:rescue', 'codex:setup'])
+    expect(roleIn(assigned, 'be').skills).toEqual(['codex:rescue', 'codex:setup'])
+    expect(roleIn(assigned, 'pm').skills).toEqual([])
+  })
+
+  test('a group with no recommendation offers no Accept, so typing it is asked again with why on top', async () => {
+    const run = memIo(memWorld({ replies: [REPLY] }), ['Accept recommendation', 'None', 'None'])
+    valueOf(await assignedBy(run.io, roles, setup))
+    const refusal = `'Accept recommendation' isn't one of: "Go one by one", "None", "All roles", or role ids from: ${
+      roles.map(role => role.id).join(', ')}.`
+    expect(run.asked[1]?.split('\n')[0]).toBe(refusal)
   })
 })

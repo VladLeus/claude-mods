@@ -111,7 +111,7 @@ describe('own skills hand-out (G-02-1b)', () => {
   /** The codex group question's own context: its one skill, never used and recommended to no role. */
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
-    lines: ['codex:rescue: No description. Recommended: none.'],
+    lines: ['Recommended: none', 'codex:rescue: No description. Recommended: none.'],
     kind: 'skill-group',
   }
 
@@ -152,7 +152,7 @@ describe('own skills hand-out (G-02-1b)', () => {
       withContext(ownEntry(3), ENTRY_CONTEXT),
     ])
     expect(run.specs).toEqual([
-      { options: ['None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
+      { options: ['Go one by one', 'None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
       { options: OWN_ENTRY_OPTIONS, header: 'Skills', context: OWN_CONTEXT },
     ])
   })

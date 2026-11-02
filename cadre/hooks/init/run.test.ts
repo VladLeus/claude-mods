@@ -2942,7 +2942,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       [
         'skills',
         () => driven(assignAt({ skills: [skillRef('x:y', 'x')] }), ['zzz'], [recommendedNone]).asked,
-        roleList,
+        `"Go one by one", ${roleList}`,
       ],
       [
         'own skills',

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { AskContext, AskSpec, RoleSpec } from '../../types'
 import { templateRole } from '../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../ui/ask'
-import { handoutAnswer, handoutEnter } from './handout'
+import { handoutAnswer, handoutEnter, handoutItemsEnter } from './handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from './handout'
 
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
@@ -263,5 +263,34 @@ describe('Accept only where something is recommended (D-279)', () => {
   test('with one recommended item the entry offers all three answers in their order', () => {
     const { specs } = handedOut(ITEMS, [])
     expect(specs[0]?.options).toEqual(['Accept recommendations', 'Go part by part', 'Whole files'])
+  })
+})
+
+describe('handoutItemsEnter (D-251)', () => {
+  test('asks the first item with no entry question, then each item; the outcome gives each its roles', () => {
+    let next = handoutItemsEnter(ITEMS, ROLES, DISMISSED)
+    const asked: string[] = []
+    for (const answer of ['Yes', 'tl']) {
+      if (next.kind !== 'ask') break
+      asked.push(next.question)
+      next = handoutAnswer(next.cursor, answer)
+    }
+    expect(asked).toEqual([
+      withContext(ITEMS[0]?.question ?? '', ITEMS[0]?.contextLine ?? ''),
+      withContext(ITEMS[1]?.question ?? '', ITEMS[1]?.contextLine ?? ''),
+    ])
+    const given = new Map([
+      ['T1', ['security']],
+      ['T2', ['tl']],
+    ])
+    expect(next).toEqual({ kind: 'done', outcome: { kind: 'given', given } })
+  })
+
+  test('with no item it is done at once and gives none; a dismissal cancels with its reason', () => {
+    const empty = { kind: 'done', outcome: { kind: 'given', given: new Map() } }
+    expect(handoutItemsEnter([], ROLES, DISMISSED)).toEqual(empty)
+    const first = handoutItemsEnter(ITEMS, ROLES, DISMISSED)
+    const end = first.kind === 'ask' ? handoutAnswer(first.cursor, null) : first
+    expect(end).toEqual({ kind: 'cancelled', reason: DISMISSED })
   })
 })
