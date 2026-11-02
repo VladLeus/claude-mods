@@ -435,7 +435,8 @@ export const EN = Object.freeze({
   'ui.assign.skillLineText2': '{name}: {purpose}{used} Recommended: {roleIds}.',
   'ui.assign.skillGroupContextTitle': 'Skills: {label}',
   'ui.assign.mcpGroupContextTitle': 'MCP servers',
-  'ui.assign.mcpGroupLine': '{name}: {source}, {count} tools. Recommended: {roleIds}.',
+  'ui.assign.mcpGroupLine.one': '{name}: {source}, {count} tool. Recommended: {roleIds}.',
+  'ui.assign.mcpGroupLine.other': '{name}: {source}, {count} tools. Recommended: {roleIds}.',
   'ui.assign.skillContext': 'Skill {position} of {count}',
   'ui.assign.ownSkillsContext': 'Your own skills',
 

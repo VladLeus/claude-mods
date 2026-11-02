@@ -10,7 +10,7 @@
 import type { AskContext, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
-import { SCREEN_LIST_WORDS, t } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { UNCUT } from '../pane'
 
 /** The start of a claude.ai connector's MCP server name in a terminal session (R2), as the MCP scan names it. */
@@ -134,12 +134,12 @@ export type McpLine = {
 
 /**
  * The context of the question for all the MCP servers at once (D-250), as skillGroupContext is for a skill group: the
- * title MCP servers, then one line per server with its source, how many tools the session lists for it and the roles
- * recommended for it, or none; the name cut to 60 code points and every value cleaned.
+ * title MCP servers, then one line per server with its source, how many tools the session lists for it (counted, `1
+ * tool`) and the roles recommended for it, or none; the name cut to 60 code points and every value cleaned.
  */
 export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
   const lineText = (line: McpLine): string =>
-    t('ui.assign.mcpGroupLine', {
+    tn('ui.assign.mcpGroupLine', line.tools, {
       name: shown(line.name, MAX_CONTEXT_NAME_CHARS),
       source: clean(line.source),
       count: line.tools,

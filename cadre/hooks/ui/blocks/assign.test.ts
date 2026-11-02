@@ -152,10 +152,15 @@ describe('mcpGroupContext (D-250)', () => {
     const lines = [
       { name: 'github', source: 'session', tools: 2, recommended: ['tl'] },
       { name: 'sentry', source: '.mcp.json', tools: 0, recommended: [] },
+      { name: 'jira', source: 'claude.ai', tools: 1, recommended: [] },
     ]
     expect(mcpGroupContext(lines)).toEqual({
       title: 'MCP servers',
-      lines: ['github: session, 2 tools. Recommended: tl.', 'sentry: .mcp.json, 0 tools. Recommended: none.'],
+      lines: [
+        'github: session, 2 tools. Recommended: tl.',
+        'sentry: .mcp.json, 0 tools. Recommended: none.',
+        'jira: claude.ai, 1 tool. Recommended: none.',
+      ],
       kind: 'mcp-server',
     })
   })

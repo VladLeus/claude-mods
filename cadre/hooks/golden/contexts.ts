@@ -596,7 +596,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "MCP servers",
         "lines": [
-          "sentry: session, 1 tools. Recommended: none."
+          "sentry: session, 1 tool. Recommended: none."
         ],
         "kind": "mcp-server"
       },
