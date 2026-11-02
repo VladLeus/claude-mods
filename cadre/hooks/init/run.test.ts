@@ -56,7 +56,7 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { infraPluginWorld } from '../golden/worlds'
+import { infraPluginWorld, tableMatchWorld } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { t } from '../locales/t'
@@ -5510,5 +5510,28 @@ describe('infra plugins by name (D-252)', () => {
     expect(run.prompts.filter(prompt => prompt.includes('away'))).toEqual([])
     expect(shownBlock(run, 'review')).not.toEqual([])
     expect(shownBlock(run, 'review').filter(line => line.includes('away'))).toEqual([])
+  })
+})
+
+/** The MCP row of a role's scope card in the last review block a run showed (D-133); '' with no such card. */
+function cardMcp(run: MemRun, id: string): string {
+  const review = shownBlock(run, 'review')
+  const at = review.findIndex(line => line.startsWith('Scope card: ') && line.endsWith(`(${id})`))
+
+  return at === -1 ? '' : (review[at + 3] ?? '')
+}
+
+describe('table seeds (D-249, D-280)', () => {
+  const GITHUB_QUESTION = 'Which roles get the github MCP server? (e.g. BE, QA, or none)'
+
+  test('a dry run asks github with the table seed as its recommendation; only the answer gives it', async () => {
+    const declined = memIo(tableMatchWorld(), INIT_ANSWERS)
+    await runInit(declined.io, { dryRun: true })
+    const at = firstLines(declined.asked).indexOf(GITHUB_QUESTION)
+    expect(declined.specs[at]?.context?.lines.at(-1)).toBe('Recommended: tl')
+    expect(cardMcp(declined, 'tl')).toBe('  MCP servers: none')
+    const given = memIo(tableMatchWorld(), { ...INIT_ANSWERS, [GITHUB_QUESTION]: 'tl' })
+    await runInit(given.io, { dryRun: true })
+    expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
   })
 })

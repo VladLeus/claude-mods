@@ -28,11 +28,9 @@ function server(name: string): McpRef {
   return { name, source: 'session' }
 }
 
-/** The ids of the roles a name was assigned to, or null when the classifier did not assign it. */
-function assignedTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
-  const found = classifyMcp([server(name)], roles).assigned.find(row => row.name === name)
-
-  return found === undefined ? null : found.roleIds
+/** The ids of the roles the table seeds for a server's recommendation, or null when it seeds none (D-249). */
+function seededTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
+  return classifyMcp([server(name)], roles).seeds.get(name) ?? null
 }
 
 /** A skill the session lists; `plugin` is null for a user or project skill. */
@@ -48,7 +46,7 @@ function skillAssignedTo(name: string, roles: readonly RoleSpec[]): readonly str
 }
 
 describe('MCP assignment', () => {
-  test('known servers go to the roles the table names, sorted, and only an unknown one is left to ask about', () => {
+  test('every server but infra is asked, sorted; the table seeds the roles of the known ones (D-249)', () => {
     const scanned: readonly McpRef[] = [
       { name: 'jira', source: 'session' },
       { name: 'playwright', source: 'project' },
@@ -58,18 +56,18 @@ describe('MCP assignment', () => {
     ]
 
     expect(classifyMcp(scanned, TEAM)).toEqual({
-      assigned: [
-        { name: 'github', roleIds: ['tl'] },
-        { name: 'jira', roleIds: ['pm', 'tl'] },
-        { name: 'playwright', roleIds: ['fe', 'qa'] },
-      ],
-      unknown: ['sentry'],
+      names: ['github', 'jira', 'playwright', 'sentry'],
+      seeds: new Map([
+        ['github', ['tl']],
+        ['jira', ['pm', 'tl']],
+        ['playwright', ['fe', 'qa']],
+      ]),
     })
   })
 
-  test('the autopilot server is never assigned and never asked about, with or without roles', () => {
-    expect(classifyMcp([server('autopilot')], TEAM)).toEqual({ assigned: [], unknown: [] })
-    expect(classifyMcp([server('autopilot')], [])).toEqual({ assigned: [], unknown: [] })
+  test('the autopilot server is never seeded and never asked about, with or without roles', () => {
+    expect(classifyMcp([server('autopilot')], TEAM)).toEqual({ names: [], seeds: new Map() })
+    expect(classifyMcp([server('autopilot')], [])).toEqual({ names: [], seeds: new Map() })
   })
 
   test('INFRA_MCP_SERVERS names the autopilot server and is frozen', () => {
@@ -77,18 +75,18 @@ describe('MCP assignment', () => {
     expect(Object.isFrozen(INFRA_MCP_SERVERS)).toBe(true)
   })
 
-  test('a row whose roles are all absent leaves the server unknown', () => {
-    expect(classifyMcp([server('playwright')], [PM, BE])).toEqual({ assigned: [], unknown: ['playwright'] })
+  test('a row whose roles are all absent seeds nothing; the server is still asked', () => {
+    expect(classifyMcp([server('playwright')], [PM, BE])).toEqual({ names: ['playwright'], seeds: new Map() })
   })
 
-  test('only the roles of a row that are present get the server', () => {
-    expect(assignedTo('jira', [PM, BE])).toEqual(['pm'])
+  test('only the roles of a row that are present are seeded', () => {
+    expect(seededTo('jira', [PM, BE])).toEqual(['pm'])
   })
 
-  test('a custom role is present through its basedOn, and any role through its own id', () => {
+  test('a custom role is seeded through its basedOn, and any role through its own id', () => {
     const roles = [PM, role('web', 'fe'), role('tester', 'qa'), role('qa', null)]
 
-    expect(assignedTo('playwright', roles)).toEqual(['qa', 'tester', 'web'])
+    expect(seededTo('playwright', roles)).toEqual(['qa', 'tester', 'web'])
   })
 
   test('the table matches whole words of a name in any case', () => {
@@ -110,15 +108,15 @@ describe('MCP assignment', () => {
       ['sentry', null],
     ]
 
-    for (const [name, expected] of table) expect([name, assignedTo(name, TEAM)]).toEqual([name, expected])
+    for (const [name, expected] of table) expect([name, seededTo(name, TEAM)]).toEqual([name, expected])
   })
 
   test('the first matching row wins when a name fits two rows', () => {
-    expect(assignedTo('playwright-github', TEAM)).toEqual(['fe', 'qa'])
-    expect(assignedTo('github-jira', TEAM)).toEqual(['pm', 'tl'])
+    expect(seededTo('playwright-github', TEAM)).toEqual(['fe', 'qa'])
+    expect(seededTo('github-jira', TEAM)).toEqual(['pm', 'tl'])
   })
 
-  test('a server seen twice is assigned once, and an unknown one is asked once', () => {
+  test('a server seen twice is seeded once, and every server is asked once', () => {
     const scanned: readonly McpRef[] = [
       { name: 'jira', source: 'project' },
       { name: 'jira', source: 'session' },
@@ -126,27 +124,26 @@ describe('MCP assignment', () => {
       { name: 'sentry', source: 'user-config' },
     ]
 
-    expect(classifyMcp(scanned, TEAM)).toEqual({
-      assigned: [{ name: 'jira', roleIds: ['pm', 'tl'] }],
-      unknown: ['sentry'],
-    })
+    expect(classifyMcp(scanned, TEAM)).toEqual({ names: ['jira', 'sentry'], seeds: new Map([['jira', ['pm', 'tl']]]) })
   })
 
   test('names and role ids come out sorted whatever the order of the scan and of the roles', () => {
     const scanned = ['zeta', 'playwright', 'beta', 'jira', 'Alpha', 'github'].map(server)
     const result = classifyMcp(scanned, [TL, QA, PM, FE])
 
-    expect(result.unknown).toEqual(['Alpha', 'beta', 'zeta'])
-    expect(result.assigned).toEqual([
-      { name: 'github', roleIds: ['tl'] },
-      { name: 'jira', roleIds: ['pm', 'tl'] },
-      { name: 'playwright', roleIds: ['fe', 'qa'] },
-    ])
+    expect(result.names).toEqual(['Alpha', 'beta', 'github', 'jira', 'playwright', 'zeta'])
+    expect(result.seeds).toEqual(
+      new Map([
+        ['github', ['tl']],
+        ['jira', ['pm', 'tl']],
+        ['playwright', ['fe', 'qa']],
+      ]),
+    )
   })
 
-  test('with no servers there is nothing to assign or ask, and with no roles every server is unknown', () => {
-    expect(classifyMcp([], TEAM)).toEqual({ assigned: [], unknown: [] })
-    expect(classifyMcp([server('jira'), server('sentry')], [])).toEqual({ assigned: [], unknown: ['jira', 'sentry'] })
+  test('with no servers there is nothing to ask, and with no roles every server is asked with no seed', () => {
+    expect(classifyMcp([], TEAM)).toEqual({ names: [], seeds: new Map() })
+    expect(classifyMcp([server('jira'), server('sentry')], [])).toEqual({ names: ['jira', 'sentry'], seeds: new Map() })
   })
 
   test('MCP_ROLE_ROWS and every row, with its roles, are frozen', () => {
@@ -161,16 +158,22 @@ describe('MCP assignment', () => {
     expect(new Set(MCP_ROLE_ROWS.map(row => row.label)).size).toBe(MCP_ROLE_ROWS.length)
   })
 
-  test('the whole path: the table assigns what it knows, the answer to the question assigns the rest', () => {
+  test('the whole path: every server is asked, and only the answers give servers to roles (D-249)', () => {
     const scanned = ['jira', 'playwright', 'github', 'sentry', 'autopilot'].map(server)
     const classified = classifyMcp(scanned, TEAM)
-    expect(classified.unknown.map(mcpQuestion)).toEqual([
+    expect(classified.names.map(mcpQuestion)).toEqual([
+      'Which roles get the github MCP server? (e.g. BE, QA, or none)',
+      'Which roles get the jira MCP server? (e.g. BE, QA, or none)',
+      'Which roles get the playwright MCP server? (e.g. BE, QA, or none)',
       'Which roles get the sentry MCP server? (e.g. BE, QA, or none)',
     ])
 
     const answer = parseRoleList('BE, qa', TEAM)
     expect(answer).toEqual(['be', 'qa'])
-    const assignments = [...classified.assigned, { name: 'sentry', roleIds: answer ?? [] }]
+    const assignments = classified.names.map(name => ({
+      name,
+      roleIds: name === 'sentry' ? (answer ?? []) : (classified.seeds.get(name) ?? []),
+    }))
     const result = assignToRoles(TEAM, assignments, 'mcp')
 
     expect(result.map(row => [row.id, row.mcp])).toEqual([

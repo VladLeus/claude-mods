@@ -42,17 +42,24 @@ function assignedBy(
 describe('assignmentStep', () => {
   /** PM, Team Lead, BE, FE, QA and Security: a repo with a frontend and tests keeps every template role. */
   const roles = proposeRoles(FULL_SCAN).roles
-  /** jira, which the table gives to PM and TL, the unknown sentry, security-review and two codex skills. */
+  /** jira, which the table seeds for PM and TL, the unknown sentry, security-review and two codex skills. */
   const setup = emptySetupScan({
     mcp: [session('jira'), session('sentry')],
     skills: [skillRef('security-review'), skillRef('codex:rescue', 'codex'), skillRef('codex:setup', 'codex')],
   })
+  const JIRA_QUESTION = 'Which roles get the jira MCP server? (e.g. BE, QA, or none)'
   const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
   const CODEX_QUESTION = 'Which roles get codex skills (2)? (e.g. BE, QA, or none)'
-  /** The two questions as asked: the team's role ids and what giving the item means under each (D-136). */
+  /** The three questions as asked: the team's role ids and what giving the item means under each (D-136). */
+  const JIRA_ASKED = withContext(JIRA_QUESTION, mcpContextLine(roles))
   const SENTRY_ASKED = withContext(SENTRY_QUESTION, mcpContextLine(roles))
   const CODEX_ASKED = withContext(CODEX_QUESTION, skillsContextLine(roles))
-  /** The own context of each question (D-211): a session server with no tool listed, and two undescribed skills. */
+  /** The own context of each question (D-211): session servers with no tool listed, and two undescribed skills. */
+  const JIRA_CONTEXT = {
+    title: 'MCP: jira',
+    lines: ['Source: session', 'Tools: none listed', 'Recommended: pm, tl'],
+    kind: 'mcp-server',
+  }
   const SENTRY_CONTEXT = {
     title: 'MCP: sentry',
     lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
@@ -64,11 +71,12 @@ describe('assignmentStep', () => {
     kind: 'skill-group',
   }
 
-  test('the tables decide the known names; each unknown server and skill group is asked once', async () => {
-    const run = memIo(memWorld({}), ['be', 'All roles'])
+  test('every server is asked with its table seed; each unknown skill group is asked once (D-249)', async () => {
+    const run = memIo(memWorld({}), ['pm, tl', 'be', 'All roles'])
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
-    expect(run.asked).toEqual([SENTRY_ASKED, CODEX_ASKED])
+    expect(run.asked).toEqual([JIRA_ASKED, SENTRY_ASKED, CODEX_ASKED])
     expect(run.specs).toEqual([
+      { options: ROLE_LIST_OPTIONS, header: 'MCP', context: JIRA_CONTEXT, acceptsTyped: true },
       { options: ROLE_LIST_OPTIONS, header: 'MCP', context: SENTRY_CONTEXT, acceptsTyped: true },
       { options: ROLE_LIST_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
     ])
@@ -88,20 +96,21 @@ describe('assignmentStep', () => {
   })
 
   test('a typed list of ids or titles gives the item to those roles, and None to no role', async () => {
-    const run = memIo(memWorld({}), ['Team Lead, qa', 'None'])
+    const run = memIo(memWorld({}), ['pm', 'Team Lead, qa', 'None'])
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
-    expect(roleIn(assigned, 'tl').mcp).toEqual(['jira', 'sentry'])
+    expect(roleIn(assigned, 'pm').mcp).toEqual(['jira'])
+    expect(roleIn(assigned, 'tl').mcp).toEqual(['sentry'])
     expect(roleIn(assigned, 'qa').mcp).toEqual(['sentry'])
     expect(roleIn(assigned, 'pm').skills).toEqual([])
     expect(roleIn(assigned, 'security').skills).toEqual(['security-review'])
   })
 
   test('an answer that names a role the team does not have is asked again with why on top', async () => {
-    const run = memIo(memWorld({}), ['cto', 'be', 'None'])
+    const run = memIo(memWorld({}), ['None', 'cto', 'be', 'None'])
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
     expect(roleIn(assigned, 'be').mcp).toEqual(['sentry'])
     const refusal = `'cto' isn't one of: "None", "All roles", or role ids from: pm, tl, be, fe, qa, security.`
-    expect(run.asked).toEqual([SENTRY_ASKED, `${refusal}\n${SENTRY_ASKED}`, CODEX_ASKED])
+    expect(run.asked).toEqual([JIRA_ASKED, SENTRY_ASKED, `${refusal}\n${SENTRY_ASKED}`, CODEX_ASKED])
   })
 
   test('three unreadable answers or a dismissal cancel with their reason, and no answer is kept (A1)', async () => {
@@ -120,7 +129,7 @@ describe('assignmentStep', () => {
     )
   })
 
-  test('infra servers and handoff and framework skills are never asked about; nothing found asks nothing', async () => {
+  test('infra servers and handoff and framework skills are never asked; a table server is (D-249)', async () => {
     const quiet = emptySetupScan({
       mcp: [session('autopilot'), session('github')],
       skills: [
@@ -129,9 +138,9 @@ describe('assignmentStep', () => {
         skillRef('superpowers:brainstorming', 'superpowers'),
       ],
     })
-    const run = memIo(memWorld({}), [])
+    const run = memIo(memWorld({}), ['tl'])
     const assigned = valueOf(await assignedBy(run.io, roles, quiet))
-    expect(run.asked).toEqual([])
+    expect(firstLines(run.asked)).toEqual(['Which roles get the github MCP server? (e.g. BE, QA, or none)'])
     expect(roleIn(assigned, 'tl').mcp).toEqual(['github'])
     expect(assigned.flatMap(role => role.skills)).toEqual([])
     const bare = await assignedBy(memIo(memWorld({}), []).io, roles, emptySetupScan())
@@ -140,17 +149,18 @@ describe('assignmentStep', () => {
 
   test('the roles it is given are never changed', async () => {
     const before = JSON.stringify(roles)
-    await assignedBy(memIo(memWorld({}), ['All roles', 'All roles']).io, roles, setup)
+    await assignedBy(memIo(memWorld({}), ['All roles', 'All roles', 'All roles']).io, roles, setup)
     expect(JSON.stringify(roles)).toBe(before)
   })
 
-  test('a second run with None takes sentry and the codex skills away, and the table names stay (A3)', async () => {
-    const first = valueOf(await assignedBy(memIo(memWorld({}), ['All roles', 'All roles']).io, roles, setup))
+  test('a second run with None takes every server and the codex skills away; the table skill stays (A3)', async () => {
+    const all = ['All roles', 'All roles', 'All roles']
+    const first = valueOf(await assignedBy(memIo(memWorld({}), all).io, roles, setup))
     expect(first.map(role => role.mcp.includes('sentry'))).toEqual(roles.map(() => true))
-    const again = valueOf(await assignedBy(memIo(memWorld({}), ['None', 'None']).io, first, setup))
+    const again = valueOf(await assignedBy(memIo(memWorld({}), ['None', 'None', 'None']).io, first, setup))
     expect(again.map(role => [role.id, role.mcp, role.skills])).toEqual([
-      ['pm', ['jira'], []],
-      ['tl', ['jira'], []],
+      ['pm', [], []],
+      ['tl', [], []],
       ['be', [], []],
       ['fe', [], []],
       ['qa', [], []],
@@ -159,8 +169,8 @@ describe('assignmentStep', () => {
   })
 
   test('a narrower second answer leaves an asked server on the roles it names only (A3)', async () => {
-    const first = valueOf(await assignedBy(memIo(memWorld({}), ['All roles', 'None']).io, roles, setup))
-    const again = valueOf(await assignedBy(memIo(memWorld({}), ['be', 'None']).io, first, setup))
+    const first = valueOf(await assignedBy(memIo(memWorld({}), ['pm, tl', 'All roles', 'None']).io, roles, setup))
+    const again = valueOf(await assignedBy(memIo(memWorld({}), ['pm, tl', 'be', 'None']).io, first, setup))
     expect(again.filter(role => role.mcp.includes('sentry')).map(role => role.id)).toEqual(['be'])
     expect(roleIn(again, 'tl').mcp).toEqual(['jira'])
   })

@@ -951,3 +951,14 @@ export function infraPluginWorld(over: Partial<MemWorld> = {}): MemWorld {
 
   return gitWorld({ commands, settings, ...over })
 }
+
+/** fullWorld (six roles, Security among them) with the MCP servers github and sentry and the own skill security-review. */
+export function tableMatchWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const tools = [
+    { name: 'mcp__github__search', description: 'Search the code.', mcp: true },
+    { name: 'mcp__sentry__issues', description: 'List the issues.', mcp: true },
+  ]
+  const commands = [{ name: 'security-review', source: 'user', description: 'Review the changes for security.' }]
+
+  return fullWorld({ tools, commands, ...over })
+}
