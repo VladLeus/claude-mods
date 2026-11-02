@@ -1484,6 +1484,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],

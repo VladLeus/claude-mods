@@ -143,6 +143,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],
@@ -324,6 +325,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],
@@ -889,6 +891,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],
@@ -1635,6 +1638,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],
@@ -2366,6 +2370,7 @@ export const GOLDEN_INIT_GOBACK_FULL: Readonly<Record<string, GoldenRun>> = {
         ],
         "header": "Skills",
         "options": [
+          "Go one by one",
           "None",
           "All roles"
         ],

@@ -1,34 +1,40 @@
 /**
- * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230, D-249, D-250, D-280), a layer 10 module: the
- * MCP servers handed out after the mcp model call (init/stages/own-skills mcpEntry and mcpServerItems), then which
- * roles get each skill group (the name tables only seed their recommendations), with the team's role ids on each
- * question's second line (mcpContextLine) and each question's own context (ui/blocks/assign), the plugin groups
- * busiest first with the history hints, then the own skills (init/stages/own-skills) with the roles a skills model
- * effect recommends for them; assignStage, the pure stage that gives each name to the roles its answer names and
- * decides the whole list of each name it asks about. Pure: it gives states and never performs an effect, imports
- * locales, suggest/skills, ui/ask, ui/blocks/assign, init/answers, init/assign-rules, init/handout, init/state and the
- * memory and own-skills stages, and never imports init/machine or init/run.
+ * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230, D-248, D-249, D-250, D-251, D-280), a layer 10
+ * module: the MCP servers handed out after the mcp model call (init/stages/own-skills mcpEntry and mcpServerItems),
+ * the skills model call from the confirmed MCP answers, then which roles get each plugin skill group (Accept
+ * recommendation, Go one by one through handoutItemsEnter, None, All roles or a typed list), with the team's role ids
+ * on each question's second line and each question's own context (ui/blocks/assign), the plugin groups busiest first
+ * with the history hints, then the own skills (init/stages/own-skills) with the roles the skills call recommended for
+ * them; assignStage, the pure stage that gives each name to the roles its answer names and decides the whole list of
+ * each name it asks about. Pure: it gives states and never performs an effect, imports core, locales, suggest/skills,
+ * ui/ask, ui/blocks/assign, init/answers, init/assign-rules, init/handout, init/state and the duration, memory and
+ * own-skills stages, and never imports init/machine or init/run.
  */
 import type { McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
-import { t } from '../../locales/t'
+import { labelled } from '../../core/labelled'
+import type { Labelled } from '../../core/labelled'
+import { idsOrNone } from '../../core/text'
+import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skills'
-import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
 import { assignToRoles, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
-import { handoutAnswer, handoutEnter } from '../handout'
+import { handoutAnswer, handoutEnter, handoutItemsEnter } from '../handout'
 import type { HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, ModelCall, StageDef } from '../state'
+import { idsOf } from './duration'
 import { ROLE_LIST_OPTIONS, roleListAccepts } from './memory'
 import {
   ASSIGNMENT_DISMISSED_REASON,
   mcpContextLine,
   mcpEntry,
   mcpServerItems,
+  groupSkillItems,
   ownSkillItems,
   ownSkillsEntry,
   ownSkillsOf,
@@ -239,22 +245,106 @@ function skillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssi
 }
 
 /**
- * The plugin group at `index` as its question asks it (D-53, D-248): its skills with the roles the skills call
- * recommended for each, or the table seed when the call fell back (skillGroupItem); undefined after the last group.
+ * The plugin group at `index` as its question asks it (D-53, D-248, D-251): the roles the skills call recommended for
+ * the whole group, and its skills with the roles recommended for each, or the table seed when the call fell back
+ * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group. Undefined after the last
+ * group.
  */
-function groupItemAt(plan: AssignPlan, index: number, skills: SkillsRecommendation): AssignItem | undefined {
+function groupAt(
+  plan: AssignPlan,
+  index: number,
+  skills: SkillsRecommendation,
+): { readonly group: SkillGroup; readonly item: AssignItem; readonly recommended: readonly string[] } | undefined {
   const group = plan.groups[index]
   if (group === undefined) return undefined
-  const recommended = skills.groupSkills.get(group.label) ?? new Map<string, readonly string[]>()
+  const perSkill = skills.groupSkills.get(group.label) ?? new Map<string, readonly string[]>()
+  const recommended = skills.groups.get(group.label) ?? []
+  const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill)
+  const line = t('ui.assign.groupRecommended', { roleIds: idsOrNone(recommended, SCREEN_LIST_WORDS.none) })
+  const context = { ...item.context, lines: [line, ...item.context.lines] }
 
-  return skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, recommended)
+  return { group, item: { ...item, context }, recommended }
+}
+
+/** The answer label that gives every skill of a plugin group the roles recommended for the group (D-251). */
+const ACCEPT_RECOMMENDATION_LABEL = t('init.assign.acceptRecommendation')
+
+/** The answer label that asks each skill of a plugin group on its own (D-251), as the own skills' hand-out does. */
+const ONE_BY_ONE_LABEL = t('init.ownSkills.oneByOne')
+
+/**
+ * The answers of a plugin group question (D-251): Accept recommendation, only when the group has a recommendation,
+ * then Go one by one, None and All roles; a role list is typed (at most four buttons).
+ */
+function groupOptions(recommended: readonly string[]): readonly string[] {
+  const choices = [ONE_BY_ONE_LABEL, ...ROLE_LIST_OPTIONS]
+
+  return recommended.length === 0 ? choices : [ACCEPT_RECOMMENDATION_LABEL, ...choices]
+}
+
+/** What an answer to a plugin group question picks (D-251): the recommendation, one by one, or a role list. */
+type GroupChoice =
+  | { readonly kind: 'accept' }
+  | { readonly kind: 'one-by-one' }
+  | { readonly kind: 'roles'; readonly roleIds: readonly string[] }
+
+/**
+ * The question of a plugin group (D-53, D-251): its question, chip and own context, the answers of groupOptions with a
+ * typed role list (D-234); the labels are read first, then the role list (parseRoleList), and what its refusal lists.
+ */
+function groupAsk(
+  item: AssignItem,
+  recommended: readonly string[],
+  roles: readonly RoleSpec[],
+): ChoiceAsk<GroupChoice> & { readonly dismissedReason: string } {
+  const options = groupOptions(recommended)
+  const accept: Labelled<GroupChoice> = { label: ACCEPT_RECOMMENDATION_LABEL, value: { kind: 'accept' } }
+  const oneByOne: Labelled<GroupChoice> = { label: ONE_BY_ONE_LABEL, value: { kind: 'one-by-one' } }
+  const labels = recommended.length === 0 ? [oneByOne] : [accept, oneByOne]
+  const parse = (answer: string): GroupChoice | null => {
+    const picked = labelled(labels, answer)
+    if (picked !== null) return picked
+    const roleIds = parseRoleList(answer, roles)
+
+    return roleIds === null ? null : { kind: 'roles', roleIds }
+  }
+
+  return {
+    question: item.question,
+    spec: { options, header: item.header, context: item.context, acceptsTyped: true },
+    parse,
+    accepts: t('init.memory.roleListAccepts', { quotedLabels: quotedLabels(options), ids: idsOf(roles) }),
+    dismissedReason: ASSIGNMENT_DISMISSED_REASON,
+  }
+}
+
+/**
+ * The skills of the plugin group at `cursor.index` handed out one by one (D-251) at `next`: a question waits at its
+ * cursor; when the last skill is answered each skill joins `done` with the roles it was given, and the next group is
+ * asked.
+ */
+function groupHandedOut(state: InitState, plan: AssignPlan, cursor: ItemCursor, next: HandoutNext): InitState {
+  if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
+  if (next.kind === 'ask') {
+    const { index, done, skills } = cursor
+    const sub: InitState['sub'] = { kind: 'group-handout', cursor: next.cursor, index, done, skills }
+
+    return withEffect({ ...state, sub }, { kind: 'ask', question: next.question, spec: next.spec })
+  }
+  if (next.outcome.kind === 'whole') return stageFailed(state)
+  const { given } = next.outcome
+  const group = plan.groups[cursor.index]
+  if (group === undefined) return stageFailed(state)
+  const done = [...cursor.done, ...group.names.map(name => ({ name, roleIds: given.get(name) ?? [] }))]
+
+  return itemAsked(state, plan, { ...cursor, tries: 1, index: cursor.index + 1, done }, null)
 }
 
 /** The question of the item at `index`, asked `tries` times so far, `question` its text after a refusal. */
 function itemAsked(state: InitState, plan: AssignPlan, cursor: ItemCursor, question: string | null): InitState {
-  const item = groupItemAt(plan, cursor.index, cursor.skills)
-  if (item === undefined) return ownSkillsStart(state, plan, cursor.done, cursor.skills)
-  const ask = itemAsk(item, plan.roles)
+  const at = groupAt(plan, cursor.index, cursor.skills)
+  if (at === undefined) return ownSkillsStart(state, plan, cursor.done, cursor.skills)
+  const ask = groupAsk(at.item, at.recommended, plan.roles)
   const asking: InitState = { ...state, sub: { kind: 'assign', ...cursor } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -365,12 +455,20 @@ function wholeAsked(state: InitState, plan: AssignPlan, cursor: WholeCursor, que
 }
 /** The answer to the question at `cursor`: its names given to the roles it named, then the next question. */
 function afterItem(state: InitState, plan: AssignPlan, cursor: ItemCursor, answer: string | null): InitState {
-  const item = groupItemAt(plan, cursor.index, cursor.skills)
-  if (item === undefined) return stageFailed(state)
-  const next = choiceAnswer(itemAsk(item, plan.roles), cursor, answer)
+  const at = groupAt(plan, cursor.index, cursor.skills)
+  if (at === undefined) return stageFailed(state)
+  const next = choiceAnswer(groupAsk(at.item, at.recommended, plan.roles), cursor, answer)
   if (next.kind === 'again') return itemAsked(state, plan, { ...cursor, tries: next.sub.tries }, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
-  const given = item.names.map(name => ({ name, roleIds: next.value }))
+  const choice = next.value
+  if (choice.kind === 'one-by-one') {
+    const perSkill = cursor.skills.groupSkills.get(at.group.label) ?? new Map<string, readonly string[]>()
+    const items = groupSkillItems(at.group, plan.setup.skills, plan.counts, perSkill)
+
+    return groupHandedOut(state, plan, cursor, handoutItemsEnter(items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
+  }
+  const roleIds = choice.kind === 'accept' ? at.recommended : choice.roleIds
+  const given = at.item.names.map(name => ({ name, roleIds }))
   const done = [...cursor.done, ...given]
 
   return itemAsked(state, plan, { ...cursor, tries: 1, index: cursor.index + 1, done }, null)
@@ -433,6 +531,11 @@ function assignAnswer(state: InitState, answer: Answer): InitState {
       return afterMcpWhole(state, plan, sub, answer.text)
     case 'assign':
       return afterItem(state, plan, sub, answer.text)
+    case 'group-handout': {
+      const { index, done, skills } = sub
+
+      return groupHandedOut(state, plan, { tries: 1, index, done, skills }, handoutAnswer(sub.cursor, answer.text))
+    }
     case 'skills-handout':
       return handedOut(state, plan, sub.done, handoutAnswer(sub.cursor, answer.text))
     case 'skills-whole':
@@ -443,23 +546,27 @@ function assignAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The MCP and skill stage (D-53, ISO-04, D-230, D-248, D-249, D-250, D-253, D-280). Every MCP server and skill is asked
- * and never given without an answer (classifyMcp, classifySkills), and infra servers and handoff, infra plugin and
- * framework skills are never asked about. First one checked mcp model call recommends roles for every server, from its
- * name, source, tool names and table seed; a review go-back reuses its kept result and calls it no more (D-253). The
- * servers are then handed out (D-250): the entry question offers Accept recommendations (only when a server has one,
- * D-279), Go one by one (each server's question with its source, tools and recommended roles) or Whole group (one
- * question for all the servers). A skill shows the roles the skill table seeds as its recommendation. Each group of
- * skills by plugin is asked once, "Which roles get ...? (e.g. BE, QA, or none)", with the team's role ids and what
- * giving the item means on its second line (mcpContextLine, skillsContextLine, D-136), answered with None, All roles or
- * a typed list of role ids or titles; an answer that names any other role is asked again (parseRoleList, T-02-33).
- * Then, when the user has skills that no plugin adds, they are handed out (G-02-1b): a model call recommends roles for
- * each, the side pane shows them, and the entry question offers Accept recommendations, Go one by one or Whole group.
- * The stage decides the whole list of each name it asks about (assigned, A3). With the history hints the plugin groups
- * are asked busiest first and each group question says how often its group was used, and the own skills are shown and
- * asked busiest first; without hints, or with none that count, the questions and their order are the same as without
- * the scan (D-59). Only an answer to every question gives roles: a dismissal cancels with ASSIGNMENT_DISMISSED_REASON,
- * and MAX_ASKS answers it cannot read at one question with NO_USABLE_ANSWER_REASON (A1, D-136).
+ * The MCP and skill stage (D-53, ISO-04, D-230, D-248, D-249, D-250, D-251, D-253, D-280). Every MCP server and skill
+ * is asked and never given without an answer (classifyMcp, classifySkills), and infra servers and handoff, infra plugin
+ * and framework skills are never asked about. First one checked mcp model call recommends roles for every server, from
+ * its name, source, tool names and table seed; a review go-back reuses its kept result and calls it no more (D-253).
+ * The servers are then handed out (D-250): the entry question offers Accept recommendations (only when a server has
+ * one, D-279), Go one by one (each server's question with its source, tools and recommended roles) or Whole group (one
+ * question for all the servers). Then one checked skills model call recommends roles for the own skills, each plugin
+ * group and each skill in a group, from the confirmed MCP servers of each role (D-248); its fallback gives the skills
+ * in a group the table seeds. Each plugin group is asked once, "Which roles get ...? (e.g. BE, QA, or none)", with the
+ * team's role ids and what giving the skills means on its second line (skillsContextLine, D-136) and the group's
+ * recommendation first in its own context; it is answered with Accept recommendation (only when the group has one:
+ * every skill of the group to those roles), Go one by one (each skill with its own recommendation, Yes, No or a typed
+ * list), None, All roles or a typed list of role ids or titles; an answer that names any other role is asked again
+ * (parseRoleList, T-02-33). Then, when the user has skills that no plugin adds, they are handed out (G-02-1b): the side
+ * pane shows them with the roles recommended for each, and the entry question offers Accept recommendations, Go one by
+ * one or Whole group. The stage decides the whole list of each name it asks about (assigned, A3). With the history
+ * hints the plugin groups are asked busiest first and each group question says how often its group was used, and the
+ * own skills are shown and asked busiest first; without hints, or with none that count, the questions and their order
+ * are the same as without the scan (D-59). Only an answer to every question gives roles: a dismissal cancels with
+ * ASSIGNMENT_DISMISSED_REASON, and MAX_ASKS answers it cannot read at one question with NO_USABLE_ANSWER_REASON (A1,
+ * D-136).
  */
 export const assignStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {

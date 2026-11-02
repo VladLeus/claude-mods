@@ -607,6 +607,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Skills: codex",
         "lines": [
+          "Recommended: none",
           "codex:rescue: Bearer [hidden]. Recommended: none."
         ],
         "kind": "skill-group"

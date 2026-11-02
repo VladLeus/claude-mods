@@ -189,6 +189,7 @@ export const EN = Object.freeze({
     '{count} MCP servers; each question shows its source, its tools and the roles it is recommended for.',
   'init.assign.mcpChip': 'MCP',
   'init.assign.mcpWholeQuestion': 'Which roles get all the MCP servers ({count})? (e.g. BE, QA, or none)',
+  'init.assign.acceptRecommendation': 'Accept recommendation',
 
   'init.ownSkills.assignmentDismissedReason':
     'A question on which roles get an MCP server or skills was dismissed or not answered.',
@@ -435,6 +436,7 @@ export const EN = Object.freeze({
   'ui.assign.skillLineText2': '{name}: {purpose}{used} Recommended: {roleIds}.',
   'ui.assign.skillGroupContextTitle': 'Skills: {label}',
   'ui.assign.mcpGroupContextTitle': 'MCP servers',
+  'ui.assign.groupRecommended': 'Recommended: {roleIds}',
   'ui.assign.mcpGroupLine.one': '{name}: {source}, {count} tool. Recommended: {roleIds}.',
   'ui.assign.mcpGroupLine.other': '{name}: {source}, {count} tools. Recommended: {roleIds}.',
   'ui.assign.skillContext': 'Skill {position} of {count}',

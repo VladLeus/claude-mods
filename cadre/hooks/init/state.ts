@@ -289,6 +289,8 @@ export type EachCursor = {
  *   before them.
  * - `assign`: the question on which roles get the plugin skill group at `index` is out, asked `tries` times so far,
  *   with the names the questions before it gave (`done`) and what the skills call recommended (`skills`, D-248).
+ * - `group-handout`: the skills of the plugin group at `index` asked one by one at `cursor` (D-251), with the names
+ *   the questions before it gave (`done`) and what the skills call recommended (`skills`).
  * - `skills-model`: the model call that recommends roles for the own skills and the plugin groups is out, after the
  *   MCP hand-out, with the server answers (`done`, D-248).
  * - `skills-handout`, `skills-whole`: the own skills after the group questions: their hand-out at `cursor`, or the
@@ -351,6 +353,13 @@ export type StageSub =
   | {
       readonly kind: 'assign'
       readonly tries: number
+      readonly index: number
+      readonly done: readonly NameAssignment[]
+      readonly skills: SkillsRecommendation
+    }
+  | {
+      readonly kind: 'group-handout'
+      readonly cursor: HandoutCursor
       readonly index: number
       readonly done: readonly NameAssignment[]
       readonly skills: SkillsRecommendation

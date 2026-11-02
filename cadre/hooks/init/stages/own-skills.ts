@@ -240,3 +240,29 @@ export function mcpServerItems(
     }
   })
 }
+
+/**
+ * Each skill of a plugin group as a hand-out item (D-251), in the group's order, asked exactly as an own skill is: its
+ * name as its id, ownSkillQuestion, its context line (ownSkillContextLine) with the roles `recommended` gives it by
+ * name, none when it gives none, the chip `Skill <i>/<n>` (ownSkillHeader) and its own context (skillContext).
+ */
+export function groupSkillItems(
+  group: SkillGroup,
+  skills: readonly SkillRef[],
+  counts: ReadonlyMap<string, number>,
+  recommended: ReadonlyMap<string, readonly string[]>,
+): HandoutItem[] {
+  return group.names.map((name, index) => {
+    const skill = skills.find(ref => ref.name === name && ref.plugin === group.plugin) ?? { name, plugin: group.plugin }
+    const roleIds = recommended.get(name) ?? []
+
+    return {
+      id: name,
+      question: ownSkillQuestion(name),
+      contextLine: ownSkillContextLine(skill, skillCount(name, counts), roleIds),
+      header: ownSkillHeader(index + 1, group.names.length),
+      recommended: roleIds,
+      context: skillContext(skillLineOf(skill, counts, roleIds), index + 1, group.names.length),
+    }
+  })
+}

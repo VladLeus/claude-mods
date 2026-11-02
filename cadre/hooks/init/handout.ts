@@ -196,6 +196,37 @@ function itemAt(cursor: HandoutCursor, index: number, given: ReadonlyMap<string,
 }
 
 /**
+ * The entry of a hand-out that starts at its first item (handoutItemsEnter, D-251): it is never asked, so its texts
+ * are empty.
+ */
+const NO_ENTRY: HandoutEntry = { question: '', contextLine: '', header: '', accept: '', oneByOne: '', whole: '' }
+
+/**
+ * A hand-out with no entry question (D-251): the cursor at the first of `items` in item mode, asking its item
+ * question (Yes, No or a typed role list); a dismissal cancels with `dismissedReason`, and after the last item the
+ * hand-out is done with what each item was given (handoutAnswer). With no item it is done at once, giving none.
+ */
+export function handoutItemsEnter(
+  items: readonly HandoutItem[],
+  roles: readonly RoleSpec[],
+  dismissedReason: string,
+): HandoutNext {
+  const given = new Map<string, readonly string[]>()
+  const cursor: HandoutCursor = {
+    entry: NO_ENTRY,
+    items,
+    roles,
+    dismissedReason,
+    mode: 'item',
+    index: 0,
+    tries: 1,
+    given,
+  }
+
+  return itemAt(cursor, 0, given)
+}
+
+/**
  * The hand-out at its entry question (G-02-1f Entry choices), with `items` to hand out to `roles`; a dismissal of any
  * of its questions cancels with `dismissedReason` (handoutAnswer). It only asks: the roles and items never change.
  */
