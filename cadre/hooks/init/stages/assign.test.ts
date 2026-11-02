@@ -22,8 +22,8 @@ import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
 import type { StepResult } from '../../ui/ask'
 import { nextStage } from '../machine'
 import type { Answer } from '../state'
-import { assignStage, mcpContextLine } from './assign'
-import { ASSIGNMENT_DISMISSED_REASON, skillsContextLine } from './own-skills'
+import { assignStage } from './assign'
+import { ASSIGNMENT_DISMISSED_REASON, mcpContextLine, skillsContextLine } from './own-skills'
 
 /** The buttons of every question on which roles get an item. */
 const ROLE_LIST_OPTIONS = ['None', 'All roles']

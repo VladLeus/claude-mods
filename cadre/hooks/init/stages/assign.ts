@@ -9,7 +9,6 @@
  * model and own-skills stages, and never imports init/machine or init/run.
  */
 import type { McpRef, RoleSpec, SetupScan } from '../../../types'
-import { t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
@@ -22,14 +21,15 @@ import type { HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { ROLE_LIST_OPTIONS, roleListAccepts } from './memory'
-import { teamContextLine } from './model'
-import { ASSIGNMENT_DISMISSED_REASON, ownSkillItems, ownSkillsEntry, ownSkillsOf, skillGroupItem } from './own-skills'
+import {
+  ASSIGNMENT_DISMISSED_REASON,
+  mcpContextLine,
+  ownSkillItems,
+  ownSkillsEntry,
+  ownSkillsOf,
+  skillGroupItem,
+} from './own-skills'
 import type { AssignItem } from './own-skills'
-
-/** The context line of an MCP server question (D-136): the team's role ids; only a role given it can use it. */
-export function mcpContextLine(roles: readonly RoleSpec[]): string {
-  return t('init.assign.mcpContextLine', { teamContext: teamContextLine(roles) })
-}
 
 /**
  * What the assignment stage works from (D-53, D-59, D-249, D-280): the team, the setup scan and the history counts;

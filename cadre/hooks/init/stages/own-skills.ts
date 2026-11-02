@@ -3,8 +3,8 @@
  * with no plugin, busiest first (ownSkillsOf), with the roles the model recommends for each (the skills model effect),
  * handed out through the entry question Accept recommendations, Go one by one or Whole group (ownSkillsEntry,
  * ownSkillItems, each skill with its own context, D-211); and what it shares with init/stages/assign: the AssignItem
- * questions on which roles get an item, skillGroupItem with its context line (skillsContextLine) and its own context,
- * and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts and items only, imports core, suggest/skills, ui/ask,
+ * questions on which roles get an item, the context line of an MCP server question (mcpContextLine), skillGroupItem
+ * with its context line (skillsContextLine) and its own context, and ASSIGNMENT_DISMISSED_REASON. Pure: it gives texts and items only, imports core, suggest/skills, ui/ask,
  * ui/blocks/assign, init/answers, init/assign-rules, init/handout and the model stage, and never imports init/machine
  * or init/run.
  */
@@ -31,6 +31,11 @@ export function skillsContextLine(roles: readonly RoleSpec[]): string {
   const meaning = t('init.ownSkills.skillsContextLine')
 
   return `${teamContextLine(roles)} ${meaning}`
+}
+
+/** The context line of an MCP server question (D-136): the team's role ids; only a role given it can use it. */
+export function mcpContextLine(roles: readonly RoleSpec[]): string {
+  return t('init.assign.mcpContextLine', { teamContext: teamContextLine(roles) })
 }
 
 /** One question on which roles get an item, the names its answer gives them, and its own context (D-203). */
