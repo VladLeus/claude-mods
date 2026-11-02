@@ -13,7 +13,7 @@
 import type { McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
-import { idsOrNone } from '../../core/text'
+import { compareText, idsOrNone } from '../../core/text'
 import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skills'
@@ -224,18 +224,38 @@ function promptGroupOf(plan: AssignPlan, group: SkillGroup): SkillPromptGroup {
 }
 
 /**
+ * Whether two MCP assignments per role are the same (D-253): the same role ids, each with the same servers in any
+ * order; a missing one (no kept call) is never the same.
+ */
+function isSameAssignment(
+  kept: ReadonlyMap<string, readonly string[]> | null,
+  now: ReadonlyMap<string, readonly string[]>,
+): boolean {
+  if (kept === null || kept.size !== now.size) return false
+  const sorted = (names: readonly string[]): string => JSON.stringify([...names].sort(compareText))
+
+  return [...now].every(([id, names]) => {
+    const before = kept.get(id)
+
+    return before !== undefined && sorted(before) === sorted(names)
+  })
+}
+
+/**
  * After the MCP hand-out (D-248): with no own skill and no plugin group the stage is done; else one skills model call
  * recommends roles for the own skills, each plugin group and each skill in a group, from the confirmed MCP servers of
- * each role (`done` holds the server answers). A review go-back reuses the kept result and calls the model no more
- * (reusable, D-235).
+ * each role (`done` holds the server answers). A review go-back reuses the kept result, and calls the model no more,
+ * while the confirmed MCP servers of each role are the ones the kept result was built from; a changed MCP answer
+ * calls it again (reusable, D-235, D-253).
  */
 function skillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssignment[]): InitState {
   const { ownGroup, groups, roles, counts } = plan
   if (ownGroup === undefined && groups.length === 0) return assigned(state, plan, done, [])
-  const kept = reusable(state)?.skills ?? null
-  if (kept !== null) return itemAsked(state, plan, { tries: 1, index: 0, done, skills: kept }, null)
-  const own = ownGroup === undefined ? [] : ownSkillsOf(plan.setup.skills, ownGroup, counts)
   const mcpByRole = mcpByRoleOf(roles, done.slice(0, plan.mcp.names.length))
+  const keptSkills = reusable(state)?.skills ?? null
+  const isReused = keptSkills !== null && isSameAssignment(reusable(state)?.mcpAssigned ?? null, mcpByRole)
+  if (isReused) return itemAsked(state, plan, { tries: 1, index: 0, done, skills: keptSkills }, null)
+  const own = ownGroup === undefined ? [] : ownSkillsOf(plan.setup.skills, ownGroup, counts)
   const promptGroups = groups.map(group => promptGroupOf(plan, group))
   const { seeds } = plan.skills
   const call: ModelCall = { id: 'skills', roles, mcpByRole, own, groups: promptGroups, counts, seeds }

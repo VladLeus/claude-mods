@@ -295,7 +295,8 @@ describe('own skills on a go-back (D-235)', () => {
     const setup = emptySetupScan({ skills: [{ name: 'mine', plugin: null }] })
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
     const skills = { own: new Map([['mine', ['be']]]), groups: new Map(), groupSkills: new Map() }
-    const kept = { mcp: null, skills, mcpAssigned: null, topics: null, parts: null }
+    const mcpAssigned = new Map(roles.map(role => [role.id, []]))
+    const kept = { mcp: null, skills, mcpAssigned, topics: null, parts: null }
     const draft = { roles, gathered, hints: new Map() }
     const back = { returnTo: 'review', returnAfter: 'assign', kept } satisfies Partial<InitState>
     const state = assignStage.enter(stateAt('assign', draft, back))
