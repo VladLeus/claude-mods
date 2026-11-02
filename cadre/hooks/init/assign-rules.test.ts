@@ -38,11 +38,9 @@ function skill(name: string, plugin: string | null = null): SkillRef {
   return { name, plugin }
 }
 
-/** The ids of the roles a skill was assigned to by the table, or null when the classifier did not assign it. */
-function skillAssignedTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
-  const found = classifySkills([skill(name)], roles).assigned.find(row => row.name === name)
-
-  return found === undefined ? null : found.roleIds
+/** The ids of the roles the skill table seeds for a skill's recommendation, or null when it seeds none (D-280). */
+function skillSeededTo(name: string, roles: readonly RoleSpec[]): readonly string[] | null {
+  return classifySkills([skill(name)], roles).seeds.get(name) ?? null
 }
 
 describe('MCP assignment', () => {
@@ -240,7 +238,7 @@ describe('skill assignment', () => {
     expect(adapterOf('none').ownsSkill(skill('my-skill'))).toBe(false)
   })
 
-  test('table skills go to their roles, infra and framework skills are skipped, the rest are grouped by plugin', () => {
+  test('every skill but infra and framework ones is grouped by plugin; table skills are seeded (D-280)', () => {
     const skills = [
       skill('security-review'),
       skill('frontend-design', 'frontend'),
@@ -253,31 +251,32 @@ describe('skill assignment', () => {
     ]
 
     expect(classifySkills(skills, TEAM)).toEqual({
-      assigned: [
-        { name: 'frontend-design', roleIds: ['fe'] },
-        { name: 'security-review', roleIds: ['security'] },
-      ],
       groups: [
         { label: 'codex', plugin: 'codex', names: ['codex:rescue', 'codex:setup'] },
-        { label: 'your own', plugin: null, names: ['my-skill'] },
+        { label: 'frontend', plugin: 'frontend', names: ['frontend-design'] },
+        { label: 'your own', plugin: null, names: ['my-skill', 'security-review'] },
       ],
+      seeds: new Map([
+        ['frontend-design', ['fe']],
+        ['security-review', ['security']],
+      ]),
     })
   })
 
-  test('the handoff skills are neither assigned nor asked about, with or without roles', () => {
+  test('the handoff skills are neither seeded nor asked about, with or without roles', () => {
     const handoff = [skill('create-handoff-doc'), skill('resume-handoff-doc')]
 
-    expect(classifySkills(handoff, TEAM)).toEqual({ assigned: [], groups: [] })
-    expect(classifySkills(handoff, [])).toEqual({ assigned: [], groups: [] })
+    expect(classifySkills(handoff, TEAM)).toEqual({ groups: [], seeds: new Map() })
+    expect(classifySkills(handoff, [])).toEqual({ groups: [], seeds: new Map() })
   })
 
   test('gsd and superpowers skills are never asked about, whichever framework the roles use', () => {
     const skills = [skill('gsd-plan-phase'), skill('gsd-ns-context'), skill('superpowers:writing-plans', 'superpowers')]
 
-    expect(classifySkills(skills, TEAM)).toEqual({ assigned: [], groups: [] })
+    expect(classifySkills(skills, TEAM)).toEqual({ groups: [], seeds: new Map() })
   })
 
-  test('the table sends security-review to security and frontend and design skills to fe', () => {
+  test('the table seeds security-review for security and frontend and design skills for fe', () => {
     const table: readonly (readonly [string, readonly string[] | null])[] = [
       ['security-review', ['security']],
       ['pkg:security-review', ['security']],
@@ -294,27 +293,29 @@ describe('skill assignment', () => {
       ['my-skill', null],
     ]
 
-    for (const [name, expected] of table) expect([name, skillAssignedTo(name, TEAM)]).toEqual([name, expected])
+    for (const [name, expected] of table) expect([name, skillSeededTo(name, TEAM)]).toEqual([name, expected])
   })
 
-  test('a table skill whose roles are all absent is asked in its group', () => {
+  test('a table skill whose roles are all absent is asked in its group with no seed', () => {
     expect(classifySkills([skill('security-review')], [PM, BE])).toEqual({
-      assigned: [],
       groups: [{ label: 'your own', plugin: null, names: ['security-review'] }],
+      seeds: new Map(),
     })
     expect(classifySkills([skill('frontend-design', 'frontend')], [PM, BE])).toEqual({
-      assigned: [],
       groups: [{ label: 'frontend', plugin: 'frontend', names: ['frontend-design'] }],
+      seeds: new Map(),
     })
   })
 
-  test('a custom role based on fe or security receives the table skills', () => {
+  test('a custom role based on fe or security is seeded for the table skills', () => {
     const roles = [PM, role('web', 'fe'), role('auditor', 'security')]
 
-    expect(classifySkills([skill('security-review'), skill('frontend-design')], roles).assigned).toEqual([
-      { name: 'frontend-design', roleIds: ['web'] },
-      { name: 'security-review', roleIds: ['auditor'] },
-    ])
+    expect(classifySkills([skill('security-review'), skill('frontend-design')], roles).seeds).toEqual(
+      new Map([
+        ['frontend-design', ['web']],
+        ['security-review', ['auditor']],
+      ]),
+    )
   })
 
   test('groups are sorted by label with your own last, and the names in a group are sorted', () => {
@@ -339,8 +340,8 @@ describe('skill assignment', () => {
     const skills = ['b-skill', 'a-skill', 'b-skill', 'security-review', 'security-review'].map(name => skill(name))
 
     expect(classifySkills(skills, [PM, SECURITY])).toEqual({
-      assigned: [{ name: 'security-review', roleIds: ['security'] }],
-      groups: [{ label: 'your own', plugin: null, names: ['a-skill', 'b-skill'] }],
+      groups: [{ label: 'your own', plugin: null, names: ['a-skill', 'b-skill', 'security-review'] }],
+      seeds: new Map([['security-review', ['security']]]),
     })
   })
 
@@ -354,16 +355,20 @@ describe('skill assignment', () => {
     ])
   })
 
-  test('a table skill from two plugins is assigned once by name', () => {
+  test('a table skill from two plugins is asked in both groups and seeded once by name', () => {
     const skills = [skill('security-review', 'alpha'), skill('security-review', 'beta')]
 
-    expect(classifySkills(skills, TEAM).assigned).toEqual([{ name: 'security-review', roleIds: ['security'] }])
+    expect(classifySkills(skills, TEAM)).toEqual({
+      groups: [
+        { label: 'alpha', plugin: 'alpha', names: ['security-review'] },
+        { label: 'beta', plugin: 'beta', names: ['security-review'] },
+      ],
+      seeds: new Map([['security-review', ['security']]]),
+    })
   })
 
   test('the security-review row ignores case like the other rows', () => {
-    expect(classifySkills([skill('Security-Review')], TEAM).assigned).toEqual([
-      { name: 'Security-Review', roleIds: ['security'] },
-    ])
+    expect(classifySkills([skill('Security-Review')], TEAM).seeds).toEqual(new Map([['Security-Review', ['security']]]))
   })
 
   test('the security-review row takes security-review as the whole last word, after a plugin or a dash', () => {
@@ -375,15 +380,15 @@ describe('skill assignment', () => {
     expect(other.filter(name => row?.pattern.test(name) === true)).toEqual([])
   })
 
-  test('an installed claude-security skill goes to Security with no question (decision #39)', () => {
+  test('an installed claude-security skill is asked with Security as its seed (decision #39, D-280)', () => {
     expect(classifySkills([skill('claude-security:claude-security', 'claude-security')], TEAM)).toEqual({
-      assigned: [{ name: 'claude-security:claude-security', roleIds: ['security'] }],
-      groups: [],
+      groups: [{ label: 'claude-security', plugin: 'claude-security', names: ['claude-security:claude-security'] }],
+      seeds: new Map([['claude-security:claude-security', ['security']]]),
     })
   })
 
-  test('with no skills there is nothing to assign or ask', () => {
-    expect(classifySkills([], TEAM)).toEqual({ assigned: [], groups: [] })
+  test('with no skills there is nothing to seed or ask', () => {
+    expect(classifySkills([], TEAM)).toEqual({ groups: [], seeds: new Map() })
   })
 
   test('SKILL_ROLE_ROWS and every row, with its roles, are frozen', () => {
@@ -467,8 +472,8 @@ describe('infra plugins by name (D-252)', () => {
   test('classifySkills skips the skills of an infra plugin under any marketplace; others keep their group', () => {
     const skills = [skill('fleet', 'agent-fleet@elsewhere'), skill('fleet-status', 'agent-fleet@elsewhere')]
     expect(classifySkills([...skills, skill('codex:rescue', 'codex')], TEAM)).toEqual({
-      assigned: [],
       groups: [{ label: 'codex', plugin: 'codex', names: ['codex:rescue'] }],
+      seeds: new Map(),
     })
   })
 })

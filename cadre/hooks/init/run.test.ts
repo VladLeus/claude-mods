@@ -5525,13 +5525,26 @@ describe('table seeds (D-249, D-280)', () => {
   const GITHUB_QUESTION = 'Which roles get the github MCP server? (e.g. BE, QA, or none)'
 
   test('a dry run asks github with the table seed as its recommendation; only the answer gives it', async () => {
-    const declined = memIo(tableMatchWorld(), INIT_ANSWERS)
+    const declined = memIo(tableMatchWorld(), OWN_ACCEPTED)
     await runInit(declined.io, { dryRun: true })
     const at = firstLines(declined.asked).indexOf(GITHUB_QUESTION)
     expect(declined.specs[at]?.context?.lines.at(-1)).toBe('Recommended: tl')
     expect(cardMcp(declined, 'tl')).toBe('  MCP servers: none')
-    const given = memIo(tableMatchWorld(), { ...INIT_ANSWERS, [GITHUB_QUESTION]: 'tl' })
+    const given = memIo(tableMatchWorld(), { ...OWN_ACCEPTED, [GITHUB_QUESTION]: 'tl' })
     await runInit(given.io, { dryRun: true })
     expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
+  })
+
+  test('security-review is handed out with its table seed when the model gives none; Accept gives it', async () => {
+    const run = memIo(tableMatchWorld(), OWN_ACCEPTED)
+    await runInit(run.io, { dryRun: true })
+    expect(firstLines(run.asked)).toContain(ownEntry(1))
+    expect(shownBlock(run, 'skills')).toEqual([
+      OWN_SKILLS_HEADING,
+      '  security-review: Review the changes for security.',
+      '    recommended: security',
+    ])
+    expect(cardSkills(run, 'security')).toContain('security-review')
+    expect(cardSkills(run, 'be')).not.toContain('security-review')
   })
 })
