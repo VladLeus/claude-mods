@@ -386,7 +386,7 @@ describe('memories one by one (G-02-1f)', () => {
         [`${given}/squad.md`]: 'another squad',
         [`${given}/extra.md`]: 'extra',
       },
-      replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":[],"T2":[]},"memories":{"M1":[],"M2":[]}}'],
+      replies: [PARTS_TOPICS_REPLY, '{"topics":{"T1":["pm"],"T2":[]},"memories":{"M1":[],"M2":[]}}'],
     })
     const roles = proposeRoles(repoScan()).roles
     const locations = { ...DEFAULT_LOCATIONS, givenRoot: '/link/repo' }

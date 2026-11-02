@@ -149,7 +149,7 @@ describe('own skills hand-out (G-02-1b)', () => {
 
   test('one own skill is counted in the singular in the entry question and its context line', async () => {
     const one = emptySetupScan({ skills: [{ name: 'alpha', plugin: null }] })
-    const run = memIo(memWorld({}), ['Accept recommendations'])
+    const run = memIo(memWorld({ replies: ['{"skills":{"S1":["pm"]}}'] }), ['Accept recommendations'])
     expect((await assignedBy(run.io, roles, one)).kind).toBe('accepted')
     const context = '1 skill with no plugin; the pane shows what each does and the roles it is recommended for.'
     expect(run.asked).toEqual([withContext(ownEntry(1), context)])
@@ -182,8 +182,12 @@ describe('own skills hand-out (G-02-1b)', () => {
     expect(run.asked).toHaveLength(2)
   })
 
-  test('with no usable recommendation, Accept gives no own skill to any role', async () => {
-    const { assigned } = await stepRun(['None', 'Accept recommendations'], [])
+  test('with no usable recommendation Accept is not offered, and typing it is refused (D-279)', async () => {
+    const { run, assigned } = await stepRun(['None', 'Accept recommendations', 'Whole group', 'None'], [])
+    expect(run.specs[1]?.options).toEqual(['Go one by one', 'Whole group'])
+    expect(run.asked[2]?.split('\n')[0]).toBe(
+      `'Accept recommendations' isn't one of: "Go one by one", "Whole group".`,
+    )
     expect(assigned.flatMap(role => role.skills)).toEqual([])
   })
 

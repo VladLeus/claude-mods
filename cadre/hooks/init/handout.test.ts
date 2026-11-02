@@ -244,3 +244,24 @@ describe('the hand-out cursor (D-230)', () => {
     expect([entry.question, one.question]).toEqual([ENTRY_ASKED, itemAsked(first)])
   })
 })
+
+describe('Accept only where something is recommended (D-279)', () => {
+  /** ITEMS with no recommendation at all. */
+  const UNRECOMMENDED: readonly HandoutItem[] = ITEMS.map(item => ({ ...item, recommended: [] }))
+
+  test('an entry whose items all have no recommendation offers only one by one and the whole group', () => {
+    const { specs } = handedOut(UNRECOMMENDED, [])
+    expect(specs[0]?.options).toEqual(['Go part by part', 'Whole files'])
+  })
+
+  test('Accept typed at such an entry is refused like any label it does not list', () => {
+    const { asked, end } = handedOut(UNRECOMMENDED, ['Accept recommendations', 'Whole files'])
+    expect(asked[1]).toBe(`'Accept recommendations' isn't one of: "Go part by part", "Whole files".\n${ENTRY_ASKED}`)
+    expect(end).toEqual({ kind: 'done', outcome: { kind: 'whole' } })
+  })
+
+  test('with one recommended item the entry offers all three answers in their order', () => {
+    const { specs } = handedOut(ITEMS, [])
+    expect(specs[0]?.options).toEqual(['Accept recommendations', 'Go part by part', 'Whole files'])
+  })
+})

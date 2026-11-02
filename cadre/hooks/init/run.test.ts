@@ -1236,7 +1236,9 @@ describe('instruction parts (G-02-1f)', () => {
   })
 
   test('each model call is retried with its exact errors, up to 3 calls, then falls back (G-02-1f)', async () => {
-    const run = memIo(partsWorld({ replies: ['nope', 'still nope', null, '{}', '[]', 'no'] }), PARTS_ANSWERS)
+    // No recommendation, so Accept is not offered (D-279): the parts go one by one, each answered None.
+    const answers = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' }
+    const run = memIo(partsWorld({ replies: ['nope', 'still nope', null, '{}', '[]', 'no'] }), answers)
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(run.prompts).toHaveLength(6)
@@ -2931,7 +2933,7 @@ describe('refusal re-ask (G-02-6b)', () => {
       [
         'own skills',
         () => driven(assignAt({ skills: [skillRef('mine')] }), ['zzz'], [recommendedNone]).asked,
-        '"Accept recommendations", "Go one by one", "Whole group"',
+        '"Go one by one", "Whole group"',
       ],
       [
         'env',

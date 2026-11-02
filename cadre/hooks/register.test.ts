@@ -1960,7 +1960,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
       answers: {
         ...INIT_ANSWERS,
         'Read your CLAUDE.md files': 'No, skip it',
-        [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations',
+        [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group',
       },
     })
     fakeHost(on, world, log)
@@ -2415,11 +2415,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     presentation: { isFullscreen: false, columns: 120 },
   }
 
-  /** initWorld with one skill of the user's own, so init asks the model for its roles (G-02-1b). */
+  /**
+   * initWorld with one skill of the user's own, so init asks the model for its roles (G-02-1b); the model gives no
+   * text, so the entry offers no Accept (D-279) and the skills go to the whole-group question.
+   */
   function skillWorld(): World {
     const commands = [{ name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' }]
 
-    return initWorld({ commands, answers: { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations' } })
+    return initWorld({ commands, answers: { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' } })
   }
 
   test('init --dry-run opens no pane and writes no pane block, while the model works too (D-208)', async ($, on) => {
@@ -2481,7 +2484,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
       source: 'user',
       description: at === 2 ? `Has ${BIDI_OVERRIDE} a control.` : `Skill ${at + 1}.`,
     }))
-    const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations' }
+    const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
 
     return initWorld(onAsk === undefined ? { commands, answers } : { commands, answers, onAsk })
   }
@@ -2511,7 +2514,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const answers = {
       ...INIT_ANSWERS,
       [OWN_SKILLS_ENTRY_PREFIX]: 'Nonsense',
-      "'Nonsense' isn't one of": 'Accept recommendations',
+      "'Nonsense' isn't one of": 'Whole group',
     }
     fakeHost(on, { ...manySkillsWorld(), answers }, log)
     await $.command.run(TUI_RUN)
