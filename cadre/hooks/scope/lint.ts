@@ -165,6 +165,14 @@ export function pluginName(key: string): string {
 }
 
 /**
+ * Whether a plugin key is an infra plugin under any marketplace: its name part (pluginName) is the name of one of
+ * INFRA_PLUGINS, so `autopilot@other-market` and a bare `cadre` count and `autopilotx@m` does not (D-252, ISO-04).
+ */
+export function isInfraPlugin(key: string): boolean {
+  return INFRA_PLUGINS.some(infra => pluginName(infra) === pluginName(key))
+}
+
+/**
  * The plugin a skill name belongs to: `codex:rescue` is `codex`. Null for a name with no plugin part, a user-level
  * skill that goes into the overlay (spike S4 V3).
  */

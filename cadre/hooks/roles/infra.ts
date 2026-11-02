@@ -10,7 +10,8 @@ import { t } from '../locales/t'
 
 /**
  * The plugins every role session must load: autopilot drives the session, agent-fleet shows it and cadre owns the
- * launcher. Scope settings enable them and never deny them (ISO-04, D-77).
+ * launcher. Scope settings enable them and never deny them (ISO-04, D-77). Init and the scopes match a scanned key on
+ * the name part of these keys, under any marketplace (D-252, D-281).
  */
 export const INFRA_PLUGINS: readonly string[] = Object.freeze([
   'autopilot@local-mods',

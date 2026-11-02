@@ -2,8 +2,8 @@
  * The assignment rules of init (D-53, D-59, ISO-04), a layer 10 module: classifyMcp and classifySkills split the
  * scanned MCP servers and skills into the ones the role table gives to the team's roles (NameAssignment) and the ones
  * left to ask about, the skills in groups by the plugin that adds them (SkillGroup); groupUses and orderGroupsByUse
- * order those groups by how often the history scan saw them. It is pure and imports core, framework/registry and roles;
- * init.ts and init/answers read it.
+ * order those groups by how often the history scan saw them. It is pure and imports core, framework/registry, roles and
+ * scope/lint; init.ts and init/answers read it.
  */
 import type { McpRef, RoleSpec, SkillRef } from '../../types'
 import { asciiLower, compareText, sortedUnique } from '../core/text'
@@ -12,6 +12,7 @@ import { t } from '../locales/t'
 import { INFRA_MCP_SERVERS, INFRA_SKILLS, MCP_ROLE_ROWS, SKILL_ROLE_ROWS } from '../roles/infra'
 import type { NameRow } from '../roles/infra'
 import { standsFor } from '../roles/template'
+import { isInfraPlugin } from '../scope/lint'
 
 /** One scanned name given to the roles with these ids. */
 export type NameAssignment = {
@@ -106,8 +107,9 @@ function groupByPlugin(skills: readonly SkillRef[]): SkillGroup[] {
 
 /**
  * Splits the scanned skills into the ones the table gives to roles and the groups left to ask about. The handoff
- * skills (infra) and the GSD and superpowers skills (framework, which come through the adapter) are skipped, whichever
- * framework the roles use, and a skill seen twice from the same plugin counts once. A skill goes to the roles of its
+ * skills (infra), the skills of an infra plugin under any marketplace (isInfraPlugin: every role keeps them, D-252)
+ * and the GSD and superpowers skills (framework, which come through the adapter) are skipped, whichever framework the
+ * roles use, and a skill seen twice from the same plugin counts once. A skill goes to the roles of its
  * row that are on the team, once by name whichever plugins add it; one that no row matches, or whose row has no role
  * on the team, joins the group of each plugin that adds it. Assigned skills are sorted by name, groups by label with
  * `your own` last, and the names in a group by name (D-53, ISO-04).
@@ -119,7 +121,8 @@ export function classifySkills(
   const assigned: NameAssignment[] = []
   const asked: SkillRef[] = []
   for (const skill of uniqueSkills(skills)) {
-    if (INFRA_SKILLS.includes(skill.name) || ADAPTERS.some(adapter => adapter.ownsSkill(skill))) continue
+    const isInfra = INFRA_SKILLS.includes(skill.name) || (skill.plugin !== null && isInfraPlugin(skill.plugin))
+    if (isInfra || ADAPTERS.some(adapter => adapter.ownsSkill(skill))) continue
 
     const roleIds = presentRoleIds(SKILL_ROLE_ROWS, skill.name, roles)
     if (roleIds.length === 0) asked.push(skill)
