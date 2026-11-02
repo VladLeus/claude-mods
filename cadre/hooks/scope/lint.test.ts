@@ -4,7 +4,7 @@ import type { CompiledScope, FrameworkId, RoleSpec, SetupScan } from '../../type
 import { ROLE_TEMPLATE, roleFromTemplate } from '../roles/template'
 import { context, emptySetupScan, FRAMEWORKS, hook, session, skillRef, templateRole, withDeny } from '../testkit'
 import { compileScope } from './compile'
-import { infraViolations, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
+import { infraViolations, isInfraPlugin, isSafeDir, lintDenyPattern, pluginName, roleOwnPaths } from './lint'
 
 /** The literal segments of a repo-relative deny entry such as `Read(./a/b/**)`, `*` and `**` dropped; [] for others. */
 function denySegments(entry: string): string[] {
@@ -419,5 +419,15 @@ describe('safety net: pluginName (A8)', () => {
   test('pluginName: the part of a plugin key before its first @; a key with no @ is its own name', () => {
     expect(pluginName('superpowers@claude-plugins-official')).toBe('superpowers')
     expect(pluginName('codex')).toBe('codex')
+  })
+})
+
+describe('isInfraPlugin (D-252)', () => {
+  test('a key whose name part is an infra plugin name is infra under any marketplace, and only then', () => {
+    expect(isInfraPlugin('autopilot@local-mods')).toBe(true)
+    expect(isInfraPlugin('autopilot@other-market')).toBe(true)
+    expect(isInfraPlugin('cadre')).toBe(true)
+    expect(isInfraPlugin('codex@x')).toBe(false)
+    expect(isInfraPlugin('autopilotx@m')).toBe(false)
   })
 })

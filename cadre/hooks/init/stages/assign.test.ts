@@ -291,3 +291,20 @@ describe('the assign stage (D-230)', () => {
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
   })
 })
+
+describe('infra plugins by name (D-252)', () => {
+  test('no question names a skill of autopilot under another marketplace; the codex group is still asked', async () => {
+    const roles = proposeRoles(FULL_SCAN).roles
+    const setup = emptySetupScan({
+      skills: [
+        skillRef('away', 'autopilot@elsewhere'),
+        skillRef('back', 'autopilot@elsewhere'),
+        skillRef('codex:rescue', 'codex'),
+      ],
+    })
+    const run = memIo(memWorld({}), ['None'])
+    await assignedBy(run.io, roles, setup)
+    expect(firstLines(run.asked)).toEqual(['Which roles get codex skills (1)? (e.g. BE, QA, or none)'])
+    expect(JSON.stringify(run.specs)).not.toContain('away')
+  })
+})

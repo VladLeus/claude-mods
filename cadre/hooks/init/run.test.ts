@@ -56,6 +56,7 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
+import { infraPluginWorld } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { t } from '../locales/t'
@@ -5497,5 +5498,17 @@ describe('one session tool list read per scan (#163)', () => {
     const answer = await perform({ ...memIo(memWorld({}), []).io, tools }, { dryRun: true }, scan)
     const given = answer.kind === 'io' && answer.result.id === 'scan' ? answer.result.tools : null
     expect([reads.length, given]).toEqual([1, reads[0]])
+  })
+})
+
+describe('infra plugins by name (D-252)', () => {
+  test('a dry run never asks about or prompts with the skills of autopilot under another marketplace', async () => {
+    const run = memIo(infraPluginWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    expect(run.asked.filter(question => question.includes('away'))).toEqual([])
+    expect(JSON.stringify(run.specs)).not.toContain('away')
+    expect(run.prompts.filter(prompt => prompt.includes('away'))).toEqual([])
+    expect(shownBlock(run, 'review')).not.toEqual([])
+    expect(shownBlock(run, 'review').filter(line => line.includes('away'))).toEqual([])
   })
 })

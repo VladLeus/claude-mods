@@ -939,3 +939,15 @@ export function ownSkillsWorld(replies: readonly (string | null)[], over: Partia
 
   return gitWorld({ commands, replies, ...over })
 }
+
+/** A git repo that lists autopilot under another marketplace with its skills away and back, and codex:rescue (D-252). */
+export function infraPluginWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const commands = [
+    { name: 'away', source: 'plugin', plugin: 'autopilot@elsewhere' },
+    { name: 'back', source: 'plugin', plugin: 'autopilot@elsewhere' },
+    { name: 'codex:rescue', source: 'plugin', plugin: 'codex' },
+  ]
+  const settings = { user: { enabledPlugins: { 'autopilot@elsewhere': true } }, project: {}, local: {} }
+
+  return gitWorld({ commands, settings, ...over })
+}

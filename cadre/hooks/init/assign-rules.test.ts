@@ -459,3 +459,13 @@ describe('history hints', () => {
     expect(orderGroupsByUse([ALPHA, CODEX, mixed], new Map([['myskill', 10]]))).toEqual([mixed, ALPHA, CODEX])
   })
 })
+
+describe('infra plugins by name (D-252)', () => {
+  test('classifySkills skips the skills of an infra plugin under any marketplace; others keep their group', () => {
+    const skills = [skill('fleet', 'agent-fleet@elsewhere'), skill('fleet-status', 'agent-fleet@elsewhere')]
+    expect(classifySkills([...skills, skill('codex:rescue', 'codex')], TEAM)).toEqual({
+      assigned: [],
+      groups: [{ label: 'codex', plugin: 'codex', names: ['codex:rescue'] }],
+    })
+  })
+})
