@@ -182,6 +182,13 @@ export const EN = Object.freeze({
   'init.model.modelDismissedReason': 'A model and effort question was dismissed or not answered.',
 
   'init.assign.mcpContextLine': '{teamContext} A role not given the server cannot use it.',
+  'init.assign.mcpEntryQuestion': 'Which roles get the MCP servers ({count})? Pick how to hand them out.',
+  'init.assign.mcpEntryContextLine.one':
+    '{count} MCP server; each question shows its source, its tools and the roles it is recommended for.',
+  'init.assign.mcpEntryContextLine.other':
+    '{count} MCP servers; each question shows its source, its tools and the roles it is recommended for.',
+  'init.assign.mcpChip': 'MCP',
+  'init.assign.mcpWholeQuestion': 'Which roles get all the MCP servers ({count})? (e.g. BE, QA, or none)',
 
   'init.ownSkills.assignmentDismissedReason':
     'A question on which roles get an MCP server or skills was dismissed or not answered.',
@@ -427,6 +434,8 @@ export const EN = Object.freeze({
   'ui.assign.skillLineText': ' Used {uses}.',
   'ui.assign.skillLineText2': '{name}: {purpose}{used} Recommended: {roleIds}.',
   'ui.assign.skillGroupContextTitle': 'Skills: {label}',
+  'ui.assign.mcpGroupContextTitle': 'MCP servers',
+  'ui.assign.mcpGroupLine': '{name}: {source}, {count} tools. Recommended: {roleIds}.',
   'ui.assign.skillContext': 'Skill {position} of {count}',
   'ui.assign.ownSkillsContext': 'Your own skills',
 

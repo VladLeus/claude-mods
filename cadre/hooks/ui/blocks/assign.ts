@@ -120,6 +120,35 @@ export function skillGroupContext(label: string, skills: readonly SkillLine[]): 
   }
 }
 
+/**
+ * One MCP server as the context of the question for all the servers lists it (D-250): its name, the source word of
+ * its server question (mcpSourceText), how many tool names the session lists for it, and the ids of the roles
+ * recommended for it.
+ */
+export type McpLine = {
+  readonly name: string
+  readonly source: string
+  readonly tools: number
+  readonly recommended: readonly string[]
+}
+
+/**
+ * The context of the question for all the MCP servers at once (D-250), as skillGroupContext is for a skill group: the
+ * title MCP servers, then one line per server with its source, how many tools the session lists for it and the roles
+ * recommended for it, or none; the name cut to 60 code points and every value cleaned.
+ */
+export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
+  const lineText = (line: McpLine): string =>
+    t('ui.assign.mcpGroupLine', {
+      name: shown(line.name, MAX_CONTEXT_NAME_CHARS),
+      source: clean(line.source),
+      count: line.tools,
+      roleIds: roleIdsText(line.recommended),
+    })
+
+  return { title: t('ui.assign.mcpGroupContextTitle'), lines: lines.map(lineText), kind: 'mcp-server' }
+}
+
 /** The context of one own skill's question (D-236): that skill's line alone, titled by its place among them. */
 export function skillContext(skill: SkillLine, position: number, count: number): AskContext {
   return { title: t('ui.assign.skillContext', { position, count }), lines: [skillLineText(skill)], kind: 'skill' }

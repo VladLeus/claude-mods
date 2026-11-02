@@ -276,6 +276,9 @@ export type EachCursor = {
  * - `describe-model`: the model call for the described structure is out, after proposal `rounds`.
  * - `mcp-model`: the model call that recommends roles for every MCP server is out, before the server questions, with
  *   the names given before it (`done`, D-248).
+ * - `mcp-handout`, `mcp-whole`: the MCP servers' hand-out at `cursor` (D-250), or the question for all the servers at
+ *   once, asked `tries` times, with the roles recommended for each server by name; `done` holds the names given
+ *   before them.
  * - `assign`: the question on which roles get the server or skill group at `index` is out, asked `tries` times so
  *   far, with the names the questions before it gave (`done`).
  * - `skills-model`, `skills-handout`, `skills-whole`: the own skills after those questions: the model call that
@@ -329,6 +332,13 @@ export type StageSub =
     }
   | { readonly kind: 'describe-model'; readonly rounds: number }
   | { readonly kind: 'mcp-model'; readonly done: readonly NameAssignment[] }
+  | { readonly kind: 'mcp-handout'; readonly cursor: HandoutCursor; readonly done: readonly NameAssignment[] }
+  | {
+      readonly kind: 'mcp-whole'
+      readonly tries: number
+      readonly done: readonly NameAssignment[]
+      readonly recommended: ReadonlyMap<string, readonly string[]>
+    }
   | {
       readonly kind: 'assign'
       readonly tries: number

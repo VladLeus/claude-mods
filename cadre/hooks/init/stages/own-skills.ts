@@ -8,15 +8,15 @@
  * and items only, imports core, suggest/skills, ui/ask, ui/blocks/assign, init/answers, init/assign-rules,
  * init/handout and the model stage, and never imports init/machine or init/run.
  */
-import type { AskContext, RoleSpec, SkillRef } from '../../../types'
+import type { AskContext, McpRef, RoleSpec, SkillRef } from '../../../types'
 import { redactSecrets } from '../../core/redact'
 import { asSentence, clean, compareText, idsOrNone } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, withContext } from '../../ui/ask'
-import { skillContext, skillGroupContext } from '../../ui/blocks/assign'
+import { mcpServerContext, skillContext, skillGroupContext } from '../../ui/blocks/assign'
 import type { SkillLine } from '../../ui/blocks/assign'
-import { NO_SKILL_PURPOSE, ownSkillIds, skillGroupQuestion, skillUsesText } from '../answers'
+import { mcpQuestion, NO_SKILL_PURPOSE, ownSkillIds, skillGroupQuestion, skillUsesText } from '../answers'
 import { groupUses } from '../assign-rules'
 import type { SkillGroup } from '../assign-rules'
 import { ACCEPT_RECOMMENDATIONS } from '../handout'
@@ -196,5 +196,47 @@ export function ownSkillItems(
     const question = ownSkillQuestion(skill.name)
 
     return [{ id: skill.name, question, contextLine, header, recommended: roleIds, context }]
+  })
+}
+
+/**
+ * The entry question of the MCP hand-out (D-250): which roles get the `count` servers, with how many there are and what
+ * each server question shows on its second line, the MCP chip, and the shared answers Accept recommendations (only
+ * when a server has a recommendation, D-279), Go one by one and Whole group.
+ */
+export function mcpEntry(count: number): HandoutEntry {
+  return {
+    question: t('init.assign.mcpEntryQuestion', { count }),
+    contextLine: tn('init.assign.mcpEntryContextLine', count, { count }),
+    header: ASK_HEADERS.mcp,
+    accept: ACCEPT_RECOMMENDATIONS,
+    oneByOne: ONE_BY_ONE_LABEL,
+    whole: WHOLE_GROUP_LABEL,
+  }
+}
+
+/**
+ * Each MCP server as a hand-out item (D-250), in the order given: its name as its id, its question (mcpQuestion) with
+ * the team's role ids on the second line (mcpContextLine), the chip `MCP <i>/<n>`, the roles `recommended` gives it by
+ * name, none when it gives none, and its own context: its source, the tools the session lists for it and those roles
+ * (mcpServerContext, D-211).
+ */
+export function mcpServerItems(
+  servers: readonly McpRef[],
+  toolNames: unknown,
+  recommended: ReadonlyMap<string, readonly string[]>,
+  roles: readonly RoleSpec[],
+): HandoutItem[] {
+  return servers.map((ref, index) => {
+    const roleIds = recommended.get(ref.name) ?? []
+
+    return {
+      id: ref.name,
+      question: mcpQuestion(ref.name),
+      contextLine: mcpContextLine(roles),
+      header: countedChip(t('init.assign.mcpChip'), index + 1, servers.length),
+      recommended: roleIds,
+      context: mcpServerContext(ref, toolNames, roleIds),
+    }
   })
 }

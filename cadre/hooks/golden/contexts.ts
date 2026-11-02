@@ -588,12 +588,15 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     },
     {
       "header": "MCP",
+      "context": null,
+      "acceptsTyped": false
+    },
+    {
+      "header": "MCP",
       "context": {
-        "title": "MCP: sentry",
+        "title": "MCP servers",
         "lines": [
-          "Source: session",
-          "Tools: 1 (issues)",
-          "Recommended: none"
+          "sentry: session, 1 tools. Recommended: none."
         ],
         "kind": "mcp-server"
       },

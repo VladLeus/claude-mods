@@ -1455,7 +1455,19 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          "Which roles get the sentry MCP server? (e.g. BE, QA, or none)",
+          "Which roles get the MCP servers (1)? Pick how to hand them out.",
+          "1 MCP server; each question shows its source, its tools and the roles it is recommended for."
+        ],
+        "header": "MCP",
+        "options": [
+          "Go one by one",
+          "Whole group"
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": [
+          "Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)",
           "Roles: pm, tl, security. A role not given the server cannot use it."
         ],
         "header": "MCP",
