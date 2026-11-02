@@ -439,9 +439,9 @@ export async function consentedGsdCheck(
 /**
  * The roles recommended for each MCP server (D-248): one model call reads each role's work and each server's name,
  * source, tool names and table seed (mcpPrompt, MCP_SYSTEM). A reply parseMcpRecommendation cannot take is sent back
- * with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no server is recommended to
- * any role: the map is empty. The model has no tools (D-83), and only its checked server and role ids are kept, keyed
- * by server name.
+ * with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then each server gets the roles
+ * the name table seeds for it, a server with no seed none (D-254). The model has no tools (D-83), and only its checked
+ * server and role ids are kept, keyed by server name.
  */
 async function recommendedServerRoles(
   io: InitIo,
@@ -458,8 +458,10 @@ async function recommendedServerRoles(
     return { kind: 'ok', value: parsed.recommended }
   }
   const prompt = (errors: readonly string[]): string => mcpPrompt(roles, servers, errors)
+  const seeds = (): ReadonlyMap<string, readonly string[]> =>
+    new Map(servers.filter(server => server.seed.length > 0).map(server => [server.name, server.seed]))
 
-  return checkedCompletion(io, progressText, MCP_SYSTEM, prompt, parse, () => new Map())
+  return checkedCompletion(io, progressText, MCP_SYSTEM, prompt, parse, seeds)
 }
 
 /**
