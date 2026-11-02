@@ -274,6 +274,12 @@ describe('history hints', () => {
 /** The mcp model call's answer that recommends no role for any server (D-248). */
 const SERVERS_NONE: Answer = { kind: 'model', result: { id: 'mcp', result: new Map() } }
 
+/** The skills model call's answer that recommends no role for any skill or group (D-248). */
+const SKILLS_NONE: Answer = {
+  kind: 'model',
+  result: { id: 'skills', result: { own: new Map(), groups: new Map(), groupSkills: new Map() } },
+}
+
 describe('the assign stage (D-230)', () => {
   /** PM, Team Lead, BE, FE, QA and Security. */
   const roles = proposeRoles(FULL_SCAN).roles
@@ -296,7 +302,7 @@ describe('the assign stage (D-230)', () => {
     const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
-    const group = nextStage(state, { kind: 'answer', text: 'be' })
+    const group = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), SKILLS_NONE)
     const codexLines = ['codex:rescue: No description. Recommended: none.']
     const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group' }
     const typed = { acceptsTyped: true }
@@ -323,7 +329,7 @@ describe('the assign stage (D-230)', () => {
     const skills = [{ name: 'codex:rescue', plugin: 'codex', purpose: 'Delegate a stuck task' }]
     const described = { ...gathered, setup: { ...setup, mcp: [], skills } }
     const hints = new Map([['codex:rescue', 3]])
-    const state = assignStage.enter(stateAt('assign', { roles, gathered: described, hints }))
+    const state = nextStage(assignStage.enter(stateAt('assign', { roles, gathered: described, hints })), SKILLS_NONE)
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'Skills: codex',
       lines: ['codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'],
@@ -331,15 +337,18 @@ describe('the assign stage (D-230)', () => {
     })
   })
 
-  test('the own skills are recommended by a skills model effect, then shown and handed out', () => {
+  test('one skills model effect after the MCP answers, then the groups, then the own skills hand-out (D-248)', () => {
     const calls = assignStage.enter(stateAt('assign', { roles, gathered, hints: new Map() }))
     const whole = nextStage(nextStage(calls, SERVERS_NONE), { kind: 'answer', text: 'Whole group' })
-    const state = nextStage(whole, { kind: 'answer', text: 'be' })
-    const calling = nextStage(state, { kind: 'answer', text: 'None' })
-    const skills = [{ name: 'mine', plugin: null, purpose: 'Do my thing.' }]
-    expect(calling.effect).toEqual({ kind: 'model', call: { id: 'skills', roles, skills, counts: new Map() } })
-    const recommended = new Map([['S1', ['be']]])
-    const entry = nextStage(calling, { kind: 'model', result: { id: 'skills', result: recommended } })
+    const calling = nextStage(whole, { kind: 'answer', text: 'be' })
+    const own = [{ name: 'mine', plugin: null, purpose: 'Do my thing.' }]
+    const groups = [{ plugin: 'codex', skills: [{ name: 'codex:rescue', plugin: 'codex' }] }]
+    const mcpByRole = new Map(roles.map(role => [role.id, role.id === 'be' ? ['sentry'] : []]))
+    const call = { id: 'skills', roles, mcpByRole, own, groups, counts: new Map(), seeds: new Map() }
+    expect(calling.effect).toEqual({ kind: 'model', call })
+    const recommended = { own: new Map([['mine', ['be']]]), groups: new Map(), groupSkills: new Map() }
+    const group = nextStage(calling, { kind: 'model', result: { id: 'skills', result: recommended } })
+    const entry = nextStage(group, { kind: 'answer', text: 'None' })
     expect(entry.outputs.map(output => (output.kind === 'show' ? output.block.key : output.kind))).toEqual(['skills'])
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
   })

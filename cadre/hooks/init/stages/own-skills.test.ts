@@ -79,8 +79,11 @@ describe('own skills hand-out (G-02-1b)', () => {
     ['mid', 4],
     ['zeta', 4],
   ])
-  /** The recommendation in the busiest-first order: S1 mid to BE, S2 zeta to FE, S3 alpha to no role. */
-  const REPLY = '{"skills":{"S1":["be"],"S2":["fe"],"S3":[]}}'
+  /**
+   * The recommendation in the busiest-first order: S1 mid to BE, S2 zeta to FE, S3 alpha to no role, and the codex
+   * group (G1) and its skill (G1S1) to no role (D-248).
+   */
+  const REPLY = '{"skills":{"S1":["be"],"S2":["fe"],"S3":[],"G1S1":[]},"groups":{"G1":[]}}'
   const CODEX_QUESTION = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
   const ENTRY_CONTEXT = '3 skills with no plugin; the pane shows what each does and the roles it is recommended for.'
   /** The one-by-one questions as asked, busiest first and then by name, each with its context line. */
@@ -162,12 +165,12 @@ describe('own skills hand-out (G-02-1b)', () => {
     expect(run.asked).toEqual([withContext(ownEntry(1), context)])
   })
 
-  test('after the plugin groups the model recommends, and the pane shows the skills busiest first', async () => {
+  test('the model recommends before the plugin groups; then the pane shows the skills busiest first', async () => {
     const run = memIo(memWorld({ replies: [REPLY] }), ['None', 'Accept recommendations'])
     const { io, events } = withEvents(run)
     await assignedBy(io, roles, setup, hints)
     expect(events).toEqual([`ask ${CODEX_QUESTION}`, 'show skills', `ask ${ownEntry(3)}`])
-    expect(completionAt(run, 0).prompt.split('\n').slice(-3)).toEqual([
+    expect(completionAt(run, 0).prompt.split('\n').slice(-6, -3)).toEqual([
       'S1 | mid | Draft the weekly report. | used 4 times',
       'S2 | zeta | (no description) | used 4 times',
       'S3 | alpha | Sort the inbox. | used 0 times',
@@ -263,12 +266,12 @@ describe('own skills hand-out (G-02-1b)', () => {
     expect(again.assigned.flatMap(role => ownOf(again.assigned, role.id))).toEqual([])
   })
 
-  test('a team with no own skill is asked no hand-out question, and the model is not called', async () => {
-    const run = memIo(memWorld({ replies: [REPLY] }), ['All roles'])
+  test('a team with no own skill is asked no hand-out question; the model is asked about its group only', async () => {
+    const run = memIo(memWorld({ replies: ['{"skills":{"G1S1":[]},"groups":{"G1":[]}}'] }), ['All roles'])
     const plugins = emptySetupScan({ skills: [skillRef('codex:rescue', 'codex')] })
     valueOf(await assignedBy(run.io, roles, plugins, hints))
     expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles))])
-    expect(run.prompts).toEqual([])
+    expect(run.prompts).toHaveLength(1)
   })
 
   test('a skill question cuts the name to 60 code points; past 12 code points the chip is just Skill', async () => {
@@ -291,8 +294,8 @@ describe('own skills on a go-back (D-235)', () => {
     const roles = proposeRoles(FULL_SCAN).roles
     const setup = emptySetupScan({ skills: [{ name: 'mine', plugin: null }] })
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
-    const ownSkills = new Map([['S1', ['be']]])
-    const kept = { mcp: null, ownSkills, topics: null, parts: null }
+    const skills = { own: new Map([['mine', ['be']]]), groups: new Map(), groupSkills: new Map() }
+    const kept = { mcp: null, skills, mcpAssigned: null, topics: null, parts: null }
     const draft = { roles, gathered, hints: new Map() }
     const back = { returnTo: 'review', returnAfter: 'assign', kept } satisfies Partial<InitState>
     const state = assignStage.enter(stateAt('assign', draft, back))

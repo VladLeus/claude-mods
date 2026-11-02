@@ -843,8 +843,8 @@ describe('skill recommendation in init (G-02-1b)', () => {
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(1)
     const { system, prompt } = completionAt(run, 0)
-    expect(system).toContain('Answer only with JSON of the shape {"skills":{"S1":["be"]}}')
-    expect(prompt.split('\n').slice(-2)).toEqual([
+    expect(system).toContain('Answer only with JSON of the shape {"skills":{"S1":["be"],"G1S1":["be"]}')
+    expect(prompt.split('\n').slice(-3, -1)).toEqual([
       'S1 | deploy-notes | Write the release notes for a deploy. | used 0 times',
       'S2 | my-skill | (no description) | used 0 times',
     ])
@@ -885,11 +885,14 @@ describe('skill recommendation in init (G-02-1b)', () => {
     expect(shownBlock(run, 'skills').at(-1)).toBe(NO_SKILL_RECOMMENDATION)
   })
 
-  test('a run with no skill of its own makes no recommendation call and shows no skills block', async () => {
+  test('a run with no skill of its own asks the model for its plugin group and shows no skills block', async () => {
     const commands = [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Rescue.' }]
-    const run = memIo(gitWorld({ commands, replies: ['{"skills":{}}'] }), INIT_ANSWERS)
+    const replies = ['{"skills":{"G1S1":[]},"groups":{"G1":[]}}']
+    const run = memIo(gitWorld({ commands, replies }), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.prompts).toEqual([])
+    expect(run.prompts).toHaveLength(1)
+    const groupRows = ['G1 | codex', 'G1S1 | codex:rescue | Rescue. | used 0 times']
+    expect(completionAt(run, 0).prompt.split('\n').slice(-2)).toEqual(groupRows)
     expect(run.shown.map(block => block.key)).not.toContain('skills')
   })
 })
@@ -947,7 +950,7 @@ describe('own skills hand-out (G-02-1b)', () => {
         { name: 'alpha', source: 'user' },
         { name: 'release-notes', source: 'project', description: 'Write the release notes.' },
       ],
-      replies: ['{"skills":{"S1":["be","tl"],"S2":["fe"],"S3":[]}}'],
+      replies: ['{"skills":{"S1":["be","tl"],"S2":["fe"],"S3":[],"G1S1":[]},"groups":{"G1":[]}}'],
     })
     const run = memIo(world, {
       ...INIT_ANSWERS,
@@ -1926,6 +1929,7 @@ describe('built role CLAUDE.md (G-02-1f)', () => {
       files: { ...secretWorld().files, '/repo/CLAUDE.md': `# Rules\n${BUILT_RULE}\n` },
       replies: [
         '{"servers":{"M1":[]}}',
+        '{"skills":{"G1S1":[]},"groups":{"G1":[]}}',
         '{"topics":[{"title":"Keys and rules","summary":"How keys are kept.","parts":["P1","P2"]}]}',
         '{"topics":{"T1":["tl"]},"memories":{"M1":["tl"]}}',
       ],
@@ -2888,7 +2892,8 @@ describe('refusal re-ask (G-02-6b)', () => {
 
       return assignStage.enter(stateAt('assign', { roles, gathered: scans, hints: new Map() }))
     }
-    const recommendedNone: Answer = { kind: 'model', result: { id: 'skills', result: new Map() } }
+    const noSkills = { own: new Map(), groups: new Map(), groupSkills: new Map() }
+    const recommendedNone: Answer = { kind: 'model', result: { id: 'skills', result: noSkills } }
     const serversNone: Answer = { kind: 'model', result: { id: 'mcp', result: new Map() } }
     const globalFile = { ...wholeDraft().gathered, setup: emptySetupScan({ hasGlobalClaudeMd: true }) }
     const memoryDraft = wholeDraft({ roles, gathered: globalFile, instructions: { kind: 'none' } })
@@ -2934,7 +2939,11 @@ describe('refusal re-ask (G-02-6b)', () => {
         () => driven(instructionsStage.enter(stateAt('instructions', memoryDraft, memoryAgain)), ['zzz']).asked,
         roleList,
       ],
-      ['skills', () => driven(assignAt({ skills: [skillRef('x:y', 'x')] }), ['zzz']).asked, roleList],
+      [
+        'skills',
+        () => driven(assignAt({ skills: [skillRef('x:y', 'x')] }), ['zzz'], [recommendedNone]).asked,
+        roleList,
+      ],
       [
         'own skills',
         () => driven(assignAt({ skills: [skillRef('mine')] }), ['zzz'], [recommendedNone]).asked,
@@ -5637,5 +5646,23 @@ describe('the mcp call fallback (D-254)', () => {
     expect(recommended('Which roles get the github MCP server? (e.g. BE, QA, or none)')).toBe('Recommended: tl')
     expect(recommended('Which roles get the sentry MCP server? (e.g. BE, QA, or none)')).toBe('Recommended: none')
     expect(cardMcp(run, 'tl')).toBe('  MCP servers: none')
+  })
+})
+
+describe('the skills call after the MCP answers (D-248)', () => {
+  test('one skills call runs after the MCP hand-out, with the confirmed servers of each role', async () => {
+    const replies = ['{"servers":{"M1":["tl"],"M2":[]}}', '{"skills":{"S1":["security"]}}']
+    const answers = { ...MCP_ONE_BY_ONE, 'Which roles get the github MCP server': 'tl' }
+    const run = memIo(tableMatchWorld({ replies }), answers)
+    const { io, events } = withEvents(run)
+    await runInit(io, { dryRun: true })
+    expect(run.prompts).toHaveLength(2)
+    const { prompt } = completionAt(run, 1)
+    expect(prompt).toContain('MCP of tl: github')
+    expect(prompt).toContain('MCP of be: none')
+    const sentryAt = events.findIndex(event => event.startsWith('ask Which roles get the sentry MCP server'))
+    const ownAt = events.findIndex(event => event.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))
+    expect([sentryAt > 0, ownAt > sentryAt]).toEqual([true, true])
+    expect(cardSkills(run, 'security')).toContain('security-review')
   })
 })
