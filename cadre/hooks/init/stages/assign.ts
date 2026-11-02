@@ -1,16 +1,16 @@
 /**
- * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230, D-249), a layer 10 module: which roles get
- * each MCP server (the name table only seeds its recommendation) and each skill group the skill table does not decide,
- * with the team's role ids on each question's second line
- * (mcpContextLine) and each question's own context (ui/blocks/assign), the plugin groups busiest first with the
- * history hints, then the own skills (init/stages/own-skills) with the roles a skills model effect recommends for
- * them; assignStage, the pure stage that gives each name to the roles its answer names and decides the whole list of
- * each name it asks about. Pure: it gives states and never performs an effect, imports ui/ask, ui/blocks/assign,
- * init/answers, init/assign-rules, init/handout, init/state and the memory, model and own-skills stages, and never
- * imports init/machine or init/run.
+ * The assignment stage of init (G-02-1b, A3, D-59, D-136, D-211, D-230, D-249, D-280), a layer 10 module: which roles
+ * get each MCP server and skill group (the name tables only seed their recommendations), with the team's role ids on
+ * each question's second line (mcpContextLine) and each question's own context (ui/blocks/assign), the plugin groups
+ * busiest first with the history hints, then the own skills (init/stages/own-skills) with the roles a skills model
+ * effect recommends for them; assignStage, the pure stage that gives each name to the roles its answer names and
+ * decides the whole list of each name it asks about. Pure: it gives states and never performs an effect, imports
+ * suggest/skills, ui/ask, ui/blocks/assign, init/answers, init/assign-rules, init/handout, init/state and the memory,
+ * model and own-skills stages, and never imports init/machine or init/run.
  */
 import type { McpRef, RoleSpec, SetupScan } from '../../../types'
 import { t } from '../../locales/t'
+import { ownSkillId } from '../../suggest/skills'
 import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpServerContext, ownSkillsContext } from '../../ui/blocks/assign'
@@ -32,10 +32,10 @@ export function mcpContextLine(roles: readonly RoleSpec[]): string {
 }
 
 /**
- * What the assignment stage works from (D-53, D-59, D-249): the team, the setup scan and the history counts; the
- * servers to ask with the table's seeds (classifyMcp) and the skills the name table decides (classifySkills); the
- * questions in the order asked, each server, then each plugin group, busiest first with the hints (orderGroupsByUse);
- * and the group of the user's own skills.
+ * What the assignment stage works from (D-53, D-59, D-249, D-280): the team, the setup scan and the history counts;
+ * the servers and skill groups to ask with the tables' seeds (classifyMcp, classifySkills); the questions in the order
+ * asked, each server, then each plugin group, busiest first with the hints (orderGroupsByUse); and the group of the
+ * user's own skills.
  */
 type AssignPlan = {
   readonly roles: readonly RoleSpec[]
@@ -59,7 +59,7 @@ function mcpRefOf(mcp: readonly McpRef[], name: string): McpRef {
  * The AssignPlan of a state's draft; null while the roles, the scans or the history hints are not set. Every server
  * that is not infra is asked (D-249): its question carries its own context with the session's tool names
  * (mcpServerContext, D-211) and the roles the name table seeds for it as its recommendation, none without a seed; the
- * table never gives it to a role. A plugin group's skills are recommended to none.
+ * table never gives it to a role. A plugin group's skills show the roles the skill table seeds for each (D-280).
  */
 function assignPlan(state: InitState): AssignPlan | null {
   const { roles, gathered, hints } = state.draft
@@ -75,7 +75,7 @@ function assignPlan(state: InitState): AssignPlan | null {
   }))
   const pluginGroups = skills.groups.filter(group => group.plugin !== null)
   const groupItems = orderGroupsByUse(pluginGroups, hints).map(group =>
-    skillGroupItem(group, hints, roles, setup.skills, new Map()),
+    skillGroupItem(group, hints, roles, setup.skills, skills.seeds),
   )
   const ownGroup = skills.groups.find(group => group.plugin === null)
 
@@ -116,9 +116,9 @@ function itemAsked(
 
 /**
  * The stage done (A3): every role first loses the names asked about, then each name joins the `mcp` or `skills` list
- * of the roles its answer named (assignToRoles); a server goes only where its answer sends it, never by the table's
- * seed alone (D-249), and the skills the skill table decides are included; `done` holds the server answers first, one
- * per server, then the group answers, and `own` the own skills.
+ * of the roles its answer named (assignToRoles); a server or skill goes only where its answer sends it, never by a
+ * table's seed alone (D-249, D-280); `done` holds the server answers first, one per server, then the group answers,
+ * and `own` the own skills.
  */
 function assigned(
   state: InitState,
@@ -137,7 +137,7 @@ function assigned(
     skills: role.skills.filter(name => !askedSkills.has(name)),
   }))
   const withMcp = assignToRoles(unasked, servers, 'mcp')
-  const roles = assignToRoles(withMcp, [...skills.assigned, ...grouped, ...own], 'skills')
+  const roles = assignToRoles(withMcp, [...grouped, ...own], 'skills')
 
   return stageDone({ ...state, draft: { ...state.draft, roles } })
 }
@@ -228,7 +228,8 @@ function afterItem(
 /**
  * The model's recommendation for the own skills (G-02-1b): the side pane shows every own skill with what it does, its
  * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out, with that
- * block as its own context (ownSkillsContext, D-236).
+ * block as its own context (ownSkillsContext, D-236). A skill the model's map has no entry for gets the roles the skill
+ * table seeds for it as its recommendation (D-280).
  */
 function afterSkillsModel(
   state: InitState,
@@ -238,9 +239,14 @@ function afterSkillsModel(
 ): InitState {
   if (plan.ownGroup === undefined) return stageFailed(state)
   const skills = ownSkillsOf(plan.setup.skills, plan.ownGroup, plan.counts)
-  const lines = ownSkillLines(skills, plan.counts, recommended)
+  const seeded = new Map(recommended)
+  skills.forEach((skill, index) => {
+    const seed = plan.skills.seeds.get(skill.name)
+    if (!seeded.has(ownSkillId(index)) && seed !== undefined) seeded.set(ownSkillId(index), seed)
+  })
+  const lines = ownSkillLines(skills, plan.counts, seeded)
   const shown = withOutputs(state, [{ kind: 'show', block: { key: 'skills', lines } }])
-  const items = ownSkillItems(skills, plan.counts, recommended)
+  const items = ownSkillItems(skills, plan.counts, seeded)
   const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines) }
 
   return handedOut(shown, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
@@ -278,10 +284,10 @@ function assignAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The MCP and skill stage (D-53, ISO-04, D-230, D-249). Every MCP server is asked, the roles the name table matches
- * shown as its recommendation and never given without an answer (classifyMcp); the skills the skill table decides go
- * to their roles with no question (classifySkills), and infra servers and handoff and framework skills are never asked
- * about. Each MCP server, then each group of unknown skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
+ * The MCP and skill stage (D-53, ISO-04, D-230, D-249, D-280). Every MCP server and skill is asked, the roles the name
+ * tables match shown as its recommendation and never given without an answer (classifyMcp, classifySkills), and infra
+ * servers and handoff, infra plugin and framework skills are never asked about. Each MCP server, then each group of
+ * skills by plugin, is asked once, "Which roles get ...? (e.g. BE,
  * QA, or none)", with the team's role ids and what giving the item means on its second line (mcpContextLine,
  * skillsContextLine, D-136), answered with None, All roles or a typed list of role ids or titles; an answer that names
  * any other role is asked again (parseRoleList, T-02-33). Then, when the user has skills that no plugin adds, they are

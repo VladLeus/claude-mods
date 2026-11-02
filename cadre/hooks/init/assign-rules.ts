@@ -1,7 +1,7 @@
 /**
- * The assignment rules of init (D-53, D-59, ISO-04), a layer 10 module: classifyMcp and classifySkills split the
- * scanned MCP servers and skills into the ones the role table gives to the team's roles (NameAssignment) and the ones
- * left to ask about, the skills in groups by the plugin that adds them (SkillGroup); groupUses and orderGroupsByUse
+ * The assignment rules of init (D-53, D-59, ISO-04, D-249, D-280), a layer 10 module: classifyMcp and classifySkills
+ * give the scanned MCP servers and skills to ask about, the skills in groups by the plugin that adds them
+ * (SkillGroup), with the roles the name tables seed as each one's recommendation; groupUses and orderGroupsByUse
  * order those groups by how often the history scan saw them. It is pure and imports core, framework/registry, roles and
  * scope/lint; init.ts and init/answers read it.
  */
@@ -21,7 +21,7 @@ export type NameAssignment = {
 }
 
 /**
- * Skills the table does not decide, grouped by the plugin that adds them so one question covers the group. `label` is
+ * Skills to ask about, grouped by the plugin that adds them so one question covers the group. `label` is
  * the plugin name, or `your own` for user and project skills, which share one group (`plugin` null). `names` is sorted.
  */
 export type SkillGroup = {
@@ -34,8 +34,8 @@ export type SkillGroup = {
 const OWN_SKILLS_LABEL = t('init.assignRules.ownSkillsLabel')
 
 /**
- * The ids of the present roles of the first row that matches the name, sorted. Empty when no row matches, and also when
- * the row matches but none of its roles is on the team: the name is then unknown and gets its own question. A role is
+ * The ids of the present roles of the first row that matches the name, sorted: the seed of its recommendation (D-249,
+ * D-280). Empty when no row matches, and also when the row matches but none of its roles is on the team. A role is
  * present when it stands for one of the row's template roles, by its id or its basedOn.
  */
 function presentRoleIds(rows: readonly NameRow[], name: string, roles: readonly RoleSpec[]): string[] {
@@ -105,30 +105,32 @@ function groupByPlugin(skills: readonly SkillRef[]): SkillGroup[] {
 }
 
 /**
- * Splits the scanned skills into the ones the table gives to roles and the groups left to ask about. The handoff
- * skills (infra), the skills of an infra plugin under any marketplace (isInfraPlugin: every role keeps them, D-252)
- * and the GSD and superpowers skills (framework, which come through the adapter) are skipped, whichever framework the
- * roles use, and a skill seen twice from the same plugin counts once. A skill goes to the roles of its
- * row that are on the team, once by name whichever plugins add it; one that no row matches, or whose row has no role
- * on the team, joins the group of each plugin that adds it. Assigned skills are sorted by name, groups by label with
- * `your own` last, and the names in a group by name (D-53, ISO-04).
+ * The scanned skills to ask about, in groups by the plugin that adds them, and the roles the skill table seeds as each
+ * one's recommendation (D-280). The handoff skills (infra), the skills of an infra plugin under any marketplace
+ * (isInfraPlugin: every role keeps them, D-252) and the GSD and superpowers skills (framework, which come through the
+ * adapter) are skipped, whichever framework the roles use, and a skill seen twice from the same plugin counts once.
+ * Every other skill joins the group of each plugin that adds it; a skill whose row matches gets the ids of that row's
+ * roles that are on the team in `seeds`, once by name whichever plugins add it, and one that no row matches, or whose
+ * row has no role on the team, has no seed. The table only seeds the recommendation and never gives a skill to a role
+ * (D-280 supersedes D-53's silent path). Groups are sorted by label with `your own` last, and the names in a group by
+ * name (D-53, ISO-04).
  */
 export function classifySkills(
   skills: readonly SkillRef[],
   roles: readonly RoleSpec[],
-): { readonly assigned: readonly NameAssignment[]; readonly groups: readonly SkillGroup[] } {
-  const assigned: NameAssignment[] = []
+): { readonly groups: readonly SkillGroup[]; readonly seeds: ReadonlyMap<string, readonly string[]> } {
+  const seeds = new Map<string, readonly string[]>()
   const asked: SkillRef[] = []
   for (const skill of uniqueSkills(skills)) {
     const isInfra = INFRA_SKILLS.includes(skill.name) || (skill.plugin !== null && isInfraPlugin(skill.plugin))
     if (isInfra || ADAPTERS.some(adapter => adapter.ownsSkill(skill))) continue
 
+    asked.push(skill)
     const roleIds = presentRoleIds(SKILL_ROLE_ROWS, skill.name, roles)
-    if (roleIds.length === 0) asked.push(skill)
-    else if (!assigned.some(assignment => assignment.name === skill.name)) assigned.push({ name: skill.name, roleIds })
+    if (roleIds.length > 0) seeds.set(skill.name, roleIds)
   }
 
-  return { assigned, groups: groupByPlugin(asked) }
+  return { groups: groupByPlugin(asked), seeds }
 }
 
 /**
