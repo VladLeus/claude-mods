@@ -41,6 +41,7 @@ export const GOLDEN_TUI: {
     null,
     null,
     null,
+    null,
     null
   ],
   "logs": [
@@ -152,14 +153,25 @@ export const GOLDEN_TUI: {
     {
       "header": "Skills",
       "options": [
-        "Accept recommendations",
         "Go one by one",
         "Whole group"
       ],
       "previews": [
         "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
-        "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```",
         "**Your own skills**\n```\nSkills with no plugin (a role given a skill can run it in its session; a role not\ngiven it cannot):\n  deploy-notes: Write the release notes for a deploy.\n    recommended: none\nThe model gave no usable recommendation: no role gets a skill unless you pick one.\n```"
+      ]
+    },
+    {
+      "header": "Skills",
+      "options": [
+        "None",
+        "All roles",
+        "Describe your own"
+      ],
+      "previews": [
+        "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```",
+        "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```",
+        "**Skills: your own**\n```\ndeploy-notes: Write the release notes for a deploy. Recommended: none.\n```"
       ]
     },
     {

@@ -34,8 +34,8 @@ export type HandoutItem = {
 
 /**
  * The entry question of a hand-out (G-02-1f Entry choices): its text, context line and chip, the labels of its three
- * answers in the order the dialog shows them (accept the recommendations, go one by one, or the whole group), and the
- * question's own context, which its ask carries (D-203).
+ * answers in the order the dialog shows them (accept the recommendations, go one by one, or the whole group; accept
+ * only when an item has a recommendation, D-279), and the question's own context, which its ask carries (D-203).
  */
 export type HandoutEntry = {
   readonly question: string
@@ -69,13 +69,18 @@ type EntryLabel = {
   readonly value: EntryChoice
 }
 
-/** The entry answers with what each picks, in the order the dialog shows them. */
-function entryLabels(entry: HandoutEntry): readonly EntryLabel[] {
-  return [
-    { label: entry.accept, value: 'accept' },
+/**
+ * The entry answers with what each picks, in the order the dialog shows them. Accept is left out when no item has a
+ * recommendation, since it would give nothing (D-279, which corrects the premise of D-250 and D-254).
+ */
+function entryLabels(entry: HandoutEntry, items: readonly HandoutItem[]): readonly EntryLabel[] {
+  const choices: readonly EntryLabel[] = [
     { label: entry.oneByOne, value: 'oneByOne' },
     { label: entry.whole, value: 'whole' },
   ]
+  if (items.every(item => item.recommended.length === 0)) return choices
+
+  return [{ label: entry.accept, value: 'accept' }, ...choices]
 }
 
 /** The entry answer an answer names, trimmed and in any case; null when it names none, so it is asked again. */
@@ -145,11 +150,11 @@ type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
  * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip, its
- * own context when it has one, and its three answers in the order accept, one by one, whole, read trimmed and in any
- * case.
+ * own context when it has one, and its answers in the order accept, one by one, whole, read trimmed and in any case;
+ * with no recommended item Accept is neither offered nor taken, so typing it is refused like any other label (D-279).
  */
 function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
-  const labels = entryLabels(cursor.entry)
+  const labels = entryLabels(cursor.entry, cursor.items)
   const options = labels.map(label => label.label)
 
   return {
