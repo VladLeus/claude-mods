@@ -1008,3 +1008,17 @@ describe('security-guidance for Security (decision #39)', () => {
     expect(pluginKeys(be)).toEqual([...INFRA_KEYS, SECURITY_GUIDANCE_PLUGIN])
   })
 })
+
+describe('infra plugins by name in every scope (D-281)', () => {
+  test('a scanned infra plugin under another marketplace is enabled for a role with none of its skills', () => {
+    const setup = emptySetupScan({ plugins: ['autopilot@elsewhere', 'codex@openai-codex'] })
+    const scope = compileScope(templateRole('be'), context({ setup }))
+
+    expect(pluginKeys(scope)).toEqual([
+      'agent-fleet@local-mods',
+      'autopilot@elsewhere',
+      'autopilot@local-mods',
+      'cadre@local-mods',
+    ])
+  })
+})
