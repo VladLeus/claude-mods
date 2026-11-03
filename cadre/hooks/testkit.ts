@@ -190,6 +190,8 @@ export type MemRun = {
   readonly shown: ShownBlock[]
   /** Every status line set, in order, null for each clear (D-232). */
   readonly progress: (string | null)[]
+  /** The step summary of each progress call, beside its line in `progress`, null when it gave none (D-327). */
+  readonly progressSummaries: (string | null)[]
   /** Every completion asked, as `${system}\n---\n${prompt}`. */
   readonly prompts: string[]
   readonly reads: string[]
@@ -266,6 +268,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
   const logged: string[] = []
   const shown: ShownBlock[] = []
   const progress: (string | null)[] = []
+  const progressSummaries: (string | null)[] = []
   const prompts: string[] = []
   const reads: string[] = []
   const listed: string[] = []
@@ -291,8 +294,9 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     show: async block => {
       shown.push(block)
     },
-    progress: async text => {
+    progress: async (text, summary) => {
       progress.push(text)
+      progressSummaries.push(summary ?? null)
     },
     complete: async (prompt, system) => {
       prompts.push(`${system}\n---\n${prompt}`)
@@ -334,7 +338,7 @@ export function memIo(world: MemWorld, answers: readonly string[] | Readonly<Rec
     tools: async () => world.tools,
   }
 
-  return { io, asked, specs, logged, shown, progress, prompts, reads, listed, gsdIdentityCalls }
+  return { io, asked, specs, logged, shown, progress, progressSummaries, prompts, reads, listed, gsdIdentityCalls }
 }
 
 /**

@@ -596,8 +596,12 @@ export type InitIo = {
    * init pane draws only the open question's context or the loader (D-299).
    */
   readonly show: (block: ShownBlock) => Promise<void>
-  /** One status line between questions on the TUI default, or null to clear it; never rejects (D-232). */
-  readonly progress: (text: string | null) => Promise<void>
+  /**
+   * The label of a long step (one status line between questions, null to clear it) and a one-line summary of what
+   * the step works on: the TUI default shows the label only (D-232), a pane surface draws both as the loader (D-301,
+   * D-327); never rejects.
+   */
+  readonly progress: (text: string | null, summary?: string) => Promise<void>
   /** One model completion; the model has no tools (D-83). Null when the model gave no text. */
   readonly complete: (prompt: string, system: string) => Promise<string | null>
   /** True when a surface can show a dialog, false in `claude -p`, null when unknown. */
