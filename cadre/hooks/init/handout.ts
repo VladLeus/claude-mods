@@ -8,7 +8,7 @@
 import type { AskContext, AskSpec, RoleSpec } from '../../types'
 import { labelled } from '../core/labelled'
 import { t } from '../locales/t'
-import { choiceAnswer, quotedLabels, withContext } from '../ui/ask'
+import { choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../ui/ask'
 import type { ChoiceAsk } from '../ui/ask'
 import { parseRoleList } from './answers'
 
@@ -20,8 +20,8 @@ export const ACCEPT_RECOMMENDATIONS = t('init.handout.acceptRecommendations')
 
 /**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
- * asked with, the role ids recommended for it, which Accept gives it, and the question's own context, which its ask
- * carries (D-203).
+ * asked with, the role ids recommended for it, which Accept gives it, the question's own context, which its ask
+ * carries (D-203), and the one line a pane surface asks in place of the context line (D-255).
  */
 export type HandoutItem = {
   readonly id: string
@@ -30,6 +30,8 @@ export type HandoutItem = {
   readonly header: string
   readonly recommended: readonly string[]
   readonly context?: AskContext
+  /** The one line a pane surface asks with the question, the context left to the pane; the context line when absent. */
+  readonly paneLine?: string
 }
 
 /**
@@ -45,11 +47,24 @@ export type HandoutEntry = {
   readonly oneByOne: string
   readonly whole: string
   readonly context?: AskContext
+  /** The one line a pane surface asks with the question, the context left to the pane; the context line when absent. */
+  readonly paneLine?: string
 }
 
-/** A dialog spec with the question's own context when it has one (D-203); without one the spec has no context. */
-function specWith(spec: AskSpec, context: AskContext | undefined): AskSpec {
-  return context === undefined ? spec : { ...spec, context }
+/**
+ * A dialog spec with the question's own context when it has one (D-203), carrying what a pane surface asks: the
+ * question with `paneLine` in place of its context line (paneQuestionOf, D-255), or with the context line itself when
+ * the question names no pane line; without a context the spec has none.
+ */
+function specWith(
+  spec: AskSpec,
+  question: { readonly question: string; readonly contextLine: string; readonly paneLine?: string },
+  context: AskContext | undefined,
+): AskSpec {
+  if (context === undefined) return spec
+  const pane = paneQuestionOf(question.question, question.contextLine, question.paneLine ?? question.contextLine)
+
+  return { ...spec, context: { ...context, pane } }
 }
 
 /**
@@ -150,8 +165,9 @@ type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
  * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip, its
- * own context when it has one, and its answers in the order accept, one by one, whole, read trimmed and in any case;
- * with no recommended item Accept is neither offered nor taken, so typing it is refused like any other label (D-279).
+ * own context when it has one, with what a pane surface asks (specWith, D-255), and its answers in the order accept,
+ * one by one, whole, read trimmed and in any case; with no recommended item Accept is neither offered nor taken, so
+ * typing it is refused like any other label (D-279).
  */
 function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
   const labels = entryLabels(cursor.entry, cursor.items)
@@ -159,7 +175,7 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 
   return {
     question: withContext(cursor.entry.question, cursor.entry.contextLine),
-    spec: specWith({ options, header: cursor.entry.header }, cursor.entry.context),
+    spec: specWith({ options, header: cursor.entry.header }, cursor.entry, cursor.entry.context),
     parse: (answer: string): EntryChoice | null => parseEntry(labels, answer),
     accepts: quotedLabels(options),
     dismissedReason: cursor.dismissedReason,
@@ -168,13 +184,13 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 
 /**
  * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip, its own
- * context when it has one, and the buttons Yes and No, a role list typed under "Other" (itemRoles), so it takes a
- * typed answer (D-234).
+ * context when it has one, with what a pane surface asks (specWith, D-255), and the buttons Yes and No, a role list
+ * typed under "Other" (itemRoles), so it takes a typed answer (D-234).
  */
 function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
   return {
     question: withContext(item.question, item.contextLine),
-    spec: specWith({ options: ITEM_OPTIONS, header: item.header, acceptsTyped: true }, item.context),
+    spec: specWith({ options: ITEM_OPTIONS, header: item.header, acceptsTyped: true }, item, item.context),
     parse: (answer: string): readonly string[] | null => itemRoles(answer, item, cursor.roles),
     accepts: itemAccepts(cursor.roles),
     dismissedReason: cursor.dismissedReason,

@@ -17,7 +17,7 @@ import { missingSecurityPlugins, recommend } from '../../roles/recommend'
 import { standsFor } from '../../roles/template'
 import { pluginName } from '../../scope/lint'
 import { resolvedFramework } from '../../team'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { SECURITY_PLUGIN_NOTES, securityContext } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
@@ -80,13 +80,18 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
 /**
  * The security plugins question as the stage asks it (decision #39, D-136): securityInstallQuestion for `keys`, with
  * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip and the missing
- * plugins as its own context (securityContext, D-236), Install or Not now trimmed and in any case, what its refusal
- * lists, and the reason a dismissal cancels with.
+ * plugins as its own context (securityContext, D-236), which a pane surface asks with its first line in place of that
+ * line (D-255), Install or Not now trimmed and in any case, what its refusal lists, and the reason a dismissal cancels
+ * with.
  */
 function securityAsk(keys: readonly string[]): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  const context = securityContext(keys)
+  const line = context.lines[0] ?? SECURITY_INSTALL_CONTEXT
+  const pane = paneQuestionOf(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT, line)
+
   return {
-    question: withContext(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT),
-    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security, context: securityContext(keys) },
+    question: pane.asked,
+    spec: { options: INSTALL_OPTIONS, header: ASK_HEADERS.security, context: { ...context, pane } },
     parse: (answer: string): boolean | null => labelled(INSTALL_CHOICES, answer),
     accepts: quotedLabels(INSTALL_OPTIONS),
     dismissedReason: SECURITY_INSTALL_DISMISSED_REASON,

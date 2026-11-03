@@ -24,7 +24,7 @@ import { scanWarnings } from '../../scan/gather'
 import { scopeCardLines } from '../../scope/card'
 import { MEMORY_PATTERN } from '../../scope/lint'
 import { resolvedFramework, scopesFor } from '../../team'
-import { ASK_HEADERS, choiceAnswer, contextText, orList, quotedLabels, refusalLine } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, contextText, orList, quotedLabels, refusalLine, withContext } from '../../ui/ask'
 import type { ChoiceAsk, StepResult } from '../../ui/ask'
 import { reviewContext } from '../../ui/blocks/context'
 import { instructionReviewLines } from '../../ui/blocks/instructions'
@@ -386,9 +386,10 @@ function reviewPlanOf(draft: Draft): {
  * Page `page` of the review as the stage asks it on every surface (D-233, ASKED #4, #19, #23, D-234): the review
  * question with the context line of the plan just shown, the page's options (pageChoices) with the Review chip, and
  * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
- * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). An answer
- * pageChoice cannot read is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change
- * something….
+ * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). A pane surface
+ * asks REVIEW_QUESTION with one line: the page's place, which the Review chip does not carry, when there is more than
+ * one page, else the page's first line (D-255). An answer pageChoice cannot read is asked again on the same page with
+ * refusalLine on top, or CHANGE_REFUSAL after Change something….
  */
 function pagedAsk(
   draft: Draft,
@@ -403,10 +404,17 @@ function pagedAsk(
   const title =
     pages.length === 1 ? t('init.review.title') : t('init.review.pagedTitle', { number: at + 1, count: pages.length })
   const accepts = `${quotedLabels(labels)}, ${REVIEW_ITEM_WORDS}`
+  const question = reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart)))
+  const context = { ...reviewContext(pages[at] ?? []), title }
+  const line = pages.length === 1 ? (context.lines[0] ?? title) : title
 
   return {
-    question: reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart))),
-    spec: { options: labels, header: ASK_HEADERS.review, context: { ...reviewContext(pages[at] ?? []), title } },
+    question,
+    spec: {
+      options: labels,
+      header: ASK_HEADERS.review,
+      context: { ...context, pane: { asked: question, text: withContext(REVIEW_QUESTION, line) } },
+    },
     parse: answer => pageChoice(choices, answer),
     accepts,
     refuse: answer => (labelled(choices, answer) === 'change' ? CHANGE_REFUSAL : refusalLine(answer, accepts)),

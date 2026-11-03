@@ -12,7 +12,7 @@ import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
 import { t } from '../../locales/t'
 import { isSafeRelativePath } from '../../paths'
-import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
@@ -113,13 +113,17 @@ const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
  * second line (launchContextLine), the three starts with the Launch chip and what the git root and the run folder
- * mean as its own context (launchContext, D-236), parseLaunchChoice, what its refusal lists, and the reason a dismissal
- * cancels with.
+ * mean as its own context (launchContext, D-236), which a pane surface asks with its first line in place of that line
+ * (D-255), parseLaunchChoice, what its refusal lists, and the reason a dismissal cancels with.
  */
 function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
+  const context = launchContext(roles)
+  const contextLine = launchContextLine(roles)
+  const pane = paneQuestionOf(LAUNCH_START_QUESTION, contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(LAUNCH_START_QUESTION, launchContextLine(roles)),
-    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch, context: launchContext(roles) },
+    question: pane.asked,
+    spec: { options: LAUNCH_START_OPTIONS, header: ASK_HEADERS.launch, context: { ...context, pane } },
     parse: parseLaunchChoice,
     accepts: LAUNCH_START_ACCEPTS,
     dismissedReason: LAUNCH_START_DISMISSED_REASON,
@@ -128,12 +132,15 @@ function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & {
 
 /**
  * The folder question asked (A2), with LAUNCH_DIR_CONTEXT on its second line, `refusal` on top and the folders the
- * repo scan found code in as its own context (launchDirContext, D-236), `tries` so far.
+ * repo scan found code in as its own context (launchDirContext, D-236), which a pane surface asks with its first line
+ * in place of LAUNCH_DIR_CONTEXT (D-255), `tries` so far.
  */
 function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
-  const question = askedText(withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT), refusal)
+  const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [])
+  const pane = paneQuestionOf(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT, context.lines[0] ?? LAUNCH_DIR_CONTEXT)
+  const question = askedText(pane.asked, refusal)
   const sub: InitState['sub'] = { kind: 'launch-dir', tries }
-  const spec = { ...LAUNCH_DIR_SPEC, context: launchDirContext(state.draft.gathered?.repo.codeDirs ?? []) }
+  const spec = { ...LAUNCH_DIR_SPEC, context: { ...context, pane } }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question, spec })
 }

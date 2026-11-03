@@ -30,6 +30,7 @@ import { normalizeFacts } from './scan/facts/normalize'
 import { pluginVersionOf, portProbeOf, portTextOf } from './scan/port-read'
 import { runStart } from './start/run'
 import { runStatus } from './status/run'
+import { paneQuestionText } from './ui/ask'
 import {
   paneColumns,
   panePlacement,
@@ -194,17 +195,21 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On a
  * pane surface `progress` puts the step's label into the loader state, which the pane draws on top, and opens the pane
  * as the run's first block does when nothing opened it yet, the last run's blocks dropped (D-257, OC-02-L); `ask`
- * clears the loader before it puts the question into the openQuestion state. On the TUI default `show` neither writes
- * the pane's state nor opens it, at any time of the run (D-208); there `progress` sets the one status line
- * (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a context too long for the preview above
- * it (beforeTuiDialog, D-228).
+ * clears the loader before it puts the question into the openQuestion state, and there asks, and keeps as the open
+ * question's text, the question's sentence and one context line (paneQuestionText, D-255), so the dialog hook still
+ * pairs the dialog with it. On the TUI default `show` neither writes the pane's state nor opens it, at any time of
+ * the run (D-208); there `progress` sets the one status line (`$.ui.status`), and `ask` clears it before each dialog
+ * (D-232) and prints a context too long for the preview above it (beforeTuiDialog, D-228).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
     ask: async (question, spec) => {
       const { options, header, multiSelect, context, acceptsTyped } = spec
+      // A pane surface asks the sentence and one context line, the pane holding the rest (D-255); the TUI default and
+      // a run with no surface ask the question as given.
+      const text = pane.surface === 'pane' ? paneQuestionText(question, context ?? null) : question
       const open: OpenQuestion = {
-        question,
+        question: text,
         header: header ?? null,
         context: context ?? null,
         acceptsTyped: acceptsTyped === true,
@@ -222,7 +227,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
           ...(multiSelect === undefined ? {} : { multiSelect }),
         }
 
-        return await $.ui.ask(question, dialog)
+        return await $.ui.ask(text, dialog)
       } finally {
         await update($, openQuestion, () => null).catch(() => undefined)
       }

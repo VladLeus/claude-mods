@@ -36,7 +36,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
+          "text": "Use these roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -48,7 +52,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
-        "kind": "security"
+        "kind": "security",
+        "pane": {
+          "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
+          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+        }
       },
       "acceptsTyped": false
     },
@@ -66,7 +74,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
+          "text": "Autopilot duration for roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -84,7 +96,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
+          "text": "Model and effort: same for all roles, or per role?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -102,7 +118,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
+          "text": "Model and effort for all roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -115,7 +135,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Commit all: only per-user files are ignored.",
           "Ignore all: nothing in .cadre/ is committed."
         ],
-        "kind": "git-policy"
+        "kind": "git-policy",
+        "pane": {
+          "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
+          "text": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/."
+        }
       },
       "acceptsTyped": false
     },
@@ -128,7 +152,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Run folder: wherever you run a launcher from.",
           "Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security"
         ],
-        "kind": "launch"
+        "kind": "launch",
+        "pane": {
+          "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
+          "text": "Where should the role launchers start their sessions? (asked once for this repo)\nGit root: the top of this repo, the same for every launcher."
+        }
       },
       "acceptsTyped": false
     },
@@ -157,7 +185,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [best-effort] No other scanned MCP servers to deny",
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
-        "kind": "review"
+        "kind": "review",
+        "pane": {
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nReview (page 1 of 7)"
+        }
       },
       "acceptsTyped": false
     }
@@ -183,7 +215,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), BE (be), FE (fe), QA (qa), Security (security); 1 change from the scan.",
+          "text": "Use these roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -195,7 +231,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
-        "kind": "security"
+        "kind": "security",
+        "pane": {
+          "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
+          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+        }
       },
       "acceptsTyped": false
     },
@@ -214,7 +254,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, be, fe, qa, security.",
+          "text": "Autopilot duration for roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -233,7 +277,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Model and effort: same for all roles, or per role?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -252,7 +300,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
+          "text": "Model and effort for all roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -275,7 +327,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Commit all: only per-user files are ignored.",
           "Ignore all: nothing in .cadre/ is committed."
         ],
-        "kind": "git-policy"
+        "kind": "git-policy",
+        "pane": {
+          "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
+          "text": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/."
+        }
       },
       "acceptsTyped": false
     },
@@ -288,7 +344,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Run folder: wherever you run a launcher from.",
           "Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/be, .cadre/bin/fe, .cadre/bin/qa, .cadre/bin/security"
         ],
-        "kind": "launch"
+        "kind": "launch",
+        "pane": {
+          "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, be, fe, qa, security) starts its session there.",
+          "text": "Where should the role launchers start their sessions? (asked once for this repo)\nGit root: the top of this repo, the same for every launcher."
+        }
       },
       "acceptsTyped": false
     },
@@ -317,7 +377,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)",
           "    [hard] No Bash tool (denied)"
         ],
-        "kind": "review"
+        "kind": "review",
+        "pane": {
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nReview (page 1 of 13)"
+        }
       },
       "acceptsTyped": false
     }
@@ -343,7 +407,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), BE (be), FE (fe), QA (qa), Security (security); 1 change from the scan.",
+          "text": "Use these roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -355,7 +423,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
-        "kind": "security"
+        "kind": "security",
+        "pane": {
+          "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
+          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+        }
       },
       "acceptsTyped": false
     },
@@ -374,7 +446,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, be, fe, qa, security.",
+          "text": "Autopilot duration for roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -393,7 +469,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, be, fe, qa, security.",
+          "text": "Model and effort: same for all roles, or per role?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -412,7 +492,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Changes from the scan:",
           "  kept be: source code found (TypeScript), no backend framework (package.json)"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
+          "text": "Model and effort for all roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -425,7 +509,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Commit all: only per-user files are ignored.",
           "Ignore all: nothing in .cadre/ is committed."
         ],
-        "kind": "git-policy"
+        "kind": "git-policy",
+        "pane": {
+          "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
+          "text": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/."
+        }
       },
       "acceptsTyped": false
     },
@@ -438,7 +526,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Run folder: wherever you run a launcher from.",
           "Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/be, .cadre/bin/fe, .cadre/bin/qa, .cadre/bin/security"
         ],
-        "kind": "launch"
+        "kind": "launch",
+        "pane": {
+          "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, be, fe, qa, security) starts its session there.",
+          "text": "Where should the role launchers start their sessions? (asked once for this repo)\nGit root: the top of this repo, the same for every launcher."
+        }
       },
       "acceptsTyped": false
     },
@@ -467,7 +559,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [hard] Plugins: only agent-fleet@local-mods, autopilot@local-mods, cadre@local-mods load (--setting-sources project whitelist)",
           "    [hard] No Bash tool (denied)"
         ],
-        "kind": "review"
+        "kind": "review",
+        "pane": {
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 46 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nReview (page 1 of 13)"
+        }
       },
       "acceptsTyped": false
     }
@@ -492,7 +588,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
+          "text": "Use these roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -504,7 +604,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "GSD: in use (.planning/ (dir))",
           "superpowers: in use (docs/superpowers/)"
         ],
-        "kind": "detection"
+        "kind": "detection",
+        "pane": {
+          "asked": "Which framework do the roles use? (asked because more than one framework is in use)\nRoles: pm, tl, security.",
+          "text": "Which framework do the roles use? (asked because more than one framework is in use)\nGSD: in use (.planning/ (dir))"
+        }
       },
       "acceptsTyped": false
     },
@@ -516,7 +620,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "GSD: in use (.planning/ (dir))",
           "superpowers: in use (docs/superpowers/)"
         ],
-        "kind": "detection"
+        "kind": "detection",
+        "pane": {
+          "asked": "Framework for all roles?\nRoles: pm, tl, security.",
+          "text": "Framework for all roles?\nGSD: in use (.planning/ (dir))"
+        }
       },
       "acceptsTyped": true
     },
@@ -528,7 +636,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
-        "kind": "security"
+        "kind": "security",
+        "pane": {
+          "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
+          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+        }
       },
       "acceptsTyped": false
     },
@@ -546,7 +658,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
+          "text": "Autopilot duration for roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -564,7 +680,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
+          "text": "Model and effort: same for all roles, or per role?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -582,7 +702,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
+          "text": "Model and effort for all roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -598,7 +722,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "sentry: session, 1 tool. Recommended: none."
         ],
-        "kind": "mcp-server"
+        "kind": "mcp-server",
+        "pane": {
+          "asked": "Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role not given the server cannot use it.",
+          "text": "Which roles get all the MCP servers (1)? (e.g. BE, QA, or none)\nsentry: session, 1 tool. Recommended: none."
+        }
       },
       "acceptsTyped": true
     },
@@ -610,7 +738,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Recommended: none",
           "codex:rescue: Bearer [hidden]. Recommended: none."
         ],
-        "kind": "skill-group"
+        "kind": "skill-group",
+        "pane": {
+          "asked": "Which roles get codex skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role given these skills can run them in its session; a role not given them cannot.",
+          "text": "Which roles get codex skills (1)? (e.g. BE, QA, or none)\nRecommended: none"
+        }
       },
       "acceptsTyped": true
     },
@@ -625,7 +757,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Memories:",
           "  notes.md"
         ],
-        "kind": "instructions"
+        "kind": "instructions",
+        "pane": {
+          "asked": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFound: global CLAUDE.md yes, 1 CLAUDE.md file in the repo chain, 0 rule files, AGENTS.md no, 1 memory. No keeps the whole-file questions.",
+          "text": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFiles found by name (nothing is read before a yes):"
+        }
       },
       "acceptsTyped": false
     },
@@ -636,7 +772,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "~/.claude/CLAUDE.md and the files it imports"
         ],
-        "kind": "memory-group"
+        "kind": "memory-group",
+        "pane": {
+          "asked": "Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
+          "text": "Which roles get your global ~/.claude/CLAUDE.md and the files it imports? (e.g. PM, TL, or none)\n~/.claude/CLAUDE.md and the files it imports"
+        }
       },
       "acceptsTyped": true
     },
@@ -647,7 +787,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "notes.md"
         ],
-        "kind": "memory-group"
+        "kind": "memory-group",
+        "pane": {
+          "asked": "Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
+          "text": "Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)\nnotes.md"
+        }
       },
       "acceptsTyped": true
     },
@@ -658,7 +802,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "lines": [
           "repo/CLAUDE.md"
         ],
-        "kind": "memory-group"
+        "kind": "memory-group",
+        "pane": {
+          "asked": "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
+          "text": "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)\nrepo/CLAUDE.md"
+        }
       },
       "acceptsTyped": true
     },
@@ -671,7 +819,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  API_KEY",
           "  JIRA_URL"
         ],
-        "kind": "env"
+        "kind": "env",
+        "pane": {
+          "asked": "Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)\nRoles: pm, tl, security. Every role carries the same names; values are filled in at launch.",
+          "text": "Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)\nEnv variable names in your settings (values are never read):"
+        }
       },
       "acceptsTyped": true
     },
@@ -699,7 +851,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Commit all: only per-user files are ignored.",
           "Ignore all: nothing in .cadre/ is committed."
         ],
-        "kind": "git-policy"
+        "kind": "git-policy",
+        "pane": {
+          "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
+          "text": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/."
+        }
       },
       "acceptsTyped": false
     },
@@ -712,7 +868,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Run folder: wherever you run a launcher from.",
           "Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security"
         ],
-        "kind": "launch"
+        "kind": "launch",
+        "pane": {
+          "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
+          "text": "Where should the role launchers start their sessions? (asked once for this repo)\nGit root: the top of this repo, the same for every launcher."
+        }
       },
       "acceptsTyped": false
     },
@@ -741,7 +901,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [best-effort] Scanned MCP servers not given are denied: sentry",
           "    [best-effort] Denied servers: tools removed and the whole server denied (deniedMcpServers; best-effort)"
         ],
-        "kind": "review"
+        "kind": "review",
+        "pane": {
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 3 hunks (3 accepted); Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nReview (page 1 of 8)"
+        }
       },
       "acceptsTyped": false
     }
@@ -766,7 +930,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the scan.",
+          "text": "Use these roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -778,7 +946,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
-        "kind": "security"
+        "kind": "security",
+        "pane": {
+          "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
+          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+        }
       },
       "acceptsTyped": false
     },
@@ -796,7 +968,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Autopilot duration for roles?\nApplies to every role: pm, tl, security.",
+          "text": "Autopilot duration for roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -814,7 +990,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.",
+          "text": "Model and effort: same for all roles, or per role?\nProposed roles:"
+        }
       },
       "acceptsTyped": false
     },
@@ -832,7 +1012,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  dropped fe: no frontend framework found (react, vue, next, svelte, angular)",
           "  dropped qa: no tests or E2E setup found"
         ],
-        "kind": "roles"
+        "kind": "roles",
+        "pane": {
+          "asked": "Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, high, xhigh, max.",
+          "text": "Model and effort for all roles?\nProposed roles:"
+        }
       },
       "acceptsTyped": true
     },
@@ -847,7 +1031,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  squad.md",
           "  workflow.md"
         ],
-        "kind": "instructions"
+        "kind": "instructions",
+        "pane": {
+          "asked": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFound: global CLAUDE.md yes, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 2 memories. No keeps the whole-file questions.",
+          "text": "Read your CLAUDE.md files, rules and memories, and let the model group them into parts for each role? Nothing from your global files or memories is committed, and originals are never edited.\nFiles found by name (nothing is read before a yes):"
+        }
       },
       "acceptsTyped": false
     },
@@ -869,7 +1057,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  workflow.md: No summary in MEMORY.md.",
           "    recommended: none"
         ],
-        "kind": "instructions"
+        "kind": "instructions",
+        "pane": {
+          "asked": "How do you want to hand out the instruction parts and memories?\n2 topics from 1 file and 2 memories; the pane shows each with the roles it is recommended for.",
+          "text": "How do you want to hand out the instruction parts and memories?\n2 topics from 1 file and 2 memories; the pane shows each with the roles it is recommended for."
+        }
       },
       "acceptsTyped": false
     },
@@ -882,7 +1074,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "  tl: .cadre/tl/CLAUDE.md",
           "  security: .cadre/security/CLAUDE.md"
         ],
-        "kind": "improver-install"
+        "kind": "improver-install",
+        "pane": {
+          "asked": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\nWithout it the built files stay as cadre wrote them; a --dry-run installs nothing.",
+          "text": "Install claude-md-management from claude-plugins-official after you confirm the plan? Its claude-md-improver tidies each role's built CLAUDE.md, and you accept or keep each change.\nBuilt CLAUDE.md files it would tidy:"
+        }
       },
       "acceptsTyped": false
     },
@@ -895,7 +1091,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Commit all: only per-user files are ignored.",
           "Ignore all: nothing in .cadre/ is committed."
         ],
-        "kind": "git-policy"
+        "kind": "git-policy",
+        "pane": {
+          "asked": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.",
+          "text": "Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/."
+        }
       },
       "acceptsTyped": false
     },
@@ -908,7 +1108,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "Run folder: wherever you run a launcher from.",
           "Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security"
         ],
-        "kind": "launch"
+        "kind": "launch",
+        "pane": {
+          "asked": "Where should the role launchers start their sessions? (asked once for this repo)\nThe launcher of each role (pm, tl, security) starts its session there.",
+          "text": "Where should the role launchers start their sessions? (asked once for this repo)\nGit root: the top of this repo, the same for every launcher."
+        }
       },
       "acceptsTyped": false
     },
@@ -937,7 +1141,11 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
           "    [best-effort] No other scanned MCP servers to deny",
           "    [none] MCP servers the scan could not see, such as unusual names or ~/.claude.json without consent, are not denied"
         ],
-        "kind": "review"
+        "kind": "review",
+        "pane": {
+          "asked": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 0 hunks; Git policy: commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, or type duration, model, assignments, memory, env or hunks under Other.",
+          "text": "Review the plan shown in the cadre init pane. Confirm it, or go back to change one item.\nReview (page 1 of 8)"
+        }
       },
       "acceptsTyped": false
     }

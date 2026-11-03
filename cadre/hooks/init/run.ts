@@ -72,9 +72,9 @@ import {
   askOnce,
   choiceResult,
   noteLine,
+  paneQuestionOf,
   quotedLabels,
   showBlock,
-  withContext,
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
@@ -216,9 +216,10 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  * 1. The Keep mine or Take new questions, the only questions after Confirm (D-105, D-67): one for each conflicted file
  *    of the confirmed plan (conflictPaths), in plan order, before any host call (conflictQuestion with
  *    CONFLICT_OPTIONS, parseConflictAnswer), each with the file's diff from the version on disk, read again through
- *    readRepoFile, to the new one as its own context (conflictContext, D-236); an answer that is neither is asked again
- *    with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that are neither
- *    with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
+ *    readRepoFile, to the new one as its own context (conflictContext, D-236), whose first line, how many lines Take
+ *    new adds and removes, a pane surface asks in place of the context line (D-255); an answer that is neither is
+ *    asked again with why on top (D-136). A dismissal cancels with CONFLICT_DISMISSED_REASON and MAX_ASKS answers that
+ *    are neither with NO_USABLE_ANSWER_REASON, so nothing is written or run (A1, D-45).
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
@@ -280,9 +281,11 @@ async function applyConfirmed(
     const disk = await readRepoFile(io, locations.root, path, MAX_READ_BYTES)
     const desired = reviewed.planned.desired.find(file => file.path === path)
     const diff = disk.state === 'text' && desired !== undefined ? lineDiff(disk.text, desired.content) : null
+    const context = conflictContext(path, diff)
+    const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.lines[0] ?? CONFLICT_CONTEXT)
     const ask = {
-      question: withContext(conflictQuestion(path), CONFLICT_CONTEXT),
-      spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict, context: conflictContext(path, diff) },
+      question: pane.asked,
+      spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict, context: { ...context, pane } },
       parse: parseConflictAnswer,
       accepts: quotedLabels(CONFLICT_OPTIONS),
     }

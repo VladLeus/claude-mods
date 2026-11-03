@@ -10,7 +10,7 @@
 import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
 import { t } from '../../locales/t'
 import { screenPath } from '../../paths'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { memoryGroupContext } from '../../ui/blocks/context'
 import { ALL_OPTION, memoryQuestion, NONE_OPTION, parseRoleList } from '../answers'
@@ -67,20 +67,25 @@ export type MemoryNext =
 /**
  * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
  * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
- * files as its own context (memoryGroupContext, D-236), a typed list of role ids or titles (parseRoleList), so it
- * takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal.
+ * files as its own context (memoryGroupContext, D-236), which a pane surface asks with its first line in place of that
+ * line (D-255), a typed list of role ids or titles (parseRoleList), so it takes a typed answer (D-234), and
+ * MEMORY_DISMISSED_REASON for a dismissal.
  */
 function groupAsk(
   group: InstructionGroup,
   names: readonly string[],
   roles: readonly RoleSpec[],
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
+  const context = memoryGroupContext(group, names)
+  const contextLine = memoryContextLine(roles)
+  const pane = paneQuestionOf(memoryQuestion(group, names), contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(memoryQuestion(group, names), memoryContextLine(roles)),
+    question: pane.asked,
     spec: {
       options: ROLE_LIST_OPTIONS,
       header: ASK_HEADERS.memory,
-      context: memoryGroupContext(group, names),
+      context: { ...context, pane },
       acceptsTyped: true,
     },
     parse: (answer: string): readonly string[] | null => parseRoleList(answer, roles),

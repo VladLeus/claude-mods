@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { GitPolicy } from '../../types'
+import type { AskContext, GitPolicy } from '../../types'
 import { CLAUDE_JSON_OPTIONS, CONSENT_DISMISSED_REASON } from '../init/stages/consent'
 import { FRAMEWORK_DISMISSED_REASON } from '../init/stages/frameworks'
 import { GIT_POLICY_OPTIONS, GIT_POLICY_QUESTION, parseGitPolicy } from '../init/stages/policy'
@@ -9,11 +9,14 @@ import { BIDI_OVERRIDE, memIo, memWorld } from '../testkit'
 import {
   ASK_HEADERS,
   askChoice,
+  askedText,
   choiceAnswer,
   MAX_ASKS,
   NO_USABLE_ANSWER_REASON,
   orList,
   PANE_TITLES,
+  paneQuestionOf,
+  paneQuestionText,
   quotedLabels,
   refusalLine,
   showBlock,
@@ -229,6 +232,39 @@ describe('question context lines (G-02-1)', () => {
     expect(withContext('Q?', `a\nb${BIDI_OVERRIDE}c`)).toBe('Q?\nabc')
     expect(withContext('Q?', 'x'.repeat(400))).toBe(`Q?\n${'x'.repeat(400)}`)
     expect(withContext('Q?', 'x'.repeat(500))).toBe(`Q?\n${'x'.repeat(399)}…`)
+  })
+})
+
+describe('the one context line of a pane surface (D-255)', () => {
+  const asked = withContext('Use these roles?', 'Roles: pm, tl.')
+  const pane = paneQuestionOf('Use these roles?', 'Roles: pm, tl.', 'Proposed roles:')
+  const context: AskContext = { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles', pane }
+
+  test('paneQuestionOf gives the question as the TUI default asks it and with the one line in its place', () => {
+    expect(pane).toEqual({ asked, text: 'Use these roles?\nProposed roles:' })
+  })
+
+  test('a question with no context, or with a context that has no pane text, is asked as given', () => {
+    expect(paneQuestionText(asked, null)).toBe(asked)
+    expect(paneQuestionText(asked, { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles' })).toBe(asked)
+  })
+
+  test('the asked text gives the pane text, and a refusal on top of it is kept as it is', () => {
+    expect(paneQuestionText(asked, context)).toBe(pane.text)
+    const refusal = refusalLine('maybe', '"Use these roles"')
+    expect(paneQuestionText(askedText(asked, refusal), context)).toBe(`${refusal}\n${pane.text}`)
+  })
+
+  test('a question that does not end with the asked text is asked as given (T-02.2-05)', () => {
+    expect(paneQuestionText('Another question?\nRoles: pm.', context)).toBe('Another question?\nRoles: pm.')
+    expect(paneQuestionText(`${asked} or not`, context)).toBe(`${asked} or not`)
+    expect(paneQuestionText(`x${asked}`, context)).toBe(`x${asked}`)
+  })
+
+  test('the one line is cleaned and capped as a context line is, so it cannot add a line (T-02-55)', () => {
+    const { text } = paneQuestionOf('Pick one?', 'Roles: pm.', `${'x'.repeat(500)}\n${BIDI_OVERRIDE}more`)
+    const [sentence, line = '', ...rest] = text.split('\n')
+    expect([sentence, Array.from(line).length, line.endsWith('…'), rest]).toEqual(['Pick one?', 400, true, []])
   })
 })
 

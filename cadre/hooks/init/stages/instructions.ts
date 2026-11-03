@@ -25,7 +25,7 @@ import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
-import { ASK_HEADERS, choiceAnswer, countedChip, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, countedChip, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { instructionPartsContext, instructionsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
@@ -127,7 +127,8 @@ export function entryContextLine(scan: InstructionScan, topics: readonly Instruc
 
 /**
  * The entry question of the instruction hand-out as the hand-out asks it (G-02-1f Entry choices): its context line, the
- * Instructions chip and the three answers.
+ * Instructions chip and the three answers. Its context line counts the topics and memories, which neither the chip nor
+ * the question names, so a pane surface asks it too (D-255).
  */
 export function instructionsEntry(scan: InstructionScan, topics: readonly InstructionTopic[]): HandoutEntry {
   return {
@@ -184,7 +185,8 @@ export function topicHeader(position: number, count: number): string {
 
 /**
  * Each topic as a hand-out item (G-02-1f Part by part): its question, context line, chip, the roles recommended for
- * it, none when the recommendation gave it none, and its own context, that topic only (topicContext, D-236).
+ * it, none when the recommendation gave it none, its own context, that topic only (topicContext, D-236), and the line
+ * of those roles as the line a pane surface asks (D-255).
  */
 export function topicItems(
   scan: InstructionScan,
@@ -201,6 +203,7 @@ export function topicItems(
       header: topicHeader(index + 1, topics.length),
       recommended: ids,
       context: topicContext(topic, scan.parts, ids, index + 1, topics.length),
+      paneLine: t('ui.assign.groupRecommended', { roleIds: idsOrNone(ids, SCREEN_LIST_WORDS.none) }),
     }
   })
 }
@@ -232,8 +235,8 @@ export function memoryItemHeader(position: number, count: number): string {
 
 /**
  * Each memory as a hand-out item (G-02-1f Memories), asked after the topics: its question, context line, chip, the
- * roles recommended for it, none when the recommendation gave it none, and its own context, that memory only
- * (memoryContext, D-236).
+ * roles recommended for it, none when the recommendation gave it none, its own context, that memory only
+ * (memoryContext, D-236), and the line of those roles as the line a pane surface asks (D-255).
  */
 export function memoryItems(
   memories: readonly MemoryItem[],
@@ -249,6 +252,7 @@ export function memoryItems(
       header: memoryItemHeader(index + 1, memories.length),
       recommended: ids,
       context: memoryContext(memory, ids, index + 1, memories.length),
+      paneLine: t('ui.assign.groupRecommended', { roleIds: idsOrNone(ids, SCREEN_LIST_WORDS.none) }),
     }
   })
 }
@@ -307,20 +311,25 @@ function instructedDone(state: InitState, instructed: Instructed): InitState {
 /**
  * The content consent (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on its second line
  * (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first, the Instructions
- * chip, the files and memories found by name as its own context (instructionsContext, D-236), the repo by the folder
- * name of `root` (D-226), and CONTENT_DISMISSED_REASON for a dismissal.
+ * chip, the files and memories found by name as its own context (instructionsContext, D-236), which a pane surface
+ * asks with its first line in place of that line (D-255), the repo by the folder name of `root` (D-226), and
+ * CONTENT_DISMISSED_REASON for a dismissal.
  */
 function contentAsk(
   setup: SetupScan,
   repo: RepoNames,
   root: string,
 ): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  const context = instructionsContext(setup, repo, root)
+  const contextLine = contentContextLine(setup, repo)
+  const pane = paneQuestionOf(CONTENT_QUESTION, contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(CONTENT_QUESTION, contentContextLine(setup, repo)),
+    question: pane.asked,
     spec: {
       options: CONTENT_OPTIONS,
       header: ASK_HEADERS.instructions,
-      context: instructionsContext(setup, repo, root),
+      context: { ...context, pane },
     },
     parse: parseContentConsent,
     accepts: quotedLabels(CONTENT_OPTIONS),

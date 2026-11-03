@@ -18,7 +18,7 @@ import { fill, t, tn } from '../locales/t'
 import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
-import { ASK_HEADERS, askChoice, noteLine, quotedLabels, showBlock, withContext } from '../ui/ask'
+import { ASK_HEADERS, askChoice, noteLine, paneQuestionOf, quotedLabels, showBlock } from '../ui/ask'
 import { diffLines, lineDiff } from '../ui/diff'
 import type { LineDiff } from '../ui/diff'
 import { instructionsRecordPath, privateClaudeMdPath } from './private'
@@ -540,12 +540,16 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
     return { accepted: null, isRestored, warnings }
   }
   await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
+  const context = improverContext(shownPath, state.diff, otherLines)
+  const contextLine = improverContextLine(state.diff)
+  // A pane surface asks the question with the context's first line, the file and its change counts (D-255).
+  const pane = paneQuestionOf(improverQuestion(shownPath), contextLine, context.lines[0] ?? contextLine)
   const answer = await askChoice(io, {
-    question: withContext(improverQuestion(shownPath), improverContextLine(state.diff)),
+    question: pane.asked,
     spec: {
       options: IMPROVER_OPTIONS,
       header: ASK_HEADERS.improver,
-      context: improverContext(shownPath, state.diff, otherLines),
+      context: { ...context, pane },
     },
     parse: parseImproverAnswer,
     accepts: quotedLabels(IMPROVER_OPTIONS),

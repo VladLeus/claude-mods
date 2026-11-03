@@ -13,7 +13,7 @@ import { redactSecrets } from '../../core/redact'
 import { asSentence, clean, compareText, idsOrNone } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { skillCount } from '../../suggest/skills'
-import { ASK_HEADERS, countedChip, withContext } from '../../ui/ask'
+import { ASK_HEADERS, countedChip, paneQuestionOf } from '../../ui/ask'
 import { mcpServerContext, skillContext, skillGroupContext } from '../../ui/blocks/assign'
 import type { SkillLine } from '../../ui/blocks/assign'
 import { mcpQuestion, NO_SKILL_PURPOSE, ownSkillIds, skillGroupQuestion, skillUsesText } from '../answers'
@@ -67,6 +67,8 @@ function skillLineOf(skill: SkillRef, counts: ReadonlyMap<string, number>, recom
  * the history scan saw the group, the team's role ids and what giving the skills means on its second line, and the
  * Skills chip; its answer gives every skill of the group. Its own context lists each skill of the group with what it
  * does, its own uses and the roles `recommended` gives it by name, none when it gives none (skillGroupContext, D-211).
+ * A pane surface asks the question with `paneLine`, the group's recommendation line when it has one, in place of the
+ * context line, else with the first line of its context (D-255).
  */
 export function skillGroupItem(
   group: SkillGroup,
@@ -74,18 +76,23 @@ export function skillGroupItem(
   roles: readonly RoleSpec[],
   skills: readonly SkillRef[],
   recommended: ReadonlyMap<string, readonly string[]>,
+  paneLine?: string,
 ): AssignItem {
   const lines = group.names.map(name => {
     const skill = skills.find(ref => ref.name === name && ref.plugin === group.plugin) ?? { name, plugin: group.plugin }
 
     return skillLineOf(skill, counts, recommended.get(name) ?? [])
   })
+  const context = skillGroupContext(group.label, lines)
+  const contextLine = skillsContextLine(roles)
+  const line = paneLine ?? context.lines[0] ?? contextLine
+  const pane = paneQuestionOf(skillGroupQuestion(group, groupUses(group, counts)), contextLine, line)
 
   return {
-    question: withContext(skillGroupQuestion(group, groupUses(group, counts)), skillsContextLine(roles)),
+    question: pane.asked,
     header: ASK_HEADERS.skills,
     names: group.names,
-    context: skillGroupContext(group.label, lines),
+    context: { ...context, pane },
   }
 }
 
@@ -177,7 +184,8 @@ export function ownSkillsEntry(count: number): HandoutEntry {
 /**
  * Each of the user's own skills as a hand-out item (G-02-1b), in the order given: its name as its id, its question,
  * context line and chip, the roles the recommendation gave it (keyed S1, S2, ... by place), none when it gave none,
- * and its own context, that skill alone (skillContext, D-236).
+ * its own context, that skill alone (skillContext, D-236), and the line of those roles as the line a pane surface
+ * asks (D-255).
  */
 export function ownSkillItems(
   skills: readonly SkillRef[],
@@ -194,8 +202,9 @@ export function ownSkillItems(
     const header = ownSkillHeader(index + 1, skills.length)
     const context = skillContext(skillLineOf(skill, counts, roleIds), index + 1, skills.length)
     const question = ownSkillQuestion(skill.name)
+    const paneLine = t('ui.assign.groupRecommended', { roleIds: idsOrNone(roleIds, SCREEN_LIST_WORDS.none) })
 
-    return [{ id: skill.name, question, contextLine, header, recommended: roleIds, context }]
+    return [{ id: skill.name, question, contextLine, header, recommended: roleIds, context, paneLine }]
   })
 }
 
@@ -218,8 +227,8 @@ export function mcpEntry(count: number): HandoutEntry {
 /**
  * Each MCP server as a hand-out item (D-250), in the order given: its name as its id, its question (mcpQuestion) with
  * the team's role ids on the second line (mcpContextLine), the chip `MCP <i>/<n>`, the roles `recommended` gives it by
- * name, none when it gives none, and its own context: its source, the tools the session lists for it and those roles
- * (mcpServerContext, D-211).
+ * name, none when it gives none, its own context: its source, the tools the session lists for it and those roles
+ * (mcpServerContext, D-211), and the line of those roles as the line a pane surface asks (D-255).
  */
 export function mcpServerItems(
   servers: readonly McpRef[],
@@ -237,6 +246,7 @@ export function mcpServerItems(
       header: countedChip(t('init.assign.mcpChip'), index + 1, servers.length),
       recommended: roleIds,
       context: mcpServerContext(ref, toolNames, roleIds),
+      paneLine: t('ui.assign.mcpServerContext4', { roleIds: idsOrNone(roleIds, SCREEN_LIST_WORDS.none) }),
     }
   })
 }
@@ -244,7 +254,8 @@ export function mcpServerItems(
 /**
  * Each skill of a plugin group as a hand-out item (D-251), in the group's order, asked exactly as an own skill is: its
  * name as its id, ownSkillQuestion, its context line (ownSkillContextLine) with the roles `recommended` gives it by
- * name, none when it gives none, the chip `Skill <i>/<n>` (ownSkillHeader) and its own context (skillContext).
+ * name, none when it gives none, the chip `Skill <i>/<n>` (ownSkillHeader), its own context (skillContext) and the
+ * line of those roles as the line a pane surface asks (D-255).
  */
 export function groupSkillItems(
   group: SkillGroup,
@@ -263,6 +274,7 @@ export function groupSkillItems(
       header: ownSkillHeader(index + 1, group.names.length),
       recommended: roleIds,
       context: skillContext(skillLineOf(skill, counts, roleIds), index + 1, group.names.length),
+      paneLine: t('ui.assign.groupRecommended', { roleIds: idsOrNone(roleIds, SCREEN_LIST_WORDS.none) }),
     }
   })
 }

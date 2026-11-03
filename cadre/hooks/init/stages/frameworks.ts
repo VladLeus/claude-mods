@@ -7,7 +7,7 @@
  * effect, imports core, detect, framework, ui/ask, init/state and init/stages/model (the answer modes and
  * teamContextLine), and never imports init/machine or init/run.
  */
-import type { Choice, Facts, FrameworkId, RoleSpec } from '../../../types'
+import type { AskContext, Choice, Facts, FrameworkId, RoleSpec } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
@@ -17,7 +17,7 @@ import { chooseFramework } from '../../framework/contract'
 import { needsGsdCheck, withGsdIdentity } from '../../framework/gsd/identity'
 import { detectAll } from '../../framework/registry'
 import { t } from '../../locales/t'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { detectionContext, screenFacts } from '../../ui/blocks/context'
 import { askedWithContext, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -90,8 +90,15 @@ const FRAMEWORK_WORDS: Readonly<Record<FrameworkId, string>> = Object.freeze({
 /** A choice the framework questions are asked for: more than one framework in use, or only installed ones (D-73). */
 type AskedChoice = Extract<Choice, { readonly kind: 'ambiguous' | 'installed-only' }>
 
-/** A framework question as the stage asks it: a ChoiceAsk with the reason a dismissal cancels with. */
-type FrameworkAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
+/**
+ * A framework question as the stage asks it: a ChoiceAsk with the reason a dismissal cancels with, and the sentence and
+ * context line its question is made of, from which the stage builds what a pane surface asks (D-255).
+ */
+type FrameworkAsk<T> = ChoiceAsk<T> & {
+  readonly dismissedReason: string
+  readonly sentence: string
+  readonly contextLine: string
+}
 
 /**
  * DET-03's mode question (D-73, D-86): the reason it is asked, with the team's role ids (teamContextLine) on its second
@@ -102,13 +109,16 @@ function modeAsk(choice: AskedChoice, roles: readonly RoleSpec[]): FrameworkAsk<
     frameworkQuestionPrefix: FRAMEWORK_QUESTION_PREFIX,
     frameworkReason: frameworkReason(choice),
   })
+  const contextLine = teamContextLine(roles)
 
   return {
-    question: withContext(question, teamContextLine(roles)),
+    question: withContext(question, contextLine),
     spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.framework },
     parse: parseAnswerMode,
     accepts: quotedLabels(ANSWER_MODE_OPTIONS),
     dismissedReason: FRAMEWORK_DISMISSED_REASON,
+    sentence: question,
+    contextLine,
   }
 }
 
@@ -120,26 +130,31 @@ function modeAsk(choice: AskedChoice, roles: readonly RoleSpec[]): FrameworkAsk<
  */
 function frameworkAsk(choice: AskedChoice, question: string, roles: readonly RoleSpec[]): FrameworkAsk<FrameworkId> {
   const allowed: readonly FrameworkId[] = [...SUPPORTED_IDS.filter(id => choice.ids.includes(id)), 'none']
+  const contextLine = teamContextLine(roles)
 
   return {
-    question: withContext(question, teamContextLine(roles)),
+    question: withContext(question, contextLine),
     spec: { options: allowed.map(id => FRAMEWORK_LABELS[id]), header: ASK_HEADERS.framework, acceptsTyped: true },
     parse: (answer: string): FrameworkId | null => parseFramework(answer, allowed),
     accepts: t('init.frameworks.frameworkAskAccepts', { map: allowed.map(id => FRAMEWORK_WORDS[id]).join(', ') }),
     dismissedReason: FRAMEWORK_DISMISSED_REASON,
+    sentence: question,
+    contextLine,
   }
 }
 
 /**
  * The state asking `ask` with the cursor `sub`, the detection evidence of the scan as the question's own context
- * (detectionContext, D-236); `question` is the ask's text after a refusal.
+ * (detectionContext, D-236), which a pane surface asks with its first line in place of the context line (D-255);
+ * `question` is the ask's text after a refusal.
  */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: FrameworkAsk<T>, question: string | null): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
   const context = detectionContext(detectAll(screenFacts(gathered.facts.facts, locations.root)))
+  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.lines[0] ?? ask.contextLine)
 
-  return askedWithContext(state, sub, ask, question, context)
+  return askedWithContext(state, sub, ask, question, { ...context, pane })
 }
 
 /** The stage done with the roles framed and the repo default. */
@@ -216,19 +231,23 @@ export const GSD_CHECK_DISMISSED_REASON = t('init.frameworks.gsdCheckDismissedRe
 /**
  * The GSD check as init and detect ask it (D-243): GSD_CHECK_QUESTION, `No, skip the check` first, then `Yes, run the
  * check`, with the GSD check chip, and as its context (kind `detection`) each user-level GSD install found but not
- * proven, by its display path. It takes no typed answer.
+ * proven, by its display path; a pane surface asks the question with the line of the first of them, so its one line
+ * names the install the check runs (D-255, edge #39). It takes no typed answer.
  */
 export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const unproven = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown')
   const options = GSD_CHECK_ANSWERS.map(answer => answer.label)
   const lines = unproven.map(fact => t('init.frameworks.gsdCheckLine', { dir: fact.dir }))
+  const context: AskContext = { title: t('init.frameworks.gsdCheckTitle'), lines, kind: 'detection' }
+  const [line] = lines
+  const text = line === undefined ? null : withContext(GSD_CHECK_QUESTION, line)
 
   return {
     question: GSD_CHECK_QUESTION,
     spec: {
       options,
       header: t('init.frameworks.gsdCheckChip'),
-      context: { title: t('init.frameworks.gsdCheckTitle'), lines, kind: 'detection' },
+      context: text === null ? context : { ...context, pane: { asked: GSD_CHECK_QUESTION, text } },
     },
     parse: (answer: string): boolean | null => labelled(GSD_CHECK_ANSWERS, answer),
     accepts: quotedLabels(options),

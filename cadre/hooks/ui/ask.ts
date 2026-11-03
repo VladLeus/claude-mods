@@ -5,7 +5,7 @@
  * import each other.
  * ui/ask is a layer 8 module: the init stages, regen, apply and epic import it.
  */
-import type { AskSpec, InitIo, PaneKey } from '../../types'
+import type { AskContext, AskSpec, InitIo, PaneKey, PaneQuestion } from '../../types'
 import { clean, reportText } from '../core/text'
 import { t } from '../locales/t'
 import { UNCUT } from './pane'
@@ -162,10 +162,36 @@ export function contextText(text: string): string {
 /**
  * A question with its short context line (G-02-1, D-136): the question, then on the next line the context, cleaned
  * and capped as a context line (contextText), so the dialog reads on its own on a surface where the side pane is not
- * drawn and a scanned or typed value in it cannot add a line or hide text (T-02-55).
+ * drawn and a scanned or typed value in it cannot add a line or hide text (T-02-55). A pane surface asks the one line
+ * its ask site chose in place of this line, through the context's `pane` (paneQuestionOf, D-255); MAX_CONTEXT_CHARS
+ * stays the safety cap of both.
  */
 export function withContext(question: string, context: string): string {
   return `${question}\n${contextText(context)}`
+}
+
+/**
+ * A question as both surfaces ask it (D-255): `asked`, the sentence with its context line as the TUI default asks it
+ * (withContext), and `text`, the sentence with the one line the ask site chose for a pane surface, which holds the
+ * rest of the context in the pane.
+ */
+export function paneQuestionOf(sentence: string, contextLine: string, line: string): PaneQuestion {
+  return { asked: withContext(sentence, contextLine), text: withContext(sentence, line) }
+}
+
+/**
+ * What a pane surface asks for `question` (D-255): the pane text of the question's context when the question is its
+ * asked text, or that text with the refusal line on top when the question is a refusal, a newline and the asked text
+ * (askedText), the refusal kept as it is; a question with no context, a context with no pane text, or a question that
+ * does not end with the asked text is asked as given.
+ */
+export function paneQuestionText(question: string, context: AskContext | null): string {
+  const pane = context?.pane
+  if (pane === undefined) return question
+  if (question === pane.asked) return pane.text
+  if (!question.endsWith(`\n${pane.asked}`)) return question
+
+  return `${question.slice(0, question.length - pane.asked.length)}${pane.text}`
 }
 
 /**

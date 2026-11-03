@@ -17,7 +17,7 @@ import { compareText, idsOrNone } from '../../core/text'
 import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { ownSkillId } from '../../suggest/skills'
 import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skills'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
 import { assignToRoles, ownSkillLines, parseRoleList } from '../answers'
@@ -144,7 +144,8 @@ type McpWholeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'mcp-whole
 /**
  * The question for all the MCP servers at once (D-250): which roles get all `n` of them, with the team's role ids on
  * its second line (mcpContextLine), the MCP chip, and as its own context each server with its source, its tool count
- * and the roles `recommended` gives it (mcpGroupContext).
+ * and the roles `recommended` gives it (mcpGroupContext), which a pane surface asks with its first line in place of
+ * that line (D-255).
  */
 function mcpWholeItem(
   state: InitState,
@@ -159,12 +160,15 @@ function mcpWholeItem(
     recommended: recommended.get(name) ?? [],
   }))
   const question = t('init.assign.mcpWholeQuestion', { count: names.length })
+  const context = mcpGroupContext(lines)
+  const contextLine = mcpContextLine(plan.roles)
+  const pane = paneQuestionOf(question, contextLine, context.lines[0] ?? contextLine)
 
   return {
-    question: withContext(question, mcpContextLine(plan.roles)),
+    question: pane.asked,
     header: ASK_HEADERS.mcp,
     names,
-    context: mcpGroupContext(lines),
+    context: { ...context, pane },
   }
 }
 
@@ -267,8 +271,8 @@ function skillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssi
 /**
  * The plugin group at `index` as its question asks it (D-53, D-248, D-251): the roles the skills call recommended for
  * the whole group, and its skills with the roles recommended for each, or the table seed when the call fell back
- * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group. Undefined after the last
- * group.
+ * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group, the line a pane surface
+ * asks with the question (D-255). Undefined after the last group.
  */
 function groupAt(
   plan: AssignPlan,
@@ -279,8 +283,8 @@ function groupAt(
   if (group === undefined) return undefined
   const perSkill = skills.groupSkills.get(group.label) ?? new Map<string, readonly string[]>()
   const recommended = skills.groups.get(group.label) ?? []
-  const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill)
   const line = t('ui.assign.groupRecommended', { roleIds: idsOrNone(recommended, SCREEN_LIST_WORDS.none) })
+  const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill, line)
   const context = { ...item.context, lines: [line, ...item.context.lines] }
 
   return { group, item: { ...item, context }, recommended }

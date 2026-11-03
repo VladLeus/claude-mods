@@ -10,7 +10,7 @@ import type { RoleCarry, RoleSpec, SetupScan } from '../../../types'
 import { sortedUnique } from '../../core/text'
 import { SECRET_READ_GUARD } from '../../framework/gsd/adapter'
 import { t } from '../../locales/t'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { ENV_PANE_HEADING, envContext } from '../../ui/blocks/context'
 import { ALL_ENV_OPTION, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
@@ -35,16 +35,21 @@ export const ENV_DISMISSED_REASON = t('init.carry.envDismissedReason')
 /**
  * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids
  * on its second line (envContextLine), the buttons None and All of them with the Env chip and the names as its own
- * context (envContext, D-236), typed names that were scanned (parseEnvNames), so it takes a typed answer (D-234), what
- * its refusal lists, and the reason a dismissal cancels with.
+ * context (envContext, D-236), which a pane surface asks with its first line in place of that line (D-255), typed
+ * names that were scanned (parseEnvNames), so it takes a typed answer (D-234), what its refusal lists, and the reason a
+ * dismissal cancels with.
  */
 function envAsk(
   names: readonly string[],
   roles: readonly RoleSpec[],
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
+  const context = envContext(names)
+  const contextLine = envContextLine(roles)
+  const pane = paneQuestionOf(envQuestion(names), contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(envQuestion(names), envContextLine(roles)),
-    spec: { options: ENV_OPTIONS, header: ASK_HEADERS.env, context: envContext(names), acceptsTyped: true },
+    question: pane.asked,
+    spec: { options: ENV_OPTIONS, header: ASK_HEADERS.env, context: { ...context, pane }, acceptsTyped: true },
     parse: (answer: string): readonly string[] | null => parseEnvNames(answer, names),
     accepts: ENV_ACCEPTS,
     dismissedReason: ENV_DISMISSED_REASON,

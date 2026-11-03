@@ -9,7 +9,7 @@
 import type { RoleChange, RoleSpec } from '../../../types'
 import { t } from '../../locales/t'
 import { isAutopilotDuration } from '../../roles/validate'
-import { ASK_HEADERS, choiceAnswer, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
@@ -47,19 +47,24 @@ const DURATION_ACCEPTS = t('init.duration.durationAccepts')
 /**
  * The duration question as the stage asks it (D-51, D-136): DURATION_QUESTION with the ids of `roles` on its second
  * line (durationContextLine), the buttons with the Duration chip and the roles with their purposes and scan `changes`
- * as its own context (rolesContext, D-236), parseDuration, which takes a typed duration (D-234), what its refusal
- * lists, and the reason a dismissal cancels with.
+ * as its own context (rolesContext, D-236), which a pane surface asks with its first line in place of that line
+ * (D-255), parseDuration, which takes a typed duration (D-234), what its refusal lists, and the reason a dismissal
+ * cancels with.
  */
 function durationAsk(
   roles: readonly RoleSpec[],
   changes: readonly RoleChange[],
 ): ChoiceAsk<string> & { readonly dismissedReason: string } {
+  const context = rolesContext(roles, changes)
+  const contextLine = durationContextLine(roles)
+  const pane = paneQuestionOf(DURATION_QUESTION, contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(DURATION_QUESTION, durationContextLine(roles)),
+    question: pane.asked,
     spec: {
       options: DURATION_OPTIONS,
       header: ASK_HEADERS.duration,
-      context: rolesContext(roles, changes),
+      context: { ...context, pane },
       acceptsTyped: true,
     },
     parse: parseDuration,

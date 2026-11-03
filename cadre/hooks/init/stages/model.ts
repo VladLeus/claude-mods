@@ -13,7 +13,7 @@ import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
 import { t } from '../../locales/t'
 import { EFFORTS, MODEL_ALIASES } from '../../roles/validate'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { rolesContext } from '../../ui/blocks/context'
 import { MODEL_EFFORT_OPTIONS, modelEffortRefusal, parseModelEffort, PER_ROLE, SAME_FOR_ALL } from '../answers'
@@ -71,20 +71,31 @@ function withModel(role: RoleSpec, choice: Pick<RoleSpec, 'model' | 'effort'>): 
   return { ...role, model: choice.model, effort: choice.effort }
 }
 
-/** A model question as the stage asks it: a ChoiceAsk with the reason a dismissal cancels with. */
-type ModelAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
+/**
+ * A model question as the stage asks it: a ChoiceAsk with the reason a dismissal cancels with, and the sentence and
+ * context line its question is made of, from which the stage builds what a pane surface asks (D-255).
+ */
+type ModelAsk<T> = ChoiceAsk<T> & {
+  readonly dismissedReason: string
+  readonly sentence: string
+  readonly contextLine: string
+}
 
 /**
  * The first model question (D-52, D-86, D-136): MODEL_MODE_QUESTION with the team's role ids (teamContextLine) on its
  * second line, then `Same for all roles` or `Per role`.
  */
 function modeAsk(roles: readonly RoleSpec[]): ModelAsk<AnswerMode> {
+  const contextLine = teamContextLine(roles)
+
   return {
-    question: withContext(MODEL_MODE_QUESTION, teamContextLine(roles)),
+    question: withContext(MODEL_MODE_QUESTION, contextLine),
     spec: { options: ANSWER_MODE_OPTIONS, header: ASK_HEADERS.model },
     parse: parseAnswerMode,
     accepts: quotedLabels(ANSWER_MODE_OPTIONS),
     dismissedReason: MODEL_DISMISSED_REASON,
+    sentence: MODEL_MODE_QUESTION,
+    contextLine,
   }
 }
 
@@ -101,15 +112,22 @@ function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'ef
     accepts: quotedLabels(MODEL_EFFORT_OPTIONS),
     refuse: answer => reportText(modelEffortRefusal(answer)),
     dismissedReason: MODEL_DISMISSED_REASON,
+    sentence: question,
+    contextLine: MODEL_EFFORT_CONTEXT,
   }
 }
 
-/** The state asking `ask` with the cursor `sub`; `question` is the ask's text after a refusal. */
+/**
+ * The state asking `ask` with the cursor `sub` and the roles as its own context (rolesContext, D-236), which a pane
+ * surface asks with its first line in place of the context line (D-255); `question` is the ask's text after a refusal.
+ */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: ModelAsk<T>, question: string | null): InitState {
   const { roles, changes } = state.draft
   if (roles === undefined) return stageFailed(state)
+  const context = rolesContext(roles, changes ?? [])
+  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.lines[0] ?? ask.contextLine)
 
-  return askedWithContext(state, sub, ask, question, rolesContext(roles, changes ?? []))
+  return askedWithContext(state, sub, ask, question, { ...context, pane })
 }
 
 /** The stage done with the roles modelled. */

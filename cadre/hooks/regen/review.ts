@@ -30,7 +30,7 @@ import { checkedCompletion } from '../suggest/checked'
 import type { Checked } from '../suggest/checked'
 import { parseRegenRecommendation, REGEN_RECOMMEND_SYSTEM, regenRecommendPrompt } from '../suggest/regen'
 import type { RegenPromptItem } from '../suggest/regen'
-import { accepted, askChoice, choiceResult, countedChip, quotedLabels, withContext } from '../ui/ask'
+import { accepted, askChoice, choiceResult, countedChip, paneQuestionOf, quotedLabels } from '../ui/ask'
 import type { ChoiceAsk, StepResult } from '../ui/ask'
 import { partChanges } from './part-changes'
 import type { PartChanges } from './part-changes'
@@ -295,7 +295,8 @@ async function regenRecommended(
 /**
  * The question of one regen item (D-142): the part question (regenPartQuestion) or the memory question
  * (regenMemoryQuestion) with its context line, Yes and No, the chip of its place (regenHeader) and what changed in it
- * as its own context (regenPartContext, D-236); an answer that is neither is asked again with why on top (D-136).
+ * as its own context (regenPartContext, D-236), whose last line, whether the model recommends the item, a pane surface
+ * asks in place of the context line (D-255); an answer that is neither is asked again with why on top (D-136).
  */
 function regenAsk(
   id: string,
@@ -303,20 +304,20 @@ function regenAsk(
   isRecommended: boolean,
   place: { readonly position: number; readonly count: number },
 ): ChoiceAsk<boolean> {
-  const question =
+  const sentence = item.kind === 'part' ? regenPartQuestion(id, item.part) : regenMemoryQuestion(id, item.memory)
+  const contextLine =
     item.kind === 'part'
-      ? withContext(regenPartQuestion(id, item.part), regenPartContextLine(item.change, isRecommended))
-      : withContext(
-          regenMemoryQuestion(id, item.memory),
-          regenMemoryContextLine(item.memory, item.change, isRecommended),
-        )
+      ? regenPartContextLine(item.change, isRecommended)
+      : regenMemoryContextLine(item.memory, item.change, isRecommended)
+  const context = regenPartContext(item, isRecommended, place)
+  const pane = paneQuestionOf(sentence, contextLine, context.lines.at(-1) ?? contextLine)
 
   return {
-    question,
+    question: pane.asked,
     spec: {
       options: REGEN_ITEM_OPTIONS,
       header: regenHeader(place.position, place.count),
-      context: regenPartContext(item, isRecommended, place),
+      context: { ...context, pane },
     },
     parse: answer => labelled(REGEN_CHOICES, answer),
     accepts: quotedLabels(REGEN_ITEM_OPTIONS),

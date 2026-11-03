@@ -422,6 +422,15 @@ export type ContextKind =
   | 'regen-part'
 
 /**
+ * A question as a pane surface asks it (D-255): `asked` is the question as the TUI default asks it, without a refusal;
+ * `text` is what a pane surface asks in its place, the question's sentence and the one context line its ask site chose.
+ */
+export type PaneQuestion = {
+  readonly asked: string
+  readonly text: string
+}
+
+/**
  * The context a question carries with it (D-203, D-229): a title, the lines that explain the choice, and what it is
  * about. register.tsx keeps it in the open-question state for the renderers; it never reaches the dialog.
  */
@@ -429,6 +438,11 @@ export type AskContext = {
   readonly title: string
   readonly lines: readonly string[]
   readonly kind: ContextKind
+  /**
+   * What a pane surface asks in place of the question (D-255): its sentence and one context line, the rest of the
+   * context left to the pane; absent, every surface asks the question as given.
+   */
+  readonly pane?: PaneQuestion
 }
 
 /**

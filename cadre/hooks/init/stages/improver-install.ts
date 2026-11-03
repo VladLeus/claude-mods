@@ -10,7 +10,7 @@ import type { AskSpec, InstructionHandout } from '../../../types'
 import { labelled } from '../../core/labelled'
 import { t } from '../../locales/t'
 import { CLAUDE_MD_PLUGIN } from '../../roles/infra'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
 import { improverInstallContext } from '../../ui/blocks/context'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -70,14 +70,18 @@ function builtRoleIds(handout: InstructionHandout, roleIds: readonly string[]): 
 
 /**
  * The dialog spec of the improver install question: IMPROVER_ASK's, with the roles the hand-out gives a built file as
- * its own context (improverInstallContext, D-236).
+ * its own context (improverInstallContext, D-236), which a pane surface asks with its first line in place of
+ * IMPROVER_INSTALL_CONTEXT (D-255).
  */
 function improverSpec(state: InitState): AskSpec {
   const { instructions, roles } = state.draft
   const roleIds = (roles ?? []).map(role => role.id)
   const built = instructions === undefined ? [] : builtRoleIds(instructions, roleIds)
+  const context = improverInstallContext(built)
+  const line = context.lines[0] ?? IMPROVER_INSTALL_CONTEXT
+  const pane = paneQuestionOf(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT, line)
 
-  return { ...IMPROVER_ASK.spec, context: improverInstallContext(built) }
+  return { ...IMPROVER_ASK.spec, context: { ...context, pane } }
 }
 
 /** The stage done with `installs` after the plugins answered Install before it, the security plugins first. */

@@ -21,7 +21,7 @@ import {
 } from '../../scan/history'
 import type { Gathered } from '../../scan/gather'
 import type { HistoryScan } from '../../scan/history'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { scanContext } from '../../ui/blocks/context'
 import { scanContextLine } from '../../ui/blocks/scan'
@@ -125,17 +125,21 @@ function historyDirOf(state: InitState): string | null {
 /**
  * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and the line of
  * what the repo scan found on its second line (scanContextLine); the two answers with the History chip and the scan
- * block as its own context (scanContext, D-236), the answers its refusal lists, and the reason a dismissal cancels
- * with.
+ * block as its own context (scanContext, D-236), which a pane surface asks with its first line in place of that line
+ * (D-255), the answers its refusal lists, and the reason a dismissal cancels with.
  */
 function historyAsk(
   total: number,
   locations: InitLocations,
   gathered: Gathered,
 ): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
+  const context = scanContext(locations, gathered)
+  const contextLine = scanContextLine(gathered.repo)
+  const pane = paneQuestionOf(historyQuestion(total), contextLine, context.lines[0] ?? contextLine)
+
   return {
-    question: withContext(historyQuestion(total), scanContextLine(gathered.repo)),
-    spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history, context: scanContext(locations, gathered) },
+    question: pane.asked,
+    spec: { options: HISTORY_OPTIONS, header: ASK_HEADERS.history, context: { ...context, pane } },
     parse: parseHistoryConsent,
     accepts: quotedLabels(HISTORY_OPTIONS),
     dismissedReason: HISTORY_DISMISSED_REASON,
