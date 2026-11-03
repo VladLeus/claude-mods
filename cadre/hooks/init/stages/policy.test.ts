@@ -17,7 +17,10 @@ import {
 /** What the launcher start stage after the git policy is entered with: the session's locations and the roles. */
 const POLICY_DRAFT = { locations: DEFAULT_LOCATIONS, roles: TEMPLATE_ROLES }
 
-/** The git policy question's own context (D-203): what each policy commits, one line per policy. */
+/**
+ * The git policy question's own context (D-203): what each policy commits, one line per policy; a pane surface asks
+ * the question with its first line in place of GIT_POLICY_CONTEXT (D-255).
+ */
 const POLICY_CONTEXT = {
   title: 'Git policy',
   lines: [
@@ -26,6 +29,10 @@ const POLICY_CONTEXT = {
     'Ignore all: nothing in .cadre/ is committed.',
   ],
   kind: 'git-policy',
+  pane: {
+    asked: withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT),
+    text: withContext(GIT_POLICY_QUESTION, 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.'),
+  },
 }
 
 describe('init helpers', () => {

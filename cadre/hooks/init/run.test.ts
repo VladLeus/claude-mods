@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
-  AskContext,
   AskSpec,
   CadreState,
   Choice,
@@ -1145,14 +1144,18 @@ describe('instruction parts (G-02-1f)', () => {
     expect(run.asked[consentAt]).toBe(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
     const heading = 'Files found by name (nothing is read before a yes):'
     const found = [heading, '  ~/.claude/CLAUDE.md', 'Memories:', '  none']
-    const consent = { title: 'Instruction files', lines: found, kind: 'instructions' }
+    // A pane surface asks the consent with its context's first line, the entry with its count line (D-255).
+    const consentPane = { asked: run.asked[consentAt], text: withContext(CONTENT_QUESTION, heading) }
+    const consent = { title: 'Instruction files', lines: found, kind: 'instructions', pane: consentPane }
     const consentOptions = ['No, skip it', 'Yes, read them']
     expect(run.specs[consentAt]).toEqual({ options: consentOptions, header: 'Instructions', context: consent })
     const entryContext =
       '2 topics from 1 file and 0 memories; the pane shows each with the roles it is recommended for.'
     expect(run.asked[entryAt]).toBe(withContext(INSTRUCTIONS_ENTRY_QUESTION, entryContext))
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
-    const entry = { title: 'Instruction parts', lines: shownBlock(run, 'instructions'), kind: 'instructions' }
+    const entryPane = { asked: run.asked[entryAt], text: run.asked[entryAt] }
+    const lines = shownBlock(run, 'instructions')
+    const entry = { title: 'Instruction parts', lines, kind: 'instructions', pane: entryPane }
     expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', context: entry })
   })
 
@@ -3598,12 +3601,15 @@ function everyStepWorld(): MemWorld {
 
 /**
  * The spec of the review question's first page on a pane surface (D-233, ASKED #19): Next page, Confirm and Change
- * something… with the Review chip, and the first PANE_PAGE_ROWS - 1 review lines as its context, titled with its place.
+ * something… with the Review chip, and the first PANE_PAGE_ROWS - 1 review lines as its context, titled with its place,
+ * which a pane surface asks with REVIEW_QUESTION in place of the question `asked` (D-255).
  */
-function firstPageSpec(lines: readonly string[]): AskSpec {
+function firstPageSpec(lines: readonly string[], asked: string | undefined): unknown {
   const size = PANE_PAGE_ROWS - 1
   const count = Math.ceil(lines.length / size)
-  const context: AskContext = { title: `Review (page 1 of ${count})`, lines: lines.slice(0, size), kind: 'review' }
+  const title = `Review (page 1 of ${count})`
+  const pane = { asked, text: withContext(REVIEW_QUESTION, title) }
+  const context = { title, lines: lines.slice(0, size), kind: 'review', pane }
 
   return { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context }
 }
@@ -3717,7 +3723,7 @@ describe('reviewStep', () => {
     expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    expect(run.specs[reviewAt]).toEqual(firstPageSpec(expected))
+    expect(run.specs[reviewAt]).toEqual(firstPageSpec(expected, run.asked[reviewAt]))
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -4061,7 +4067,7 @@ describe('review question hint (G-02-7)', () => {
     expect(asked[0]?.endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
     expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    expect(run.specs[reviewAt]).toEqual(firstPageSpec(shownBlock(run, 'review')))
+    expect(run.specs[reviewAt]).toEqual(firstPageSpec(shownBlock(run, 'review'), run.asked[reviewAt]))
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
@@ -4437,10 +4443,13 @@ describe('init apply conflicts (D-67)', () => {
     const diff = lineDiff(EDITED_ROLE, role)
     const counts = `Take new: ${diff.added} ${diff.added === 1 ? 'line' : 'lines'} added, ${diff.removed} removed`
     const at = run.asked.indexOf(ROLE_ASKED)
+    // A pane surface asks the question with how many lines Take new adds and removes (D-255).
+    const [sentence = ''] = ROLE_ASKED.split('\n')
     expect(run.specs[at]?.context).toEqual({
       title: 'Conflict: .cadre/be/ROLE.md',
       lines: [counts, ...diffLines(diff)],
       kind: 'conflict-diff',
+      pane: { asked: ROLE_ASKED, text: withContext(sentence, counts) },
     })
   })
 
@@ -5560,10 +5569,12 @@ describe('question contexts (D-211, D-236)', () => {
     const run = memIo(gitWorld({ tools }), { ...INIT_ANSWERS, 'Which roles get the MCP servers': 'Go one by one' })
     await runInit(run.io, { dryRun: true })
     const at = run.asked.findIndex(question => question.startsWith('Which roles get the sentry MCP server?'))
+    const [sentence = ''] = (run.asked[at] ?? '').split('\n')
     expect(run.specs[at]?.context).toEqual({
       title: 'MCP: sentry',
       lines: ['Source: session', 'Tools: 1 (issues)', 'Recommended: none'],
       kind: 'mcp-server',
+      pane: { asked: run.asked[at], text: withContext(sentence, 'Recommended: none') },
     })
   })
 })

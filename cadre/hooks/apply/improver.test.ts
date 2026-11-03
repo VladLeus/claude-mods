@@ -327,7 +327,10 @@ describe('improver pass (G-02-1f)', () => {
     expect(run.shown).toEqual([{ key: 'improver', title: 'Improver changes', lines }])
     expect(improverBlockLines(BE_BUILT_REPO_PATH, lineDiff(BE_BUILT, BE_IMPROVED))).toEqual(lines)
     expect(run.asked).toEqual([BE_IMPROVER_ASKED])
-    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver' }
+    // A pane surface asks the question with the context's first line, the file and its counts (D-255).
+    const question = "Accept the improver's changes to .cadre/be/CLAUDE.md?"
+    const pane = { asked: BE_IMPROVER_ASKED, text: `${question}\n${lines[0] ?? ''}` }
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', pane }
     expect(run.specs).toEqual([{ options: ['Accept', 'Keep original'], header: 'Improver', context }])
     expect(outcome).toEqual({
       accepted: new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]),
@@ -351,7 +354,9 @@ describe('improver pass (G-02-1f)', () => {
       '- Run the tests before a commit.',
       '+ Use API_KEY=[hidden] on staging.',
     ]
-    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver' }
+    const [asked = ''] = run.asked
+    const pane = { asked, text: `Accept the improver's changes to .cadre/be/CLAUDE.md?\n${lines[0] ?? ''}` }
+    const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', pane }
     expect([run.shown, run.specs.map(spec => spec.context)]).toEqual([
       [{ key: 'improver', title: 'Improver changes', lines }],
       [context],

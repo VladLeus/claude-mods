@@ -88,6 +88,10 @@ describe('autonomy hunks', () => {
     expect(asked.spec).toEqual({ options: ['Accept', 'Decline'], header: 'Hunk 3 of 3' })
   })
 
+  test('a hunk question has no context of its own, so every surface asks its full text (D-255)', () => {
+    expect(hunkQuestion({ proposal: MODE, before: 'interactive' }, 1, 2).spec.context).toBeUndefined()
+  })
+
   test('the header of the last GSD hunk fits the 12 characters a dialog chip allows', () => {
     const total = GSD_AUTONOMY.length
     const header = hunkQuestion({ proposal: CONTEXT_WARNINGS, before: NOT_SET_TEXT }, total, total).spec.header

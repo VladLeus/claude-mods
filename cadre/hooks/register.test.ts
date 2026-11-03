@@ -17,7 +17,7 @@ import { MODEL_PROGRESS, SCAN_PROGRESS } from './init/run'
 import { CLAUDE_JSON_QUESTION } from './init/stages/consent'
 import { DURATION_QUESTION } from './init/stages/duration'
 import { FRAMEWORK_QUESTION_PREFIX } from './init/stages/frameworks'
-import { GIT_POLICY_CONTEXT, GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
+import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './init/stages/policy'
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
@@ -760,8 +760,10 @@ describe('register with a faked host', () => {
     }
     fakeHost(on, unproven, log)
     const out = await $.command.run({ command: 'cadre', args: 'detect' })
+    // A pane surface asks the check with the install it runs, its context's one line (D-255, edge #39).
     expect(log.asks).toEqual([
-      "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)",
+      "ask Run GSD's own check to confirm it's installed? (runs node gsd-tools runtime-identity)\n" +
+        '~/.claude/gsd-core: found, not proven',
     ])
     expect(log.askOptions).toEqual([['No, skip the check', 'Yes, run the check']])
     expect(log.runs).toEqual([])
@@ -1478,8 +1480,10 @@ describe('cadre init with a faked host', () => {
     const answers = { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' }
     fakeHost(on, initWorld({ answers }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    const asked = `ask ${withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)}`
-    const again = `ask ${refusal}\n${withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)}`
+    // A pane surface asks the question with its first policy line, the refusal kept on top (D-255).
+    const line = 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.'
+    const asked = `ask ${withContext(GIT_POLICY_QUESTION, line)}`
+    const again = `ask ${refusal}\n${withContext(GIT_POLICY_QUESTION, line)}`
     expect(log.asks.slice(log.asks.indexOf(asked))).toEqual([asked, again, again])
     expect(refusal).toBe("'whatever' isn't one of: definitions, all, ignore.")
     expect(log.logs.at(-1)).toBe(NO_USABLE_ANSWER_REASON)
@@ -2705,6 +2709,19 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, skillWorld(), log)
     await $.command.run(TUI_RUN)
     expect(log.asks).toEqual(TUI_ASKS_AT_BASE)
+  })
+
+  test('in fullscreen a question with a context asks its sentence and one line, kept open (D-255)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
+    const opened = log.questionWrites.filter(isObject)
+    const contextual = opened.filter(open => isObject(open.context))
+    // The hunk questions carry no context of their own yet (D-287), so they are asked as they are.
+    const long = contextual.flatMap(open => (String(open.question).split('\n').length > 2 ? [open.question] : []))
+    expect([contextual.length > 10, long]).toEqual([true, []])
+    // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan).
+    expect(opened.map(open => `ask ${String(open.question)}`)).toEqual(log.asks)
   })
 })
 

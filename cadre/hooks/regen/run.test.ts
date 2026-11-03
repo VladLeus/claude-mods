@@ -820,6 +820,11 @@ describe('regen by part hashes (G-02-1f)', () => {
           title: 'Regen 1 of 1',
           lines: ['CLAUDE.md > Git', 'Changed since init.', 'Recommended: yes'],
           kind: 'regen-part',
+          // A pane surface asks the question with whether the model recommends the item (D-255).
+          pane: {
+            asked: withContext('Should be get "Git" from CLAUDE.md?', 'Changed since init. Recommended: yes.'),
+            text: withContext('Should be get "Git" from CLAUDE.md?', 'Recommended: yes'),
+          },
         },
       },
     ])

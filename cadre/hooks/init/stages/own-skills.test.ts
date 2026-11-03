@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, InitIo, McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
+import type { InitIo, McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import {
   EMPTY_FACTS,
@@ -107,12 +107,26 @@ describe('own skills hand-out (G-02-1b)', () => {
   const ZETA_LINE = 'zeta: No description. Used 4 times in the last 50 sessions. Recommended: fe.'
   const ALPHA_LINE = 'alpha: Sort the inbox. Recommended: none.'
   /** The own-skills entry question's own context: the own-skills block. */
-  const OWN_CONTEXT = { title: 'Your own skills', lines: OWN_BLOCK, kind: 'skills' }
-  /** The codex group question's own context: its one skill, never used and recommended to no role. */
+  /** The entry question as asked: its count line, which a pane surface asks too (D-255). */
+  const ENTRY_ASKED = withContext(ownEntry(3), ENTRY_CONTEXT)
+  const OWN_CONTEXT = {
+    title: 'Your own skills',
+    lines: OWN_BLOCK,
+    kind: 'skills',
+    pane: { asked: ENTRY_ASKED, text: ENTRY_ASKED },
+  }
+  /**
+   * The codex group question's own context: its one skill, never used and recommended to no role; a pane surface asks
+   * the question with its recommendation line (D-255).
+   */
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
     lines: ['Recommended: none', 'codex:rescue: No description. Recommended: none.'],
     kind: 'skill-group',
+    pane: {
+      asked: withContext(CODEX_QUESTION, skillsContextLine(roles)),
+      text: withContext(CODEX_QUESTION, 'Recommended: none'),
+    },
   }
 
   test("an own skill's purpose with no final mark gets a period in its context line (N1)", () => {
@@ -147,10 +161,7 @@ describe('own skills hand-out (G-02-1b)', () => {
 
   test('the plugin groups come first, then the entry question with its context, chip and three answers', async () => {
     const { run } = await stepRun(['None', 'Accept recommendations'])
-    expect(run.asked).toEqual([
-      withContext(CODEX_QUESTION, skillsContextLine(roles)),
-      withContext(ownEntry(3), ENTRY_CONTEXT),
-    ])
+    expect(run.asked).toEqual([withContext(CODEX_QUESTION, skillsContextLine(roles)), ENTRY_ASKED])
     expect(run.specs).toEqual([
       { options: ['Go one by one', 'None', 'All roles'], header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
       { options: OWN_ENTRY_OPTIONS, header: 'Skills', context: OWN_CONTEXT },
@@ -204,15 +215,18 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('Go one by one asks each own skill once, busiest first, then by name: Yes, No and a role list', async () => {
     const { run, assigned } = await stepRun(['None', 'Go one by one', 'Yes', 'No', 'qa'])
     expect(run.asked.slice(2)).toEqual([MID_ASKED, ZETA_ASKED, ALPHA_ASKED])
-    const skillAt = (at: number, line: string): AskContext => ({
-      title: `Skill ${at} of 3`,
-      lines: [line],
-      kind: 'skill',
-    })
+    // A pane surface asks each skill's question with the roles recommended for it (D-255).
+    const specAt = (at: number, line: string, asked: string, recommended: string): unknown => {
+      const [sentence = ''] = asked.split('\n')
+      const pane = { asked, text: withContext(sentence, `Recommended: ${recommended}`) }
+      const context = { title: `Skill ${at} of 3`, lines: [line], kind: 'skill', pane }
+
+      return { options: ['Yes', 'No'], header: `Skill ${at}/3`, context, acceptsTyped: true }
+    }
     expect(run.specs.slice(2)).toEqual([
-      { options: ['Yes', 'No'], header: 'Skill 1/3', context: skillAt(1, MID_LINE), acceptsTyped: true },
-      { options: ['Yes', 'No'], header: 'Skill 2/3', context: skillAt(2, ZETA_LINE), acceptsTyped: true },
-      { options: ['Yes', 'No'], header: 'Skill 3/3', context: skillAt(3, ALPHA_LINE), acceptsTyped: true },
+      specAt(1, MID_LINE, MID_ASKED, 'be'),
+      specAt(2, ZETA_LINE, ZETA_ASKED, 'fe'),
+      specAt(3, ALPHA_LINE, ALPHA_ASKED, 'none'),
     ])
     expect(roles.map(role => [role.id, ownOf(assigned, role.id)])).toEqual([
       ['pm', []],
@@ -235,7 +249,9 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run, assigned } = await stepRun(['None', 'Whole group', 'All roles'])
     const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
     expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
-    const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group' }
+    // A pane surface asks the whole-group question with the first line of its context (D-255).
+    const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(own, ALPHA_LINE) }
+    const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group', pane }
     expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context, acceptsTyped: true })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))
   })

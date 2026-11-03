@@ -61,6 +61,11 @@ describe('the consent stage (D-230)', () => {
     expect(state.openQuestion).toEqual(ask)
   })
 
+  test('the consent has no context of its own, so every surface asks it as it is (D-255)', () => {
+    const state = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
+    expect(state.openQuestion?.spec.context).toBeUndefined()
+  })
+
   test('an answer finishes the stage with the consent in the draft and enters the scans with it', () => {
     const state = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
     const next = nextStage(state, { kind: 'answer', text: 'Yes, read names only' })

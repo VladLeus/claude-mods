@@ -55,7 +55,9 @@ describe('carryStep', () => {
   test('the env question is asked once, and every role carries the picked names only', () => {
     const run = driven(carryAt(roles, twoNames), ['JIRA_URL'])
     expect(run.asked).toEqual([ENV_ASKED])
-    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env' }
+    // A pane surface asks the question with the first line of its context (D-255).
+    const pane = { asked: ENV_ASKED, text: withContext(ENV_QUESTION, TWO_NAMES_LINES[0] ?? '') }
+    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', pane }
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
@@ -158,7 +160,8 @@ describe('the carry stage (D-230)', () => {
     const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
-    const context = { title: 'Env variables', lines, kind: 'env' }
+    const pane = { asked: question, text: withContext(envQuestion(['API_KEY', 'JIRA_URL']), lines[0] ?? '') }
+    const context = { title: 'Env variables', lines, kind: 'env', pane }
     const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

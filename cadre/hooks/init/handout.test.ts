@@ -240,8 +240,28 @@ describe('the hand-out cursor (D-230)', () => {
     if (one.kind !== 'ask') throw new Error('no first item question')
     const two = handoutAnswer(one.cursor, 'Yes')
     if (two.kind !== 'ask') throw new Error('no second item question')
-    expect([entry.spec.context, one.spec.context, Object.hasOwn(two.spec, 'context')]).toEqual([parts, topic, false])
+    // With no pane line a pane surface asks the question as the TUI default does (D-255).
+    const entryPane = { asked: ENTRY_ASKED, text: ENTRY_ASKED }
+    const itemPane = { asked: itemAsked(first), text: itemAsked(first) }
+    const contexts = [entry.spec.context, one.spec.context, Object.hasOwn(two.spec, 'context')]
+    expect(contexts).toEqual([{ ...parts, pane: entryPane }, { ...topic, pane: itemPane }, false])
     expect([entry.question, one.question]).toEqual([ENTRY_ASKED, itemAsked(first)])
+  })
+
+  test('a pane line takes the place of the context line in what a pane surface asks (D-255)', () => {
+    const topic: AskContext = { title: 'Topic 1 of 2', lines: ['Security rules only'], kind: 'topic' }
+    const item = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
+    const first = { ...item, paneLine: 'Recommended: security' }
+    const parts: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
+    const withLine = { ...ENTRY, context: parts, paneLine: '2 topics' }
+    const entry = handoutEnter(withLine, [first], ROLES, DISMISSED)
+    if (entry.kind !== 'ask') throw new Error('no entry question')
+    const one = handoutAnswer(entry.cursor, 'Go part by part')
+    if (one.kind !== 'ask') throw new Error('no item question')
+    const entryPane = { asked: ENTRY_ASKED, text: withContext(ENTRY.question, '2 topics') }
+    const itemPane = { asked: itemAsked(first), text: withContext(first.question, 'Recommended: security') }
+    const contexts = [entry.spec.context, one.spec.context]
+    expect(contexts).toEqual([{ ...parts, pane: entryPane }, { ...topic, pane: itemPane }])
   })
 })
 

@@ -110,8 +110,16 @@ function historyAt(locations: InitLocations = DEFAULT_LOCATIONS): InitState {
   return historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, locations }))
 }
 
-/** The history question's own context (D-236): the scan block of an empty repo and setup, with no warning. */
-const SCAN_ASK_CONTEXT = { title: 'Scan', lines: scanSummaryLines(repoScan(), emptySetupScan(), '/repo'), kind: 'scan' }
+/**
+ * The history question's own context (D-236): the scan block of an empty repo and setup, with no warning; a pane
+ * surface asks the question for `total` sessions with its first line in place of SCAN_CONTEXT (D-255).
+ */
+function scanAskContext(total: number): unknown {
+  const lines = scanSummaryLines(repoScan(), emptySetupScan(), '/repo')
+  const pane = { asked: historyAsked(total), text: withContext(historyQuestion(total), lines[0] ?? '') }
+
+  return { title: 'Scan', lines, kind: 'scan', pane }
+}
 
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
 function historyCalls(io: InitIo): (call: IoCall) => Promise<IoResult> {
@@ -244,7 +252,7 @@ describe('history scan', () => {
     const drive = await drivenWith(historyAt(), ['No, skip it'], historyCalls(run.io))
     expect(drive.state.draft.hints).toEqual(new Map())
     expect(drive.asked).toEqual([historyAsked(2)])
-    expect(drive.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History', context: SCAN_ASK_CONTEXT }])
+    expect(drive.specs).toEqual([{ options: HISTORY_OPTIONS, header: 'History', context: scanAskContext(2) }])
     expect(run.reads).toEqual([])
     expect(drive.outputs).toEqual([])
   })
@@ -381,7 +389,7 @@ describe('the history stage (D-230)', () => {
     expect(state.effect).toEqual({ kind: 'io', call: { id: 'list-sessions', dir: DIR } })
     expect(state.openQuestion).toBeNull()
     const asking = nextStage(state, listed(ONE_SESSION))
-    const spec = { options: HISTORY_OPTIONS, header: 'History', context: SCAN_ASK_CONTEXT }
+    const spec = { options: HISTORY_OPTIONS, header: 'History', context: scanAskContext(1) }
     const ask = { question: historyAsked(1), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
@@ -393,7 +401,8 @@ describe('the history stage (D-230)', () => {
     const state = historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, gathered }))
     const lines = [...scanSummaryLines(repo, emptySetupScan(), '/repo'), 'warning: could not list src']
     const asking = nextStage(state, listed(ONE_SESSION))
-    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan' })
+    const pane = { asked: historyAsked(1), text: withContext(historyQuestion(1), lines[0] ?? '') }
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', pane })
   })
 
   test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {

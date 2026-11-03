@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskSpec, InitIo, RoleSpec, SetupScan } from '../../../types'
+import type { InitIo, RoleSpec, SetupScan } from '../../../types'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, FULL_SCAN, memIo, memWorld, roleIn, valueOf } from '../../testkit'
 import { askOnce, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
@@ -42,16 +42,18 @@ describe('memoryStep', () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await groupsOver(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
-    const spec = (title: string, lines: readonly string[]): AskSpec => ({
-      options: ROLE_LIST_OPTIONS,
-      header: 'Memory',
-      context: { title, lines, kind: 'memory-group' },
-      acceptsTyped: true,
-    })
+    // A pane surface asks each question with the first line of its context (D-255).
+    const spec = (question: string, title: string, lines: readonly string[]): unknown => {
+      const pane = { asked: asAsked(question), text: withContext(question, lines[0] ?? '') }
+
+      const context = { title, lines, kind: 'memory-group', pane }
+
+      return { options: ROLE_LIST_OPTIONS, header: 'Memory', context, acceptsTyped: true }
+    }
     expect(run.specs).toEqual([
-      spec('Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
-      spec('Auto-memories', ['a.md']),
-      spec('Project CLAUDE.md', ['repo/CLAUDE.md']),
+      spec(GLOBAL_QUESTION, 'Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
+      spec(MEMORY_QUESTION, 'Auto-memories', ['a.md']),
+      spec(PROJECT_QUESTION, 'Project CLAUDE.md', ['repo/CLAUDE.md']),
     ])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
       ['pm', ['global-claude-md', 'project-claude-md']],
@@ -130,12 +132,14 @@ describe('the whole-file question cursor (D-230)', () => {
   test('memoryEnter asks the first group the scan found, and with none found the roles get no group', () => {
     const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }), '/repo')
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
+    const asked = withContext(question, memoryContextLine(roles))
+    const pane = { asked, text: withContext(question, 'a.md') }
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
-      withContext(question, memoryContextLine(roles)),
+      asked,
       {
         options: ROLE_LIST_OPTIONS,
         header: 'Memory',
-        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group' },
+        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group', pane },
         acceptsTyped: true,
       },
     ])

@@ -75,11 +75,14 @@ describe('assignmentStep', () => {
     title: 'MCP: jira',
     lines: ['Source: session', 'Tools: none listed', 'Recommended: pm, tl'],
     kind: 'mcp-server',
+    // A pane surface asks each question with the roles recommended for it in place of the context line (D-255).
+    pane: { asked: JIRA_ASKED, text: withContext(JIRA_QUESTION, 'Recommended: pm, tl') },
   }
   const SENTRY_CONTEXT = {
     title: 'MCP: sentry',
     lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
     kind: 'mcp-server',
+    pane: { asked: SENTRY_ASKED, text: withContext(SENTRY_QUESTION, 'Recommended: none') },
   }
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
@@ -89,6 +92,7 @@ describe('assignmentStep', () => {
       'codex:setup: No description. Recommended: none.',
     ],
     kind: 'skill-group',
+    pane: { asked: CODEX_ASKED, text: withContext(CODEX_QUESTION, 'Recommended: none') },
   }
 
   test('every server and skill is asked; a table match is only its seed (D-249, D-280)', async () => {
@@ -304,14 +308,21 @@ describe('the assign stage (D-230)', () => {
     const entry = nextStage(calling, SERVERS_NONE)
     expect(entry.openQuestion?.spec).toEqual({ options: ['Go one by one', 'Whole group'], header: 'MCP' })
     const state = nextStage(entry, { kind: 'answer', text: 'Go one by one' })
-    const question = withContext('Which roles get the sentry MCP server? (e.g. BE, QA, or none)', mcpContextLine(roles))
+    const sentence = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
+    const question = withContext(sentence, mcpContextLine(roles))
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
-    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+    const pane = { asked: question, text: withContext(sentence, 'Recommended: none') }
+    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', pane }
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), SKILLS_NONE)
     const codexLines = ['Recommended: none', 'codex:rescue: No description. Recommended: none.']
-    const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group' }
+    const codexQuestion = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
+    const codexPane = {
+      asked: withContext(codexQuestion, skillsContextLine(roles)),
+      text: withContext(codexQuestion, 'Recommended: none'),
+    }
+    const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group', pane: codexPane }
     const typed = { acceptsTyped: true }
     expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
   })
@@ -325,10 +336,13 @@ describe('the assign stage (D-230)', () => {
     expect(calling.effect).toEqual({ kind: 'model', call: { id: 'mcp', roles, servers } })
     const entry = nextStage(calling, { kind: 'model', result: { id: 'mcp', result: new Map([['sentry', ['qa']]]) } })
     const state = nextStage(entry, { kind: 'answer', text: 'Go one by one' })
+    const sentence = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
+    const pane = { asked: withContext(sentence, mcpContextLine(roles)), text: withContext(sentence, 'Recommended: qa') }
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'MCP: sentry',
       lines: ['Source: .mcp.json', 'Tools: 2 (events, issues)', 'Recommended: qa'],
       kind: 'mcp-server',
+      pane,
     })
   })
 
@@ -337,6 +351,8 @@ describe('the assign stage (D-230)', () => {
     const described = { ...gathered, setup: { ...setup, mcp: [], skills } }
     const hints = new Map([['codex:rescue', 3]])
     const state = nextStage(assignStage.enter(stateAt('assign', { roles, gathered: described, hints })), SKILLS_NONE)
+    const question = state.openQuestion?.question ?? ''
+    const [sentence = ''] = question.split('\n')
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'Skills: codex',
       lines: [
@@ -344,6 +360,7 @@ describe('the assign stage (D-230)', () => {
         'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
       ],
       kind: 'skill-group',
+      pane: { asked: question, text: withContext(sentence, 'Recommended: none') },
     })
   })
 

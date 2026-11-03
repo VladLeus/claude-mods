@@ -42,6 +42,16 @@ const DETECTED = {
   kind: 'detection',
 }
 
+/**
+ * DETECTED as the question `asked` carries it: a pane surface asks that question's sentence, its first line, with the
+ * first detection line in place of the team line (D-255).
+ */
+function detectedFor(asked: string | undefined): unknown {
+  const [sentence = ''] = (asked ?? '').split('\n')
+
+  return { ...DETECTED, pane: { asked, text: withContext(sentence, GSD_LINE) } }
+}
+
 /** The frameworks stage entered for `choice` and `roles`, the rest of a whole draft set. */
 function frameworksAt(choice: Choice, roles: readonly RoleSpec[]): InitState {
   return frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
@@ -92,8 +102,8 @@ describe('frameworkStep', () => {
     expect(run.state.draft.repoDefault).toBeNull()
     expect(firstLines(run.asked)).toEqual([AMBIGUOUS_QUESTION, FRAMEWORK_ALL_QUESTION])
     expect(run.specs).toEqual([
-      { options: ['Same for all roles', 'Per role'], header: 'Framework', context: DETECTED },
-      { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true },
+      { options: ['Same for all roles', 'Per role'], header: 'Framework', context: detectedFor(run.asked[0]) },
+      { options: BOTH_OPTIONS, header: 'Framework', context: detectedFor(run.asked[1]), acceptsTyped: true },
     ])
   })
 
@@ -107,8 +117,13 @@ describe('frameworkStep', () => {
       'Framework for Team Lead (tl)?',
       'Framework for Security (security)?',
     ])
-    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true }
-    expect(run.specs.slice(1)).toEqual([each, each, each])
+    const each = run.asked.slice(1).map(asked => ({
+      options: BOTH_OPTIONS,
+      header: 'Framework',
+      context: detectedFor(asked),
+      acceptsTyped: true,
+    }))
+    expect(run.specs.slice(1)).toEqual(each)
   })
 
   test('installed-only asks with the installed framework and none, and says why it asks', () => {
@@ -116,7 +131,8 @@ describe('frameworkStep', () => {
     expect(run.state.draft.roles?.map(role => role.framework)).toEqual(['gsd', 'gsd', 'gsd'])
     expect(firstLines(run.asked)).toEqual([INSTALLED_QUESTION, FRAMEWORK_ALL_QUESTION])
     const options = ['GSD', 'none (built-in)']
-    expect(run.specs[1]).toEqual({ options, header: 'Framework', context: DETECTED, acceptsTyped: true })
+    const context = detectedFor(run.asked[1])
+    expect(run.specs[1]).toEqual({ options, header: 'Framework', context, acceptsTyped: true })
   })
 
   test('every framework question carries the detection evidence: each framework, a marker only found (D-236)', () => {
@@ -190,8 +206,13 @@ describe('frameworkStep', () => {
   test('options keep SUPPORTED_IDS order then none for each role, 2 to 4 of them, in any choice order', () => {
     const reversed: Choice = { kind: 'ambiguous', ids: ['superpowers', 'gsd'] }
     const run = driven(frameworksAt(reversed, roles), ['Per role', 'GSD', 'GSD', 'GSD'])
-    const each = { options: BOTH_OPTIONS, header: 'Framework', context: DETECTED, acceptsTyped: true }
-    expect(run.specs.slice(1)).toEqual([each, each, each])
+    const each = run.asked.slice(1).map(asked => ({
+      options: BOTH_OPTIONS,
+      header: 'Framework',
+      context: detectedFor(asked),
+      acceptsTyped: true,
+    }))
+    expect(run.specs.slice(1)).toEqual(each)
     for (const spec of run.specs) {
       expect(spec.options.length).toBeGreaterThanOrEqual(2)
       expect(spec.options.length).toBeLessThanOrEqual(4)
@@ -254,7 +275,7 @@ describe('the frameworks stage (D-230)', () => {
     const state = frameworksStage.enter(stateAt('frameworks', wholeDraft({ choice, roles })))
     const prefix = `${FRAMEWORK_QUESTION_PREFIX} (asked because more than one framework is in use)`
     const question = withContext(prefix, 'Roles: pm, tl, security.')
-    const spec = { options: ['Same for all roles', 'Per role'], header: 'Framework', context: DETECTED }
+    const spec = { options: ['Same for all roles', 'Per role'], header: 'Framework', context: detectedFor(question) }
     const ask = { question, spec }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
@@ -302,6 +323,18 @@ describe('the GSD check (D-243)', () => {
     expect(effect?.spec.context?.lines.join('\n')).toContain('~/.claude/gsd-core')
     const after = [no.stage, no.draft.repoDefault, no.draft.gathered?.facts.facts.gsd]
     expect(after).toEqual(['security', 'none', [UNPROVEN]])
+  })
+
+  test('a pane surface asks the check with the install it runs as its one line (D-255, edge #39)', () => {
+    const asked = gsdAt([UNPROVEN])
+    const context = asked.effect.kind === 'ask' ? asked.effect.spec.context : null
+    const line = '~/.claude/gsd-core: found, not proven'
+    expect(context).toEqual({
+      title: context?.title,
+      lines: [line],
+      kind: 'detection',
+      pane: { asked: QUESTION, text: withContext(QUESTION, line) },
+    })
   })
 
   test('Yes asks the runner for the check with the locations, as an io effect', () => {

@@ -30,12 +30,20 @@ describe('modelStep', () => {
   /** The first model question as asked for these five roles: their ids under it (D-136). */
   const MODE_ASKED = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
   /** Every model question's own context: the roles with their purposes (D-236). */
-  const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+  const lines = proposalLines(roles, [])
+  /** The context of the question `asked` of `sentence`: a pane surface asks its first line in place (D-255). */
+  const contextOf = (asked: string, sentence: string): unknown => ({
+    title: 'Roles',
+    lines,
+    kind: 'roles',
+    pane: { asked, text: withContext(sentence, lines[0] ?? '') },
+  })
 
   test('the first model question offers Same for all roles first, then Per role', () => {
     const run = driven(modelAt(roles), ['Same for all roles', 'opus + medium'])
     expect(MODEL_MODE_QUESTION).toBe('Model and effort: same for all roles, or per role?')
     expect(run.asked[0]).toBe(MODE_ASKED)
+    const context = contextOf(MODE_ASKED, MODEL_MODE_QUESTION)
     expect(run.specs[0]).toEqual({ options: ['Same for all roles', 'Per role'], header: 'Model', context })
   })
 
@@ -46,6 +54,7 @@ describe('modelStep', () => {
     )
     expect(run.asked).toEqual([MODE_ASKED, MODEL_ALL])
     const options = ['opus + medium', 'sonnet + medium', 'sonnet + high']
+    const context = contextOf(MODEL_ALL, MODEL_ALL_LINE)
     expect(run.specs[1]).toEqual({ options, header: 'Model', context, acceptsTyped: true })
     expect(run.outputs).toEqual([])
   })
@@ -53,18 +62,21 @@ describe('modelStep', () => {
   test('Per role asks each role by its title and id in role order, each with the three options (A6)', () => {
     const answers = ['Per role', 'opus + medium', 'sonnet + high', 'sonnet + medium', 'haiku low', 'OPUS+max']
     const run = driven(modelAt(roles), answers)
-    expect(run.asked).toEqual([
-      MODE_ASKED,
-      ...[
-        'Model and effort for PM (pm)?',
-        'Model and effort for Team Lead (tl)?',
-        'Model and effort for BE (be)?',
-        'Model and effort for QA (qa)?',
-        'Model and effort for Security (security)?',
-      ].map(question => withContext(question, MODEL_EFFORT_CONTEXT)),
-    ])
-    const each = { options: MODEL_EFFORT_OPTIONS, header: 'Model', context, acceptsTyped: true }
-    expect(run.specs.slice(1)).toEqual([each, each, each, each, each])
+    const questions = [
+      'Model and effort for PM (pm)?',
+      'Model and effort for Team Lead (tl)?',
+      'Model and effort for BE (be)?',
+      'Model and effort for QA (qa)?',
+      'Model and effort for Security (security)?',
+    ]
+    expect(run.asked).toEqual([MODE_ASKED, ...questions.map(question => withContext(question, MODEL_EFFORT_CONTEXT))])
+    const each = questions.map(question => ({
+      options: MODEL_EFFORT_OPTIONS,
+      header: 'Model',
+      context: contextOf(withContext(question, MODEL_EFFORT_CONTEXT), question),
+      acceptsTyped: true,
+    }))
+    expect(run.specs.slice(1)).toEqual(each)
     expect(run.state.draft.roles?.map(role => `${role.id}: ${role.model} ${role.effort}`)).toEqual([
       'pm: opus medium',
       'tl: sonnet high',
@@ -164,7 +176,10 @@ describe('the model stage (D-230)', () => {
   test('modelStage asks Same for all roles or Per role with the team ids; the open question is that ask', () => {
     const state = modelStage.enter(stateAt('model', { roles }))
     const question = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
-    const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+    const lines = proposalLines(roles, [])
+    // A pane surface asks the question with the first line of its context (D-255).
+    const pane = { asked: question, text: withContext(MODEL_MODE_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
@@ -175,8 +190,18 @@ describe('the model stage (D-230)', () => {
   test('every model question carries the roles with their purposes and the scan changes (D-236)', () => {
     const changes = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }] satisfies RoleChange[]
     const run = driven(modelStage.enter(stateAt('model', { roles, changes })), ['Per role'])
-    const context = { title: 'Roles', lines: proposalLines(roles, changes), kind: 'roles' }
-    expect(run.specs.map(spec => spec.context)).toEqual([context, context])
+    const lines = proposalLines(roles, changes)
+    const asks = [
+      [withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.'), MODEL_MODE_QUESTION],
+      [withContext('Model and effort for PM (pm)?', MODEL_EFFORT_CONTEXT), 'Model and effort for PM (pm)?'],
+    ]
+    const contexts = asks.map(([asked = '', sentence = '']) => ({
+      title: 'Roles',
+      lines,
+      kind: 'roles',
+      pane: { asked, text: withContext(sentence, lines[0] ?? '') },
+    }))
+    expect(run.specs.map(spec => spec.context)).toEqual(contexts)
   })
 
   test('Same for all roles, then a pair, ends the stage with every role on that model and effort', () => {

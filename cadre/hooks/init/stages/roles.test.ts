@@ -139,7 +139,10 @@ describe('describeStep', () => {
     const { run, end } = await rolesRun([DESCRIBE, DESCRIPTION, USE], [DESCRIBED_REPLY])
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: { roles: DESCRIBED_ROLES, changes: [] } })
     expect(run.asked[1]).toBe(DESCRIBE_ASKED)
-    const context = { title: 'Roles', lines: proposalLines(PROPOSAL.roles, PROPOSAL.changes), kind: 'roles' }
+    const lines = proposalLines(PROPOSAL.roles, PROPOSAL.changes)
+    // A pane surface asks the question with the first line of its context (D-255).
+    const pane = { asked: DESCRIBE_ASKED, text: withContext(DESCRIBE_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     expect(run.specs[1]).toEqual({ options: ['Use the template instead', 'Cancel init'], header: 'Describe', context })
   })
 
@@ -238,16 +241,23 @@ describe('adjustLoop', () => {
     expect(adjusted?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(adjusted?.find(role => role.id === 'docs')?.title).toBe('Docs writer')
     expect(firstLines(adjusts)).toEqual([ADJUST_QUESTION, ADJUST_QUESTION, ADJUST_QUESTION])
-    const context = { title: 'Roles', lines: proposalLines(roles, full.changes), kind: 'roles' }
+    const lines = proposalLines(roles, full.changes)
+    const pane = { asked: ASKED, text: withContext(ADJUST_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     expect(run.specs[1]).toEqual({ options: ['Done adjusting', 'Show the roles'], header: 'Adjust', context })
   })
 
   test('each Adjust question carries the roles as they are now, with the scan changes (D-236)', async () => {
     const { run } = await adjustRun(['drop fe', 'Done adjusting'])
     const kept = roles.filter(role => role.id !== 'fe')
+    // Each asks, on a pane surface, the question with the first line of the roles as they are now (D-255).
+    const paneOf = (now: readonly RoleSpec[]): { readonly asked: string; readonly text: string } => ({
+      asked: withContext(ADJUST_QUESTION, adjustContextLine(now)),
+      text: withContext(ADJUST_QUESTION, proposalLines(now, full.changes)[0] ?? ''),
+    })
     expect(run.specs.slice(1, 3).map(spec => spec.context)).toEqual([
-      { title: 'Roles', lines: proposalLines(roles, full.changes), kind: 'roles' },
-      { title: 'Roles', lines: proposalLines(kept, full.changes), kind: 'roles' },
+      { title: 'Roles', lines: proposalLines(roles, full.changes), kind: 'roles', pane: paneOf(roles) },
+      { title: 'Roles', lines: proposalLines(kept, full.changes), kind: 'roles', pane: paneOf(kept) },
     ])
   })
 
@@ -373,9 +383,11 @@ describe('rolesStep', () => {
     const lines = proposalLines(proposal.roles, proposal.changes)
     expect(run.shown).toEqual([{ key: 'roles', title: 'Roles', lines }])
     expect(run.logged).toEqual([])
-    expect(run.asked).toEqual([withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))])
+    const asked = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
+    expect(run.asked).toEqual([asked])
     const options = ['Use these roles', 'Adjust them', 'Describe my own structure']
-    expect(run.specs[0]).toEqual({ options, header: 'Roles', context: { title: 'Roles', lines, kind: 'roles' } })
+    const pane = { asked, text: withContext(ROLES_QUESTION, lines[0] ?? '') }
+    expect(run.specs[0]).toEqual({ options, header: 'Roles', context: { title: 'Roles', lines, kind: 'roles', pane } })
     expect(ROLES_QUESTION).toBe('Use these roles?')
     expect(ROLES_OPTIONS).toEqual(['Use these roles', 'Adjust them', 'Describe my own structure'])
     expect(Object.isFrozen(ROLES_OPTIONS)).toBe(true)
@@ -584,7 +596,8 @@ describe('the roles stage (D-230)', () => {
     const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
     const question = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
     const lines = proposalLines(proposal.roles, proposal.changes)
-    const context = { title: 'Roles', lines, kind: 'roles' }
+    const pane = { asked: question, text: withContext(ROLES_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     const ask = { question, spec: { options: [...ROLES_OPTIONS], header: 'Roles', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
@@ -594,7 +607,9 @@ describe('the roles stage (D-230)', () => {
   test('the describe question carries the proposal it was asked from as its context (D-236)', () => {
     const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
     const describing = nextStage(state, { kind: 'answer', text: 'Describe my own structure' })
-    const context = { title: 'Roles', lines: proposalLines(proposal.roles, proposal.changes), kind: 'roles' }
+    const lines = proposalLines(proposal.roles, proposal.changes)
+    const pane = { asked: DESCRIBE_ASKED, text: withContext(DESCRIBE_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     expect(describing.openQuestion?.spec.context).toEqual(context)
     const again = nextStage(describing, { kind: 'answer', text: '  ' })
     expect(again.openQuestion?.spec.context).toEqual(context)

@@ -124,16 +124,26 @@ describe('security plugin installs (decision #39)', () => {
   })
 })
 
-/** The security plugins question's own context when both plugins are missing (D-236). */
-const PLUGINS_CONTEXT = {
-  title: 'Security plugins',
-  lines: [
-    `${SECURITY_KEY}: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 ` +
-      'or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
-    `${GUIDANCE_KEY}: security-guidance adds hooks that warn about risky edits.`,
-  ],
-  kind: 'security',
+/** The lines of the security plugins question's own context when both plugins are missing (D-236). */
+const PLUGINS_LINES = [
+  `${SECURITY_KEY}: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 ` +
+    'or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.',
+  `${GUIDANCE_KEY}: security-guidance adds hooks that warn about risky edits.`,
+]
+
+/**
+ * The security plugins question's own context for the missing `keys` and their `lines` (D-236): a pane surface asks
+ * the question with the first of those lines in place of SECURITY_INSTALL_CONTEXT (D-255).
+ */
+function pluginsContext(keys: readonly string[], lines: readonly string[]): unknown {
+  const question = securityInstallQuestion(keys)
+  const pane = { asked: withContext(question, SECURITY_INSTALL_CONTEXT), text: withContext(question, lines[0] ?? '') }
+
+  return { title: 'Security plugins', lines, kind: 'security', pane }
 }
+
+/** The security plugins question's own context when both plugins are missing (D-236, D-255). */
+const PLUGINS_CONTEXT = pluginsContext(SECURITY_KEYS, PLUGINS_LINES)
 
 describe('security plugin review fixes (#69)', () => {
   test('the question shows each plugin name cleaned, as every printed key is (B7)', () => {
@@ -154,7 +164,7 @@ describe('the security stage (D-230)', () => {
   test('the plugins question carries only the missing plugins with what each does (D-236)', () => {
     const setup = emptySetupScan({ installedPlugins: [SECURITY_KEY] })
     const state = securityAt(wholeDraft({ ...DRAFT, gathered: { ...DRAFT.gathered, setup } }))
-    expect(state.openQuestion?.spec.context).toEqual({ ...PLUGINS_CONTEXT, lines: PLUGINS_CONTEXT.lines.slice(1) })
+    expect(state.openQuestion?.spec.context).toEqual(pluginsContext([GUIDANCE_KEY], PLUGINS_LINES.slice(1)))
   })
 
   test('with no plugin missing it shows the recommendations, asks nothing and installs nothing', () => {

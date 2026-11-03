@@ -44,7 +44,10 @@ describe('durationStep', () => {
       const run = driven(durationAt(roles), [answer])
       expect([answer, run.state.draft.duration]).toEqual([answer, duration])
       expect(run.asked).toEqual([ASKED])
-      const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+      const lines = proposalLines(roles, [])
+      // A pane surface asks the question with the first line of its context (D-255).
+      const pane = { asked: ASKED, text: withContext(DURATION_QUESTION, lines[0] ?? '') }
+      const context = { title: 'Roles', lines, kind: 'roles', pane }
       expect(run.specs).toEqual([{ options: ['4h', '2h', '8h'], header: 'Duration', context, acceptsTyped: true }])
       expect(run.outputs).toEqual([])
     }
@@ -96,13 +99,17 @@ describe('the duration stage (D-230)', () => {
     const changes: readonly RoleChange[] = [{ roleId: 'fe', change: 'dropped', reason: 'No web code.', evidence: [] }]
     const state = durationStage.enter(stateAt('duration', { roles, changes }))
     const lines = proposalLines(roles, changes)
-    expect(state.openQuestion?.spec.context).toEqual({ title: 'Roles', lines, kind: 'roles' })
+    const asked = withContext(DURATION_QUESTION, durationContextLine(roles))
+    const pane = { asked, text: withContext(DURATION_QUESTION, lines[0] ?? '') }
+    expect(state.openQuestion?.spec.context).toEqual({ title: 'Roles', lines, kind: 'roles', pane })
   })
 
   test('durationStage asks the duration question with the role ids; the open question is that ask', () => {
     const state = durationStage.enter(stateAt('duration', { roles }))
     const question = withContext(DURATION_QUESTION, durationContextLine(roles))
-    const context = { title: 'Roles', lines: proposalLines(roles, []), kind: 'roles' }
+    const lines = proposalLines(roles, [])
+    const pane = { asked: question, text: withContext(DURATION_QUESTION, lines[0] ?? '') }
+    const context = { title: 'Roles', lines, kind: 'roles', pane }
     const ask = { question, spec: { options: ['4h', '2h', '8h'], header: 'Duration', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
