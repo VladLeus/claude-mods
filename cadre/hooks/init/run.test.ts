@@ -5120,6 +5120,83 @@ describe('install checks (decision #39)', () => {
   })
 })
 
+describe('apply step labels (D-284, edge #13)', () => {
+  /** The one label of each apply step kind, as the status line or the pane's loader shows it (D-284). */
+  const LABELS = {
+    hunks: 'cadre: running the accepted changes…',
+    installs: 'cadre: installing plugins…',
+    improver: 'cadre: running the improver…',
+  }
+
+  /**
+   * The init port of `run` and the host port `host` with the run's progress lines and the host's runs in one list, in
+   * order: `progress <text>` and `run <argv>`.
+   */
+  function labelled(
+    run: MemRun,
+    host: HostIo,
+  ): { readonly io: InitIo; readonly host: HostIo; readonly events: string[] } {
+    const events: string[] = []
+    const io: InitIo = {
+      ...run.io,
+      progress: async text => {
+        events.push(`progress ${text ?? ''}`)
+        await run.io.progress(text)
+      },
+    }
+    const logged: HostIo = {
+      ...host,
+      run: async (argv, options) => {
+        events.push(`run ${argv.join(' ')}`)
+
+        return host.run(argv, options)
+      },
+    }
+
+    return { io, host: logged, events }
+  }
+
+  /** Where `label` was set in `events` and where the first run that starts with `argv` came; -1 for none. */
+  function labelAndRun(events: readonly string[], label: string, argv: readonly string[]): [number, number] {
+    return [events.indexOf(`progress ${label}`), events.findIndex(event => event.startsWith(`run ${argv.join(' ')}`))]
+  }
+
+  test('an accepted hunk: its label is set once, before the first hunk runs', async () => {
+    const run = memIo(modeWorld(), INIT_ANSWERS)
+    const { io, host, events } = labelled(run, memHost(hostWorld({})).io)
+    await runInit(io, { dryRun: false, host })
+    const [labelAt, runAt] = labelAndRun(events, LABELS.hunks, MODE_RUN)
+    expect([labelAt >= 0, labelAt < runAt]).toEqual([true, true])
+    expect(run.progress.filter(text => text === LABELS.hunks).length).toBe(1)
+  })
+
+  test('plugins answered Install: their label is set once, before the install checks and runs', async () => {
+    const run = memIo(gitWorld(), INSTALL_ANSWERS)
+    const { io, host, events } = labelled(run, memHost(hostWorld({ runs: INSTALLS_OK })).io)
+    await runInit(io, { dryRun: false, host })
+    const [labelAt, runAt] = labelAndRun(events, LABELS.installs, PYTHON_OK_RUN.argv)
+    expect([labelAt >= 0, labelAt < runAt]).toEqual([true, true])
+    expect(run.progress.filter(text => text === LABELS.installs).length).toBe(1)
+  })
+
+  test('a built role file: the improver label is set once, before the first improver run', async () => {
+    const files = builtFilesRecord()
+    const run = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+    const { io, host, events } = labelled(run, improvingHost(files).io)
+    await runInit(io, { dryRun: false, host })
+    const [labelAt, runAt] = labelAndRun(events, LABELS.improver, ['claude', '-p'])
+    expect([labelAt >= 0, labelAt < runAt]).toEqual([true, true])
+    expect(run.progress.filter(text => text === LABELS.improver).length).toBe(1)
+  })
+
+  test('a plain init with no hunk, install or improver run sets none of the three labels', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: false, host: memHost(hostWorld({ runs: [COMMON_DIR_RULE] })).io })
+    expect(run.progress.filter(text => Object.values(LABELS).includes(text ?? ''))).toEqual([])
+    expect(run.progress.length).toBeGreaterThan(0)
+  })
+})
+
 describe('linked memory deny (G-02-1f)', () => {
   test('the review adds the read-only row under each role given a memory, and under no other', async () => {
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
