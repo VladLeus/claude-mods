@@ -131,13 +131,17 @@ const PLUGINS_LINES = [
   `${GUIDANCE_KEY}: security-guidance adds hooks that warn about risky edits.`,
 ]
 
+/** The security plugins question as a pane surface asks it: no plugin name or note, the pane lists them (D-283). */
+const PANE_QUESTION = 'Install from claude-plugins-official after you confirm the plan: the missing security plugins?'
+
 /**
  * The security plugins question's own context for the missing `keys` and their `lines` (D-236): a pane surface asks
- * the question with the first of those lines in place of SECURITY_INSTALL_CONTEXT (D-255).
+ * PANE_QUESTION with the first of those lines in place of SECURITY_INSTALL_CONTEXT (D-255, D-283).
  */
 function pluginsContext(keys: readonly string[], lines: readonly string[]): unknown {
   const question = securityInstallQuestion(keys)
-  const pane = { asked: withContext(question, SECURITY_INSTALL_CONTEXT), text: withContext(question, lines[0] ?? '') }
+  const asked = withContext(question, SECURITY_INSTALL_CONTEXT)
+  const pane = { asked, text: withContext(PANE_QUESTION, lines[0] ?? '') }
 
   return { title: 'Security plugins', lines, kind: 'security', pane }
 }

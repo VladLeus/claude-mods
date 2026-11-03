@@ -38,6 +38,8 @@ describe('carryStep', () => {
     'Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)'
   /** The env question as asked: the team's role ids and where the values come from under it (D-136). */
   const ENV_ASKED = withContext(ENV_QUESTION, envContextLine(roles))
+  /** The env question as a pane surface asks it: no env name, the pane lists them (D-283). */
+  const ENV_PANE_QUESTION = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
   /** The side-pane block of the two names, shown right before the env question (D-135). */
   const TWO_NAMES_LINES = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
   const TWO_NAMES_BLOCK = { kind: 'show', block: { key: 'env', lines: TWO_NAMES_LINES } }
@@ -55,8 +57,8 @@ describe('carryStep', () => {
   test('the env question is asked once, and every role carries the picked names only', () => {
     const run = driven(carryAt(roles, twoNames), ['JIRA_URL'])
     expect(run.asked).toEqual([ENV_ASKED])
-    // A pane surface asks the question with the first line of its context (D-255).
-    const pane = { asked: ENV_ASKED, text: withContext(ENV_QUESTION, TWO_NAMES_LINES[0] ?? '') }
+    // A pane surface asks the question alone with the first line of its context, which lists every name (D-255, D-283).
+    const pane = { asked: ENV_ASKED, text: withContext(ENV_PANE_QUESTION, TWO_NAMES_LINES[0] ?? '') }
     const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', pane }
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
@@ -160,7 +162,8 @@ describe('the carry stage (D-230)', () => {
     const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
-    const pane = { asked: question, text: withContext(envQuestion(['API_KEY', 'JIRA_URL']), lines[0] ?? '') }
+    const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
+    const pane = { asked: question, text: withContext(short, lines[0] ?? '') }
     const context = { title: 'Env variables', lines, kind: 'env', pane }
     const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })

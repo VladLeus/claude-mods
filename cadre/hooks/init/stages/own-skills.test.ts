@@ -117,7 +117,7 @@ describe('own skills hand-out (G-02-1b)', () => {
   }
   /**
    * The codex group question's own context: its one skill, never used and recommended to no role; a pane surface asks
-   * the question with its recommendation line (D-255).
+   * the question alone, with no count or uses, and its recommendation line (D-255, D-283).
    */
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
@@ -125,7 +125,7 @@ describe('own skills hand-out (G-02-1b)', () => {
     kind: 'skill-group',
     pane: {
       asked: withContext(CODEX_QUESTION, skillsContextLine(roles)),
-      text: withContext(CODEX_QUESTION, 'Recommended: none'),
+      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', 'Recommended: none'),
     },
   }
 
@@ -249,8 +249,9 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run, assigned } = await stepRun(['None', 'Whole group', 'All roles'])
     const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
     expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
-    // A pane surface asks the whole-group question with the first line of its context (D-255).
-    const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(own, ALPHA_LINE) }
+    // A pane surface asks the whole-group question alone with the first line of its context (D-255, D-283).
+    const short = 'Which roles get your own skills? (e.g. BE, QA, or none)'
+    const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(short, ALPHA_LINE) }
     const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group', pane }
     expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context, acceptsTyped: true })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))

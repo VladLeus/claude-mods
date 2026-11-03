@@ -42,18 +42,20 @@ describe('memoryStep', () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await groupsOver(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
-    // A pane surface asks each question with the first line of its context (D-255).
-    const spec = (question: string, title: string, lines: readonly string[]): unknown => {
-      const pane = { asked: asAsked(question), text: withContext(question, lines[0] ?? '') }
+    // A pane surface asks each group alone, its files in the pane, with the first line of its context (D-255, D-283).
+    const spec = (question: string, short: string, title: string, lines: readonly string[]): unknown => {
+      const pane = { asked: asAsked(question), text: withContext(short, lines[0] ?? '') }
 
       const context = { title, lines, kind: 'memory-group', pane }
 
       return { options: ROLE_LIST_OPTIONS, header: 'Memory', context, acceptsTyped: true }
     }
+    const memoryShort = 'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)'
+    const projectShort = 'Which roles get the project CLAUDE.md? (e.g. PM, TL, or none)'
     expect(run.specs).toEqual([
-      spec(GLOBAL_QUESTION, 'Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
-      spec(MEMORY_QUESTION, 'Auto-memories', ['a.md']),
-      spec(PROJECT_QUESTION, 'Project CLAUDE.md', ['repo/CLAUDE.md']),
+      spec(GLOBAL_QUESTION, GLOBAL_QUESTION, 'Global CLAUDE.md', ['~/.claude/CLAUDE.md and the files it imports']),
+      spec(MEMORY_QUESTION, memoryShort, 'Auto-memories', ['a.md']),
+      spec(PROJECT_QUESTION, projectShort, 'Project CLAUDE.md', ['repo/CLAUDE.md']),
     ])
     expect(given.map(role => [role.id, role.instructions])).toEqual([
       ['pm', ['global-claude-md', 'project-claude-md']],
@@ -133,7 +135,8 @@ describe('the whole-file question cursor (D-230)', () => {
     const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }), '/repo')
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
     const asked = withContext(question, memoryContextLine(roles))
-    const pane = { asked, text: withContext(question, 'a.md') }
+    const short = 'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)'
+    const pane = { asked, text: withContext(short, 'a.md') }
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       asked,
       {

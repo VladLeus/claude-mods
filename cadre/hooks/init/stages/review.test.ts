@@ -326,7 +326,10 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'env' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['carry', 'review', 'carry'])
     const env = ['Env variable names in your settings (values are never read):', '  API_KEY']
-    const context = { title: 'Env variables', lines: env, kind: 'env', pane: paneOf(going, env[0] ?? '') }
+    // A pane surface asks the env question alone, with no env name, and the first line of its context (D-283).
+    const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
+    const pane = { asked: going.openQuestion?.question, text: withContext(short, env[0] ?? '') }
+    const context = { title: 'Env variables', lines: env, kind: 'env', pane }
     const spec = { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })

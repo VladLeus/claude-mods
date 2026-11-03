@@ -54,6 +54,8 @@ describe('assignmentStep', () => {
   const JIRA_QUESTION = 'Which roles get the jira MCP server? (e.g. BE, QA, or none)'
   const SENTRY_QUESTION = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
   const CODEX_QUESTION = 'Which roles get codex skills (2)? (e.g. BE, QA, or none)'
+  /** The codex group question as a pane surface asks it: no count or uses, the pane lists each skill (D-283). */
+  const CODEX_PANE_QUESTION = 'Which roles get codex skills? (e.g. BE, QA, or none)'
   /** The MCP hand-out's entry question and its whole-group question, as asked (D-250). */
   const MCP_ENTRY_ASKED = withContext(
     'Which roles get the MCP servers (2)? Pick how to hand them out.',
@@ -92,7 +94,8 @@ describe('assignmentStep', () => {
       'codex:setup: No description. Recommended: none.',
     ],
     kind: 'skill-group',
-    pane: { asked: CODEX_ASKED, text: withContext(CODEX_QUESTION, 'Recommended: none') },
+    // The group question alone, with no count or uses (D-283).
+    pane: { asked: CODEX_ASKED, text: withContext(CODEX_PANE_QUESTION, 'Recommended: none') },
   }
 
   test('every server and skill is asked; a table match is only its seed (D-249, D-280)', async () => {
@@ -320,7 +323,7 @@ describe('the assign stage (D-230)', () => {
     const codexQuestion = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
     const codexPane = {
       asked: withContext(codexQuestion, skillsContextLine(roles)),
-      text: withContext(codexQuestion, 'Recommended: none'),
+      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', 'Recommended: none'),
     }
     const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group', pane: codexPane }
     const typed = { acceptsTyped: true }
@@ -352,7 +355,7 @@ describe('the assign stage (D-230)', () => {
     const hints = new Map([['codex:rescue', 3]])
     const state = nextStage(assignStage.enter(stateAt('assign', { roles, gathered: described, hints })), SKILLS_NONE)
     const question = state.openQuestion?.question ?? ''
-    const [sentence = ''] = question.split('\n')
+    const sentence = 'Which roles get codex skills? (e.g. BE, QA, or none)'
     expect(state.openQuestion?.spec.context).toEqual({
       title: 'Skills: codex',
       lines: [
