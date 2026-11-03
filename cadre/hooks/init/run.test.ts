@@ -154,7 +154,7 @@ import {
   withWrites,
 } from '../testkit'
 import type { HostCall, HostRunRule, HostWrite, MemHost, MemRun, MemWorld } from '../testkit'
-import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, refusalLine, withContext } from '../ui/ask'
+import { ASK_HEADERS, MAX_ASKS, NO_USABLE_ANSWER_REASON, PANE_TITLES, refusalLine, withContext } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { proposalLines } from '../ui/blocks/context'
 import { recommendationLines } from '../ui/blocks/recommendations'
@@ -414,6 +414,18 @@ function historyGitWorld(over: Partial<MemWorld> = {}): MemWorld {
         '{"type":"user","message":{"role":"user","content":"<command-name>/gsd-plan-phase</command-name>"}}',
     },
     ...over,
+  })
+}
+
+/**
+ * Every title, summary and line of the contexts a run asked with (D-302, T-02.2-24): what a stand-alone block showed
+ * now travels with the next question, so the never-shown scans read these as well as the pane.
+ */
+function askedContextTexts(run: MemRun): string[] {
+  return run.specs.flatMap(spec => {
+    const { context } = spec
+
+    return context === undefined ? [] : [context.title, context.summary, ...context.lines]
   })
 }
 
@@ -1461,6 +1473,7 @@ describe('instruction parts (G-02-1f)', () => {
       ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
       ...run.logged,
       ...paneText(run),
+      ...askedContextTexts(run),
       reply,
     ].join('\n')
     expect(leaks(shown, [GLOBAL_SENTENCE, REPO_SENTENCE])).toEqual([])
@@ -1638,6 +1651,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
       ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
       ...run.logged,
       ...paneText(run),
+      ...askedContextTexts(run),
       reply,
     ].join('\n')
     expect(leaks(shown, [RULE_SENTENCE, DOC_SENTENCE])).toEqual([])
@@ -1782,6 +1796,7 @@ describe('memories one by one (G-02-1f)', () => {
       ...run.specs.flatMap(spec => [...spec.options, spec.header ?? '']),
       ...run.logged,
       ...paneText(run),
+      ...askedContextTexts(run),
       reply,
       ...run.prompts,
     ].join('\n')
@@ -2783,7 +2798,7 @@ describe('carryStep', () => {
     const run = memIo(secretWorld(), { ...PARTS_DECLINED, 'Which env variables': 'All of them' })
     const reply = await runInit(run.io, { dryRun: true })
     expect(run.asked.filter(question => question.startsWith('Which '))).toHaveLength(7)
-    const text = [...run.asked, ...run.logged, ...paneText(run), reply].join('\n')
+    const text = [...run.asked, ...run.logged, ...paneText(run), ...askedContextTexts(run), reply].join('\n')
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 })
@@ -2802,12 +2817,18 @@ describe('hunkStep', () => {
       '.planning/config.json: hooks.context_warnings',
     ])
     expect(run.logged).toContain(attendedNote(['mode', 'workflow.text_mode']))
-    const text = [...run.asked, ...run.logged, ...paneText(run), reply].join('\n')
+    const text = [...run.asked, ...run.logged, ...paneText(run), ...askedContextTexts(run), reply].join('\n')
     expect(leaks(text, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
     const proven = memIo({ ...secretWorld(), facts: PROVEN_FACTS }, PARTS_DECLINED)
     const provenReply = await runInit(proven.io, { dryRun: true })
     expect(proven.asked.filter(question => question.startsWith('.planning/config.json: '))).toHaveLength(3)
-    const provenText = [...proven.asked, ...proven.logged, ...paneText(proven), provenReply].join('\n')
+    const provenText = [
+      ...proven.asked,
+      ...proven.logged,
+      ...paneText(proven),
+      ...askedContextTexts(proven),
+      provenReply,
+    ].join('\n')
     expect(leaks(provenText, [...SECRET_FIXTURES, ...ABSOLUTE_PATH_MARKERS])).toEqual([])
   })
 
@@ -5881,13 +5902,16 @@ describe('lists on pane surfaces (D-256)', () => {
   const twelve = (names: readonly string[]): string => [...names.slice(0, 12), '+2 more'].join(', ')
 
   /**
-   * What a dry run over manyNamesWorld on `surface` lists: the scan block's MCP server line and CLAUDE.md line, and the
-   * tools line of the mcp01 question's context.
+   * What a dry run over manyNamesWorld, with one session transcript so the history question is asked, lists on
+   * `surface`: the MCP server line and CLAUDE.md line of the history question's context, the scan block (D-302), and
+   * the tools line of the mcp01 question's context.
    */
   async function listsOn(surface: Surface): Promise<readonly string[]> {
-    const run = memIo(manyNamesWorld(), MANY_ANSWERS)
+    const dirs = { '/repo/.git': [], [HISTORY_DIR]: [{ ...entry('a.jsonl'), mtimeMs: 1 }] }
+    const run = memIo(manyNamesWorld({ dirs }), MANY_ANSWERS)
     await runInit(run.io, { dryRun: true, surface })
-    const scan = shownBlock(run, 'scan')
+    const historyAt = firstLines(run.asked).findIndex(line => line.startsWith(HISTORY_PREFIX))
+    const scan = run.specs[historyAt]?.context?.lines ?? []
     const at = firstLines(run.asked).findIndex(line => line.startsWith('Which roles get the mcp01 MCP server?'))
 
     return [
@@ -6003,6 +6027,80 @@ describe('every pane-surface ask carries a context (D-300)', () => {
     expect([at >= 0, run.specs[at]?.context?.lines]).toEqual([
       true,
       ['github: session, 1 tool. Recommended: tl.', 'sentry: session, 1 tool. Recommended: be, qa.'],
+    ])
+  })
+})
+
+describe('no stand-alone pane block: what it held folds into the next question (D-302)', () => {
+  /** The context lines of the first question of `run` whose first line starts with `prefix`; none when none is. */
+  function contextLinesAt(run: MemRun, prefix: string): readonly string[] {
+    const at = firstLines(run.asked).findIndex(line => line.startsWith(prefix))
+
+    return run.specs[at]?.context?.lines ?? []
+  }
+
+  test('no stage of a golden init world shows a block of its own; notes ride the loader from D-325 on', async () => {
+    for (const { world, answers } of Object.values(GOLDEN_WORLDS)) {
+      const run = memIo(world, answers)
+      await runInit(run.io, { dryRun: true })
+      expect(run.shown.filter(block => block.key !== 'notes')).toEqual([])
+    }
+  })
+
+  test('with no session transcript the roles question starts with the scan summary and its warnings', async () => {
+    const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
+    const world = gitWorld({ locations })
+    const run = memIo(world, INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const gathered = await gatherScans(memIo(world, {}).io, locations, false)
+    const scan = [
+      ...scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS),
+      ...scanWarningLines(scanWarnings(locations, gathered)),
+    ]
+    const lines = contextLinesAt(run, ROLES_QUESTION)
+    expect(scan).toContain('warning: the root was given through a link')
+    expect(lines.slice(0, scan.length + 3)).toEqual([PANE_TITLES.scan, ...scan, '', 'Proposed roles:'])
+  })
+
+  test('the TUI default drops the fold: its roles question holds the proposal alone', async () => {
+    const run = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true, surface: 'tui-default' })
+    expect(contextLinesAt(run, ROLES_QUESTION)[0]).toBe('Proposed roles:')
+  })
+
+  test('after the history scan the roles question starts with the session history it found', async () => {
+    const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    await runInit(run.io, { dryRun: true })
+    const lines = contextLinesAt(run, ROLES_QUESTION)
+    const blank = lines.indexOf('')
+    const history = [PANE_TITLES.history, t('init.history.historyHeading'), '  gsd-plan-phase  1']
+    expect([lines.slice(0, 3), lines[blank + 1]]).toEqual([history, 'Proposed roles:'])
+  })
+
+  test('a team that misses a security plugin has the recommendations first in the security question', async () => {
+    const { world, answers } = GOLDEN_WORLDS.nothing
+    const run = memIo(world, answers)
+    await runInit(run.io, { dryRun: true })
+    const lines = contextLinesAt(run, SECURITY_INSTALL_PREFIX)
+    const blank = lines.indexOf('')
+    const heading = t('ui.recommendations.recommendationsHeading')
+    expect([lines[0], lines[1], lines[blank + 1]?.startsWith('claude-security@')]).toEqual([
+      PANE_TITLES.recommendations,
+      heading,
+      true,
+    ])
+  })
+
+  test('an instruction read with warnings and no part puts them first in each whole-file question', async () => {
+    const run = memIo(partsWorld({ files: { [GLOBAL_CLAUDE_MD]: 'x'.repeat(300 * 1024) } }), PARTS_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const lines = contextLinesAt(run, 'Which roles get your global')
+    const blank = lines.indexOf('')
+    const warnings = lines.slice(2, blank)
+    expect([lines.slice(0, 2), warnings.length > 0, warnings.every(line => line.startsWith('warning: '))]).toEqual([
+      [PANE_TITLES.instructions, READ_HEADING_ROW],
+      true,
+      true,
     ])
   })
 })
