@@ -2459,6 +2459,52 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   })
 })
 
+/**
+ * What the TUI default asked in the init dry run of skillWorld (TUI_RUN), as the fake host saw each dialog, at the base
+ * of plan 02.2-02, pasted as printed: D-255 and D-283 change only what a pane surface asks, so the TUI default goes on
+ * asking exactly these texts (checker warning 5). No later commit of the plan edits it.
+ */
+const TUI_ASKS_AT_BASE: readonly string[] = [
+  'ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never ' +
+    'read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this ' +
+    'session.',
+  'ask Use these roles?\nProposed: PM (pm), Team Lead (tl), Security (security); 3 changes from the ' +
+    'scan.',
+  'ask Which framework do the roles use? (asked because more than one framework is in use)\nRoles: ' +
+    'pm, tl, security.',
+  'ask Framework for all roles?\nRoles: pm, tl, security.\nOr press n, type your own answer, then ' +
+    'Enter.',
+  'ask Install from claude-plugins-official after you confirm the plan: claude-security and ' +
+    'security-guidance? claude-security gives the Security role a review skill (/claude-security), ' +
+    'needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. ' +
+    'security-guidance adds hooks that warn about risky edits.\nNothing is installed before you ' +
+    'confirm the final review, and a --dry-run installs nothing.',
+  'ask Autopilot duration for roles?\nApplies to every role: pm, tl, security.\nOr press n, type ' +
+    'your own answer, then Enter.',
+  'ask Model and effort: same for all roles, or per role?\nRoles: pm, tl, security.',
+  'ask Model and effort for all roles?\nModels: opus, sonnet, haiku, fable; efforts: low, medium, ' +
+    'high, xhigh, max.\nOr press n, type your own answer, then Enter.',
+  'ask How do you want to hand out your own skills (1)?\n1 skill with no plugin; the pane shows what ' +
+    'each does and the roles it is recommended for.',
+  'ask Which roles get your own skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role ' +
+    'given these skills can run them in its session; a role not given them cannot.\nOr press n, type ' +
+    'your own answer, then Enter.',
+  'ask .planning/config.json: mode\n  before: not set (GSD default)\n  after:  "yolo"\nWhy: ' +
+    'interactive mode stops for confirmations; yolo lets an autopilot role run phases ' +
+    'unattended\nRequired for unattended GSD roles.',
+  'ask .planning/config.json: workflow.text_mode\n  before: not set (GSD default)\n  after:  ' +
+    'false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the role ' +
+    'would stall\nRequired for unattended GSD roles.',
+  'ask Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. ' +
+    'Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.',
+  'ask Where should the role launchers start their sessions? (asked once for this repo)\nThe ' +
+    'launcher of each role (pm, tl, security) starts its session there.',
+  'ask Review the plan shown in the cadre init pane. Confirm it, or go back to change one ' +
+    'item.\nSummary: 25 create, 0 change, 0 leave, 0 conflict, 2 hunks (2 accepted); Git policy: ' +
+    'commit definitions (.cadre/*/.runtime/ ignored); Launchers start in: the git root\nUse a button, ' +
+    'or type duration, model, assignments, memory, env or hunks as a note (press n).',
+]
+
 describe('the TUI default: the terminal main screen draws no side pane (D-208)', () => {
   /** `init --dry-run` typed on the terminal main screen, as the engine stamps it: the TUI default (D-208). */
   const TUI_RUN: Parameters<Engine['command']['run']>[0] = {
@@ -2652,6 +2698,13 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     }))
     const golden = { opens: log.panes, statuses: log.statuses, logs: log.logs, asks, reply: out.text.split('\n') }
     expect(golden).toEqual(GOLDEN_TUI)
+  })
+
+  test('the TUI default asks exactly the texts it asked at the plan base (D-255, D-283)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    await $.command.run(TUI_RUN)
+    expect(log.asks).toEqual(TUI_ASKS_AT_BASE)
   })
 })
 
