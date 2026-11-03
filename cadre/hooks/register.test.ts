@@ -2444,12 +2444,12 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     return initWorld(onComplete === undefined ? world : { ...world, onComplete })
   }
 
-  test('the pane drawn while a model call runs draws the label of the call alone (D-257, D-299)', async ($, on) => {
+  test('the pane drawn while a model call runs draws its label and summary alone (D-299, D-301)', async ($, on) => {
     const log = newLog()
     const drawn: Drawn[] = []
     fakeHost(on, oneCallWorld(async () => void drawn.push(await drawPane($, INLINE_PANE))), log)
     await $.command.run(DRY_RUN)
-    expect(drawn).toEqual([{ first: MODEL_PROGRESS.skills, rows: 1 }])
+    expect(drawn).toEqual([{ first: MODEL_PROGRESS.skills, rows: 2 }])
   })
 
   test('the pane drawn at the next question shows its own context, with no loader row (D-257)', async ($, on) => {

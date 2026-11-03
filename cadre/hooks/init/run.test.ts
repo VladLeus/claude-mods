@@ -945,6 +945,35 @@ describe('progress lines (D-232)', () => {
   })
 })
 
+describe('step summaries (D-301, D-327)', () => {
+  test('the scan records what it reads, and a history read how many sessions it reads', async () => {
+    const sessions = ['a', 'b', 'c', 'd'].map((name, at) => ({ ...entry(`${name}.jsonl`), mtimeMs: at + 1 }))
+    const world = historyGitWorld({ dirs: { '/repo/.git': [], [HISTORY_DIR]: sessions } })
+    const run = memIo(world, { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
+    await runInit(run.io, { dryRun: true })
+    expect([run.progress, run.progressSummaries]).toEqual([
+      [SCAN_PROGRESS, HISTORY_PROGRESS],
+      ['the repo, your settings, plugins, skills and MCP servers', '4 sessions'],
+    ])
+  })
+
+  test('the mcp call records how many servers it recommends roles for, and for how many roles', async () => {
+    const names = ['github', 'linear', 'sentry']
+    const tools = names.map(name => ({ name: `mcp__${name}__search`, description: 'Search.', mcp: true }))
+    const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
+    await runInit(run.io, { dryRun: true })
+    const at = run.progress.indexOf(MODEL_PROGRESS.mcp)
+    expect([at > 0, run.progressSummaries[at]]).toEqual([true, '3 servers, 3 roles'])
+  })
+
+  test('each attempt of a model call records the same summary beside its label, so a retry shows it', async () => {
+    const run = memIo(ownSkillsWorld([]), OWN_ACCEPTED)
+    await runInit(run.io, { dryRun: true })
+    const summaries = Array.from({ length: MAX_PROPOSE_ATTEMPTS }, () => '2 skills, 0 groups, 3 roles')
+    expect(run.progressSummaries.slice(1)).toEqual(summaries)
+  })
+})
+
 describe('own skills hand-out (G-02-1b)', () => {
   const CODEX_QUESTION = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
 
@@ -5157,9 +5186,9 @@ describe('apply step labels (D-284, edge #13)', () => {
     const events: string[] = []
     const io: InitIo = {
       ...run.io,
-      progress: async text => {
+      progress: async (text, summary) => {
         events.push(`progress ${text ?? ''}`)
-        await run.io.progress(text)
+        await run.io.progress(text, summary)
       },
     }
     const logged: HostIo = {
@@ -5205,6 +5234,20 @@ describe('apply step labels (D-284, edge #13)', () => {
     const [labelAt, runAt] = labelAndRun(events, LABELS.improver, ['claude', '-p'])
     expect([labelAt >= 0, labelAt < runAt]).toEqual([true, true])
     expect(run.progress.filter(text => text === LABELS.improver).length).toBe(1)
+  })
+
+  test('each apply step records how many items it works on beside its label (D-301)', async () => {
+    const hunks = memIo(modeWorld(), INIT_ANSWERS)
+    await runInit(hunks.io, { dryRun: false, host: memHost(hostWorld({})).io })
+    const installs = memIo(gitWorld(), INSTALL_ANSWERS)
+    await runInit(installs.io, { dryRun: false, host: memHost(hostWorld({ runs: INSTALLS_OK })).io })
+    const files = builtFilesRecord()
+    const improver = memIo(builtWorld({ files }), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
+    await runInit(improver.io, { dryRun: false, host: improvingHost(files).io })
+    const summaryOf = (run: MemRun, label: string): string | null | undefined =>
+      run.progressSummaries[run.progress.indexOf(label)]
+    const summaries = [summaryOf(hunks, LABELS.hunks), summaryOf(installs, LABELS.installs)]
+    expect([...summaries, summaryOf(improver, LABELS.improver)]).toEqual(['1 hunk', '2 plugins', '2 files'])
   })
 
   test('a plain init with no hunk, install or improver run sets none of the three labels', async () => {
