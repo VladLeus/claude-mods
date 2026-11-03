@@ -1,11 +1,11 @@
 /**
- * The cadre init side pane, a layer 8 module: the pane's view and rows (D-133), the one block it draws, the open
- * question's own context or the newest block between questions (D-203), its rows wrapped to the columns its body has
- * (D-231), the runs each row is drawn in (D1) and where the terminal seated the pane (D3). It imports core, the locale
- * tables (for the labels it styles) and the types, so register's Pane hook reads it here, and the option preview takes
- * wrapLine from it.
+ * The cadre init side pane, a layer 8 module: the one block its state draws (D-299, D-303), the open question's own
+ * context or else the loader of a long step (D-301), its rows wrapped to the columns its body has (D-231), the runs
+ * each row is drawn in (D1) and where the terminal seated the pane (D3). It imports core, the locale tables (for the
+ * labels it styles) and the types, so register's Pane hook reads it here, and the option preview takes wrapLine from
+ * it.
  */
-import type { ContextKind, Enforcement, FileOpKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
+import type { Enforcement, FileOpKind, OpenQuestion, PaneState } from '../../types'
 import { isObject } from '../core/json'
 import { clean } from '../core/text'
 import { ARTIFACT } from '../locales/artifact'
@@ -18,57 +18,18 @@ export type PaneRow = {
 }
 
 /**
- * The side pane after one more block (D-133): that block first, then every other block in its order, so the pane holds
- * one block per key, a block shown again replaces the old one and moves to the top, and the newest context is first.
- * A notes block shown again keeps the old notes before its own lines, so the notes of a run collect in the order they
- * were noted (batch-1 review S1). The blocks it is given are never changed.
+ * The one block the cadre init pane draws for its state (D-299, D-301): while a question is open, that question's own
+ * context alone, its title and lines, and nothing when it has none, never a block of an earlier step; else, while a
+ * long step runs, the loader alone, its label as the title and its summary as the one line when it has one, both
+ * cleaned and not cut (clean, UNCUT); else null, which the Pane render draws as its empty frame.
  */
-export function paneView(blocks: readonly ShownBlock[], block: ShownBlock): ShownBlock[] {
-  const others = blocks.filter(other => other.key !== block.key)
-  if (block.key !== 'notes') return [block, ...others]
-  const old = blocks.find(other => other.key === 'notes')
-  if (old === undefined) return [block, ...others]
+export function paneBlockOf(pane: PaneState): { readonly title: string; readonly lines: readonly string[] } | null {
+  const { open, loader } = pane
+  if (open !== null) return open.context === null ? null : { title: open.context.title, lines: open.context.lines }
+  if (loader === null) return null
+  const title = clean(loader.label, UNCUT)
 
-  return [{ ...block, lines: [...old.lines, ...block.lines] }, ...others]
-}
-
-/** The pane block key of each context kind that names one (D-203); every other kind draws as notes. */
-const CONTEXT_KEYS: Readonly<Partial<Record<ContextKind, PaneKey>>> = Object.freeze({
-  scan: 'scan',
-  history: 'history',
-  roles: 'roles',
-  review: 'review',
-  env: 'env',
-  instructions: 'instructions',
-  skills: 'skills',
-  improver: 'improver',
-})
-
-/**
- * The one block the side pane draws (D-203): while a question cadre asked is open with its own context, that context
- * alone, as a block of its title and lines whose key is the pane key of its kind, or `notes` for a kind with none;
- * otherwise, between questions or for a question with no context (a hunk), the newest block shown, as before; none
- * when nothing was shown.
- */
-export function questionPaneBlocks(open: OpenQuestion | null, blocks: readonly ShownBlock[]): ShownBlock[] {
-  const context = open?.context ?? null
-  if (context !== null) {
-    return [{ key: CONTEXT_KEYS[context.kind] ?? 'notes', title: context.title, lines: context.lines }]
-  }
-  const [newest] = blocks
-
-  return newest === undefined ? [] : [newest]
-}
-
-/**
- * The blocks the side pane draws while a long step runs (D-257): `shown` as it is when no step runs (`loader` null or
- * empty), else first a block whose title is the step's label, cleaned and not cut, with no lines, then `shown`. The
- * blocks it is given are never changed.
- */
-export function withLoader(shown: readonly ShownBlock[], loader: string | null): ShownBlock[] {
-  if (loader === null || loader === '') return [...shown]
-
-  return [{ key: 'loader', title: clean(loader, UNCUT), lines: [] }, ...shown]
+  return loader.summary === null ? { title, lines: [] } : { title, lines: [clean(loader.summary, UNCUT)] }
 }
 
 /**
@@ -143,7 +104,10 @@ export function wrapLine(text: string, columns: number): string[] {
  * typed value cannot add a row or hide text, then wrapped to `columns` (wrapLine, D-231); with no columns, as on a
  * surface whose props carry none, each title and line is one row.
  */
-export function paneRows(blocks: readonly ShownBlock[], columns: number | null): PaneRow[] {
+export function paneRows(
+  blocks: readonly { readonly title: string; readonly lines: readonly string[] }[],
+  columns: number | null,
+): PaneRow[] {
   const rowsOf = (text: string, isTitle: boolean): PaneRow[] => {
     const cleaned = clean(text, UNCUT)
     const texts = columns === null ? [cleaned] : wrapLine(cleaned, columns)

@@ -508,9 +508,9 @@ export type InitFacts = {
 }
 
 /**
- * The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f,
- * G-02-1b), the improver's diff of the built file it asks about included (D-141), and draws the loader of a long step
- * on top of them while it runs (D-257).
+ * The kinds of block a stage shows through InitIo.show (D-133, D-135, G-02-1f, G-02-1b, D-141). The member stays for
+ * the port (D-326), but the cadre init pane draws no shown block: only the open question's context or the loader
+ * (D-299, D-301).
  */
 export type PaneKey =
   | 'scan'
@@ -525,7 +525,7 @@ export type PaneKey =
   | 'improver'
   | 'loader'
 
-/** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
+/** One block shown through InitIo.show (D-133, D-326): its kind, its bold title, and one row per line. */
 export type ShownBlock = {
   readonly key: PaneKey
   readonly title: string
@@ -533,32 +533,41 @@ export type ShownBlock = {
 }
 
 /**
- * The side-pane state of one init run (D-133): `initPane`, the blocks the cadre init pane shows, newest first,
- * `openQuestion`, the question cadre has open now (R1, D-203), and `loader`, the long step cadre waits for now (D-257);
- * only register.tsx reads and writes them. They are declared in this types contract because `claude plugin validate`
- * takes a plugin's state keys from the manifest's `types` file only.
+ * The long step a run on a pane surface waits for now (D-257, D-301): the step's label (an `init.status.*` text) and a
+ * one-line summary of what it works on, null when the step has none.
+ */
+export type PaneLoader = {
+  readonly label: string
+  readonly summary: string | null
+}
+
+/**
+ * The one value the cadre init pane draws (D-303): `open`, the question cadre has open now (D-203), or null when none
+ * is, and `loader`, the long step a run on a pane surface waits for now, or null when none runs. The page of a paged
+ * context travels inside `open.context` (D-306). The pane draws the open question's own context, else the loader
+ * alone, else its empty frame (D-299, D-301).
+ */
+export type PaneState = {
+  readonly open: OpenQuestion | null
+  readonly loader: PaneLoader | null
+}
+
+/**
+ * The side-pane state of one /cadre run (D-303): `pane`, the one value the cadre init pane draws. register.tsx alone
+ * writes it, in one `update` per change (an ask, its answer, a step's progress, the run's end), and the Pane render
+ * reads it once per drawing; the AskUserQuestion hook reads its open question. It is declared in this types contract
+ * because `claude plugin validate` takes a plugin's state keys from the manifest's `types` file only.
  */
 declare module 'claude-code' {
   interface PluginState {
     cadre: {
-      initPane: ShownBlock[]
-      /**
-       * The question cadre has open now, or null when none is: written by the init port's ask before the dialog and
-       * cleared after it (D-203); the cadre init pane draws the block of its header (R1).
-       */
-      openQuestion: OpenQuestion | null
-      /**
-       * The label of the long step a run on a pane surface waits for now, or null when none runs: written by the init
-       * port's progress, cleared as the next question opens and when the run ends, however it ends; the cadre init
-       * pane draws it on top of its block (D-257).
-       */
-      loader: string | null
+      pane: PaneState
     }
   }
 }
 
 /**
- * The question cadre has open now, as register.tsx keeps it in the openQuestion state (D-203, D-229): its text, its
+ * The question cadre has open now, as register.tsx keeps it in the pane state (D-203, D-229, D-303): its text, its
  * header chip (null when it has none), its context (null when it has none) and whether it takes a typed answer.
  */
 export type OpenQuestion = {
@@ -583,8 +592,8 @@ export type InitIo = {
    */
   readonly log: (text: string) => void
   /**
-   * Shows a block of lines in the cadre init side pane, replacing the block of the same key and putting it first;
-   * never rejects.
+   * Shows a block of lines; never rejects. Kept for the port (D-326): register.tsx draws nothing for it, as the cadre
+   * init pane draws only the open question's context or the loader (D-299).
    */
   readonly show: (block: ShownBlock) => Promise<void>
   /** One status line between questions on the TUI default, or null to clear it; never rejects (D-232). */

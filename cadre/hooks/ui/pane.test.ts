@@ -1,20 +1,18 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { AskContext, ContextKind, OpenQuestion, PaneKey, ShownBlock } from '../../types'
+import type { AskContext, OpenQuestion, PaneKey, PaneState, ShownBlock } from '../../types'
 import { ARTIFACT } from '../locales/artifact'
 import type { EnKey } from '../locales/en'
 import { keyLabel, labelOf } from '../locales/t'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
   PANE_PAGE_ROWS,
+  paneBlockOf,
   paneColumns,
   panePlacement,
   paneRows,
   paneSpans,
-  paneView,
-  questionPaneBlocks,
   questionScroll,
-  withLoader,
   wrapLine,
 } from './pane'
 import type { PaneRow, PaneSpan } from './pane'
@@ -26,53 +24,6 @@ const CONTROL_OR_FORMAT = /(?!\n)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
 function paneBlock(key: PaneKey, lines: readonly string[] = [`${key} line`]): ShownBlock {
   return { key, title: key, lines }
 }
-
-describe('paneView', () => {
-  test('a new block goes first and the other blocks keep their order', () => {
-    const scan = paneBlock('scan')
-    const history = paneBlock('history')
-    const roles = paneBlock('roles')
-    expect(paneView([scan, history], roles)).toEqual([roles, scan, history])
-  })
-
-  test('a block shown again replaces the block of its key and moves to the top', () => {
-    const roles = paneBlock('roles')
-    const scan2 = paneBlock('scan', ['Repo scan (read-only):', '  stack: TypeScript'])
-    expect(paneView([roles, paneBlock('scan')], scan2)).toEqual([scan2, roles])
-    expect(paneView([], scan2)).toEqual([scan2])
-  })
-
-  test('it never changes the blocks it is given', () => {
-    const blocks = [paneBlock('roles'), paneBlock('scan')]
-    const before = JSON.stringify(blocks)
-    paneView(blocks, paneBlock('roles', ['changed']))
-    expect(JSON.stringify(blocks)).toBe(before)
-  })
-
-  test('a notes block shown again keeps the old notes before its own lines and goes first (S1)', () => {
-    const notesA = paneBlock('notes', ['note 1'])
-    const notesB = paneBlock('notes', ['note 2'])
-    const scan = paneBlock('scan')
-    const blocks = [notesA, scan]
-    const before = JSON.stringify(blocks)
-    const merged = { key: 'notes', title: notesB.title, lines: [...notesA.lines, ...notesB.lines] }
-    expect(paneView(blocks, notesB)).toEqual([merged, scan])
-    expect(JSON.stringify(blocks)).toBe(before)
-  })
-
-  test('the first notes block goes first, as any new block does (S1)', () => {
-    const notesA = paneBlock('notes', ['note 1'])
-    const scan = paneBlock('scan')
-    expect(paneView([scan], notesA)).toEqual([notesA, scan])
-  })
-
-  test('a block of another key still replaces its own and moves to the top, above the notes (S1)', () => {
-    const notesA = paneBlock('notes', ['note 1'])
-    const scan = paneBlock('scan')
-    const roles2 = paneBlock('roles', ['changed'])
-    expect(paneView([notesA, paneBlock('roles'), scan], roles2)).toEqual([roles2, notesA, scan])
-  })
-})
 
 describe('wrapLine (D-231)', () => {
   test('a line longer than the width ends its row at the last space at or before the width', () => {
@@ -127,7 +78,7 @@ describe('paneRows', () => {
   test('every title and line is cleaned, so none can add a row or hide text; none is cut (T-02-48, D-231)', () => {
     const bell = String.fromCharCode(7)
     const long = 'x'.repeat(300)
-    const rows = paneRows([{ key: 'scan', title: `Sc\nan${BIDI_OVERRIDE}`, lines: [`a\nb${bell}`, long] }], null)
+    const rows = paneRows([{ title: `Sc\nan${BIDI_OVERRIDE}`, lines: [`a\nb${bell}`, long] }], null)
     expect(rows.map(row => row.text)).toEqual(['Scan', 'ab', long])
     expect(rows.filter(row => CONTROL_OR_FORMAT.test(row.text) || row.text.includes('\n'))).toEqual([])
   })
@@ -135,7 +86,7 @@ describe('paneRows', () => {
   test('at 60 columns no row is longer than 60 code points; a 300-character line is several rows (D-231)', () => {
     const line = Array.from({ length: 60 }, () => 'word').join(' ')
     const title = `Conflict: ${'docs/'.repeat(14)}x.md`
-    const rows = paneRows([{ key: 'review', title, lines: [line, 'short'] }], 60)
+    const rows = paneRows([{ title, lines: [line, 'short'] }], 60)
     expect(rows.every(row => Array.from(row.text).length <= 60)).toBe(true)
     expect(rows.filter(row => !row.isTitle).map(row => row.text)).toEqual([...wrapLine(line, 60), 'short'])
     expect(rows.filter(row => row.isTitle).map(row => row.text)).toEqual(wrapLine(title, 60))
@@ -360,69 +311,51 @@ function openWith(context: AskContext | null): OpenQuestion {
   return { question: 'Which roles get the sentry MCP server?', header: 'MCP', context, acceptsTyped: true }
 }
 
-describe('questionPaneBlocks (D-203)', () => {
-  const blocks = [paneBlock('recommendations'), paneBlock('roles'), paneBlock('scan')]
+/** The pane state with `open` and `loader` (D-303). */
+function stateOf(open: OpenQuestion | null, loader: PaneState['loader'] = null): PaneState {
+  return { open, loader }
+}
 
-  test('while a question with its own context is open, the pane holds that context only, as one block', () => {
-    const lines = ['Source: session', 'Tools: none listed']
-    const context: AskContext = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
-    expect(questionPaneBlocks(openWith(context), blocks)).toEqual([
-      { key: 'notes', title: 'MCP: sentry', lines: ['Source: session', 'Tools: none listed'] },
-    ])
+describe('paneBlockOf (D-299, D-301, D-303)', () => {
+  const lines = ['Source: session', 'Tools: none listed']
+  const context: AskContext = { title: 'MCP: sentry', lines, kind: 'mcp-server' }
+  const loader = { label: 'cadre: scanning the repo…', summary: null }
+
+  test('the idle state, no question open and no step running, draws nothing: the empty frame', () => {
+    expect(paneBlockOf(stateOf(null))).toBe(null)
   })
 
-  test('between questions, or while a question with no context is open (a hunk), the newest block shows', () => {
-    expect(questionPaneBlocks(null, blocks)).toEqual([blocks[0]])
-    expect(questionPaneBlocks(openWith(null), blocks)).toEqual([blocks[0]])
-    expect(questionPaneBlocks(null, [])).toEqual([])
+  test('an open question draws its own context alone, its title and lines, even while a loader is set', () => {
+    const block = { title: 'MCP: sentry', lines: ['Source: session', 'Tools: none listed'] }
+    expect(paneBlockOf(stateOf(openWith(context)))).toEqual(block)
+    expect(paneBlockOf(stateOf(openWith(context), loader))).toEqual(block)
   })
 
-  test('a context of a kind a pane block has keeps that key; every other kind draws as notes', () => {
-    const kinds: readonly ContextKind[] = [
-      'scan',
-      'roles',
-      'review',
-      'env',
-      'instructions',
-      'skills',
-      'git-policy',
-      'topic',
-    ]
-    const keys = kinds.map(kind => questionPaneBlocks(openWith({ title: 'T', lines: [], kind }), blocks)[0]?.key)
-    expect(keys).toEqual(['scan', 'roles', 'review', 'env', 'instructions', 'skills', 'notes', 'notes'])
-    expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'history' }), [])[0]?.key).toBe('history')
-    expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'improver' }), [])[0]?.key).toBe('improver')
-  })
-})
-
-describe('withLoader (D-257)', () => {
-  const shown = [paneBlock('roles')]
-
-  test('with no long step running, the blocks are drawn as they are', () => {
-    expect(withLoader(shown, null)).toEqual(shown)
-    expect(withLoader(shown, '')).toEqual(shown)
-    expect(withLoader([], null)).toEqual([])
+  test('an open question with no context draws nothing, never a block of an earlier step (D-299)', () => {
+    expect(paneBlockOf(stateOf(openWith(null)))).toBe(null)
+    expect(paneBlockOf(stateOf(openWith(null), loader))).toBe(null)
   })
 
-  test('a running step draws its label first, as a title with no lines, then the blocks', () => {
-    expect(withLoader(shown, 'cadre: scanning the repo…')).toEqual([
-      { key: 'loader', title: 'cadre: scanning the repo…', lines: [] },
-      paneBlock('roles'),
-    ])
-    expect(withLoader([], 'cadre: scanning the repo…')).toEqual([
-      { key: 'loader', title: 'cadre: scanning the repo…', lines: [] },
-    ])
+  test('with no question open a running step draws its loader alone: its label as the title (D-301)', () => {
+    expect(paneBlockOf(stateOf(null, loader))).toEqual({ title: 'cadre: scanning the repo…', lines: [] })
   })
 
-  test('the label is cleaned and not cut, so it cannot add a row or hide text (T-02.2-08)', () => {
+  test('a loader with a summary draws it as its one line under the label (D-301)', () => {
+    const summary = '3 servers, 2 roles'
+    expect(paneBlockOf(stateOf(null, { ...loader, summary }))).toEqual({ title: loader.label, lines: [summary] })
+  })
+
+  test('the label and the summary are cleaned and not cut, so neither adds a row or hides text (T-02.2-08)', () => {
     const long = `cadre: ${'x'.repeat(300)}`
-    expect(withLoader([], `${long}${BIDI_OVERRIDE}\n`)[0]?.title).toBe(long)
+    const block = paneBlockOf(stateOf(null, { label: `${long}${BIDI_OVERRIDE}\n`, summary: `a\nb${BIDI_OVERRIDE}` }))
+    expect(block).toEqual({ title: long, lines: ['ab'] })
   })
 
-  test('it never changes the blocks it is given', () => {
-    const blocks = [paneBlock('scan')]
-    withLoader(blocks, 'cadre: scanning the repo…')
-    expect(blocks).toEqual([paneBlock('scan')])
+  test('it never changes the state it is given', () => {
+    const state = stateOf(openWith(context), loader)
+    const before = JSON.stringify(state)
+    paneBlockOf(state)
+    expect(JSON.stringify(state)).toBe(before)
   })
 })
 

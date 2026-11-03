@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine, MountTarget } from 'claude-code/testing'
 
-import type { AskContext, AskSpec, PaneKey } from '../types'
+import type { AskContext, AskSpec } from '../types'
 import { MANIFEST_SKIPPED_NOTE, NEXT_STEP_NOTE, privateFoldersUnknownWarning } from './apply/run'
 import { sha256Hex } from './core/hash'
 import { isObject, stableJson } from './core/json'
@@ -137,7 +137,7 @@ type World = {
  * each process call asked for ('' when it asked for none), each dialog question as `ask <question>`, the option labels
  * each dialog showed, the preview of each option of each dialog (D3), the first question of each dialog as the tool
  * call gave it, each text the plugin logged to the transcript, each side pane it opened as `ui.open <id> <title>`, each
- * pane it closed as `ui.close <id>`, each value it set the init pane's state to (D-133), and each path it wrote, in
+ * pane it closed as `ui.close <id>`, each value it wrote to the one pane state (D-303), and each path it wrote, in
  * order.
  */
 type HostLog = {
@@ -151,13 +151,6 @@ type HostLog = {
   readonly logs: string[]
   readonly panes: string[]
   readonly closes: string[]
-  readonly paneWrites: unknown[]
-  /** The header of each value written to the open-question state, null for a clear (R1, D-203). */
-  readonly headerWrites: unknown[]
-  /** Each value written to the open-question state (D-203). */
-  readonly questionWrites: unknown[]
-  /** Each value written to the loader state, null for a clear (D-257). */
-  readonly loaderWrites: unknown[]
   /** Each value written to the one pane state, its open question and its loader in one (D-303). */
   readonly paneStates: unknown[]
   /** Each status line the plugin set, null for a clear (D-232). */
@@ -177,8 +170,8 @@ function askHeads(log: HostLog): string[] {
  * Host ops that would change something or reach beyond the read-only reads (a second process call, the network, an
  * MCP tool, a tool registration); `/cadre detect`, every --dry-run and every refusal must never reach one, and only
  * plain init and regen write, in a world whose isWriteAllowed lets `fs.write` through. `process.spawn` is forbidden
- * too, but streams, so fakeHost hooks it with a generator. `state.set` is forbidden too, except the init pane's own
- * state (D-133, T-02-49), so fakeHost hooks it on its own. `process.run` is not here: it is logged, and only the
+ * too, but streams, so fakeHost hooks it with a generator. `state.set` is forbidden too, except the one pane state
+ * (D-133, T-02-49, D-303), so fakeHost hooks it on its own. `process.run` is not here: it is logged, and only the
  * user-level identity call and the launcher chmods of an apply may use it.
  */
 const FORBIDDEN_OPS: readonly string[] = [
@@ -204,47 +197,43 @@ function newLog(): HostLog {
     logs: [],
     panes: [],
     closes: [],
-    paneWrites: [],
-    headerWrites: [],
-    questionWrites: [],
-    loaderWrites: [],
     paneStates: [],
     statuses: [],
     writes: [],
   }
 }
 
-/** One block of the init side pane as the fake host saw its state written (D-133). */
-type PaneBlock = {
-  readonly key: string
-  readonly title: string
-  readonly lines: readonly string[]
+/** The question open in a value written to the pane state, null when none is (D-303). */
+function openOf(state: unknown): unknown {
+  return isObject(state) && isObject(state.open) ? state.open : null
 }
 
-/** Whether a value in the init pane's state is one block: a key, a title and its lines, all text. */
-function isPaneBlock(value: unknown): value is PaneBlock {
-  if (!isObject(value)) return false
-  const { key, title, lines } = value
+/** The header chip of the question open in a value written to the pane state, null when none is (R1, D-203). */
+function headerOf(state: unknown): unknown {
+  const open = openOf(state)
 
-  return (
-    typeof key === 'string' &&
-    typeof title === 'string' &&
-    Array.isArray(lines) &&
-    lines.every(line => typeof line === 'string')
-  )
+  return isObject(open) ? open.header : null
 }
 
-/** The init pane as it stands after a run, newest block first: the last value its state was set to (D-133). */
-function paneOf(log: HostLog): PaneBlock[] {
-  const last = log.paneWrites.at(-1)
-
-  return Array.isArray(last) ? last.filter(isPaneBlock) : []
+/** The label of the loader in a value written to the pane state, null when no step runs (D-257, D-301). */
+function loaderOf(state: unknown): unknown {
+  return isObject(state) && isObject(state.loader) ? state.loader.label : null
 }
 
-/** The lines of the init pane's block of this key; empty when the pane has no such block. */
-function paneLines(log: HostLog, key: string): readonly string[] {
-  return paneOf(log).find(block => block.key === key)?.lines ?? []
+/**
+ * The own context of the first question a run opened in the pane state whose text starts with `prefix` (D-299): what
+ * the pane drew while it was open, its title and its lines; null when the run opened no such question with a context.
+ */
+function openedContext(log: HostLog, prefix: string): { readonly title: string; readonly lines: string[] } | null {
+  const open = log.paneStates.map(openOf).find(value => isObject(value) && String(value.question).startsWith(prefix))
+  if (!isObject(open) || !isObject(open.context)) return null
+  const { title, lines } = open.context
+
+  return { title: String(title), lines: Array.isArray(lines) ? lines.map(String) : [] }
 }
+
+/** The pane state with no question open and no loader: what a run writes when it ends (D-303, D-304). */
+const IDLE_STATE = { open: null, loader: null }
 
 /**
  * A repo with `.planning/` and `docs/superpowers/`, a user-level GSD 1.16.0 with a proven identity, and superpowers
@@ -465,14 +454,13 @@ function hasPath(world: World, path: string): boolean {
 /**
  * Answers the host ops `/cadre detect`, `/cadre init` and `/cadre regen` may use from `world` and logs each fs, process
  * and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript text is
- * kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is kept in
- * `log.paneWrites` and stored, unless `world.denyPane` refuses both. Each value of the open-question state is kept in
- * `log.questionWrites`, its header in `log.headerWrites`, and stored, never refused (R1, D-203); each value of the
- * loader state is kept in `log.loaderWrites` and stored, never refused (D-257). A pane closed is kept in `log.closes`,
- * and the close is refused when `world.denyClose`. The model answers `world.replies` in order, each call after
- * `world.onComplete` ran. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done,
- * and its path kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any
- * other state included, is answered with a refusal, so a call to one would show up in the log and fail its call.
+ * kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the one pane state, the open
+ * question and the loader in one, is kept in `log.paneStates` and stored, unless `world.denyPane` refuses both (R1,
+ * D-203, D-303). A pane closed is kept in `log.closes`, and the close is refused when `world.denyClose`. The model
+ * answers `world.replies` in order, each call after `world.onComplete` ran. A process call answers its runResults
+ * entry, else `runtime`. `fs.write` is answered as done, and its path kept in `log.writes`, only when
+ * `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state included, is answered with a
+ * refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
@@ -502,33 +490,15 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: undefined }
   })
-  // The init pane's blocks, the question open now and the loader are the plugin's own state (D-133, T-02-49, R1,
-  // D-203, D-257); the open question and the loader are never refused, and a write of any other state is forbidden.
+  // The one pane state, the question open now and the loader in one, is the plugin's own state (D-133, T-02-49, R1,
+  // D-203, D-303); a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
-    if (e.plugin === 'cadre' && e.key === 'pane') {
-      log.paneStates.push(e.value)
-      if (world.denyPane) return { deny: 'no pane state' }
-
-      return next(e)
-    }
-    if (e.plugin === 'cadre' && e.key === 'openQuestion') {
-      const open: unknown = e.value
-      log.questionWrites.push(open)
-      log.headerWrites.push(isObject(open) ? open.header : null)
-
-      return next(e)
-    }
-    if (e.plugin === 'cadre' && e.key === 'loader') {
-      log.loaderWrites.push(e.value)
-
-      return next(e)
-    }
-    if (e.plugin !== 'cadre' || e.key !== 'initPane') {
+    if (e.plugin !== 'cadre' || e.key !== 'pane') {
       log.ops.push('forbidden state.set')
 
       return { deny: 'detect uses no such op' }
     }
-    log.paneWrites.push(e.value)
+    log.paneStates.push(e.value)
     if (world.denyPane) return { deny: 'no pane state' }
 
     return next(e)
@@ -1584,14 +1554,11 @@ describe('cadre init with a faked host', () => {
     expect(second.text).toBe(first.text)
   })
 
-  test('init guards before it scans, asks the ~/.claude.json consent first and shows both scans', async ($, on) => {
+  test('init guards before it scans, asks the ~/.claude.json consent first and logs no scan', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.asks[0]?.startsWith('ask Read ~/.claude.json for MCP server names?')).toBe(true)
-    const lines = paneLines(log, 'scan')
-    expect(lines[0]).toBe('Repo scan (read-only):')
-    expect(lines).toContain('User setup (names only):')
     expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
     const guardAt = log.ops.indexOf('fs.exists /home/u/.claude/autopilot/s1.json')
@@ -1609,7 +1576,6 @@ describe('cadre init with a faked host', () => {
     expect(out.text).toBe(cancelledReply(ROLES_DISMISSED_REASON))
     expect(askHeads(log)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
-    expect(paneLines(log, 'scan')[0]).toBe('Repo scan (read-only):')
     expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
@@ -1621,33 +1587,30 @@ describe('cadre init with a faked host', () => {
     expect(out.text).toContain('File plan:')
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
-    expect(log.paneWrites.length).toBeGreaterThan(0)
+    expect(log.paneStates.length).toBeGreaterThan(0)
     expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
-  test('init --dry-run keeps every block in the pane, newest first, and logs one-line notes only', async ($, on) => {
+  test('init --dry-run writes the pane state only, no block, and logs one-line notes only (D-303)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
-    expect(paneOf(log).map(block => block.title)).toEqual(['Review', 'Recommendations', 'Roles', 'Scan'])
+    const isPaneState = (state: unknown): boolean =>
+      isObject(state) && Object.keys(state).sort().join() === 'loader,open'
+    expect([log.paneStates.length > 0, log.paneStates.filter(state => !isPaneState(state))]).toEqual([true, []])
     expect(log.logs.every(text => !text.includes('\n'))).toBe(true)
     expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
-  test('the first block of a run replaces whatever an earlier run left in the pane (D-133)', async ($, on) => {
+  test('a second run starts from the idle pane state the first left, and ends idle (D-133, D-304)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const firstRun = log.paneWrites.length
+    const firstRun = log.paneStates.length
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    // The scan's progress opens the pane with no block (D-257, OC-02-L), then the scan block shows alone.
-    const restart = log.paneWrites.slice(firstRun, firstRun + 2)
-    const keys = restart.map(value => (Array.isArray(value) ? value.filter(isPaneBlock).map(block => block.key) : null))
-    expect(keys).toEqual([[], ['scan']])
-    expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
+    expect([firstRun > 0, log.paneStates[firstRun - 1], log.paneStates.at(-1)]).toEqual([true, IDLE_STATE, IDLE_STATE])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
   })
 
@@ -1735,24 +1698,14 @@ describe('cadre init with a faked host', () => {
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
-  test('init --dry-run shows the security plugin lines and commands under the recommendations (#39)', async ($, on) => {
+  test('init --dry-run shows the missing security plugins in their question context (#39, D-299)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const lines = paneLines(log, 'recommendations')
-    const headingAt = lines.indexOf('Recommendations (print-only; init asks before it installs any):')
-    const claudeSecurity =
-      "- claude-security for Security: claude-security gives the Security role Anthropic's review skill " +
-      '(needs Python 3.9 or newer)'
-    const securityAt = lines.indexOf(claudeSecurity)
-    expect(headingAt).toBeGreaterThanOrEqual(0)
-    expect(securityAt).toBeGreaterThan(headingAt)
-    expect(lines.slice(headingAt + 1, securityAt).filter(line => !/^(- |    run: )/.test(line))).toEqual([])
-    expect(lines.slice(securityAt, securityAt + 4)).toEqual([
-      claudeSecurity,
-      '    run: claude plugin install claude-security@claude-plugins-official',
-      '- security-guidance for Security: no hooks warn the Security role about risky edits',
-      '    run: claude plugin install security-guidance@claude-plugins-official',
+    const lines = openedContext(log, SECURITY_INSTALL_PREFIX)?.lines ?? []
+    expect(lines.map(line => line.split(': ')[0])).toEqual([
+      'claude-security@claude-plugins-official',
+      'security-guidance@claude-plugins-official',
     ])
     expect(lines.filter(line => line.includes('/security-review'))).toEqual([])
   })
@@ -1855,8 +1808,9 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
 
   /**
    * Has the host read `question` as the question cadre has open (D-239), with `context` as its own context (D-203),
-   * one that takes a typed answer unless `acceptsTyped` says not (D-234): every read of cadre's openQuestion state
-   * gives it, so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own questions are.
+   * one that takes a typed answer unless `acceptsTyped` says not (D-234): every read of cadre's pane state gives it
+   * open with no loader (D-303), so a dialog that asks it is cadre's own and the hook may rewrite it, as init's own
+   * questions are.
    */
   function openAsCadre(
     on: HostOn,
@@ -1866,9 +1820,9 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
   ): void {
     const open = { question, header: null, context, acceptsTyped }
     on('state.get', async (_$, e, next) => {
-      if (e.plugin !== 'cadre' || e.key !== 'openQuestion') return next(e)
+      if (e.plugin !== 'cadre' || e.key !== 'pane') return next(e)
 
-      return { value: { value: open, version: 1 } }
+      return { value: { value: { open, loader: null }, version: 1 } }
     })
   }
 
@@ -2214,7 +2168,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     const log = newLog()
     const open: unknown[] = []
     const atPolicy = async (): Promise<void> => {
-      if ((log.asks.at(-1) ?? '').startsWith(`ask ${GIT_POLICY_QUESTION}`)) open.push(log.questionWrites.at(-1))
+      if ((log.asks.at(-1) ?? '').startsWith(`ask ${GIT_POLICY_QUESTION}`)) open.push(openOf(log.paneStates.at(-1)))
     }
     fakeHost(on, initWorld({ onAsk: atPolicy }), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
@@ -2230,7 +2184,7 @@ describe('the init pane as the option preview of a dialog on the main screen (D3
     // The kit draws the pane only on a mount, and the first block of a run clears its seat (D3), so the pane is seated
     // inline again at every ask, as a terminal main screen keeps it drawn; the header open at that ask is kept.
     const reseat = async (): Promise<void> => {
-      headers.push(log.headerWrites.at(-1) ?? null)
+      headers.push(headerOf(log.paneStates.at(-1)))
       const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
       await ui.unmount()
     }
@@ -2284,13 +2238,44 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   }
 
   /**
-   * What a drawing of only the pane's block of this key shows (R1): its title row, then its lines, each wrapped to the
-   * 60 columns of the test's pane body (D-231).
+   * What a drawing of only the own context of the first question the run opened with `prefix` shows (R1, D-299): its
+   * title row, then its lines, each wrapped to the 60 columns of the test's pane body (D-231).
    */
-  function blockDrawn(log: HostLog, key: PaneKey): Drawn {
-    const block = { key, title: PANE_TITLES[key], lines: paneLines(log, key) }
+  function contextDrawn(log: HostLog, prefix: string): Drawn {
+    const context = openedContext(log, prefix)
+    if (context === null) return { first: undefined, rows: 0 }
 
-    return { first: PANE_TITLES[key], rows: paneRows([block], INLINE_PANE.bodyColumns).length }
+    return { first: context.title, rows: paneRows([context], INLINE_PANE.bodyColumns).length }
+  }
+
+  /** The span texts of each row of a drawing of the cadre-init pane with `props` (D1), as the goldens pin them. */
+  async function paneTexts($: Engine, props: MountTarget<'terminal', 'Pane'>['props']): Promise<string[][]> {
+    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props })
+    const box = await ui.find({ type: 'Box' })
+    await ui.unmount()
+
+    return (box?.children ?? []).map(row => {
+      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
+
+      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
+    })
+  }
+
+  /**
+   * The onAsk of a world that has the terminal draw the pane with `props` at the run's first Review question, the
+   * span texts of its rows going into `drawn` (D-219, D-299): the Review's own context, its first page on a pane
+   * surface. Init's other dialogs are left alone.
+   */
+  function drawAtReview(
+    $: Engine,
+    log: HostLog,
+    props: MountTarget<'terminal', 'Pane'>['props'],
+    drawn: string[][][],
+  ): () => Promise<void> {
+    return async () => {
+      if (drawn.length > 0 || !(log.asks.at(-1) ?? '').startsWith(`ask ${REVIEW_QUESTION}`)) return
+      drawn.push(await paneTexts($, props))
+    }
   }
 
   /**
@@ -2306,12 +2291,9 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
   ): () => Promise<void> {
     return async () => {
       if (!(log.asks.at(-1) ?? '').startsWith(`ask ${question}`)) return
-      open.push({ drawn: await drawPane($, props), header: log.headerWrites.at(-1) })
+      open.push({ drawn: await drawPane($, props), header: headerOf(log.paneStates.at(-1)) })
     }
   }
-
-  /** The pane state with no question open and no loader: what a run writes when it ends (D-303, D-304). */
-  const IDLE_STATE = { open: null, loader: null }
 
   /** What a drawing of the idle pane shows: the empty text alone, with no rows (D-299, D-324). */
   const EMPTY_DRAWN: Drawn = { first: t('register.paneEmpty'), rows: 0 }
@@ -2371,27 +2353,27 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(open.map(entry => entry.drawn)).toEqual([EMPTY_DRAWN])
   })
 
-  test('an inline pane drawn while a question is open shows its block, the newest once it settles', async ($, on) => {
+  test('an inline pane drawn while a question is open draws its context, then the idle one (D-299)', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
-    const at = log.headerWrites.indexOf('Roles')
-    expect(log.headerWrites.slice(at, at + 2)).toEqual(['Roles', null])
-    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+    expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
+    const at = log.paneStates.map(headerOf).indexOf('Roles')
+    expect(log.paneStates.slice(at + 1, at + 2)).toEqual([IDLE_STATE])
+    expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
 
-  test('a docked pane drawn while a question is open shows its block too: every placement', async ($, on) => {
+  test('a docked pane drawn while a question is open draws its own context too: every placement', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
     fakeHost(on, initWorld({ onAsk: drawWhileOpen($, log, DOCK_PANE, open, ROLES_QUESTION) }), log)
     await $.command.run(DRY_RUN)
-    expect(open).toEqual([{ drawn: blockDrawn(log, 'roles'), header: 'Roles' }])
-    const at = log.headerWrites.indexOf('Roles')
-    expect(log.headerWrites.slice(at, at + 2)).toEqual(['Roles', null])
-    expect(await drawPane($, DOCK_PANE)).toEqual(blockDrawn(log, 'review'))
+    expect(open).toEqual([{ drawn: contextDrawn(log, ROLES_QUESTION), header: 'Roles' }])
+    const at = log.paneStates.map(headerOf).indexOf('Roles')
+    expect(log.paneStates.slice(at + 1, at + 2)).toEqual([IDLE_STATE])
+    expect(await drawPane($, DOCK_PANE)).toEqual(EMPTY_DRAWN)
   })
 
   test('the Git policy question draws its own context while open, not the newest block (D-203)', async ($, on) => {
@@ -2411,21 +2393,23 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(open.map(entry => [entry.drawn.first, entry.header])).toEqual([['Security plugins', 'Security']])
   })
 
-  test('a dismissed dialog still clears the header, so the pane draws the newest block after it', async ($, on) => {
+  test('a dismissed dialog still writes the idle state, so the pane draws the empty frame (D-304)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
     await $.command.run(DRY_RUN)
     expect(askHeads(log).at(-1)).toBe(`ask ${ROLES_QUESTION}`)
-    expect(log.headerWrites.slice(-3)).toEqual(['Roles', null, null])
-    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'roles'))
+    const at = log.paneStates.map(headerOf).lastIndexOf('Roles')
+    // The dialog's own idle state, then the run's at its end and the pane's as it closes (D-304).
+    expect(log.paneStates.slice(at + 1)).toEqual([IDLE_STATE, IDLE_STATE, IDLE_STATE])
+    expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
   })
 
-  test('a run clears the header when it ends, after the clear of its last dialog', async ($, on) => {
+  test('a run writes the idle state when it ends, after the idle state of its last dialog (D-304)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run(DRY_RUN)
-    // The last dialog's own clear, then the run's: a write that update tries again only adds another null.
-    expect(log.headerWrites.slice(-2)).toEqual([null, null])
+    // The last dialog's own idle state, then the run's at its end and the pane's as it closes.
+    expect(log.paneStates.slice(-3)).toEqual([IDLE_STATE, IDLE_STATE, IDLE_STATE])
   })
 
   test('a scroll the host cannot do never blocks a question: init asks on and replies (D-209)', async ($, on) => {
@@ -2468,61 +2452,42 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(open.map(entry => entry.drawn.first)).toEqual([PANE_TITLES.skills])
   })
 
-  test('a run clears the loader when it ends, so the pane after it draws the newest block (D-257)', async ($, on) => {
+  test('a run clears the loader when it ends, so the pane then draws the empty frame (D-257, D-304)', async ($, on) => {
     const log = newLog()
     fakeHost(on, oneCallWorld(), log)
     await $.command.run(DRY_RUN)
-    expect(log.loaderWrites.filter(text => text !== null)).toEqual([SCAN_PROGRESS, MODEL_PROGRESS.skills])
-    expect(log.loaderWrites.at(-1)).toBe(null)
-    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+    const loaders = log.paneStates.map(loaderOf)
+    expect(loaders.filter(label => label !== null)).toEqual([SCAN_PROGRESS, MODEL_PROGRESS.skills])
+    expect(loaders.at(-1)).toBe(null)
+    expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
   })
 
-  test('the pane wraps each row to the columns its body has, cutting none (D-231)', async ($, on) => {
+  test('the pane wraps each row of the open context to its body columns, cutting none (D-231)', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
+    const drawn: string[][][] = []
+    fakeHost(on, initWorld({ onAsk: drawAtReview($, log, { ...INLINE_PANE, bodyColumns: 40 }, drawn) }), log)
     await $.command.run(DRY_RUN)
-    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: { ...INLINE_PANE, bodyColumns: 40 } })
-    const box = await ui.find({ type: 'Box' })
-    await ui.unmount()
-    const texts = (box?.children ?? []).map(row => {
-      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
-
-      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
-    })
-    const lines = paneLines(log, 'review')
+    const texts = drawn[0] ?? []
+    const context = openedContext(log, REVIEW_QUESTION) ?? { title: '', lines: [] }
     expect(texts.every(row => Array.from(row.join('')).length <= 40)).toBe(true)
-    expect(texts.length).toBe(paneRows([{ key: 'review', title: 'Review', lines }], 40).length)
-    expect(texts.length).toBeGreaterThan(1 + lines.length)
+    expect(texts.length).toBe(paneRows([context], 40).length)
+    expect(texts.length).toBeGreaterThan(1 + context.lines.length)
   })
 
-  test('golden: the pane rows drawn inline after the run, each row its span texts (D-219)', async ($, on) => {
+  test('golden: the pane rows drawn inline at the Review question, each row its span texts (D-219)', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
+    const drawn: string[][][] = []
+    fakeHost(on, initWorld({ onAsk: drawAtReview($, log, INLINE_PANE, drawn) }), log)
     await $.command.run(DRY_RUN)
-    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: INLINE_PANE })
-    const box = await ui.find({ type: 'Box' })
-    await ui.unmount()
-    const rows = (box?.children ?? []).map(row => {
-      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
-
-      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
-    })
-    expect(rows).toEqual(GOLDEN_PANE_ROWS.inline)
+    expect(drawn[0]).toEqual(GOLDEN_PANE_ROWS.inline)
   })
 
-  test('golden: the pane rows drawn docked after the run, each row its span texts (D-219)', async ($, on) => {
+  test('golden: the pane rows drawn docked at the Review question, each row its span texts (D-219)', async ($, on) => {
     const log = newLog()
-    fakeHost(on, initWorld(), log)
+    const drawn: string[][][] = []
+    fakeHost(on, initWorld({ onAsk: drawAtReview($, log, DOCK_PANE, drawn) }), log)
     await $.command.run(DRY_RUN)
-    const ui = await $.ui.mount({ ...PANE_ON_TERMINAL, props: DOCK_PANE })
-    const box = await ui.find({ type: 'Box' })
-    await ui.unmount()
-    const rows = (box?.children ?? []).map(row => {
-      const spans: unknown[] = isObject(row) && Array.isArray(row.children) ? row.children : [row]
-
-      return spans.map(span => (isObject(span) && Array.isArray(span.children) ? span.children.join('') : String(span)))
-    })
-    expect(rows).toEqual(GOLDEN_PANE_ROWS.dock)
+    expect(drawn[0]).toEqual(GOLDEN_PANE_ROWS.dock)
   })
 })
 
@@ -2591,12 +2556,13 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     return initWorld({ commands, answers: { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' } })
   }
 
-  test('init --dry-run opens no pane and writes no pane block, while the model works too (D-208)', async ($, on) => {
+  test('init --dry-run opens no pane and writes no loader, while the model works too (D-208)', async ($, on) => {
     const log = newLog()
     fakeHost(on, skillWorld(), log)
     const out = await $.command.run(TUI_RUN)
     expect(askHeads(log).some(ask => ask.startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`))).toBe(true)
-    expect([log.panes, log.paneWrites, log.closes]).toEqual([[], [], []])
+    const loaders = log.paneStates.map(loaderOf).filter(label => label !== null)
+    expect([log.panes, loaders, log.closes]).toEqual([[], [], []])
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
@@ -2644,7 +2610,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const log = newLog()
     fakeHost(on, skillWorld(), log)
     await $.command.run(TUI_RUN)
-    expect(log.loaderWrites.filter(text => text !== null)).toEqual([])
+    expect(log.paneStates.map(loaderOf).filter(label => label !== null)).toEqual([])
     expect(log.statuses.includes(MODEL_PROGRESS.skills)).toBe(true)
   })
 
@@ -2676,7 +2642,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const seen: { readonly logs: readonly string[]; readonly open: unknown }[] = []
     const atSkills = async (): Promise<void> => {
       if (!(log.asks.at(-1) ?? '').startsWith(`ask ${OWN_SKILLS_ENTRY_PREFIX}`)) return
-      seen.push({ logs: [...log.logs], open: log.questionWrites.at(-1) })
+      seen.push({ logs: [...log.logs], open: openOf(log.paneStates.at(-1)) })
     }
     fakeHost(on, manySkillsWorld(atSkills), log)
     await $.command.run(TUI_RUN)
@@ -2756,7 +2722,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
   test('golden: the TUI-default init dry run: panes, statuses, logs, asks, reply (D-208, D-219)', async ($, on) => {
     const log = newLog()
     const headers: unknown[] = []
-    fakeHost(on, { ...skillWorld(), onAsk: async () => void headers.push(log.headerWrites.at(-1) ?? null) }, log)
+    fakeHost(on, { ...skillWorld(), onAsk: async () => void headers.push(headerOf(log.paneStates.at(-1))) }, log)
     const out = await $.command.run(TUI_RUN)
     const asks = log.askOptions.map((options, at) => ({
       header: headers[at] ?? null,
@@ -2778,7 +2744,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     const log = newLog()
     fakeHost(on, skillWorld(), log)
     await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
-    const opened = log.questionWrites.filter(isObject)
+    const opened = log.paneStates.map(openOf).filter(isObject)
     const contextual = opened.filter(open => isObject(open.context))
     // The hunk questions carry no context of their own yet (D-287), so they are asked as they are.
     const long = contextual.flatMap(open => (String(open.question).split('\n').length > 2 ? [open.question] : []))
@@ -3152,7 +3118,7 @@ describe('Phase 2 faked-host matrix', () => {
       const frameworkAsks = log.asks.filter(ask => ask.startsWith(`ask ${FRAMEWORK_QUESTION_PREFIX}`))
       expect(frameworkAsks.length).toBe(expected.frameworkAsks)
       if (expected.card === null) return
-      expect(paneLines(log, 'review').join('\n')).toContain(expected.card)
+      expect((openedContext(log, REVIEW_QUESTION)?.lines ?? []).join('\n')).toContain(expected.card)
     })
   }
 
@@ -3304,12 +3270,12 @@ describe('Phase 2 faked-host matrix', () => {
     expect(log.ops.filter(op => op.startsWith('fs.read ') && op.endsWith('.jsonl'))).toEqual([])
     expect(log.ops.filter(op => op.endsWith('.jsonl'))).toEqual([])
     expect(log.logs.join('\n')).not.toContain('Session history')
-    expect(paneLines(log, 'history')).toEqual([])
+    expect(JSON.stringify(log.paneStates)).not.toContain('Session history')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
   })
 
-  test('history answered Yes: names and counts are shown, never transcript text (SCAN-03, T-02-41)', async ($, on) => {
+  test('history answered Yes: names and counts are read, never transcript text (SCAN-03, T-02-41)', async ($, on) => {
     const log = newLog()
     const answers = { ...INIT_ANSWERS, "Scan this repo's session history": 'Yes, scan names and counts' }
     const world = historyHostWorld({ answers })
@@ -3321,8 +3287,7 @@ describe('Phase 2 faked-host matrix', () => {
       `fs.read ${HISTORY_DIR}/a.jsonl`,
       `fs.read ${HISTORY_DIR}/b.jsonl`,
     ])
-    expect(paneLines(log, 'history')).toEqual(['Session history (names and counts only):', '  gsd-plan-phase  2'])
-    expect(leaks([dry, ...log.logs, JSON.stringify(log.paneWrites)].join('\n'), ['SENTINEL_SECRET_VALUE'])).toEqual([])
+    expect(leaks([dry, ...log.logs, JSON.stringify(log.paneStates)].join('\n'), ['SENTINEL_SECRET_VALUE'])).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
     expect(log.runs).toEqual([])
   })
@@ -3384,18 +3349,15 @@ describe('Phase 2 faked-host matrix', () => {
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
     expect(log.ops).toContain('fs.read /home/u/.claude.json')
-    expect(paneLines(log, 'scan').join('\n')).toContain('MCP servers: datadog, linear, sentry')
-    expect(paneLines(log, 'scan').join('\n')).toContain('CLAUDE.md files: repo/CLAUDE.md')
+    // The history question's own context is the scan the pane draws while it is open (D-299).
+    const scan = (openedContext(log, "Scan this repo's session history")?.lines ?? []).join('\n')
+    expect(scan).toContain('MCP servers: datadog, linear, sentry')
+    expect(scan).toContain('CLAUDE.md files: repo/CLAUDE.md')
     expect(log.ops).toContain(`fs.read ${HISTORY_DIR}/${token}.jsonl`)
-    expect(paneLines(log, 'history')).toEqual([
-      'Session history (names and counts only):',
-      '  codex:rescue  1',
-      '  gsd-plan-phase  1',
-    ])
-    // Every value the pane's state was set to, so a block shown and later replaced is scanned too, and each question's
-    // own context and option previews, which the pane and the dialog draw (D-203, E1).
-    const pane = JSON.stringify(log.paneWrites)
-    const asked = JSON.stringify([log.questionWrites, log.askPreviews])
+    // Every value the pane state was set to, each question's own context and each loader included (D-303), and the
+    // option previews, which the pane and the dialog draw (D-203, E1).
+    const pane = JSON.stringify(log.paneStates)
+    const asked = JSON.stringify([log.paneStates.map(openOf), log.askPreviews])
     expect(asked).toContain('codex:rescue: ')
     expect(log.askPreviews.flat().some(preview => typeof preview === 'string')).toBe(true)
     // The dialog texts as the tool call gave them, each question's second line included (WD-S5).
