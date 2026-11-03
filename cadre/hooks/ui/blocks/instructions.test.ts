@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart, InstructionScan } from '../../../types'
 import { REDACTED } from '../../core/redact'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { fallbackTopics } from '../../suggest/topics'
 import { MEMORIES, MEMORY, memory, RECOMMENDED, ROLES, TOPICS } from '../../testkit'
 import { instructionLines, instructionReviewLines } from './instructions'
@@ -115,7 +116,7 @@ describe('instructionLines redaction (WD-S5, #163)', () => {
 
 describe('instructionReviewLines', () => {
   test('per role the topics and memories it gets, else none, then what stays with the root session only', () => {
-    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED)).toEqual([
+    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, SCREEN_LIST_WORDS)).toEqual([
       'Instructions per role:',
       '  pm: none',
       '  tl: 1 topic: Git and commits; 0 memories',
@@ -125,7 +126,7 @@ describe('instructionReviewLines', () => {
   })
 
   test('rowsAfter puts the rows it gives for a role right after that role row (02-GAPS-B3 N3)', () => {
-    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, id => [`x ${id}`])).toEqual([
+    expect(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, SCREEN_LIST_WORDS, id => [`x ${id}`])).toEqual([
       'Instructions per role:',
       '  pm: none',
       'x pm',
@@ -135,13 +136,13 @@ describe('instructionReviewLines', () => {
       'x security',
       'Kept with the root session only: 0 topics, 0 memories',
     ])
-    const none = instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, () => [])
-    expect(none).toEqual(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED))
+    const none = instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, SCREEN_LIST_WORDS, () => [])
+    expect(none).toEqual(instructionReviewLines(ROLES, TOPICS, [], RECOMMENDED, SCREEN_LIST_WORDS))
   })
 
   test('a role with memories and no topic counts both; a memory no role gets is counted as kept', () => {
     const given = new Map([...RECOMMENDED, ['M1', ['pm', 'security']], ['M2', []]])
-    expect(instructionReviewLines(ROLES, TOPICS, MEMORIES, given)).toEqual([
+    expect(instructionReviewLines(ROLES, TOPICS, MEMORIES, given, SCREEN_LIST_WORDS)).toEqual([
       'Instructions per role:',
       '  pm: 0 topics; 1 memory',
       '  tl: 1 topic: Git and commits; 0 memories',
@@ -165,7 +166,7 @@ describe('instructionReviewLines', () => {
       ['T5', []],
     ])
     const withMemories = new Map([...given, ['M1', ['tl']], ['M2', ['tl']]])
-    expect(instructionReviewLines(ROLES, topics, MEMORIES, withMemories)).toEqual([
+    expect(instructionReviewLines(ROLES, topics, MEMORIES, withMemories, SCREEN_LIST_WORDS)).toEqual([
       'Instructions per role:',
       '  pm: none',
       '  tl: 4 topics: A, B, C, +1 more; 2 memories',

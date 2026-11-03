@@ -14,6 +14,7 @@ import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
 import { scanWarnings } from '../scan/gather'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
+import { listWordsOf } from '../ui/surface'
 import type { Surface } from '../ui/surface'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
@@ -77,7 +78,10 @@ const scanStage: StageDef = Object.freeze({
     if (answer.kind !== 'io' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
     const gathered = answer.result.result
     const warnings = scanWarningLines(scanWarnings(locations, gathered))
-    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, locations.root), ...warnings]
+    const lines = [
+      ...scanSummaryLines(gathered.repo, gathered.setup, locations.root, listWordsOf(state.surface)),
+      ...warnings,
+    ]
     const detections = detectAll(gathered.facts.facts)
     const draft = {
       ...state.draft,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { HookScript, RoleSpec, SetupScan } from '../../../types'
+import { PANE_LIST_WORDS, SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { gatherScans } from '../../scan/gather'
 import {
@@ -81,8 +82,8 @@ describe('carryStep', () => {
     const state = carryAt(roles, forty)
     const lines = ['Env variable names in your settings (values are never read):', ...names.map(name => `  ${name}`)]
     expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])
-    expect(state.openQuestion?.question.split('\n')[0]).toBe(envQuestion(names))
-    expect(envQuestion(names)).toContain('+35 more')
+    expect(state.openQuestion?.question.split('\n')[0]).toBe(envQuestion(names, PANE_LIST_WORDS))
+    expect(envQuestion(names, SCREEN_LIST_WORDS)).toContain('+35 more')
     const carried = driven(state, ['CADRE_UAT_NAME_40']).state.draft.roles
     expect(carried?.map(role => role.carry.env)).toEqual(roles.map(() => ['CADRE_UAT_NAME_40']))
   })
@@ -160,7 +161,7 @@ describe('the carry stage (D-230)', () => {
 
   test('carryStage lists every scanned env name, then asks the env question; the open question is that ask', () => {
     const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
-    const question = withContext(envQuestion(['API_KEY', 'JIRA_URL']), envContextLine(roles))
+    const question = withContext(envQuestion(['API_KEY', 'JIRA_URL'], PANE_LIST_WORDS), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
     const pane = { asked: question, text: withContext(short, lines[0] ?? '') }

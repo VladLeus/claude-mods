@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { surfaceOf } from './surface'
+import { PANE_LIST_WORDS, SCREEN_LIST_WORDS } from '../locales/t'
+import { listWordsOf, surfaceOf, withMax } from './surface'
 
 /** The presentation of a command run on the terminal main screen (D-208). */
 const MAIN_SCREEN = { isFullscreen: false, columns: 120 }
@@ -41,5 +42,19 @@ describe('surfaceOf (D-208)', () => {
   test('an entry of the list that is not a surface name counts as a surface beside the terminal', () => {
     expect(surfaceOf(MAIN_SCREEN, ['terminal', 3])).toBe('pane')
     expect(surfaceOf(MAIN_SCREEN, [null])).toBe('pane')
+  })
+})
+
+describe('listWordsOf and withMax (D-256)', () => {
+  test('a pane surface lists every name; the TUI default and a run with no surface keep the screen cap of 12', () => {
+    expect(listWordsOf('pane')).toBe(PANE_LIST_WORDS)
+    expect(listWordsOf('tui-default')).toBe(SCREEN_LIST_WORDS)
+    expect(listWordsOf('none')).toBe(SCREEN_LIST_WORDS)
+  })
+
+  test('withMax lowers the cap of a capped list and leaves an uncapped list uncapped', () => {
+    expect(withMax(SCREEN_LIST_WORDS, 3)).toEqual({ ...SCREEN_LIST_WORDS, max: 3 })
+    expect(withMax(SCREEN_LIST_WORDS, 30).max).toBe(12)
+    expect(withMax(PANE_LIST_WORDS, 3)).toBe(PANE_LIST_WORDS)
   })
 })

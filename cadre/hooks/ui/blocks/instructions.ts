@@ -7,9 +7,11 @@
 import type { InstructionPart, InstructionScan, InstructionTopic, MemoryItem, RoleSpec } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { clean, idsOrNone } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { TOP_OF_FILE } from '../../records'
 import { fallbackTopics } from '../../suggest/topics'
+import { withMax } from '../surface'
 
 /**
  * Where a part comes from, as the pane and a topic's context line show it: its file, cleaned, then its heading
@@ -33,12 +35,15 @@ export function topicParts(topic: InstructionTopic, parts: readonly InstructionP
   })
 }
 
-/** Items joined with `, `: the first `max`, then `+N more` when more remain. */
-export function cappedList(items: readonly string[], max: number): string {
-  const shown = items.slice(0, max)
+/**
+ * Items joined with `, `: the first `words.max`, then the more word of `words` when more remain (D-256: every item on a
+ * pane surface).
+ */
+export function cappedList(items: readonly string[], words: ListWords): string {
+  const shown = items.slice(0, words.max)
   const rest = items.length - shown.length
 
-  return (rest > 0 ? [...shown, SCREEN_LIST_WORDS.more(rest)] : shown).join(', ')
+  return (rest > 0 ? [...shown, words.more(rest)] : shown).join(', ')
 }
 
 /** The first row of the instructions block (G-02-1f; AUTO-PICK #12): what a plain init writes after Confirm. */
@@ -124,34 +129,36 @@ export function instructionLines(
   })), ...notes]
 }
 
-/** The most topic titles a review row names before it counts the rest. */
+/** The most topic titles a review row names on the TUI default before it counts the rest (D-283: all on a pane). */
 const MAX_SHOWN_TITLES = 3
 
 /**
  * One role's review row (G-02-1f): `none` when it gets no topic and no memory; else how many topics it gets with
- * their first titles, `0 topics` with none, then how many memories.
+ * their titles, three and how many more on the TUI default, all on a pane surface (`words`, withMax, D-256, D-283),
+ * `0 topics` with none, then how many memories.
  */
-function roleItemsLine(id: string, topics: readonly InstructionTopic[], memories: number): string {
+function roleItemsLine(id: string, topics: readonly InstructionTopic[], memories: number, words: ListWords): string {
   if (topics.length === 0 && memories === 0) return t('ui.instructions.roleItemsLine', { id })
   const memoryCount = tn('init.instructions.memories', memories, { count: memories })
   const topicCount = tn('init.instructions.topics', topics.length, { count: topics.length })
   if (topics.length === 0) return t('ui.instructions.roleItemsLine2', { id, topicCount, memoryCount })
-  const titles = cappedList(topics.map(topic => topic.title), MAX_SHOWN_TITLES)
+  const titles = cappedList(topics.map(topic => topic.title), withMax(words, MAX_SHOWN_TITLES))
 
   return t('ui.instructions.roleItemsLine3', { id, topicCount, titles, memoryCount })
 }
 
 /**
  * The review rows of the parts flow (G-02-1f), shown after the scope cards: per role, in role order, the topics it was
- * given (three titles, then how many more) and how many memories, or none, each followed by the rows `rowsAfter` gives
- * for that role (02-GAPS-B3 N3; none by default), then how many topics and memories no role was given, which stay with
- * the root session only.
+ * given (their titles as `words` allows: three, then how many more, on the TUI default, all on a pane surface; D-256,
+ * D-283) and how many memories, or none, each followed by the rows `rowsAfter` gives for that role (02-GAPS-B3 N3;
+ * none by default), then how many topics and memories no role was given, which stay with the root session only.
  */
 export function instructionReviewLines(
   roles: readonly Pick<RoleSpec, 'id'>[],
   topics: readonly InstructionTopic[],
   memories: readonly Pick<MemoryItem, 'id'>[],
   given: ReadonlyMap<string, readonly string[]>,
+  words: ListWords,
   rowsAfter: (roleId: string) => readonly string[] = () => [],
 ): string[] {
   const isGiven = (itemId: string, roleId: string): boolean => given.get(itemId)?.includes(roleId) === true
@@ -163,7 +170,7 @@ export function instructionReviewLines(
   const roleLine = (id: string): string => {
     const roleTopics = topics.filter(topic => isGiven(topic.id, id))
 
-    return roleItemsLine(id, roleTopics, memories.filter(memory => isGiven(memory.id, id)).length)
+    return roleItemsLine(id, roleTopics, memories.filter(memory => isGiven(memory.id, id)).length, words)
   }
 
   return [

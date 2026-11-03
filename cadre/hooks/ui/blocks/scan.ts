@@ -6,6 +6,7 @@
  */
 import type { RepoScan, ScanKind, SetupScan } from '../../../types'
 import { cardList, idsOrNone, shown } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { screenPath } from '../../paths'
 import { undecidedFacts } from '../../scan/repo'
@@ -84,11 +85,11 @@ function cadreSummary(cadre: RepoScan['cadre']): string {
   return t('ui.scan.cadreSummary', { dir: cadre.dir, manifestState: cadre.manifestState })
 }
 
-/** The plugin count, with their names listed as a card lists names when there are any. */
-function pluginSummary(plugins: readonly string[]): string {
+/** The plugin count, with their names listed as `words` lists names when there are any (D-256). */
+function pluginSummary(plugins: readonly string[], words: ListWords): string {
   if (plugins.length === 0) return '0'
 
-  const map = cardList(plugins.map(plugin => shown(plugin)), SCREEN_LIST_WORDS)
+  const map = cardList(plugins.map(plugin => shown(plugin)), words)
 
   return t('ui.scan.pluginSummary', { count: plugins.length, map })
 }
@@ -97,18 +98,18 @@ function pluginSummary(plugins: readonly string[]): string {
  * The scans as init shows them in the side pane before any role question (SCAN-01, SCAN-02, D-133): the repo part
  * (stack, frontend, backend, tests, E2E, an existing `.cadre/`, and the partial lines when the walk listed a deeper
  * folder only in part or stopped at its safety cap, D-137), then the user setup as names and counts only. Each setup
- * line gives its counts first and its name list last, and a list shows 12 names cleaned and capped, then counts the
- * rest, so a long list never pushes a count past the 240 code points a line keeps (B2). A CLAUDE.md file in the repo
- * is named with the folder name of `root` (screenPath, D-226). No setting value, file content or warning is part of
- * it.
+ * line gives its counts first and its name list last, and a list shows the names `words` allows, cleaned and capped:
+ * every name on a pane surface, 12 and how many more on the TUI default (listWordsOf, D-256), so a long list never
+ * pushes a count out of its line (B2). A CLAUDE.md file in the repo is named with the folder name of `root`
+ * (screenPath, D-226). No setting value, file content or warning is part of it.
  */
-export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string): string[] {
+export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string, words: ListWords): string[] {
   const stack = t('ui.scan.stack', { languages: idsOrNone(repo.languages, SCREEN_LIST_WORDS.none) })
   const sides = t('ui.scan.sides', {
     findingLabels: findingLabels(repo, 'fe'),
     findingLabelsB: findingLabels(repo, 'be'),
   })
-  const mcp = cardList(setup.mcp.map(server => shown(server.name)), SCREEN_LIST_WORDS)
+  const mcp = cardList(setup.mcp.map(server => shown(server.name)), words)
   const globalMd = setup.hasGlobalClaudeMd ? t('ui.scan.yes') : t('ui.scan.no')
 
   return [
@@ -118,12 +119,12 @@ export function scanSummaryLines(repo: RepoScan, setup: SetupScan, root: string)
     t('ui.scan.existingCadre', { cadreSummary: cadreSummary(repo.cadre) }),
     ...partialLines(repo),
     t('ui.scan.setupHeading'),
-    t('ui.scan.plugins', { pluginSummary: pluginSummary(setup.plugins) }),
+    t('ui.scan.plugins', { pluginSummary: pluginSummary(setup.plugins, words) }),
     t('ui.scan.setupCounts', { count: setup.skills.length, countB: setup.agents.length, mcp }),
     t('ui.scan.setupFiles', {
       globalMd,
       count: setup.memoryFiles.length,
-      map: cardList(setup.claudeMd.map(file => shown(screenPath(file, root))), SCREEN_LIST_WORDS),
+      map: cardList(setup.claudeMd.map(file => shown(screenPath(file, root))), words),
     }),
   ]
 }

@@ -10,6 +10,7 @@
 import type { AskContext, McpRef } from '../../../types'
 import { redactedText } from '../../core/redact'
 import { asSentence, cardList, clean, idsOrNone, shown, sortedUnique } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { UNCUT } from '../pane'
 
@@ -59,14 +60,20 @@ function roleIdsText(ids: readonly string[]): string {
 
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
- * session lists for it (mcpToolNamesOf), counted first, then 12 names and how many more, or `Tools: none listed`,
- * and the roles recommended for it, or none. No other field of the server or its tools is read (T-02.1-72).
+ * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
+ * on a pane surface, D-256), or `Tools: none listed`, and the roles recommended for it, or none. No other field of the
+ * server or its tools is read (T-02.1-72).
  */
-export function mcpServerContext(ref: McpRef, sessionTools: unknown, recommended: readonly string[]): AskContext {
+export function mcpServerContext(
+  ref: McpRef,
+  sessionTools: unknown,
+  recommended: readonly string[],
+  words: ListWords,
+): AskContext {
   const tools = mcpToolNamesOf(sessionTools, ref.name)
   const toolsLine = tools.length === 0 ? t('ui.assign.mcpServerContext') : t('ui.assign.mcpServerContext2', {
     count: tools.length,
-    tools: cardList(tools, SCREEN_LIST_WORDS),
+    tools: cardList(tools, words),
   })
 
   return {

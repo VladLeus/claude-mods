@@ -15,6 +15,7 @@ import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { reportText } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { t, tn } from '../../locales/t'
 import { planSummary, renderPlan } from '../../plan/text'
@@ -32,6 +33,7 @@ import { recommendationLines } from '../../ui/blocks/recommendations'
 import { scanWarningLines } from '../../ui/blocks/scan'
 import { PANE_PAGE_ROWS } from '../../ui/pane'
 import { PREVIEW_ROWS } from '../../ui/preview'
+import { listWordsOf } from '../../ui/surface'
 import type { Surface } from '../../ui/surface'
 import type { Draft, PlanResult, Reviewed } from '../draft'
 import { initReplyText } from '../initapply'
@@ -293,10 +295,10 @@ export function improverRunCount(draft: Draft, plan: Plan): number {
  * The review rows of the instruction parts (G-02-1f): per role the topics and memories it was given, and the topics
  * and memories kept with the root session only (instructionReviewLines, which gives its heading, then one row per
  * role in role order, then the kept row), with LINKED_MEMORIES_ROW right under the row of each role given at least
- * one memory and the role's privateFilesRow under that (its rowsAfter, 02-GAPS-B3 N3, S4); for the parts flow only,
- * none for the whole-file questions or none.
+ * one memory and the role's privateFilesRow under that (its rowsAfter, 02-GAPS-B3 N3, S4), the topic titles as
+ * `words` allows them (D-256, D-283); for the parts flow only, none for the whole-file questions or none.
  */
-function handoutLines(draft: Draft): string[] {
+function handoutLines(draft: Draft, words: ListWords): string[] {
   const handout = draft.instructions
   if (handout.kind !== 'parts') return []
   const { given } = handout
@@ -304,7 +306,7 @@ function handoutLines(draft: Draft): string[] {
   const hasMemory = (id: string): boolean => memories.some(memory => given.get(memory.id)?.includes(id) === true)
   const rowsAfter = (id: string): string[] => [...(hasMemory(id) ? [LINKED_MEMORIES_ROW] : []), privateFilesRow(id)]
 
-  return instructionReviewLines(draft.roles, handout.topics, memories, given, rowsAfter)
+  return instructionReviewLines(draft.roles, handout.topics, memories, given, words, rowsAfter)
 }
 
 /**
@@ -321,9 +323,14 @@ function handoutLines(draft: Draft): string[] {
  * cleaned and capped as a report cell is (decision #69 B7), and last, when claude-md-management is installed or
  * answered Install and the improver has a built file to run on, improverRunLine (improverRunCount, 02-GAPS-B3 S4).
  * Every line has its secret-like spans hidden (redactedText, E1, #163), so the review block and each page of its
- * context show none.
+ * context show none; its lists are capped by `words` (D-256).
  */
-function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, plan: Plan): string[] {
+function reviewLines(
+  draft: Draft,
+  scopes: ReadonlyMap<string, CompiledScope>,
+  plan: Plan,
+  words: ListWords,
+): string[] {
   const keys = draft.pluginInstalls.map(reportText).join(', ')
   const installLine = t('init.review.reviewLines', { keys })
   const rows = draft.roles.map(role => privateFilesRow(role.id))
@@ -339,7 +346,7 @@ function reviewLines(draft: Draft, scopes: ReadonlyMap<string, CompiledScope>, p
     t('init.review.rolesHeading'),
     ...draft.roles.map(role => t('init.review.roleRow', { title: role.title, id: role.id })),
     ...cardLines(draft.roles, scopes),
-    ...handoutLines(draft),
+    ...handoutLines(draft, words),
     ...privateRows,
     ...renderPlan(plan),
     policyLine(draft.policy),
@@ -388,16 +395,17 @@ function reviewPlanOf(draft: Draft): {
  * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
  * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). A pane surface
  * asks REVIEW_QUESTION with one line: the page's place, which the Review chip does not carry, when there is more than
- * one page, else the page's first line (D-255). An answer pageChoice cannot read is asked again on the same page with
- * refusalLine on top, or CHANGE_REFUSAL after Change something….
+ * one page, else the page's first line (D-255). Its lists are capped by `words` (D-256). An answer pageChoice cannot
+ * read is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change something….
  */
 function pagedAsk(
   draft: Draft,
   plan: Plan,
   page: number,
   rows: number,
+  words: ListWords,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan), rows)
+  const pages = reviewPages(reviewLines(draft, reviewPlanOf(draft).scopes, plan, words), rows)
   const at = Math.min(Math.max(0, page), pages.length - 1)
   const choices = pageChoices(at, pages.length)
   const labels = choices.map(choice => choice.label)
@@ -429,7 +437,7 @@ function reviewAskOf(
   plan: Plan,
   page: number,
 ): ChoiceAsk<ReviewChoice> & { readonly dismissedReason: string } {
-  return pagedAsk(draft, plan, page, pageRows(state.surface))
+  return pagedAsk(draft, plan, page, pageRows(state.surface), listWordsOf(state.surface))
 }
 
 /** The round's plan of the whole draft out, an io effect (planStep, run by init/run). */
@@ -464,7 +472,7 @@ function reviewAsked(
 function afterPlan(state: InitState, planned: PlanResult): InitState {
   const draft = fullDraft(state.draft)
   if (draft === null) return stageFailed(state)
-  const lines = reviewLines(draft, reviewPlanOf(draft).scopes, planned.plan)
+  const lines = reviewLines(draft, reviewPlanOf(draft).scopes, planned.plan, listWordsOf(state.surface))
 
   return reviewAsked(withOutputs(state, [{ kind: 'show', block: { key: 'review', lines } }]), planned, null, 1, 0)
 }

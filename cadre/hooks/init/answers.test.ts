@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RoleSpec, SkillRef } from '../../types'
+import { SCREEN_LIST_WORDS } from '../locales/t'
 import { EFFORTS } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { BIDI_OVERRIDE, PM, role, TL } from '../testkit'
+import { withMax } from '../ui/surface'
 import {
   ALL_ENV_OPTION,
   ALL_OPTION,
@@ -437,7 +439,7 @@ describe('answer parsers', () => {
   })
 
   test('envQuestion lists the scanned names and says that values are never stored', () => {
-    expect(envQuestion(['API_KEY', 'JIRA_URL'])).toBe(
+    expect(envQuestion(['API_KEY', 'JIRA_URL'], SCREEN_LIST_WORDS)).toBe(
       'Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)',
     )
   })
@@ -445,7 +447,7 @@ describe('answer parsers', () => {
   test('envQuestion cleans each name and cuts it to 60 code points', () => {
     const odd = `A${BIDI_OVERRIDE}B`
 
-    expect(envQuestion([odd, 'X'.repeat(70)])).toBe(
+    expect(envQuestion([odd, 'X'.repeat(70)], SCREEN_LIST_WORDS)).toBe(
       `Which env variables do roles carry? Names: AB, ${'X'.repeat(59)}… ` +
         '(values are never stored; e.g. API_KEY, or none)',
     )
@@ -461,11 +463,11 @@ describe('answer parsers', () => {
   })
 
   test('memoryQuestion words the question with the group label and the names found', () => {
-    expect(memoryQuestion('auto-memory', ['a.md', 'b.md'])).toBe(autoMemoryAsk('a.md, b.md'))
-    expect(memoryQuestion('project-claude-md', ['<repo>/CLAUDE.md'])).toBe(
+    expect(memoryQuestion('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS)).toBe(autoMemoryAsk('a.md, b.md'))
+    expect(memoryQuestion('project-claude-md', ['<repo>/CLAUDE.md'], SCREEN_LIST_WORDS)).toBe(
       'Which roles get the project CLAUDE.md (<repo>/CLAUDE.md)? (e.g. PM, TL, or none)',
     )
-    expect(memoryQuestion('global-claude-md', ['~/.claude/CLAUDE.md'])).toBe(
+    expect(memoryQuestion('global-claude-md', ['~/.claude/CLAUDE.md'], SCREEN_LIST_WORDS)).toBe(
       'Which roles get your global ~/.claude/CLAUDE.md and the files it imports (~/.claude/CLAUDE.md)? ' +
         '(e.g. PM, TL, or none)',
     )
@@ -473,17 +475,20 @@ describe('answer parsers', () => {
 
   test('memoryQuestion shows five names at most and counts the rest', () => {
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    const words = SCREEN_LIST_WORDS
 
-    expect(memoryQuestion('auto-memory', names.slice(0, 5))).toBe(autoMemoryAsk('a, b, c, d, e'))
-    expect(memoryQuestion('auto-memory', names.slice(0, 6))).toBe(autoMemoryAsk('a, b, c, d, e, +1 more'))
-    expect(memoryQuestion('auto-memory', names)).toBe(autoMemoryAsk('a, b, c, d, e, +2 more'))
+    expect(memoryQuestion('auto-memory', names.slice(0, 5), words)).toBe(autoMemoryAsk('a, b, c, d, e'))
+    expect(memoryQuestion('auto-memory', names.slice(0, 6), words)).toBe(autoMemoryAsk('a, b, c, d, e, +1 more'))
+    expect(memoryQuestion('auto-memory', names, words)).toBe(autoMemoryAsk('a, b, c, d, e, +2 more'))
   })
 
   test('memoryQuestion cleans each name to 60 code points, and with no name it leaves the brackets out', () => {
     const odd = `m${BIDI_OVERRIDE}.md`
 
-    expect(memoryQuestion('auto-memory', [odd, 'x'.repeat(61)])).toBe(autoMemoryAsk(`m.md, ${'x'.repeat(59)}…`))
-    expect(memoryQuestion('auto-memory', [])).toBe(
+    expect(memoryQuestion('auto-memory', [odd, 'x'.repeat(61)], SCREEN_LIST_WORDS)).toBe(
+      autoMemoryAsk(`m.md, ${'x'.repeat(59)}…`),
+    )
+    expect(memoryQuestion('auto-memory', [], SCREEN_LIST_WORDS)).toBe(
       'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)',
     )
   })
@@ -501,28 +506,31 @@ function envNames(count: number): string[] {
 
 describe('env question cap (G-02-5)', () => {
   test('cappedNames shows five names at most, then counts the rest; no name gives no text', () => {
-    expect(cappedNames(envNames(5))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05')
-    expect(cappedNames(envNames(6))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more')
-    expect(cappedNames(envNames(40))).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more')
-    expect(cappedNames([])).toBe('')
+    const five = withMax(SCREEN_LIST_WORDS, 5)
+    expect(cappedNames(envNames(5), five)).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05')
+    expect(cappedNames(envNames(6), five)).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more')
+    expect(cappedNames(envNames(40), five)).toBe('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more')
+    expect(cappedNames([], five)).toBe('')
   })
 
   test('cappedNames cleans each name it shows and cuts it to 60 code points', () => {
     const ellipsis = String.fromCodePoint(0x2026)
-    expect(cappedNames([`A${BIDI_OVERRIDE}B`, 'X'.repeat(70)])).toBe(`AB, ${'X'.repeat(59)}${ellipsis}`)
+    const five = withMax(SCREEN_LIST_WORDS, 5)
+    expect(cappedNames([`A${BIDI_OVERRIDE}B`, 'X'.repeat(70)], five)).toBe(`AB, ${'X'.repeat(59)}${ellipsis}`)
   })
 
   test('the env question lists all of 5 names, 5 of 6 with +1 more and 5 of 40 with +35 more', () => {
-    expect(envQuestion(envNames(5))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05'))
-    expect(envQuestion(envNames(6))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more'))
-    expect(envQuestion(envNames(40))).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more'))
+    const words = SCREEN_LIST_WORDS
+    expect(envQuestion(envNames(5), words)).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05'))
+    expect(envQuestion(envNames(6), words)).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more'))
+    expect(envQuestion(envNames(40), words)).toBe(envAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +35 more'))
   })
 
   test('the memory question keeps its text: the same cap in brackets, or no brackets with no name', () => {
-    expect(memoryQuestion('auto-memory', envNames(6))).toBe(
+    expect(memoryQuestion('auto-memory', envNames(6), SCREEN_LIST_WORDS)).toBe(
       autoMemoryAsk('NAME_01, NAME_02, NAME_03, NAME_04, NAME_05, +1 more'),
     )
-    expect(memoryQuestion('auto-memory', [])).toBe(
+    expect(memoryQuestion('auto-memory', [], SCREEN_LIST_WORDS)).toBe(
       'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)',
     )
   })
@@ -540,15 +548,15 @@ describe('the questions a pane surface asks with no names (D-283)', () => {
   test('the env question names no env variable: the pane lists every one', () => {
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
     expect(envPaneQuestion()).toBe(short)
-    expect(envQuestion(['API_KEY'])).not.toBe(short)
+    expect(envQuestion(['API_KEY'], SCREEN_LIST_WORDS)).not.toBe(short)
   })
 
   test('an instruction group question names the group and none of its files', () => {
-    expect(memoryPaneQuestion('auto-memory')).toBe(memoryQuestion('auto-memory', []))
+    expect(memoryPaneQuestion('auto-memory')).toBe(memoryQuestion('auto-memory', [], SCREEN_LIST_WORDS))
     expect(memoryPaneQuestion('project-claude-md')).toBe(
       'Which roles get the project CLAUDE.md? (e.g. PM, TL, or none)',
     )
-    expect(memoryPaneQuestion('global-claude-md')).toBe(memoryQuestion('global-claude-md', []))
+    expect(memoryPaneQuestion('global-claude-md')).toBe(memoryQuestion('global-claude-md', [], SCREEN_LIST_WORDS))
   })
 
   test('a skill group question names the group with no count or uses, its label cleaned and cut', () => {

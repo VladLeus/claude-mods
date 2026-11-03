@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
+import { PANE_LIST_WORDS, SCREEN_LIST_MAX, SCREEN_LIST_WORDS } from '../locales/t'
+import { CARD_LIST_WORDS } from '../scope/card'
 import { BIDI_OVERRIDE } from '../testkit'
 import {
   asciiLower,
@@ -8,6 +10,7 @@ import {
   clean,
   idLabel,
   idsOrNone,
+  MAX_CARD_LIST,
   pad,
   reportText,
   shown,
@@ -140,7 +143,7 @@ describe('shown and cardList', () => {
 
   test('cardList is none for no names and lists up to 12 names as they are', () => {
     const twelve = Array.from({ length: 12 }, (_, index) => `n${index + 1}`)
-    const words = { none: 'none', more: (count: number) => `+${count} more` }
+    const words = { none: 'none', more: (count: number) => `+${count} more`, max: 12 }
 
     expect(cardList([], words)).toBe('none')
     expect(cardList(['a'], words)).toBe('a')
@@ -149,9 +152,21 @@ describe('shown and cardList', () => {
 
   test('cardList of more than 12 names lists the first 12, then counts the rest', () => {
     const names = Array.from({ length: 15 }, (_, index) => `n${index + 1}`)
-    const words = { none: 'none', more: (count: number) => `+${count} more` }
+    const words = { none: 'none', more: (count: number) => `+${count} more`, max: 12 }
 
     expect(cardList(names, words)).toBe([...names.slice(0, 12), '+3 more'].join(', '))
+  })
+
+  test('cardList caps at its words: the screen and a card at 12, a pane surface shows every name (D-256)', () => {
+    const names = Array.from({ length: 14 }, (_, index) => `n${index + 1}`)
+    expect(cardList(names, SCREEN_LIST_WORDS)).toBe([...names.slice(0, 12), '+2 more'].join(', '))
+    expect(cardList(names, PANE_LIST_WORDS)).toBe(names.join(', '))
+    expect(cardList(names, CARD_LIST_WORDS)).toBe([...names.slice(0, 12), '+2 more'].join(', '))
+    expect([SCREEN_LIST_WORDS.max, CARD_LIST_WORDS.max, PANE_LIST_WORDS.max]).toEqual([12, MAX_CARD_LIST, Infinity])
+  })
+
+  test("the screen's cap SCREEN_LIST_MAX stays the card cap MAX_CARD_LIST (D-256)", () => {
+    expect(SCREEN_LIST_MAX).toBe(MAX_CARD_LIST)
   })
 })
 

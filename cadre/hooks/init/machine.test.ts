@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart } from '../../types'
 import type { GuardResult } from '../guards/repo'
+import { PANE_LIST_WORDS } from '../locales/t'
 import { scanWarnings } from '../scan/gather'
 import {
   DEFAULT_LOCATIONS,
@@ -106,7 +107,7 @@ describe('the guard and scan stages (D-230)', () => {
     const gathered = await scansOf(gitWorld())
     const next = nextStage(state, { kind: 'io', result: { id: 'scan', result: gathered } })
     const warnings = scanWarningLines(scanWarnings(DEFAULT_LOCATIONS, gathered))
-    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, '/repo'), ...warnings]
+    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS), ...warnings]
     expect(next.stage).toBe('history')
     expect(next.draft.gathered).toBe(gathered)
     expect(next.outputs).toEqual([{ kind: 'show', block: { key: 'scan', lines } }])

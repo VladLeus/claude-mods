@@ -21,7 +21,8 @@ import type {
 } from '../../../types'
 import { SUPPORTED_IDS } from '../../core/framework-id'
 import { redactedText } from '../../core/redact'
-import { cardList, clean, idsOrNone, MAX_CARD_LIST, pad, shown } from '../../core/text'
+import { cardList, clean, idsOrNone, pad, shown } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
 import { SCREEN_LIST_WORDS, t } from '../../locales/t'
 import { launcherPath, screenPath } from '../../paths'
@@ -89,21 +90,24 @@ function roleIdsText(ids: readonly string[]): string {
   return idsOrNone(ids.map(id => shown(id)), SCREEN_LIST_WORDS.none)
 }
 
-/** Items as indented rows, each cleaned: the first MAX_CARD_LIST, then a row that counts the rest. */
-function cappedRows(items: readonly string[]): string[] {
-  const rows = items.slice(0, MAX_CARD_LIST).map(item => `  ${shown(item)}`)
+/**
+ * Items as indented rows, each cleaned: the first `words.max`, then a row that counts the rest (D-256: every item on a
+ * pane surface, 12 on the TUI default).
+ */
+function cappedRows(items: readonly string[], words: ListWords): string[] {
+  const rows = items.slice(0, words.max).map(item => `  ${shown(item)}`)
   const rest = items.length - rows.length
 
-  return rest > 0 ? [...rows, `  ${SCREEN_LIST_WORDS.more(rest)}`] : rows
+  return rest > 0 ? [...rows, `  ${words.more(rest)}`] : rows
 }
 
 /**
  * The context of the history question (D-236): the scan block as the side pane shows it after the scans, the summary
- * lines (scanSummaryLines), then each scan warning (scanWarningLines).
+ * lines with the names `words` allows (scanSummaryLines, D-256), then each scan warning (scanWarningLines).
  */
-export function scanContext(locations: InitLocations, gathered: Gathered): AskContext {
+export function scanContext(locations: InitLocations, gathered: Gathered, words: ListWords): AskContext {
   const lines = [
-    ...scanSummaryLines(gathered.repo, gathered.setup, locations.root),
+    ...scanSummaryLines(gathered.repo, gathered.setup, locations.root, words),
     ...scanWarningLines(scanWarnings(locations, gathered)),
   ]
 
@@ -170,21 +174,23 @@ export function securityContext(keys: readonly string[]): AskContext {
 /** The display form of the global CLAUDE.md, as the instruction questions name it. */
 const GLOBAL_CLAUDE_MD_TEXT = '~/.claude/CLAUDE.md'
 
-/** The rows of a list of found names, or one `none` row with none (cappedRows). */
-function foundRows(items: readonly string[]): string[] {
-  return items.length === 0 ? [t('ui.context.foundRows')] : cappedRows(items)
+/** The rows of a list of found names as `words` caps them, or one `none` row with none (cappedRows, D-256). */
+function foundRows(items: readonly string[], words: ListWords): string[] {
+  return items.length === 0 ? [t('ui.context.foundRows')] : cappedRows(items, words)
 }
 
 /**
  * The context of the content consent (D-236): the instruction files and the memories init found, by name only, before
  * anything is read: the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules` and
  * AGENTS.md, then the memory files, MEMORY.md in any letter case left out, as the hand-out never offers it. A file in
- * the repo is named with the folder name of `root` (screenPath, D-226).
+ * the repo is named with the folder name of `root` (screenPath, D-226). Each list shows the names `words` allows
+ * (D-256).
  */
 export function instructionsContext(
   setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
   repo: Pick<InstructionSources, 'rules' | 'hasAgentsMd'>,
   root: string,
+  words: ListWords,
 ): AskContext {
   const files = [
     ...(setup.hasGlobalClaudeMd ? [GLOBAL_CLAUDE_MD_TEXT] : []),
@@ -195,9 +201,9 @@ export function instructionsContext(
   const memories = setup.memoryFiles.filter(name => !isMemoryIndexName(name))
   const lines = [
     t('ui.context.instructionsContext'),
-    ...foundRows(files),
+    ...foundRows(files, words),
     t('ui.context.instructionsContext2'),
-    ...foundRows(memories),
+    ...foundRows(memories, words),
   ]
 
   return { title: t('ui.context.instructionsContext3'), lines, kind: 'instructions' }
@@ -273,13 +279,14 @@ const MEMORY_GROUP_TITLES: Readonly<Record<InstructionGroup, string>> = Object.f
 const GLOBAL_GROUP_LINE = t('ui.context.globalGroupLine', { globalClaudeMdText: GLOBAL_CLAUDE_MD_TEXT })
 
 /**
- * The context of a whole-file question (D-63, D-236): the files of that group only, by name, the first MAX_CARD_LIST
- * and then how many more; the global CLAUDE.md, which the scan names by no file list, with the files it imports.
+ * The context of a whole-file question (D-63, D-236): the files of that group only, by name, the first `words.max`
+ * and then how many more (D-256: every file on a pane surface); the global CLAUDE.md, which the scan names by no file
+ * list, with the files it imports.
  */
-export function memoryGroupContext(group: InstructionGroup, names: readonly string[]): AskContext {
-  const shownNames = names.slice(0, MAX_CARD_LIST).map(name => shown(name))
+export function memoryGroupContext(group: InstructionGroup, names: readonly string[], words: ListWords): AskContext {
+  const shownNames = names.slice(0, words.max).map(name => shown(name))
   const rest = names.length - shownNames.length
-  const files = rest > 0 ? [...shownNames, SCREEN_LIST_WORDS.more(rest)] : shownNames
+  const files = rest > 0 ? [...shownNames, words.more(rest)] : shownNames
   const lines = group === 'global-claude-md' ? [GLOBAL_GROUP_LINE] : files
 
   return { title: MEMORY_GROUP_TITLES[group], lines, kind: 'memory-group' }
@@ -306,10 +313,10 @@ export function improverInstallContext(roleIds: readonly string[]): AskContext {
 
 /**
  * The context of the launcher start question (D-236): what the git root and the run folder mean as a start, then the
- * launcher of each role (launcherPath), 12 of them and how many more.
+ * launcher of each role (launcherPath), as many as `words` allows and how many more (D-256: all on a pane surface).
  */
-export function launchContext(roles: readonly RoleSpec[]): AskContext {
-  const map = cardList(roles.map(role => launcherPath(shown(role.id))), SCREEN_LIST_WORDS)
+export function launchContext(roles: readonly RoleSpec[], words: ListWords): AskContext {
+  const map = cardList(roles.map(role => launcherPath(shown(role.id))), words)
   const lines = [
     t('ui.context.launchContext'),
     t('ui.context.launchContext2'),
@@ -321,13 +328,14 @@ export function launchContext(roles: readonly RoleSpec[]): AskContext {
 
 /**
  * The context of the launcher folder question (D-236): the top-level folders the repo scan found code in, as candidate
- * folders, 12 and then how many more; with none, a line that says so.
+ * folders, as many as `words` allows and then how many more (D-256: all on a pane surface); with none, a line that
+ * says so.
  */
-export function launchDirContext(codeDirs: readonly string[]): AskContext {
+export function launchDirContext(codeDirs: readonly string[], words: ListWords): AskContext {
   const lines =
     codeDirs.length === 0
       ? [t('ui.context.launchDirContext')]
-      : [t('ui.context.launchDirContext2'), ...cappedRows(codeDirs.map(dir => `${dir}/`))]
+      : [t('ui.context.launchDirContext2'), ...cappedRows(codeDirs.map(dir => `${dir}/`), words)]
 
   return { title: t('ui.context.launchDirContext3'), lines, kind: 'launch-dir' }
 }

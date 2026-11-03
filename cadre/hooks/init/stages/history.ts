@@ -8,6 +8,7 @@
  * init/machine or init/run.
  */
 import type { InitLocations } from '../../../types'
+import type { ListWords } from '../../core/text'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { t, tn } from '../../locales/t'
@@ -25,6 +26,7 @@ import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../u
 import type { ChoiceAsk } from '../../ui/ask'
 import { scanContext } from '../../ui/blocks/context'
 import { scanContextLine } from '../../ui/blocks/scan'
+import { listWordsOf } from '../../ui/surface'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, SessionListing, StageDef } from '../state'
 
@@ -125,15 +127,17 @@ function historyDirOf(state: InitState): string | null {
 /**
  * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and the line of
  * what the repo scan found on its second line (scanContextLine); the two answers with the History chip and the scan
- * block as its own context (scanContext, D-236), which a pane surface asks with its first line in place of that line
- * (D-255), the answers its refusal lists, and the reason a dismissal cancels with.
+ * block as its own context (scanContext, its lists as `words` allows them, D-236, D-256), which a pane surface asks
+ * with its first line in place of that line (D-255), the answers its refusal lists, and the reason a dismissal cancels
+ * with.
  */
 function historyAsk(
   total: number,
   locations: InitLocations,
   gathered: Gathered,
+  words: ListWords,
 ): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
-  const context = scanContext(locations, gathered)
+  const context = scanContext(locations, gathered, words)
   const contextLine = scanContextLine(gathered.repo)
   const pane = paneQuestionOf(historyQuestion(total), contextLine, context.lines[0] ?? contextLine)
 
@@ -167,7 +171,7 @@ function skippedWith(state: InitState, note: string): InitState {
 function historyAsked(state: InitState, listing: SessionListing, question: string | null, tries: number): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
-  const ask = historyAsk(listing.total, locations, gathered)
+  const ask = historyAsk(listing.total, locations, gathered, listWordsOf(state.surface))
   const sub: InitState['sub'] = { kind: 'history', tries, listing }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -197,7 +201,8 @@ function afterConsent(state: InitState, answer: string | null): InitState {
     return stageFailed(state)
   }
   const { listing } = state.sub
-  const next = choiceAnswer(historyAsk(listing.total, locations, gathered), state.sub, answer)
+  const words = listWordsOf(state.surface)
+  const next = choiceAnswer(historyAsk(listing.total, locations, gathered, words), state.sub, answer)
   if (next.kind === 'again') return historyAsked(state, listing, next.question, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return withHints(state, 'skipped')

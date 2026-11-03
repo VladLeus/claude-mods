@@ -12,6 +12,7 @@ import type {
 } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { REDACTED } from '../../core/redact'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { NO_MEMORY_SUMMARY } from '../../scan/instructions/memories'
 import {
@@ -192,10 +193,10 @@ describe('instruction questions (G-02-1f)', () => {
 
   test('a topic question names the topic; its context line has the summary, recommended roles, then sources', () => {
     expect(topicQuestion(SECURITY_TOPIC)).toBe('Which roles get "Security rules"?')
-    expect(topicContextLine(SECURITY_TOPIC, PARTS, ['security'])).toBe(
+    expect(topicContextLine(SECURITY_TOPIC, PARTS, ['security'], SCREEN_LIST_WORDS)).toBe(
       'How secrets stay out of the repo. Recommended: security. From: ~/.claude/CLAUDE.md > Security.',
     )
-    expect(topicContextLine(GIT_TOPIC, PARTS, [])).toBe(
+    expect(topicContextLine(GIT_TOPIC, PARTS, [], SCREEN_LIST_WORDS)).toBe(
       'How commits are made. Recommended: none. From: ~/.claude/CLAUDE.md > Git.',
     )
   })
@@ -203,7 +204,7 @@ describe('instruction questions (G-02-1f)', () => {
   test('a topic context line names three sources, then how many more', () => {
     const many = ['A', 'B', 'C', 'D', 'E'].map((heading, at) => part(`P${at + 1}`, heading, `# ${heading}\n`))
     const topic = { id: 'T1', title: 'All', summary: 'Everything.', partIds: many.map(found => found.id) }
-    expect(topicContextLine(topic, many, ['tl', 'security'])).toBe(
+    expect(topicContextLine(topic, many, ['tl', 'security'], SCREEN_LIST_WORDS)).toBe(
       'Everything. Recommended: tl, security. ' +
         'From: ~/.claude/CLAUDE.md > A, ~/.claude/CLAUDE.md > B, ~/.claude/CLAUDE.md > C, +2 more.',
     )
@@ -212,11 +213,11 @@ describe('instruction questions (G-02-1f)', () => {
   test('a summary gets a final period; a long line keeps its whole Recommended sentence (S5, N1)', () => {
     const long = ['a', 'b', 'c'].map(letter => part(`P${letter}`, letter.repeat(80), 'x\n', `${letter.repeat(116)}.md`))
     const topic = { id: 'T1', title: 'Long', summary: 's'.repeat(160), partIds: long.map(found => found.id) }
-    const line = topicContextLine(topic, long, ['be', 'qa'])
+    const line = topicContextLine(topic, long, ['be', 'qa'], SCREEN_LIST_WORDS)
     expect(Array.from(line).length).toBeGreaterThan(400)
     expect(contextText(line)).toContain(`${'s'.repeat(160)}. Recommended: be, qa. From: `)
     const deploy = { ...SECURITY_TOPIC, summary: 'Deploy notes' }
-    expect(topicContextLine(deploy, PARTS, [])).toBe(
+    expect(topicContextLine(deploy, PARTS, [], SCREEN_LIST_WORDS)).toBe(
       'Deploy notes. Recommended: none. From: ~/.claude/CLAUDE.md > Security.',
     )
   })
@@ -229,13 +230,13 @@ describe('instruction questions (G-02-1f)', () => {
   })
 
   test('the topic items carry each topic question, context line, chip and recommended roles', () => {
-    const items = topicItems(SCAN, TOPICS, RECOMMENDED)
+    const items = topicItems(SCAN, TOPICS, RECOMMENDED, SCREEN_LIST_WORDS)
     expect(items.map(item => [item.id, item.question, item.header, item.recommended])).toEqual([
       ['T1', 'Which roles get "Security rules"?', 'Topic 1/2', ['security']],
       ['T2', 'Which roles get "Git and commits"?', 'Topic 2/2', ['tl']],
     ])
-    expect(items[0]?.contextLine).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security']))
-    expect(topicItems(SCAN, TOPICS, new Map()).map(item => item.recommended)).toEqual([[], []])
+    expect(items[0]?.contextLine).toBe(topicContextLine(SECURITY_TOPIC, PARTS, ['security'], SCREEN_LIST_WORDS))
+    expect(topicItems(SCAN, TOPICS, new Map(), SCREEN_LIST_WORDS).map(item => item.recommended)).toEqual([[], []])
   })
 
   test('a memory question names its file; its context line has its summary and the recommended roles', () => {
@@ -254,7 +255,7 @@ describe('instruction questions (G-02-1f)', () => {
   test('a secret-like span of a topic or memory summary is hidden in its question context line (WD-S5)', () => {
     const secret = ['token', 'ab12cd34ef56'].join('=')
     const topic = { ...SECURITY_TOPIC, summary: `Uses ${secret} on staging` }
-    expect(topicContextLine(topic, PARTS, [])).toBe(
+    expect(topicContextLine(topic, PARTS, [], SCREEN_LIST_WORDS)).toBe(
       `Uses token=${REDACTED} on staging. Recommended: none. From: ~/.claude/CLAUDE.md > Security.`,
     )
     const squad = memory('M1', 'squad.md', `Deploy with ${secret}`)

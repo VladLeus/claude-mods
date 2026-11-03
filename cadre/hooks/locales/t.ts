@@ -88,13 +88,27 @@ export function tn(base: PluralBase, count: number, values: SlotValues = {}): st
 }
 
 /**
- * The words of a list on screen: `none` for an empty list, and `more` for the last item of a capped list. core/text
- * ListWords takes this shape; t.ts imports no core type.
+ * The most names a list on the TUI default shows before it counts the rest (D-256): the same 12 as core/text
+ * MAX_CARD_LIST, which t.ts does not import (both are layer 0 and t.ts imports no core module); text.test checks the
+ * two stay equal.
+ */
+export const SCREEN_LIST_MAX = 12
+
+/**
+ * The words of a list on screen: `none` for an empty list, `more` for the last item of a capped list, and its cap,
+ * SCREEN_LIST_MAX names (D-256). core/text ListWords takes this shape; t.ts imports no core type.
  */
 export const SCREEN_LIST_WORDS = Object.freeze({
   none: t('ui.scan.none'),
   more: (count: number): string => t('ui.list.more', { count }),
+  max: SCREEN_LIST_MAX,
 })
+
+/**
+ * The words of a list in the pane of a pane surface (D-256): the screen's words with no cap, so the pane shows every
+ * name; the large safety caps on data read from disk stay where the data is read (D-231).
+ */
+export const PANE_LIST_WORDS = Object.freeze({ ...SCREEN_LIST_WORDS, max: Number.POSITIVE_INFINITY })
 
 /**
  * The field label a row template draws: the text before its first `: `, after the last slot before it, trimmed; ''

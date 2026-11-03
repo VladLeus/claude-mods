@@ -10,11 +10,13 @@ import type { LaunchStart, RoleSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText, shown } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { t } from '../../locales/t'
 import { isSafeRelativePath } from '../../paths'
 import { ASK_HEADERS, askedText, choiceAnswer, MAX_ASKS, orList, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { launchContext, launchDirContext } from '../../ui/blocks/context'
+import { listWordsOf } from '../../ui/surface'
 import { asking, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -113,11 +115,15 @@ const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
  * second line (launchContextLine), the three starts with the Launch chip and what the git root and the run folder
- * mean as its own context (launchContext, D-236), which a pane surface asks with its first line in place of that line
- * (D-255), parseLaunchChoice, what its refusal lists, and the reason a dismissal cancels with.
+ * mean as its own context (launchContext, its launcher map as `words` allows it, D-236, D-256), which a pane surface
+ * asks with its first line in place of that line (D-255), parseLaunchChoice, what its refusal lists, and the reason a
+ * dismissal cancels with.
  */
-function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
-  const context = launchContext(roles)
+function launchStartAsk(
+  roles: readonly RoleSpec[],
+  words: ListWords,
+): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
+  const context = launchContext(roles, words)
   const contextLine = launchContextLine(roles)
   const pane = paneQuestionOf(LAUNCH_START_QUESTION, contextLine, context.lines[0] ?? contextLine)
 
@@ -136,7 +142,7 @@ function launchStartAsk(roles: readonly RoleSpec[]): ChoiceAsk<LaunchChoice> & {
  * in place of LAUNCH_DIR_CONTEXT (D-255), `tries` so far.
  */
 function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
-  const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [])
+  const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [], listWordsOf(state.surface))
   const pane = paneQuestionOf(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT, context.lines[0] ?? LAUNCH_DIR_CONTEXT)
   const question = askedText(pane.asked, refusal)
   const sub: InitState['sub'] = { kind: 'launch-dir', tries }
@@ -164,7 +170,7 @@ function dirRefused(state: InitState, tries: number, answer: string, problem: st
 function afterStart(state: InitState, answer: string | null): InitState {
   const { roles } = state.draft
   if (state.sub.kind !== 'ask' || roles === undefined) return stageFailed(state)
-  const ask = launchStartAsk(roles)
+  const ask = launchStartAsk(roles, listWordsOf(state.surface))
   const next = choiceAnswer(ask, state.sub, answer)
   if (next.kind === 'again') return asking(state, next.question, ask.spec, next.sub.tries)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
@@ -224,7 +230,7 @@ export const launchStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const { roles } = state.draft
     if (roles === undefined) return stageFailed(state)
-    const ask = launchStartAsk(roles)
+    const ask = launchStartAsk(roles, listWordsOf(state.surface))
 
     return asking(state, ask.question, ask.spec, 1)
   },

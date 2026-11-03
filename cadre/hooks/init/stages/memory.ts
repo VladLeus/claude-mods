@@ -8,6 +8,7 @@
  * and the duration and model stages, and never imports init/machine or init/run.
  */
 import type { AskSpec, InstructionGroup, RoleSpec, SetupScan } from '../../../types'
+import type { ListWords } from '../../core/text'
 import { t } from '../../locales/t'
 import { screenPath } from '../../paths'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
@@ -69,17 +70,19 @@ export type MemoryNext =
  * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
  * files as its own context (memoryGroupContext, D-236), which a pane surface asks with its first line in place of that
  * line (D-255) and with memoryPaneQuestion, which names no file, in place of the question (D-283), a typed list of role
- * ids or titles (parseRoleList), so it takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal.
+ * ids or titles (parseRoleList), so it takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal. Its
+ * names, in the question and in the context, are capped by `words` (D-256).
  */
 function groupAsk(
   group: InstructionGroup,
   names: readonly string[],
   roles: readonly RoleSpec[],
+  words: ListWords,
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
-  const context = memoryGroupContext(group, names)
+  const context = memoryGroupContext(group, names, words)
   const contextLine = memoryContextLine(roles)
   const line = context.lines[0] ?? contextLine
-  const pane = paneQuestionOf(memoryQuestion(group, names), contextLine, line, memoryPaneQuestion(group))
+  const pane = paneQuestionOf(memoryQuestion(group, names, words), contextLine, line, memoryPaneQuestion(group))
 
   return {
     question: pane.asked,
@@ -96,8 +99,9 @@ function groupAsk(
 }
 
 /**
- * The question of the first group at or after `from` the scan found, asked the first time; after the last, the roles
- * with the groups they were given, in the order global, auto-memory, project, so the answers decide the whole list.
+ * The question of the first group at or after `from` the scan found, asked the first time, its names capped by `words`
+ * (D-256); after the last, the roles with the groups they were given, in the order global, auto-memory, project, so the
+ * answers decide the whole list.
  */
 function groupAt(
   roles: readonly RoleSpec[],
@@ -105,6 +109,7 @@ function groupAt(
   root: string,
   from: number,
   given: ReadonlyMap<InstructionGroup, readonly string[]>,
+  words: ListWords,
 ): MemoryNext {
   const at = INSTRUCTION_ORDER.findIndex((group, index) => index >= from && groupNames(group, setup, root) !== null)
   const group = INSTRUCTION_ORDER[at]
@@ -117,7 +122,7 @@ function groupAt(
 
     return { kind: 'done', roles: instructed }
   }
-  const ask = groupAsk(group, names, roles)
+  const ask = groupAsk(group, names, roles, words)
 
   return { kind: 'ask', question: ask.question, spec: ask.spec, cursor: { tries: 1, at, given } }
 }
@@ -125,11 +130,12 @@ function groupAt(
 /**
  * The instruction and memory questions (D-63, D-100) at their first question: for each group the scan found, in the
  * order the global ~/.claude/CLAUDE.md, the auto-memories for this repo, the project CLAUDE.md, one question names the
- * group and its files and asks which roles get it (groupAsk); a group the scan did not find is not asked, and with none
- * found every role gets no group. No file is read and no content is shown; the roles it is given never change.
+ * group and its files, capped by `words` (D-256), and asks which roles get it (groupAsk); a group the scan did not find
+ * is not asked, and with none found every role gets no group. No file is read and no content is shown; the roles it is
+ * given never change.
  */
-export function memoryEnter(roles: readonly RoleSpec[], setup: SetupScan, root: string): MemoryNext {
-  return groupAt(roles, setup, root, 0, new Map())
+export function memoryEnter(roles: readonly RoleSpec[], setup: SetupScan, root: string, words: ListWords): MemoryNext {
+  return groupAt(roles, setup, root, 0, new Map(), words)
 }
 
 /**
@@ -144,16 +150,17 @@ export function memoryAnswer(
   cursor: MemoryCursor,
   answer: string | null,
   root: string,
+  words: ListWords,
 ): MemoryNext {
   const group = INSTRUCTION_ORDER[cursor.at]
   const names = group === undefined ? null : groupNames(group, setup, root)
   if (group === undefined || names === null) return { kind: 'cancelled', reason: MEMORY_DISMISSED_REASON }
-  const ask = groupAsk(group, names, roles)
+  const ask = groupAsk(group, names, roles, words)
   const next = choiceAnswer(ask, cursor, answer)
   if (next.kind === 'again') {
     return { kind: 'ask', question: next.question, spec: ask.spec, cursor: { ...cursor, tries: next.sub.tries } }
   }
   if (next.kind === 'cancelled') return next
 
-  return groupAt(roles, setup, root, cursor.at + 1, new Map([...cursor.given, [group, next.value]]))
+  return groupAt(roles, setup, root, cursor.at + 1, new Map([...cursor.given, [group, next.value]]), words)
 }

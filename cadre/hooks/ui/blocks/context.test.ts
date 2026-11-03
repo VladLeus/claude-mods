@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Detection, InstructionPart, InstructionScan, RoleChange } from '../../../types'
 import { REDACTED } from '../../core/redact'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { rolesFromProposal } from '../../suggest/propose'
 import {
@@ -94,9 +95,9 @@ describe('question contexts (D-203, D-236)', () => {
     const repo = repoScan({ warnings: ['could not list src'] })
     const setup = emptySetupScan()
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup }
-    expect(scanContext(DEFAULT_LOCATIONS, gathered)).toEqual({
+    expect(scanContext(DEFAULT_LOCATIONS, gathered, SCREEN_LIST_WORDS)).toEqual({
       title: 'Scan',
-      lines: [...scanSummaryLines(repo, setup, '/repo'), 'warning: could not list src'],
+      lines: [...scanSummaryLines(repo, setup, '/repo', SCREEN_LIST_WORDS), 'warning: could not list src'],
       kind: 'scan',
     })
   })
@@ -137,7 +138,8 @@ describe('question contexts (D-203, D-236)', () => {
 
   test('instructionsContext lists the files and memories found by name, MEMORY.md left out', () => {
     const setup = { hasGlobalClaudeMd: true, claudeMd: ['<repo>/CLAUDE.md'], memoryFiles: ['MEMORY.md', 'squad.md'] }
-    expect(instructionsContext(setup, { rules: ['security.md'], hasAgentsMd: true }, '/repo')).toEqual({
+    const repo = { rules: ['security.md'], hasAgentsMd: true }
+    expect(instructionsContext(setup, repo, '/repo', SCREEN_LIST_WORDS)).toEqual({
       title: 'Instruction files',
       lines: [
         'Files found by name (nothing is read before a yes):',
@@ -151,7 +153,7 @@ describe('question contexts (D-203, D-236)', () => {
       kind: 'instructions',
     })
     const none = { hasGlobalClaudeMd: false, claudeMd: [], memoryFiles: [] }
-    expect(instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo').lines).toEqual([
+    expect(instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo', SCREEN_LIST_WORDS).lines).toEqual([
       'Files found by name (nothing is read before a yes):',
       '  none',
       'Memories:',
@@ -192,18 +194,18 @@ describe('question contexts (D-203, D-236)', () => {
   })
 
   test('memoryGroupContext lists the files of its group, the global CLAUDE.md by what it holds', () => {
-    expect(memoryGroupContext('global-claude-md', [])).toEqual({
+    expect(memoryGroupContext('global-claude-md', [], SCREEN_LIST_WORDS)).toEqual({
       title: 'Global CLAUDE.md',
       lines: ['~/.claude/CLAUDE.md and the files it imports'],
       kind: 'memory-group',
     })
-    expect(memoryGroupContext('auto-memory', ['a.md', 'b.md'])).toEqual({
+    expect(memoryGroupContext('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS)).toEqual({
       title: 'Auto-memories',
       lines: ['a.md', 'b.md'],
       kind: 'memory-group',
     })
     const many = Array.from({ length: 14 }, (_, at) => `<repo>/f${at}/CLAUDE.md`)
-    const project = memoryGroupContext('project-claude-md', many)
+    const project = memoryGroupContext('project-claude-md', many, SCREEN_LIST_WORDS)
     expect([project.title, project.lines.length, project.lines.at(-1)]).toEqual(['Project CLAUDE.md', 13, '+2 more'])
   })
 
@@ -224,7 +226,7 @@ describe('question contexts (D-203, D-236)', () => {
   })
 
   test('launchContext says what the git root and the run folder mean, then lists the launchers', () => {
-    expect(launchContext([templateRole('pm'), templateRole('be')])).toEqual({
+    expect(launchContext([templateRole('pm'), templateRole('be')], SCREEN_LIST_WORDS)).toEqual({
       title: 'Launch',
       lines: [
         'Git root: the top of this repo, the same for every launcher.',
@@ -237,7 +239,7 @@ describe('question contexts (D-203, D-236)', () => {
 
   test('launchDirContext lists the folders with code, 12 then how many more; with none it says so', () => {
     const dirs = Array.from({ length: 13 }, (_, at) => `d${String(at).padStart(2, '0')}`)
-    const context = launchDirContext(dirs)
+    const context = launchDirContext(dirs, SCREEN_LIST_WORDS)
     expect([context.title, context.kind, context.lines[0], context.lines[1]]).toEqual([
       'Launch folder',
       'launch-dir',
@@ -245,7 +247,7 @@ describe('question contexts (D-203, D-236)', () => {
       '  d00/',
     ])
     expect([context.lines.length, context.lines.at(-1)]).toEqual([14, '  +1 more'])
-    expect(launchDirContext([]).lines).toEqual(['No folder with code was found in this repo.'])
+    expect(launchDirContext([], SCREEN_LIST_WORDS).lines).toEqual(['No folder with code was found in this repo.'])
   })
 
   test('reviewContext is the review block, each line cleaned as a report cell (T-02.1-71)', () => {
@@ -293,7 +295,7 @@ describe('context lines kept whole (#163)', () => {
     const topic = { ...SECURITY_TOPIC, summary: wide }
     const scan: InstructionScan = { parts: [PART], files: [PART.file], memories: [], warnings: [] }
     const contexts = [
-      scanContext(DEFAULT_LOCATIONS, gathered),
+      scanContext(DEFAULT_LOCATIONS, gathered, SCREEN_LIST_WORDS),
       rolesContext([templateRole('be', { purpose: wide })], []),
       detectionContext([detection]),
       securityContext([wide]),

@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { InstructionScan } from '../../../types'
 import { sha256Hex } from '../../core/hash'
 import { contentContextLine, topicContextLine } from '../../init/stages/instructions'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { fallbackTopics, topicsPrompt } from '../../suggest/topics'
 import { emptySetupScan, entry, link, memIo, memWorld, RECOMMENDED, TOPICS } from '../../testkit'
 import type { MemWorld } from '../../testkit'
@@ -413,7 +414,7 @@ describe('readInstructionFiles', () => {
       `    from: ${shownFile} > X`,
       `    from: ${shownFile} > Y`,
     ])
-    const contexts = topics.map(topic => topicContextLine(topic, scan.parts, []))
+    const contexts = topics.map(topic => topicContextLine(topic, scan.parts, [], SCREEN_LIST_WORDS))
     expect(contexts.filter(line => line.includes(`From: ${'d'.repeat(100)}`))).toHaveLength(2)
     expect(contexts.filter(line => line.includes(`${stem}x.md >`) || line.includes(`${stem}y.md >`))).toEqual([])
     expect(topicsPrompt(scan.parts, [])).toContain(`P2 | ${shownFile} | X | # X`)

@@ -9,10 +9,12 @@
 import type { Effort, InstructionGroup, RoleSpec, SkillRef } from '../../types'
 import { redactSecrets } from '../core/redact'
 import { clean, idsOrNone, sortedUnique } from '../core/text'
+import type { ListWords } from '../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../locales/t'
 import { EFFORTS, isModelName, MODEL_ALIASES } from '../roles/validate'
 import { HISTORY_MAX_SESSIONS } from '../scan/history'
 import { ownSkillId, skillCount } from '../suggest/skills'
+import { withMax } from '../ui/surface'
 import type { NameAssignment, SkillGroup } from './assign-rules'
 
 /** The dialog button that gives an item to no role. A typed answer of the same words counts the same, in any case. */
@@ -308,29 +310,32 @@ export function parseEnvNames(answer: string, available: readonly string[]): rea
   return sortedUnique(words)
 }
 
-/** The most scanned names a question shows before it counts the rest: the env and memory questions (D-135). */
+/**
+ * The most scanned names the env and memory questions show on the TUI default before they count the rest (D-135);
+ * a pane surface asks them with no name (D-283).
+ */
 const MAX_SHOWN_NAMES = 5
 
 /**
- * The scanned names as a question shows them (D-135): the first MAX_SHOWN_NAMES, each cleaned and cut to 60 code
- * points, then `+N more` when more remain, joined with `, `; empty with no name. It only shapes the text: a name past
- * the fifth is still an answer the question takes.
+ * The scanned names as a question shows them (D-135): the first `words.max`, each cleaned and cut to 60 code points,
+ * then the more word of `words` when more remain, joined with `, `; empty with no name (D-256). It only shapes the
+ * text: a name past the cap is still an answer the question takes.
  */
-export function cappedNames(names: readonly string[]): string {
-  const shown = names.slice(0, MAX_SHOWN_NAMES).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
+export function cappedNames(names: readonly string[], words: ListWords): string {
+  const shown = names.slice(0, words.max).map(name => clean(name, MAX_SHOWN_NAME_CHARS))
   const rest = names.length - shown.length
-  const items = rest > 0 ? [...shown, SCREEN_LIST_WORDS.more(rest)] : shown
+  const items = rest > 0 ? [...shown, words.more(rest)] : shown
 
   return items.join(', ')
 }
 
 /**
  * The question for the env variable names roles carry (D-60, D-135). It shows the scanned names as cappedNames gives
- * them, at most five and then how many more; the side pane lists every name before it is asked. Values are never
- * read, so none can be shown.
+ * them, at most five and then how many more on the TUI default (withMax of `words`, D-256); the side pane lists every
+ * name before it is asked. Values are never read, so none can be shown.
  */
-export function envQuestion(names: readonly string[]): string {
-  const shown = cappedNames(names)
+export function envQuestion(names: readonly string[], words: ListWords): string {
+  const shown = cappedNames(names, withMax(words, MAX_SHOWN_NAMES))
 
   return t('init.answers.envQuestion', { shown, none: NONE_OPTION.toLowerCase() })
 }
@@ -353,22 +358,25 @@ export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Ob
 /** The hint that ends a memory question. */
 const MEMORY_ANSWER_HINT = t('init.answers.memoryAnswerHint', { none: NONE_OPTION.toLowerCase() })
 
-/** The names a memory question shows, in brackets, as cappedNames gives them. Empty with no name. */
-function shownNames(names: readonly string[]): string {
+/**
+ * The names a memory question shows, in brackets, as cappedNames gives them, at most five on the TUI default (withMax
+ * of `words`, D-256). Empty with no name.
+ */
+function shownNames(names: readonly string[], words: ListWords): string {
   if (names.length === 0) return ''
 
-  return t('init.answers.shownNames', { cappedNames: cappedNames(names) })
+  return t('init.answers.shownNames', { cappedNames: cappedNames(names, withMax(words, MAX_SHOWN_NAMES)) })
 }
 
 /**
  * The question for an instruction group (D-63): which roles get the global CLAUDE.md files, the auto-memories or the
- * project CLAUDE.md. It shows the group and the names found, the first five cleaned and cut to 60 code points each and
- * the rest counted; the content is never shown.
+ * project CLAUDE.md. It shows the group and the names found, the first five on the TUI default (`words`, D-256)
+ * cleaned and cut to 60 code points each and the rest counted; the content is never shown.
  */
-export function memoryQuestion(group: InstructionGroup, names: readonly string[]): string {
+export function memoryQuestion(group: InstructionGroup, names: readonly string[], words: ListWords): string {
   return t('init.answers.memoryQuestion', {
     instructionLabels: INSTRUCTION_LABELS[group],
-    shownNames: shownNames(names),
+    shownNames: shownNames(names, words),
     memoryAnswerHint: MEMORY_ANSWER_HINT,
   })
 }

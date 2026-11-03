@@ -58,7 +58,7 @@ import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
 import { infraPluginWorld, manyNamesWorld, tableMatchWorld } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
-import { t } from '../locales/t'
+import { PANE_LIST_WORDS, t } from '../locales/t'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths } from '../plan/plan'
 import { DRY_RUN_NOTE, renderPlan } from '../plan/text'
@@ -327,7 +327,7 @@ describe('runInit', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(gitWorld({ locations, facts }), {}).io, locations, false)
-    const summary = scanSummaryLines(gathered.repo, gathered.setup, '/repo')
+    const summary = scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS)
     const warnings = scanWarningLines(scanWarnings(locations, gathered))
     expect(warnings.slice(0, 2)).toEqual([
       'warning: the root was given through a link',
@@ -347,7 +347,7 @@ describe('runInit', () => {
     const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
     expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
     expect(events[1]).toBe('show scan')
-    expect(run.shown[0]?.lines).toEqual(scanSummaryLines(gathered.repo, gathered.setup, '/repo'))
+    expect(run.shown[0]?.lines).toEqual(scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS))
   })
 
   test('a desktop app connector in the session tools is left out with one line in the scan block (R2)', async () => {

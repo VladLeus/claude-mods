@@ -20,6 +20,7 @@ import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skill
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
+import { listWordsOf } from '../../ui/surface'
 import { assignToRoles, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
@@ -111,7 +112,7 @@ function mcpStart(state: InitState, plan: AssignPlan, recommended: ReadonlyMap<s
   const { names } = plan.mcp
   if (names.length === 0) return skillsStart(state, plan, [])
   const refs = names.map(name => mcpRefOf(plan.setup.mcp, name))
-  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles)
+  const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface))
 
   return mcpHandedOut(state, plan, handoutEnter(mcpEntry(names.length), items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { McpRef } from '../../../types'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import {
   mcpGroupContext,
   mcpServerContext,
@@ -43,7 +44,7 @@ describe('MCP server contexts (D-211)', () => {
   })
 
   test('a .mcp.json server lists its source, its tool names and the recommended roles, and nothing else', () => {
-    expect(mcpServerContext(GITHUB, TOOLS, ['be', 'qa'])).toEqual({
+    expect(mcpServerContext(GITHUB, TOOLS, ['be', 'qa'], SCREEN_LIST_WORDS)).toEqual({
       title: 'MCP: github',
       lines: ['Source: .mcp.json', 'Tools: 2 (create_issue, list_prs)', 'Recommended: be, qa'],
       kind: 'mcp-server',
@@ -51,7 +52,7 @@ describe('MCP server contexts (D-211)', () => {
   })
 
   test('a server the session lists no tool for says so, and no recommendation reads none', () => {
-    expect(mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, []).lines).toEqual([
+    expect(mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS).lines).toEqual([
       'Source: session',
       'Tools: none listed',
       'Recommended: none',
@@ -60,10 +61,10 @@ describe('MCP server contexts (D-211)', () => {
 
   test('50 tools show 12 names, then how many more (T-02.1-73); a name never adds a line (T-02.1-71)', () => {
     const many = Array.from({ length: 50 }, (_, at) => `mcp__big__t${String(at).padStart(2, '0')}`)
-    const tools = mcpServerContext({ name: 'big', source: 'session' }, many, []).lines[1]
+    const tools = mcpServerContext({ name: 'big', source: 'session' }, many, [], SCREEN_LIST_WORDS).lines[1]
     expect(tools).toBe('Tools: 50 (t00, t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, +38 more)')
     const newline = String.fromCodePoint(10)
-    const forged = mcpServerContext({ name: `x${newline}y`, source: 'project' }, [], [])
+    const forged = mcpServerContext({ name: `x${newline}y`, source: 'project' }, [], [], SCREEN_LIST_WORDS)
     expect([forged.title, forged.lines.length]).toEqual(['MCP: xy', 3])
   })
 })

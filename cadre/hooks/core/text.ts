@@ -32,9 +32,14 @@ export function isChangedByClean(value: string, maxChars: number): boolean {
 
 /**
  * The words a list is shown with, which the caller takes from the table its text belongs to: `none` for an empty list,
- * and `more` for the last item of a capped list, which counts the names it leaves out.
+ * `more` for the last item of a capped list, which counts the names it leaves out, and `max`, the most names it shows
+ * before `more` (D-256): a card's and the screen's MAX_CARD_LIST, every name on a pane surface.
  */
-export type ListWords = { readonly none: string; readonly more: (count: number) => string }
+export type ListWords = {
+  readonly none: string
+  readonly more: (count: number) => string
+  readonly max: number
+}
 
 /**
  * Ids or names as a row or a context line names them: joined with `, `, or the caller's word for none when there are
@@ -139,17 +144,18 @@ export function shown(value: string, maxChars = MAX_SHOWN_CHARS): string {
 }
 
 /**
- * A list as a card line or rule shows it: the caller's none word when empty, else the names, past 12 of them the first
- * 12 and the caller's more word, which counts the rest. A rule passes each scanned name through `shown` first. A line
- * can still pass the 240 code points a card line keeps, so a rule puts its fixed text before a list, or on its own
- * line, never after it (B6).
+ * A list as a card line, a rule or a screen shows it: the caller's none word when empty, else the names, past
+ * `words.max` of them the first `words.max` and the caller's more word, which counts the rest (D-256: a card keeps
+ * MAX_CARD_LIST, a pane surface shows every name). A rule passes each scanned name through `shown` first. A line can
+ * still pass the 240 code points a card line keeps, so a rule puts its fixed text before a list, or on its own line,
+ * never after it (B6).
  */
 export function cardList(names: readonly string[], words: ListWords): string {
   if (names.length === 0) return words.none
-  const rest = names.length - MAX_CARD_LIST
+  const rest = names.length - words.max
   if (rest <= 0) return names.join(', ')
 
-  return [...names.slice(0, MAX_CARD_LIST), words.more(rest)].join(', ')
+  return [...names.slice(0, words.max), words.more(rest)].join(', ')
 }
 
 /**

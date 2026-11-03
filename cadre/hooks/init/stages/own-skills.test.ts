@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, McpRef, RoleSpec, SetupScan, SkillRef } from '../../../types'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import {
   EMPTY_FACTS,
@@ -347,7 +348,7 @@ describe('the MCP hand-out (D-250)', () => {
       { name: 'sentry', source: 'project' },
     ]
     const tools = ['mcp__github__search', 'mcp__sentry__issues']
-    const items = mcpServerItems(servers, tools, new Map([['github', ['tl']]]), roles)
+    const items = mcpServerItems(servers, tools, new Map([['github', ['tl']]]), roles, SCREEN_LIST_WORDS)
     expect(items.map(item => [item.id, item.question, item.header, item.recommended])).toEqual([
       ['github', 'Which roles get the github MCP server? (e.g. BE, QA, or none)', 'MCP 1/2', ['tl']],
       ['sentry', 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)', 'MCP 2/2', []],

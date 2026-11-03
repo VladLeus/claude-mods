@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, RoleSpec, SetupScan } from '../../../types'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { emptySetupScan, FULL_SCAN, memIo, memWorld, roleIn, valueOf } from '../../testkit'
 import { askOnce, NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
@@ -19,9 +20,10 @@ async function groupsOver(
   roles: readonly RoleSpec[],
   setup: SetupScan,
 ): Promise<StepResult<readonly RoleSpec[]>> {
-  let next = memoryEnter(roles, setup, '/repo')
+  let next = memoryEnter(roles, setup, '/repo', SCREEN_LIST_WORDS)
   while (next.kind === 'ask') {
-    next = memoryAnswer(roles, setup, next.cursor, await askOnce(io, next.question, next.spec), '/repo')
+    const answer = await askOnce(io, next.question, next.spec)
+    next = memoryAnswer(roles, setup, next.cursor, answer, '/repo', SCREEN_LIST_WORDS)
   }
 
   return next.kind === 'done' ? { kind: 'accepted', value: next.roles } : next
@@ -132,7 +134,8 @@ describe('the whole-file question cursor (D-230)', () => {
   const roles = proposeRoles(FULL_SCAN).roles
 
   test('memoryEnter asks the first group the scan found, and with none found the roles get no group', () => {
-    const first = memoryEnter(roles, emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] }), '/repo')
+    const setup = emptySetupScan({ memoryFiles: ['a.md'], claudeMd: ['<repo>/CLAUDE.md'] })
+    const first = memoryEnter(roles, setup, '/repo', SCREEN_LIST_WORDS)
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
     const asked = withContext(question, memoryContextLine(roles))
     const short = 'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)'
@@ -146,7 +149,7 @@ describe('the whole-file question cursor (D-230)', () => {
         acceptsTyped: true,
       },
     ])
-    const none = memoryEnter(roles, emptySetupScan(), '/repo')
+    const none = memoryEnter(roles, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
     expect(none.kind === 'done' ? none.roles.map(role => role.instructions) : none).toEqual(roles.map(() => []))
   })
 })

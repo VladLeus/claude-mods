@@ -11,6 +11,7 @@
 import type { AskContext, McpRef, RoleSpec, SkillRef } from '../../../types'
 import { redactSecrets } from '../../core/redact'
 import { asSentence, clean, compareText, idsOrNone } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, paneQuestionOf } from '../../ui/ask'
@@ -236,14 +237,16 @@ export function mcpEntry(count: number): HandoutEntry {
 /**
  * Each MCP server as a hand-out item (D-250), in the order given: its name as its id, its question (mcpQuestion) with
  * the team's role ids on the second line (mcpContextLine), the chip `MCP <i>/<n>`, the roles `recommended` gives it by
- * name, none when it gives none, its own context: its source, the tools the session lists for it and those roles
- * (mcpServerContext, D-211), and the line of those roles as the line a pane surface asks (D-255).
+ * name, none when it gives none, its own context: its source, the tools the session lists for it as `words` allows
+ * them and those roles (mcpServerContext, D-211, D-256), and the line of those roles as the line a pane surface asks
+ * (D-255).
  */
 export function mcpServerItems(
   servers: readonly McpRef[],
   toolNames: unknown,
   recommended: ReadonlyMap<string, readonly string[]>,
   roles: readonly RoleSpec[],
+  words: ListWords,
 ): HandoutItem[] {
   return servers.map((ref, index) => {
     const roleIds = recommended.get(ref.name) ?? []
@@ -254,7 +257,7 @@ export function mcpServerItems(
       contextLine: mcpContextLine(roles),
       header: countedChip(t('init.assign.mcpChip'), index + 1, servers.length),
       recommended: roleIds,
-      context: mcpServerContext(ref, toolNames, roleIds),
+      context: mcpServerContext(ref, toolNames, roleIds, words),
       paneLine: t('ui.assign.mcpServerContext4', { roleIds: idsOrNone(roleIds, SCREEN_LIST_WORDS.none) }),
     }
   })

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { InitIo, InitLocations, PortEntry } from '../../../types'
+import { PANE_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { listSessions, scanHistory } from '../../scan/history'
 import type { HistoryScan } from '../../scan/history'
@@ -115,7 +116,7 @@ function historyAt(locations: InitLocations = DEFAULT_LOCATIONS): InitState {
  * surface asks the question for `total` sessions with its first line in place of SCAN_CONTEXT (D-255).
  */
 function scanAskContext(total: number): unknown {
-  const lines = scanSummaryLines(repoScan(), emptySetupScan(), '/repo')
+  const lines = scanSummaryLines(repoScan(), emptySetupScan(), '/repo', PANE_LIST_WORDS)
   const pane = { asked: historyAsked(total), text: withContext(historyQuestion(total), lines[0] ?? '') }
 
   return { title: 'Scan', lines, kind: 'scan', pane }
@@ -399,7 +400,7 @@ describe('the history stage (D-230)', () => {
     const repo = repoScan({ warnings: ['could not list src'] })
     const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo, setup: emptySetupScan() }
     const state = historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, gathered }))
-    const lines = [...scanSummaryLines(repo, emptySetupScan(), '/repo'), 'warning: could not list src']
+    const lines = [...scanSummaryLines(repo, emptySetupScan(), '/repo', PANE_LIST_WORDS), 'warning: could not list src']
     const asking = nextStage(state, listed(ONE_SESSION))
     const pane = { asked: historyAsked(1), text: withContext(historyQuestion(1), lines[0] ?? '') }
     expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', pane })

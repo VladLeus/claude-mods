@@ -17,7 +17,7 @@ import type {
   SetupScan,
   SkillRef,
 } from '../../types'
-import { cardList, reportText, shown, sortedUnique } from '../core/text'
+import { cardList, MAX_CARD_LIST, reportText, shown, sortedUnique } from '../core/text'
 import type { ListWords } from '../core/text'
 import { adapterOf } from '../framework/registry'
 import { ARTIFACT } from '../locales/artifact'
@@ -36,10 +36,14 @@ import {
 } from './lint'
 import type { Refusal } from './lint'
 
-/** The words of a scope card or INDEX.md list (core/text cardList): generated-file text, so ARTIFACT words (D-221). */
+/**
+ * The words of a scope card or INDEX.md list (core/text cardList): generated-file text, so ARTIFACT words (D-221), and
+ * the MAX_CARD_LIST cap on every surface (D-256: only pane blocks lose it).
+ */
 export const CARD_LIST_WORDS: ListWords = Object.freeze({
   none: ARTIFACT.cardNone,
   more: (count: number) => fill(ARTIFACT.cardMore, { count }),
+  max: MAX_CARD_LIST,
 })
 
 /**

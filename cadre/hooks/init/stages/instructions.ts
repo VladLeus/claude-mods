@@ -21,6 +21,7 @@ import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { redactedText } from '../../core/redact'
 import { asSentence, idsOrNone, shown } from '../../core/text'
+import type { ListWords } from '../../core/text'
 import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
@@ -29,6 +30,7 @@ import { ASK_HEADERS, choiceAnswer, countedChip, paneQuestionOf, quotedLabels } 
 import type { ChoiceAsk } from '../../ui/ask'
 import { instructionPartsContext, instructionsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
+import { listWordsOf, withMax } from '../../ui/surface'
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
@@ -144,7 +146,7 @@ export function instructionsEntry(scan: InstructionScan, topics: readonly Instru
 /** Why init cancels when a question of the instruction hand-out is dismissed or not answered (A1, D-45). */
 export const HANDOUT_DISMISSED_REASON = t('init.instructions.handoutDismissedReason')
 
-/** The most sources a topic's context line names before it counts the rest. */
+/** The most sources a topic context line names on the TUI default before it counts the rest (D-256: a pane, all). */
 const MAX_SHOWN_SOURCES = 3
 
 /**
@@ -158,15 +160,18 @@ export function topicQuestion(topic: InstructionTopic): string {
 /**
  * The context line of a topic's question (G-02-1f Part by part, D-136): its summary, its secret-like spans hidden
  * (redactedText, E1, #163), as a sentence (asSentence, 02-GAPS-B2 N1), the roles the model recommended for it, or
- * none, then the file and heading of its first three parts, each cut as shown text, and how many more. The roles come
- * before the sources, so the context cap can only cut the sources (02-GAPS-B2 S5).
+ * none, then the file and heading of its parts, each cut as shown text, the first three and how many more on the TUI
+ * default, all on a pane surface (`words`, withMax, D-256). The roles come before the sources, so the context cap can
+ * only cut the sources (02-GAPS-B2 S5).
  */
 export function topicContextLine(
   topic: InstructionTopic,
   parts: readonly InstructionPart[],
   recommended: readonly string[],
+  words: ListWords,
 ): string {
-  const sources = cappedList(topicParts(topic, parts).map(part => shown(sourceText(part))), MAX_SHOWN_SOURCES)
+  const named = topicParts(topic, parts).map(part => shown(sourceText(part)))
+  const sources = cappedList(named, withMax(words, MAX_SHOWN_SOURCES))
 
   return t('init.instructions.topicContextLine', {
     asSentence: asSentence(redactedText(topic.summary)),
@@ -186,12 +191,13 @@ export function topicHeader(position: number, count: number): string {
 /**
  * Each topic as a hand-out item (G-02-1f Part by part): its question, context line, chip, the roles recommended for
  * it, none when the recommendation gave it none, its own context, that topic only (topicContext, D-236), and the line
- * of those roles as the line a pane surface asks (D-255).
+ * of those roles as the line a pane surface asks (D-255); its sources are capped by `words` (D-256).
  */
 export function topicItems(
   scan: InstructionScan,
   topics: readonly InstructionTopic[],
   recommended: ReadonlyMap<string, readonly string[]>,
+  words: ListWords,
 ): HandoutItem[] {
   return topics.map((topic, index) => {
     const ids = recommended.get(topic.id) ?? []
@@ -199,7 +205,7 @@ export function topicItems(
     return {
       id: topic.id,
       question: topicQuestion(topic),
-      contextLine: topicContextLine(topic, scan.parts, ids),
+      contextLine: topicContextLine(topic, scan.parts, ids, words),
       header: topicHeader(index + 1, topics.length),
       recommended: ids,
       context: topicContext(topic, scan.parts, ids, index + 1, topics.length),
@@ -312,15 +318,16 @@ function instructedDone(state: InitState, instructed: Instructed): InitState {
  * The content consent (G-02-1f "Consent first", D-134): CONTENT_QUESTION with what init found on its second line
  * (contentContextLine: the setup scan, and the rule files and AGENTS.md by name), No, skip it first, the Instructions
  * chip, the files and memories found by name as its own context (instructionsContext, D-236), which a pane surface
- * asks with its first line in place of that line (D-255), the repo by the folder name of `root` (D-226), and
- * CONTENT_DISMISSED_REASON for a dismissal.
+ * asks with its first line in place of that line (D-255), the repo by the folder name of `root` (D-226), its lists
+ * capped by `words` (D-256), and CONTENT_DISMISSED_REASON for a dismissal.
  */
 function contentAsk(
   setup: SetupScan,
   repo: RepoNames,
   root: string,
+  words: ListWords,
 ): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
-  const context = instructionsContext(setup, repo, root)
+  const context = instructionsContext(setup, repo, root, words)
   const contextLine = contentContextLine(setup, repo)
   const pane = paneQuestionOf(CONTENT_QUESTION, contextLine, context.lines[0] ?? contextLine)
 
@@ -345,7 +352,7 @@ function contentAsked(
   tries: number,
   question: string | null,
 ): InitState {
-  const ask = contentAsk(input.setup, repo, input.locations.root)
+  const ask = contentAsk(input.setup, repo, input.locations.root, listWordsOf(state.surface))
   const asking: InitState = { ...state, sub: { kind: 'content', tries, repo } }
 
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
@@ -360,9 +367,9 @@ function grouped(state: InitState, keep: InstructionHandout, next: MemoryNext): 
   return withEffect(asking, { kind: 'ask', question: next.question, spec: next.spec })
 }
 
-/** The whole-file questions of D-63 (memoryEnter), handed out as `keep`. */
+/** The whole-file questions of D-63 (memoryEnter), handed out as `keep`, their names capped for the run's surface. */
 function wholeFiles(state: InitState, input: InstructionInput, keep: InstructionHandout): InitState {
-  return grouped(state, keep, memoryEnter(input.roles, input.setup, input.locations.root))
+  return grouped(state, keep, memoryEnter(input.roles, input.setup, input.locations.root, listWordsOf(state.surface)))
 }
 
 /**
@@ -394,7 +401,8 @@ function handOutParts(state: InitState, input: InstructionInput, found: PartsFou
   const { scan, topics, recommended } = found
   const lines = instructionLines(scan, topics, recommended)
   const shownBlock = withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }])
-  const items = [...topicItems(scan, topics, recommended), ...memoryItems(scan.memories, recommended)]
+  const words = listWordsOf(state.surface)
+  const items = [...topicItems(scan, topics, recommended, words), ...memoryItems(scan.memories, recommended)]
   const entry = { ...instructionsEntry(scan, topics), context: instructionPartsContext(scan, topics, recommended) }
   const next = handoutEnter(entry, items, input.roles, HANDOUT_DISMISSED_REASON)
 
@@ -468,7 +476,8 @@ function afterContent(
   sub: { readonly tries: number; readonly repo: RepoNames },
   answer: string | null,
 ): InitState {
-  const next = choiceAnswer(contentAsk(input.setup, sub.repo, input.locations.root), sub, answer)
+  const words = listWordsOf(state.surface)
+  const next = choiceAnswer(contentAsk(input.setup, sub.repo, input.locations.root, words), sub, answer)
   if (next.kind === 'again') return contentAsked(state, input, sub.repo, next.sub.tries, next.question)
   if (next.kind === 'cancelled') return stageCancelled(state, next.reason)
   if (!next.value) return wholeFiles(state, input, WHOLE)
@@ -520,8 +529,9 @@ function instructionsAnswer(state: InitState, answer: Answer): InitState {
     }
     case 'memory':
       const root = input.locations.root
+      const words = listWordsOf(state.surface)
 
-      return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text, root))
+      return grouped(state, sub.keep, memoryAnswer(input.roles, input.setup, sub.cursor, answer.text, root, words))
     default:
       return stageFailed(state)
   }

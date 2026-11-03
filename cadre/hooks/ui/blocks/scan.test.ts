@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RepoScan } from '../../../types'
+import { SCREEN_LIST_WORDS } from '../../locales/t'
 import { proposeRoles } from '../../roles/propose'
 import { scanRepo } from '../../scan/repo'
 import { BIDI_OVERRIDE, emptySetupScan, entry, memIo, memWorld, repoScan } from '../../testkit'
+import { listWordsOf } from '../surface'
 import { scanContextLine, scanSummaryLines, truncatedLine } from './scan'
 
 /** The middle of the partial line for deeper folders listed only in part (D-137). */
@@ -14,7 +16,7 @@ const SAFETY_CAP = 'the scan stopped at the 20,000-entry safety cap'
 
 describe('scanSummaryLines', () => {
   test('an empty repo and setup are summed up with none and zero for every part', () => {
-    expect(scanSummaryLines(repoScan(), emptySetupScan(), '/repo')).toEqual([
+    expect(scanSummaryLines(repoScan(), emptySetupScan(), '/repo', SCREEN_LIST_WORDS)).toEqual([
       'Repo scan (read-only):',
       '  stack: none; frontend: none; backend: none',
       '  tests: none; E2E: none',
@@ -40,7 +42,7 @@ describe('scanSummaryLines', () => {
       ],
       hasSource: true,
     })
-    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo')
+    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
     expect(lines[1]).toBe('  stack: JavaScript, TypeScript; frontend: next, react; backend: express')
     expect(lines[2]).toBe('  tests: JS/TS test files, vitest; E2E: Playwright config')
   })
@@ -60,7 +62,8 @@ describe('scanSummaryLines', () => {
     const repo = await scanRepo(memIo(world, []).io, '/repo')
     const proposal = proposeRoles(repo)
 
-    expect(scanSummaryLines(repo, emptySetupScan(), '/repo')[1]).toBe('  stack: Ruby; frontend: react; backend: rails')
+    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
+    expect(lines[1]).toBe('  stack: Ruby; frontend: react; backend: rails')
     expect(proposal.roles.map(role => role.id)).toContain('be')
     expect(proposal.changes.filter(change => change.roleId === 'be')).toEqual([])
   })
@@ -74,22 +77,23 @@ describe('scanSummaryLines', () => {
       stateState: 'absent',
     })
     const shown = (dir: 'present' | 'unknown', manifestState: 'present' | 'absent' | 'unknown'): string | undefined =>
-      scanSummaryLines(repoScan({ cadre: cadre(dir, manifestState) }), emptySetupScan(), '/repo')[3]
+      scanSummaryLines(repoScan({ cadre: cadre(dir, manifestState) }), emptySetupScan(), '/repo', SCREEN_LIST_WORDS)[3]
     expect(shown('present', 'present')).toBe('  existing .cadre/: present (manifest present)')
     expect(shown('present', 'absent')).toBe('  existing .cadre/: present (manifest absent)')
     expect(shown('unknown', 'unknown')).toBe('  existing .cadre/: unknown (manifest unknown)')
   })
 
   test('a scan that listed a deeper folder only in part says so after the .cadre/ line (G-02-1e)', () => {
-    const lines = scanSummaryLines(repoScan({ cappedFolders: ['app/views'] }), emptySetupScan(), '/repo')
+    const capped = repoScan({ cappedFolders: ['app/views'] })
+    const lines = scanSummaryLines(capped, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
     expect(lines[4]).toBe(`  partial: 1 deeper folder ${IN_PART}; may be incomplete: stack, tests, E2E`)
     expect(lines[5]).toBe('User setup (names only):')
-    expect(scanSummaryLines(repoScan(), emptySetupScan(), '/repo')).toHaveLength(8)
+    expect(scanSummaryLines(repoScan(), emptySetupScan(), '/repo', SCREEN_LIST_WORDS)).toHaveLength(8)
   })
 
   test('a scan stopped at the safety cap that also capped folders shows the safety line, then the folder line', () => {
     const repo = repoScan({ cappedFolders: ['a/b', 'c/d'], isOverallCapped: true })
-    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo')
+    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
     expect(lines.slice(4, 7)).toEqual([
       `  partial: ${SAFETY_CAP}; may be incomplete: stack, tests, E2E`,
       `  partial: 2 deeper folders ${IN_PART}; may be incomplete: stack, tests, E2E`,
@@ -115,7 +119,7 @@ describe('scanSummaryLines', () => {
       hasGlobalClaudeMd: true,
       memoryFiles: ['a.md', 'b.md', 'c.md'],
     })
-    expect(scanSummaryLines(repoScan(), setup, '/repo').slice(5)).toEqual([
+    expect(scanSummaryLines(repoScan(), setup, '/repo', SCREEN_LIST_WORDS).slice(5)).toEqual([
       '  plugins: 10 (a@m, b@m, c@m, d@m, e@m, f@m, g@m, h@m, i@m, j@m)',
       '  skills: 3; agents: 2; MCP servers: jira, sentry',
       '  global ~/.claude/CLAUDE.md: yes; memories: 3; CLAUDE.md files: ~/work/CLAUDE.md, repo/CLAUDE.md',
@@ -137,18 +141,42 @@ describe('scanSummaryLines', () => {
       memoryFiles: ['a.md'],
     })
     const first12 = (list: readonly string[]): string => list.slice(0, 12).join(', ')
-    expect(scanSummaryLines(repoScan(), setup, '/repo').slice(5)).toEqual([
+    expect(scanSummaryLines(repoScan(), setup, '/repo', SCREEN_LIST_WORDS).slice(5)).toEqual([
       `  plugins: 30 (${first12(plugins)}, +18 more)`,
       `  skills: 0; agents: 0; MCP servers: ${first12(servers)}, +8 more`,
       `  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: ${first12(onScreen)}, +3 more`,
     ])
   })
 
+  test('a pane surface lists every setup name; the TUI default and no surface list 12, then +2 more (D-256)', () => {
+    const names = Array.from({ length: 14 }, (_, index) => `name${String(index + 1).padStart(2, '0')}`)
+    const plugins = names.map(name => `${name}@m`)
+    const files = names.map(name => `repo/${name}/CLAUDE.md`)
+    const setup = emptySetupScan({
+      plugins,
+      mcp: names.map(name => ({ name, source: 'session' })),
+      claudeMd: names.map(name => `<repo>/${name}/CLAUDE.md`),
+    })
+    expect(scanSummaryLines(repoScan(), setup, '/repo', listWordsOf('pane')).slice(5)).toEqual([
+      `  plugins: 14 (${plugins.join(', ')})`,
+      `  skills: 0; agents: 0; MCP servers: ${names.join(', ')}`,
+      `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${files.join(', ')}`,
+    ])
+    const twelve = (list: readonly string[]): string => [...list.slice(0, 12), '+2 more'].join(', ')
+    for (const words of [listWordsOf('tui-default'), listWordsOf('none')]) {
+      expect(scanSummaryLines(repoScan(), setup, '/repo', words).slice(5)).toEqual([
+        `  plugins: 14 (${twelve(plugins)})`,
+        `  skills: 0; agents: 0; MCP servers: ${twelve(names)}`,
+        `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${twelve(files)}`,
+      ])
+    }
+  })
+
   test('a long or hidden-character name in a setup list is cleaned and capped, and the counts stay in front', () => {
     const long = `a${BIDI_OVERRIDE}b${'x'.repeat(300)}`
     const setup = emptySetupScan({ plugins: [long], mcp: [{ name: long, source: 'session' }], claudeMd: [long] })
     const shownName = `ab${'x'.repeat(107)}…`
-    expect(scanSummaryLines(repoScan(), setup, '/repo').slice(5)).toEqual([
+    expect(scanSummaryLines(repoScan(), setup, '/repo', SCREEN_LIST_WORDS).slice(5)).toEqual([
       `  plugins: 1 (${shownName})`,
       `  skills: 0; agents: 0; MCP servers: ${shownName}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${shownName}`,
@@ -208,7 +236,8 @@ describe('truncatedLine (G-02-1e)', () => {
 
   test('with the safety cap and a capped folder, both partial lines end with the stopped-early tail (N7)', () => {
     const repo = foundAll({ cappedFolders: ['a/b'], isOverallCapped: true })
-    const partial = scanSummaryLines(repo, emptySetupScan(), '/repo').filter(line => line.startsWith('  partial: '))
+    const lines = scanSummaryLines(repo, emptySetupScan(), '/repo', SCREEN_LIST_WORDS)
+    const partial = lines.filter(line => line.startsWith('  partial: '))
     expect(partial).toEqual([
       `  partial: ${SAFETY_CAP}; the scan stopped early; stack, tests and E2E may be incomplete`,
       `  partial: 1 deeper folder ${IN_PART}; the scan stopped early; stack, tests and E2E may be incomplete`,
