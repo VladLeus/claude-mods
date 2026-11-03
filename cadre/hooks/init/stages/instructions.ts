@@ -132,7 +132,10 @@ export function entryContextLine(scan: InstructionScan, topics: readonly Instruc
  * Instructions chip and the three answers. Its context line counts the topics and memories, which neither the chip nor
  * the question names, so a pane surface asks it too (D-255).
  */
-export function instructionsEntry(scan: InstructionScan, topics: readonly InstructionTopic[]): HandoutEntry {
+export function instructionsEntry(
+  scan: InstructionScan,
+  topics: readonly InstructionTopic[],
+): Omit<HandoutEntry, 'context'> {
   return {
     question: INSTRUCTIONS_ENTRY_QUESTION,
     contextLine: entryContextLine(scan, topics),

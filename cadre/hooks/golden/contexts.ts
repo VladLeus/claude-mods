@@ -19,7 +19,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
   "nothing": [
     {
       "header": "claude.json",
-      "context": null,
+      "context": {
+        "title": "Read ~/.claude.json?",
+        "lines": [
+          "Without it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        ],
+        "kind": "consent",
+        "pane": {
+          "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+          "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -197,7 +207,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
   "gsd": [
     {
       "header": "claude.json",
-      "context": null,
+      "context": {
+        "title": "Read ~/.claude.json?",
+        "lines": [
+          "Without it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        ],
+        "kind": "consent",
+        "pane": {
+          "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+          "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -310,12 +330,38 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     },
     {
       "header": "Hunk 1 of 2",
-      "context": null,
+      "context": {
+        "title": ".planning/config.json: mode",
+        "lines": [
+          "  before: not set (GSD default)",
+          "  after:  \"yolo\"",
+          "Why: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
+          "Required for unattended GSD roles."
+        ],
+        "kind": "hunk",
+        "pane": {
+          "asked": ".planning/config.json: mode",
+          "text": ".planning/config.json: mode\n  after:  \"yolo\""
+        }
+      },
       "acceptsTyped": false
     },
     {
       "header": "Hunk 2 of 2",
-      "context": null,
+      "context": {
+        "title": ".planning/config.json: workflow.text_mode",
+        "lines": [
+          "  before: not set (GSD default)",
+          "  after:  false",
+          "Why: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
+          "Required for unattended GSD roles."
+        ],
+        "kind": "hunk",
+        "pane": {
+          "asked": ".planning/config.json: workflow.text_mode",
+          "text": ".planning/config.json: workflow.text_mode\n  after:  false"
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -389,7 +435,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
   "superpowers": [
     {
       "header": "claude.json",
-      "context": null,
+      "context": {
+        "title": "Read ~/.claude.json?",
+        "lines": [
+          "Without it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        ],
+        "kind": "consent",
+        "pane": {
+          "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+          "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -571,7 +627,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
   "everyStep": [
     {
       "header": "claude.json",
-      "context": null,
+      "context": {
+        "title": "Read ~/.claude.json?",
+        "lines": [
+          "Without it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        ],
+        "kind": "consent",
+        "pane": {
+          "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+          "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -712,7 +778,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     },
     {
       "header": "MCP",
-      "context": null,
+      "context": {
+        "title": "MCP servers",
+        "lines": [
+          "sentry: session, 1 tool. Recommended: none."
+        ],
+        "kind": "mcp-server",
+        "pane": {
+          "asked": "Which roles get the MCP servers (1)? Pick how to hand them out.\n1 MCP server; each question shows its source, its tools and the roles it is recommended for.",
+          "text": "Which roles get the MCP servers (1)? Pick how to hand them out.\n1 MCP server; each question shows its source, its tools and the roles it is recommended for."
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -829,17 +905,56 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
     },
     {
       "header": "Hunk 1 of 3",
-      "context": null,
+      "context": {
+        "title": ".planning/config.json: mode",
+        "lines": [
+          "  before: not set (GSD default)",
+          "  after:  \"yolo\"",
+          "Why: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
+          "Required for unattended GSD roles."
+        ],
+        "kind": "hunk",
+        "pane": {
+          "asked": ".planning/config.json: mode",
+          "text": ".planning/config.json: mode\n  after:  \"yolo\""
+        }
+      },
       "acceptsTyped": false
     },
     {
       "header": "Hunk 2 of 3",
-      "context": null,
+      "context": {
+        "title": ".planning/config.json: workflow.text_mode",
+        "lines": [
+          "  before: not set (GSD default)",
+          "  after:  false",
+          "Why: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
+          "Required for unattended GSD roles."
+        ],
+        "kind": "hunk",
+        "pane": {
+          "asked": ".planning/config.json: workflow.text_mode",
+          "text": ".planning/config.json: workflow.text_mode\n  after:  false"
+        }
+      },
       "acceptsTyped": false
     },
     {
       "header": "Hunk 3 of 3",
-      "context": null,
+      "context": {
+        "title": ".planning/config.json: hooks.context_warnings",
+        "lines": [
+          "  before: not set (GSD default)",
+          "  after:  false",
+          "Why: only when gsd-statusline is the statusline: gsd-context-monitor warnings conflict with the autopilot handoff",
+          "Optional."
+        ],
+        "kind": "hunk",
+        "pane": {
+          "asked": ".planning/config.json: hooks.context_warnings",
+          "text": ".planning/config.json: hooks.context_warnings\n  after:  false"
+        }
+      },
       "acceptsTyped": false
     },
     {
@@ -913,7 +1028,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
   "parts": [
     {
       "header": "claude.json",
-      "context": null,
+      "context": {
+        "title": "Read ~/.claude.json?",
+        "lines": [
+          "Without it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        ],
+        "kind": "consent",
+        "pane": {
+          "asked": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session.",
+          "text": "Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this session."
+        }
+      },
       "acceptsTyped": false
     },
     {

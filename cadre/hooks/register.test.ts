@@ -2352,14 +2352,14 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(open.map(entry => [entry.drawn.first, entry.drawn.rows > 1])).toEqual([['Scan', true]])
   })
 
-  test('while the MCP entry question is open the pane draws the empty frame, no old block (D-299)', async ($, on) => {
+  test('while the MCP entry question is open the pane draws its own context, the servers (D-300)', async ($, on) => {
     const log = newLog()
     const open: Open[] = []
     const tools = [{ name: 'mcp__sentry__issues', description: 'Issues.', mcp: true }]
-    const onAsk = drawWhileOpen($, log, INLINE_PANE, open, 'Which roles get the MCP servers')
-    fakeHost(on, initWorld({ tools, onAsk }), log)
+    const entry = 'Which roles get the MCP servers'
+    fakeHost(on, initWorld({ tools, onAsk: drawWhileOpen($, log, INLINE_PANE, open, entry) }), log)
     await $.command.run(DRY_RUN)
-    expect(open.map(entry => entry.drawn)).toEqual([EMPTY_DRAWN])
+    expect([open, open[0]?.drawn.first]).toEqual([[{ drawn: contextDrawn(log, entry), header: 'MCP' }], 'MCP servers'])
   })
 
   test('an inline pane drawn while a question is open draws its context, then the idle one (D-299)', async ($, on) => {
@@ -2760,7 +2760,7 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
     const opened = log.paneStates.map(openOf).filter(isObject)
     const contextual = opened.filter(open => isObject(open.context))
-    // The hunk questions carry no context of their own yet (D-287), so they are asked as they are.
+    // A hunk question asks its key line, and on a pane surface its after line under it (D-287, D-300).
     const long = contextual.flatMap(open => (String(open.question).split('\n').length > 2 ? [open.question] : []))
     expect([contextual.length > 10, long]).toEqual([true, []])
     // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan).

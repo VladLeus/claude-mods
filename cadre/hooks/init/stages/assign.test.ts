@@ -104,8 +104,15 @@ describe('assignmentStep', () => {
     const assigned = valueOf(await assignedBy(run.io, roles, setup))
     expect(run.asked.slice(0, 4)).toEqual([MCP_ENTRY_ASKED, JIRA_ASKED, SENTRY_ASKED, CODEX_ASKED])
     expect(firstLines(run.asked.slice(4))).toEqual([OWN_SKILLS_ENTRY_ONE])
-    expect(run.specs.slice(0, 4)).toEqual([
-      { options: ['Accept recommendations', 'Go one by one', 'Whole group'], header: 'MCP' },
+    const [entry] = run.specs
+    const servers = ['jira: session, 0 tools. Recommended: pm, tl.', 'sentry: session, 0 tools. Recommended: none.']
+    expect([entry?.context?.title, entry?.context?.lines, entry?.context?.kind]).toEqual([
+      'MCP servers',
+      servers,
+      'mcp-server',
+    ])
+    expect(run.specs.slice(0, 4).map(spec => ({ ...spec, context: spec === entry ? null : spec.context }))).toEqual([
+      { options: ['Accept recommendations', 'Go one by one', 'Whole group'], header: 'MCP', context: null },
       { options: ['Yes', 'No'], header: 'MCP 1/2', context: JIRA_CONTEXT, acceptsTyped: true },
       { options: ['Yes', 'No'], header: 'MCP 2/2', context: SENTRY_CONTEXT, acceptsTyped: true },
       { options: GROUP_OPTIONS, header: 'Skills', context: CODEX_CONTEXT, acceptsTyped: true },
@@ -309,7 +316,12 @@ describe('the assign stage (D-230)', () => {
     const servers = [{ name: 'sentry', source: 'session', tools: [], seed: [] }]
     expect(calling.effect).toEqual({ kind: 'model', call: { id: 'mcp', roles, servers } })
     const entry = nextStage(calling, SERVERS_NONE)
-    expect(entry.openQuestion?.spec).toEqual({ options: ['Go one by one', 'Whole group'], header: 'MCP' })
+    const entrySpec = entry.openQuestion?.spec
+    expect([entrySpec?.options, entrySpec?.header, entrySpec?.context?.lines]).toEqual([
+      ['Go one by one', 'Whole group'],
+      'MCP',
+      ['sentry: session, 0 tools. Recommended: none.'],
+    ])
     const state = nextStage(entry, { kind: 'answer', text: 'Go one by one' })
     const sentence = 'Which roles get the sentry MCP server? (e.g. BE, QA, or none)'
     const question = withContext(sentence, mcpContextLine(roles))

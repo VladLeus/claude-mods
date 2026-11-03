@@ -397,6 +397,7 @@ export type Choice =
  * draw it.
  */
 export type ContextKind =
+  | 'consent'
   | 'scan'
   | 'history'
   | 'roles'

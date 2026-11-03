@@ -100,6 +100,7 @@ export const EN = Object.freeze({
 
   'init.consent.claudeJsonQuestion':
     'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
+  'init.consent.claudeJsonTitle': 'Read ~/.claude.json?',
   'init.consent.claudeJsonContext':
     'Without it, init still finds MCP servers in .mcp.json, your plugins and this session.',
   'init.consent.consentNo': 'No, skip it',
@@ -264,6 +265,7 @@ export const EN = Object.freeze({
   'init.hunks.after': '  after:  {target}',
   'init.hunks.why': 'Why: {why}',
   'init.hunks.chip': 'Hunk {index} of {total}',
+  'init.hunks.contextTitle': '{file}: {key}',
   'init.hunks.hunkDismissedReason': 'A hunk question was dismissed or not answered.',
 
   'init.launch.launchStartQuestion': 'Where should the role launchers start their sessions? (asked once for this repo)',

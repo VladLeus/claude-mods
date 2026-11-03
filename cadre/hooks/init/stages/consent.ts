@@ -5,10 +5,11 @@
  * stage that asks it. Pure: it gives states and never performs an effect, imports core, ui/ask and init/state, and
  * never imports init/machine or init/run.
  */
+import type { AskSpec } from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { t } from '../../locales/t'
-import { ASK_HEADERS, choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
 import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 
@@ -40,12 +41,22 @@ export const CONSENT_DISMISSED_REASON = t('init.consent.consentDismissedReason')
 
 /**
  * The ~/.claude.json question as the consent stage asks it (D-58, D-136): CLAUDE_JSON_QUESTION with
- * CLAUDE_JSON_CONTEXT on its second line, the two answers with the claude.json chip, parseConsent, the answers its
- * refusal lists, and the reason a dismissal cancels with.
+ * CLAUDE_JSON_CONTEXT on its second line, the two answers with the claude.json chip, and as its own context (kind
+ * `consent`) that one line stating what is read, so a pane surface shows it in the pane (D-287, D-300); then
+ * parseConsent, the answers its refusal lists, and the reason a dismissal cancels with.
  */
 const CONSENT_ASK = Object.freeze({
   question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
-  spec: Object.freeze({ options: CLAUDE_JSON_OPTIONS, header: ASK_HEADERS.claudeJson }),
+  spec: Object.freeze<AskSpec>({
+    options: CLAUDE_JSON_OPTIONS,
+    header: ASK_HEADERS.claudeJson,
+    context: {
+      title: t('init.consent.claudeJsonTitle'),
+      lines: [CLAUDE_JSON_CONTEXT],
+      kind: 'consent',
+      pane: paneQuestionOf(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT, CLAUDE_JSON_CONTEXT),
+    },
+  }),
   parse: parseConsent,
   accepts: quotedLabels(CLAUDE_JSON_OPTIONS),
   dismissedReason: CONSENT_DISMISSED_REASON,

@@ -232,23 +232,21 @@ export const GSD_CHECK_DISMISSED_REASON = t('init.frameworks.gsdCheckDismissedRe
  * The GSD check as init and detect ask it (D-243): GSD_CHECK_QUESTION, `No, skip the check` first, then `Yes, run the
  * check`, with the GSD check chip, and as its context (kind `detection`) each user-level GSD install found but not
  * proven, by its display path; a pane surface asks the question with the line of the first of them, so its one line
- * names the install the check runs (D-255, edge #39). It takes no typed answer.
+ * names the install the check runs (D-255, edge #39), or with the context's title when it lists none, so the context
+ * always carries what a pane surface asks (D-300). It takes no typed answer.
  */
 export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const unproven = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown')
   const options = GSD_CHECK_ANSWERS.map(answer => answer.label)
   const lines = unproven.map(fact => t('init.frameworks.gsdCheckLine', { dir: fact.dir }))
-  const context: AskContext = { title: t('init.frameworks.gsdCheckTitle'), lines, kind: 'detection' }
-  const [line] = lines
-  const text = line === undefined ? null : withContext(GSD_CHECK_QUESTION, line)
+  const title = t('init.frameworks.gsdCheckTitle')
+  const [line = title] = lines
+  const pane = { asked: GSD_CHECK_QUESTION, text: withContext(GSD_CHECK_QUESTION, line) }
+  const context: AskContext = { title, lines, kind: 'detection', pane }
 
   return {
     question: GSD_CHECK_QUESTION,
-    spec: {
-      options,
-      header: t('init.frameworks.gsdCheckChip'),
-      context: text === null ? context : { ...context, pane: { asked: GSD_CHECK_QUESTION, text } },
-    },
+    spec: { options, header: t('init.frameworks.gsdCheckChip'), context },
     parse: (answer: string): boolean | null => labelled(GSD_CHECK_ANSWERS, answer),
     accepts: quotedLabels(options),
     dismissedReason: GSD_CHECK_DISMISSED_REASON,

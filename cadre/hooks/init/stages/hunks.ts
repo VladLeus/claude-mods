@@ -6,7 +6,16 @@
  * each answer as an op; the proposals and their ops are framework/gsd/hunks'. Pure: it gives states and never performs
  * an effect, imports core, framework, scan, team, ui/ask and init/state, and never imports init/machine or init/run.
  */
-import type { AskSpec, AutonomyHunks, FrameworkId, HunkOp, PortRead, RoleSpec, SetupScan } from '../../../types'
+import type {
+  AskContext,
+  AskSpec,
+  AutonomyHunks,
+  FrameworkId,
+  HunkOp,
+  PortRead,
+  RoleSpec,
+  SetupScan,
+} from '../../../types'
 import { labelled } from '../../core/labelled'
 import type { Labelled } from '../../core/labelled'
 import { reportText } from '../../core/text'
@@ -19,7 +28,7 @@ import { ADAPTERS } from '../../framework/registry'
 import { t } from '../../locales/t'
 import { MAX_READ_BYTES } from '../../scan/facts/normalize'
 import { resolvedFramework } from '../../team'
-import { choiceAnswer, quotedLabels } from '../../ui/ask'
+import { choiceAnswer, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
@@ -46,10 +55,12 @@ const REQUIRED_NOTE = t('init.hunks.requiredNote')
 const OPTIONAL_NOTE = t('init.hunks.optionalNote')
 
 /**
- * The dialog for one hunk (ROLE-04): the file and key, the before and after values, why, and whether autonomy requires
- * it, under the header `Hunk <index> of <total>` with the buttons Accept and Decline. `index` counts from 1 in the
- * order of the candidates. GSD has three proposals at most, so the header stays within the 12-character chip a dialog
- * allows. Every value is cleaned and capped as a report cell is, so none can add a line or hide text.
+ * The dialog for one hunk (ROLE-04, D-287): the file and key alone as the question, under the header `Hunk <index> of
+ * <total>` with the buttons Accept and Decline, and as its own context (kind `hunk`, D-300) the before and after
+ * values, why, and whether autonomy requires it; a pane surface asks the key line with the after line (OC-04-H).
+ * `index` counts from 1 in the order of the candidates. GSD has three proposals at most, so the header stays within
+ * the 12-character chip a dialog allows. Every value is cleaned and capped as a report cell is, so none can add a line
+ * or hide text.
  */
 export function hunkQuestion(
   candidate: HunkCandidate,
@@ -57,15 +68,19 @@ export function hunkQuestion(
   total: number,
 ): { readonly question: string; readonly spec: AskSpec } {
   const { proposal, before } = candidate
-  const question = [
-    t('init.hunks.keyLine', { file: reportText(proposal.file), key: reportText(proposal.key) }),
+  const [file, key] = [reportText(proposal.file), reportText(proposal.key)]
+  const question = t('init.hunks.keyLine', { file, key })
+  const after = t('init.hunks.after', { target: reportText(targetText(proposal)) })
+  const lines = [
     t('init.hunks.before', { before: reportText(before) }),
-    t('init.hunks.after', { target: reportText(targetText(proposal)) }),
+    after,
     t('init.hunks.why', { why: reportText(proposal.why) }),
     proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE,
-  ].join('\n')
+  ]
+  const pane = { asked: question, text: withContext(question, after) }
+  const context: AskContext = { title: t('init.hunks.contextTitle', { file, key }), lines, kind: 'hunk', pane }
 
-  return { question, spec: { options: HUNK_OPTIONS, header: t('init.hunks.chip', { index, total }) } }
+  return { question, spec: { options: HUNK_OPTIONS, header: t('init.hunks.chip', { index, total }), context } }
 }
 
 /**

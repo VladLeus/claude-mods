@@ -20,6 +20,7 @@ import type { SkillPromptGroup, SkillsRecommendation } from '../../suggest/skill
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { mcpGroupContext, mcpSourceText, mcpToolNamesOf, ownSkillsContext } from '../../ui/blocks/assign'
+import type { McpLine } from '../../ui/blocks/assign'
 import { listWordsOf } from '../../ui/surface'
 import { assignToRoles, ownSkillLines, parseRoleList } from '../answers'
 import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
@@ -113,8 +114,9 @@ function mcpStart(state: InitState, plan: AssignPlan, recommended: ReadonlyMap<s
   if (names.length === 0) return skillsStart(state, plan, [])
   const refs = names.map(name => mcpRefOf(plan.setup.mcp, name))
   const items = mcpServerItems(refs, state.toolNames, recommended, plan.roles, listWordsOf(state.surface))
+  const entry = { ...mcpEntry(names.length), context: mcpGroupContext(mcpLinesOf(state, plan, recommended)) }
 
-  return mcpHandedOut(state, plan, handoutEnter(mcpEntry(names.length), items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
+  return mcpHandedOut(state, plan, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }
 
 /**
@@ -143,10 +145,28 @@ function mcpHandedOut(state: InitState, plan: AssignPlan, next: HandoutNext): In
 type McpWholeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'mcp-whole' }>, 'kind'>
 
 /**
+ * Each MCP server of the plan as the contexts of the MCP entry and of the question for all the servers list it
+ * (D-250, D-300): its name, its source (mcpSourceText), how many tool names the session lists for it and the roles
+ * `recommended` gives it, none when it gives none.
+ */
+function mcpLinesOf(
+  state: InitState,
+  plan: AssignPlan,
+  recommended: ReadonlyMap<string, readonly string[]>,
+): McpLine[] {
+  return plan.mcp.names.map(name => ({
+    name,
+    source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
+    tools: mcpToolNamesOf(state.toolNames, name).length,
+    recommended: recommended.get(name) ?? [],
+  }))
+}
+
+/**
  * The question for all the MCP servers at once (D-250): which roles get all `n` of them, with the team's role ids on
  * its second line (mcpContextLine), the MCP chip, and as its own context each server with its source, its tool count
- * and the roles `recommended` gives it (mcpGroupContext), which a pane surface asks with its first line in place of
- * that line (D-255).
+ * and the roles `recommended` gives it (mcpGroupContext over mcpLinesOf), which a pane surface asks with its first line
+ * in place of that line (D-255).
  */
 function mcpWholeItem(
   state: InitState,
@@ -154,14 +174,8 @@ function mcpWholeItem(
   recommended: ReadonlyMap<string, readonly string[]>,
 ): AssignItem {
   const { names } = plan.mcp
-  const lines = names.map(name => ({
-    name,
-    source: mcpSourceText(mcpRefOf(plan.setup.mcp, name)),
-    tools: mcpToolNamesOf(state.toolNames, name).length,
-    recommended: recommended.get(name) ?? [],
-  }))
   const question = t('init.assign.mcpWholeQuestion', { count: names.length })
-  const context = mcpGroupContext(lines)
+  const context = mcpGroupContext(mcpLinesOf(state, plan, recommended))
   const contextLine = mcpContextLine(plan.roles)
   const pane = paneQuestionOf(question, contextLine, context.lines[0] ?? contextLine)
 

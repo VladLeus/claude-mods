@@ -138,7 +138,7 @@ describe('autonomy hunks', () => {
       ['mode', '"interactive"', '"yolo"', true],
       ['workflow.text_mode', 'not set (GSD default)', 'false', false],
     ])
-    expect(asked[0]?.question).toContain('\n  before: "interactive"\n  after:  "yolo"\n')
+    expect(asked[0]?.spec.context?.lines.slice(0, 2)).toEqual(['  before: "interactive"', '  after:  "yolo"'])
   })
 
   test('a string target is shown JSON-quoted and a boolean or number target as itself, as a before is (A2)', () => {
@@ -150,7 +150,7 @@ describe('autonomy hunks', () => {
     ]
 
     expect(candidates.map(candidate => hunkOp(candidate, true, RUNNABLE).after)).toEqual(['"yolo"', 'false', '3'])
-    expect(candidates.map(candidate => hunkQuestion(candidate, 1, 1).question.split('\n')[2])).toEqual([
+    expect(candidates.map(candidate => hunkQuestion(candidate, 1, 1).spec.context?.lines[1])).toEqual([
       '  after:  "yolo"',
       '  after:  false',
       '  after:  3',
@@ -227,9 +227,9 @@ describe('hunkStep', () => {
       '.planning/config.json: mode',
       '.planning/config.json: workflow.text_mode',
     ])
-    expect(run.specs).toEqual([
-      { options: BUTTONS, header: 'Hunk 1 of 2' },
-      { options: BUTTONS, header: 'Hunk 2 of 2' },
+    expect(run.specs.map(spec => [spec.options, spec.header, spec.context?.kind])).toEqual([
+      [BUTTONS, 'Hunk 1 of 2', 'hunk'],
+      [BUTTONS, 'Hunk 2 of 2', 'hunk'],
     ])
     const hunk = { kind: 'hunk', file: '.planning/config.json', isRequired: true, isRunnable: true }
     expect(run.state.draft.hunks).toEqual([
@@ -294,7 +294,8 @@ describe('hunkStep', () => {
     const quiet = await hunkRun(configWorld(AT_TARGETS), 'gsd', gatheredOf(PROVEN_FACTS, false), [])
     expect(quiet.state.draft.hunks).toEqual([])
     const run = await hunkRun(configWorld(AT_TARGETS), 'gsd', gatheredOf(PROVEN_FACTS, true), ['Decline'])
-    expect(run.specs).toEqual([{ options: BUTTONS, header: 'Hunk 1 of 1' }])
+    const shown = run.specs.map(spec => [spec.options, spec.header, spec.context?.kind])
+    expect(shown).toEqual([[BUTTONS, 'Hunk 1 of 1', 'hunk']])
     expect(run.state.draft.hunks?.map(hunk => [hunk.key, hunk.isRequired, hunk.isAccepted])).toEqual([
       ['hooks.context_warnings', false, false],
     ])
@@ -371,8 +372,9 @@ describe('the hunk stage (D-230)', () => {
     expect(state.openQuestion).toBeNull()
     const read = configText('{"mode":"interactive"}')
     const asking = nextStage(state, { kind: 'io', result: { id: 'read-repo-file', result: read } })
-    expect(asking.openQuestion?.spec).toEqual({ options: ['Accept', 'Decline'], header: 'Hunk 1 of 2' })
-    expect(asking.openQuestion?.question.split('\n')[0]).toBe('.planning/config.json: mode')
+    const spec = asking.openQuestion?.spec
+    expect([spec?.options, spec?.header, spec?.context?.kind]).toEqual([['Accept', 'Decline'], 'Hunk 1 of 2', 'hunk'])
+    expect(asking.openQuestion?.question).toBe('.planning/config.json: mode')
   })
 
   test('with no role on GSD nothing is read or asked, and the stage ends with no hunks', () => {

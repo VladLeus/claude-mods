@@ -9,6 +9,9 @@ import type { HandoutEntry, HandoutItem, HandoutNext } from './handout'
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
 const ROLES: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('security')]
 
+/** The own context of the entry question of the cases (D-300). */
+const ENTRY_CONTEXT: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
+
 /** The entry question of the cases, with the three labels of the instruction parts flow (G-02-1f). */
 const ENTRY: HandoutEntry = {
   question: 'How do you want to hand out the instruction parts?',
@@ -17,6 +20,12 @@ const ENTRY: HandoutEntry = {
   accept: 'Accept recommendations',
   oneByOne: 'Go part by part',
   whole: 'Whole files',
+  context: ENTRY_CONTEXT,
+}
+
+/** The own context of the question of the topic titled `title` (D-300). */
+function topicContextOf(title: string): AskContext {
+  return { title, lines: [`${title} only`], kind: 'topic' }
 }
 
 /** Two items: the first recommended to Security, the second to no role. */
@@ -27,6 +36,7 @@ const ITEMS: readonly HandoutItem[] = [
     contextLine: 'How secrets stay out of the repo.',
     header: 'Topic 1/2',
     recommended: ['security'],
+    context: topicContextOf('Security rules'),
   },
   {
     id: 'T2',
@@ -34,8 +44,22 @@ const ITEMS: readonly HandoutItem[] = [
     contextLine: 'How commits are made.',
     header: 'Topic 2/2',
     recommended: [],
+    context: topicContextOf('Git and commits'),
   },
 ]
+
+/**
+ * A context as a hand-out question carries it (D-255, D-300): with what a pane surface asks, the question with its
+ * context line when no pane line takes its place.
+ */
+function withPane(
+  context: AskContext,
+  question: { readonly question: string; readonly contextLine: string },
+): AskContext {
+  const asked = withContext(question.question, question.contextLine)
+
+  return { ...context, pane: { asked, text: asked } }
+}
 
 /** The reason the cases cancel with when the entry question is dismissed. */
 const DISMISSED = 'A question on which roles get instruction parts was dismissed or not answered.'
@@ -82,9 +106,8 @@ describe('handoutStep', () => {
   test('asks the entry question once, with its context line, the three answers in order and its chip', () => {
     const run = handedOut(ITEMS, ['Accept recommendations'])
     expect(run.asked).toEqual([ENTRY_ASKED])
-    expect(run.specs).toEqual([
-      { options: ['Accept recommendations', 'Go part by part', 'Whole files'], header: 'Instructions' },
-    ])
+    const options = ['Accept recommendations', 'Go part by part', 'Whole files']
+    expect(run.specs).toEqual([{ options, header: 'Instructions', context: withPane(ENTRY_CONTEXT, ENTRY) }])
   })
 
   test('Accept gives each item its recommended roles, one with none to no role, and asks nothing more', () => {
@@ -132,7 +155,9 @@ describe('handoutStep', () => {
 
 /** A topic item with this id, title, chip and recommended roles; its context line names the title. */
 function topicItem(id: string, title: string, header: string, recommended: readonly string[]): HandoutItem {
-  return { id, question: `Which roles get "${title}"?`, contextLine: `About ${title}.`, header, recommended }
+  const context = topicContextOf(title)
+
+  return { id, question: `Which roles get "${title}"?`, contextLine: `About ${title}.`, header, recommended, context }
 }
 
 /** Three items: the first recommended to Security, the second to the Team Lead, the third to no role. */
@@ -154,9 +179,10 @@ describe('handoutStep one by one', () => {
   test('Go part by part asks each item once, in order, with its context line, its chip and Yes / No', () => {
     const run = handedOut(ITEMS, ['Go part by part', 'Yes', 'No'])
     expect(run.asked).toEqual([ENTRY_ASKED, itemAsked(ITEMS[0]), itemAsked(ITEMS[1])])
+    const [first, second] = ITEMS.map(item => withPane(item.context, item))
     expect(run.specs.slice(1)).toEqual([
-      { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true },
-      { options: ['Yes', 'No'], header: 'Topic 2/2', acceptsTyped: true },
+      { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true, context: first },
+      { options: ['Yes', 'No'], header: 'Topic 2/2', acceptsTyped: true, context: second },
     ])
   })
 
@@ -208,9 +234,10 @@ describe('handoutStep one by one', () => {
 describe('the hand-out cursor (D-230)', () => {
   test('handoutEnter asks the entry question with its context line, the three answers in order and its chip', () => {
     const first = handoutEnter(ENTRY, ITEMS, ROLES, DISMISSED)
+    const options = ['Accept recommendations', 'Go part by part', 'Whole files']
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       ENTRY_ASKED,
-      { options: ['Accept recommendations', 'Go part by part', 'Whole files'], header: 'Instructions' },
+      { options, header: 'Instructions', context: withPane(ENTRY_CONTEXT, ENTRY) },
     ])
   })
 
@@ -219,7 +246,8 @@ describe('the hand-out cursor (D-230)', () => {
     if (entry.kind !== 'ask') throw new Error('no entry question')
     const first = handoutAnswer(entry.cursor, 'Go part by part')
     if (first.kind !== 'ask') throw new Error('no first item question')
-    const typed = { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true }
+    const context = ITEMS[0] === undefined ? null : withPane(ITEMS[0].context, ITEMS[0])
+    const typed = { options: ['Yes', 'No'], header: 'Topic 1/2', acceptsTyped: true, context }
     expect([first.question, first.spec]).toEqual([itemAsked(ITEMS[0]), typed])
     const second = handoutAnswer(first.cursor, 'Yes')
     if (second.kind !== 'ask') throw new Error('no second item question')
@@ -230,7 +258,7 @@ describe('the hand-out cursor (D-230)', () => {
     ])
   })
 
-  test('an entry or item with its own context puts it in its dialog spec; one without has none (D-203)', () => {
+  test('every entry and item puts its own context in its dialog spec (D-203, D-300)', () => {
     const parts: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
     const topic: AskContext = { title: 'Topic 1 of 2', lines: ['Security rules only'], kind: 'topic' }
     const first = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
@@ -240,11 +268,9 @@ describe('the hand-out cursor (D-230)', () => {
     if (one.kind !== 'ask') throw new Error('no first item question')
     const two = handoutAnswer(one.cursor, 'Yes')
     if (two.kind !== 'ask') throw new Error('no second item question')
-    // With no pane line a pane surface asks the question as the TUI default does (D-255).
-    const entryPane = { asked: ENTRY_ASKED, text: ENTRY_ASKED }
-    const itemPane = { asked: itemAsked(first), text: itemAsked(first) }
-    const contexts = [entry.spec.context, one.spec.context, Object.hasOwn(two.spec, 'context')]
-    expect(contexts).toEqual([{ ...parts, pane: entryPane }, { ...topic, pane: itemPane }, false])
+    const second = ITEMS[1] === undefined ? null : withPane(ITEMS[1].context, ITEMS[1])
+    const contexts = [entry.spec.context, one.spec.context, two.spec.context]
+    expect(contexts).toEqual([withPane(parts, ENTRY), withPane(topic, first), second])
     expect([entry.question, one.question]).toEqual([ENTRY_ASKED, itemAsked(first)])
   })
 

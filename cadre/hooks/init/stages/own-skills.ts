@@ -179,8 +179,11 @@ export function ownSkillsOf(
   return own.sort((a, b) => skillCount(b.name, counts) - skillCount(a.name, counts) || compareText(a.name, b.name))
 }
 
-/** The entry question of the own-skills hand-out (G-02-1b): its question, context line, chip and answers. */
-export function ownSkillsEntry(count: number): HandoutEntry {
+/**
+ * The entry question of the own-skills hand-out (G-02-1b): its question, context line, chip and answers; the
+ * assignment stage adds its own context, the own-skills block (D-300).
+ */
+export function ownSkillsEntry(count: number): Omit<HandoutEntry, 'context'> {
   return {
     question: ownSkillsQuestion(count),
     contextLine: ownSkillsContextLine(count),
@@ -221,9 +224,10 @@ export function ownSkillItems(
 /**
  * The entry question of the MCP hand-out (D-250): which roles get the `count` servers, with how many there are and what
  * each server question shows on its second line, the MCP chip, and the shared answers Accept recommendations (only
- * when a server has a recommendation, D-279), Go one by one and Whole group.
+ * when a server has a recommendation, D-279), Go one by one and Whole group; the assignment stage adds its own
+ * context, every server with its recommended roles (D-300).
  */
-export function mcpEntry(count: number): HandoutEntry {
+export function mcpEntry(count: number): Omit<HandoutEntry, 'context'> {
   return {
     question: t('init.assign.mcpEntryQuestion', { count }),
     contextLine: tn('init.assign.mcpEntryContextLine', count, { count }),

@@ -15,13 +15,31 @@ import {
 /** What the scans after the consent are entered with: the session's locations. */
 const CONSENT_DRAFT = { locations: DEFAULT_LOCATIONS }
 
+/** The consent question as every surface but a pane asks it: the question, then its context line (D-136). */
+const CONSENT_ASKED = withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT)
+
+/**
+ * The dialog spec of the consent: its two answers, its chip and its own context, the one line stating what is read
+ * (D-287, D-300), with what a pane surface asks.
+ */
+const CONSENT_SPEC = {
+  options: CLAUDE_JSON_OPTIONS,
+  header: 'claude.json',
+  context: {
+    title: 'Read ~/.claude.json?',
+    lines: [CLAUDE_JSON_CONTEXT],
+    kind: 'consent',
+    pane: { asked: CONSENT_ASKED, text: CONSENT_ASKED },
+  },
+}
+
 describe('runInit', () => {
   test('consentStage accepts yes or no; a dismissal or unknown answers cancel with their reasons (A1)', () => {
     const start = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
     const yes = driven(start, ['Yes, read names only'])
     expect(yes.state.draft.readUserMcp).toBe(true)
-    expect(yes.asked).toEqual([withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT)])
-    expect(yes.specs).toEqual([{ options: CLAUDE_JSON_OPTIONS, header: 'claude.json' }])
+    expect(yes.asked).toEqual([CONSENT_ASKED])
+    expect(yes.specs).toEqual([CONSENT_SPEC])
     expect(driven(start, [' no, SKIP it ']).state.draft.readUserMcp).toBe(false)
     const cases: readonly (readonly [readonly string[], string])[] = [
       [[], CONSENT_DISMISSED_REASON],
@@ -53,10 +71,7 @@ describe('consent declines first (G-02-11)', () => {
 describe('the consent stage (D-230)', () => {
   test('consentStage asks the ~/.claude.json question with its context and chip; the open question is that ask', () => {
     const state = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
-    const ask = {
-      question: withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT),
-      spec: { options: CLAUDE_JSON_OPTIONS, header: 'claude.json' },
-    }
+    const ask = { question: CONSENT_ASKED, spec: CONSENT_SPEC }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
   })
@@ -64,7 +79,8 @@ describe('the consent stage (D-230)', () => {
   test('the consent carries a one-line context: what is read, and only after a yes (D-287, D-300)', () => {
     const state = consentStage.enter(stateAt('consent', CONSENT_DRAFT))
     const context = state.openQuestion?.spec.context
-    expect([context?.title, context?.lines]).toEqual(['Read ~/.claude.json?', [CLAUDE_JSON_CONTEXT]])
+    const shown = [context?.title, context?.lines, context?.kind]
+    expect(shown).toEqual(['Read ~/.claude.json?', [CLAUDE_JSON_CONTEXT], 'consent'])
   })
 
   test('an answer finishes the stage with the consent in the draft and enters the scans with it', () => {

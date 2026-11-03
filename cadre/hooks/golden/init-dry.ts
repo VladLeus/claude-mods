@@ -435,11 +435,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          ".planning/config.json: mode",
-          "  before: not set (GSD default)",
-          "  after:  \"yolo\"",
-          "Why: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
-          "Required for unattended GSD roles."
+          ".planning/config.json: mode"
         ],
         "header": "Hunk 1 of 2",
         "options": [
@@ -450,11 +446,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          ".planning/config.json: workflow.text_mode",
-          "  before: not set (GSD default)",
-          "  after:  false",
-          "Why: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
-          "Required for unattended GSD roles."
+          ".planning/config.json: workflow.text_mode"
         ],
         "header": "Hunk 2 of 2",
         "options": [
@@ -1552,11 +1544,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          ".planning/config.json: mode",
-          "  before: not set (GSD default)",
-          "  after:  \"yolo\"",
-          "Why: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
-          "Required for unattended GSD roles."
+          ".planning/config.json: mode"
         ],
         "header": "Hunk 1 of 3",
         "options": [
@@ -1567,11 +1555,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          ".planning/config.json: workflow.text_mode",
-          "  before: not set (GSD default)",
-          "  after:  false",
-          "Why: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall",
-          "Required for unattended GSD roles."
+          ".planning/config.json: workflow.text_mode"
         ],
         "header": "Hunk 2 of 3",
         "options": [
@@ -1582,11 +1566,7 @@ export const GOLDEN_INIT_DRY: Readonly<Record<string, GoldenRun>> = {
       },
       {
         "question": [
-          ".planning/config.json: hooks.context_warnings",
-          "  before: not set (GSD default)",
-          "  after:  false",
-          "Why: only when gsd-statusline is the statusline: gsd-context-monitor warnings conflict with the autopilot handoff",
-          "Optional."
+          ".planning/config.json: hooks.context_warnings"
         ],
         "header": "Hunk 3 of 3",
         "options": [

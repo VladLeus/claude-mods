@@ -21,7 +21,7 @@ export const ACCEPT_RECOMMENDATIONS = t('init.handout.acceptRecommendations')
 /**
  * One item a hand-out may give to roles (G-02-1f, G-02-1b): its id, its question with the context line and chip it is
  * asked with, the role ids recommended for it, which Accept gives it, the question's own context, which its ask
- * carries (D-203), and the one line a pane surface asks in place of the context line (D-255).
+ * always carries (D-203, D-300), and the one line a pane surface asks in place of the context line (D-255).
  */
 export type HandoutItem = {
   readonly id: string
@@ -29,7 +29,7 @@ export type HandoutItem = {
   readonly contextLine: string
   readonly header: string
   readonly recommended: readonly string[]
-  readonly context?: AskContext
+  readonly context: AskContext
   /** The one line a pane surface asks with the question, the context left to the pane; the context line when absent. */
   readonly paneLine?: string
 }
@@ -37,7 +37,8 @@ export type HandoutItem = {
 /**
  * The entry question of a hand-out (G-02-1f Entry choices): its text, context line and chip, the labels of its three
  * answers in the order the dialog shows them (accept the recommendations, go one by one, or the whole group; accept
- * only when an item has a recommendation, D-279), and the question's own context, which its ask carries (D-203).
+ * only when an item has a recommendation, D-279), and the question's own context, which its ask always carries
+ * (D-203, D-300).
  */
 export type HandoutEntry = {
   readonly question: string
@@ -46,22 +47,21 @@ export type HandoutEntry = {
   readonly accept: string
   readonly oneByOne: string
   readonly whole: string
-  readonly context?: AskContext
+  readonly context: AskContext
   /** The one line a pane surface asks with the question, the context left to the pane; the context line when absent. */
   readonly paneLine?: string
 }
 
 /**
- * A dialog spec with the question's own context when it has one (D-203), carrying what a pane surface asks: the
- * question with `paneLine` in place of its context line (paneQuestionOf, D-255), or with the context line itself when
- * the question names no pane line; without a context the spec has none.
+ * A dialog spec with the question's own context, which every hand-out question carries (D-203, D-300), and what a
+ * pane surface asks: the question with `paneLine` in place of its context line (paneQuestionOf, D-255), or with the
+ * context line itself when the question names no pane line.
  */
 function specWith(
   spec: AskSpec,
   question: { readonly question: string; readonly contextLine: string; readonly paneLine?: string },
-  context: AskContext | undefined,
+  context: AskContext,
 ): AskSpec {
-  if (context === undefined) return spec
   const pane = paneQuestionOf(question.question, question.contextLine, question.paneLine ?? question.contextLine)
 
   return { ...spec, context: { ...context, pane } }
@@ -165,7 +165,7 @@ type HandoutAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
  * The entry question (G-02-1f Entry choices): its question with its context line on the second line, its chip, its
- * own context when it has one, with what a pane surface asks (specWith, D-255), and its answers in the order accept,
+ * own context, with what a pane surface asks (specWith, D-255, D-300), and its answers in the order accept,
  * one by one, whole, read trimmed and in any case; with no recommended item Accept is neither offered nor taken, so
  * typing it is refused like any other label (D-279).
  */
@@ -184,7 +184,7 @@ function entryAsk(cursor: HandoutCursor): HandoutAsk<EntryChoice> {
 
 /**
  * An item question (G-02-1f Part by part): its question with its context line on the second line, its chip, its own
- * context when it has one, with what a pane surface asks (specWith, D-255), and the buttons Yes and No, a role list
+ * context, with what a pane surface asks (specWith, D-255, D-300), and the buttons Yes and No, a role list
  * typed under "Other" (itemRoles), so it takes a typed answer (D-234).
  */
 function itemAsk(cursor: HandoutCursor, item: HandoutItem): HandoutAsk<readonly string[]> {
@@ -213,9 +213,17 @@ function itemAt(cursor: HandoutCursor, index: number, given: ReadonlyMap<string,
 
 /**
  * The entry of a hand-out that starts at its first item (handoutItemsEnter, D-251): it is never asked, so its texts
- * are empty.
+ * and its context are empty.
  */
-const NO_ENTRY: HandoutEntry = { question: '', contextLine: '', header: '', accept: '', oneByOne: '', whole: '' }
+const NO_ENTRY: HandoutEntry = {
+  question: '',
+  contextLine: '',
+  header: '',
+  accept: '',
+  oneByOne: '',
+  whole: '',
+  context: { title: '', lines: [], kind: 'skill-group' },
+}
 
 /**
  * A hand-out with no entry question (D-251): the cursor at the first of `items` in item mode, asking its item

@@ -56,8 +56,8 @@ export const GOLDEN_TUI: {
         "Yes, read names only"
       ],
       "previews": [
-        null,
-        null
+        "**Read \\~/.claude.json?**\n```\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this\nsession.\n```",
+        "**Read \\~/.claude.json?**\n```\nWithout it, init still finds MCP servers in .mcp.json, your plugins and this\nsession.\n```"
       ]
     },
     {
@@ -182,8 +182,8 @@ export const GOLDEN_TUI: {
         "Decline"
       ],
       "previews": [
-        null,
-        null
+        "**.planning/config.json: mode**\n```\n  before: not set (GSD default)\n  after:  \"yolo\"\nWhy: interactive mode stops for confirmations; yolo lets an autopilot role run\nphases unattended\nRequired for unattended GSD roles.\n```",
+        "**.planning/config.json: mode**\n```\n  before: not set (GSD default)\n  after:  \"yolo\"\nWhy: interactive mode stops for confirmations; yolo lets an autopilot role run\nphases unattended\nRequired for unattended GSD roles.\n```"
       ]
     },
     {
@@ -193,8 +193,8 @@ export const GOLDEN_TUI: {
         "Decline"
       ],
       "previews": [
-        null,
-        null
+        "**.planning/config.json: workflow.text\\_mode**\n```\n  before: not set (GSD default)\n  after:  false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the\nrole would stall\nRequired for unattended GSD roles.\n```",
+        "**.planning/config.json: workflow.text\\_mode**\n```\n  before: not set (GSD default)\n  after:  false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the\nrole would stall\nRequired for unattended GSD roles.\n```"
       ]
     },
     {

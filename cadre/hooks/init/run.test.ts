@@ -289,7 +289,8 @@ describe('runInit', () => {
     expect(CLAUDE_JSON_QUESTION).toBe(
       'Read ~/.claude.json for MCP server names? Only server names are kept; account data is never read into the plan.',
     )
-    expect(run.specs[0]).toEqual({ options: ['No, skip it', 'Yes, read names only'], header: 'claude.json' })
+    const [first] = run.specs
+    expect([first?.options, first?.header]).toEqual([['No, skip it', 'Yes, read names only'], 'claude.json'])
     expect(CLAUDE_JSON_OPTIONS).toEqual(['No, skip it', 'Yes, read names only'])
     expect(Object.isFrozen(CLAUDE_JSON_OPTIONS)).toBe(true)
   })
@@ -3226,10 +3227,12 @@ describe('question context lines (G-02-1)', () => {
     expect(bare).toEqual([])
   })
 
-  test('a hunk question gets no extra line: it already carries the file, the before and after, and why', async () => {
+  test('a hunk question asks its key line alone; its context carries before, after and why (D-287)', async () => {
     const { perRole } = await questionRuns()
-    const hunks = perRole.asked.filter(question => question.startsWith('.planning/config.json: '))
-    expect(hunks.map(question => question.split('\n').at(-1))).toEqual([
+    const isHunk = (question: string): boolean => question.startsWith('.planning/config.json: ')
+    const at = perRole.asked.flatMap((question, index) => (isHunk(question) ? [index] : []))
+    expect(at.map(index => perRole.asked[index]?.split('\n').length)).toEqual([1, 1, 1])
+    expect(at.map(index => perRole.specs[index]?.context?.lines.at(-1))).toEqual([
       'Required for unattended GSD roles.',
       'Required for unattended GSD roles.',
       'Optional.',

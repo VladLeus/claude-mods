@@ -719,11 +719,7 @@ export const GOLDEN_INIT_APPLY: Readonly<Record<string, GoldenApply>> = {
         },
         {
           "question": [
-            ".planning/config.json: mode",
-            "  before: not set (GSD default)",
-            "  after:  \"yolo\"",
-            "Why: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended",
-            "Required for unattended GSD roles."
+            ".planning/config.json: mode"
           ],
           "header": "Hunk 1 of 1",
           "options": [

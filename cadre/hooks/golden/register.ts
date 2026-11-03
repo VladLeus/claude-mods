@@ -10,11 +10,11 @@
  * (null when none), its options as the dialog drew them and the option preview of each (null where none), the
  * question's own context (D-203). The run is given no presentation, as the test kit stamps none, so no preview line
  * is wrapped (previewColumns, D-231); a register spec pins the wrap at 80 columns. The spec seats the pane inline again
- * at each ask, as a terminal main screen keeps it drawn. The claude.json consent and the hunk questions have no
- * context of their own, so they have no preview and no Describe your own option; of the others, only a question that
- * takes a typed answer gets Describe your own (D-234). The Review is paged (D-233, ASKED #19): its first page, with
- * Next page, Confirm and Change something…. The pane opens as the run starts (D-324), so the seat the kit records at
- * the consent holds for every later question, "Use these roles?" included.
+ * at each ask, as a terminal main screen keeps it drawn. Every question carries a context of its own (D-300), the
+ * hunk questions their before, after and why (D-287); only a question that takes a typed answer gets Describe your own
+ * (D-234). The Review is paged (D-233, ASKED #19): its first page, with Next page, Confirm and Change something…. The
+ * pane opens as the run starts (D-324), so the seat the kit records at the consent holds for every later question;
+ * the consent itself has no preview, as the kit seats the pane only at its ask, after its options were rewritten.
  */
 export const GOLDEN_PREVIEWS: readonly {
   readonly header: string | null
@@ -130,8 +130,8 @@ export const GOLDEN_PREVIEWS: readonly {
       "Decline"
     ],
     "previews": [
-      null,
-      null
+      "**.planning/config.json: mode**\n```\n  before: not set (GSD default)\n  after:  \"yolo\"\nWhy: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended\nRequired for unattended GSD roles.\n```",
+      "**.planning/config.json: mode**\n```\n  before: not set (GSD default)\n  after:  \"yolo\"\nWhy: interactive mode stops for confirmations; yolo lets an autopilot role run phases unattended\nRequired for unattended GSD roles.\n```"
     ]
   },
   {
@@ -141,8 +141,8 @@ export const GOLDEN_PREVIEWS: readonly {
       "Decline"
     ],
     "previews": [
-      null,
-      null
+      "**.planning/config.json: workflow.text\\_mode**\n```\n  before: not set (GSD default)\n  after:  false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall\nRequired for unattended GSD roles.\n```",
+      "**.planning/config.json: workflow.text\\_mode**\n```\n  before: not set (GSD default)\n  after:  false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the role would stall\nRequired for unattended GSD roles.\n```"
     ]
   },
   {
