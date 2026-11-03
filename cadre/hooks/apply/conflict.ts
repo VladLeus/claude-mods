@@ -53,14 +53,17 @@ const UNREAD_CONFLICT_LINE = t('apply.conflict.unreadLine')
  * The context of a conflict question (D-236): the file's diff from the person's version to cadre's new one, which Take
  * new writes: how many lines Take new adds and removes, then the changed lines as diffLines shows them, their
  * secret-like spans hidden before the cap (E1, PR-S1; only the shown lines, never a text on disk); with no diff,
- * because the person's version could not be read, UNREAD_CONFLICT_LINE.
+ * because the person's version could not be read, UNREAD_CONFLICT_LINE. Its summary is the counts line, or that one
+ * line when there is no diff (D-310).
  */
 export function conflictContext(path: string, diff: LineDiff | null): AskContext {
   const title = t('apply.conflict.contextTitle', { path: reportText(path) })
-  if (diff === null) return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff' }
+  if (diff === null) {
+    return { title, lines: [UNREAD_CONFLICT_LINE], kind: 'conflict-diff', summary: UNREAD_CONFLICT_LINE }
+  }
   const counts = tn('apply.conflict.takeNewCounts', diff.added, { count: diff.added, removed: diff.removed })
 
-  return { title, lines: [counts, ...diffLines(diff)], kind: 'conflict-diff' }
+  return { title, lines: [counts, ...diffLines(diff)], kind: 'conflict-diff', summary: counts }
 }
 
 /**

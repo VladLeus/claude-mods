@@ -336,7 +336,7 @@ async function applyConfirmed(
     const desired = reviewed.planned.desired.find(file => file.path === path)
     const diff = disk.state === 'text' && desired !== undefined ? lineDiff(disk.text, desired.content) : null
     const context = conflictContext(path, diff)
-    const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.lines[0] ?? CONFLICT_CONTEXT)
+    const pane = paneQuestionOf(conflictQuestion(path), CONFLICT_CONTEXT, context.summary)
     const ask = {
       question: pane.asked,
       spec: { options: CONFLICT_OPTIONS, header: ASK_HEADERS.conflict, context: { ...context, pane } },

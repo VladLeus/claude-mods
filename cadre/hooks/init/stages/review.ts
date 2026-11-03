@@ -393,10 +393,11 @@ function reviewPlanOf(draft: Draft): {
  * Page `page` of the review as the stage asks it on every surface (D-233, ASKED #4, #19, #23, D-234): the review
  * question with the context line of the plan just shown, the page's options (pageChoices) with the Review chip, and
  * the page as its own context, titled with its place when there is more than one page (`Review (page i of n)`,
- * DECIDED #22); no typed answer is offered, since Change something… takes the item in a note (#164). A pane surface
- * asks REVIEW_QUESTION with one line: the page's place, which the Review chip does not carry, when there is more than
- * one page, else the page's first line (D-255). Its lists are capped by `words` (D-256). An answer pageChoice cannot
- * read is asked again on the same page with refusalLine on top, or CHANGE_REFUSAL after Change something….
+ * DECIDED #22), its summary counting the files of the plan and the roles; no typed answer is offered, since Change
+ * something… takes the item in a note (#164). A pane surface asks REVIEW_QUESTION with that summary under it, and
+ * when there is more than one page the page's place, which the Review chip does not carry, last (D-310). Its lists are
+ * capped by `words` (D-256). An answer pageChoice cannot read is asked again on the same page with refusalLine on top,
+ * or CHANGE_REFUSAL after Change something….
  */
 function pagedAsk(
   draft: Draft,
@@ -413,15 +414,17 @@ function pagedAsk(
     pages.length === 1 ? t('init.review.title') : t('init.review.pagedTitle', { number: at + 1, count: pages.length })
   const accepts = `${quotedLabels(labels)}, ${REVIEW_ITEM_WORDS}`
   const question = reviewQuestion(contextText(reviewContextLine(plan, draft.policy, draft.launchStart)))
-  const context = { ...reviewContext(pages[at] ?? []), title }
-  const line = pages.length === 1 ? (context.lines[0] ?? title) : title
+  const files = plan.ops.filter(op => op.kind !== 'hunk').length
+  const context = { ...reviewContext(pages[at] ?? [], files, draft.roles.length), title }
+  const summarised = withContext(REVIEW_QUESTION, context.summary)
+  const text = pages.length === 1 ? summarised : `${summarised}\n${title}`
 
   return {
     question,
     spec: {
       options: labels,
       header: ASK_HEADERS.review,
-      context: { ...context, pane: { asked: question, text: withContext(REVIEW_QUESTION, line) } },
+      context: { ...context, pane: { asked: question, text } },
     },
     parse: answer => pageChoice(choices, answer),
     accepts,

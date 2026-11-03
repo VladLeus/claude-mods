@@ -24,7 +24,7 @@ import { redactedText } from '../../core/redact'
 import { cardList, clean, idsOrNone, pad, shown } from '../../core/text'
 import type { ListWords } from '../../core/text'
 import { builtClaudeMdPath } from '../../generate/launcher'
-import { SCREEN_LIST_WORDS, t } from '../../locales/t'
+import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { launcherPath, screenPath } from '../../paths'
 import { scanWarnings } from '../../scan/gather'
 import type { Gathered } from '../../scan/gather'
@@ -103,25 +103,39 @@ function cappedRows(items: readonly string[], words: ListWords): string[] {
 
 /**
  * The context of the history question (D-236): the scan block as the side pane shows it after the scans, the summary
- * lines with the names `words` allows (scanSummaryLines, D-256), then each scan warning (scanWarningLines).
+ * lines with the names `words` allows (scanSummaryLines, D-256), then each scan warning (scanWarningLines); its
+ * summary counts the plugins, MCP servers and CLAUDE.md files those lines list (D-310).
  */
 export function scanContext(locations: InitLocations, gathered: Gathered, words: ListWords): AskContext {
+  const { setup } = gathered
   const lines = [
-    ...scanSummaryLines(gathered.repo, gathered.setup, locations.root, words),
+    ...scanSummaryLines(gathered.repo, setup, locations.root, words),
     ...scanWarningLines(scanWarnings(locations, gathered)),
   ]
+  const summary = t('ui.summary.scan', {
+    plugins: tn('ui.summary.plugins', setup.plugins.length, { count: setup.plugins.length }),
+    servers: tn('ui.summary.servers', setup.mcp.length, { count: setup.mcp.length }),
+    files: tn('ui.summary.claudeMdFiles', setup.claudeMd.length, { count: setup.claudeMd.length }),
+  })
 
-  return { title: t('ui.context.scanContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'scan' }
+  return { title: t('ui.context.scanContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'scan', summary }
 }
 
 /**
  * The context of the roles, Adjust, describe, duration and model questions (D-236): the roles with their titles, ids
- * and purposes, then the changes the scan made to the template (proposalLines).
+ * and purposes, then the changes the scan made to the template (proposalLines); its summary counts the roles and
+ * names their ids (D-310).
  */
 export function rolesContext(roles: readonly RoleSpec[], changes: readonly RoleChange[]): AskContext {
   const lines = proposalLines(roles, changes).map(line => clean(line, UNCUT))
+  const ids = roleIdsText(roles.map(role => role.id))
 
-  return { title: t('ui.context.rolesContext'), lines, kind: 'roles' }
+  return {
+    title: t('ui.context.rolesContext'),
+    lines,
+    kind: 'roles',
+    summary: tn('ui.summary.roles', roles.length, { count: roles.length, ids }),
+  }
 }
 
 /** One framework's detection as a context line: its name and status, its version when known, then its evidence. */
@@ -142,13 +156,24 @@ function detectionLine(detection: Detection): string {
 /**
  * The context of a framework question (D-236): the detection evidence of each framework cadre supports, found or not,
  * then of each framework it does not support that the scan found; one line each with its status, version and evidence.
+ * Its summary counts the frameworks the scan found and names their ids, or says none was found (D-310).
  */
 export function detectionContext(detections: readonly Detection[]): AskContext {
   const shownDetections = detections.filter(
     detection => detection.status !== 'not-found' || SUPPORTED_IDS.some(id => id === detection.id),
   )
+  const found = detections.filter(detection => detection.status !== 'not-found').map(detection => shown(detection.id))
+  const summary =
+    found.length === 0
+      ? t('ui.summary.noFramework')
+      : tn('ui.summary.frameworks', found.length, { count: found.length, ids: found.join(', ') })
 
-  return { title: t('ui.context.detectionContext'), lines: shownDetections.map(detectionLine), kind: 'detection' }
+  return {
+    title: t('ui.context.detectionContext'),
+    lines: shownDetections.map(detectionLine),
+    kind: 'detection',
+    summary,
+  }
 }
 
 /**
@@ -160,15 +185,20 @@ export function screenFacts(facts: Facts, root: string): Facts {
   return { ...facts, gsd: facts.gsd.map(fact => ({ ...fact, dir: screenPath(fact.dir, root) })) }
 }
 
-/** The context of the security plugins question (D-236): each missing plugin by its key, with what it does. */
+/**
+ * The context of the security plugins question (D-236): each missing plugin by its key, with what it does; its
+ * summary counts the plugins to install and names them (D-310).
+ */
 export function securityContext(keys: readonly string[]): AskContext {
   const lines = keys.map(key => {
     const note = SECURITY_PLUGIN_NOTES.get(pluginName(key))
 
     return clean(note === undefined ? key : t('ui.context.securityContext', { key, note }), UNCUT)
   })
+  const names = keys.map(key => shown(pluginName(key))).join(', ')
+  const summary = tn('ui.summary.securityPlugins', keys.length, { count: keys.length, names })
 
-  return { title: t('ui.context.securityContext2'), lines, kind: 'security' }
+  return { title: t('ui.context.securityContext2'), lines, kind: 'security', summary }
 }
 
 /** The display form of the global CLAUDE.md, as the instruction questions name it. */
@@ -184,7 +214,7 @@ function foundRows(items: readonly string[], words: ListWords): string[] {
  * anything is read: the global CLAUDE.md, the CLAUDE.md files of the repo chain, the rule files of `.claude/rules` and
  * AGENTS.md, then the memory files, MEMORY.md in any letter case left out, as the hand-out never offers it. A file in
  * the repo is named with the folder name of `root` (screenPath, D-226). Each list shows the names `words` allows
- * (D-256).
+ * (D-256); the summary counts both lists (D-310).
  */
 export function instructionsContext(
   setup: Pick<SetupScan, 'hasGlobalClaudeMd' | 'claudeMd' | 'memoryFiles'>,
@@ -205,30 +235,44 @@ export function instructionsContext(
     t('ui.context.instructionsContext2'),
     ...foundRows(memories, words),
   ]
+  const summary = t('ui.summary.instructions', {
+    files: tn('ui.summary.files', files.length, { count: files.length }),
+    memories: tn('ui.summary.memories', memories.length, { count: memories.length }),
+  })
 
-  return { title: t('ui.context.instructionsContext3'), lines, kind: 'instructions' }
+  return { title: t('ui.context.instructionsContext3'), lines, kind: 'instructions', summary }
 }
 
 /**
  * The context of the entry question of the instruction hand-out (D-236): the instructions block as the side pane
- * shows it (instructionLines), each line cleaned, not cut (#163).
+ * shows it (instructionLines), each line cleaned, not cut (#163); its summary counts the topics, the memories and how
+ * many of them `recommended` gives a role (D-310).
  */
 export function instructionPartsContext(
   scan: InstructionScan,
   topics: readonly InstructionTopic[],
   recommended: ReadonlyMap<string, readonly string[]>,
 ): AskContext {
+  const ids = [...topics.map(topic => topic.id), ...scan.memories.map(memory => memory.id)]
+  const recommendedCount = ids.filter(id => (recommended.get(id) ?? []).length > 0).length
+  const summary = t('ui.summary.instructionParts', {
+    topics: tn('ui.summary.topics', topics.length, { count: topics.length }),
+    memories: tn('ui.summary.memories', scan.memories.length, { count: scan.memories.length }),
+    recommended: recommendedCount,
+  })
+
   return {
     title: t('ui.context.instructionPartsContextTitle'),
     lines: instructionLines(scan, topics, recommended).map(line => clean(line, UNCUT)),
     kind: 'instructions',
+    summary,
   }
 }
 
 /**
  * The context of one topic's question (D-236): that topic only, its title and summary, their secret-like spans hidden
  * (redactedText, E1, #163, PR-S3), the file and heading of each of its parts (never their text) and the roles
- * recommended for it, titled by its place among the topics.
+ * recommended for it, titled by its place among the topics; its summary is those roles (D-310).
  */
 export function topicContext(
   topic: InstructionTopic,
@@ -245,14 +289,15 @@ export function topicContext(
     ...topicParts(topic, parts).map(part => clean(t('ui.context.topicContext2', { source: sourceText(part) }), UNCUT)),
     t('ui.context.topicContext3', { roleIds: roleIdsText(recommended) }),
   ]
+  const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
-  return { title: t('ui.context.topicContext4', { position, count }), lines, kind: 'topic' }
+  return { title: t('ui.context.topicContext4', { position, count }), lines, kind: 'topic', summary }
 }
 
 /**
  * The context of one memory's question (D-236): that memory only, its file and summary, the summary's secret-like
  * spans hidden (redactedText, E1, #163), and the roles recommended for it, never its folder or text, titled by its
- * place among the memories.
+ * place among the memories; its summary is those roles (D-310).
  */
 export function memoryContext(
   memory: MemoryItem,
@@ -264,8 +309,9 @@ export function memoryContext(
     clean(t('ui.context.memoryContext', { file: memory.file, summary: redactedText(memory.summary) }), UNCUT),
     t('ui.context.memoryContext2', { roleIds: roleIdsText(recommended) }),
   ]
+  const summary = t('ui.summary.recommended', { roleIds: roleIdsText(recommended) })
 
-  return { title: t('ui.context.memoryContext3', { position, count }), lines, kind: 'memory' }
+  return { title: t('ui.context.memoryContext3', { position, count }), lines, kind: 'memory', summary }
 }
 
 /** The title of each instruction group's whole-file question context (D-236). */
@@ -281,25 +327,38 @@ const GLOBAL_GROUP_LINE = t('ui.context.globalGroupLine', { globalClaudeMdText: 
 /**
  * The context of a whole-file question (D-63, D-236): the files of that group only, by name, the first `words.max`
  * and then how many more (D-256: every file on a pane surface); the global CLAUDE.md, which the scan names by no file
- * list, with the files it imports.
+ * list, with the files it imports. Its summary counts the group's files, the global CLAUDE.md as its one file (D-310).
  */
 export function memoryGroupContext(group: InstructionGroup, names: readonly string[], words: ListWords): AskContext {
   const shownNames = names.slice(0, words.max).map(name => shown(name))
   const rest = names.length - shownNames.length
   const files = rest > 0 ? [...shownNames, words.more(rest)] : shownNames
-  const lines = group === 'global-claude-md' ? [GLOBAL_GROUP_LINE] : files
+  const isGlobal = group === 'global-claude-md'
+  const count = isGlobal ? 1 : names.length
 
-  return { title: MEMORY_GROUP_TITLES[group], lines, kind: 'memory-group' }
+  return {
+    title: MEMORY_GROUP_TITLES[group],
+    lines: isGlobal ? [GLOBAL_GROUP_LINE] : files,
+    kind: 'memory-group',
+    summary: tn('ui.summary.files', count, { count }),
+  }
 }
 
-/** The context of the env question (D-236): the env block, its heading and then each scanned name, never a value. */
+/**
+ * The context of the env question (D-236): the env block, its heading and then each scanned name, never a value; its
+ * summary counts the names (D-310).
+ */
 export function envContext(names: readonly string[]): AskContext {
   const lines = [ENV_PANE_HEADING, ...names.map(name => `  ${shown(name)}`)]
+  const summary = tn('ui.summary.envNames', names.length, { count: names.length })
 
-  return { title: t('ui.context.envContext'), lines, kind: 'env' }
+  return { title: t('ui.context.envContext'), lines, kind: 'env', summary }
 }
 
-/** The context of the improver install question (D-236): each role given a built CLAUDE.md, with its path. */
+/**
+ * The context of the improver install question (D-236): each role given a built CLAUDE.md, with its path; its summary
+ * counts those roles and names their ids (D-310).
+ */
 export function improverInstallContext(roleIds: readonly string[]): AskContext {
   const rows = roleIds.map(id => t('ui.context.improverInstallContext', {
     id: shown(id),
@@ -307,13 +366,15 @@ export function improverInstallContext(roleIds: readonly string[]): AskContext {
   }))
 
   const lines = [t('ui.context.improverInstallContext2'), ...rows]
+  const summary = tn('ui.summary.roles', roleIds.length, { count: roleIds.length, ids: roleIdsText(roleIds) })
 
-  return { title: t('ui.context.improverInstallContext3'), lines, kind: 'improver-install' }
+  return { title: t('ui.context.improverInstallContext3'), lines, kind: 'improver-install', summary }
 }
 
 /**
  * The context of the launcher start question (D-236): what the git root and the run folder mean as a start, then the
- * launcher of each role (launcherPath), as many as `words` allows and how many more (D-256: all on a pane surface).
+ * launcher of each role (launcherPath), as many as `words` allows and how many more (D-256: all on a pane surface);
+ * its summary counts the launchers (D-310).
  */
 export function launchContext(roles: readonly RoleSpec[], words: ListWords): AskContext {
   const map = cardList(roles.map(role => launcherPath(shown(role.id))), words)
@@ -322,25 +383,40 @@ export function launchContext(roles: readonly RoleSpec[], words: ListWords): Ask
     t('ui.context.launchContext2'),
     t('ui.context.launchContext3', { map }),
   ]
+  const summary = tn('ui.summary.launchers', roles.length, { count: roles.length })
 
-  return { title: t('ui.context.launchContext4'), lines, kind: 'launch' }
+  return { title: t('ui.context.launchContext4'), lines, kind: 'launch', summary }
 }
 
 /**
  * The context of the launcher folder question (D-236): the top-level folders the repo scan found code in, as candidate
  * folders, as many as `words` allows and then how many more (D-256: all on a pane surface); with none, a line that
- * says so.
+ * says so. Its summary counts the folders (D-310).
  */
 export function launchDirContext(codeDirs: readonly string[], words: ListWords): AskContext {
   const lines =
     codeDirs.length === 0
       ? [t('ui.context.launchDirContext')]
       : [t('ui.context.launchDirContext2'), ...cappedRows(codeDirs.map(dir => `${dir}/`), words)]
+  const summary = tn('ui.summary.codeFolders', codeDirs.length, { count: codeDirs.length })
 
-  return { title: t('ui.context.launchDirContext3'), lines, kind: 'launch-dir' }
+  return { title: t('ui.context.launchDirContext3'), lines, kind: 'launch-dir', summary }
 }
 
-/** The context of the review question (D-236): the review block it is asked about, each line cleaned, uncut (#163). */
-export function reviewContext(lines: readonly string[]): AskContext {
-  return { title: t('ui.context.reviewContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'review' }
+/**
+ * The context of the review question (D-236): the review block it is asked about, each line cleaned, uncut (#163);
+ * its summary counts the `files` the plan writes or keeps and the `roles` it has (D-310).
+ */
+export function reviewContext(lines: readonly string[], files: number, roles: number): AskContext {
+  const summary = t('ui.summary.review', {
+    files: tn('ui.summary.files', files, { count: files }),
+    roles: tn('ui.summary.roleCount', roles, { count: roles }),
+  })
+
+  return {
+    title: t('ui.context.reviewContext'),
+    lines: lines.map(line => clean(line, UNCUT)),
+    kind: 'review',
+    summary,
+  }
 }

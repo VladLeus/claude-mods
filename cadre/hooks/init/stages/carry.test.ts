@@ -58,9 +58,10 @@ describe('carryStep', () => {
   test('the env question is asked once, and every role carries the picked names only', () => {
     const run = driven(carryAt(roles, twoNames), ['JIRA_URL'])
     expect(run.asked).toEqual([ENV_ASKED])
-    // A pane surface asks the question alone with the first line of its context, which lists every name (D-255, D-283).
-    const pane = { asked: ENV_ASKED, text: withContext(ENV_PANE_QUESTION, TWO_NAMES_LINES[0] ?? '') }
-    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', pane }
+    // A pane surface asks the question alone with the summary of its context, which lists every name (D-283, D-310).
+    const summary = '2 env names'
+    const pane = { asked: ENV_ASKED, text: withContext(ENV_PANE_QUESTION, summary) }
+    const context = { title: 'Env variables', lines: TWO_NAMES_LINES, kind: 'env', summary, pane }
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
@@ -164,8 +165,8 @@ describe('the carry stage (D-230)', () => {
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL'], PANE_LIST_WORDS), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
-    const pane = { asked: question, text: withContext(short, lines[0] ?? '') }
-    const context = { title: 'Env variables', lines, kind: 'env', pane }
+    const pane = { asked: question, text: withContext(short, '2 env names') }
+    const context = { title: 'Env variables', lines, kind: 'env', summary: '2 env names', pane }
     const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

@@ -127,9 +127,8 @@ function historyDirOf(state: InitState): string | null {
 /**
  * The history question as the stage asks it (SCAN-03, D-136): historyQuestion with the session count, and the line of
  * what the repo scan found on its second line (scanContextLine); the two answers with the History chip and the scan
- * block as its own context (scanContext, its lists as `words` allows them, D-236, D-256), which a pane surface asks
- * with its first line in place of that line (D-255), the answers its refusal lists, and the reason a dismissal cancels
- * with.
+ * block as its own context (scanContext, its lists as `words` allows them, D-236, D-256), whose summary a pane surface
+ * asks in place of that line (D-310), the answers its refusal lists, and the reason a dismissal cancels with.
  */
 function historyAsk(
   total: number,
@@ -139,7 +138,7 @@ function historyAsk(
 ): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const context = scanContext(locations, gathered, words)
   const contextLine = scanContextLine(gathered.repo)
-  const pane = paneQuestionOf(historyQuestion(total), contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(historyQuestion(total), contextLine, context.summary)
 
   return {
     question: pane.asked,

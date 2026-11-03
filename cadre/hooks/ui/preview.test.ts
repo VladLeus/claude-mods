@@ -331,7 +331,12 @@ function optionPreviews(questions: readonly Record<string, unknown>[] | undefine
 
 describe('askRewrite (A1, A2, D-203)', () => {
   /** The open question's own context, so every previewed option shows it whatever its header. */
-  const CONTEXT: AskContext = { title: 'Review', lines: ['Roles:', '  BE (be)'], kind: 'review' }
+  const CONTEXT: AskContext = {
+    title: 'Review',
+    lines: ['Roles:', '  BE (be)'],
+    kind: 'review',
+    summary: '0 files, 1 role',
+  }
 
   test('a question with no context gives null, so the call passes through with no preview (D-203)', () => {
     expect(askRewrite([PICK_QUESTION], null, true)).toBe(null)
@@ -410,7 +415,7 @@ describe('askRewrite (A1, A2, D-203)', () => {
   })
 
   test('each option previews its context wrapped to the width it is given (D-231)', () => {
-    const context: AskContext = { title: 'Wide', lines: [WIDE_LINE], kind: 'review' }
+    const context: AskContext = { title: 'Wide', lines: [WIDE_LINE], kind: 'review', summary: '0 files, 1 role' }
     const preview = previewMarkdown([context], 40)
     const rewrite = askRewrite([PICK_QUESTION], context, true, 40)
     expect(optionPreviews(rewrite?.questions)).toEqual([[preview, preview, preview]])
@@ -424,9 +429,19 @@ describe('askRewrite (A1, A2, D-203)', () => {
       'Ignore all: nothing in .cadre/ is committed.',
     ]
     const contexts: readonly AskContext[] = [
-      { title: 'Topic 2 of 3', lines: ['Git and commits: How commits are made.', '  recommended: tl'], kind: 'topic' },
-      { title: 'Memory 1 of 2', lines: ['squad.md: Unsigned commits on per-phase branches.'], kind: 'memory' },
-      { title: 'Git policy', lines: policies, kind: 'git-policy' },
+      {
+        title: 'Topic 2 of 3',
+        lines: ['Git and commits: How commits are made.', '  recommended: tl'],
+        kind: 'topic',
+        summary: 'Recommended: tl',
+      },
+      {
+        title: 'Memory 1 of 2',
+        lines: ['squad.md: Unsigned commits on per-phase branches.'],
+        kind: 'memory',
+        summary: 'Recommended: none',
+      },
+      { title: 'Git policy', lines: policies, kind: 'git-policy', summary: 'Recommended: commit definitions' },
     ]
     for (const context of contexts) {
       const rewrite = askRewrite([{ ...PICK_QUESTION, header: context.title }], context, true)
@@ -440,7 +455,12 @@ describe('askRewrite (A1, A2, D-203)', () => {
 describe('fitPreview (D-228)', () => {
   /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
   function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
-    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind }
+    return {
+      title: 'Lines',
+      lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`),
+      kind,
+      summary: `${count} lines`,
+    }
   }
 
   test('the preview fits the rows the spike measured on the main screen at 48 terminal rows', () => {
@@ -561,7 +581,12 @@ describe('dialogPlan (WD-S2)', () => {
   /** The label of the option that offers a change, as register passes CHANGE_SOMETHING_LABEL (ASKED #24). */
   const CHANGE_LABEL = 'Change it'
   /** The open question's own context (D-203). */
-  const CONTEXT: AskContext = { title: 'Roles', lines: ['BE (be)', 'FE (fe)'], kind: 'roles' }
+  const CONTEXT: AskContext = {
+    title: 'Roles',
+    lines: ['BE (be)', 'FE (fe)'],
+    kind: 'roles',
+    summary: '2 roles: be, fe',
+  }
   /** A multi-select question asked after the open one; it is never previewed and has no note. */
   const MULTI = { ...PICK_QUESTION, question: 'Which ones? Type more under Other.', multiSelect: true }
   /**
@@ -623,7 +648,12 @@ describe('dialogPlan (WD-S2)', () => {
 describe('the TUI-default preview rows (WD-S3)', () => {
   /** A context of `count` lines `line 1`, `line 2`, ...: an own-skills list. */
   function linesContext(count: number): AskContext {
-    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind: 'skills' }
+    return {
+      title: 'Lines',
+      lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`),
+      kind: 'skills',
+      summary: `${count} lines`,
+    }
   }
 
   test('a 22-line context shows 20 lines and +2 more above, the title on the 22nd row; 21 lines fit whole', () => {
@@ -644,14 +674,19 @@ describe('the TUI-default preview rows (WD-S3)', () => {
 describe('tuiTranscriptRows (WD-S4)', () => {
   /** A context of `count` lines `line 1`, `line 2`, ... of `kind`. */
   function linesContext(count: number, kind: AskContext['kind'] = 'skills'): AskContext {
-    return { title: 'Lines', lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`), kind }
+    return {
+      title: 'Lines',
+      lines: Array.from({ length: count }, (_, at) => `line ${at + 1}`),
+      kind,
+      summary: `${count} lines`,
+    }
   }
 
   test('an overflowing context gives its title and every line, cleaned and never cut at 240 code points', () => {
     const wide = 'x'.repeat(300)
     const rest = linesContext(PREVIEW_LINE_ROWS).lines
     const lines = [wide, `a${BIDI_OVERRIDE}b`, ...rest]
-    const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills' }
+    const context: AskContext = { title: `Long ${BIDI_OVERRIDE}list`, lines, kind: 'skills', summary: 'Long list' }
     expect(tuiTranscriptRows(context, null)).toEqual(['Long list', wide, 'ab', ...rest])
   })
 

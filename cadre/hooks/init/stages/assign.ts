@@ -165,8 +165,8 @@ function mcpLinesOf(
 /**
  * The question for all the MCP servers at once (D-250): which roles get all `n` of them, with the team's role ids on
  * its second line (mcpContextLine), the MCP chip, and as its own context each server with its source, its tool count
- * and the roles `recommended` gives it (mcpGroupContext over mcpLinesOf), which a pane surface asks with its first line
- * in place of that line (D-255).
+ * and the roles `recommended` gives it (mcpGroupContext over mcpLinesOf), whose summary a pane surface asks in place
+ * of that line (D-310).
  */
 function mcpWholeItem(
   state: InitState,
@@ -177,7 +177,7 @@ function mcpWholeItem(
   const question = t('init.assign.mcpWholeQuestion', { count: names.length })
   const context = mcpGroupContext(mcpLinesOf(state, plan, recommended))
   const contextLine = mcpContextLine(plan.roles)
-  const pane = paneQuestionOf(question, contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(question, contextLine, context.summary)
 
   return {
     question: pane.asked,
@@ -286,8 +286,9 @@ function skillsStart(state: InitState, plan: AssignPlan, done: readonly NameAssi
 /**
  * The plugin group at `index` as its question asks it (D-53, D-248, D-251): the roles the skills call recommended for
  * the whole group, and its skills with the roles recommended for each, or the table seed when the call fell back
- * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group, the line a pane surface
- * asks with the question (D-255). Undefined after the last group.
+ * (skillGroupItem); its own context starts with `Recommended: <ids or none>` for the group, and its summary, which a
+ * pane surface asks with the question, counts the skills and names that recommendation (D-310). Undefined after the
+ * last group.
  */
 function groupAt(
   plan: AssignPlan,
@@ -299,7 +300,7 @@ function groupAt(
   const perSkill = skills.groupSkills.get(group.label) ?? new Map<string, readonly string[]>()
   const recommended = skills.groups.get(group.label) ?? []
   const line = t('ui.assign.groupRecommended', { roleIds: idsOrNone(recommended, SCREEN_LIST_WORDS.none) })
-  const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill, line)
+  const item = skillGroupItem(group, plan.counts, plan.roles, plan.setup.skills, perSkill, recommended)
   const context = { ...item.context, lines: [line, ...item.context.lines] }
 
   return { group, item: { ...item, context }, recommended }
@@ -516,8 +517,9 @@ function afterItem(state: InitState, plan: AssignPlan, cursor: ItemCursor, answe
 /**
  * The model's recommendation for the own skills (G-02-1b): the side pane shows every own skill with what it does, its
  * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out, with that
- * block as its own context (ownSkillsContext, D-236). In the hand-out items, a skill the model's map has no entry for
- * gets the roles the skill table seeds for it as its recommendation (D-280); the side-pane lines show the model's map.
+ * block as its own context (ownSkillsContext, D-236), its summary counting the skills and those the model's map
+ * recommends a role for (D-310). In the hand-out items, a skill the model's map has no entry for gets the roles the
+ * skill table seeds for it as its recommendation (D-280); the side-pane lines show the model's map.
  */
 function afterSkillsModel(
   state: InitState,
@@ -535,7 +537,8 @@ function afterSkillsModel(
   const lines = ownSkillLines(skills, plan.counts, recommended)
   const shown = withOutputs(state, [{ kind: 'show', block: { key: 'skills', lines } }])
   const items = ownSkillItems(skills, plan.counts, seeded)
-  const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines) }
+  const withRoles = skills.filter((_, index) => (recommended.get(ownSkillId(index)) ?? []).length > 0).length
+  const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines, skills.length, withRoles) }
 
   return handedOut(shown, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }

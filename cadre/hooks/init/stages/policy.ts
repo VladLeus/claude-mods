@@ -48,11 +48,15 @@ const GIT_POLICIES: readonly GitPolicyEntry[] =
 /** The context line of the git policy question (D-136): what each policy keeps in git. */
 export const GIT_POLICY_CONTEXT = GIT_POLICIES.map(entry => entry.commits).join(' ')
 
-/** The git policy question's own context (D-203, D-229): what each policy commits, one line per policy. */
+/**
+ * The git policy question's own context (D-203, D-229): what each policy commits, one line per policy; its summary
+ * recommends the default policy, commit definitions (D-310).
+ */
 const GIT_POLICY_ASK_CONTEXT: AskContext = Object.freeze({
   title: t('init.policy.contextTitle'),
   lines: Object.freeze(GIT_POLICIES.map(entry => entry.commits)),
   kind: 'git-policy',
+  summary: t('ui.summary.gitPolicy'),
 })
 
 /**
@@ -87,14 +91,10 @@ export const GIT_POLICY_DISMISSED_REASON = t('init.policy.dismissed')
 const GIT_POLICY_ACCEPTS = GIT_POLICIES.map(entry => entry.word).join(', ')
 
 /**
- * What a pane surface asks for the git policy question (D-255): GIT_POLICY_QUESTION with the first line of its own
+ * What a pane surface asks for the git policy question (D-310): GIT_POLICY_QUESTION with the summary of its own
  * context in place of GIT_POLICY_CONTEXT.
  */
-const GIT_POLICY_PANE = paneQuestionOf(
-  GIT_POLICY_QUESTION,
-  GIT_POLICY_CONTEXT,
-  GIT_POLICY_ASK_CONTEXT.lines[0] ?? GIT_POLICY_CONTEXT,
-)
+const GIT_POLICY_PANE = paneQuestionOf(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT, GIT_POLICY_ASK_CONTEXT.summary)
 
 /**
  * The git policy question as the policy stage asks it (D-65, D-136): GIT_POLICY_QUESTION with GIT_POLICY_CONTEXT on its

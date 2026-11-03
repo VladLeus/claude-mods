@@ -138,7 +138,7 @@ export type RegenAsk =
 /**
  * The context of one regen question (D-236): what changed in that item, where it is (a part's file and heading, a
  * memory's file and summary, never its folder or text), whether it is new or changed since init and whether it is
- * recommended, titled by its place among the questions.
+ * recommended, titled by its place among the questions; its summary is that recommendation line (D-310).
  */
 export function regenPartContext(
   item: RegenAsk,
@@ -156,14 +156,13 @@ export function regenPartContext(
         file: clean(item.memory.file),
         value: redactedText(summary ?? item.memory.summary),
       })
-  const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], t('regen.review.recommended', {
-    value: isRecommended ? t('ui.scan.yes') : t('ui.scan.no'),
-  })]
+  const recommended = t('regen.review.recommended', { value: isRecommended ? t('ui.scan.yes') : t('ui.scan.no') })
+  const lines = [reportText(where), REGEN_CHANGE_TEXTS[item.change], recommended]
 
   return { title: t('regen.review.pagedChip', {
     position: place.position,
     count: place.count,
-  }), lines, kind: 'regen-part' }
+  }), lines, kind: 'regen-part', summary: recommended }
 }
 
 /** What changed on one side since its records were made, and what regen asks about it (sideChanges). */
@@ -297,8 +296,8 @@ async function regenRecommended(
 /**
  * The question of one regen item (D-142): the part question (regenPartQuestion) or the memory question
  * (regenMemoryQuestion) with its context line, Yes and No, the chip of its place (regenHeader) and what changed in it
- * as its own context (regenPartContext, D-236), whose last line, whether the model recommends the item, a pane surface
- * asks in place of the context line (D-255); an answer that is neither is asked again with why on top (D-136).
+ * as its own context (regenPartContext, D-236), whose summary, whether the model recommends the item, a pane surface
+ * asks in place of the context line (D-310); an answer that is neither is asked again with why on top (D-136).
  */
 function regenAsk(
   id: string,
@@ -312,7 +311,7 @@ function regenAsk(
       ? regenPartContextLine(item.change, isRecommended)
       : regenMemoryContextLine(item.memory, item.change, isRecommended)
   const context = regenPartContext(item, isRecommended, place)
-  const pane = paneQuestionOf(sentence, contextLine, context.lines.at(-1) ?? contextLine)
+  const pane = paneQuestionOf(sentence, contextLine, context.summary)
 
   return {
     question: pane.asked,

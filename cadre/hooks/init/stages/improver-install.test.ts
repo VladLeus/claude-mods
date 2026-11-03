@@ -48,10 +48,10 @@ describe('the improver install stage (D-230)', () => {
     const state = improverAt(BUILT)
     const question = withContext(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT)
     const lines = ['Built CLAUDE.md files it would tidy:', '  pm: .cadre/pm/CLAUDE.md']
-    // A pane surface asks the question with the first line of its context (D-255).
-    const text = withContext(IMPROVER_INSTALL_QUESTION, 'Built CLAUDE.md files it would tidy:')
-    const pane = { asked: question, text }
-    const context = { title: 'Improver install', lines, kind: 'improver-install', pane }
+    // A pane surface asks the question with the summary of its context (D-310).
+    const summary = '1 role: pm'
+    const pane = { asked: question, text: withContext(IMPROVER_INSTALL_QUESTION, summary) }
+    const context = { title: 'Improver install', lines, kind: 'improver-install', summary, pane }
     const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Improver', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)

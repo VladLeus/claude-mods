@@ -31,12 +31,15 @@ describe('modelStep', () => {
   const MODE_ASKED = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
   /** Every model question's own context: the roles with their purposes (D-236). */
   const lines = proposalLines(roles, [])
-  /** The context of the question `asked` of `sentence`: a pane surface asks its first line in place (D-255). */
+  /** The summary of every model question's context: the five roles and their ids (D-310). */
+  const summary = '5 roles: pm, tl, be, qa, security'
+  /** The context of the question `asked` of `sentence`: a pane surface asks its summary in place (D-310). */
   const contextOf = (asked: string, sentence: string): unknown => ({
     title: 'Roles',
     lines,
     kind: 'roles',
-    pane: { asked, text: withContext(sentence, lines[0] ?? '') },
+    summary,
+    pane: { asked, text: withContext(sentence, summary) },
   })
 
   test('the first model question offers Same for all roles first, then Per role', () => {
@@ -177,9 +180,10 @@ describe('the model stage (D-230)', () => {
     const state = modelStage.enter(stateAt('model', { roles }))
     const question = withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.')
     const lines = proposalLines(roles, [])
-    // A pane surface asks the question with the first line of its context (D-255).
-    const pane = { asked: question, text: withContext(MODEL_MODE_QUESTION, lines[0] ?? '') }
-    const context = { title: 'Roles', lines, kind: 'roles', pane }
+    // A pane surface asks the question with the summary of its context (D-310).
+    const summary = '5 roles: pm, tl, be, qa, security'
+    const pane = { asked: question, text: withContext(MODEL_MODE_QUESTION, summary) }
+    const context = { title: 'Roles', lines, kind: 'roles', summary, pane }
     const ask = { question, spec: { options: ['Same for all roles', 'Per role'], header: 'Model', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
@@ -195,11 +199,13 @@ describe('the model stage (D-230)', () => {
       [withContext(MODEL_MODE_QUESTION, 'Roles: pm, tl, be, qa, security.'), MODEL_MODE_QUESTION],
       [withContext('Model and effort for PM (pm)?', MODEL_EFFORT_CONTEXT), 'Model and effort for PM (pm)?'],
     ]
+    const summary = '5 roles: pm, tl, be, qa, security'
     const contexts = asks.map(([asked = '', sentence = '']) => ({
       title: 'Roles',
       lines,
       kind: 'roles',
-      pane: { asked, text: withContext(sentence, lines[0] ?? '') },
+      summary,
+      pane: { asked, text: withContext(sentence, summary) },
     }))
     expect(run.specs.map(spec => spec.context)).toEqual(contexts)
   })

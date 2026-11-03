@@ -108,25 +108,30 @@ describe('own skills hand-out (G-02-1b)', () => {
   const ZETA_LINE = 'zeta: No description. Used 4 times in the last 50 sessions. Recommended: fe.'
   const ALPHA_LINE = 'alpha: Sort the inbox. Recommended: none.'
   /** The own-skills entry question's own context: the own-skills block. */
-  /** The entry question as asked: its count line, which a pane surface asks too (D-255). */
+  /** The entry question as asked: its count line (D-136). */
   const ENTRY_ASKED = withContext(ownEntry(3), ENTRY_CONTEXT)
+  /** The entry's summary, which a pane surface asks: the three skills, two of them recommended a role (D-310). */
+  const OWN_SUMMARY = '3 skills, 2 recommended'
   const OWN_CONTEXT = {
     title: 'Your own skills',
     lines: OWN_BLOCK,
     kind: 'skills',
-    pane: { asked: ENTRY_ASKED, text: ENTRY_ASKED },
+    summary: OWN_SUMMARY,
+    pane: { asked: ENTRY_ASKED, text: withContext(ownEntry(3), OWN_SUMMARY) },
   }
   /**
    * The codex group question's own context: its one skill, never used and recommended to no role; a pane surface asks
-   * the question alone, with no count or uses, and its recommendation line (D-255, D-283).
+   * the question alone, with no count or uses, and its summary: the skill count and the group's recommendation
+   * (D-283, D-310).
    */
   const CODEX_CONTEXT = {
     title: 'Skills: codex',
     lines: ['Recommended: none', 'codex:rescue: No description. Recommended: none.'],
     kind: 'skill-group',
+    summary: '1 skill. Recommended: none',
     pane: {
       asked: withContext(CODEX_QUESTION, skillsContextLine(roles)),
-      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', 'Recommended: none'),
+      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', '1 skill. Recommended: none'),
     },
   }
 
@@ -216,11 +221,12 @@ describe('own skills hand-out (G-02-1b)', () => {
   test('Go one by one asks each own skill once, busiest first, then by name: Yes, No and a role list', async () => {
     const { run, assigned } = await stepRun(['None', 'Go one by one', 'Yes', 'No', 'qa'])
     expect(run.asked.slice(2)).toEqual([MID_ASKED, ZETA_ASKED, ALPHA_ASKED])
-    // A pane surface asks each skill's question with the roles recommended for it (D-255).
+    // A pane surface asks each skill's question with its summary, the roles recommended for it (D-310).
     const specAt = (at: number, line: string, asked: string, recommended: string): unknown => {
       const [sentence = ''] = asked.split('\n')
-      const pane = { asked, text: withContext(sentence, `Recommended: ${recommended}`) }
-      const context = { title: `Skill ${at} of 3`, lines: [line], kind: 'skill', pane }
+      const summary = `Recommended: ${recommended}`
+      const pane = { asked, text: withContext(sentence, summary) }
+      const context = { title: `Skill ${at} of 3`, lines: [line], kind: 'skill', summary, pane }
 
       return { options: ['Yes', 'No'], header: `Skill ${at}/3`, context, acceptsTyped: true }
     }
@@ -250,10 +256,13 @@ describe('own skills hand-out (G-02-1b)', () => {
     const { run, assigned } = await stepRun(['None', 'Whole group', 'All roles'])
     const own = 'Which roles get your own skills (3)? (used 8 times in recent sessions) (e.g. BE, QA, or none)'
     expect(run.asked.slice(2)).toEqual([withContext(own, skillsContextLine(roles))])
-    // A pane surface asks the whole-group question alone with the first line of its context (D-255, D-283).
+    // A pane surface asks the whole-group question alone with its summary: the own skills have no group
+    // recommendation (D-283, D-310).
     const short = 'Which roles get your own skills? (e.g. BE, QA, or none)'
-    const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(short, ALPHA_LINE) }
-    const context = { title: 'Skills: your own', lines: [ALPHA_LINE, MID_LINE, ZETA_LINE], kind: 'skill-group', pane }
+    const summary = '3 skills. Recommended: none'
+    const pane = { asked: withContext(own, skillsContextLine(roles)), text: withContext(short, summary) }
+    const lines = [ALPHA_LINE, MID_LINE, ZETA_LINE]
+    const context = { title: 'Skills: your own', lines, kind: 'skill-group', summary, pane }
     expect(run.specs.at(-1)).toEqual({ options: ['None', 'All roles'], header: 'Skills', context, acceptsTyped: true })
     expect(assigned.map(role => ownOf(assigned, role.id))).toEqual(roles.map(() => ['alpha', 'mid', 'zeta']))
   })
@@ -358,6 +367,7 @@ describe('the MCP hand-out (D-250)', () => {
       title: 'MCP: sentry',
       lines: ['Source: .mcp.json', 'Tools: 1 (issues)', 'Recommended: none'],
       kind: 'mcp-server',
+      summary: 'Recommended: none',
     })
   })
 })

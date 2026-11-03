@@ -61,8 +61,8 @@ function roleIdsText(ids: readonly string[]): string {
 /**
  * The context of an MCP server question (D-211, D-236): the server by name, its source (mcpSourceText), the tools the
  * session lists for it (mcpToolNamesOf), counted first, then the names `words` allows and how many more (every name
- * on a pane surface, D-256), or `Tools: none listed`, and the roles recommended for it, or none. No other field of the
- * server or its tools is read (T-02.1-72).
+ * on a pane surface, D-256), or `Tools: none listed`, and the roles recommended for it, or none, which are its summary
+ * too (D-310). No other field of the server or its tools is read (T-02.1-72).
  */
 export function mcpServerContext(
   ref: McpRef,
@@ -84,6 +84,7 @@ export function mcpServerContext(
       roleIds: roleIdsText(recommended),
     })],
     kind: 'mcp-server',
+    summary: t('ui.summary.recommended', { roleIds: roleIdsText(recommended) }),
   }
 }
 
@@ -117,13 +118,19 @@ function skillLineText(skill: SkillLine): string {
 
 /**
  * The context of a skill group question (D-211, D-236): the group by its label, then one line per skill with what it
- * does, how often it was used and the roles recommended for it.
+ * does, how often it was used and the roles recommended for it; its summary counts the skills and names the roles
+ * `recommended` for the whole group, none when it names none (D-310).
  */
-export function skillGroupContext(label: string, skills: readonly SkillLine[]): AskContext {
+export function skillGroupContext(
+  label: string,
+  skills: readonly SkillLine[],
+  recommended: readonly string[] = [],
+): AskContext {
   return {
     title: t('ui.assign.skillGroupContextTitle', { label: shown(label, MAX_CONTEXT_NAME_CHARS) }),
     lines: skills.map(skillLineText),
     kind: 'skill-group',
+    summary: tn('ui.summary.skillGroup', skills.length, { count: skills.length, roleIds: roleIdsText(recommended) }),
   }
 }
 
@@ -142,7 +149,8 @@ export type McpLine = {
 /**
  * The context of the question for all the MCP servers at once (D-250), as skillGroupContext is for a skill group: the
  * title MCP servers, then one line per server with its source, how many tools the session lists for it (counted, `1
- * tool`) and the roles recommended for it, or none; the name cut to 60 code points and every value cleaned.
+ * tool`) and the roles recommended for it, or none; the name cut to 60 code points and every value cleaned. Its
+ * summary counts the servers and those with a recommended role (D-310).
  */
 export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
   const lineText = (line: McpLine): string =>
@@ -153,18 +161,35 @@ export function mcpGroupContext(lines: readonly McpLine[]): AskContext {
       roleIds: roleIdsText(line.recommended),
     })
 
-  return { title: t('ui.assign.mcpGroupContextTitle'), lines: lines.map(lineText), kind: 'mcp-server' }
+  const recommended = lines.filter(line => line.recommended.length > 0).length
+  const summary = tn('ui.summary.mcpGroup', lines.length, { count: lines.length, recommended })
+
+  return { title: t('ui.assign.mcpGroupContextTitle'), lines: lines.map(lineText), kind: 'mcp-server', summary }
 }
 
-/** The context of one own skill's question (D-236): that skill's line alone, titled by its place among them. */
+/**
+ * The context of one skill's question (D-236): that skill's line alone, titled by its place among them; its summary
+ * is the roles recommended for it (D-310).
+ */
 export function skillContext(skill: SkillLine, position: number, count: number): AskContext {
-  return { title: t('ui.assign.skillContext', { position, count }), lines: [skillLineText(skill)], kind: 'skill' }
+  return {
+    title: t('ui.assign.skillContext', { position, count }),
+    lines: [skillLineText(skill)],
+    kind: 'skill',
+    summary: t('ui.summary.recommended', { roleIds: roleIdsText(skill.recommended) }),
+  }
 }
 
 /**
  * The context of the own-skills entry question (D-236): the own-skills block as the side pane shows it, each line
- * cleaned, not cut (#163).
+ * cleaned, not cut (#163); its summary counts the `count` own skills and the `recommended` of them with a recommended
+ * role (D-310).
  */
-export function ownSkillsContext(lines: readonly string[]): AskContext {
-  return { title: t('ui.assign.ownSkillsContext'), lines: lines.map(line => clean(line, UNCUT)), kind: 'skills' }
+export function ownSkillsContext(lines: readonly string[], count: number, recommended: number): AskContext {
+  return {
+    title: t('ui.assign.ownSkillsContext'),
+    lines: lines.map(line => clean(line, UNCUT)),
+    kind: 'skills',
+    summary: tn('ui.summary.ownSkills', count, { count, recommended }),
+  }
 }

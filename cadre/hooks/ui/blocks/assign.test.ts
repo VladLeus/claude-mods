@@ -124,23 +124,26 @@ describe('skill contexts (D-211)', () => {
       'token-count: 2 ways to count tokens. Recommended: none.',
     ]
     expect(skillGroupContext('codex', skills).lines).toEqual(lines)
+    expect(skillGroupContext('codex', skills, ['be', 'qa'])).toMatchObject({ summary: '3 skills. Recommended: be, qa' })
     expect(skills.map((skill, at) => skillContext(skill, at + 1, skills.length).lines)).toEqual(lines.map(l => [l]))
   })
 
-  test('the own-skills entry context is the own-skills block, each line cleaned as a report cell', () => {
+  test('the own-skills entry context is the own-skills block, each line cleaned; its summary counts them', () => {
     const bidi = String.fromCodePoint(0x202e)
-    expect(ownSkillsContext(['Skills with no plugin:', `  mine: Do${bidi} it.`])).toEqual({
+    expect(ownSkillsContext(['Skills with no plugin:', `  mine: Do${bidi} it.`], 1, 0)).toEqual({
       title: 'Your own skills',
       lines: ['Skills with no plugin:', '  mine: Do it.'],
       kind: 'skills',
+      summary: '1 skill, 0 recommended',
     })
+    expect(ownSkillsContext([], 14, 3)).toMatchObject({ summary: '14 skills, 3 recommended' })
   })
 })
 
 describe('own skill lines and their caps (#163)', () => {
   test('the own-skills context keeps a line whole, never cut at 240 code points', () => {
     const wide = 'w'.repeat(300)
-    expect(ownSkillsContext([wide]).lines).toEqual([wide])
+    expect(ownSkillsContext([wide], 1, 0).lines).toEqual([wide])
   })
 
   test('a purpose is redacted before its 120 cap: a key across the cap shows no prefix of it', () => {

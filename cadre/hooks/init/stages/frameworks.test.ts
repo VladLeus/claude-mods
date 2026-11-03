@@ -40,16 +40,17 @@ const DETECTED = {
   title: 'Frameworks',
   lines: [GSD_LINE, 'superpowers: not found (no docs/superpowers/ or .superpowers/; no enabled superpowers@ plugin)'],
   kind: 'detection',
+  summary: 'No framework found',
 }
 
 /**
  * DETECTED as the question `asked` carries it: a pane surface asks that question's sentence, its first line, with the
- * first detection line in place of the team line (D-255).
+ * summary of the detections, no framework found, in place of the team line (D-310).
  */
 function detectedFor(asked: string | undefined): unknown {
   const [sentence = ''] = (asked ?? '').split('\n')
 
-  return { ...DETECTED, pane: { asked, text: withContext(sentence, GSD_LINE) } }
+  return { ...DETECTED, pane: { asked, text: withContext(sentence, DETECTED.summary) } }
 }
 
 /** The frameworks stage entered for `choice` and `roles`, the rest of a whole draft set. */

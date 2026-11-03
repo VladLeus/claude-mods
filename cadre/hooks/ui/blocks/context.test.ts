@@ -268,11 +268,13 @@ describe('question contexts (D-203, D-236)', () => {
   })
 
   test('reviewContext is the review block, each line cleaned as a report cell (T-02.1-71)', () => {
-    expect(reviewContext(['Plan:', `  create${BIDI} .cadre/be/role.json`])).toEqual({
+    expect(reviewContext(['Plan:', `  create${BIDI} .cadre/be/role.json`], 25, 3)).toEqual({
       title: 'Review',
       lines: ['Plan:', '  create .cadre/be/role.json'],
       kind: 'review',
+      summary: '25 files, 3 roles',
     })
+    expect(reviewContext([], 1, 1)).toMatchObject({ summary: '1 file, 1 role' })
   })
 })
 
@@ -319,7 +321,7 @@ describe('context lines kept whole (#163)', () => {
       instructionPartsContext(scan, [topic], RECOMMENDED),
       topicContext(topic, [PART], [], 1, 1),
       memoryContext(memory('M1', 'squad.md', wide), [], 1, 1),
-      reviewContext([wide]),
+      reviewContext([wide], 1, 1),
     ]
     expect(contexts.map(context => context.lines.some(line => line.includes(wide)))).toEqual(contexts.map(() => true))
   })

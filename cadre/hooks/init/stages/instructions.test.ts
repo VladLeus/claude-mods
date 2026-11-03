@@ -434,13 +434,14 @@ describe('the instructions stage (D-230)', () => {
   test('the content consent carries the files and memories found by name as its own context (D-236)', () => {
     const state = instructionsStage.enter(stateAt('instructions', { roles, gathered, locations: DEFAULT_LOCATIONS }))
     const asking = nextStage(state, { kind: 'io', result: { id: 'repo-instruction-names', result: repo } })
-    // A pane surface asks the question with the first line of its context (D-255).
-    const text = withContext(CONTENT_QUESTION, 'Files found by name (nothing is read before a yes):')
+    // A pane surface asks the question with the summary of its context (D-310).
+    const summary = '1 file, 0 memories'
     expect(asking.openQuestion?.spec.context).toEqual({
       title: 'Instruction files',
       lines: ['Files found by name (nothing is read before a yes):', '  ~/.claude/CLAUDE.md', 'Memories:', '  none'],
       kind: 'instructions',
-      pane: { asked: asking.openQuestion?.question, text },
+      summary,
+      pane: { asked: asking.openQuestion?.question, text: withContext(CONTENT_QUESTION, summary) },
     })
   })
 
@@ -451,18 +452,20 @@ describe('the instructions stage (D-230)', () => {
     const read = nextStage(reading, { kind: 'io', result: { id: 'read-instruction-files', result: MEMORY_SCAN } })
     const recommending = nextStage(read, { kind: 'model', result: { id: 'topics', result: TOPICS } })
     const entry = nextStage(recommending, { kind: 'model', result: { id: 'parts', result: RECOMMENDED } })
-    // The entry's context line counts the topics and memories, so a pane surface asks it too (D-255).
-    const entryAsked = entry.openQuestion?.question
+    // The entry's summary counts the topics, the memories and the recommended ones; a pane surface asks it (D-310).
+    const entrySummary = '2 topics, 2 memories, 2 recommended'
     expect(entry.openQuestion?.spec.context).toEqual({
       title: 'Instruction parts',
       lines: instructionLines(MEMORY_SCAN, TOPICS, RECOMMENDED),
       kind: 'instructions',
-      pane: { asked: entryAsked, text: entryAsked },
+      summary: entrySummary,
+      pane: { asked: entry.openQuestion?.question, text: withContext(INSTRUCTIONS_ENTRY_QUESTION, entrySummary) },
     })
     const first = nextStage(entry, { kind: 'answer', text: 'Go part by part' })
     const second = nextStage(first, { kind: 'answer', text: 'Yes' })
     const third = nextStage(second, { kind: 'answer', text: 'Yes' })
-    // Each item asks, on a pane surface, its question with the roles recommended for it (D-255).
+    // Each item asks, on a pane surface, its question with its summary, the roles recommended for it (D-310).
+    const summaries = ['Recommended: security', 'Recommended: tl', 'Recommended: none']
     const texts = [
       withContext('Which roles get "Security rules"?', 'Recommended: security'),
       withContext('Which roles get "Git and commits"?', 'Recommended: tl'),
@@ -478,18 +481,21 @@ describe('the instructions stage (D-230)', () => {
           '  recommended: security',
         ],
         kind: 'topic',
+        summary: summaries[0],
         pane: panes[0],
       },
       {
         title: 'Topic 2 of 2',
         lines: ['Git and commits: How commits are made.', '  from: ~/.claude/CLAUDE.md > Git', '  recommended: tl'],
         kind: 'topic',
+        summary: summaries[1],
         pane: panes[1],
       },
       {
         title: 'Memory 1 of 2',
         lines: ['squad.md: Unsigned commits on per-phase branches.', '  recommended: none'],
         kind: 'memory',
+        summary: summaries[2],
         pane: panes[2],
       },
     ])

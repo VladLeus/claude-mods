@@ -162,27 +162,28 @@ export function contextText(text: string): string {
 /**
  * A question with its short context line (G-02-1, D-136): the question, then on the next line the context, cleaned
  * and capped as a context line (contextText), so the dialog reads on its own on a surface where the side pane is not
- * drawn and a scanned or typed value in it cannot add a line or hide text (T-02-55). A pane surface asks the one line
- * its ask site chose in place of this line, through the context's `pane` (paneQuestionOf, D-255); MAX_CONTEXT_CHARS
- * stays the safety cap of both.
+ * drawn and a scanned or typed value in it cannot add a line or hide text (T-02-55). A pane surface asks the summary
+ * of the question's context in place of this line, through the context's `pane` (paneQuestionOf, D-310);
+ * MAX_CONTEXT_CHARS stays the safety cap of both.
  */
 export function withContext(question: string, context: string): string {
   return `${question}\n${contextText(context)}`
 }
 
 /**
- * A question as both surfaces ask it (D-255): `asked`, the sentence with its context line as the TUI default asks it
- * (withContext), and `text`, the sentence with the one line the ask site chose for a pane surface, which holds the
- * rest of the context in the pane. A question whose sentence names what its context lists gives `paneSentence`, the
- * question alone, which `text` asks in place of the sentence (D-283).
+ * A question as both surfaces ask it (D-255, D-310): `asked`, the sentence with its context line as the TUI default
+ * asks it (withContext), and `text`, the sentence with the summary of its context under it, which a pane surface asks
+ * while the pane holds the rest of the context; the summary is cleaned and capped as a context line, so
+ * MAX_CONTEXT_CHARS stays a safety limit. A question whose sentence names what its context lists gives
+ * `paneSentence`, the question alone, which `text` asks in place of the sentence (D-283).
  */
 export function paneQuestionOf(
   sentence: string,
   contextLine: string,
-  line: string,
+  summary: string,
   paneSentence?: string,
 ): PaneQuestion {
-  return { asked: withContext(sentence, contextLine), text: withContext(paneSentence ?? sentence, line) }
+  return { asked: withContext(sentence, contextLine), text: withContext(paneSentence ?? sentence, summary) }
 }
 
 /**

@@ -118,14 +118,14 @@ function modelEffortAsk(question: string): ModelAsk<Pick<RoleSpec, 'model' | 'ef
 }
 
 /**
- * The state asking `ask` with the cursor `sub` and the roles as its own context (rolesContext, D-236), which a pane
- * surface asks with its first line in place of the context line (D-255); `question` is the ask's text after a refusal.
+ * The state asking `ask` with the cursor `sub` and the roles as its own context (rolesContext, D-236), whose summary a
+ * pane surface asks in place of the context line (D-310); `question` is the ask's text after a refusal.
  */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: ModelAsk<T>, question: string | null): InitState {
   const { roles, changes } = state.draft
   if (roles === undefined) return stageFailed(state)
   const context = rolesContext(roles, changes ?? [])
-  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.lines[0] ?? ask.contextLine)
+  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.summary)
 
   return askedWithContext(state, sub, ask, question, { ...context, pane })
 }

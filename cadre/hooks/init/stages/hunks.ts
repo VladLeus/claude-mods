@@ -57,7 +57,8 @@ const OPTIONAL_NOTE = t('init.hunks.optionalNote')
 /**
  * The dialog for one hunk (ROLE-04, D-287): the file and key alone as the question, under the header `Hunk <index> of
  * <total>` with the buttons Accept and Decline, and as its own context (kind `hunk`, D-300) the before and after
- * values, why, and whether autonomy requires it; a pane surface asks the key line with the after line (OC-04-H).
+ * values, why, and whether autonomy requires it; its summary is the after line, which a pane surface asks under the
+ * key line (OC-04-H, D-310).
  * `index` counts from 1 in the order of the candidates. GSD has three proposals at most, so the header stays within
  * the 12-character chip a dialog allows. Every value is cleaned and capped as a report cell is, so none can add a line
  * or hide text.
@@ -78,7 +79,8 @@ export function hunkQuestion(
     proposal.isRequired ? REQUIRED_NOTE : OPTIONAL_NOTE,
   ]
   const pane = { asked: question, text: withContext(question, after) }
-  const context: AskContext = { title: t('init.hunks.contextTitle', { file, key }), lines, kind: 'hunk', pane }
+  const title = t('init.hunks.contextTitle', { file, key })
+  const context: AskContext = { title, lines, kind: 'hunk', summary: after, pane }
 
   return { question, spec: { options: HUNK_OPTIONS, header: t('init.hunks.chip', { index, total }), context } }
 }

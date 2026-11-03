@@ -39,10 +39,14 @@ function parseConsent(answer: string): boolean | null {
 /** Why init cancels when the ~/.claude.json question is dismissed or not answered (A1, D-45). */
 export const CONSENT_DISMISSED_REASON = t('init.consent.consentDismissedReason')
 
+/** The summary of the consent's context (D-310): the one file it reads, and only the MCP server names in it. */
+const CONSENT_SUMMARY = t('ui.summary.consent')
+
 /**
  * The ~/.claude.json question as the consent stage asks it (D-58, D-136): CLAUDE_JSON_QUESTION with
  * CLAUDE_JSON_CONTEXT on its second line, the two answers with the claude.json chip, and as its own context (kind
- * `consent`) that one line stating what is read, so a pane surface shows it in the pane (D-287, D-300); then
+ * `consent`) that one line stating what is read, so a pane surface shows it in the pane (D-287, D-300), with its
+ * summary, the one file read for MCP server names only, which a pane surface asks under the question (D-310); then
  * parseConsent, the answers its refusal lists, and the reason a dismissal cancels with.
  */
 const CONSENT_ASK = Object.freeze({
@@ -54,7 +58,8 @@ const CONSENT_ASK = Object.freeze({
       title: t('init.consent.claudeJsonTitle'),
       lines: [CLAUDE_JSON_CONTEXT],
       kind: 'consent',
-      pane: paneQuestionOf(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT, CLAUDE_JSON_CONTEXT),
+      summary: CONSENT_SUMMARY,
+      pane: paneQuestionOf(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT, CONSENT_SUMMARY),
     },
   }),
   parse: parseConsent,

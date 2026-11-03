@@ -44,11 +44,13 @@ describe('memoryStep', () => {
     const run = memIo(memWorld({}), ['pm, tl', 'None', 'All roles'])
     const given = valueOf(await groupsOver(run.io, roles, found))
     expect(run.asked).toEqual([GLOBAL_QUESTION, MEMORY_QUESTION, PROJECT_QUESTION].map(asAsked))
-    // A pane surface asks each group alone, its files in the pane, with the first line of its context (D-255, D-283).
+    // A pane surface asks each group alone, its files in the pane, with the summary of its context (D-283, D-310):
+    // every group here holds one file.
     const spec = (question: string, short: string, title: string, lines: readonly string[]): unknown => {
-      const pane = { asked: asAsked(question), text: withContext(short, lines[0] ?? '') }
+      const summary = '1 file'
+      const pane = { asked: asAsked(question), text: withContext(short, summary) }
 
-      const context = { title, lines, kind: 'memory-group', pane }
+      const context = { title, lines, kind: 'memory-group', summary, pane }
 
       return { options: ROLE_LIST_OPTIONS, header: 'Memory', context, acceptsTyped: true }
     }
@@ -139,13 +141,13 @@ describe('the whole-file question cursor (D-230)', () => {
     const question = 'Which roles get the auto-memories for this repo (a.md)? (e.g. PM, TL, or none)'
     const asked = withContext(question, memoryContextLine(roles))
     const short = 'Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)'
-    const pane = { asked, text: withContext(short, 'a.md') }
+    const pane = { asked, text: withContext(short, '1 file') }
     expect(first.kind === 'ask' ? [first.question, first.spec] : first).toEqual([
       asked,
       {
         options: ROLE_LIST_OPTIONS,
         header: 'Memory',
-        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group', pane },
+        context: { title: 'Auto-memories', lines: ['a.md'], kind: 'memory-group', summary: '1 file', pane },
         acceptsTyped: true,
       },
     ])

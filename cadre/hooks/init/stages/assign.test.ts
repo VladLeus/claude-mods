@@ -77,13 +77,16 @@ describe('assignmentStep', () => {
     title: 'MCP: jira',
     lines: ['Source: session', 'Tools: none listed', 'Recommended: pm, tl'],
     kind: 'mcp-server',
-    // A pane surface asks each question with the roles recommended for it in place of the context line (D-255).
+    // A pane surface asks each question with its summary, the roles recommended for it, in place of the context line
+    // (D-310).
+    summary: 'Recommended: pm, tl',
     pane: { asked: JIRA_ASKED, text: withContext(JIRA_QUESTION, 'Recommended: pm, tl') },
   }
   const SENTRY_CONTEXT = {
     title: 'MCP: sentry',
     lines: ['Source: session', 'Tools: none listed', 'Recommended: none'],
     kind: 'mcp-server',
+    summary: 'Recommended: none',
     pane: { asked: SENTRY_ASKED, text: withContext(SENTRY_QUESTION, 'Recommended: none') },
   }
   const CODEX_CONTEXT = {
@@ -94,8 +97,9 @@ describe('assignmentStep', () => {
       'codex:setup: No description. Recommended: none.',
     ],
     kind: 'skill-group',
-    // The group question alone, with no count or uses (D-283).
-    pane: { asked: CODEX_ASKED, text: withContext(CODEX_PANE_QUESTION, 'Recommended: none') },
+    // The group question alone, with no count or uses (D-283), and its summary (D-310).
+    summary: '2 skills. Recommended: none',
+    pane: { asked: CODEX_ASKED, text: withContext(CODEX_PANE_QUESTION, '2 skills. Recommended: none') },
   }
 
   test('every server and skill is asked; a table match is only its seed (D-249, D-280)', async () => {
@@ -327,17 +331,24 @@ describe('the assign stage (D-230)', () => {
     const question = withContext(sentence, mcpContextLine(roles))
     const lines = ['Source: session', 'Tools: none listed', 'Recommended: none']
     const pane = { asked: question, text: withContext(sentence, 'Recommended: none') }
-    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', pane }
+    const context = { title: 'MCP: sentry', lines, kind: 'mcp-server', summary: 'Recommended: none', pane }
     const ask = { question, spec: { options: ['Yes', 'No'], header: 'MCP 1/1', context, acceptsTyped: true } }
     expect([state.effect, state.openQuestion]).toEqual([{ kind: 'ask', ...ask }, ask])
     const group = nextStage(nextStage(state, { kind: 'answer', text: 'be' }), SKILLS_NONE)
     const codexLines = ['Recommended: none', 'codex:rescue: No description. Recommended: none.']
     const codexQuestion = 'Which roles get codex skills (1)? (e.g. BE, QA, or none)'
+    const codexSummary = '1 skill. Recommended: none'
     const codexPane = {
       asked: withContext(codexQuestion, skillsContextLine(roles)),
-      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', 'Recommended: none'),
+      text: withContext('Which roles get codex skills? (e.g. BE, QA, or none)', codexSummary),
     }
-    const codex = { title: 'Skills: codex', lines: codexLines, kind: 'skill-group', pane: codexPane }
+    const codex = {
+      title: 'Skills: codex',
+      lines: codexLines,
+      kind: 'skill-group',
+      summary: codexSummary,
+      pane: codexPane,
+    }
     const typed = { acceptsTyped: true }
     expect(group.openQuestion?.spec).toEqual({ options: GROUP_OPTIONS, header: 'Skills', context: codex, ...typed })
   })
@@ -357,6 +368,7 @@ describe('the assign stage (D-230)', () => {
       title: 'MCP: sentry',
       lines: ['Source: .mcp.json', 'Tools: 2 (events, issues)', 'Recommended: qa'],
       kind: 'mcp-server',
+      summary: 'Recommended: qa',
       pane,
     })
   })
@@ -375,7 +387,8 @@ describe('the assign stage (D-230)', () => {
         'codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.',
       ],
       kind: 'skill-group',
-      pane: { asked: question, text: withContext(sentence, 'Recommended: none') },
+      summary: '1 skill. Recommended: none',
+      pane: { asked: question, text: withContext(sentence, '1 skill. Recommended: none') },
     })
   })
 

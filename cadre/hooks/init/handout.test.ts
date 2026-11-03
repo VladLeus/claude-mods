@@ -9,8 +9,13 @@ import type { HandoutEntry, HandoutItem, HandoutNext } from './handout'
 /** The team of the hand-out cases: PM, Team Lead and Security, in that order. */
 const ROLES: readonly RoleSpec[] = [templateRole('pm'), templateRole('tl'), templateRole('security')]
 
-/** The own context of the entry question of the cases (D-300). */
-const ENTRY_CONTEXT: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
+/** The own context of the entry question of the cases (D-300), with its summary (D-310). */
+const ENTRY_CONTEXT: AskContext = {
+  title: 'Instruction parts',
+  lines: ['2 topics from 1 file'],
+  kind: 'instructions',
+  summary: '2 topics, 0 memories, 1 recommended',
+}
 
 /** The entry question of the cases, with the three labels of the instruction parts flow (G-02-1f). */
 const ENTRY: HandoutEntry = {
@@ -23,9 +28,9 @@ const ENTRY: HandoutEntry = {
   context: ENTRY_CONTEXT,
 }
 
-/** The own context of the question of the topic titled `title` (D-300). */
+/** The own context of the question of the topic titled `title` (D-300), with its summary (D-310). */
 function topicContextOf(title: string): AskContext {
-  return { title, lines: [`${title} only`], kind: 'topic' }
+  return { title, lines: [`${title} only`], kind: 'topic', summary: `${title} summary` }
 }
 
 /** Two items: the first recommended to Security, the second to no role. */
@@ -49,8 +54,8 @@ const ITEMS: readonly HandoutItem[] = [
 ]
 
 /**
- * A context as a hand-out question carries it (D-255, D-300): with what a pane surface asks, the question with its
- * context line when no pane line takes its place.
+ * A context as a hand-out question carries it (D-300, D-310): with what a pane surface asks, the question with the
+ * context's summary in place of its context line.
  */
 function withPane(
   context: AskContext,
@@ -58,7 +63,7 @@ function withPane(
 ): AskContext {
   const asked = withContext(question.question, question.contextLine)
 
-  return { ...context, pane: { asked, text: asked } }
+  return { ...context, pane: { asked, text: withContext(question.question, context.summary) } }
 }
 
 /** The reason the cases cancel with when the entry question is dismissed. */
@@ -259,8 +264,8 @@ describe('the hand-out cursor (D-230)', () => {
   })
 
   test('every entry and item puts its own context in its dialog spec (D-203, D-300)', () => {
-    const parts: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
-    const topic: AskContext = { title: 'Topic 1 of 2', lines: ['Security rules only'], kind: 'topic' }
+    const parts: AskContext = { ...ENTRY_CONTEXT, lines: ['2 topics from 1 file'] }
+    const topic: AskContext = { ...topicContextOf('Topic 1 of 2'), lines: ['Security rules only'] }
     const first = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
     const entry = handoutEnter({ ...ENTRY, context: parts }, [first, ...ITEMS.slice(1)], ROLES, DISMISSED)
     if (entry.kind !== 'ask') throw new Error('no entry question')
@@ -274,13 +279,11 @@ describe('the hand-out cursor (D-230)', () => {
     expect([entry.question, one.question]).toEqual([ENTRY_ASKED, itemAsked(first)])
   })
 
-  test('a pane line takes the place of the context line in what a pane surface asks (D-255)', () => {
-    const topic: AskContext = { title: 'Topic 1 of 2', lines: ['Security rules only'], kind: 'topic' }
-    const item = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
-    const first = { ...item, paneLine: 'Recommended: security' }
-    const parts: AskContext = { title: 'Instruction parts', lines: ['2 topics from 1 file'], kind: 'instructions' }
-    const withLine = { ...ENTRY, context: parts, paneLine: '2 topics' }
-    const entry = handoutEnter(withLine, [first], ROLES, DISMISSED)
+  test('the summary of its context takes the place of the context line in what a pane surface asks (D-310)', () => {
+    const topic: AskContext = { ...topicContextOf('Topic 1 of 2'), summary: 'Recommended: security' }
+    const first = { ...topicItem('T1', 'Security rules', 'Topic 1/2', ['security']), context: topic }
+    const parts: AskContext = { ...ENTRY_CONTEXT, summary: '2 topics' }
+    const entry = handoutEnter({ ...ENTRY, context: parts }, [first], ROLES, DISMISSED)
     if (entry.kind !== 'ask') throw new Error('no entry question')
     const one = handoutAnswer(entry.cursor, 'Go part by part')
     if (one.kind !== 'ask') throw new Error('no item question')

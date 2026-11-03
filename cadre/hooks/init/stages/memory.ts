@@ -68,10 +68,10 @@ export type MemoryNext =
 /**
  * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
  * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
- * files as its own context (memoryGroupContext, D-236), which a pane surface asks with its first line in place of that
- * line (D-255) and with memoryPaneQuestion, which names no file, in place of the question (D-283), a typed list of role
- * ids or titles (parseRoleList), so it takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal. Its
- * names, in the question and in the context, are capped by `words` (D-256).
+ * files as its own context (memoryGroupContext, D-236), whose summary a pane surface asks in place of that line (D-310)
+ * and with memoryPaneQuestion, which names no file, in place of the question (D-283), a typed list of role ids or
+ * titles (parseRoleList), so it takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal. Its names,
+ * in the question and in the context, are capped by `words` (D-256).
  */
 function groupAsk(
   group: InstructionGroup,
@@ -81,8 +81,8 @@ function groupAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   const context = memoryGroupContext(group, names, words)
   const contextLine = memoryContextLine(roles)
-  const line = context.lines[0] ?? contextLine
-  const pane = paneQuestionOf(memoryQuestion(group, names, words), contextLine, line, memoryPaneQuestion(group))
+  const sentence = memoryQuestion(group, names, words)
+  const pane = paneQuestionOf(sentence, contextLine, context.summary, memoryPaneQuestion(group))
 
   return {
     question: pane.asked,

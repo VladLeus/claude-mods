@@ -115,9 +115,9 @@ const LAUNCH_DIR_SPEC = Object.freeze({ options: LAUNCH_DIR_OPTIONS, header: ASK
 /**
  * The launcher start question as the stage asks it (A2, D-136): LAUNCH_START_QUESTION with the ids of `roles` on its
  * second line (launchContextLine), the three starts with the Launch chip and what the git root and the run folder
- * mean as its own context (launchContext, its launcher map as `words` allows it, D-236, D-256), which a pane surface
- * asks with its first line in place of that line (D-255), parseLaunchChoice, what its refusal lists, and the reason a
- * dismissal cancels with.
+ * mean as its own context (launchContext, its launcher map as `words` allows it, D-236, D-256), whose summary a pane
+ * surface asks in place of that line (D-310), parseLaunchChoice, what its refusal lists, and the reason a dismissal
+ * cancels with.
  */
 function launchStartAsk(
   roles: readonly RoleSpec[],
@@ -125,7 +125,7 @@ function launchStartAsk(
 ): ChoiceAsk<LaunchChoice> & { readonly dismissedReason: string } {
   const context = launchContext(roles, words)
   const contextLine = launchContextLine(roles)
-  const pane = paneQuestionOf(LAUNCH_START_QUESTION, contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(LAUNCH_START_QUESTION, contextLine, context.summary)
 
   return {
     question: pane.asked,
@@ -138,12 +138,12 @@ function launchStartAsk(
 
 /**
  * The folder question asked (A2), with LAUNCH_DIR_CONTEXT on its second line, `refusal` on top and the folders the
- * repo scan found code in as its own context (launchDirContext, D-236), which a pane surface asks with its first line
- * in place of LAUNCH_DIR_CONTEXT (D-255), `tries` so far.
+ * repo scan found code in as its own context (launchDirContext, D-236), whose summary a pane surface asks in place of
+ * LAUNCH_DIR_CONTEXT (D-310), `tries` so far.
  */
 function dirAsked(state: InitState, tries: number, refusal: string | null): InitState {
   const context = launchDirContext(state.draft.gathered?.repo.codeDirs ?? [], listWordsOf(state.surface))
-  const pane = paneQuestionOf(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT, context.lines[0] ?? LAUNCH_DIR_CONTEXT)
+  const pane = paneQuestionOf(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT, context.summary)
   const question = askedText(pane.asked, refusal)
   const sub: InitState['sub'] = { kind: 'launch-dir', tries }
   const spec = { ...LAUNCH_DIR_SPEC, context: { ...context, pane } }

@@ -192,13 +192,13 @@ type RolesAsk<T> = ChoiceAsk<T> & { readonly dismissedReason: string }
 
 /**
  * The roles question (D-46, D-136): ROLES_QUESTION with rolesContextLine for `roles` and `changes` on its second line,
- * its three answers with the Roles chip and the roles as its own context (rolesContext, D-236), which a pane surface
- * asks with its first line in place of that line (D-255), and ROLES_DISMISSED_REASON for a dismissal.
+ * its three answers with the Roles chip and the roles as its own context (rolesContext, D-236), whose summary a pane
+ * surface asks in place of that line (D-310), and ROLES_DISMISSED_REASON for a dismissal.
  */
 function rolesAsk(roles: readonly RoleSpec[], changes: readonly RoleChange[]): RolesAsk<RolesChoice> {
   const context = rolesContext(roles, changes)
   const contextLine = rolesContextLine(roles, changes)
-  const pane = paneQuestionOf(ROLES_QUESTION, contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(ROLES_QUESTION, contextLine, context.summary)
 
   return {
     question: pane.asked,
@@ -254,13 +254,12 @@ function proposed(
 
 /**
  * The Adjust question for the roles of `cursor` (D-47, D-136), with `refusal` on top and the roles as they are now as
- * its own context (rolesContext, D-236), which a pane surface asks with its first line in place of the context line
- * (D-255).
+ * its own context (rolesContext, D-236), whose summary a pane surface asks in place of the context line (D-310).
  */
 function adjustAsked(state: InitState, cursor: AdjustCursor, refusal: string | null): InitState {
   const context = rolesContext(cursor.roles, cursor.changes)
   const contextLine = adjustContextLine(cursor.roles)
-  const pane = paneQuestionOf(ADJUST_QUESTION, contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(ADJUST_QUESTION, contextLine, context.summary)
   const question = askedText(pane.asked, refusal)
   const spec = { ...ADJUST_SPEC, context: { ...context, pane } }
 
@@ -314,13 +313,13 @@ function afterAdjust(
 type DescribeCursor = Omit<Extract<InitState['sub'], { readonly kind: 'describe' }>, 'kind'>
 
 /**
- * The describe question at `cursor`, with the roles it was asked from as its own context (rolesContext, D-236), which
- * a pane surface asks with its first line in place of DESCRIBE_CONTEXT (D-255); `question` is its text once refused.
+ * The describe question at `cursor`, with the roles it was asked from as its own context (rolesContext, D-236), whose
+ * summary a pane surface asks in place of DESCRIBE_CONTEXT (D-310); `question` is its text once refused.
  */
 function describeAsked(state: InitState, cursor: DescribeCursor, question: string | null): InitState {
   const sub: InitState['sub'] = { kind: 'describe', ...cursor }
   const context = rolesContext(cursor.roles, cursor.changes)
-  const pane = paneQuestionOf(DESCRIBE_QUESTION, DESCRIBE_CONTEXT, context.lines[0] ?? DESCRIBE_CONTEXT)
+  const pane = paneQuestionOf(DESCRIBE_QUESTION, DESCRIBE_CONTEXT, context.summary)
   const spec = { ...DESCRIBE_ASK.spec, context: { ...context, pane } }
 
   return withEffect({ ...state, sub }, { kind: 'ask', question: question ?? DESCRIBE_ASK.question, spec })

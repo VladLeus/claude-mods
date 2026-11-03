@@ -1460,8 +1460,9 @@ describe('cadre init with a faked host', () => {
     const answers = { ...INIT_ANSWERS, 'Git policy': 'whatever', [refusal]: 'whatever' }
     fakeHost(on, initWorld({ answers }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init' })
-    // A pane surface asks the question with its first policy line, the refusal kept on top (D-255).
-    const line = 'Commit definitions: .cadre/ is committed except .cadre/*/.runtime/.'
+    // A pane surface asks the question with its summary, the default policy recommended, the refusal kept on top
+    // (D-310).
+    const line = 'Recommended: commit definitions'
     const asked = `ask ${withContext(GIT_POLICY_QUESTION, line)}`
     const again = `ask ${refusal}\n${withContext(GIT_POLICY_QUESTION, line)}`
     expect(log.asks.slice(log.asks.indexOf(asked))).toEqual([asked, again, again])

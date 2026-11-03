@@ -235,18 +235,20 @@ describe('question context lines (G-02-1)', () => {
   })
 })
 
-describe('the one context line of a pane surface (D-255)', () => {
+describe('the summary a pane surface asks under the question (D-310)', () => {
   const asked = withContext('Use these roles?', 'Roles: pm, tl.')
-  const pane = paneQuestionOf('Use these roles?', 'Roles: pm, tl.', 'Proposed roles:')
-  const context: AskContext = { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles', pane }
+  const summary = '2 roles: pm, tl'
+  const pane = paneQuestionOf('Use these roles?', 'Roles: pm, tl.', summary)
+  const bare: AskContext = { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles', summary }
+  const context: AskContext = { ...bare, pane }
 
-  test('paneQuestionOf gives the question as the TUI default asks it and with the one line in its place', () => {
-    expect(pane).toEqual({ asked, text: 'Use these roles?\nProposed roles:' })
+  test('paneQuestionOf gives the question as the TUI default asks it and with the summary in its place', () => {
+    expect(pane).toEqual({ asked, text: 'Use these roles?\n2 roles: pm, tl' })
   })
 
   test('a question with no context, or with a context that has no pane text, is asked as given', () => {
     expect(paneQuestionText(asked, null)).toBe(asked)
-    expect(paneQuestionText(asked, { title: 'Roles', lines: ['Proposed roles:'], kind: 'roles' })).toBe(asked)
+    expect(paneQuestionText(asked, bare)).toBe(asked)
   })
 
   test('the asked text gives the pane text, and a refusal on top of it is kept as it is', () => {
@@ -261,7 +263,7 @@ describe('the one context line of a pane surface (D-255)', () => {
     expect(paneQuestionText(`x${asked}`, context)).toBe(`x${asked}`)
   })
 
-  test('the one line is cleaned and capped as a context line is, so it cannot add a line (T-02-55)', () => {
+  test('the summary is cleaned and capped as a context line is, so it cannot add a line (T-02-55)', () => {
     const { text } = paneQuestionOf('Pick one?', 'Roles: pm.', `${'x'.repeat(500)}\n${BIDI_OVERRIDE}more`)
     const [sentence, line = '', ...rest] = text.split('\n')
     expect([sentence, Array.from(line).length, line.endsWith('…'), rest]).toEqual(['Pick one?', 400, true, []])

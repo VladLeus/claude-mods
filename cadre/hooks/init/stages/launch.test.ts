@@ -84,7 +84,7 @@ const DIR_ASKED = withContext(LAUNCH_DIR_QUESTION, LAUNCH_DIR_CONTEXT)
 
 /**
  * The launcher start question's own context for LAUNCH_TEAM: what each start means and the launchers (D-236); a pane
- * surface asks the question with its first line (D-255).
+ * surface asks the question with its summary, the launcher count (D-310).
  */
 const LAUNCH_CONTEXT = {
   title: 'Launch',
@@ -94,21 +94,20 @@ const LAUNCH_CONTEXT = {
     'Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security',
   ],
   kind: 'launch',
-  pane: {
-    asked: LAUNCH_ASKED,
-    text: withContext(LAUNCH_START_QUESTION, 'Git root: the top of this repo, the same for every launcher.'),
-  },
+  summary: '3 launchers',
+  pane: { asked: LAUNCH_ASKED, text: withContext(LAUNCH_START_QUESTION, '3 launchers') },
 }
 
 /**
  * The launcher folder question's own context in a repo with no folder of code (D-236); a pane surface asks the
- * question with its first line (D-255).
+ * question with its summary, the folder count (D-310).
  */
 const NO_DIRS_CONTEXT = {
   title: 'Launch folder',
   lines: ['No folder with code was found in this repo.'],
   kind: 'launch-dir',
-  pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, 'No folder with code was found in this repo.') },
+  summary: '0 code folders',
+  pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, '0 code folders') },
 }
 
 describe('launchStartStep', () => {
@@ -292,7 +291,8 @@ describe('the launch stage (D-230)', () => {
       title: 'Launch folder',
       lines: ['Folders with code in this repo:', '  apps/', '  packages/'],
       kind: 'launch-dir',
-      pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, 'Folders with code in this repo:') },
+      summary: '2 code folders',
+      pane: { asked: DIR_ASKED, text: withContext(LAUNCH_DIR_QUESTION, '2 code folders') },
     })
   })
 

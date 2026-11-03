@@ -184,12 +184,14 @@ export function improverBlockLines(path: string, diff: LineDiff): string[] {
 
 /**
  * The context of the per-file improver question (D-236): its diff, as the improver block shows it, then the other files
- * the run changed (otherFilesLines, T-02-75).
+ * the run changed (otherFilesLines, T-02-75); its summary is the block's first line, the file with how many lines the
+ * improver added and removed (D-310).
  */
 export function improverContext(path: string, diff: LineDiff, otherLines: readonly string[]): AskContext {
-  const lines = [...improverBlockLines(path, diff), ...otherLines]
+  const [summary = '', ...diffRows] = improverBlockLines(path, diff)
+  const lines = [summary, ...diffRows, ...otherLines]
 
-  return { title: t('apply.improver.improverContext', { path: reportText(path) }), lines, kind: 'improver' }
+  return { title: t('apply.improver.improverContext', { path: reportText(path) }), lines, kind: 'improver', summary }
 }
 
 /** The note for a built file the improver ran on and did not change (D-141). */
@@ -542,8 +544,8 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
   await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
   const context = improverContext(shownPath, state.diff, otherLines)
   const contextLine = improverContextLine(state.diff)
-  // A pane surface asks the question with the context's first line, the file and its change counts (D-255).
-  const pane = paneQuestionOf(improverQuestion(shownPath), contextLine, context.lines[0] ?? contextLine)
+  // A pane surface asks the question with the context's summary, the file and its change counts (D-310).
+  const pane = paneQuestionOf(improverQuestion(shownPath), contextLine, context.summary)
   const answer = await askChoice(io, {
     question: pane.asked,
     spec: {

@@ -113,13 +113,15 @@ function historyAt(locations: InitLocations = DEFAULT_LOCATIONS): InitState {
 
 /**
  * The history question's own context (D-236): the scan block of an empty repo and setup, with no warning; a pane
- * surface asks the question for `total` sessions with its first line in place of SCAN_CONTEXT (D-255).
+ * surface asks the question for `total` sessions with its summary, the empty setup's counts, in place of SCAN_CONTEXT
+ * (D-310).
  */
 function scanAskContext(total: number): unknown {
   const lines = scanSummaryLines(repoScan(), emptySetupScan(), '/repo', PANE_LIST_WORDS)
-  const pane = { asked: historyAsked(total), text: withContext(historyQuestion(total), lines[0] ?? '') }
+  const summary = '0 plugins, 0 MCP servers, 0 CLAUDE.md files'
+  const pane = { asked: historyAsked(total), text: withContext(historyQuestion(total), summary) }
 
-  return { title: 'Scan', lines, kind: 'scan', pane }
+  return { title: 'Scan', lines, kind: 'scan', summary, pane }
 }
 
 /** The history stage's host operations as init/run performs them, through `io` (listSessions, scanHistory). */
@@ -402,8 +404,9 @@ describe('the history stage (D-230)', () => {
     const state = historyStage.enter(stateAt('history', { ...HISTORY_DRAFT, gathered }))
     const lines = [...scanSummaryLines(repo, emptySetupScan(), '/repo', PANE_LIST_WORDS), 'warning: could not list src']
     const asking = nextStage(state, listed(ONE_SESSION))
-    const pane = { asked: historyAsked(1), text: withContext(historyQuestion(1), lines[0] ?? '') }
-    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', pane })
+    const summary = '0 plugins, 0 MCP servers, 0 CLAUDE.md files'
+    const pane = { asked: historyAsked(1), text: withContext(historyQuestion(1), summary) }
+    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Scan', lines, kind: 'scan', summary, pane })
   })
 
   test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {

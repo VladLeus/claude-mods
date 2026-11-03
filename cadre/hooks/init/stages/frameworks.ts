@@ -145,14 +145,14 @@ function frameworkAsk(choice: AskedChoice, question: string, roles: readonly Rol
 
 /**
  * The state asking `ask` with the cursor `sub`, the detection evidence of the scan as the question's own context
- * (detectionContext, D-236), which a pane surface asks with its first line in place of the context line (D-255);
- * `question` is the ask's text after a refusal.
+ * (detectionContext, D-236), whose summary a pane surface asks in place of the context line (D-310); `question` is
+ * the ask's text after a refusal.
  */
 function asked<T>(state: InitState, sub: InitState['sub'], ask: FrameworkAsk<T>, question: string | null): InitState {
   const { gathered, locations } = state.draft
   if (gathered === undefined || locations === undefined) return stageFailed(state)
   const context = detectionContext(detectAll(screenFacts(gathered.facts.facts, locations.root)))
-  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.lines[0] ?? ask.contextLine)
+  const pane = paneQuestionOf(ask.sentence, ask.contextLine, context.summary)
 
   return askedWithContext(state, sub, ask, question, { ...context, pane })
 }
@@ -231,18 +231,18 @@ export const GSD_CHECK_DISMISSED_REASON = t('init.frameworks.gsdCheckDismissedRe
 /**
  * The GSD check as init and detect ask it (D-243): GSD_CHECK_QUESTION, `No, skip the check` first, then `Yes, run the
  * check`, with the GSD check chip, and as its context (kind `detection`) each user-level GSD install found but not
- * proven, by its display path; a pane surface asks the question with the line of the first of them, so its one line
- * names the install the check runs (D-255, edge #39), or with the context's title when it lists none, so the context
- * always carries what a pane surface asks (D-300). It takes no typed answer.
+ * proven, by its display path; its summary, which a pane surface asks under the question, is the line of the first of
+ * them, so it names the install the check runs (D-310, edge #39), or the context's title when it lists none, so the
+ * context always carries what a pane surface asks (D-300). It takes no typed answer.
  */
 export function gsdCheckAsk(facts: Facts): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const unproven = facts.gsd.filter(fact => fact.location === 'user' && fact.identity === 'unknown')
   const options = GSD_CHECK_ANSWERS.map(answer => answer.label)
   const lines = unproven.map(fact => t('init.frameworks.gsdCheckLine', { dir: fact.dir }))
   const title = t('init.frameworks.gsdCheckTitle')
-  const [line = title] = lines
-  const pane = { asked: GSD_CHECK_QUESTION, text: withContext(GSD_CHECK_QUESTION, line) }
-  const context: AskContext = { title, lines, kind: 'detection', pane }
+  const [summary = title] = lines
+  const pane = { asked: GSD_CHECK_QUESTION, text: withContext(GSD_CHECK_QUESTION, summary) }
+  const context: AskContext = { title, lines, kind: 'detection', summary, pane }
 
   return {
     question: GSD_CHECK_QUESTION,

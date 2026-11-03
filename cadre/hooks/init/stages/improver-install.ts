@@ -70,16 +70,15 @@ function builtRoleIds(handout: InstructionHandout, roleIds: readonly string[]): 
 
 /**
  * The dialog spec of the improver install question: IMPROVER_ASK's, with the roles the hand-out gives a built file as
- * its own context (improverInstallContext, D-236), which a pane surface asks with its first line in place of
- * IMPROVER_INSTALL_CONTEXT (D-255).
+ * its own context (improverInstallContext, D-236), whose summary a pane surface asks in place of
+ * IMPROVER_INSTALL_CONTEXT (D-310).
  */
 function improverSpec(state: InitState): AskSpec {
   const { instructions, roles } = state.draft
   const roleIds = (roles ?? []).map(role => role.id)
   const built = instructions === undefined ? [] : builtRoleIds(instructions, roleIds)
   const context = improverInstallContext(built)
-  const line = context.lines[0] ?? IMPROVER_INSTALL_CONTEXT
-  const pane = paneQuestionOf(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT, line)
+  const pane = paneQuestionOf(IMPROVER_INSTALL_QUESTION, IMPROVER_INSTALL_CONTEXT, context.summary)
 
   return { ...IMPROVER_ASK.spec, context: { ...context, pane } }
 }

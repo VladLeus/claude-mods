@@ -198,14 +198,17 @@ async function plannedFor(state: InitState): Promise<PlanResult> {
 /** The git policy question as the git policy stage asks it (D-136). */
 const GIT_POLICY_ASK_TEXT = withContext(GIT_POLICY_QUESTION, GIT_POLICY_CONTEXT)
 
+/** The summary of the review of REVIEW_DRAFT (D-310): the files its plan writes or keeps and its three roles. */
+const REVIEW_SUMMARY = '25 files, 3 roles'
+
 /** The answer to the plan io effect: the plan made. */
 function planAnswer(planned: PlanResult): Answer {
   return { kind: 'io', result: { id: 'plan', result: planned } }
 }
 
 /**
- * What a pane surface asks for the open question of `state` (D-255): its asked text, and its sentence, the first line
- * of that text, with `line` in place of the context line.
+ * What a pane surface asks for the open question of `state` (D-310): its asked text, and its sentence, the first line
+ * of that text, with `line`, the summary of its context, in place of the context line.
  */
 function paneOf(state: InitState, line: string): { readonly asked: string | undefined; readonly text: string } {
   const asked = state.openQuestion?.question
@@ -225,9 +228,10 @@ describe('the review stage (D-230)', () => {
     const lines = blocks[0]?.lines ?? []
     const count = Math.ceil(lines.length / (PANE_PAGE_ROWS - 1))
     const title = `Review (page 1 of ${count})`
-    // A pane surface asks the review question with the page's place, which the Review chip does not carry (D-255).
-    const pane = { asked: reviewQuestion(context), text: withContext(REVIEW_QUESTION, title) }
-    const own = { title, lines: lines.slice(0, PANE_PAGE_ROWS - 1), kind: 'review', pane }
+    // A pane surface asks the review question with its summary, then the page's place, which the Review chip does not
+    // carry (D-310).
+    const pane = { asked: reviewQuestion(context), text: `${withContext(REVIEW_QUESTION, REVIEW_SUMMARY)}\n${title}` }
+    const own = { title, lines: lines.slice(0, PANE_PAGE_ROWS - 1), kind: 'review', summary: REVIEW_SUMMARY, pane }
     const spec = { options: ['Next page', 'Confirm', 'Change something…'], header: 'Review', context: own }
     const ask = { question: reviewQuestion(context), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
@@ -285,7 +289,8 @@ describe('the review stage (D-230)', () => {
       'Run folder: wherever you run a launcher from.',
       'Launchers: .cadre/bin/pm, .cadre/bin/tl, .cadre/bin/security',
     ]
-    const context = { title: 'Launch', lines, kind: 'launch', pane: paneOf(going, lines[0] ?? '') }
+    const summary = '3 launchers'
+    const context = { title: 'Launch', lines, kind: 'launch', summary, pane: paneOf(going, summary) }
     expect(going.openQuestion?.spec).toEqual({ options: LAUNCH_START_OPTIONS, header: 'Launch', context })
     const back = nextStage(going, { kind: 'answer', text: 'The folder I run it from' })
     expect([back.stage, back.rounds, back.returnTo, back.returnAfter]).toEqual(['review', 1, null, null])
@@ -298,7 +303,8 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'duration' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['duration', 'review', 'duration'])
     const lines = proposalLines(REVIEW_DRAFT.roles, [])
-    const context = { title: 'Roles', lines, kind: 'roles', pane: paneOf(going, lines[0] ?? '') }
+    const summary = '3 roles: pm, tl, security'
+    const context = { title: 'Roles', lines, kind: 'roles', summary, pane: paneOf(going, summary) }
     const spec = { options: DURATION_OPTIONS, header: 'Duration', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: '2h' })
@@ -326,10 +332,10 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'env' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['carry', 'review', 'carry'])
     const env = ['Env variable names in your settings (values are never read):', '  API_KEY']
-    // A pane surface asks the env question alone, with no env name, and the first line of its context (D-283).
+    // A pane surface asks the env question alone, with no env name, and the summary of its context (D-283, D-310).
     const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
-    const pane = { asked: going.openQuestion?.question, text: withContext(short, env[0] ?? '') }
-    const context = { title: 'Env variables', lines: env, kind: 'env', pane }
+    const pane = { asked: going.openQuestion?.question, text: withContext(short, '1 env name') }
+    const context = { title: 'Env variables', lines: env, kind: 'env', summary: '1 env name', pane }
     const spec = { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'API_KEY' })
@@ -361,7 +367,8 @@ describe('the review stage (D-230)', () => {
     const entry = nextStage(going, { kind: 'model', result: { id: 'mcp', result: new Map() } })
     const asked = nextStage(entry, { kind: 'answer', text: 'Whole group' })
     const lines = ['sentry: session, 0 tools. Recommended: none.']
-    const context = { title: 'MCP servers', lines, kind: 'mcp-server', pane: paneOf(asked, lines[0] ?? '') }
+    const summary = '1 server, 0 recommended'
+    const context = { title: 'MCP servers', lines, kind: 'mcp-server', summary, pane: paneOf(asked, summary) }
     const spec = { options: ['None', 'All roles'], header: 'MCP', context, acceptsTyped: true }
     expect(asked.openQuestion?.spec).toEqual(spec)
     const back = nextStage(asked, { kind: 'answer', text: 'All roles' })
@@ -376,7 +383,8 @@ describe('the review stage (D-230)', () => {
     const going = nextStage(asking, { kind: 'answer', text: 'memory' })
     expect([going.stage, going.returnTo, going.returnAfter]).toEqual(['instructions', 'review', 'instructions'])
     const lines = ['~/.claude/CLAUDE.md and the files it imports']
-    const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group', pane: paneOf(going, lines[0] ?? '') }
+    const pane = paneOf(going, '1 file')
+    const context = { title: 'Global CLAUDE.md', lines, kind: 'memory-group', summary: '1 file', pane }
     const spec = { options: ['None', 'All roles'], header: 'Memory', context, acceptsTyped: true }
     expect(going.openQuestion?.spec).toEqual(spec)
     const back = nextStage(going, { kind: 'answer', text: 'All roles' })
@@ -535,11 +543,12 @@ describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
     const { asking, lines } = await tuiReview()
     const pages = pagesOf(lines)
     const titled = (at: number): string => `Review (page ${at + 1} of ${pages.length})`
-    // A pane surface asks each page with its place, which the Review chip does not carry (D-255).
+    // A pane surface asks each page with its summary, then its place, which the Review chip does not carry (D-310).
     const pageAt = (state: InitState, at: number): unknown => {
-      const pane = paneOf(state, titled(at))
+      const text = `${withContext(REVIEW_QUESTION, REVIEW_SUMMARY)}\n${titled(at)}`
+      const pane = { asked: state.openQuestion?.question, text }
 
-      return { title: titled(at), lines: pages[at], kind: 'review', pane }
+      return { title: titled(at), lines: pages[at], kind: 'review', summary: REVIEW_SUMMARY, pane }
     }
     expect(asking.openQuestion?.spec.context).toEqual(pageAt(asking, 0))
     expect(asking.openQuestion?.spec.acceptsTyped).toBeUndefined()
@@ -610,9 +619,11 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
     const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
     expect(shown.length < PANE_PAGE_ROWS).toBe(true)
     expect(asking.openQuestion?.spec.options).toEqual(['Confirm', 'Change something…'])
-    // One page has no place to name: a pane surface asks the review question with the page's first line (D-255).
-    const pane = paneOf(asking, shown[0] ?? '')
-    expect(asking.openQuestion?.spec.context).toEqual({ title: 'Review', lines: shown, kind: 'review', pane })
+    // One page has no place to name: a pane surface asks the review question with its summary alone (D-310).
+    const summary = '4 files, 0 roles'
+    const pane = paneOf(asking, summary)
+    const context = { title: 'Review', lines: shown, kind: 'review', summary, pane }
+    expect(asking.openQuestion?.spec.context).toEqual(context)
   })
 
   test('the former Change buttons show on no surface, but their labels still go back to their items', async () => {

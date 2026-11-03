@@ -86,15 +86,14 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
 /**
  * The security plugins question as the stage asks it (decision #39, D-136): securityInstallQuestion for `keys`, with
  * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip and the missing
- * plugins as its own context (securityContext, D-236), which a pane surface asks with its first line in place of that
- * line (D-255) and with SECURITY_INSTALL_PANE_QUESTION in place of the sentence (D-283), Install or Not now trimmed and
- * in any case, what its refusal lists, and the reason a dismissal cancels with.
+ * plugins as its own context (securityContext, D-236), whose summary a pane surface asks in place of that line (D-310)
+ * and with SECURITY_INSTALL_PANE_QUESTION in place of the sentence (D-283), Install or Not now trimmed and in any case,
+ * what its refusal lists, and the reason a dismissal cancels with.
  */
 function securityAsk(keys: readonly string[]): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const context = securityContext(keys)
-  const line = context.lines[0] ?? SECURITY_INSTALL_CONTEXT
   const sentence = securityInstallQuestion(keys)
-  const pane = paneQuestionOf(sentence, SECURITY_INSTALL_CONTEXT, line, SECURITY_INSTALL_PANE_QUESTION)
+  const pane = paneQuestionOf(sentence, SECURITY_INSTALL_CONTEXT, context.summary, SECURITY_INSTALL_PANE_QUESTION)
 
   return {
     question: pane.asked,
