@@ -148,12 +148,18 @@ function fallbackMessage(errors: readonly string[]): string {
 }
 
 /**
- * Turns the person's description into roles through the model (D-83), with `progressText` as the status line while
- * the model reads it (D-232). The prompt carries the description as a JSON string and nothing from a scan
- * (proposePrompt); every reply is validated by parseProposal, and an invalid one is sent back with its exact errors,
- * MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it falls back with the last errors.
+ * Turns the person's description into roles through the model (D-83), with `progressText` as the status line and
+ * `summary`, null for none, as its one-line summary while the model reads it (D-232, D-301). The prompt carries the
+ * description as a JSON string and nothing from a scan (proposePrompt); every reply is validated by parseProposal, and
+ * an invalid one is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion). Then it
+ * falls back with the last errors.
  */
-export async function proposeFromText(io: InitIo, text: string, progressText: string): Promise<Proposed> {
+export async function proposeFromText(
+  io: InitIo,
+  text: string,
+  progressText: string,
+  summary: string | null = null,
+): Promise<Proposed> {
   const parse = (reply: string): Checked<Proposed> => {
     const parsed = parseProposal(reply)
     if (parsed.kind === 'invalid') return parsed
@@ -163,5 +169,5 @@ export async function proposeFromText(io: InitIo, text: string, progressText: st
   const prompt = (errors: readonly string[]): string => proposePrompt(text, errors)
   const fallback = (errors: readonly string[]): Proposed => ({ kind: 'fallback', message: fallbackMessage(errors) })
 
-  return checkedCompletion(io, progressText, PROPOSE_SYSTEM, prompt, parse, fallback)
+  return checkedCompletion(io, { label: progressText, summary }, PROPOSE_SYSTEM, prompt, parse, fallback)
 }

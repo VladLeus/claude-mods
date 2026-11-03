@@ -267,9 +267,9 @@ const REGEN_PROGRESS = t('init.status.regen')
 
 /**
  * The recommendation for each item a regen asks about, by `I<n>` (G-02-1f Regen, D-142): one model call with the role
- * and the items (regenRecommendPrompt, REGEN_RECOMMEND_SYSTEM), REGEN_PROGRESS on the status line (D-232). A reply
- * parseRegenRecommendation cannot take is sent back with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all
- * (checkedCompletion), and then no item is recommended.
+ * and the items (regenRecommendPrompt, REGEN_RECOMMEND_SYSTEM), REGEN_PROGRESS on the status line (D-232) and how many
+ * items it reads as the loader's summary (D-301). A reply parseRegenRecommendation cannot take is sent back with its
+ * exact errors, MAX_PROPOSE_ATTEMPTS calls in all (checkedCompletion), and then no item is recommended.
  */
 async function regenRecommended(
   io: InitIo,
@@ -289,7 +289,9 @@ async function regenRecommended(
   }
   const prompt = (errors: readonly string[]): string => regenRecommendPrompt(role, items, errors)
 
-  return checkedCompletion(io, REGEN_PROGRESS, REGEN_RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+  const step = { label: REGEN_PROGRESS, summary: tn('init.status.count.items', asked.length, { count: asked.length }) }
+
+  return checkedCompletion(io, step, REGEN_RECOMMEND_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**

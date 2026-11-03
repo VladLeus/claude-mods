@@ -77,6 +77,7 @@ import { parseCadreState } from '../state/cadre-files'
 import { MAX_PROPOSE_ATTEMPTS } from '../suggest/checked'
 import { RECOMMEND_SYSTEM } from '../suggest/instructions'
 import { MCP_SYSTEM } from '../suggest/mcp'
+import type { McpPromptServer } from '../suggest/mcp'
 import { SKILLS_SYSTEM } from '../suggest/skills'
 import { TOPICS_SYSTEM } from '../suggest/topics'
 import { resolvedFramework, scopesFor } from '../team'
@@ -169,11 +170,13 @@ import {
   IMPROVER_PROGRESS,
   INSTALL_PROGRESS,
   MODEL_PROGRESS,
+  modelSummary,
   perform,
   performState,
   planStep,
   runInit,
   SCAN_PROGRESS,
+  SCAN_SUMMARY,
 } from './run'
 import type { InitOptions } from './run'
 import { assignStage } from './stages/assign'
@@ -971,6 +974,16 @@ describe('step summaries (D-301, D-327)', () => {
     await runInit(run.io, { dryRun: true })
     const summaries = Array.from({ length: MAX_PROPOSE_ATTEMPTS }, () => '2 skills, 0 groups, 3 roles')
     expect(run.progressSummaries.slice(1)).toEqual(summaries)
+  })
+
+  test('a model call summary counts what the call reads, one or more; a described structure is named', () => {
+    const server = (name: string): McpPromptServer => ({ name, source: 'session', tools: [], seed: [] })
+    const roles = [templateRole('fe'), templateRole('qa')]
+    const servers = ['github', 'linear', 'sentry'].map(server)
+    expect(modelSummary({ id: 'mcp', roles, servers })).toBe('3 servers, 2 roles')
+    expect(modelSummary({ id: 'mcp', roles: roles.slice(1), servers: servers.slice(2) })).toBe('1 server, 1 role')
+    expect(modelSummary({ id: 'describe-roles', text: 'one backend role' })).toBe('the roles you described')
+    expect(SCAN_SUMMARY).toBe('the repo, your settings, plugins, skills and MCP servers')
   })
 })
 

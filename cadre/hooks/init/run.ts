@@ -44,7 +44,7 @@ import { trackedParts } from '../generate/gittrack'
 import { builtClaudeMdPath } from '../generate/launcher'
 import { initGuard } from '../guards/repo'
 import { hasRunFailed } from '../host/steps'
-import { t } from '../locales/t'
+import { t, tn } from '../locales/t'
 import { GITIGNORE_FILE, isRepoFolder, roleJsonPath } from '../paths'
 import { gitignoreLines, mergeIgnoreBlock } from '../plan/gitignore'
 import { planReadPaths, planWithManifest, recordedCadreVersion } from '../plan/plan'
@@ -57,7 +57,7 @@ import { listSessions, scanHistory } from '../scan/history'
 import { readInstructionFiles, repoInstructionNames } from '../scan/instructions/read'
 import { readPaths, readRepoFile } from '../scan/port-read'
 import { checkedCompletion } from '../suggest/checked'
-import type { Checked } from '../suggest/checked'
+import type { Checked, StepProgress } from '../suggest/checked'
 import { parseRecommendation, RECOMMEND_SYSTEM, recommendPrompt } from '../suggest/instructions'
 import { MCP_SYSTEM, mcpPrompt, parseMcpRecommendation } from '../suggest/mcp'
 import { proposeFromText } from '../suggest/propose'
@@ -120,6 +120,60 @@ export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.
   topics: t('init.status.topics'),
   parts: t('init.status.parts'),
 })
+
+/**
+ * What the scans read, the one line under SCAN_PROGRESS in a pane surface's loader (D-301): a fixed text, as nothing
+ * is counted before the scans ran (the wording is Claude's discretion under D-301).
+ */
+export const SCAN_SUMMARY = t('init.status.summary.scan')
+
+/** The words a step summary counts (D-301), each the last part of an `init.status.count.*` locale base. */
+type CountWord =
+  | 'servers'
+  | 'roles'
+  | 'skills'
+  | 'groups'
+  | 'parts'
+  | 'topics'
+  | 'memories'
+  | 'sessions'
+  | 'hunks'
+  | 'plugins'
+  | 'files'
+
+/** A step summary of counts (D-301): each `<count> <word>`, in its one or other form (tn), joined with ', '. */
+function countsText(counts: readonly (readonly [CountWord, number])[]): string {
+  return counts.map(([word, count]) => tn(`init.status.count.${word}`, count, { count })).join(', ')
+}
+
+/**
+ * The one-line summary of what a model call of init works on, drawn under its label (MODEL_PROGRESS) in a pane
+ * surface's loader (D-301; the wording is Claude's discretion under D-301): the counts of what the call reads, servers
+ * and roles for the MCP call, own skills, plugin groups and roles for the skills call, the parts for the topics call,
+ * topics, memories and roles for the parts call (countsText), and a fixed text for a described structure. The TUI
+ * default shows the label only.
+ */
+export function modelSummary(call: ModelCall): string {
+  switch (call.id) {
+    case 'describe-roles':
+      return t('init.status.summary.describe')
+    case 'mcp':
+      return countsText([['servers', call.servers.length], ['roles', call.roles.length]])
+    case 'skills':
+      return countsText([['skills', call.own.length], ['groups', call.groups.length], ['roles', call.roles.length]])
+    case 'topics':
+      return countsText([['parts', call.scan.parts.length]])
+    case 'parts': {
+      const { topics, memories, roles } = call
+
+      return countsText([['topics', topics.length], ['memories', memories.length], ['roles', roles.length]])
+    }
+    default: {
+      const unreachable: never = call
+      return unreachable
+    }
+  }
+}
 
 /**
  * The manifest entries of the built files a re-init keeps as they are (02-GAPS-B3 S1): for each role whose built
@@ -301,13 +355,14 @@ async function applyConfirmed(
   }
   const failures: HunkRun[] = []
   const runs = hunkRuns(draft.hunks, gathered.setup, gsd)
-  if (runs.length > 0) await io.progress(APPLY_HUNKS_PROGRESS)
+  if (runs.length > 0) await io.progress(APPLY_HUNKS_PROGRESS, countsText([['hunks', runs.length]]))
   for (const run of runs) {
     const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
     if (hasRunFailed(result)) failures.push(run)
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
-  if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS)
+  const installCount = countsText([['plugins', draft.pluginInstalls.length]])
+  if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS, installCount)
   const installs =
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
@@ -339,7 +394,7 @@ async function applyConfirmed(
   const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
   const offered = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const allowed = privatePlan.allowed
-  if (offered.length > 0) await io.progress(IMPROVER_PROGRESS)
+  if (offered.length > 0) await io.progress(IMPROVER_PROGRESS, countsText([['files', offered.length]]))
   const written = await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {
@@ -402,7 +457,7 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
     case 'guard':
       return { id: 'guard', result: await initGuard(io, 'init') }
     case 'scan': {
-      await io.progress(SCAN_PROGRESS)
+      await io.progress(SCAN_PROGRESS, SCAN_SUMMARY)
       const scanIo = withToolsOnce(io)
       const result = await gatherScans(scanIo, call.locations, call.readUserMcp)
 
@@ -411,7 +466,7 @@ async function performIo(io: InitIo, options: InitOptions, call: IoCall): Promis
     case 'list-sessions':
       return { id: 'list-sessions', result: await listSessions(io, call.dir) }
     case 'scan-history':
-      await io.progress(HISTORY_PROGRESS)
+      await io.progress(HISTORY_PROGRESS, countsText([['sessions', call.sessions.length]]))
 
       return { id: 'scan-history', result: await scanHistory(io, call.dir, call.sessions) }
     case 'read-repo-file':
@@ -464,7 +519,7 @@ export async function consentedGsdCheck(
 async function recommendedServerRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'mcp' }>,
-  progressText: string,
+  step: StepProgress,
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const { roles, servers } = call
   const serverNames = servers.map(server => server.name)
@@ -479,7 +534,7 @@ async function recommendedServerRoles(
   const seeds = (): ReadonlyMap<string, readonly string[]> =>
     new Map(servers.filter(server => server.seed.length > 0).map(server => [server.name, server.seed]))
 
-  return checkedCompletion(io, progressText, MCP_SYSTEM, prompt, parse, seeds)
+  return checkedCompletion(io, step, MCP_SYSTEM, prompt, parse, seeds)
 }
 
 /**
@@ -493,7 +548,7 @@ async function recommendedServerRoles(
 async function recommendedSkillRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'skills' }>,
-  progressText: string,
+  step: StepProgress,
 ): Promise<SkillsRecommendation> {
   const { roles, mcpByRole, own, groups, counts, seeds } = call
   const roleIds = roles.map(role => role.id)
@@ -519,7 +574,7 @@ async function recommendedSkillRoles(
     ),
   })
 
-  return checkedCompletion(io, progressText, SKILLS_SYSTEM, prompt, parse, seeded)
+  return checkedCompletion(io, step, SKILLS_SYSTEM, prompt, parse, seeded)
 }
 
 /**
@@ -531,7 +586,7 @@ async function recommendedSkillRoles(
 async function groupedTopics(
   io: InitIo,
   scan: InstructionScan,
-  progressText: string,
+  step: StepProgress,
 ): Promise<readonly InstructionTopic[]> {
   const partIds = scan.parts.map(part => part.id)
   const parse = (reply: string): Checked<readonly InstructionTopic[]> => {
@@ -542,7 +597,7 @@ async function groupedTopics(
   }
   const prompt = (errors: readonly string[]): string => topicsPrompt(scan.parts, errors)
 
-  return checkedCompletion(io, progressText, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
+  return checkedCompletion(io, step, TOPICS_SYSTEM, prompt, parse, () => fallbackTopics(scan))
 }
 
 /**
@@ -554,7 +609,7 @@ async function groupedTopics(
 async function recommendedRoles(
   io: InitIo,
   call: Extract<ModelCall, { readonly id: 'parts' }>,
-  progressText: string,
+  step: StepProgress,
 ): Promise<ReadonlyMap<string, readonly string[]>> {
   const { roles, topics, memories } = call
   const topicIds = topics.map(topic => topic.id)
@@ -568,7 +623,7 @@ async function recommendedRoles(
   }
   const prompt = (errors: readonly string[]): string => recommendPrompt(roles, topics, memories, errors)
 
-  return checkedCompletion(io, progressText, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
+  return checkedCompletion(io, step, RECOMMEND_SYSTEM, prompt, parse, () => new Map())
 }
 
 /**
@@ -576,21 +631,21 @@ async function recommendedRoles(
  * it always did: the roles of a described structure (proposeFromText), the roles recommended for each MCP server
  * (recommendedServerRoles), the roles recommended for each own skill (recommendedSkillRoles), the topics of an
  * instruction read (groupedTopics), or the roles recommended for each topic and memory (recommendedRoles), each with
- * the status line of its ModelCall id (MODEL_PROGRESS, D-232).
+ * the status line of its ModelCall id (MODEL_PROGRESS, D-232) and the summary of what it reads (modelSummary, D-301).
  */
 async function performModel(io: InitIo, call: ModelCall): Promise<ModelResult> {
-  const progressText = MODEL_PROGRESS[call.id]
+  const step: StepProgress = { label: MODEL_PROGRESS[call.id], summary: modelSummary(call) }
   switch (call.id) {
     case 'describe-roles':
-      return { id: 'describe-roles', result: await proposeFromText(io, call.text, progressText) }
+      return { id: 'describe-roles', result: await proposeFromText(io, call.text, step.label, step.summary) }
     case 'mcp':
-      return { id: 'mcp', result: await recommendedServerRoles(io, call, progressText) }
+      return { id: 'mcp', result: await recommendedServerRoles(io, call, step) }
     case 'skills':
-      return { id: 'skills', result: await recommendedSkillRoles(io, call, progressText) }
+      return { id: 'skills', result: await recommendedSkillRoles(io, call, step) }
     case 'topics':
-      return { id: 'topics', result: await groupedTopics(io, call.scan, progressText) }
+      return { id: 'topics', result: await groupedTopics(io, call.scan, step) }
     case 'parts':
-      return { id: 'parts', result: await recommendedRoles(io, call, progressText) }
+      return { id: 'parts', result: await recommendedRoles(io, call, step) }
     default: {
       const unreachable: never = call
       return unreachable

@@ -15,6 +15,15 @@ export const MAX_PROPOSE_ATTEMPTS = 3
 /** The error the next prompt and the fallback line give when the model answered with no text. */
 const NO_TEXT_ERROR = PROMPTS.noTextError
 
+/**
+ * The loader of one long step (D-301): its label, the `init.status.*` text the status line and the pane show, and a
+ * one-line summary of what the step works on, null when it has none; the TUI default shows the label only.
+ */
+export type StepProgress = {
+  readonly label: string
+  readonly summary: string | null
+}
+
 /** A model reply as a reply check of checkedCompletion takes it: the value it gives, or every error found. */
 export type Checked<T> =
   | { readonly kind: 'ok'; readonly value: T }
@@ -22,13 +31,13 @@ export type Checked<T> =
 
 /**
  * One model call with its retries (D-83; 02-GAPS-B2 S7: one home for the four of init): each attempt first sets
- * `progressText` as the status line (InitIo.progress, D-232), then each reply goes through `parse`, and a reply it
- * cannot take, or no text at all (NO_TEXT_ERROR), is sent back through `prompt` with its exact errors,
- * MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
+ * `step` as the loader, its label and its summary, the same on a retry (InitIo.progress, D-232, D-301), then each
+ * reply goes through `parse`, and a reply it cannot take, or no text at all (NO_TEXT_ERROR), is sent back through
+ * `prompt` with its exact errors, MAX_PROPOSE_ATTEMPTS calls in all. Then it gives `fallback` of the last errors.
  */
 export async function checkedCompletion<T>(
   io: InitIo,
-  progressText: string,
+  step: StepProgress,
   system: string,
   prompt: (errors: readonly string[]) => string,
   parse: (reply: string) => Checked<T>,
@@ -36,7 +45,7 @@ export async function checkedCompletion<T>(
 ): Promise<T> {
   let errors: readonly string[] = []
   for (let attempt = 0; attempt < MAX_PROPOSE_ATTEMPTS; attempt += 1) {
-    await io.progress(progressText)
+    await io.progress(step.label, step.summary ?? undefined)
     const reply = await io.complete(prompt(errors), system)
     const checked = reply === null ? null : parse(reply)
     if (checked?.kind === 'ok') return checked.value
