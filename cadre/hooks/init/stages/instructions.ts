@@ -26,7 +26,7 @@ import { SCREEN_LIST_WORDS, t, tn } from '../../locales/t'
 import { memoryFoldersOf } from '../../paths'
 import { isMemoryIndexName } from '../../scan/instructions/memories'
 import type { InstructionSources } from '../../scan/instructions/read'
-import { ASK_HEADERS, choiceAnswer, countedChip, paneQuestionOf, quotedLabels } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, countedChip, PANE_TITLES, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { instructionPartsContext, instructionsContext, memoryContext, topicContext } from '../../ui/blocks/context'
 import { cappedList, instructionLines, sourceText, topicParts } from '../../ui/blocks/instructions'
@@ -34,7 +34,7 @@ import { listWordsOf, withMax } from '../../ui/surface'
 import { ACCEPT_RECOMMENDATIONS, handoutAnswer, handoutEnter } from '../handout'
 import type { HandoutEntry, HandoutItem, HandoutNext } from '../handout'
 import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, Kept, RepoNames, StageDef } from '../state'
+import type { Answer, InitState, Kept, Output, RepoNames, StageDef } from '../state'
 import { memoryAnswer, memoryEnter } from './memory'
 import type { MemoryNext } from './memory'
 
@@ -394,20 +394,18 @@ function partsHandedOut(state: InitState, input: InstructionInput, found: PartsF
 }
 
 /**
- * The hand-out of what the parts flow found (G-02-1f Entry choices, Memories): the instructions block in the side pane
- * first (instructionLines), then the entry question, with that block as its own context (instructionPartsContext,
- * D-236), with the topics and then the memories as items.
+ * The hand-out of what the parts flow found (G-02-1f Entry choices, Memories): the entry question, with the
+ * instructions block (instructionLines) as its own context (instructionPartsContext, D-236; no block of its own,
+ * D-302), with the topics and then the memories as items.
  */
 function handOutParts(state: InitState, input: InstructionInput, found: PartsFound): InitState {
   const { scan, topics, recommended } = found
-  const lines = instructionLines(scan, topics, recommended)
-  const shownBlock = withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }])
   const words = listWordsOf(state.surface)
   const items = [...topicItems(scan, topics, recommended, words), ...memoryItems(scan.memories, recommended)]
   const entry = { ...instructionsEntry(scan, topics), context: instructionPartsContext(scan, topics, recommended) }
   const next = handoutEnter(entry, items, input.roles, HANDOUT_DISMISSED_REASON)
 
-  return partsHandedOut(shownBlock, input, found, next)
+  return partsHandedOut(state, input, found, next)
 }
 
 /**
@@ -444,18 +442,19 @@ function recommending(
 }
 
 /**
- * After the read (G-02-1f): a read with no part and no memory shows its read warnings, if any, in the instructions
- * block, then asks the whole-file questions; else the model groups the parts into topics across files (no call without
- * a part, the topics model effect), and a second call recommends roles for the topics and the memories. A review
- * go-back uses the topics of the first pass instead, kept for the same role ids and part ids (keptFor, D-235).
+ * After the read (G-02-1f): a read with no part and no memory asks the whole-file questions, its read warnings, if
+ * any, folded first into their contexts as the instructions block, which no later context holds (D-302); else the
+ * model groups the parts into topics across files (no call without a part, the topics model effect), and a second call
+ * recommends roles for the topics and the memories. A review go-back uses the topics of the first pass instead, kept
+ * for the same role ids and part ids (keptFor, D-235).
  */
 function afterRead(state: InitState, input: InstructionInput, scan: InstructionScan): InitState {
   const isEmpty = scan.parts.length === 0 && scan.memories.length === 0
   if (isEmpty && scan.warnings.length === 0) return wholeFiles(state, input, WHOLE)
   if (isEmpty) {
-    const lines = instructionLines(scan, [], new Map())
+    const fold: Output = { kind: 'fold', title: PANE_TITLES.instructions, lines: instructionLines(scan, [], new Map()) }
 
-    return wholeFiles(withOutputs(state, [{ kind: 'show', block: { key: 'instructions', lines } }]), input, WHOLE)
+    return wholeFiles(withOutputs(state, [fold]), input, WHOLE)
   }
   if (scan.parts.length === 0) return recommending(state, input, scan, [])
   const kept = keptFor(state, scan)?.topics ?? null

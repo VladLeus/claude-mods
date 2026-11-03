@@ -2,8 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { InstructionPart } from '../../types'
 import type { GuardResult } from '../guards/repo'
-import { PANE_LIST_WORDS } from '../locales/t'
-import { scanWarnings } from '../scan/gather'
 import {
   DEFAULT_LOCATIONS,
   gitWorld,
@@ -14,7 +12,6 @@ import {
   TOPICS,
   wholeDraft,
 } from '../testkit'
-import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { initialState, nextStage, STAGES } from './machine'
 import { INIT_CANCELLED } from './replies'
 import type { Answer, InitState } from './state'
@@ -99,18 +96,17 @@ describe('the guard and scan stages (D-230)', () => {
     expect(passed.draft.locations).toBe(DEFAULT_LOCATIONS)
   })
 
-  test('the scans are an io effect with the consent answer; the scan block shows before the history ask', async () => {
+  test('the scans are an io effect with the consent answer; their summary shows in no block of its own', async () => {
     const draft = { locations: DEFAULT_LOCATIONS, readUserMcp: false }
     const state = STAGES.scan.enter(stateAt('scan', draft))
     const call = { id: 'scan', locations: DEFAULT_LOCATIONS, readUserMcp: false }
     expect(state.effect).toEqual({ kind: 'io', call })
     const gathered = await scansOf(gitWorld())
     const next = nextStage(state, { kind: 'io', result: { id: 'scan', result: gathered } })
-    const warnings = scanWarningLines(scanWarnings(DEFAULT_LOCATIONS, gathered))
-    const lines = [...scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS), ...warnings]
+    // The history question's context, or a fold into the roles questions, shows the scan summary (D-302).
     expect(next.stage).toBe('history')
     expect(next.draft.gathered).toBe(gathered)
-    expect(next.outputs).toEqual([{ kind: 'show', block: { key: 'scan', lines } }])
+    expect(next.outputs).toEqual([])
   })
 })
 

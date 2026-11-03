@@ -41,9 +41,8 @@ describe('carryStep', () => {
   const ENV_ASKED = withContext(ENV_QUESTION, envContextLine(roles))
   /** The env question as a pane surface asks it: no env name, the pane lists them (D-283). */
   const ENV_PANE_QUESTION = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
-  /** The side-pane block of the two names, shown right before the env question (D-135). */
+  /** The env question's own context lines for the two names: every scanned name, names only (D-135, D-302). */
   const TWO_NAMES_LINES = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
-  const TWO_NAMES_BLOCK = { kind: 'show', block: { key: 'env', lines: TWO_NAMES_LINES } }
 
   /** A hook script registered for an event in the user settings. */
   function hook(script: string, event = 'PreToolUse'): HookScript {
@@ -65,7 +64,7 @@ describe('carryStep', () => {
     expect(run.specs).toEqual([{ options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true }])
     const carry = { autoCompactWindow: false, statusLine: false, env: ['JIRA_URL'], hooks: [] }
     expect(run.state.draft.roles?.map(role => role.carry)).toEqual(roles.map(() => carry))
-    expect(run.outputs).toEqual([TWO_NAMES_BLOCK])
+    expect(run.outputs).toEqual([])
   })
 
   test('All of them carries every scanned name, None carries none, and NAME=value is asked again', () => {
@@ -77,12 +76,12 @@ describe('carryStep', () => {
     expect(none.state.draft.roles?.every(role => role.carry.env.length === 0)).toBe(true)
   })
 
-  test('the side pane lists every scanned env name right before the env question, names only (D-135)', () => {
+  test("the env question's context lists every scanned env name, names only, no block of its own (D-135)", () => {
     const names = Array.from({ length: 40 }, (_, at) => `CADRE_UAT_NAME_${String(at + 1).padStart(2, '0')}`)
     const forty = emptySetupScan({ carry: { ...noCarry, envNames: names } })
     const state = carryAt(roles, forty)
     const lines = ['Env variable names in your settings (values are never read):', ...names.map(name => `  ${name}`)]
-    expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])
+    expect([state.outputs, state.openQuestion?.spec.context?.lines]).toEqual([[], lines])
     expect(state.openQuestion?.question.split('\n')[0]).toBe(envQuestion(names, PANE_LIST_WORDS))
     expect(envQuestion(names, SCREEN_LIST_WORDS)).toContain('+35 more')
     const carried = driven(state, ['CADRE_UAT_NAME_40']).state.draft.roles
@@ -143,7 +142,7 @@ describe('carryStep', () => {
     for (const [answers, reason] of cases) {
       const run = driven(carryAt(roles, twoNames), answers)
       expect(run.state.effect).toEqual({ kind: 'end', reply: cancelledReply(reason) })
-      expect(run.outputs).toEqual([TWO_NAMES_BLOCK, { kind: 'log', text: reason }])
+      expect(run.outputs).toEqual([{ kind: 'log', text: reason }])
     }
     expect(ENV_DISMISSED_REASON).toBe('The env variables question was dismissed or not answered.')
   })
@@ -160,7 +159,7 @@ describe('the carry stage (D-230)', () => {
   /** The carry facts of user settings with nothing set. */
   const noCarry = { autoCompactWindow: null, hasStatusLine: false, isGsdStatusline: false, envNames: [] }
 
-  test('carryStage lists every scanned env name, then asks the env question; the open question is that ask', () => {
+  test('carryStage asks the env question, every scanned env name in its context; the open question is that ask', () => {
     const state = carryAt(roles, emptySetupScan({ carry: { ...noCarry, envNames: ['API_KEY', 'JIRA_URL'] } }))
     const question = withContext(envQuestion(['API_KEY', 'JIRA_URL'], PANE_LIST_WORDS), envContextLine(roles))
     const lines = ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL']
@@ -170,7 +169,7 @@ describe('the carry stage (D-230)', () => {
     const ask = { question, spec: { options: ['None', 'All of them'], header: 'Env', context, acceptsTyped: true } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
-    expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'env', lines } }])
+    expect(state.outputs).toEqual([])
   })
 
   test('the env question carries the env names as its own context, each cleaned (D-236, T-02.1-71)', () => {

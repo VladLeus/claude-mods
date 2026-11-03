@@ -2,10 +2,10 @@
  * The history stage of init (SCAN-03, D-59, D-133, D-230), a layer 10 module: the consent question, asked before any
  * session transcript is read, with how many sessions this repo has and that only the newest are read
  * (historyQuestion), and historyStage, the pure stage that has this repo's session folder listed, asks, has the
- * history scan (scan/history) run only after a yes and shows the names and counts it found as the side pane's Session
- * history block (historyLines); and historyHints, the scan as hints for the skill questions. Pure: it gives states and
- * never performs an effect, imports core, paths, scan/gather, scan/history, ui and init/state, and never imports
- * init/machine or init/run.
+ * history scan (scan/history) run only after a yes and folds the names and counts it found, the Session history block
+ * (historyLines), into the roles questions (D-302); and historyHints, the scan as hints for the skill questions. Pure:
+ * it gives states and never performs an effect, imports core, paths, scan/gather, scan/history, ui and init/state, and
+ * never imports init/machine or init/run.
  */
 import type { InitLocations } from '../../../types'
 import type { ListWords } from '../../core/text'
@@ -22,13 +22,13 @@ import {
 } from '../../scan/history'
 import type { Gathered } from '../../scan/gather'
 import type { HistoryScan } from '../../scan/history'
-import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, PANE_TITLES, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { scanContext } from '../../ui/blocks/context'
 import { scanContextLine } from '../../ui/blocks/scan'
 import { listWordsOf } from '../../ui/surface'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
-import type { Answer, InitState, SessionListing, StageDef } from '../state'
+import type { Answer, InitState, Output, SessionListing, StageDef } from '../state'
 
 /** The line init prints when this repo has no session history: no session folder, or no transcript in it (SCAN-03). */
 export const NO_HISTORY_NOTE = t('init.history.noHistoryNote')
@@ -161,9 +161,18 @@ function withHints(state: InitState, history: HistoryScan | 'skipped'): InitStat
   return stageDone({ ...state, draft: { ...state.draft, hints: historyHints(history) } })
 }
 
-/** The scan skipped with `note` logged as it is: nothing was asked and no transcript was read. */
+/**
+ * The scan skipped with `note` logged as it is: nothing was asked and no transcript was read. No history question
+ * shows the scan summary and its warnings (scanContext), so they fold into the questions of the stage that asks next,
+ * the roles (D-302).
+ */
 function skippedWith(state: InitState, note: string): InitState {
-  return withHints(withOutputs(state, [{ kind: 'log', text: note }]), 'skipped')
+  const { gathered, locations } = state.draft
+  if (gathered === undefined || locations === undefined) return stageFailed(state)
+  const scan = scanContext(locations, gathered, listWordsOf(state.surface))
+  const fold: Output = { kind: 'fold', title: PANE_TITLES.scan, lines: scan.lines }
+
+  return withHints(withOutputs(state, [{ kind: 'log', text: note }, fold]), 'skipped')
 }
 
 /** The history question asked with the session count and the scan's context line, asked `tries` times so far. */
@@ -209,9 +218,14 @@ function afterConsent(state: InitState, answer: string | null): InitState {
   return withEffect(state, { kind: 'io', call: { id: 'scan-history', dir, sessions: listing.sessions } })
 }
 
-/** After the scan: its names and counts shown as the Session history block (historyLines, D-133), kept as hints. */
+/**
+ * After the scan: its names and counts kept as hints, and the Session history block (historyLines, D-133), which no
+ * later context holds, folded into the questions of the stage that asks next, the roles (D-302).
+ */
 function afterScan(state: InitState, scan: HistoryScan): InitState {
-  return withHints(withOutputs(state, [{ kind: 'show', block: { key: 'history', lines: historyLines(scan) } }]), scan)
+  const fold: Output = { kind: 'fold', title: PANE_TITLES.history, lines: historyLines(scan) }
+
+  return withHints(withOutputs(state, [fold]), scan)
 }
 
 /** The answer to the effect the history stage has out: the listing, the history question, or the scan. */
@@ -229,10 +243,11 @@ function historyAnswer(state: InitState, answer: Answer): InitState {
  * The history stage (SCAN-03, D-59, D-230), right after the scan summary. It has this repo's session folder in the
  * user folder listed (historyDir, from the repo root as resolved), and reads nothing else before the person answers:
  * with no user folder, no folder or no transcript it logs NO_HISTORY_NOTE, and with a folder it cannot list
- * UNLISTED_HISTORY_NOTE; either way it asks nothing and the scan is skipped. Otherwise it asks the history question
- * (afterListing, afterConsent), and only after a yes the scan runs over the newest sessions and its names and counts
- * show as the Session history block, each line cleaned as a report cell (D-133). No other stage needs the result: the
- * counts are only hints for the skill questions (historyHints).
+ * UNLISTED_HISTORY_NOTE; either way it asks nothing, the scan is skipped and the scan summary folds into the roles
+ * questions (D-302). Otherwise it asks the history question (afterListing, afterConsent), and only after a yes the
+ * scan runs over the newest sessions and its names and counts fold into the roles questions as the Session history
+ * block, each line cleaned as a report cell (D-133, D-302). No other stage needs the result: the counts are only hints
+ * for the skill questions (historyHints).
  */
 export const historyStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {

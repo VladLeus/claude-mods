@@ -217,15 +217,25 @@ function paneOf(state: InitState, line: string): { readonly asked: string | unde
   return { asked, text: withContext(sentence, line) }
 }
 
+/**
+ * Every line of the review `asking` asks about, page by page: the context of its page, then of each next page, paged
+ * with Next page while the page offers it (D-233); the review shows in no block of its own (D-302).
+ */
+function pagedLines(asking: InitState): string[] {
+  const lines = [...(asking.openQuestion?.spec.context?.lines ?? [])]
+  if (asking.openQuestion?.spec.options.includes('Next page') !== true) return lines
+
+  return [...lines, ...pagedLines(nextStage(asking, { kind: 'answer', text: 'Next page' }))]
+}
+
 describe('the review stage (D-230)', () => {
-  test('reviewStage plans the whole draft first, then shows the review block and asks; the open question', async () => {
+  test('reviewStage plans the whole draft first, then asks the review by pages; the open question', async () => {
     const state = reviewAt()
     expect(state.openQuestion).toBeNull()
     const planned = await plannedFor(state)
     const asking = nextStage(state, planAnswer(planned))
     const context = contextText(reviewContextLine(planned.plan, 'definitions', { kind: 'git-root' }))
-    const blocks = asking.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
-    const lines = blocks[0]?.lines ?? []
+    const lines = pagedLines(asking)
     const count = Math.ceil(lines.length / (PANE_PAGE_ROWS - 1))
     const title = `Review (page 1 of ${count})`
     // A pane surface asks the review question with its summary, then the page's place, which the Review chip does not
@@ -236,13 +246,13 @@ describe('the review stage (D-230)', () => {
     const ask = { question: reviewQuestion(context), spec }
     expect(asking.effect).toEqual({ kind: 'ask', ...ask })
     expect(asking.openQuestion).toEqual(ask)
-    expect(blocks.map(block => [block.key, block.lines[0]])).toEqual([['review', 'Roles:']])
+    expect([asking.outputs, lines[0]]).toEqual([[], 'Roles:'])
   })
 
-  test('the review question carries the first page of the review block as its own context (D-236, D-233)', async () => {
+  test('the review question carries the first page of the review as its own context (D-236, D-233)', async () => {
     const state = reviewAt()
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const shown = pagedLines(asking)
     const page = shown.slice(0, PANE_PAGE_ROWS - 1)
     expect(asking.openQuestion?.spec.context?.lines).toEqual(page)
     const again = nextStage(asking, { kind: 'answer', text: 'maybe' })
@@ -402,8 +412,8 @@ describe('the review stage (D-230)', () => {
     expect(going.openQuestion?.question).toBe(asked)
     const chosen = nextStage({ ...going, outputs: [] }, { kind: 'answer', text: 'Use these roles' })
     expect([chosen.returnTo, chosen.returnAfter, chosen.rounds]).toEqual(['review', 'improver-install', 0])
-    const keys = chosen.outputs.flatMap(output => (output.kind === 'show' ? [output.block.key] : []))
-    expect(keys).toEqual(['recommendations'])
+    const folds = chosen.outputs.flatMap(output => (output.kind === 'fold' ? [output.title] : []))
+    expect(folds).toEqual(['Recommendations'])
     const built: InstructionHandout = {
       kind: 'parts',
       scan: { parts: [], files: [], memories: [], warnings: [] },
@@ -427,13 +437,13 @@ describe('the review stage (D-230)', () => {
 })
 
 describe('review redaction (WD-S5, #163)', () => {
-  test('a secret-like span of a review line is hidden in the review block and its paged context', async () => {
+  test('a secret-like span of a review line is hidden in every page of the review and its paged context', async () => {
     const [first] = REVIEW_DRAFT.roles
     const title = `Lead ${['token', 'ab12cd34ef56'].join('=')}`
     const roles = REVIEW_DRAFT.roles.map((role, at) => (at === 0 ? { ...role, title } : role))
     const state = reviewAt({ roles })
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const shown = pagedLines(asking)
     const context = asking.openQuestion?.spec.context?.lines ?? []
     const row = `  Lead token=${REDACTED} (${first?.id})`
     expect([shown.includes(row), context.includes(row)]).toEqual([true, true])
@@ -457,21 +467,23 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
     return recommendationLines(recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup }), roles)
   }
 
-  /** The review block of a draft asked on `surface`, and the context of every page, paged with Next page (D-233). */
+  /**
+   * The review of a draft asked on `surface`: the context of every page, paged with Next page (D-233), and all their
+   * lines in order, the review shown in no block of its own (D-302).
+   */
   async function reviewed(
     draft: Draft,
     surface: Surface,
   ): Promise<{ readonly lines: readonly string[]; readonly pages: readonly (readonly string[])[] }> {
     const entered = reviewStage.enter(stateAt('review', draft, { surface }))
     let state = nextStage(entered, planAnswer(await plannedFor(entered)))
-    const lines = state.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
     const pages: (readonly string[])[] = [state.openQuestion?.spec.context?.lines ?? []]
     while (state.openQuestion?.spec.options.includes('Next page') === true) {
       state = nextStage(state, { kind: 'answer', text: 'Next page' })
       pages.push(state.openQuestion?.spec.context?.lines ?? [])
     }
 
-    return { lines, pages }
+    return { lines: pages.flat(), pages }
   }
 
   test('an FE team on no framework: the recommendations after the scan warnings, before the installs', async () => {
@@ -502,10 +514,10 @@ describe('the recommendations in the review (WD-M2, ROLE-03)', () => {
     const draft = draftWith([...REVIEW_DRAFT.roles, templateRole('fe')])
     const shown = recommendedLines(draft)
     for (const surface of ['pane', 'tui-default'] satisfies Surface[]) {
-      const { lines, pages } = await reviewed(draft, surface)
+      const { pages } = await reviewed(draft, surface)
       const flat = pages.flat()
       const at = flat.indexOf(shown[0] ?? '')
-      expect([surface, flat, flat.slice(at, at + shown.length)]).toEqual([surface, lines, shown])
+      expect([surface, at >= 0, flat.slice(at, at + shown.length)]).toEqual([surface, true, shown])
     }
   })
 })
@@ -515,7 +527,7 @@ describe('the paged review on the TUI default (D-233, ASKED #4)', () => {
   async function tuiReview(state: Partial<InitState> = {}): Promise<{ readonly asking: InitState; lines: string[] }> {
     const entered = reviewAt({}, { surface: 'tui-default', ...state })
     const asking = nextStage(entered, planAnswer(await plannedFor(entered)))
-    const lines = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const lines = pagedLines(asking)
 
     return { asking, lines }
   }
@@ -604,7 +616,7 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
   test('a page holds PANE_PAGE_ROWS - 1 review lines, with the options of the TUI default', async () => {
     const state = reviewAt()
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const shown = pagedLines(asking)
     expect([PANE_PAGE_ROWS, shown.length > 2 * (PANE_PAGE_ROWS - 1)]).toEqual([20, true])
     const second = nextStage(asking, { kind: 'answer', text: 'Next page' })
     const lines = shown.slice(PANE_PAGE_ROWS - 1, 2 * (PANE_PAGE_ROWS - 1))
@@ -616,7 +628,7 @@ describe('the paged review on a pane surface (ASKED #19, #23)', () => {
   test('a review that fits one page offers Confirm and Change something… only, titled Review (ASKED #23)', async () => {
     const state = reviewAt({ roles: [] })
     const asking = nextStage(state, planAnswer(await plannedFor(state)))
-    const shown = asking.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
+    const shown = pagedLines(asking)
     expect(shown.length < PANE_PAGE_ROWS).toBe(true)
     expect(asking.openQuestion?.spec.options).toEqual(['Confirm', 'Change something…'])
     // One page has no place to name: a pane surface asks the review question with its summary alone (D-310).

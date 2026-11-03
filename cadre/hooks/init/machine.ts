@@ -12,9 +12,6 @@ import { reportText } from '../core/text'
 import { chooseFramework } from '../framework/contract'
 import { detectAll } from '../framework/registry'
 import { proposeRoles } from '../roles/propose'
-import { scanWarnings } from '../scan/gather'
-import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
-import { listWordsOf } from '../ui/surface'
 import type { Surface } from '../ui/surface'
 import { cancelledReply, INIT_CANCELLED } from './replies'
 import { STAGE_ORDER, stageDone, stageEnded, stageFailed, withEffect, withOutputs } from './state'
@@ -61,10 +58,10 @@ function toolNamesOf(tools: unknown): string[] {
 }
 
 /**
- * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, then the scan block with their warnings in the
- * side pane (D-133), shown before the history question, and what the scans fix for the whole run: the frameworks
- * installed, the framework choice, the template proposal, and the session's tool names for the MCP server questions'
- * contexts (D-211).
+ * The scans (SCAN-01, SCAN-02), an io effect with the consent answer, and what the scans fix for the whole run: the
+ * frameworks installed, the framework choice, the template proposal, and the session's tool names for the MCP server
+ * questions' contexts (D-211). The scan summary with its warnings shows in the history question's context, or folded
+ * into the roles questions when no history question is asked (D-302); no block of its own.
  */
 const scanStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
@@ -77,11 +74,6 @@ const scanStage: StageDef = Object.freeze({
     const { locations } = state.draft
     if (answer.kind !== 'io' || answer.result.id !== 'scan' || locations === undefined) return stageFailed(state)
     const gathered = answer.result.result
-    const warnings = scanWarningLines(scanWarnings(locations, gathered))
-    const lines = [
-      ...scanSummaryLines(gathered.repo, gathered.setup, locations.root, listWordsOf(state.surface)),
-      ...warnings,
-    ]
     const detections = detectAll(gathered.facts.facts)
     const draft = {
       ...state.draft,
@@ -90,9 +82,8 @@ const scanStage: StageDef = Object.freeze({
       choice: chooseFramework(detections, null),
       proposal: proposeRoles(gathered.repo),
     }
-    const scanned = { ...state, draft, toolNames: toolNamesOf(answer.result.tools) }
 
-    return stageDone(withOutputs(scanned, [{ kind: 'show', block: { key: 'scan', lines } }]))
+    return stageDone({ ...state, draft, toolNames: toolNamesOf(answer.result.tools) })
   },
 })
 

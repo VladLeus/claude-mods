@@ -40,7 +40,7 @@ import { initReplyText } from '../initapply'
 import { privatesOf, repoPartsOf, withRepoRecords } from '../initplan'
 import type { PlanStepInput } from '../initplan'
 import { IGNORE_ALL_NOTE } from '../replies'
-import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect, withOutputs } from '../state'
+import { fullDraft, stageBack, stageCancelled, stageEnded, stageFailed, withEffect } from '../state'
 import type { Answer, Applied, InitState, ReviewItem, StageDef } from '../state'
 import { launchLine } from './launch'
 import { policyLine } from './policy'
@@ -471,13 +471,12 @@ function reviewAsked(
   return withEffect(asking, { kind: 'ask', question: question ?? ask.question, spec: ask.spec })
 }
 
-/** After the plan: the review block in the side pane (reviewLines, D-133), then the review question about it. */
+/**
+ * After the plan: the review question about it on its first page, the pages of the review block (reviewLines, D-133)
+ * its own context; no block of its own (D-302).
+ */
 function afterPlan(state: InitState, planned: PlanResult): InitState {
-  const draft = fullDraft(state.draft)
-  if (draft === null) return stageFailed(state)
-  const lines = reviewLines(draft, reviewPlanOf(draft).scopes, planned.plan, listWordsOf(state.surface))
-
-  return reviewAsked(withOutputs(state, [{ kind: 'show', block: { key: 'review', lines } }]), planned, null, 1, 0)
+  return reviewAsked(state, planned, null, 1, 0)
 }
 
 /**

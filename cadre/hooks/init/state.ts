@@ -91,11 +91,15 @@ export const STAGE_ORDER: readonly InitStage[] = Object.freeze([
 ])
 
 /**
- * What a stage gives the runner to show before its effect, in order (D-133): a side-pane block (shown as showBlock
- * shows it), a note (logged and shown as noteLine does), or one line logged as it is.
+ * What a stage gives the runner before its effect, in order (D-133): a fold, content no later context holds, which the
+ * runner merges into the context of the questions the next asking stage asks on a pane surface, under its title
+ * (D-302); a note (logged and shown as noteLine does); or one line logged as it is. A side-pane block (`show`) stays
+ * in the type for the port (D-326), but no stage gives one: the pane draws only the open question or the loader
+ * (D-299).
  */
 export type Output =
   | { readonly kind: 'show'; readonly block: { readonly key: PaneKey; readonly lines: readonly string[] } }
+  | { readonly kind: 'fold'; readonly title: string; readonly lines: readonly string[] }
   | { readonly kind: 'note'; readonly line: string }
   | { readonly kind: 'log'; readonly text: string }
 

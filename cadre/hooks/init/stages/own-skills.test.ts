@@ -12,7 +12,6 @@ import {
   OWN_SKILLS_ENTRY_PREFIX,
   repoScan,
   roleIn,
-  shownBlock,
   skillRef,
   stageStep,
   stateAt,
@@ -182,17 +181,17 @@ describe('own skills hand-out (G-02-1b)', () => {
     expect(run.asked).toEqual([withContext(ownEntry(1), context)])
   })
 
-  test('the model recommends before the plugin groups; then the pane shows the skills busiest first', async () => {
+  test('the model recommends before the plugin groups; then the entry lists the skills busiest first', async () => {
     const run = memIo(memWorld({ replies: [REPLY] }), ['None', 'Accept recommendations'])
     const { io, events } = withEvents(run)
     await assignedBy(io, roles, setup, hints)
-    expect(events).toEqual([`ask ${CODEX_QUESTION}`, 'show skills', `ask ${ownEntry(3)}`])
+    expect(events).toEqual([`ask ${CODEX_QUESTION}`, `ask ${ownEntry(3)}`])
     expect(completionAt(run, 0).prompt.split('\n').slice(-6, -3)).toEqual([
       'S1 | mid | Draft the weekly report. | used 4 times',
       'S2 | zeta | (no description) | used 4 times',
       'S3 | alpha | Sort the inbox. | used 0 times',
     ])
-    expect(shownBlock(run, 'skills')).toEqual(OWN_BLOCK)
+    expect([run.shown, run.specs[1]?.context?.lines]).toEqual([[], OWN_BLOCK])
   })
 
   test('Accept recommendations gives each own skill its recommended roles; the plugin answer stays', async () => {
@@ -329,8 +328,8 @@ describe('own skills on a go-back (D-235)', () => {
     const state = assignStage.enter(stateAt('assign', draft, back))
     expect(state.effect.kind).toBe('ask')
     expect(state.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
-    const shown = state.outputs.flatMap(output => (output.kind === 'show' ? output.block.lines : []))
-    expect(shown).toContain('    recommended: be')
+    expect(state.outputs).toEqual([])
+    expect(state.openQuestion?.spec.context?.lines).toContain('    recommended: be')
     const first = assignStage.enter(stateAt('assign', draft, { kept }))
     expect(first.effect.kind).toBe('model')
   })

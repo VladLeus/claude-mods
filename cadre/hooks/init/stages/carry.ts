@@ -1,7 +1,7 @@
 /**
  * The carried settings stage of init (D-60, D-62, D-84, D-103, D-135, D-136, D-230), a layer 10 module: the env
- * question, with the team's role ids on its second line (envContextLine), asked after the side pane lists every
- * scanned env name, and carryStage, the pure stage that gives every role the same picked names, never a value, the
+ * question, with the team's role ids on its second line (envContextLine) and every scanned env name in its own context
+ * (D-302), and carryStage, the pure stage that gives every role the same picked names, never a value, the
  * autoCompactWindow and statusLine settings the user sets, and the GSD secret read guard any settings source registers.
  * Pure: it gives states and never performs an effect, imports core, framework/gsd, init/answers, init/state, ui/ask
  * and init/stages/model, and never imports init/machine or init/run.
@@ -13,10 +13,10 @@ import { SECRET_READ_GUARD } from '../../framework/gsd/adapter'
 import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { ENV_PANE_HEADING, envContext } from '../../ui/blocks/context'
+import { envContext } from '../../ui/blocks/context'
 import { listWordsOf } from '../../ui/surface'
 import { ALL_ENV_OPTION, envPaneQuestion, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
-import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
+import { asking, stageCancelled, stageDone, stageFailed } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { teamContextLine } from './model'
 
@@ -99,10 +99,10 @@ function carryAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The carried settings stage (D-60, D-62, D-84, D-230). When the user settings define env variables, the side pane
- * first lists every scanned name, one per row (D-135), since the question shows only the first five (envQuestion), so
- * All of them never covers a name the person cannot see; then the one env question asks which ones roles carry
- * (envAsk), and any other answer is asked again with why on top. With none, nothing is shown or asked. Every role
+ * The carried settings stage (D-60, D-62, D-84, D-230). When the user settings define env variables, the one env
+ * question asks which ones roles carry (envAsk), its own context listing every scanned name, one per row (D-135, no
+ * block of its own, D-302), since the question shows only the first five (envQuestion), so All of them never covers a
+ * name the person cannot see; any other answer is asked again with why on top. With none, nothing is asked. Every role
  * carries the same (carriedDone). A dismissal is cancelled with ENV_DISMISSED_REASON and MAX_ASKS answers that name no
  * scanned variable with NO_USABLE_ANSWER_REASON (A1, D-136). No env or settings value is read, stored or printed
  * (T-02-34).
@@ -114,11 +114,9 @@ export const carryStage: StageDef = Object.freeze({
     const { setup } = gathered
     const names = setup.carry.envNames
     if (names.length === 0) return carriedDone(state, roles, setup, [])
-    const lines = [ENV_PANE_HEADING, ...names.map(name => `  ${name}`)]
-    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'env', lines } }])
     const ask = envAsk(names, roles, listWordsOf(state.surface))
 
-    return asking(shown, ask.question, ask.spec, 1)
+    return asking(state, ask.question, ask.spec, 1)
   },
   answer: carryAnswer,
 })

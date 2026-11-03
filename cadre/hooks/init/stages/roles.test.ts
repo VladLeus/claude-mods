@@ -27,7 +27,6 @@ import {
   leaks,
   memIo,
   memWorld,
-  shownBlock,
   driven,
   SOURCE_SCAN,
   stageRun,
@@ -295,14 +294,13 @@ describe('adjustLoop', () => {
     expect(run.logged).toEqual([])
   })
 
-  test('Show the roles shows the current roles in the pane and asks again', async () => {
+  test('Show the roles asks again, the current roles in its own context, no block of its own (D-302)', async () => {
     const { run } = await adjustRun(['drop fe', 'Show the roles', 'Done adjusting'])
-    const shown = run.shown[1]
-    expect(shown?.key).toBe('roles')
-    expect(shown?.lines[0]).toBe('Proposed roles:')
-    expect(shown?.lines.join('\n')).not.toContain('FE (fe)')
-    expect(shown?.lines).not.toContain('Changes from the scan:')
-    expect(run.logged).toEqual([])
+    // The asks: the roles question, then Adjust after drop fe, after Show the roles, and after Done adjusting.
+    const shown = run.specs[3]?.context?.lines ?? []
+    expect(shown[0]).toBe('Proposed roles:')
+    expect(shown.join('\n')).not.toContain('FE (fe)')
+    expect([run.shown, run.logged]).toEqual([[], []])
   })
 
   test('a dismissed adjust question cancels the step with its reason (A1)', async () => {
@@ -383,12 +381,12 @@ describe('adjustLoop', () => {
 describe('rolesStep', () => {
   const proposal = PROPOSAL
 
-  test('Use these roles returns the proposed roles, after the proposal lines are shown', async () => {
+  test('Use these roles returns the proposed roles, asked with the proposal lines as its context', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
     const end = await stageRun(run.io, rolesStage, rolesAt(proposal, FRAMEWORKS))
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: proposal })
     const lines = proposalLines(proposal.roles, proposal.changes)
-    expect(run.shown).toEqual([{ key: 'roles', title: 'Roles', lines }])
+    expect(run.shown).toEqual([])
     expect(run.logged).toEqual([])
     const asked = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
     expect(run.asked).toEqual([asked])
@@ -414,7 +412,7 @@ describe('rolesStep', () => {
     expect(docs?.hasBash).toBe(true)
     expect(docs?.autopilot.askUser).toBe(false)
     expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
-    expect(run.shown[1]?.lines).toEqual(proposalLines(DESCRIBED_ROLES, []))
+    expect(run.specs[2]?.context?.lines).toEqual(proposalLines(DESCRIBED_ROLES, []))
   })
 
   test('three invalid replies print why and ask the roles question again with the template roles', async () => {
@@ -426,9 +424,8 @@ describe('rolesStep', () => {
     expect(run.logged).toHaveLength(1)
     expect(reason?.startsWith('Could not use the described structure:')).toBe(true)
     expect(reason?.endsWith(FALLBACK_END)).toBe(true)
-    expect(run.shown.map(block => block.key)).toEqual(['roles', 'notes', 'roles'])
-    expect(run.shown[1]).toEqual({ key: 'notes', title: 'Notes', lines: run.logged })
-    expect(run.shown[2]?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
+    expect(run.shown).toEqual([{ key: 'notes', title: 'Notes', lines: run.logged }])
+    expect(run.specs[2]?.context?.lines).toEqual(proposalLines(proposal.roles, proposal.changes))
     expect(firstLines(run.asked)).toEqual([ROLES_QUESTION, DESCRIBE_QUESTION, ROLES_QUESTION])
   })
 
@@ -461,7 +458,7 @@ describe('rolesStep', () => {
     const { run, end } = await rolesRun(answers, [], full)
     expect(rolesOf(end)?.map(role => role.id)).toEqual(['pm', 'tl', 'be', 'qa', 'security', 'docs'])
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
-    expect(shownBlock(run, 'roles').join('\n')).toContain('Docs writer (docs)')
+    expect(run.specs.at(-1)?.context?.lines.join('\n')).toContain('Docs writer (docs)')
   })
 
   test('a dismissal or 3 unreadable answers at any point cancel the step with their reason (A1)', async () => {
@@ -509,8 +506,10 @@ describe('rolesStep', () => {
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: { roles: kept, changes: full.changes } })
     expect(firstLines(run.asked).filter(question => question === ROLES_QUESTION)).toHaveLength(2)
     const noteAt = events.indexOf(`log ${ADJUST_ROUNDS_NOTE}`)
-    expect(noteAt > 0 && events[noteAt + 1] === 'show notes' && events[noteAt + 2] === 'show roles').toBe(true)
-    expect(shownBlock(run, 'roles')).toEqual(proposalLines(kept, full.changes))
+    expect(noteAt > 0 && events[noteAt + 1] === 'show notes' && events[noteAt + 2] === `ask ${ROLES_QUESTION}`).toBe(
+      true,
+    )
+    expect(run.specs.at(-1)?.context?.lines).toEqual(proposalLines(kept, full.changes))
   })
 
   test('the Adjust cap is not acceptance: a dismissed roles question after it cancels the step', async () => {
@@ -520,13 +519,14 @@ describe('rolesStep', () => {
     expect(rolesResult(end)).toEqual({ kind: 'cancelled', reason: ROLES_DISMISSED_REASON })
   })
 
-  test('a start team is shown with its own scan changes, none for a described team (A6)', async () => {
+  test('a start team is asked about with its own scan changes, none for a described team (A6)', async () => {
     const run = memIo(memWorld({}), { 'Use these roles?': 'Use these roles' })
     const start: RoleProposal = { roles: DESCRIBED_ROLES, changes: [] }
     const end = await stageRun(run.io, rolesStage, rolesAt(proposal, FRAMEWORKS, start))
     expect(rolesResult(end)).toEqual({ kind: 'accepted', value: start })
-    expect(run.shown).toEqual([{ key: 'roles', title: 'Roles', lines: proposalLines(DESCRIBED_ROLES, []) }])
-    expect(shownBlock(run, 'roles').slice(-2)).toEqual(['Changes from the scan:', '  none'])
+    const lines = run.specs[0]?.context?.lines ?? []
+    expect([run.shown, lines]).toEqual([[], proposalLines(DESCRIBED_ROLES, [])])
+    expect(lines.slice(-2)).toEqual(['Changes from the scan:', '  none'])
   })
 })
 
@@ -601,7 +601,7 @@ describe('role title redaction (WD-S5, #163)', () => {
 describe('the roles stage (D-230)', () => {
   const proposal = proposeRoles(SOURCE_SCAN)
 
-  test('rolesStage shows the proposal, then asks the roles question; the open question is that ask', () => {
+  test('rolesStage asks the roles question, the proposal its context; the open question is that ask', () => {
     const state = rolesStage.enter(stateAt('roles', { proposal, installed: FRAMEWORKS }))
     const question = withContext(ROLES_QUESTION, rolesContextLine(proposal.roles, proposal.changes))
     const lines = proposalLines(proposal.roles, proposal.changes)
@@ -611,7 +611,7 @@ describe('the roles stage (D-230)', () => {
     const ask = { question, spec: { options: [...ROLES_OPTIONS], header: 'Roles', context } }
     expect(state.effect).toEqual({ kind: 'ask', ...ask })
     expect(state.openQuestion).toEqual(ask)
-    expect(state.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
+    expect(state.outputs).toEqual([])
   })
 
   test('the describe question carries the proposal it was asked from as its context (D-236)', () => {
@@ -639,7 +639,7 @@ describe('the roles stage (D-230)', () => {
     const asked = nextStage({ ...calling, outputs: [] }, { kind: 'model', result: { id: 'describe-roles', result } })
     expect(asked.openQuestion?.question).toBe(withContext(ROLES_QUESTION, rolesContextLine(DESCRIBED_ROLES, [])))
     const lines = proposalLines(DESCRIBED_ROLES, [])
-    expect(asked.outputs).toEqual([{ kind: 'show', block: { key: 'roles', lines } }])
+    expect([asked.outputs, asked.openQuestion?.spec.context?.lines]).toEqual([[], lines])
   })
 })
 

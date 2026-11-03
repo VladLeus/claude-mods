@@ -264,6 +264,23 @@ export function choiceAnswer<T>(
 }
 
 /**
+ * `spec` with each of `folds` merged into its context as a leading section (D-302): the fold's title, its lines and one
+ * blank line, in the order given, before the context's own lines; every title and line cleaned and not cut, as a pane
+ * block's were (clean with UNCUT, #163), so a folded scanned value cannot add a row or hide text (T-02.2-24). A spec
+ * with no context, or no fold, is given back as it is; the summary and the pane text never change.
+ */
+export function foldedSpec(
+  spec: AskSpec,
+  folds: readonly { readonly title: string; readonly lines: readonly string[] }[],
+): AskSpec {
+  const { context } = spec
+  if (context === undefined || folds.length === 0) return spec
+  const sections = folds.flatMap(fold => [fold.title, ...fold.lines, ''].map(line => clean(line, UNCUT)))
+
+  return { ...spec, context: { ...context, lines: [...sections, ...context.lines] } }
+}
+
+/**
  * Logs one note to the transcript as one line and shows it in the side pane's notes block (D-133; batch-1 review S1:
  * the desktop app does not draw ui.log rows), cleaned as a report cell (reportText), so a scanned or typed value cannot
  * add a line or hide text. A block of lines goes to the side pane (showBlock) instead.

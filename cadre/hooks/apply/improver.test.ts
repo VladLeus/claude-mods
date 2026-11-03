@@ -313,7 +313,7 @@ describe('improver pass (G-02-1f)', () => {
     expect(improverNoChangeNote(BE_BUILT_REPO_PATH)).toBe('the improver made no change to .cadre/be/CLAUDE.md')
   })
 
-  test('a change is shown as a diff in the improver block, asked about, and Accept keeps it', async () => {
+  test("a change is asked about with its diff as the question's context, and Accept keeps it (D-302)", async () => {
     const disk = builtDisk()
     const { io } = editingHost(disk, new Map([[BE_BUILT_PATH, { [BE_BUILT_PATH]: BE_IMPROVED }]]))
     const run = diskIo(disk, { "Accept the improver's changes": 'Accept' })
@@ -324,7 +324,7 @@ describe('improver pass (G-02-1f)', () => {
       '+ Run the tests before every commit.',
       '+ Keep commits small.',
     ]
-    expect(run.shown).toEqual([{ key: 'improver', title: 'Improver changes', lines }])
+    expect(run.shown).toEqual([])
     expect(improverBlockLines(BE_BUILT_REPO_PATH, lineDiff(BE_BUILT, BE_IMPROVED))).toEqual(lines)
     expect(run.asked).toEqual([BE_IMPROVER_ASKED])
     // The context's summary is its file and counts line, which a pane surface asks under the question (D-310).
@@ -359,10 +359,7 @@ describe('improver pass (G-02-1f)', () => {
     const summary = lines[0] ?? ''
     const pane = { asked, text: `Accept the improver's changes to .cadre/be/CLAUDE.md?\n${summary}` }
     const context = { title: 'Improver: .cadre/be/CLAUDE.md', lines, kind: 'improver', summary, pane }
-    expect([run.shown, run.specs.map(spec => spec.context)]).toEqual([
-      [{ key: 'improver', title: 'Improver changes', lines }],
-      [context],
-    ])
+    expect([run.shown, run.specs.map(spec => spec.context)]).toEqual([[], [context]])
     expect([outcome.accepted, disk.files[BE_BUILT_PATH]]).toEqual([new Map([[BE_BUILT_REPO_PATH, improved]]), improved])
   })
 
@@ -594,9 +591,12 @@ function roleFolderDisk(): Disk {
   return disk
 }
 
-/** The rows of the improver block under the other-files heading: each one a shown path. */
-function otherRows(run: MemRun): string[] {
-  const lines = run.shown.findLast(block => block.key === 'improver')?.lines ?? []
+/**
+ * The other-files rows of the improver pass, from their heading on, each one a shown path: in the context of the
+ * per-file question when one was asked, else in the notes it logged (D-302).
+ */
+function otherRows(run: MemRun): readonly string[] {
+  const lines = run.specs.findLast(spec => spec.context?.kind === 'improver')?.context?.lines ?? run.logged
   const at = lines.findIndex(line => line.startsWith('Other files changed by the improver in '))
 
   return at < 0 ? [] : lines.slice(at)
@@ -627,7 +627,7 @@ describe('improver other changes (G-02-1f, D-141)', () => {
       '  .cadre/be/notes.md',
       '  .cadre/be/role.json',
     ])
-    expect(run.shown.at(-1)?.lines.slice(0, 1)).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
+    expect(run.specs.at(-1)?.context?.lines.slice(0, 1)).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
     expect([outcome.accepted, outcome.restores]).toEqual([new Map([[BE_BUILT_REPO_PATH, BE_IMPROVED]]), []])
     expect(disk.files[beFile('role.json')]).toBe('{"id":"be","edited":true}\n')
   })
@@ -669,9 +669,8 @@ describe('improver other changes (G-02-1f, D-141)', () => {
         changed: 0,
         total: 1,
       })
-      expect(run.shown.filter(block => block.key === 'improver').map(block => block.lines)).toEqual([
-        otherFilesLines('.cadre/be', ['.cadre/be/role.json']),
-      ])
+      const improver = run.shown.filter(block => block.key === 'improver')
+      expect([improver, otherRows(run)]).toEqual([[], otherFilesLines('.cadre/be', ['.cadre/be/role.json'])])
       expect(run.asked).toEqual([])
     }
   })

@@ -404,7 +404,8 @@ describe('the assign stage (D-230)', () => {
     const recommended = { own: new Map([['mine', ['be']]]), groups: new Map(), groupSkills: new Map() }
     const group = nextStage(calling, { kind: 'model', result: { id: 'skills', result: recommended } })
     const entry = nextStage(group, { kind: 'answer', text: 'None' })
-    expect(entry.outputs.map(output => (output.kind === 'show' ? output.block.key : output.kind))).toEqual(['skills'])
+    // The entry's own context holds the own-skills block; no block of its own (D-302).
+    expect([entry.outputs, entry.openQuestion?.spec.context?.title]).toEqual([[], 'Your own skills'])
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
   })
 })

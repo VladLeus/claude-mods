@@ -37,13 +37,16 @@ function securityAt(draft: Draft = DRAFT): InitState {
   return securityStage.enter(stateAt('security', draft))
 }
 
-/** The recommendations block of `draft`'s team, as the stage shows it before the question (ROLE-03). */
+/**
+ * The recommendations of `draft`'s team, as the stage folds them first into the context of its question (ROLE-03,
+ * D-302).
+ */
 function recommendationsOf(draft: Draft): unknown {
   const { roles, gathered } = draft
   const frameworks = roles.map(role => resolvedFramework(role, draft.repoDefault))
   const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
 
-  return { kind: 'show', block: { key: 'recommendations', lines: recommendationLines(recommendations, roles) } }
+  return { kind: 'fold', title: 'Recommendations', lines: recommendationLines(recommendations, roles) }
 }
 
 describe('security plugin installs (decision #39)', () => {
@@ -160,7 +163,7 @@ describe('security plugin review fixes (#69)', () => {
 })
 
 describe('the security stage (D-230)', () => {
-  test('securityStage shows the recommendations, then asks the plugins question; the open question is that ask', () => {
+  test('securityStage folds the recommendations into the plugins question; the open question is that ask', () => {
     const state = securityAt()
     const question = withContext(securityInstallQuestion(SECURITY_KEYS), SECURITY_INSTALL_CONTEXT)
     const ask = { question, spec: { options: ['Install', 'Not now'], header: 'Security', context: PLUGINS_CONTEXT } }
@@ -176,13 +179,13 @@ describe('the security stage (D-230)', () => {
     expect(state.openQuestion?.spec.context).toEqual(pluginsContext([GUIDANCE_KEY], PLUGINS_LINES.slice(1), summary))
   })
 
-  test('with no plugin missing it shows the recommendations, asks nothing and installs nothing', () => {
+  test('with no plugin missing it asks nothing, installs nothing and folds nothing: the Review lists them', () => {
     const setup = emptySetupScan({ installedPlugins: SECURITY_KEYS })
     const installed = wholeDraft({ gathered: { ...DRAFT.gathered, setup }, pluginInstalls: [GUIDANCE_KEY] })
     const state = securityAt(installed)
     expect([state.sub, state.openQuestion, state.draft.pluginInstalls]).toEqual([{ kind: 'done' }, null, []])
     expect(state.draft.roles).toEqual(installed.roles)
-    expect(state.outputs).toEqual([recommendationsOf(installed)])
+    expect(state.outputs).toEqual([])
   })
 
   test('Install gives the keys and the Security role its review skill; Not now none, and takes the skill away', () => {

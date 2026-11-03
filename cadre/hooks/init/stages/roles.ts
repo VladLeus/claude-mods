@@ -17,7 +17,7 @@ import { ADJUST_WORDS, applyAdjust, parseAdjust } from '../../roles/adjust'
 import type { Proposed } from '../../suggest/propose'
 import { ASK_HEADERS, askedText, choiceAnswer, orList, paneQuestionOf, quotedLabels, withContext } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
-import { proposalLines, roleLines, rolesContext } from '../../ui/blocks/context'
+import { rolesContext } from '../../ui/blocks/context'
 import { stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { idsOf } from './duration'
@@ -234,9 +234,9 @@ type AdjustCursor = {
 }
 
 /**
- * The roles proposed (A1, A6): the proposal block in the side pane (proposalLines), then the roles question about
- * `roles` with their scan `changes`, the `rounds + 1`-th proposal; once MAX_ROLE_ROUNDS proposals were asked, the next
- * one cancels with ROLE_ROUNDS_REASON instead, so no cap ever accepts roles.
+ * The roles proposed (A1, A6): the roles question about `roles` with their scan `changes`, whose own context holds the
+ * proposal (rolesContext, no block of its own, D-302), the `rounds + 1`-th proposal; once MAX_ROLE_ROUNDS proposals
+ * were asked, the next one cancels with ROLE_ROUNDS_REASON instead, so no cap ever accepts roles.
  */
 function proposed(
   state: InitState,
@@ -245,11 +245,10 @@ function proposed(
   rounds: number,
 ): InitState {
   if (rounds >= MAX_ROLE_ROUNDS) return stageCancelled(state, ROLE_ROUNDS_REASON)
-  const shown = withOutputs(state, [{ kind: 'show', block: { key: 'roles', lines: proposalLines(roles, changes) } }])
   const ask = rolesAsk(roles, changes)
   const sub: InitState['sub'] = { kind: 'roles', tries: 1, rounds: rounds + 1, roles, changes }
 
-  return withEffect({ ...shown, sub }, { kind: 'ask', question: ask.question, spec: ask.spec })
+  return withEffect({ ...state, sub }, { kind: 'ask', question: ask.question, spec: ask.spec })
 }
 
 /**
@@ -285,9 +284,10 @@ function adjustAgain(
 
 /**
  * The answer to the Adjust question (D-47): `Done adjusting` proposes the roles as adjusted, with the same scan
- * changes; `Show the roles` shows them in the side pane (roleLines) and asks again; a typed change, add, drop, rename
- * or framework, is applied, or its exact message, cleaned as a report cell, goes on top of the next ask (D-136). A
- * framework outside the ones installed for the repo is refused (A5). A dismissal cancels with ADJUST_DISMISSED_REASON.
+ * changes; `Show the roles` asks again, the roles as they are now in its own context (no block of its own, D-302); a
+ * typed change, add, drop, rename or framework, is applied, or its exact message, cleaned as a report cell, goes on top
+ * of the next ask (D-136). A framework outside the ones installed for the repo is refused (A5). A dismissal cancels
+ * with ADJUST_DISMISSED_REASON.
  */
 function afterAdjust(
   state: InitState,
@@ -298,11 +298,7 @@ function afterAdjust(
   if (answer === null) return stageCancelled(state, ADJUST_DISMISSED_REASON)
   const choice = labelled(ADJUST_CHOICES, answer)
   if (choice === 'done') return proposed(state, cursor.roles, cursor.changes, cursor.rounds)
-  if (choice === 'show') {
-    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'roles', lines: roleLines(cursor.roles) } }])
-
-    return adjustAgain(shown, cursor, cursor.roles, null)
-  }
+  if (choice === 'show') return adjustAgain(state, cursor, cursor.roles, null)
   const result = adjusted(cursor.roles, answer, installed)
   if (result.kind === 'error') return adjustAgain(state, cursor, cursor.roles, reportText(result.message))
 

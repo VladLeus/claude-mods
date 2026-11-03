@@ -71,10 +71,10 @@ import {
   askChoice,
   askOnce,
   choiceResult,
+  foldedSpec,
   noteLine,
   paneQuestionOf,
   quotedLabels,
-  showBlock,
 } from '../ui/ask'
 import type { StepResult } from '../ui/ask'
 import { lineDiff } from '../ui/diff'
@@ -86,7 +86,7 @@ import type { PlanStepInput } from './initplan'
 import { initialState, nextStage } from './machine'
 import { INIT_CANCELLED } from './replies'
 import { gsdCheckAsk } from './stages/frameworks'
-import type { Answer, Effect, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
+import type { Answer, Effect, InitStage, InitState, IoCall, IoResult, ModelCall, ModelResult, Output } from './state'
 
 /**
  * How `/cadre init` runs (D-105, T-03-16): --dry-run prints the plan and holds no host, so it can neither write nor
@@ -411,13 +411,16 @@ async function applyConfirmed(
 }
 
 /**
- * Shows one output of a state (D-133): a side-pane block (showBlock), a note (noteLine), or one line logged as is. The
- * testkit's stageRun shows a stage's outputs through it too.
+ * Shows one output of a state (D-133): a note (noteLine), or one line logged as is. A fold makes no io call: runInit
+ * holds it for the next asking stage's questions (D-302); a side-pane block draws nothing, as the pane draws only the
+ * open question or the loader (D-299), and no stage gives one (D-326). The testkit's stageRun shows a stage's outputs
+ * through it too.
  */
 export async function showOutput(io: InitIo, output: Output): Promise<void> {
   switch (output.kind) {
     case 'show':
-      return showBlock(io, output.block.key, output.block.lines)
+    case 'fold':
+      return
     case 'note':
       return noteLine(io, output.line)
     case 'log':
@@ -712,15 +715,33 @@ export async function performState(io: InitIo, options: InitOptions, state: Init
  * own line and answers cancelledReply with the step's reason (D-45), so only values the person accepted reach the steps
  * after it, and nothing is written or installed before Confirm. Every answer lives in memory for this one run, and
  * nothing is kept for the next (D-45, D-82). The order, the merges and the cancels are the stage machine's
- * (init/machine, D-230): runInit only shows each state's outputs, performs its effect and feeds the answer back.
+ * (init/machine, D-230): runInit only shows each state's outputs, holds their folds for the questions of the next stage
+ * that asks, which it asks with the folds in their contexts on a pane surface (foldedSpec, D-302), performs each
+ * effect and feeds the answer back.
  */
 export async function runInit(io: InitIo, options: InitOptions): Promise<string> {
   let state = initialState(options.dryRun, options.surface)
+  // The folds the stages gave since the last ask, and those bound to the stage that asked first after them (D-302).
+  let held: readonly Extract<Output, { readonly kind: 'fold' }>[] = []
+  let boundStage: InitStage | null = null
+  let bound: typeof held = []
   for (;;) {
     for (const output of state.outputs) await showOutput(io, output)
-    const { effect } = state
+    held = [...held, ...state.outputs.flatMap(output => (output.kind === 'fold' ? [output] : []))]
+    const { effect, openQuestion, stage } = state
     if (effect.kind === 'end') return effect.reply
-    const answer = await performState(io, options, state)
+    if (effect.kind === 'ask' && held.length > 0) {
+      bound = boundStage === stage ? [...bound, ...held] : held
+      boundStage = stage
+      held = []
+    }
+    if (effect.kind === 'ask' && boundStage !== stage) {
+      boundStage = null
+      bound = []
+    }
+    const folds = state.surface === 'tui-default' ? [] : bound
+    const open = openQuestion === null ? null : { ...openQuestion, spec: foldedSpec(openQuestion.spec, folds) }
+    const answer = await performState(io, options, { ...state, openQuestion: open })
     if (answer === null) return INIT_CANCELLED
     state = nextStage({ ...state, outputs: [] }, answer)
   }

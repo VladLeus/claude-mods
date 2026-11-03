@@ -129,13 +129,17 @@ const PRIVATE_FRAGMENTS: readonly string[] = [
 ]
 
 /**
- * Every text a run put before the person: each question asked, each option and chip of its dialog, each logged line,
- * each side-pane title and line, and the reply.
+ * Every text a run put before the person: each question asked, each option and chip of its dialog, the title, summary
+ * and lines of each question's own context, which hold what side-pane blocks showed (D-302), each logged line, each
+ * side-pane title and line, and the reply.
  */
 function runTexts(run: MemRun, reply: string): string[] {
   return [
     ...run.asked,
     ...run.specs.flatMap(spec => [...spec.options, ...(spec.header === undefined ? [] : [spec.header])]),
+    ...run.specs.flatMap(({ context }) =>
+      context === undefined ? [] : [context.title, context.summary, ...context.lines],
+    ),
     ...run.logged,
     ...run.shown.flatMap(block => [block.title, ...block.lines]),
     reply,
@@ -199,7 +203,7 @@ describe('user text names no internal phase (G-02-3b)', () => {
   test('a full dry run with the INIT_ANSWERS defaults asks, logs, shows and replies with no phase name', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
-    expect(run.shown.map(block => block.key)).toEqual(['scan', 'roles', 'recommendations', 'review'])
+    expect(run.shown).toEqual([])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
   })
@@ -208,7 +212,7 @@ describe('user text names no internal phase (G-02-3b)', () => {
     const answers = { ...INIT_ANSWERS, "Scan this repo's session history": 'Yes, scan names and counts' }
     const run = memIo(historyWorld(), answers)
     const reply = await runInit(run.io, { dryRun: true })
-    expect(run.shown.map(block => block.key)).toEqual(['scan', 'history', 'roles', 'recommendations', 'review'])
+    expect(run.shown).toEqual([])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
   })
@@ -244,7 +248,7 @@ describe('user text names no internal phase (G-02-3b)', () => {
     }
     const run = memIo(world, answers)
     const reply = await runInit(run.io, { dryRun: true })
-    expect(run.shown.map(block => block.key)).toContain('env')
+    expect(run.specs.map(spec => spec.context?.kind)).toContain('env')
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(runTexts(run, reply).filter(text => PHASE_NAME.test(text))).toEqual([])
     const lines = runTexts(run, reply).flatMap(text => text.split('\n'))

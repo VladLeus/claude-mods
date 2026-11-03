@@ -19,6 +19,7 @@ import {
 } from '../../testkit'
 import type { MemWorld } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, PANE_TITLES, withContext } from '../../ui/ask'
+import { scanContext } from '../../ui/blocks/context'
 import { scanSummaryLines } from '../../ui/blocks/scan'
 import type { Draft } from '../draft'
 import { nextStage } from '../machine'
@@ -104,6 +105,21 @@ const HISTORY_DRAFT: Partial<Draft> = {
   installed: ['none'],
   choice: { kind: 'none' },
   proposal: proposeRoles(repoScan()),
+}
+
+/**
+ * The scan summary of HISTORY_DRAFT's empty repo and setup for a session at `locations`, folded into the roles
+ * questions when no history question is asked (D-302).
+ */
+function scanFoldAt(locations: InitLocations): unknown {
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup: emptySetupScan() }
+
+  return { kind: 'fold', title: 'Scan', lines: scanContext(locations, gathered, PANE_LIST_WORDS).lines }
+}
+
+/** The Session history section a history scan folds into the roles questions (D-302). */
+function historyFoldOf(scan: HistoryScan): unknown {
+  return { kind: 'fold', title: 'Session history', lines: historyLines(scan) }
 }
 
 /** The history stage entered for a session at `locations`: its listing of the session folder out. */
@@ -236,7 +252,7 @@ describe('history scan', () => {
       const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
       expect(drive.state.draft.hints).toEqual(new Map())
       expect(drive.asked).toEqual([])
-      expect(drive.outputs).toEqual([{ kind: 'log', text: NO_HISTORY_NOTE }])
+      expect(drive.outputs).toEqual([{ kind: 'log', text: NO_HISTORY_NOTE }, scanFoldAt(DEFAULT_LOCATIONS)])
       expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
     }
   })
@@ -246,7 +262,7 @@ describe('history scan', () => {
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
     expect(drive.state.draft.hints).toEqual(new Map())
     expect(drive.asked).toEqual([])
-    expect(drive.outputs).toEqual([{ kind: 'log', text: UNLISTED_HISTORY_NOTE }])
+    expect(drive.outputs).toEqual([{ kind: 'log', text: UNLISTED_HISTORY_NOTE }, scanFoldAt(DEFAULT_LOCATIONS)])
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
   })
 
@@ -260,7 +276,7 @@ describe('history scan', () => {
     expect(drive.outputs).toEqual([])
   })
 
-  test('historyStage: Yes, scan names and counts reads the sessions newest first, shows the lines once', async () => {
+  test('historyStage: Yes, scan names and counts reads the sessions newest first, folds the lines once', async () => {
     const world = historyWorld({ 'a.jsonl': EXAMPLE, 'b.jsonl': commandLine('<command-name>/cadre</command-name>') })
     const run = memIo(world, [])
     const scan = scanOf({
@@ -275,7 +291,7 @@ describe('history scan', () => {
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
     expect(drive.state.draft.hints).toEqual(historyHints(scan))
     expect(run.reads).toEqual([`${DIR}/a.jsonl`, `${DIR}/b.jsonl`])
-    expect(drive.outputs).toEqual([{ kind: 'show', block: { key: 'history', lines: historyLines(scan) } }])
+    expect(drive.outputs).toEqual([historyFoldOf(scan)])
     expect(historyLines(scan)).toEqual([
       HEADING,
       '  cadre  2',
@@ -284,11 +300,11 @@ describe('history scan', () => {
     ])
   })
 
-  test('historyStage: a Yes run shows one Session history block in the pane and logs no block (D-133)', async () => {
+  test('historyStage: a Yes run folds one Session history section into the roles questions, logging none', async () => {
     const run = memIo(historyWorld({ 'a.jsonl': EXAMPLE }), [])
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
     const scan = await scanHistory(memIo(historyWorld({ 'a.jsonl': EXAMPLE }), []).io, DIR, [transcript('a.jsonl', 1)])
-    expect(drive.outputs).toEqual([{ kind: 'show', block: { key: 'history', lines: historyLines(scan) } }])
+    expect(drive.outputs).toEqual([historyFoldOf(scan)])
     expect(PANE_TITLES.history).toBe('Session history')
     expect(drive.outputs.filter(output => output.kind === 'log' && output.text.includes('\n'))).toEqual([])
   })
@@ -328,7 +344,7 @@ describe('history scan', () => {
     const skipped = await drivenWith(historyAt(homeless), [], historyCalls(none.io))
     expect(skipped.state.draft.hints).toEqual(new Map())
     expect(none.listed).toEqual([])
-    expect(skipped.outputs).toEqual([{ kind: 'log', text: NO_HISTORY_NOTE }])
+    expect(skipped.outputs).toEqual([{ kind: 'log', text: NO_HISTORY_NOTE }, scanFoldAt(homeless)])
   })
 
   test('historyStage: the session folder is the one of the repo root as resolved', async () => {
@@ -351,8 +367,8 @@ describe('history scan', () => {
     expect(leaks(held, ['SENTINEL_SECRET_VALUE', '/home/u'])).toEqual(['SENTINEL_SECRET_VALUE', '/home/u'])
     const run = memIo(world, [])
     const drive = await drivenWith(historyAt(), ['Yes, scan names and counts'], historyCalls(run.io))
-    const blocks = drive.outputs.flatMap(output => (output.kind === 'show' ? [output.block] : []))
-    const pane = blocks.flatMap(block => [PANE_TITLES[block.key], ...block.lines]).join('\n')
+    const folds = drive.outputs.flatMap(output => (output.kind === 'fold' ? [output] : []))
+    const pane = folds.flatMap(fold => [fold.title, ...fold.lines]).join('\n')
     expect(pane).toContain('  gsd-plan-phase  1')
     expect(pane).toContain('  codex:rescue  1')
     const logged = drive.outputs.flatMap(output => (output.kind === 'log' ? [output.text] : []))
@@ -410,10 +426,11 @@ describe('the history stage (D-230)', () => {
   })
 
   test('with no user folder, no transcript or a folder it cannot list, it logs why and asks nothing', () => {
-    const skipped = historyAt({ ...DEFAULT_LOCATIONS, home: null })
+    const homeless = { ...DEFAULT_LOCATIONS, home: null }
+    const skipped = historyAt(homeless)
     expect([skipped.sub, skipped.outputs, skipped.draft.hints]).toEqual([
       { kind: 'done' },
-      [{ kind: 'log', text: NO_HISTORY_NOTE }],
+      [{ kind: 'log', text: NO_HISTORY_NOTE }, scanFoldAt(homeless)],
       new Map(),
     ])
     const state = historyAt()
@@ -427,13 +444,13 @@ describe('the history stage (D-230)', () => {
     }
   })
 
-  test('Yes scans the listed sessions as an io effect, shows the history block and keeps the names as hints', () => {
+  test('Yes scans the listed sessions as an io effect, folds the history block and keeps the names as hints', () => {
     const asking = nextStage(historyAt(), listed(ONE_SESSION))
     const scanning = nextStage(asking, { kind: 'answer', text: 'Yes, scan names and counts' })
     expect(scanning.effect).toEqual({ kind: 'io', call: { id: 'scan-history', dir: DIR, sessions: ONE_SESSION } })
     const done = nextStage(scanning, { kind: 'io', result: { id: 'scan-history', result: EXAMPLE_SCAN } })
     expect(done.stage).toBe('roles')
-    expect(done.outputs[0]).toEqual({ kind: 'show', block: { key: 'history', lines: historyLines(EXAMPLE_SCAN) } })
+    expect(done.outputs[0]).toEqual(historyFoldOf(EXAMPLE_SCAN))
     expect(done.draft.hints).toEqual(historyHints(EXAMPLE_SCAN))
   })
 })

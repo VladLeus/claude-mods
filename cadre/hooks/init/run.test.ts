@@ -137,7 +137,6 @@ import {
   SECURITY_KEY,
   SECURITY_KEYS,
   session,
-  shownBlock,
   skillRef,
   SOURCE_SCAN,
   stageStep,
@@ -315,17 +314,16 @@ describe('runInit', () => {
     expect(run.logged).toEqual([CONSENT_DISMISSED_REASON])
   })
 
-  test('after the consent init shows the repo scan and user setup in the pane, before the next question', async () => {
+  test('after the consent the repo scan and user setup show in the next question, the roles (D-302)', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
-    expect(events[1]).toBe('show scan')
-    expect(run.shown[0]?.lines[0]).toBe('Repo scan (read-only):')
-    expect(run.shown[0]?.lines).toContain('User setup (names only):')
+    expect([events[0], events[2]]).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
+    const scan = foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)
+    expect([scan[0], scan.includes('User setup (names only):')]).toEqual(['Repo scan (read-only):', true])
   })
 
-  test('init shows every scan warning right after the summary, in the same pane block, before the roles', async () => {
+  test('every scan warning follows the summary in the scan section of the roles question (D-302)', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const facts = { facts: { ...EMPTY_FACTS, warnings: ['a settings file could not be read'] }, gsdUserDir: null }
     const run = memIo(gitWorld({ locations, facts }), INIT_ANSWERS)
@@ -338,10 +336,8 @@ describe('runInit', () => {
       'warning: the root was given through a link',
       'warning: a settings file could not be read',
     ])
-    expect(events[1]).toBe('show scan')
-    expect(run.shown[0]).toEqual({ key: 'scan', title: 'Scan', lines: [...summary, ...warnings] })
-    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
-    expect(events[3]).toBe('show roles')
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)).toEqual([...summary, ...warnings])
+    expect(events.slice(1, 3)).toEqual([`log ${NO_HISTORY_NOTE}`, `ask ${ROLES_QUESTION}`])
   })
 
   test('with no scan warning nothing is added after the scan summary', async () => {
@@ -351,32 +347,31 @@ describe('runInit', () => {
     await runInit(io, { dryRun: true })
     const gathered = await gatherScans(memIo(listable, {}).io, DEFAULT_LOCATIONS, false)
     expect(scanWarnings(DEFAULT_LOCATIONS, gathered)).toEqual([])
-    expect(events[1]).toBe('show scan')
-    expect(run.shown[0]?.lines).toEqual(scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS))
+    expect(events[1]).toBe(`log ${NO_HISTORY_NOTE}`)
+    const summary = scanSummaryLines(gathered.repo, gathered.setup, '/repo', PANE_LIST_WORDS)
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)).toEqual(summary)
   })
 
-  test('a desktop app connector in the session tools is left out with one line in the scan block (R2)', async () => {
+  test('a desktop app connector in the session tools is left out with one line in the scan section (R2)', async () => {
     const uuid = 'bffcbad4-dacc-4759-8f45-f8c9abe5e705'
     const tools = [{ name: `mcp__${uuid}__append_values`, description: 'x', mcp: true }]
     const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.shown[0]?.key).toBe('scan')
-    expect(run.shown[0]?.lines).toContain(
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)).toContain(
       'warning: left out 1 desktop app connector (role sessions run in the terminal, where connectors are ' +
         'claude_ai_* servers)',
     )
-    expect(JSON.stringify(run.shown)).not.toContain(uuid)
+    expect(JSON.stringify(run.specs)).not.toContain(uuid)
   })
 
-  test('after the summary init shows the roles proposed from the repo scan and asks the roles question', async () => {
+  test('after the summary init asks the roles question with the roles the repo scan proposed (D-302)', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const proposal = proposeRoles(await scanRepo(memIo(gitWorld(), {}).io, '/repo'))
-    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
-    expect(events[3]).toBe('show roles')
-    expect(shownBlock(run, 'roles')).toEqual(proposalLines(proposal.roles, proposal.changes))
-    expect(events[4]).toBe(`ask ${ROLES_QUESTION}`)
+    expect(events.slice(1, 3)).toEqual([`log ${NO_HISTORY_NOTE}`, `ask ${ROLES_QUESTION}`])
+    const lines = contextLinesAt(run, ROLES_QUESTION)
+    expect(lines.slice(lines.indexOf('') + 1)).toEqual(proposalLines(proposal.roles, proposal.changes))
   })
 
   test('a dismissed roles question cancels init and prints why', async () => {
@@ -429,29 +424,105 @@ function askedContextTexts(run: MemRun): string[] {
   })
 }
 
+/** The context lines of the first question of `run` whose first line starts with `prefix`; none when none is. */
+function contextLinesAt(run: MemRun, prefix: string): readonly string[] {
+  const at = firstLines(run.asked).findIndex(line => line.startsWith(prefix))
+
+  return run.specs[at]?.context?.lines ?? []
+}
+
+/**
+ * The lines of the section titled `title` that a fold put first in the context of the first question of `run` whose
+ * first line starts with `prefix` (D-302): the lines after the title up to the blank line that ends the section; none
+ * when that context holds no such section.
+ */
+function foldAt(run: MemRun, prefix: string, title: string): readonly string[] {
+  const lines = contextLinesAt(run, prefix)
+  const start = lines.indexOf(title)
+  if (start === -1) return []
+  const end = lines.indexOf('', start)
+
+  return lines.slice(start + 1, end === -1 ? lines.length : end)
+}
+
+/** The review option that asks its next page (D-233). */
+const NEXT_PAGE = t('init.review.nextPage')
+
+/** The reviews each run asked through pagedIo, each with all its pages' lines in order (D-302). */
+const PAGED_REVIEWS = new WeakMap<MemRun, string[][]>()
+
+/**
+ * `run`'s port, paging through each review (D-233, D-302): a review page that offers Next page is kept and answered
+ * with it, never asked through `run`, so no scripted answer is spent on it; the last page is asked through `run`. Each
+ * review, all its pages' lines in order as the person paged through them, is kept for reviewsOf.
+ */
+function pagedIo(run: MemRun): InitIo {
+  const reviews: string[][] = []
+  PAGED_REVIEWS.set(run, reviews)
+  let pages: string[] = []
+
+  return {
+    ...run.io,
+    ask: async (question, spec) => {
+      const { context } = spec
+      if (context?.kind !== 'review') return run.io.ask(question, spec)
+      pages = [...pages, ...context.lines]
+      if (spec.options.includes(NEXT_PAGE)) return NEXT_PAGE
+      reviews.push(pages)
+      pages = []
+
+      return run.io.ask(question, spec)
+    },
+  }
+}
+
+/** Each review `run` asked through pagedIo, all its pages' lines in order; none for a run not paged. */
+function reviewsOf(run: MemRun): readonly (readonly string[])[] {
+  return PAGED_REVIEWS.get(run) ?? []
+}
+
+/** The lines of the last review `run` asked through pagedIo, all its pages in order; none when it asked none. */
+function lastReview(run: MemRun): readonly string[] {
+  return reviewsOf(run).at(-1) ?? []
+}
+
+/**
+ * Each roles proposal `run` asked about: the context of each roles question from its proposal on, without the section
+ * a fold put first (D-302).
+ */
+function proposalsOf(run: MemRun): (readonly string[])[] {
+  const asked = firstLines(run.asked)
+
+  return run.specs.flatMap((spec, at) => {
+    if (asked[at] !== ROLES_QUESTION) return []
+    const lines = spec.context?.lines ?? []
+
+    return [lines.slice(lines.indexOf('Proposed roles:'))]
+  })
+}
+
 describe('runInit history step (SCAN-03, D-59)', () => {
   test('the history question follows the scan summary and comes before the roles; No reads nothing', async () => {
     const run = memIo(historyGitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    expect(events[0]).toBe(`ask ${CLAUDE_JSON_QUESTION}`)
-    expect(events[1]).toBe('show scan')
-    expect(events[2]).toBe(`ask ${historyQuestion(1)}`)
-    expect(events[3]).toBe('show roles')
-    expect(events[4]).toBe(`ask ${ROLES_QUESTION}`)
+    expect(events.slice(0, 3)).toEqual([
+      `ask ${CLAUDE_JSON_QUESTION}`,
+      `ask ${historyQuestion(1)}`,
+      `ask ${ROLES_QUESTION}`,
+    ])
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([])
     expect(run.logged.join('\n')).not.toContain('Session history')
-    expect(shownBlock(run, 'history')).toEqual([])
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.history)).toEqual([])
   })
 
-  test('with Yes the names and counts are shown after the question and before the roles', async () => {
+  test('with Yes the names and counts show in the roles question, the next one asked (D-302)', async () => {
     const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    expect(events[2]).toBe(`ask ${historyQuestion(1)}`)
-    expect(events[3]).toBe('show history')
-    expect(shownBlock(run, 'history')).toEqual(['Session history (names and counts only):', '  gsd-plan-phase  1'])
-    expect(events[4]).toBe('show roles')
+    expect(events.slice(1, 3)).toEqual([`ask ${historyQuestion(1)}`, `ask ${ROLES_QUESTION}`])
+    const history = ['Session history (names and counts only):', '  gsd-plan-phase  1']
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.history)).toEqual(history)
     expect(run.reads.filter(path => path.endsWith('.jsonl'))).toEqual([`${HISTORY_DIR}/a.jsonl`])
   })
 
@@ -467,61 +538,66 @@ describe('runInit history step (SCAN-03, D-59)', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    expect(events[2]).toBe(`log ${NO_HISTORY_NOTE}`)
+    expect(events[1]).toBe(`log ${NO_HISTORY_NOTE}`)
     expect(run.asked.filter(question => question.startsWith(HISTORY_PREFIX))).toEqual([])
   })
 })
 
 describe('init pane (G-02-1)', () => {
-  test('a dry run shows the scan as the first pane block, titled Scan, and logs none of it', async () => {
+  test('a dry run with no session shows the scan first in the roles question, titled Scan, logging none', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.shown[0]?.key).toBe('scan')
-    expect(run.shown[0]?.title).toBe('Scan')
-    expect(run.shown[0]?.lines[0]).toBe('Repo scan (read-only):')
+    const lines = contextLinesAt(run, ROLES_QUESTION)
+    expect(lines.slice(0, 2)).toEqual([PANE_TITLES.scan, 'Repo scan (read-only):'])
     expect(run.logged.filter(text => text.startsWith('Repo scan'))).toEqual([])
   })
 
-  test('the scan is one pane block, shown once, right before the history question', async () => {
+  test('with a session the scan shows once, in the history question, and in no later question (D-302)', async () => {
     const run = memIo(historyGitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    expect(events.slice(0, 3)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, 'show scan', `ask ${historyQuestion(1)}`])
-    expect(run.shown.filter(block => block.key === 'scan')).toHaveLength(1)
+    expect(events.slice(0, 2)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${historyQuestion(1)}`])
+    expect(contextLinesAt(run, HISTORY_PREFIX)[0]).toBe('Repo scan (read-only):')
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)).toEqual([])
   })
 
   test('each scan line is cleaned as a report cell: a value cannot add a row or hide text (T-02-48)', async () => {
     const hostile = `a link\nwarning: forged${BIDI_OVERRIDE}\u0007`
     const run = memIo(gitWorld({ locations: { ...DEFAULT_LOCATIONS, warnings: [hostile] } }), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    const lines = run.shown[0]?.lines ?? []
+    const lines = foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)
     expect(lines).toContain('warning: a linkwarning: forged')
     expect(lines.filter(line => /[\n\u0007\u202E]/u.test(line))).toEqual([])
   })
 
-  test('a full dry run shows scan, roles, recommendations and review, in that order, and logs no block', async () => {
+  test('a full dry run shows no block: scan and recommendations fold into the next question', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(run.shown.map(block => block.key)).toEqual(['scan', 'roles', 'recommendations', 'review'])
-    expect(run.shown.map(block => block.title)).toEqual(['Scan', 'Roles', 'Recommendations', 'Review'])
+    const folds = [
+      foldAt(run, ROLES_QUESTION, PANE_TITLES.scan).length > 0,
+      foldAt(run, SECURITY_INSTALL_PREFIX, PANE_TITLES.recommendations).length > 0,
+    ]
+    expect([run.shown, folds]).toEqual([[], [true, true]])
     expect(run.logged.filter(text => text.includes('\n'))).toEqual([])
   })
 
-  test('with the history question answered Yes the history block comes right after the scan', async () => {
+  test('with the history question answered Yes the history folds into the roles question, the scan not', async () => {
     const run = memIo(historyGitWorld(), { ...INIT_ANSWERS, [HISTORY_PREFIX]: 'Yes, scan names and counts' })
     await runInit(run.io, { dryRun: true })
-    expect(run.shown.map(block => block.key)).toEqual(['scan', 'history', 'roles', 'recommendations', 'review'])
+    const history = foldAt(run, ROLES_QUESTION, PANE_TITLES.history)
+    const scan = foldAt(run, ROLES_QUESTION, PANE_TITLES.scan)
+    expect([run.shown, history.length > 0, scan]).toEqual([[], true, []])
     expect(run.logged.filter(text => text.includes('\n'))).toEqual([])
   })
 
-  test('the review block holds each scope card row as scopeCardLines gives it, and the plan (G-02-8)', async () => {
+  test('the review holds each scope card row as scopeCardLines gives it, and the plan (G-02-8)', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     const team = await defaultRoles(gitWorld())
     const scopes = scopesFor(team, 'none', await scansOf(gitWorld()), [], { kind: 'git-root' })
     const pm = scopes.get('pm')
     const card = pm === undefined ? [] : scopeCardLines(pm.card)
-    const review = shownBlock(run, 'review')
+    const review = lastReview(run)
     const at = review.indexOf('Scope card: PM (pm)')
     expect(card[0]).toBe('Scope card: PM (pm)')
     expect(card).toContain('  rules:')
@@ -530,7 +606,7 @@ describe('init pane (G-02-1)', () => {
     expect(review).toContain('File plan:')
   })
 
-  test('Adjust shows the roles in a roles block when asked to Show the roles', async () => {
+  test('Show the roles asks Adjust again with the roles as they are now in its context (D-302)', async () => {
     // A change the team can take: a refused one puts its message on top of the next ask, which no key starts.
     const run = queuedIo(gitWorld(), {
       ...INIT_ANSWERS,
@@ -540,8 +616,10 @@ describe('init pane (G-02-1)', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     const showAt = events.indexOf(`ask ${ADJUST_QUESTION}`, events.indexOf(`ask ${ADJUST_QUESTION}`) + 1)
-    expect(events.slice(showAt, showAt + 3)).toEqual([`ask ${ADJUST_QUESTION}`, 'show roles', `ask ${ADJUST_QUESTION}`])
-    expect(run.shown.filter(block => block.key === 'roles')).toHaveLength(3)
+    expect(events.slice(showAt, showAt + 2)).toEqual([`ask ${ADJUST_QUESTION}`, `ask ${ADJUST_QUESTION}`])
+    const adjusts = run.specs.filter((_, at) => run.asked[at]?.startsWith(ADJUST_QUESTION) === true)
+    const hasSecurity = adjusts.map(spec => (spec.context?.lines ?? []).some(line => line.includes('(security)')))
+    expect([run.shown, hasSecurity]).toEqual([[], [true, false, false]])
   })
 })
 
@@ -569,9 +647,9 @@ describe('runInit framework and recommendations', () => {
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
     expect(run.asked.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(false)
-    const at = events.indexOf('show recommendations')
+    const at = events.findIndex(event => event.startsWith(`ask ${SECURITY_INSTALL_PREFIX}`))
     expect(at >= 0 && at < events.indexOf('ask Git policy for .cadre/?')).toBe(true)
-    const lines = shownBlock(run, 'recommendations')
+    const lines = foldAt(run, SECURITY_INSTALL_PREFIX, PANE_TITLES.recommendations)
     expect(lines[0]).toBe('Recommendations (print-only; init asks before it installs any):')
     expect(lines.some(line => line.startsWith('- GSD for all roles: '))).toBe(true)
     expect(lines.some(line => line.startsWith('- superpowers for all roles: '))).toBe(true)
@@ -586,7 +664,7 @@ describe('runInit framework and recommendations', () => {
     const roles = proposeRoles(scan).roles
     const frameworks = roles.map((): FrameworkId => 'none')
     const expected = recommendationLines(recommend({ roles, frameworks, scan, setup }), roles)
-    expect(shownBlock(run, 'recommendations')).toEqual(expected)
+    expect(foldAt(run, SECURITY_INSTALL_PREFIX, PANE_TITLES.recommendations)).toEqual(expected)
   })
 
   test('with two frameworks in use the framework question follows the roles; no framework is recommended', async () => {
@@ -600,7 +678,7 @@ describe('runInit framework and recommendations', () => {
     expect(rolesAt).toBeGreaterThanOrEqual(0)
     expect(frameworkAt).toBeGreaterThan(rolesAt)
     expect(events[frameworkAt + 1]).toBe(`ask ${FRAMEWORK_ALL_QUESTION}`)
-    const recommended = shownBlock(run, 'recommendations').join('\n')
+    const recommended = foldAt(run, SECURITY_INSTALL_PREFIX, PANE_TITLES.recommendations).join('\n')
     expect(recommended.startsWith('Recommendations')).toBe(true)
     expect(recommended).not.toContain('- GSD for all roles')
     expect(recommended).not.toContain('- superpowers for all roles')
@@ -667,8 +745,8 @@ describe('durationStep', () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
     const { io, events } = withEvents(run)
     await runInit(io, { dryRun: true })
-    const recommendedAt = events.indexOf('show recommendations')
-    expect(recommendedAt).not.toBe(-1)
+    const recommendedAt = events.findIndex(event => event.startsWith(`ask ${SECURITY_INSTALL_PREFIX}`))
+    expect(foldAt(run, SECURITY_INSTALL_PREFIX, PANE_TITLES.recommendations)).not.toEqual([])
     expect(events.indexOf(`ask ${DURATION_QUESTION}`) > recommendedAt).toBe(true)
     expect(firstLines(run.asked).filter(question => question === DURATION_QUESTION)).toHaveLength(1)
     const dismissed = memIo(gitWorld(), answersWithout('Autopilot duration'))
@@ -795,16 +873,12 @@ const OWN_ACCEPTED: Readonly<Record<string, string>> = {
 }
 
 describe('skill purpose in init (D-139)', () => {
-  test('a dry run shows the Your own skills block with each purpose before any own-skill question', async () => {
+  test('a dry run asks the own-skills entry with each purpose in its context, Your own skills (D-302)', async () => {
     const run = memIo(purposeWorld(), OWN_ACCEPTED)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
-    expect(run.shown.filter(block => block.key === 'skills').map(block => block.title)).toEqual(['Your own skills'])
-    expect(shownBlock(run, 'skills')).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
-    const shownAt = events.indexOf('show skills')
-    const askedAt = events.findIndex(event => event.startsWith('ask ') && event.includes('your own skills'))
-    expect(shownAt).toBeGreaterThan(-1)
-    expect(askedAt).toBeGreaterThan(shownAt)
+    await runInit(run.io, { dryRun: true })
+    const at = firstLines(run.asked).findIndex(line => line.startsWith(OWN_SKILLS_ENTRY_PREFIX))
+    expect([run.specs[at]?.context?.title, run.shown]).toEqual(['Your own skills', []])
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
   })
 
   test('a plain init holds the purpose in memory for the pane and writes no file that holds it (T-02-66)', async () => {
@@ -816,7 +890,7 @@ describe('skill purpose in init (D-139)', () => {
     }
     const run = memIo(purposeWorld(), answers)
     const reply = await runInit(run.io, { dryRun: false, host: host.io })
-    expect(shownBlock(run, 'skills')).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toContain(`  my-skill: ${UNIQUE_PURPOSE}`)
     const roleFiles = host.writes.filter(write => write.path.endsWith('/role.json'))
     expect(roleFiles.map(write => write.path)).toEqual([
       '/repo/.cadre/pm/role.json',
@@ -869,7 +943,7 @@ describe('skill recommendation in init (G-02-1b)', () => {
       'S1 | deploy-notes | Write the release notes for a deploy. | used 0 times',
       'S2 | my-skill | (no description) | used 0 times',
     ])
-    expect(shownBlock(run, 'skills')).toEqual([
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([
       OWN_SKILLS_HEADING,
       '  deploy-notes: Write the release notes for a deploy.',
       '    recommended: tl, security',
@@ -888,7 +962,7 @@ describe('skill recommendation in init (G-02-1b)', () => {
       '- the reply is not JSON',
     ])
     expect(completionAt(run, 2).prompt.split('\n').at(-1)).toBe('- unknown skill "S9"')
-    expect(shownBlock(run, 'skills')).toEqual([
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([
       OWN_SKILLS_HEADING,
       '  deploy-notes: Write the release notes for a deploy.',
       '    recommended: none',
@@ -898,15 +972,15 @@ describe('skill recommendation in init (G-02-1b)', () => {
     ])
   })
 
-  test('a model that gives no text is asked three times, told so, and the block shows the fallback row', async () => {
+  test('a model that gives no text is asked three times, told so, and the entry shows the fallback row', async () => {
     const run = memIo(ownSkillsWorld([]), OWN_ACCEPTED)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(MAX_PROPOSE_ATTEMPTS)
     expect(completionAt(run, 2).prompt.split('\n').at(-1)).toBe('- the model gave no text')
-    expect(shownBlock(run, 'skills').at(-1)).toBe(NO_SKILL_RECOMMENDATION)
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX).at(-1)).toBe(NO_SKILL_RECOMMENDATION)
   })
 
-  test('a run with no skill of its own asks the model for its plugin group and shows no skills block', async () => {
+  test('a run with no skill of its own asks the model for its plugin group and asks no own-skills entry', async () => {
     const commands = [{ name: 'codex:rescue', source: 'plugin', plugin: 'codex', description: 'Rescue.' }]
     const replies = ['{"skills":{"G1S1":[]},"groups":{"G1":[]}}']
     const run = memIo(gitWorld({ commands, replies }), INIT_ANSWERS)
@@ -914,7 +988,7 @@ describe('skill recommendation in init (G-02-1b)', () => {
     expect(run.prompts).toHaveLength(1)
     const groupRows = ['G1 | codex', 'G1S1 | codex:rescue | Rescue. | used 0 times']
     expect(completionAt(run, 0).prompt.split('\n').slice(-2)).toEqual(groupRows)
-    expect(run.shown.map(block => block.key)).not.toContain('skills')
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([])
   })
 })
 
@@ -923,9 +997,9 @@ function ownEntry(count: number): string {
   return `${OWN_SKILLS_ENTRY_PREFIX} (${count})?`
 }
 
-/** The skills row of a role's scope card in the last review block a run showed (D-133); '' with no such card. */
+/** The skills row of a role's scope card in the last review a run paged through (D-302); '' with no such card. */
 function cardSkills(run: MemRun, id: string): string {
-  const review = shownBlock(run, 'review')
+  const review = lastReview(run)
   const at = review.findIndex(line => line.startsWith('Scope card: ') && line.endsWith(`(${id})`))
 
   return at === -1 ? '' : (review[at + 2] ?? '')
@@ -1025,7 +1099,7 @@ describe('own skills hand-out (G-02-1b)', () => {
       'Which roles get the skill alpha': 'No',
       'Which roles get the skill zeta': 'qa',
     })
-    expect((await runInit(run.io, { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect((await runInit(pagedIo(run), { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const lines = firstLines(run.asked)
     const at = lines.indexOf(CODEX_QUESTION)
     expect(lines.slice(at, at + 5)).toEqual([
@@ -1173,24 +1247,21 @@ function withReadEvents(run: MemRun): { readonly io: InitIo; readonly events: st
 describe('instruction parts (G-02-1f)', () => {
   test('a dry run answered Yes and Accept recommendations shows the per-role topics after the cards', async () => {
     const run = memIo(partsWorld(), PARTS_ANSWERS)
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
-    const review = shownBlock(run, 'review')
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
     const lastCard = review.map(line => line.startsWith('Scope card: ')).lastIndexOf(true)
     expect(review.slice(at, at + PARTS_REVIEW_ROWS.length)).toEqual(PARTS_REVIEW_ROWS)
     expect([lastCard > 0, at > lastCard, review.indexOf('File plan:')]).toEqual([true, true, at + 8])
   })
 
-  test('the instructions block shows each topic, its sources and roles, right before the entry question', async () => {
+  test('the entry question holds the instructions block: each topic, its sources and roles (D-302)', async () => {
     const run = memIo(partsWorld(), PARTS_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
-    expect(run.shown.filter(block => block.key === 'instructions')).toEqual([
-      { key: 'instructions', title: 'Instruction parts', lines: PARTS_BLOCK },
-    ])
-    const entryAt = events.indexOf(`ask ${INSTRUCTIONS_ENTRY_QUESTION}`)
-    expect([entryAt > 0, events[entryAt - 1]]).toEqual([true, 'show instructions'])
+    await runInit(run.io, { dryRun: true })
+    const at = firstLines(run.asked).indexOf(INSTRUCTIONS_ENTRY_QUESTION)
+    expect([at > 0, run.specs[at]?.context?.title, run.shown]).toEqual([true, 'Instruction parts', []])
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual(PARTS_BLOCK)
   })
 
   test('the consent and entry questions carry their context lines, No first and the Instructions chip', async () => {
@@ -1214,7 +1285,7 @@ describe('instruction parts (G-02-1f)', () => {
     const options = ['Accept recommendations', 'Go part by part', 'Whole files']
     const entrySummary = '2 topics, 0 memories, 2 recommended'
     const entryPane = { asked: run.asked[entryAt], text: withContext(INSTRUCTIONS_ENTRY_QUESTION, entrySummary) }
-    const lines = shownBlock(run, 'instructions')
+    const lines = PARTS_BLOCK
     const entry = { title: 'Instruction parts', lines, kind: 'instructions', summary: entrySummary, pane: entryPane }
     expect(run.specs[entryAt]).toEqual({ options, header: 'Instructions', context: entry })
   })
@@ -1244,15 +1315,18 @@ describe('instruction parts (G-02-1f)', () => {
 
   test('No, skip it reads nothing, calls no model and asks the whole-file questions unchanged (D-63)', async () => {
     const run = memIo(partsWorld(), PARTS_DECLINED)
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const asked = firstLines(run.asked)
     expect(asked).toContain(CONTENT_QUESTION)
     expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBeGreaterThan(asked.indexOf(CONTENT_QUESTION))
     expect(run.reads).not.toContain(GLOBAL_CLAUDE_MD)
     expect(run.prompts).toEqual([])
-    expect(run.shown.map(block => block.key)).not.toContain('instructions')
-    expect(shownBlock(run, 'review')).not.toContain('Instructions per role:')
+    expect([asked.includes(INSTRUCTIONS_ENTRY_QUESTION), contextLinesAt(run, GLOBAL_GROUP_QUESTION)[0]]).toEqual([
+      false,
+      '~/.claude/CLAUDE.md and the files it imports',
+    ])
+    expect(lastReview(run)).not.toContain('Instructions per role:')
   })
 
   test('option 0 of the content consent never consents: a dry run answering it reads no instruction file', async () => {
@@ -1272,7 +1346,7 @@ describe('instruction parts (G-02-1f)', () => {
       replies: ['{"topics":{},"memories":{"M1":["tl"]}}'],
     })
     const run = memIo(world, PARTS_ANSWERS)
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     const found =
       'Found: global CLAUDE.md no, 0 CLAUDE.md files in the repo chain, 0 rule files, AGENTS.md no, 1 memory. ' +
@@ -1286,7 +1360,7 @@ describe('instruction parts (G-02-1f)', () => {
     expect(run.prompts[0]?.startsWith(`${RECOMMEND_SYSTEM}\n---\n`)).toBe(true)
     expect(run.prompts[0]).toContain('M1 | notes.md | No summary in MEMORY.md.')
     expect(run.prompts.join('\n')).not.toContain('SENTINEL_SECRET_VALUE')
-    expect(shownBlock(run, 'review')).toContain('  tl: 0 topics; 1 memory')
+    expect(lastReview(run)).toContain('  tl: 0 topics; 1 memory')
   })
 
   test('a repo with nothing to hand out asks no content consent and leaves every role no group', async () => {
@@ -1314,7 +1388,7 @@ describe('instruction parts (G-02-1f)', () => {
     // No recommendation, so Accept is not offered (D-279): the parts go one by one, each answered None.
     const answers = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Go part by part' }
     const run = memIo(partsWorld({ replies: ['nope', 'still nope', null, '{}', '[]', 'no'] }), answers)
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(run.prompts).toHaveLength(6)
     expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
@@ -1322,7 +1396,7 @@ describe('instruction parts (G-02-1f)', () => {
     // With no memory to name, a reply with no memories object is not an error (02-GAPS-B2 N14).
     expect(run.prompts[4]?.endsWith('\n- the reply has no "topics" object')).toBe(true)
     expect(run.prompts[4]).not.toContain('"memories" object')
-    const block = shownBlock(run, 'instructions')
+    const block = contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)
     expect(block.slice(1, 4)).toEqual([
       '  ~/.claude/CLAUDE.md: All of ~/.claude/CLAUDE.md',
       '    from: ~/.claude/CLAUDE.md > Security',
@@ -1332,7 +1406,7 @@ describe('instruction parts (G-02-1f)', () => {
       'The model gave no usable recommendation: no role gets a part unless you pick one.',
       'The model could not group the parts: each file is one topic.',
     ])
-    const review = shownBlock(run, 'review')
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
     expect(review.slice(at, at + 8)).toEqual([
       'Instructions per role:',
@@ -1352,14 +1426,14 @@ describe('instruction parts (G-02-1f)', () => {
     await runInit(run.io, { dryRun: true })
     expect(run.prompts).toHaveLength(3)
     expect(run.prompts[1]?.endsWith('\n- the reply is not JSON')).toBe(true)
-    expect(shownBlock(run, 'instructions')).toEqual(PARTS_BLOCK)
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual(PARTS_BLOCK)
   })
 
   test('Go part by part with Yes, No and be, qa: first topic its roles, the second none, the third two', async () => {
     const run = memIo(threePartsWorld(), PART_BY_PART_ANSWERS)
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
-    const review = shownBlock(run, 'review')
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
     expect(review.slice(at, at + 14)).toEqual([
       'Instructions per role:',
@@ -1405,10 +1479,10 @@ describe('instruction parts (G-02-1f)', () => {
 
   test('Whole files asks the whole-file questions unchanged and hands out whole (D-63)', async () => {
     const run = memIo(partsWorld(), { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' })
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     const asked = firstLines(run.asked)
     expect(asked.indexOf(GLOBAL_GROUP_QUESTION)).toBe(asked.indexOf(INSTRUCTIONS_ENTRY_QUESTION) + 1)
-    expect(shownBlock(run, 'review')).not.toContain('Instructions per role:')
+    expect(lastReview(run)).not.toContain('Instructions per role:')
     const answers = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files', 'Which roles get': 'pm' }
     const setup = emptySetupScan({ hasGlobalClaudeMd: true })
     const roles = proposeRoles(repoScan()).roles
@@ -1424,15 +1498,16 @@ describe('instruction parts (G-02-1f)', () => {
       [INSTRUCTIONS_ENTRY_QUESTION]: ['Accept recommendations', 'Go part by part'],
       'Review the plan': ['memory', 'Confirm'],
     })
-    expect((await runInit(run.io, { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
+    expect((await runInit(pagedIo(run), { dryRun: true })).split('\n').at(-1)).toBe(DRY_RUN_NOTE)
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([
       INSTRUCTIONS_ENTRY_QUESTION,
       'Which roles get "Security rules"?',
       'Which roles get "Git and commits"?',
     ])
     expect([run.reads.filter(path => path === GLOBAL_CLAUDE_MD).length, run.prompts.length]).toEqual([1, 2])
-    expect(run.shown.filter(block => block.key === 'instructions')).toHaveLength(2)
-    expect(shownBlock(run, 'review')).toContain('Kept with the root session only: 2 topics, 0 memories')
+    const entries = run.specs.filter((_, at) => firstLines(run.asked)[at] === INSTRUCTIONS_ENTRY_QUESTION)
+    expect(entries.map(spec => spec.context?.title)).toEqual(['Instruction parts', 'Instruction parts'])
+    expect(lastReview(run)).toContain('Kept with the root session only: 2 topics, 0 memories')
   })
 
   test('the review item memory after No, or with nothing to hand out, asks as before', async () => {
@@ -1451,7 +1526,7 @@ describe('instruction parts (G-02-1f)', () => {
     const instructionReads = run.reads.filter(path => path.endsWith('CLAUDE.md') && !path.includes('/.cadre/'))
     expect(instructionReads).toEqual([GLOBAL_CLAUDE_MD, '/repo/CLAUDE.md'])
     expect(run.prompts[0]).toContain('P2 | CLAUDE.md | Rules | # Rules')
-    expect(shownBlock(run, 'instructions')).toContain('    from: CLAUDE.md > Rules')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: CLAUDE.md > Rules')
   })
 
   test('the content consent counts the global file and the chain files the scan found', async () => {
@@ -1492,7 +1567,7 @@ describe('instruction parts (G-02-1f)', () => {
     })
     const run = memIo(world, PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    expect(shownBlock(run, 'instructions')).toEqual([
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual([
       READ_HEADING_ROW,
       '  General: The general rules.',
       '    from: ~/.claude/CLAUDE.md > G',
@@ -1506,7 +1581,7 @@ describe('instruction parts (G-02-1f)', () => {
     const locations = { ...DEFAULT_LOCATIONS, configDir: '.claude-alt' }
     const run = memIo(partsWorld({ locations }), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    const lines = run.shown.filter(block => block.key === 'instructions').flatMap(block => block.lines)
+    const lines = contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)
 
     expect(lines).not.toHaveLength(0)
     expect(lines.filter(line => line.includes(t('paths.configDirWarning')))).toEqual([])
@@ -1556,7 +1631,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     const run = memIo(rulesWorld(), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts[0]).toContain('P1 | .claude/rules/security.md | Secrets | # Secrets')
-    expect(shownBlock(run, 'instructions')).toEqual([
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual([
       READ_HEADING_ROW,
       '  Secrets: How secrets are kept.',
       '    from: .claude/rules/security.md > Secrets',
@@ -1610,7 +1685,8 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     const run = memIo(partsWorld({ unknownPaths: [RULES_DIR] }), PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(run.asked).toContain(withContext(CONTENT_QUESTION, GLOBAL_ONLY_FOUND))
-    expect(shownBlock(run, 'instructions')).toContain('warning: could not list .claude/rules (treated as unknown)')
+    const warning = 'warning: could not list .claude/rules (treated as unknown)'
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain(warning)
   })
 
   test('a doc the repo CLAUDE.md links to is read as a repo part after the chain', async () => {
@@ -1629,7 +1705,7 @@ describe('rules and AGENTS.md in init (G-02-1f)', () => {
     const run = memIo(world, PARTS_ANSWERS)
     await runInit(run.io, { dryRun: true })
     expect(run.prompts[0]).toContain('P3 | docs/guide.md | Guide | # Guide')
-    expect(shownBlock(run, 'instructions')).toContain('    from: docs/guide.md > Guide')
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toContain('    from: docs/guide.md > Guide')
   })
 
   test('rule and doc text never reaches a question, a log line, the pane or the reply (T-02-61)', async () => {
@@ -1699,7 +1775,7 @@ describe('memories one by one (G-02-1f)', () => {
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
-    expect(shownBlock(run, 'instructions')).toEqual(MEMORIES_BLOCK)
+    expect(contextLinesAt(run, INSTRUCTIONS_ENTRY_QUESTION)).toEqual(MEMORIES_BLOCK)
   })
 
   test('the entry question names the parts and memories, and its context line counts both', async () => {
@@ -1734,8 +1810,8 @@ describe('memories one by one (G-02-1f)', () => {
 
   test('the review counts the memories each role gets and the ones kept with the root session', async () => {
     const run = memIo(memoriesWorld(), MEMORY_BY_PART_ANSWERS)
-    await runInit(run.io, { dryRun: true })
-    const review = shownBlock(run, 'review')
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
     expect(review.slice(at, at + 11)).toEqual([
       'Instructions per role:',
@@ -1754,8 +1830,8 @@ describe('memories one by one (G-02-1f)', () => {
 
   test('Accept recommendations gives each memory its recommended roles; one with none stays at the root', async () => {
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
-    await runInit(run.io, { dryRun: true })
-    const review = shownBlock(run, 'review')
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
     expect(review.slice(at, at + 9)).toEqual([
       'Instructions per role:',
@@ -2402,9 +2478,8 @@ describe('improver in init (G-02-1f)', () => {
     expect(reply.split('\n').filter(line => line.startsWith('warning: '))).toEqual([])
     const shownText = `~/.claude/cadre/${security.split('/').at(-2) ?? ''}/security/instructions/CLAUDE.md`
     expect(run.logged).toContain(improverNoChangeNote(shownText))
-    expect(run.shown.filter(block => block.key === 'improver').map(block => block.lines[0])).toEqual([
-      '.cadre/be/CLAUDE.md: 2 lines added, 1 removed',
-    ])
+    const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
+    expect(improved.map(spec => spec.context?.lines[0])).toEqual(['.cadre/be/CLAUDE.md: 2 lines added, 1 removed'])
   })
 
   test('Keep original writes the built text back after the runs; the manifest records the built text', async () => {
@@ -2454,14 +2529,15 @@ describe('improver in init (G-02-1f)', () => {
     expect(roleWrites).toHaveLength(1)
     expect(writtenManifestText(host)).toContain(await sha256Hex(roleWrites[0]?.text ?? ''))
     expect(writtenManifestText(host)).not.toContain(await sha256Hex(edited))
-    expect(run.shown.filter(block => block.key === 'improver').at(-1)?.lines).toContain('  .cadre/be/role.json')
+    const improved = run.specs.filter(spec => spec.context?.kind === 'improver')
+    expect(improved.at(-1)?.context?.lines).toContain('  .cadre/be/role.json')
   })
 
   test('a dry run holds no host: it runs no improver and asks, shows and replies nothing of it', async () => {
     const run = memIo(builtWorld(), { ...PARTS_ANSWERS, [IMPROVER_PREFIX]: 'Accept' })
     const reply = await runInit(run.io, { dryRun: true })
     expect(firstLines(run.asked).filter(question => question.startsWith(IMPROVER_PREFIX))).toEqual([])
-    expect(run.shown.filter(block => block.key === 'improver')).toEqual([])
+    expect([run.shown, run.specs.filter(spec => spec.context?.kind === 'improver')]).toEqual([[], []])
     expect(reply.split('\n').filter(line => line.startsWith('Improver:'))).toEqual([])
     expect(reply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
   })
@@ -2478,10 +2554,6 @@ function improverOffer(answer: string): Readonly<Record<string, string>> {
 /** The last line of the review when claude-md-management is the one plugin answered Install (D-141). */
 const IMPROVER_INSTALL_ROW = `Plugins to install after Confirm (a --dry-run installs nothing): ${CLAUDE_MD_PLUGIN}`
 
-/** The last review block a run showed, or none. */
-function lastReview(run: MemRun): readonly string[] {
-  return run.shown.findLast(block => block.key === 'review')?.lines ?? []
-}
 
 describe('improver install offer (G-02-1f)', () => {
   test('asked after the security question when a role got a built part and the plugin is missing', async () => {
@@ -2521,7 +2593,7 @@ describe('improver install offer (G-02-1f)', () => {
     const files = builtFilesRecord(false)
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), improverOffer('Install'))
-    const reply = await runInit(run.io, { dryRun: false, host: io })
+    const reply = await runInit(pagedIo(run), { dryRun: false, host: io })
     expect(lastReview(run).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
     const install = host.calls.findIndex(call => call.argv.join(' ') === `claude plugin install ${CLAUDE_MD_PLUGIN}`)
     expect(install).toBeGreaterThanOrEqual(0)
@@ -2563,7 +2635,7 @@ describe('improver install offer (G-02-1f)', () => {
     const files = builtFilesRecord()
     const { io, host } = improvingHost(files)
     const run = memIo(builtWorld({ files }), improverOffer('Install'))
-    await runInit(run.io, { dryRun: false, host: io })
+    await runInit(pagedIo(run), { dryRun: false, host: io })
     expect(firstLines(run.asked)).not.toContain(IMPROVER_INSTALL_QUESTION)
     expect(host.calls.filter(call => call.argv[1] === 'plugin')).toEqual([])
     expect(improverCalls(host)).toHaveLength(2)
@@ -2577,7 +2649,7 @@ describe('improver install offer (G-02-1f)', () => {
     expect(reply).toBe(cancelledReply(IMPROVER_INSTALL_DISMISSED_REASON))
     expect([host.writes, host.calls]).toEqual([[], []])
     const dry = memIo(builtWorld(), improverOffer('Install'))
-    const dryReply = await runInit(dry.io, { dryRun: true })
+    const dryReply = await runInit(pagedIo(dry), { dryRun: true })
     expect(lastReview(dry).slice(-2)).toEqual([IMPROVER_INSTALL_ROW, improverRunLine(2)])
     expect(dryReply.split('\n').at(-1)).toBe(DRY_RUN_NOTE)
   })
@@ -2694,14 +2766,14 @@ describe('an unchanged re-init (02-GAPS-B3 S1)', () => {
     expect(manifest).toContain(await sha256Hex(BUILT_BE_IMPROVED))
     const again = improvingHost(files)
     const run = memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers)
-    const reply = await runInit(run.io, { dryRun: false, host: again.io })
+    const reply = await runInit(pagedIo(run), { dryRun: false, host: again.io })
     expect(reply.split('\n').slice(-2)).toEqual([APPLIED_NONE_NOTE, NEXT_STEP_NOTE])
     expect(opKinds(reply).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
     expect(opKinds(reply).get('.cadre/be/role.json')).toBe('leave')
     expect([improverCalls(again.host), again.host.writes]).toEqual([[], []])
     expect(files[BE_CLAUDE_MD]).toBe(BUILT_BE_IMPROVED)
     expect(files['/repo/.cadre/manifest.json']).toBe(manifest)
-    expect(shownBlock(run, 'review').filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
+    expect(lastReview(run).filter(line => line.endsWith(BE_CLAUDE_MD_PATH))).toEqual([])
     const dry = await runInit(memIo(builtWorld({ files, dirs: builtAfterDirs() }), answers).io, { dryRun: true })
     expect(opKinds(dry).get(BE_CLAUDE_MD_PATH)).toBe(undefined)
   })
@@ -2723,8 +2795,8 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
   test('a whole-files review lists the heading, then the private files of each role in role order', async () => {
     const whole = { ...PARTS_ANSWERS, [INSTRUCTIONS_ENTRY_QUESTION]: 'Whole files' }
     const run = memIo(builtWorld(), whole)
-    await runInit(run.io, { dryRun: true })
-    const review = shownBlock(run, 'review')
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
     const at = review.indexOf(PRIVATE_FILES_HEADING)
     const ids = review.filter(line => line.startsWith('Scope card: ')).map(line => /\(([^)]+)\)$/.exec(line)?.[1] ?? '')
     expect(ids).toHaveLength(6)
@@ -2734,18 +2806,18 @@ describe('what Confirm writes outside the repo (02-GAPS-B3 S4)', () => {
 
   test('with claude-md-management in, the review ends with the improver line; without it, it has none', async () => {
     const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
-    await runInit(installed.io, { dryRun: true })
+    await runInit(pagedIo(installed), { dryRun: true })
     expect(lastReview(installed).at(-1)).toBe(improverRunLine(2))
     const notNow = memIo(builtWorld({ files: builtFilesRecord(false) }), improverOffer('Not now'))
-    await runInit(notNow.io, { dryRun: true })
+    await runInit(pagedIo(notNow), { dryRun: true })
     expect(lastReview(notNow).filter(line => line.startsWith('After Confirm, claude-md-improver'))).toEqual([])
   })
 
   test('the --dry-run reply names the private files and the improver before its note, a plain one not', async () => {
     const installed = memIo(builtWorld({ files: builtFilesRecord() }), PARTS_ANSWERS)
-    const dry = (await runInit(installed.io, { dryRun: true })).split('\n')
+    const dry = (await runInit(pagedIo(installed), { dryRun: true })).split('\n')
     const at = dry.indexOf(launchLine({ kind: 'git-root' }))
-    const ids = shownBlock(installed, 'review')
+    const ids = lastReview(installed)
       .filter(line => line.startsWith('Scope card: '))
       .map(line => /\(([^)]+)\)$/.exec(line)?.[1] ?? '')
     expect(dry.slice(at + 1)).toEqual([
@@ -3427,15 +3499,16 @@ describe('init plan', () => {
     "init shows every role's scope card once, inside the review after the launch-start question (ROLE-06, A5)",
     async () => {
       const run = memIo(gitWorld(), INIT_ANSWERS)
-      const { io, events } = withEvents(run)
+      const { io, events } = withEvents({ ...run, io: pagedIo(run) })
       await runInit(io, { dryRun: true })
       const team = await defaultRoles(gitWorld())
       const cards = cardLines(team, scopesFor(team, 'none', await scansOf(gitWorld()), [], { kind: 'git-root' }))
       const launchAt = events.indexOf(`ask ${LAUNCH_START_QUESTION}`)
-      const reviewAt = events.indexOf('show review')
-      const lines = shownBlock(run, 'review')
-      const pmCards = run.shown.filter(block => block.lines.includes('Scope card: PM (pm)'))
-      expect(pmCards.map(block => block.key)).toEqual(['review'])
+      const reviewAt = events.indexOf(`ask ${REVIEW_QUESTION}`)
+      const lines = lastReview(run)
+      const before = run.specs.slice(0, firstLines(run.asked).indexOf(REVIEW_QUESTION))
+      const carded = before.filter(spec => (spec.context?.lines ?? []).some(line => line.startsWith('Scope card: ')))
+      expect([carded, run.shown]).toEqual([[], []])
       expect(reviewAt).toBeGreaterThan(launchAt)
       expect(events.slice(launchAt + 1, reviewAt).filter(event => /^(log|show) /.test(event))).toEqual([])
       expect(lines.join('\n')).toContain(
@@ -3458,11 +3531,11 @@ describe('init plan', () => {
         'Type the folder the launchers start in': 'apps/web',
       }
       const run = memIo(gitWorld({ dirs: { '/repo/.git': [], '/repo/apps/web': [] } }), answers)
-      const { io, events } = withEvents(run)
+      const { io, events } = withEvents({ ...run, io: pagedIo(run) })
       await runInit(io, { dryRun: true })
-      const review = shownBlock(run, 'review')
-      const reviewAt = run.shown.findIndex(block => block.key === 'review')
-      const before = run.shown.slice(0, reviewAt).flatMap(block => block.lines)
+      const review = lastReview(run)
+      const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
+      const before = run.specs.slice(0, reviewAt).flatMap(spec => spec.context?.lines ?? [])
       expect(review).toContain('    [none] Additional directory: <git root> (start folder is <git root>/apps/web)')
       expect(reviewAt).toBeGreaterThan(0)
       expect(before.filter(line => line.includes('Scope card: '))).toEqual([])
@@ -3755,12 +3828,11 @@ describe('consentedGsdCheck (D-243, WF-S6)', () => {
 })
 
 describe('reviewStep', () => {
-  test('before the question init shows one review block: roles, cards, plan, policy, start, warnings', async () => {
+  test('the review question holds one review over its pages: roles, cards, plan, policy, start, warnings', async () => {
     const locations = { ...DEFAULT_LOCATIONS, warnings: ['the root was given through a link'] }
     const world = fullWorld({ locations })
     const run = memIo(world, INIT_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     const gathered = await gatherScans(memIo(world, {}).io, locations, false)
     const team = proposeRoles(gathered.repo).roles
     const scopes = scopesFor(team, 'none', gathered, [], { kind: 'git-root' })
@@ -3791,11 +3863,11 @@ describe('reviewStep', () => {
     ]
     expect(team).toHaveLength(6)
     expect(expected).toContain('warning: the root was given through a link')
-    const reviews = run.shown.filter(block => block.key === 'review')
-    expect(reviews).toEqual([{ key: 'review', title: 'Review', lines: expected }])
-    expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
-    const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
-    expect(run.specs[reviewAt]).toEqual(firstPageSpec(expected, run.asked[reviewAt], '46 files, 6 roles'))
+    expect([reviewsOf(run), run.shown]).toEqual([[expected], []])
+    const first = memIo(world, INIT_ANSWERS)
+    await runInit(first.io, { dryRun: true })
+    const reviewAt = firstLines(first.asked).indexOf(REVIEW_QUESTION)
+    expect(first.specs[reviewAt]).toEqual(firstPageSpec(expected, first.asked[reviewAt], '46 files, 6 roles'))
   })
 
   test('git policy re-asks only the policy and shows the summary again; Ignore all then Confirm', async () => {
@@ -3804,10 +3876,10 @@ describe('reviewStep', () => {
       'Review the plan': ['git policy', 'Confirm'],
       'Git policy': ['Commit definitions (default)', 'Ignore all of .cadre/'],
     })
-    const reply = await runInit(run.io, { dryRun: true })
+    const reply = await runInit(pagedIo(run), { dryRun: true })
     expect(between(run.asked, REVIEW_QUESTION)).toEqual([GIT_POLICY_QUESTION])
     expect(firstLines(run.asked).filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(2)
-    expect(run.shown.filter(block => block.key === 'review')).toHaveLength(2)
+    expect(reviewsOf(run)).toHaveLength(2)
     const team = await defaultRoles(gitWorld())
     const files = await plannedFiles(gitWorld(), team, { gitPolicy: 'ignore' })
     const plan = await emptyDiskPlan(files, 'ignore', [], GIT_TEAM_HAS_SECURITY)
@@ -3884,7 +3956,7 @@ describe('reviewStep', () => {
     }
   })
 
-  test('Change roles re-asks the roles and every per-role step, and shows the recommendations again', async () => {
+  test('Change roles re-asks the roles and every per-role step, and folds the recommendations again', async () => {
     const run = queuedIo(everyStepWorld(), { ...PARTS_DECLINED, 'Review the plan': ['Change roles', 'Confirm'] })
     await runInit(run.io, { dryRun: true })
     const asked = firstLines(run.asked)
@@ -3893,7 +3965,8 @@ describe('reviewStep', () => {
     expect(firstPass.some(question => question.startsWith(FRAMEWORK_QUESTION_PREFIX))).toBe(true)
     expect(firstPass.some(question => question.startsWith('.planning/config.json: '))).toBe(true)
     expect(between(run.asked, REVIEW_QUESTION)).toEqual(firstPass.filter(question => question !== DURATION_QUESTION))
-    expect(run.shown.filter(block => block.key === 'recommendations')).toHaveLength(2)
+    const folded = run.specs.filter(spec => spec.context?.lines[0] === PANE_TITLES.recommendations)
+    expect(folded).toHaveLength(2)
     expect(asked.filter(question => question === GIT_POLICY_QUESTION)).toHaveLength(1)
     expect(asked.filter(question => question === LAUNCH_START_QUESTION)).toHaveLength(1)
   })
@@ -3906,9 +3979,9 @@ describe('reviewStep', () => {
       'Review the plan': ['Change roles', 'Confirm'],
     })
     const kinds = opKinds(await runInit(run.io, { dryRun: true }))
-    const proposals = run.shown.filter(block => block.key === 'roles')
+    const proposals = proposalsOf(run)
     expect(proposals).toHaveLength(3)
-    expect(proposals.at(-1)?.lines.join('\n')).not.toContain('Security (security)')
+    expect(proposals.at(-1)?.join('\n')).not.toContain('Security (security)')
     expect(firstLines(run.asked).filter(question => question === ADJUST_QUESTION)).toHaveLength(2)
     expect([...kinds.keys()].filter(path => path.startsWith('.cadre/security/'))).toEqual([])
     expect(kinds.get('.cadre/pm/role.json')).toBe('create')
@@ -3936,9 +4009,9 @@ describe('reviewStep', () => {
     })
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
-    const proposals = run.shown.filter(block => block.key === 'roles')
+    const proposals = proposalsOf(run)
     expect(proposals).toHaveLength(3)
-    expect(proposals.at(-1)?.lines.slice(-2)).toEqual(['Changes from the scan:', '  none'])
+    expect(proposals.at(-1)?.slice(-2)).toEqual(['Changes from the scan:', '  none'])
   })
 
   test("Change roles shows the template team with the template's scan changes, as first shown (A6)", async () => {
@@ -3946,10 +4019,10 @@ describe('reviewStep', () => {
     const run = queuedIo(gitWorld({ replies: [DESCRIBED_REPLY] }), answers)
     const reply = await runInit(run.io, { dryRun: true })
     expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
-    const proposals = run.shown.filter(block => block.key === 'roles')
+    const proposals = proposalsOf(run)
     expect(proposals).toHaveLength(2)
     expect(proposals.at(-1)).toEqual(proposals[0])
-    expect(proposals[0]?.lines.slice(-1)).not.toEqual(['  none'])
+    expect(proposals[0]?.slice(-1)).not.toEqual(['  none'])
   })
 
   test(
@@ -4073,25 +4146,22 @@ describe('review shows policy and launcher start (G-02-3)', () => {
     return review.slice(review.findIndex(line => line.startsWith('Summary: ')) + 1)
   }
 
-  test('a dry run shows the git policy and the launcher start right after the plan, before the question', async () => {
+  test('a dry run shows the git policy and the launcher start right after the plan, in the review', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
-    const review = shownBlock(run, 'review')
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
     expect(review).toContain('File plan:')
     expect(afterPlan(review).slice(0, 2)).toEqual([
       'Git policy: commit definitions (.cadre/*/.runtime/ ignored)',
       'Launchers start in: the git root',
     ])
     expect(review).not.toContain(IGNORE_ALL_NOTE)
-    const askedAt = events.findIndex(event => event.startsWith('ask Review the plan'))
-    expect([askedAt > 0, events[askedAt - 1]]).toEqual([true, 'show review'])
   })
 
   test('with the ignore policy the review also shows the worktree note, right after the launcher start', async () => {
     const run = memIo(gitWorld(), { ...INIT_ANSWERS, 'Git policy': 'Ignore all of .cadre/' })
-    await runInit(run.io, { dryRun: true })
-    expect(afterPlan(shownBlock(run, 'review')).slice(0, 3)).toEqual([
+    await runInit(pagedIo(run), { dryRun: true })
+    expect(afterPlan(lastReview(run)).slice(0, 3)).toEqual([
       'Git policy: ignore all of .cadre/',
       'Launchers start in: the git root',
       IGNORE_ALL_NOTE,
@@ -4100,8 +4170,8 @@ describe('review shows policy and launcher start (G-02-3)', () => {
 
   test('the review and the reply show the lines of the .gitignore block under its row (PLAN-03)', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
-    const reply = (await runInit(run.io, { dryRun: true })).split('\n')
-    const review = shownBlock(run, 'review')
+    const reply = (await runInit(pagedIo(run), { dryRun: true })).split('\n')
+    const review = lastReview(run)
     const reviewAt = review.indexOf('  create    .gitignore')
     const replyAt = reply.indexOf('  create    .gitignore')
     expect([reviewAt > 0, replyAt > 0]).toEqual([true, true])
@@ -4125,22 +4195,22 @@ describe('consent declines first (G-02-11)', () => {
     expect(reply.startsWith(INIT_CANCELLED)).toBe(false)
     expect(firstLines(run.asked.slice(0, 2))).toEqual([CLAUDE_JSON_QUESTION, historyQuestion(1)])
     expect(run.reads.filter(path => path === '/home/u/.claude.json' || path.endsWith('.jsonl'))).toEqual([])
-    expect(run.shown.map(block => block.key)).not.toContain('history')
+    expect(foldAt(run, ROLES_QUESTION, PANE_TITLES.history)).toEqual([])
   })
 })
 
 describe('review question hint (G-02-7)', () => {
-  test('reviewStep asks it with the four buttons, once, right after it shows the review block', async () => {
+  test('reviewStep asks it with the four buttons, once, its first page the review lines it starts with', async () => {
     const run = memIo(gitWorld(), INIT_ANSWERS)
-    const { io, events } = withEvents(run)
-    await runInit(io, { dryRun: true })
+    await runInit(run.io, { dryRun: true })
     const asked = run.asked.filter(question => question.startsWith('Review the plan'))
     expect(firstLines(asked)).toEqual([REVIEW_QUESTION])
     expect(asked[0]?.endsWith(`\n${REVIEW_TYPE_HINT}`)).toBe(true)
-    expect(events[events.indexOf(`ask ${REVIEW_QUESTION}`) - 1]).toBe('show review')
+    const paged = memIo(gitWorld(), INIT_ANSWERS)
+    await runInit(pagedIo(paged), { dryRun: true })
     const reviewAt = firstLines(run.asked).indexOf(REVIEW_QUESTION)
     const summary = '25 files, 3 roles'
-    expect(run.specs[reviewAt]).toEqual(firstPageSpec(shownBlock(run, 'review'), run.asked[reviewAt], summary))
+    expect(run.specs[reviewAt]).toEqual(firstPageSpec(lastReview(paged), run.asked[reviewAt], summary))
   })
 
   test('every item the hint names can be typed, and a typed model still goes back to the model step only', async () => {
@@ -4808,13 +4878,13 @@ function installedWorld(keys: readonly string[]): MemWorld {
 describe('security plugin installs (decision #39)', () => {
   test('init asks it after the recommendations, before the duration; a dry run answered Install plans it', async () => {
     const run = memIo(gitWorld(), INSTALL_ANSWERS)
-    const { io, events } = withEvents(run)
+    const { io, events } = withEvents({ ...run, io: pagedIo(run) })
     const reply = await runInit(io, { dryRun: true })
-    const recommendedAt = events.indexOf('show recommendations')
+    const recommended = foldAt(run, BOTH_QUESTION_START, PANE_TITLES.recommendations)
     const askedAt = events.findIndex(event => event.startsWith(`ask ${BOTH_QUESTION_START}`))
     const durationAt = events.indexOf(`ask ${DURATION_QUESTION}`)
-    expect([recommendedAt >= 0, recommendedAt < askedAt, askedAt < durationAt]).toEqual([true, true, true])
-    const lines = shownBlock(run, 'review')
+    expect([recommended.length > 0, askedAt >= 0, askedAt < durationAt]).toEqual([true, true, true])
+    const lines = lastReview(run)
     expect(lines.at(-1)).toBe(
       'Plugins to install after Confirm (a --dry-run installs nothing): ' +
         'claude-security@claude-plugins-official, security-guidance@claude-plugins-official',
@@ -4909,9 +4979,9 @@ describe('security plugin installs (decision #39)', () => {
   })
 })
 
-/** The lines of each review init showed, in order: one side-pane review block per round, from `Roles:` on. */
+/** The lines of each review init asked, in order, one per round, all its pages from `Roles:` on (pagedIo, D-302). */
 function reviewRounds(run: MemRun): string[][] {
-  return run.shown.filter(block => block.key === 'review').map(block => [...block.lines])
+  return reviewsOf(run).map(review => [...review])
 }
 
 /** The `Plugins: only ... load` card line of the role with this title and id in a review round; '' when none. */
@@ -4928,7 +4998,7 @@ describe('security plugin review fixes (#69)', () => {
     const settings = { user: {}, project: { enabledPlugins }, local: {} }
     const run = memIo(gitWorld({ settings }), INIT_ANSWERS)
     await runInit(run.io, { dryRun: true })
-    const lines = shownBlock(run, 'recommendations')
+    const lines = foldAt(run, BOTH_QUESTION_START, PANE_TITLES.recommendations)
     expect(run.asked.filter(question => question.startsWith(BOTH_QUESTION_START))).toHaveLength(1)
     expect(lines).toContain(`    run: claude plugin install ${SECURITY_KEY}`)
     expect(lines).toContain(`    run: claude plugin install ${GUIDANCE_KEY}`)
@@ -4936,11 +5006,11 @@ describe('security plugin review fixes (#69)', () => {
 
   test('the review card of Security enables the plugins answered Install, and only those (A4)', async () => {
     const installs = memIo(gitWorld(), INSTALL_ANSWERS)
-    await runInit(installs.io, { dryRun: true })
+    await runInit(pagedIo(installs), { dryRun: true })
     const installRule = pluginsRule(reviewRounds(installs).at(-1) ?? [], 'Security (security)')
     expect([installRule.includes(SECURITY_KEY), installRule.includes(GUIDANCE_KEY)]).toEqual([true, true])
     const notNow = memIo(gitWorld(), INIT_ANSWERS)
-    await runInit(notNow.io, { dryRun: true })
+    await runInit(pagedIo(notNow), { dryRun: true })
     const notNowRule = pluginsRule(reviewRounds(notNow).at(-1) ?? [], 'Security (security)')
     expect([notNowRule === '', notNowRule.includes('security')]).toEqual([false, false])
   })
@@ -4952,7 +5022,7 @@ describe('security plugin review fixes (#69)', () => {
       'Review the plan': ['Change roles', 'Confirm'],
     })
     const host = memHost(hostWorld({ runs: INSTALLS_OK }))
-    await runInit(run.io, { dryRun: false, host: host.io })
+    await runInit(pagedIo(run), { dryRun: false, host: host.io })
     const rounds = reviewRounds(run)
     const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
     expect(installLines).toEqual([1, 0])
@@ -4969,7 +5039,7 @@ describe('security plugin review fixes (#69)', () => {
       'Review the plan': ['Change roles', 'Confirm'],
     })
     const host = memHost(hostWorld({ runs: INSTALLS_OK }))
-    const reply = await runInit(run.io, { dryRun: false, host: host.io })
+    const reply = await runInit(pagedIo(run), { dryRun: false, host: host.io })
     const rounds = reviewRounds(run)
     const installLines = rounds.map(round => round.filter(line => line.startsWith('Plugins to install')).length)
     expect(installLines).toEqual([1, 0])
@@ -5305,8 +5375,8 @@ describe('apply step labels (D-284, edge #13)', () => {
 describe('linked memory deny (G-02-1f)', () => {
   test('the review adds the read-only row under each role given a memory, and under no other', async () => {
     const run = memIo(memoriesWorld(), PARTS_ANSWERS)
-    await runInit(run.io, { dryRun: true })
-    const review = shownBlock(run, 'review')
+    await runInit(pagedIo(run), { dryRun: true })
+    const review = lastReview(run)
     const at = review.indexOf('Instructions per role:')
 
     expect(review.slice(at + 1, at + 8)).toEqual([
@@ -5324,12 +5394,12 @@ describe('linked memory deny (G-02-1f)', () => {
   test('a review with no memory given, or with the content declined, has no read-only row', async () => {
     const parts = memIo(partsWorld(), PARTS_ANSWERS)
     const declined = memIo(memoriesWorld(), PARTS_DECLINED)
-    await runInit(parts.io, { dryRun: true })
-    await runInit(declined.io, { dryRun: true })
+    await runInit(pagedIo(parts), { dryRun: true })
+    await runInit(pagedIo(declined), { dryRun: true })
 
-    expect(shownBlock(parts, 'review')).toContain('Instructions per role:')
-    expect(shownBlock(parts, 'review')).not.toContain(LINKED_MEMORIES_ROW)
-    expect(shownBlock(declined, 'review')).not.toContain(LINKED_MEMORIES_ROW)
+    expect(lastReview(parts)).toContain('Instructions per role:')
+    expect(lastReview(parts)).not.toContain(LINKED_MEMORIES_ROW)
+    expect(lastReview(declined)).not.toContain(LINKED_MEMORIES_ROW)
   })
 })
 
@@ -5720,12 +5790,12 @@ describe('one session tool list read per scan (#163)', () => {
 describe('infra plugins by name (D-252)', () => {
   test('a dry run never asks about or prompts with the skills of autopilot under another marketplace', async () => {
     const run = memIo(infraPluginWorld(), INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     expect(run.asked.filter(question => question.includes('away'))).toEqual([])
     expect(JSON.stringify(run.specs)).not.toContain('away')
     expect(run.prompts.filter(prompt => prompt.includes('away'))).toEqual([])
-    expect(shownBlock(run, 'review')).not.toEqual([])
-    expect(shownBlock(run, 'review').filter(line => line.includes('away'))).toEqual([])
+    expect(lastReview(run)).not.toEqual([])
+    expect(lastReview(run).filter(line => line.includes('away'))).toEqual([])
   })
 })
 
@@ -5735,9 +5805,9 @@ const MCP_ONE_BY_ONE: Readonly<Record<string, string>> = {
   'Which roles get the MCP servers': 'Go one by one',
 }
 
-/** The MCP row of a role's scope card in the last review block a run showed (D-133); '' with no such card. */
+/** The MCP row of a role's scope card in the last review a run paged through (D-302); '' with no such card. */
 function cardMcp(run: MemRun, id: string): string {
-  const review = shownBlock(run, 'review')
+  const review = lastReview(run)
   const at = review.findIndex(line => line.startsWith('Scope card: ') && line.endsWith(`(${id})`))
 
   return at === -1 ? '' : (review[at + 3] ?? '')
@@ -5749,20 +5819,20 @@ describe('table seeds (D-249, D-280)', () => {
   test('a dry run asks github with its recommendation; only the answer gives it', async () => {
     const replies = ['{"servers":{"M1":["tl"],"M2":[]}}']
     const declined = memIo(tableMatchWorld({ replies }), MCP_ONE_BY_ONE)
-    await runInit(declined.io, { dryRun: true })
+    await runInit(pagedIo(declined), { dryRun: true })
     const at = firstLines(declined.asked).indexOf(GITHUB_QUESTION)
     expect(declined.specs[at]?.context?.lines.at(-1)).toBe('Recommended: tl')
     expect(cardMcp(declined, 'tl')).toBe('  MCP servers: none')
     const given = memIo(tableMatchWorld({ replies }), { ...MCP_ONE_BY_ONE, [GITHUB_QUESTION]: 'tl' })
-    await runInit(given.io, { dryRun: true })
+    await runInit(pagedIo(given), { dryRun: true })
     expect(cardMcp(given, 'tl')).toBe('  MCP servers: github')
   })
 
   test('security-review is handed out with its table seed when the model gives none; Accept gives it', async () => {
     const run = memIo(tableMatchWorld(), OWN_ACCEPTED)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     expect(firstLines(run.asked)).toContain(ownEntry(1))
-    expect(shownBlock(run, 'skills')).toEqual([
+    expect(contextLinesAt(run, OWN_SKILLS_ENTRY_PREFIX)).toEqual([
       OWN_SKILLS_HEADING,
       '  security-review: Review the changes for security.',
       '    recommended: none',
@@ -5794,7 +5864,7 @@ describe('the mcp call (D-248, D-253)', () => {
   test('Accept gives each server the roles the mcp call recommended for it (D-250)', async () => {
     const answers = { ...OWN_ACCEPTED, 'Which roles get the MCP servers': 'Accept recommendations' }
     const run = memIo(tableMatchWorld({ replies: [SERVERS_REPLY] }), answers)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     expect(['tl', 'be', 'qa', 'pm'].map(id => cardMcp(run, id))).toEqual([
       '  MCP servers: github',
       '  MCP servers: sentry',
@@ -5806,9 +5876,9 @@ describe('the mcp call (D-248, D-253)', () => {
   test('a run with no server but infra makes no mcp call', async () => {
     const tools = [{ name: 'mcp__autopilot__wait_for', description: 'Wait.', mcp: true }]
     const run = memIo(gitWorld({ tools }), INIT_ANSWERS)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toEqual([])
-    expect(shownBlock(run, 'review')).not.toEqual([])
+    expect(lastReview(run)).not.toEqual([])
   })
 
   test('a review go-back to the assignments reuses the kept mcp result and calls the model no more', async () => {
@@ -5825,7 +5895,7 @@ describe('the mcp call (D-248, D-253)', () => {
 describe('the mcp call fallback (D-254)', () => {
   test('a failed mcp call recommends the table seeds for matched servers and none for the rest', async () => {
     const run = memIo(tableMatchWorld({ replies: ['not json', '{"servers":{"M9":[]}}', null] }), MCP_ONE_BY_ONE)
-    await runInit(run.io, { dryRun: true })
+    await runInit(pagedIo(run), { dryRun: true })
     expect(run.prompts.filter(text => text.startsWith(MCP_SYSTEM))).toHaveLength(MAX_PROPOSE_ATTEMPTS)
     const recommended = (question: string): string | undefined =>
       run.specs[firstLines(run.asked).indexOf(question)]?.context?.lines.at(-1)
@@ -5840,7 +5910,7 @@ describe('the skills call after the MCP answers (D-248)', () => {
     const replies = ['{"servers":{"M1":["tl"],"M2":[]}}', '{"skills":{"S1":["security"]}}']
     const answers = { ...MCP_ONE_BY_ONE, 'Which roles get the github MCP server': 'tl' }
     const run = memIo(tableMatchWorld({ replies }), answers)
-    const { io, events } = withEvents(run)
+    const { io, events } = withEvents({ ...run, io: pagedIo(run) })
     await runInit(io, { dryRun: true })
     expect(run.prompts).toHaveLength(2)
     const { prompt } = completionAt(run, 1)
@@ -6032,13 +6102,6 @@ describe('every pane-surface ask carries a context (D-300)', () => {
 })
 
 describe('no stand-alone pane block: what it held folds into the next question (D-302)', () => {
-  /** The context lines of the first question of `run` whose first line starts with `prefix`; none when none is. */
-  function contextLinesAt(run: MemRun, prefix: string): readonly string[] {
-    const at = firstLines(run.asked).findIndex(line => line.startsWith(prefix))
-
-    return run.specs[at]?.context?.lines ?? []
-  }
-
   test('no stage of a golden init world shows a block of its own; notes ride the loader from D-325 on', async () => {
     for (const { world, answers } of Object.values(GOLDEN_WORLDS)) {
       const run = memIo(world, answers)

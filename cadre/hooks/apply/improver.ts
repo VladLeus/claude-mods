@@ -18,7 +18,7 @@ import { fill, t, tn } from '../locales/t'
 import { displayPath, isFileInsideRoot, parentOf, trimSlash } from '../paths'
 import { MAX_READ_BYTES } from '../scan/facts/normalize'
 import { missingState } from '../scan/port-read'
-import { ASK_HEADERS, askChoice, noteLine, paneQuestionOf, quotedLabels, showBlock } from '../ui/ask'
+import { ASK_HEADERS, askChoice, noteLine, paneQuestionOf, quotedLabels } from '../ui/ask'
 import { diffLines, lineDiff } from '../ui/diff'
 import type { LineDiff } from '../ui/diff'
 import { instructionsRecordPath, privateClaudeMdPath } from './private'
@@ -500,11 +500,11 @@ function stateNote(state: Exclude<BuiltState, { readonly kind: 'changed' }>, pat
  * UNGUARDED_RUN_REASON, and stays as built. Else it looks at the file's folder and the paths `watched` names
  * (folderSnapshot), runs improverArgv with the file's flags in that folder with IMPROVER_TIMEOUT_MS, the clock read
  * around the run, then reads and looks again. Other files the run changed, and files it could not check, are reply
- * warnings and rows of the improver block; they are never undone. A file whose run failed, that did not change, or
- * that changed into something cadre cannot read gets its note and no question; a failed run's change and an unreadable
- * file go back as built. A changed file's diff from the built text is shown in the improver block and the per-file
- * question is asked: Accept keeps the new text, Keep original gives the file back, and a question with no usable answer
- * gives it back with a warning.
+ * warnings, notes and rows of the per-file question's context; they are never undone. A file whose run failed, that
+ * did not change, or that changed into something cadre cannot read gets its note and no question; a failed run's
+ * change and an unreadable file go back as built. A changed file's per-file question is asked with its diff from the
+ * built text as its own context (improverContext; no block of its own, D-302): Accept keeps the new text, Keep
+ * original gives the file back, and a question with no usable answer gives it back with a warning.
  */
 async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: ShownFrom): Promise<ImprovedFile> {
   const folder = parentOf(file.path)
@@ -535,13 +535,11 @@ async function improveOne(io: InitIo, host: HostIo, file: BuiltFile, from: Shown
   const state = builtState(file, before, after, failure)
   if (state.kind !== 'changed') {
     await noteLine(io, stateNote(state, shownPath))
-    if (otherLines.length > 0) await showBlock(io, 'improver', otherLines)
     for (const line of otherLines) await noteLine(io, line)
     const isRestored = state.kind === 'unreadable' || (state.kind === 'failed' && state.isChanged)
 
     return { accepted: null, isRestored, warnings }
   }
-  await showBlock(io, 'improver', [...improverBlockLines(shownPath, state.diff), ...otherLines])
   const context = improverContext(shownPath, state.diff, otherLines)
   const contextLine = improverContextLine(state.diff)
   // A pane surface asks the question with the context's summary, the file and its change counts (D-310).

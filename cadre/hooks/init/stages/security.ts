@@ -3,9 +3,9 @@
  * each missing security plugin with one note for each (securityInstallQuestion), its context line that nothing is
  * installed before Confirm, the Install and Not now answers both install offers use (INSTALL_CHOICES,
  * INSTALL_OPTIONS), withSecuritySkill, which gives the claude-security review skill or takes it away, and
- * securityStage, the pure stage that shows the recommendations for the team and asks it. Pure: it gives states and
- * never performs an effect, imports core, roles, scope, team, ui and init/state, and never imports init/machine or
- * init/run.
+ * securityStage, the pure stage that asks it with the recommendations for the team folded into its context. Pure: it
+ * gives states and never performs an effect, imports core, roles, scope, team, ui and init/state, and never imports
+ * init/machine or init/run.
  */
 import type { RoleSpec, SetupScan } from '../../../types'
 import { labelled } from '../../core/labelled'
@@ -17,7 +17,7 @@ import { missingSecurityPlugins, recommend } from '../../roles/recommend'
 import { standsFor } from '../../roles/template'
 import { pluginName } from '../../scope/lint'
 import { resolvedFramework } from '../../team'
-import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
+import { ASK_HEADERS, choiceAnswer, PANE_TITLES, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { SECURITY_PLUGIN_NOTES, securityContext } from '../../ui/blocks/context'
 import { recommendationLines } from '../../ui/blocks/recommendations'
@@ -135,10 +135,11 @@ function securityAnswer(state: InitState, answer: Answer): InitState {
 }
 
 /**
- * The security plugins stage (decision #39, ROLE-03, LNCH-01, D-230): the recommendations block for the team in the
- * side pane first, then, for the plugins a team with a Security role misses (missingSecurityPlugins), the security
- * plugins question (securityAsk): Install gives every missing key and Not now none; any other answer is asked again
- * with why on top. With no key it asks nothing and installs nothing. A dismissal is cancelled with
+ * The security plugins stage (decision #39, ROLE-03, LNCH-01, D-230): for the plugins a team with a Security role
+ * misses (missingSecurityPlugins), the security plugins question (securityAsk), with the recommendations for the team,
+ * which no later context holds, folded first into its context (D-302): Install gives every missing key and Not now
+ * none; any other answer is asked again with why on top. With no key it asks nothing, installs nothing and folds
+ * nothing (the Review lists the recommendations). A dismissal is cancelled with
  * SECURITY_INSTALL_DISMISSED_REASON and MAX_ASKS answers that are neither with NO_USABLE_ANSWER_REASON (A1, D-45). It
  * installs nothing itself: the keys are installed only after Confirm, never in --dry-run (applyConfirmed).
  */
@@ -146,15 +147,15 @@ export const securityStage: StageDef = Object.freeze({
   enter: (state: InitState): InitState => {
     const { roles, repoDefault, gathered } = state.draft
     if (roles === undefined || repoDefault === undefined || gathered === undefined) return stageFailed(state)
+    const keys = missingSecurityPlugins(roles, gathered.setup)
+    if (keys.length === 0) return installsDone(state, roles, gathered.setup, [])
     const frameworks = roles.map(role => resolvedFramework(role, repoDefault))
     const recommendations = recommend({ roles, frameworks, scan: gathered.repo, setup: gathered.setup })
     const lines = recommendationLines(recommendations, roles)
-    const shown = withOutputs(state, [{ kind: 'show', block: { key: 'recommendations', lines } }])
-    const keys = missingSecurityPlugins(roles, gathered.setup)
-    if (keys.length === 0) return installsDone(shown, roles, gathered.setup, [])
+    const folded = withOutputs(state, [{ kind: 'fold', title: PANE_TITLES.recommendations, lines }])
     const ask = securityAsk(keys)
 
-    return asking(shown, ask.question, ask.spec, 1)
+    return asking(folded, ask.question, ask.spec, 1)
   },
   answer: securityAnswer,
 })

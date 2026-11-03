@@ -38,6 +38,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
+          "Scan",
+          "Repo scan (read-only):",
+          "  stack: none; frontend: none; backend: none",
+          "  tests: none; E2E: none",
+          "  existing .cadre/: none",
+          "User setup (names only):",
+          "  plugins: 0",
+          "  skills: 0; agents: 0; MCP servers: none",
+          "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+          "warning: could not list the repo root (treated as unknown)",
+          "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
           "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
@@ -61,6 +72,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
+          "Recommendations",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official",
+          "",
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
@@ -235,6 +257,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
+          "Scan",
+          "Repo scan (read-only):",
+          "  stack: TypeScript; frontend: react; backend: none",
+          "  tests: JS/TS test files; E2E: none",
+          "  existing .cadre/: none",
+          "User setup (names only):",
+          "  plugins: 0",
+          "  skills: 0; agents: 0; MCP servers: none",
+          "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+          "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
           "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
@@ -259,6 +291,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
+          "Recommendations",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+          "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+          "- DevTools MCP for FE: the FE role cannot inspect the running page",
+          "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official",
+          "",
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
@@ -474,6 +517,16 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
+          "Scan",
+          "Repo scan (read-only):",
+          "  stack: TypeScript; frontend: react; backend: none",
+          "  tests: JS/TS test files; E2E: none",
+          "  existing .cadre/: none",
+          "User setup (names only):",
+          "  plugins: 0",
+          "  skills: 0; agents: 0; MCP servers: none",
+          "  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: none",
+          "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
           "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
@@ -498,6 +551,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
+          "Recommendations",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- Playwright MCP for FE: the FE role has no E2E setup to check its work in a browser",
+          "    run: claude mcp add playwright -- npx @playwright/mcp@latest",
+          "- DevTools MCP for FE: the FE role cannot inspect the running page",
+          "    run: claude mcp add chrome-devtools -- npx chrome-devtools-mcp@latest",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official",
+          "",
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
@@ -675,6 +739,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
+          "Scan",
+          "Repo scan (read-only):",
+          "  stack: none; frontend: none; backend: none",
+          "  tests: none; E2E: none",
+          "  existing .cadre/: none",
+          "User setup (names only):",
+          "  plugins: 0",
+          "  skills: 1; agents: 0; MCP servers: sentry",
+          "  global ~/.claude/CLAUDE.md: yes; memories: 1; CLAUDE.md files: repo/CLAUDE.md",
+          "warning: could not list the repo root (treated as unknown)",
+          "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
           "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
@@ -732,6 +807,13 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
+          "Recommendations",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official",
+          "",
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],
@@ -1098,6 +1180,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Roles",
         "lines": [
+          "Scan",
+          "Repo scan (read-only):",
+          "  stack: none; frontend: none; backend: none",
+          "  tests: none; E2E: none",
+          "  existing .cadre/: none",
+          "User setup (names only):",
+          "  plugins: 0",
+          "  skills: 0; agents: 0; MCP servers: none",
+          "  global ~/.claude/CLAUDE.md: yes; memories: 3; CLAUDE.md files: none",
+          "warning: could not list the repo root (treated as unknown)",
+          "",
           "Proposed roles:",
           "  PM (pm)                 Owns product decisions: scope, requirements and acceptance.",
           "  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.",
@@ -1121,6 +1214,17 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
       "context": {
         "title": "Security plugins",
         "lines": [
+          "Recommendations",
+          "Recommendations (print-only; init asks before it installs any):",
+          "- GSD for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: npx -y --package=@opengsd/gsd-core@latest -- gsd-core --global",
+          "- superpowers for all roles: no dev framework is in use; roles run the built-in plan, execute, verify loop",
+          "    run: claude plugin install superpowers@claude-plugins-official",
+          "- claude-security for Security: claude-security gives the Security role Anthropic's review skill (needs Python 3.9 or newer)",
+          "    run: claude plugin install claude-security@claude-plugins-official",
+          "- security-guidance for Security: no hooks warn the Security role about risky edits",
+          "    run: claude plugin install security-guidance@claude-plugins-official",
+          "",
           "claude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo.",
           "security-guidance@claude-plugins-official: security-guidance adds hooks that warn about risky edits."
         ],

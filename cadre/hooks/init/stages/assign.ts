@@ -27,7 +27,7 @@ import { classifyMcp, classifySkills, orderGroupsByUse } from '../assign-rules'
 import type { NameAssignment, SkillGroup } from '../assign-rules'
 import { handoutAnswer, handoutEnter, handoutItemsEnter } from '../handout'
 import type { HandoutItem, HandoutNext } from '../handout'
-import { reusable, stageCancelled, stageDone, stageFailed, withEffect, withOutputs } from '../state'
+import { reusable, stageCancelled, stageDone, stageFailed, withEffect } from '../state'
 import type { Answer, InitState, ModelCall, StageDef } from '../state'
 import { idsOf } from './duration'
 import { ROLE_LIST_OPTIONS, roleListAccepts } from './memory'
@@ -515,11 +515,11 @@ function afterItem(state: InitState, plan: AssignPlan, cursor: ItemCursor, answe
 }
 
 /**
- * The model's recommendation for the own skills (G-02-1b): the side pane shows every own skill with what it does, its
- * own use count and the roles recommended for it (ownSkillLines), then the entry question of their hand-out, with that
- * block as its own context (ownSkillsContext, D-236), its summary counting the skills and those the model's map
+ * The model's recommendation for the own skills (G-02-1b): the entry question of their hand-out, with every own skill,
+ * what it does, its own use count and the roles recommended for it (ownSkillLines) as its own context
+ * (ownSkillsContext, D-236; no block of its own, D-302), its summary counting the skills and those the model's map
  * recommends a role for (D-310). In the hand-out items, a skill the model's map has no entry for gets the roles the
- * skill table seeds for it as its recommendation (D-280); the side-pane lines show the model's map.
+ * skill table seeds for it as its recommendation (D-280); the context lines show the model's map.
  */
 function afterSkillsModel(
   state: InitState,
@@ -535,12 +535,11 @@ function afterSkillsModel(
     if (!seeded.has(ownSkillId(index)) && seed !== undefined) seeded.set(ownSkillId(index), seed)
   })
   const lines = ownSkillLines(skills, plan.counts, recommended)
-  const shown = withOutputs(state, [{ kind: 'show', block: { key: 'skills', lines } }])
   const items = ownSkillItems(skills, plan.counts, seeded)
   const withRoles = skills.filter((_, index) => (recommended.get(ownSkillId(index)) ?? []).length > 0).length
   const entry = { ...ownSkillsEntry(skills.length), context: ownSkillsContext(lines, skills.length, withRoles) }
 
-  return handedOut(shown, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
+  return handedOut(state, plan, done, handoutEnter(entry, items, plan.roles, ASSIGNMENT_DISMISSED_REASON))
 }
 
 /** The answer to the group question for all of the user's own skills: every own skill to the roles it named. */
