@@ -9,9 +9,11 @@ import {
   ALL_OPTION,
   assignToRoles,
   cappedNames,
+  envPaneQuestion,
   envQuestion,
   INSTRUCTION_LABELS,
   mcpQuestion,
+  memoryPaneQuestion,
   memoryQuestion,
   MODEL_EFFORT_OPTIONS,
   modelEffortRefusal,
@@ -23,6 +25,7 @@ import {
   parseRoleList,
   PER_ROLE,
   SAME_FOR_ALL,
+  skillGroupPaneQuestion,
   skillGroupQuestion,
   skillUsesText,
 } from './answers'
@@ -530,5 +533,28 @@ describe('env question cap (G-02-5)', () => {
     expect(parseEnvNames('all', names)).toEqual(names)
     expect(parseEnvNames('NAME_40, NAME_06', names)).toEqual(['NAME_06', 'NAME_40'])
     expect(parseEnvNames('NAME_41', names)).toBeNull()
+  })
+})
+
+describe('the questions a pane surface asks with no names (D-283)', () => {
+  test('the env question names no env variable: the pane lists every one', () => {
+    const short = 'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)'
+    expect(envPaneQuestion()).toBe(short)
+    expect(envQuestion(['API_KEY'])).not.toBe(short)
+  })
+
+  test('an instruction group question names the group and none of its files', () => {
+    expect(memoryPaneQuestion('auto-memory')).toBe(memoryQuestion('auto-memory', []))
+    expect(memoryPaneQuestion('project-claude-md')).toBe(
+      'Which roles get the project CLAUDE.md? (e.g. PM, TL, or none)',
+    )
+    expect(memoryPaneQuestion('global-claude-md')).toBe(memoryQuestion('global-claude-md', []))
+  })
+
+  test('a skill group question names the group with no count or uses, its label cleaned and cut', () => {
+    const group: SkillGroup = { label: 'codex', plugin: 'codex', names: ['codex:rescue', 'codex:setup'] }
+    expect(skillGroupPaneQuestion(group)).toBe('Which roles get codex skills? (e.g. BE, QA, or none)')
+    const hostile: SkillGroup = { label: `x${BIDI_OVERRIDE}${'y'.repeat(80)}`, plugin: 'x', names: ['a'] }
+    expect(skillGroupPaneQuestion(hostile)).toBe(`Which roles get x${'y'.repeat(58)}… skills? (e.g. BE, QA, or none)`)
   })
 })

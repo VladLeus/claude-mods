@@ -46,6 +46,12 @@ export function securityInstallQuestion(keys: readonly string[]): string {
 }
 
 /**
+ * The security plugins question as a pane surface asks it (D-283): the question alone, with no plugin name or note;
+ * the pane lists each missing plugin with what it does (securityContext).
+ */
+const SECURITY_INSTALL_PANE_QUESTION = t('init.security.installQuestionPane', { prefix: SECURITY_INSTALL_PREFIX })
+
+/**
  * Each answer to an install question with whether it installs: only Install does. It serves both install offers, the
  * security plugins (decision #39) and claude-md-management (D-141; 02-GAPS-B3 N6).
  */
@@ -81,13 +87,14 @@ export function withSecuritySkill(roles: readonly RoleSpec[], isWanted: boolean)
  * The security plugins question as the stage asks it (decision #39, D-136): securityInstallQuestion for `keys`, with
  * SECURITY_INSTALL_CONTEXT on its second line, the buttons INSTALL_OPTIONS with the Security chip and the missing
  * plugins as its own context (securityContext, D-236), which a pane surface asks with its first line in place of that
- * line (D-255), Install or Not now trimmed and in any case, what its refusal lists, and the reason a dismissal cancels
- * with.
+ * line (D-255) and with SECURITY_INSTALL_PANE_QUESTION in place of the sentence (D-283), Install or Not now trimmed and
+ * in any case, what its refusal lists, and the reason a dismissal cancels with.
  */
 function securityAsk(keys: readonly string[]): ChoiceAsk<boolean> & { readonly dismissedReason: string } {
   const context = securityContext(keys)
   const line = context.lines[0] ?? SECURITY_INSTALL_CONTEXT
-  const pane = paneQuestionOf(securityInstallQuestion(keys), SECURITY_INSTALL_CONTEXT, line)
+  const sentence = securityInstallQuestion(keys)
+  const pane = paneQuestionOf(sentence, SECURITY_INSTALL_CONTEXT, line, SECURITY_INSTALL_PANE_QUESTION)
 
   return {
     question: pane.asked,

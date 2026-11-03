@@ -13,7 +13,7 @@ import { t } from '../../locales/t'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { ENV_PANE_HEADING, envContext } from '../../ui/blocks/context'
-import { ALL_ENV_OPTION, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
+import { ALL_ENV_OPTION, envPaneQuestion, envQuestion, NONE_OPTION, parseEnvNames } from '../answers'
 import { asking, stageCancelled, stageDone, stageFailed, withOutputs } from '../state'
 import type { Answer, InitState, StageDef } from '../state'
 import { teamContextLine } from './model'
@@ -35,9 +35,9 @@ export const ENV_DISMISSED_REASON = t('init.carry.envDismissedReason')
 /**
  * The env question as the stage asks it (D-60, D-136): envQuestion for the scanned `names`, with the team's role ids
  * on its second line (envContextLine), the buttons None and All of them with the Env chip and the names as its own
- * context (envContext, D-236), which a pane surface asks with its first line in place of that line (D-255), typed
- * names that were scanned (parseEnvNames), so it takes a typed answer (D-234), what its refusal lists, and the reason a
- * dismissal cancels with.
+ * context (envContext, D-236), which a pane surface asks with its first line in place of that line (D-255) and with
+ * envPaneQuestion, which names no env name, in place of the question (D-283), typed names that were scanned
+ * (parseEnvNames), so it takes a typed answer (D-234), what its refusal lists, and the reason a dismissal cancels with.
  */
 function envAsk(
   names: readonly string[],
@@ -45,7 +45,7 @@ function envAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   const context = envContext(names)
   const contextLine = envContextLine(roles)
-  const pane = paneQuestionOf(envQuestion(names), contextLine, context.lines[0] ?? contextLine)
+  const pane = paneQuestionOf(envQuestion(names), contextLine, context.lines[0] ?? contextLine, envPaneQuestion())
 
   return {
     question: pane.asked,

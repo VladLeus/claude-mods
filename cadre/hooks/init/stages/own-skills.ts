@@ -16,7 +16,14 @@ import { skillCount } from '../../suggest/skills'
 import { ASK_HEADERS, countedChip, paneQuestionOf } from '../../ui/ask'
 import { mcpServerContext, skillContext, skillGroupContext } from '../../ui/blocks/assign'
 import type { SkillLine } from '../../ui/blocks/assign'
-import { mcpQuestion, NO_SKILL_PURPOSE, ownSkillIds, skillGroupQuestion, skillUsesText } from '../answers'
+import {
+  mcpQuestion,
+  NO_SKILL_PURPOSE,
+  ownSkillIds,
+  skillGroupPaneQuestion,
+  skillGroupQuestion,
+  skillUsesText,
+} from '../answers'
 import { groupUses } from '../assign-rules'
 import type { SkillGroup } from '../assign-rules'
 import { ACCEPT_RECOMMENDATIONS } from '../handout'
@@ -68,7 +75,8 @@ function skillLineOf(skill: SkillRef, counts: ReadonlyMap<string, number>, recom
  * Skills chip; its answer gives every skill of the group. Its own context lists each skill of the group with what it
  * does, its own uses and the roles `recommended` gives it by name, none when it gives none (skillGroupContext, D-211).
  * A pane surface asks the question with `paneLine`, the group's recommendation line when it has one, in place of the
- * context line, else with the first line of its context (D-255).
+ * context line, else with the first line of its context (D-255), and with skillGroupPaneQuestion, which carries no
+ * count or uses, in place of the question (D-283).
  */
 export function skillGroupItem(
   group: SkillGroup,
@@ -86,7 +94,8 @@ export function skillGroupItem(
   const context = skillGroupContext(group.label, lines)
   const contextLine = skillsContextLine(roles)
   const line = paneLine ?? context.lines[0] ?? contextLine
-  const pane = paneQuestionOf(skillGroupQuestion(group, groupUses(group, counts)), contextLine, line)
+  const sentence = skillGroupQuestion(group, groupUses(group, counts))
+  const pane = paneQuestionOf(sentence, contextLine, line, skillGroupPaneQuestion(group))
 
   return {
     question: pane.asked,

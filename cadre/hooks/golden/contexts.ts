@@ -55,7 +55,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "security",
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
-          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+          "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
         }
       },
       "acceptsTyped": false
@@ -234,7 +234,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "security",
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
-          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+          "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
         }
       },
       "acceptsTyped": false
@@ -426,7 +426,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "security",
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
-          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+          "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
         }
       },
       "acceptsTyped": false
@@ -639,7 +639,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "security",
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
-          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+          "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
         }
       },
       "acceptsTyped": false
@@ -741,7 +741,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "skill-group",
         "pane": {
           "asked": "Which roles get codex skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role given these skills can run them in its session; a role not given them cannot.",
-          "text": "Which roles get codex skills (1)? (e.g. BE, QA, or none)\nRecommended: none"
+          "text": "Which roles get codex skills? (e.g. BE, QA, or none)\nRecommended: none"
         }
       },
       "acceptsTyped": true
@@ -790,7 +790,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "memory-group",
         "pane": {
           "asked": "Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
-          "text": "Which roles get the auto-memories for this repo (notes.md)? (e.g. PM, TL, or none)\nnotes.md"
+          "text": "Which roles get the auto-memories for this repo? (e.g. PM, TL, or none)\nnotes.md"
         }
       },
       "acceptsTyped": true
@@ -805,7 +805,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "memory-group",
         "pane": {
           "asked": "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)\nRoles: pm, tl, security. Their content is never shown or committed.",
-          "text": "Which roles get the project CLAUDE.md (repo/CLAUDE.md)? (e.g. PM, TL, or none)\nrepo/CLAUDE.md"
+          "text": "Which roles get the project CLAUDE.md? (e.g. PM, TL, or none)\nrepo/CLAUDE.md"
         }
       },
       "acceptsTyped": true
@@ -822,7 +822,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "env",
         "pane": {
           "asked": "Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)\nRoles: pm, tl, security. Every role carries the same names; values are filled in at launch.",
-          "text": "Which env variables do roles carry? Names: API_KEY, JIRA_URL (values are never stored; e.g. API_KEY, or none)\nEnv variable names in your settings (values are never read):"
+          "text": "Which env variables do roles carry? (values are never stored; e.g. API_KEY, or none)\nEnv variable names in your settings (values are never read):"
         }
       },
       "acceptsTyped": true
@@ -949,7 +949,7 @@ export const GOLDEN_CONTEXTS: Readonly<Record<string, readonly GoldenContextAsk[
         "kind": "security",
         "pane": {
           "asked": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nNothing is installed before you confirm the final review, and a --dry-run installs nothing.",
-          "text": "Install from claude-plugins-official after you confirm the plan: claude-security and security-guidance? claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo. security-guidance adds hooks that warn about risky edits.\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
+          "text": "Install from claude-plugins-official after you confirm the plan: the missing security plugins?\nclaude-security@claude-plugins-official: claude-security gives the Security role a review skill (/claude-security), needs Python 3.9 or newer and writes CLAUDE-SECURITY-<time>/ report folders into the repo."
         }
       },
       "acceptsTyped": false

@@ -173,10 +173,16 @@ export function withContext(question: string, context: string): string {
 /**
  * A question as both surfaces ask it (D-255): `asked`, the sentence with its context line as the TUI default asks it
  * (withContext), and `text`, the sentence with the one line the ask site chose for a pane surface, which holds the
- * rest of the context in the pane.
+ * rest of the context in the pane. A question whose sentence names what its context lists gives `paneSentence`, the
+ * question alone, which `text` asks in place of the sentence (D-283).
  */
-export function paneQuestionOf(sentence: string, contextLine: string, line: string): PaneQuestion {
-  return { asked: withContext(sentence, contextLine), text: withContext(sentence, line) }
+export function paneQuestionOf(
+  sentence: string,
+  contextLine: string,
+  line: string,
+  paneSentence?: string,
+): PaneQuestion {
+  return { asked: withContext(sentence, contextLine), text: withContext(paneSentence ?? sentence, line) }
 }
 
 /**

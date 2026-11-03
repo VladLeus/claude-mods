@@ -13,7 +13,7 @@ import { screenPath } from '../../paths'
 import { ASK_HEADERS, choiceAnswer, paneQuestionOf, quotedLabels } from '../../ui/ask'
 import type { ChoiceAsk } from '../../ui/ask'
 import { memoryGroupContext } from '../../ui/blocks/context'
-import { ALL_OPTION, memoryQuestion, NONE_OPTION, parseRoleList } from '../answers'
+import { ALL_OPTION, memoryPaneQuestion, memoryQuestion, NONE_OPTION, parseRoleList } from '../answers'
 import type { MemoryCursor } from '../state'
 import { idsOf } from './duration'
 import { teamContextLine } from './model'
@@ -68,8 +68,8 @@ export type MemoryNext =
  * The question of an instruction group (D-63, D-136): memoryQuestion with its names, the team's role ids and that no
  * content is shown on its second line (memoryContextLine), None or All roles with the Memory chip and the group's
  * files as its own context (memoryGroupContext, D-236), which a pane surface asks with its first line in place of that
- * line (D-255), a typed list of role ids or titles (parseRoleList), so it takes a typed answer (D-234), and
- * MEMORY_DISMISSED_REASON for a dismissal.
+ * line (D-255) and with memoryPaneQuestion, which names no file, in place of the question (D-283), a typed list of role
+ * ids or titles (parseRoleList), so it takes a typed answer (D-234), and MEMORY_DISMISSED_REASON for a dismissal.
  */
 function groupAsk(
   group: InstructionGroup,
@@ -78,7 +78,8 @@ function groupAsk(
 ): ChoiceAsk<readonly string[]> & { readonly dismissedReason: string } {
   const context = memoryGroupContext(group, names)
   const contextLine = memoryContextLine(roles)
-  const pane = paneQuestionOf(memoryQuestion(group, names), contextLine, context.lines[0] ?? contextLine)
+  const line = context.lines[0] ?? contextLine
+  const pane = paneQuestionOf(memoryQuestion(group, names), contextLine, line, memoryPaneQuestion(group))
 
   return {
     question: pane.asked,

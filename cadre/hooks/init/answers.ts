@@ -55,6 +55,17 @@ export function skillGroupQuestion(group: SkillGroup, uses?: number): string {
   })
 }
 
+/**
+ * The question for a group of skills as a pane surface asks it (D-283): the group's label, cleaned and cut to 60 code
+ * points, with no count or uses; the pane lists each skill of the group with its own uses.
+ */
+export function skillGroupPaneQuestion(group: SkillGroup): string {
+  return t('init.answers.skillGroupQuestionPane', {
+    label: clean(group.label, MAX_SHOWN_NAME_CHARS),
+    roleAnswerHint: ROLE_ANSWER_HINT,
+  })
+}
+
 /** What a skill's purpose reads when the engine gave the skill no description (D-139, G-02-1b). */
 export const NO_SKILL_PURPOSE = t('init.answers.noSkillPurpose')
 
@@ -324,6 +335,14 @@ export function envQuestion(names: readonly string[]): string {
   return t('init.answers.envQuestion', { shown, none: NONE_OPTION.toLowerCase() })
 }
 
+/**
+ * The env question as a pane surface asks it (D-283): the question alone, with no scanned name; the pane lists every
+ * name (envContext).
+ */
+export function envPaneQuestion(): string {
+  return t('init.answers.envQuestionPane', { none: NONE_OPTION.toLowerCase() })
+}
+
 /** What each instruction group is called in a question (D-63). Only the group is named; no content is ever shown. */
 export const INSTRUCTION_LABELS: Readonly<Record<InstructionGroup, string>> = Object.freeze({
   'global-claude-md': t('init.answers.instructionLabelsGlobalClaudeMd'),
@@ -350,6 +369,17 @@ export function memoryQuestion(group: InstructionGroup, names: readonly string[]
   return t('init.answers.memoryQuestion', {
     instructionLabels: INSTRUCTION_LABELS[group],
     shownNames: shownNames(names),
+    memoryAnswerHint: MEMORY_ANSWER_HINT,
+  })
+}
+
+/**
+ * The question for an instruction group as a pane surface asks it (D-283): the group alone, with no file name; the pane
+ * lists the group's files (memoryGroupContext).
+ */
+export function memoryPaneQuestion(group: InstructionGroup): string {
+  return t('init.answers.memoryQuestionPane', {
+    instructionLabels: INSTRUCTION_LABELS[group],
     memoryAnswerHint: MEMORY_ANSWER_HINT,
   })
 }

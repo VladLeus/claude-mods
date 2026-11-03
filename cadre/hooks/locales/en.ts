@@ -40,6 +40,7 @@ export const EN = Object.freeze({
   'init.answers.uses.one': ' (used {count} time in recent sessions)',
   'init.answers.uses.other': ' (used {count} times in recent sessions)',
   'init.answers.skillGroupQuestion': 'Which roles get {label} skills ({count})?{uses} {roleAnswerHint}',
+  'init.answers.skillGroupQuestionPane': 'Which roles get {label} skills? {roleAnswerHint}',
   'init.answers.noSkillPurpose': 'No description.',
   'init.answers.ownSkillsHeading':
     'Skills with no plugin (a role given a skill can run it in its session; a role not given it cannot):',
@@ -55,12 +56,15 @@ export const EN = Object.freeze({
   'init.answers.allEnvOption': 'All of them',
   'init.answers.envQuestion':
     'Which env variables do roles carry? Names: {shown} (values are never stored; e.g. API_KEY, or {none})',
+  'init.answers.envQuestionPane':
+    'Which env variables do roles carry? (values are never stored; e.g. API_KEY, or {none})',
   'init.answers.instructionLabelsGlobalClaudeMd': 'your global ~/.claude/CLAUDE.md and the files it imports',
   'init.answers.instructionLabelsAutoMemory': 'the auto-memories for this repo',
   'init.answers.instructionLabelsProjectClaudeMd': 'the project CLAUDE.md',
   'init.answers.memoryAnswerHint': '(e.g. PM, TL, or {none})',
   'init.answers.shownNames': ' ({cappedNames})',
   'init.answers.memoryQuestion': 'Which roles get {instructionLabels}{shownNames}? {memoryAnswerHint}',
+  'init.answers.memoryQuestionPane': 'Which roles get {instructionLabels}? {memoryAnswerHint}',
 
   'init.handout.acceptRecommendations': 'Accept recommendations',
   'init.handout.yesLabel': 'Yes',
@@ -160,6 +164,7 @@ export const EN = Object.freeze({
   'init.security.securityInstallDismissedReason': 'The security plugins question was dismissed or not answered.',
   'init.security.namesJoin': ' and ',
   'init.security.installQuestion': '{prefix} {names}? {notes}',
+  'init.security.installQuestionPane': '{prefix} the missing security plugins?',
 
   'init.improverInstall.improverInstallQuestion':
     `Install claude-md-management from claude-plugins-official after you confirm the plan? Its ${
