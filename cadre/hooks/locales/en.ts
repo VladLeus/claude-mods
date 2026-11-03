@@ -326,6 +326,9 @@ export const EN = Object.freeze({
   'init.status.topics': 'cadre: grouping instructions…',
   'init.status.parts': 'cadre: recommending instruction parts…',
   'init.status.regen': 'cadre: checking changed parts…',
+  'init.status.applyHunks': 'cadre: running the accepted changes…',
+  'init.status.installPlugins': 'cadre: installing plugins…',
+  'init.status.improver': 'cadre: running the improver…',
 
   'init.assignRules.ownSkillsLabel': 'your own',
 

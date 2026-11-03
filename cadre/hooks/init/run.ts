@@ -103,6 +103,15 @@ export const SCAN_PROGRESS = t('init.status.scan')
 /** The status line the TUI default shows while the history scan reads the session transcripts (D-232). */
 export const HISTORY_PROGRESS = t('init.status.history')
 
+/** The status line or pane loader while apply runs the accepted hunks, once for all of them (D-284, edge #13). */
+export const APPLY_HUNKS_PROGRESS = t('init.status.applyHunks')
+
+/** The status line or pane loader while apply installs the plugins answered Install, once for all (D-284). */
+export const INSTALL_PROGRESS = t('init.status.installPlugins')
+
+/** The status line or pane loader set once before apply's first improver run (D-284, edge #13). */
+export const IMPROVER_PROGRESS = t('init.status.improver')
+
 /** The status line the TUI default shows while each model call of init runs, by its ModelCall id (D-232). */
 export const MODEL_PROGRESS: Readonly<Record<ModelCall['id'], string>> = Object.freeze({
   'describe-roles': t('init.status.describeRoles'),
@@ -213,14 +222,15 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  * 2. Each accepted hunk cadre can run, in hunk order (hunkRuns): the argv is re-resolved from its adapter proposal
  *    through a proven user-level GSD only, so a declined hunk or a repo-local GSD never runs and its command stays in
  *    the plan (D-28, D-72). It runs with cwd at the repo root and HUNK_TIMEOUT_MS; a run the host rejects or that
- *    exits non-zero is a failure, and apply goes on (D-106).
+ *    exits non-zero is a failure, and apply goes on (D-106). Before the first run their one label is set
+ *    (APPLY_HUNKS_PROGRESS, D-284).
  * 3. The hunks after their runs (hunksAfterRuns): a failed hunk is no longer runnable.
  * 4. The plugins the person answered Install for (draft.pluginInstalls: the security plugins, decision #39, and
  *    claude-md-management, D-141), installed in order from the home folder, never the repo (installPlugins,
  *    T-03-46): claude-security only after its Python check, and a failed install tried once more after the
  *    marketplace add. An install that fails or is skipped is a problem the
  *    reply prints with the command to run, never fatal. With no home folder known nothing is run, and each key is such
- *    a problem (noHomeInstallText).
+ *    a problem (noHomeInstallText). Before the installs their one label is set (INSTALL_PROGRESS, D-284).
  * 5. Attended judged again from the config on disk (attendedByConfig), the scopes compiled again and the plan made
  *    again from the disk (planStep, with the repo parts 5a keeps, which each parts-flow role's role.json records with
  *    the other parts of their files as not given: withRepoRecords, G-02-1f Regen), all from the setup with the
@@ -249,7 +259,8 @@ export async function planStep(io: InitIo, input: PlanStepInput): Promise<PlanRe
  *    each private text file with a global part, never one of the header alone; 02-GAPS-B3 M1, C1), the improver pass
  *    runs between the file writes and the manifest (writeImproved, G-02-1f, D-141): one `claude -p` run per written
  *    built file, in its own folder, then its diff and the Accept or Keep original question; a kept file is written
- *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs.
+ *    back as built, and the manifest records each built file as it ends up. Otherwise no improver runs. With a file
+ *    offered, its one label is set once before the writes and the first run (IMPROVER_PROGRESS, D-284).
  * 7. The outcome with every failed run (hunkFailures), the keys of the failed hunks that are required (attended), the
  *    plugins installed and the install problems (installed, installProblems), the untracked-parts warnings of 5a
  *    (untrackedParts), the private problems of 5b and 6 (privateProblems) and the improver warnings and tally of 6a
@@ -286,11 +297,14 @@ async function applyConfirmed(
     configDir: locations.configDir,
   }
   const failures: HunkRun[] = []
-  for (const run of hunkRuns(draft.hunks, gathered.setup, gsd)) {
+  const runs = hunkRuns(draft.hunks, gathered.setup, gsd)
+  if (runs.length > 0) await io.progress(APPLY_HUNKS_PROGRESS)
+  for (const run of runs) {
     const result = await host.run(run.argv, { cwd: locations.root, timeoutMs: HUNK_TIMEOUT_MS })
     if (hasRunFailed(result)) failures.push(run)
   }
   const hunks = hunksAfterRuns(draft.hunks, new Set(failures.map(run => run.key)))
+  if (locations.home !== null && draft.pluginInstalls.length > 0) await io.progress(INSTALL_PROGRESS)
   const installs =
     locations.home === null
       ? { installed: [], installProblems: draft.pluginInstalls.map(noHomeInstallText) }
@@ -322,6 +336,7 @@ async function applyConfirmed(
   const filter = { repoIds: withParts, privateFolders, roleFolders: privatePlan.folders }
   const offered = isImproverReady ? builtRoleFiles(steps, locations.root, filter) : []
   const allowed = privatePlan.allowed
+  if (offered.length > 0) await io.progress(IMPROVER_PROGRESS)
   const written = await writeWithImprover(io, host, { locations, input, steps, offered, allowed })
   const required = new Set(hunks.filter(hunk => hunk.isRequired).map(hunk => hunk.key))
   const outcome: ApplyOutcome = {

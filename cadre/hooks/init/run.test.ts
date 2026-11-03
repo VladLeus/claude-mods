@@ -163,8 +163,11 @@ import { PANE_PAGE_ROWS } from '../ui/pane'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
+  APPLY_HUNKS_PROGRESS,
   consentedGsdCheck,
   HISTORY_PROGRESS,
+  IMPROVER_PROGRESS,
+  INSTALL_PROGRESS,
   MODEL_PROGRESS,
   perform,
   performState,
@@ -927,6 +930,11 @@ describe('progress lines (D-232)', () => {
 
   test('the status texts name what init waits for, one per model call (D-232, DECIDED #22)', () => {
     expect([SCAN_PROGRESS, HISTORY_PROGRESS]).toEqual(['cadre: scanning the repo…', 'cadre: reading session history…'])
+    expect([APPLY_HUNKS_PROGRESS, INSTALL_PROGRESS, IMPROVER_PROGRESS]).toEqual([
+      'cadre: running the accepted changes…',
+      'cadre: installing plugins…',
+      'cadre: running the improver…',
+    ])
     expect(MODEL_PROGRESS).toEqual({
       'describe-roles': 'cadre: reading your structure…',
       mcp: 'cadre: recommending MCP servers…',
