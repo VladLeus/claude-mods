@@ -43,6 +43,7 @@ import { compileScope } from '../scope/compile'
 import { titleGrepArgv } from '../status/session-find'
 import { scopesFor } from '../team'
 import {
+  ancestor,
   DEFAULT_LOCATIONS,
   EMPTY_FACTS,
   emptySetupScan,
@@ -961,4 +962,23 @@ export function tableMatchWorld(over: Partial<MemWorld> = {}): MemWorld {
   const commands = [{ name: 'security-review', source: 'user', description: 'Review the changes for security.' }]
 
   return fullWorld({ tools, commands, ...over })
+}
+
+/**
+ * gitWorld with fourteen of each name list the scan block and an MCP server question show, two more than the screen's
+ * cap of 12 (D-256): the session MCP servers mcp01 to mcp14, mcp01 with the fourteen tools tool01 to tool14 and each
+ * other server with one; the CLAUDE.md files of the repo folders dir01 to dir14; and the own skills skill01 to skill14.
+ * `over` changes the fields it names.
+ */
+export function manyNamesWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const fourteen = (stem: string): string[] =>
+    Array.from({ length: 14 }, (_, at) => `${stem}${String(at + 1).padStart(2, '0')}`)
+  const tools = [
+    ...fourteen('tool').map(tool => ({ name: `mcp__mcp01__${tool}`, description: 'A tool.', mcp: true })),
+    ...fourteen('mcp').slice(1).map(server => ({ name: `mcp__${server}__search`, description: 'Search.', mcp: true })),
+  ]
+  const ancestors = fourteen('/repo/dir').map(dir => ancestor(dir))
+  const commands = fourteen('skill').map(name => ({ name, source: 'user', description: 'An own skill.' }))
+
+  return gitWorld({ tools, ancestors, commands, ...over })
 }

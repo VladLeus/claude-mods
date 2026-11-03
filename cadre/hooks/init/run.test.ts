@@ -55,7 +55,7 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { infraPluginWorld, tableMatchWorld } from '../golden/worlds'
+import { infraPluginWorld, manyNamesWorld, tableMatchWorld } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { t } from '../locales/t'
@@ -159,6 +159,7 @@ import { recommendationLines } from '../ui/blocks/recommendations'
 import { scanSummaryLines, scanWarningLines } from '../ui/blocks/scan'
 import { diffLines, lineDiff } from '../ui/diff'
 import { PANE_PAGE_ROWS } from '../ui/pane'
+import type { Surface } from '../ui/surface'
 import { CONFLICT_CONTEXT } from './initapply'
 import { cancelledReply, IGNORE_ALL_NOTE, INIT_CANCELLED } from './replies'
 import {
@@ -5791,5 +5792,57 @@ describe('the go-back rule of the two calls (D-253)', () => {
 
   test('a go-back with a changed MCP answer calls the skills model again; the mcp call never runs again', async () => {
     expect(await callsWith(['None', 'be'])).toEqual([1, 2])
+  })
+})
+
+describe('lists on pane surfaces (D-256)', () => {
+  /** PARTS_DECLINED with the own skills accepted and the MCP servers handed out one by one, so mcp01 is asked. */
+  const MANY_ANSWERS: Readonly<Record<string, string>> = {
+    ...PARTS_DECLINED,
+    [OWN_SKILLS_ENTRY_PREFIX]: 'Accept recommendations',
+    'Which roles get the MCP servers': 'Go one by one',
+  }
+
+  /** The names `<stem>01` to `<stem>14`, as manyNamesWorld names its servers, tools, folders and skills. */
+  const fourteen = (stem: string): string[] =>
+    Array.from({ length: 14 }, (_, at) => `${stem}${String(at + 1).padStart(2, '0')}`)
+
+  /** The CLAUDE.md files of manyNamesWorld as a screen names them. */
+  const files = fourteen('repo/dir').map(dir => `${dir}/CLAUDE.md`)
+
+  /** The first 12 of fourteen names, then how many more. */
+  const twelve = (names: readonly string[]): string => [...names.slice(0, 12), '+2 more'].join(', ')
+
+  /**
+   * What a dry run over manyNamesWorld on `surface` lists: the scan block's MCP server line and CLAUDE.md line, and the
+   * tools line of the mcp01 question's context.
+   */
+  async function listsOn(surface: Surface): Promise<readonly string[]> {
+    const run = memIo(manyNamesWorld(), MANY_ANSWERS)
+    await runInit(run.io, { dryRun: true, surface })
+    const scan = shownBlock(run, 'scan')
+    const at = firstLines(run.asked).findIndex(line => line.startsWith('Which roles get the mcp01 MCP server?'))
+
+    return [
+      scan.find(line => line.startsWith('  skills: ')) ?? '',
+      scan.find(line => line.startsWith('  global ~/.claude/CLAUDE.md: ')) ?? '',
+      run.specs[at]?.context?.lines[1] ?? '',
+    ]
+  }
+
+  test('a pane surface lists all 14 MCP servers, CLAUDE.md files and tools of manyNamesWorld', async () => {
+    expect(await listsOn('pane')).toEqual([
+      `  skills: 14; agents: 0; MCP servers: ${fourteen('mcp').join(', ')}`,
+      `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${files.join(', ')}`,
+      `Tools: 14 (${fourteen('tool').join(', ')})`,
+    ])
+  })
+
+  test('the TUI default lists 12 of each of those lists, then +2 more', async () => {
+    expect(await listsOn('tui-default')).toEqual([
+      `  skills: 14; agents: 0; MCP servers: ${twelve(fourteen('mcp'))}`,
+      `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${twelve(files)}`,
+      `Tools: 14 (${twelve(fourteen('tool'))})`,
+    ])
   })
 })
