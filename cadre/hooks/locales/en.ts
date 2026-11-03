@@ -344,6 +344,7 @@ export const EN = Object.freeze({
   'ui.paneTitle.instructions': 'Instruction parts',
   'ui.paneTitle.skills': 'Your own skills',
   'ui.paneTitle.improver': 'Improver changes',
+  'ui.paneTitle.loader': 'Working',
 
   'ui.chip.claudeJson': 'claude.json',
   'ui.chip.history': 'History',

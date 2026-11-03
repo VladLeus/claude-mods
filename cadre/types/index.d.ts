@@ -495,7 +495,8 @@ export type InitFacts = {
 
 /**
  * The kinds of block the cadre init side pane shows; the pane holds one block of each kind (D-133, D-135, G-02-1f,
- * G-02-1b), the improver's diff of the built file it asks about included (D-141).
+ * G-02-1b), the improver's diff of the built file it asks about included (D-141), and draws the loader of a long step
+ * on top of them while it runs (D-257).
  */
 export type PaneKey =
   | 'scan'
@@ -508,6 +509,7 @@ export type PaneKey =
   | 'instructions'
   | 'skills'
   | 'improver'
+  | 'loader'
 
 /** One block of the cadre init side pane (D-133): its kind, the title drawn in bold above it, and one row per line. */
 export type ShownBlock = {
@@ -517,10 +519,10 @@ export type ShownBlock = {
 }
 
 /**
- * The side-pane state of one init run (D-133): `initPane`, the blocks the cadre init pane shows, newest first, and
- * `openQuestion`, the question cadre has open now (R1, D-203); only register.tsx reads and writes them. They are
- * declared in this types contract because `claude plugin validate` takes a plugin's state keys from the manifest's
- * `types` file only.
+ * The side-pane state of one init run (D-133): `initPane`, the blocks the cadre init pane shows, newest first,
+ * `openQuestion`, the question cadre has open now (R1, D-203), and `loader`, the long step cadre waits for now (D-257);
+ * only register.tsx reads and writes them. They are declared in this types contract because `claude plugin validate`
+ * takes a plugin's state keys from the manifest's `types` file only.
  */
 declare module 'claude-code' {
   interface PluginState {
@@ -531,6 +533,12 @@ declare module 'claude-code' {
        * cleared after it (D-203); the cadre init pane draws the block of its header (R1).
        */
       openQuestion: OpenQuestion | null
+      /**
+       * The label of the long step a run on a pane surface waits for now, or null when none runs: written by the init
+       * port's progress, cleared as the next question opens and when the run ends, however it ends; the cadre init
+       * pane draws it on top of its block (D-257).
+       */
+      loader: string | null
     }
   }
 }

@@ -61,6 +61,17 @@ export function questionPaneBlocks(open: OpenQuestion | null, blocks: readonly S
 }
 
 /**
+ * The blocks the side pane draws while a long step runs (D-257): `shown` as it is when no step runs (`loader` null or
+ * empty), else first a block whose title is the step's label, cleaned and not cut, with no lines, then `shown`. The
+ * blocks it is given are never changed.
+ */
+export function withLoader(shown: readonly ShownBlock[], loader: string | null): ShownBlock[] {
+  if (loader === null || loader === '') return [...shown]
+
+  return [{ key: 'loader', title: clean(loader, UNCUT), lines: [] }, ...shown]
+}
+
+/**
  * The rows a page of the paged review fills on a pane surface (D-233, ASKED #19): a page holds this many less one
  * review lines and its title. The spike measured the docked pane's body at the terminal's rows less one (47 at 48
  * rows, 29 at 30), but the review stage cannot read a pane's rows and the desktop app's are not measured (UAT-04), so

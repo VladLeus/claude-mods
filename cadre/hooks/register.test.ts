@@ -115,6 +115,8 @@ type World = {
   readonly notes?: Readonly<Record<string, string>>
   /** Runs inside the fake dialog before it answers, so a test can look at the pane while a question is open (R1). */
   readonly onAsk?: () => Promise<void>
+  /** Runs inside the fake model call before it answers, so a test can look at the pane while a step runs (D-257). */
+  readonly onComplete?: () => Promise<void>
   /** What `clock.now` answers, in epoch milliseconds. */
   readonly now: number
   /** What `session.id` answers. */
@@ -153,6 +155,8 @@ type HostLog = {
   readonly headerWrites: unknown[]
   /** Each value written to the open-question state (D-203). */
   readonly questionWrites: unknown[]
+  /** Each value written to the loader state, null for a clear (D-257). */
+  readonly loaderWrites: unknown[]
   /** Each status line the plugin set, null for a clear (D-232). */
   readonly statuses: (string | null)[]
   readonly writes: string[]
@@ -200,6 +204,7 @@ function newLog(): HostLog {
     paneWrites: [],
     headerWrites: [],
     questionWrites: [],
+    loaderWrites: [],
     statuses: [],
     writes: [],
   }
@@ -458,11 +463,12 @@ function hasPath(world: World, path: string): boolean {
  * and settings op into `log`; a dialog is answered from `world.answers` and logged as an ask, and a transcript text is
  * kept in `log.logs`. A side pane is placed and kept in `log.panes`, and each value of the init pane's state is kept in
  * `log.paneWrites` and stored, unless `world.denyPane` refuses both. Each value of the open-question state is kept in
- * `log.questionWrites`, its header in `log.headerWrites`, and stored, never refused (R1, D-203). A pane closed is kept
- * in `log.closes`, and the close is refused when `world.denyClose`. The model answers `world.replies` in order. A
- * process call answers its runResults entry, else `runtime`. `fs.write` is answered as done, and its path kept in
- * `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any other state included,
- * is answered with a refusal, so a call to one would show up in the log and fail its call.
+ * `log.questionWrites`, its header in `log.headerWrites`, and stored, never refused (R1, D-203); each value of the
+ * loader state is kept in `log.loaderWrites` and stored, never refused (D-257). A pane closed is kept in `log.closes`,
+ * and the close is refused when `world.denyClose`. The model answers `world.replies` in order, each call after
+ * `world.onComplete` ran. A process call answers its runResults entry, else `runtime`. `fs.write` is answered as done,
+ * and its path kept in `log.writes`, only when `world.isWriteAllowed`. Every other forbidden op, a `state.set` of any
+ * other state included, is answered with a refusal, so a call to one would show up in the log and fail its call.
  */
 function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('session.root', async () => (world.denyRoot ? { deny: 'no session root' } : { value: world.root }))
@@ -492,13 +498,18 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
 
     return { value: undefined }
   })
-  // The init pane's blocks and the question open now are the plugin's own state (D-133, T-02-49, R1, D-203); the
-  // open question is never refused, and a write of any other state is forbidden.
+  // The init pane's blocks, the question open now and the loader are the plugin's own state (D-133, T-02-49, R1,
+  // D-203, D-257); the open question and the loader are never refused, and a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
     if (e.plugin === 'cadre' && e.key === 'openQuestion') {
       const open: unknown = e.value
       log.questionWrites.push(open)
       log.headerWrites.push(isObject(open) ? open.header : null)
+
+      return next(e)
+    }
+    if (e.plugin === 'cadre' && e.key === 'loader') {
+      log.loaderWrites.push(e.value)
 
       return next(e)
     }
@@ -536,6 +547,7 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   on('tool.list', async () => ({ value: world.tools }))
   let nextReply = 0
   on('model.complete', async () => {
+    await world.onComplete?.()
     const text = world.replies[nextReply]
     nextReply += 1
     const usage = { input_tokens: 1, output_tokens: 1 }
@@ -1617,8 +1629,10 @@ describe('cadre init with a faked host', () => {
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     const firstRun = log.paneWrites.length
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
-    const restart = log.paneWrites[firstRun]
-    expect(Array.isArray(restart) ? restart.filter(isPaneBlock).map(block => block.key) : []).toEqual(['scan'])
+    // The scan's progress opens the pane with no block (D-257, OC-02-L), then the scan block shows alone.
+    const restart = log.paneWrites.slice(firstRun, firstRun + 2)
+    const keys = restart.map(value => (Array.isArray(value) ? value.filter(isPaneBlock).map(block => block.key) : null))
+    expect(keys).toEqual([[], ['scan']])
     expect(paneOf(log).map(block => block.key)).toEqual(['review', 'recommendations', 'roles', 'scan'])
     expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
   })
@@ -2357,6 +2371,45 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
+  /**
+   * initWorld with one skill of the user's own, so init makes one model call for its roles (G-02-1b), answered at once
+   * with no recommendation, so the entry offers no Accept and the skill goes to the whole group (D-279); `onComplete`
+   * runs inside that call.
+   */
+  function oneCallWorld(onComplete?: () => Promise<void>): World {
+    const commands = [{ name: 'deploy-notes', source: 'user', description: 'Write the release notes for a deploy.' }]
+    const answers = { ...INIT_ANSWERS, [OWN_SKILLS_ENTRY_PREFIX]: 'Whole group' }
+    const world = { commands, answers, replies: ['{"skills":{},"groups":{}}'] }
+
+    return initWorld(onComplete === undefined ? world : { ...world, onComplete })
+  }
+
+  test('the pane drawn while a model call runs starts with the label of the call (D-257)', async ($, on) => {
+    const log = newLog()
+    const drawn: Drawn[] = []
+    fakeHost(on, oneCallWorld(async () => void drawn.push(await drawPane($, INLINE_PANE))), log)
+    await $.command.run(DRY_RUN)
+    expect(drawn.map(entry => entry.first)).toEqual([MODEL_PROGRESS.skills])
+  })
+
+  test('the pane drawn at the next question shows its own context, with no loader row (D-257)', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    const onAsk = drawWhileOpen($, log, INLINE_PANE, open, OWN_SKILLS_ENTRY_PREFIX)
+    fakeHost(on, { ...oneCallWorld(), onAsk }, log)
+    await $.command.run(DRY_RUN)
+    expect(open.map(entry => entry.drawn.first)).toEqual([PANE_TITLES.skills])
+  })
+
+  test('a run clears the loader when it ends, so the pane after it draws the newest block (D-257)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, oneCallWorld(), log)
+    await $.command.run(DRY_RUN)
+    expect(log.loaderWrites.filter(text => text !== null)).toEqual([SCAN_PROGRESS, MODEL_PROGRESS.skills])
+    expect(log.loaderWrites.at(-1)).toBe(null)
+    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+  })
+
   test('the pane wraps each row to the columns its body has, cutting none (D-231)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
@@ -2472,6 +2525,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     fakeHost(on, skillWorld(), log)
     await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(log.statuses).toEqual([])
+  })
+
+  test('on the TUI default no loader text is written: a long step sets the status line (D-257)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, skillWorld(), log)
+    await $.command.run(TUI_RUN)
+    expect(log.loaderWrites.filter(text => text !== null)).toEqual([])
+    expect(log.statuses.includes(MODEL_PROGRESS.skills)).toBe(true)
   })
 
   /**

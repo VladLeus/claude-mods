@@ -14,6 +14,7 @@ import {
   paneView,
   questionPaneBlocks,
   questionScroll,
+  withLoader,
   wrapLine,
 } from './pane'
 import type { PaneRow, PaneSpan } from './pane'
@@ -391,6 +392,37 @@ describe('questionPaneBlocks (D-203)', () => {
     expect(keys).toEqual(['scan', 'roles', 'review', 'env', 'instructions', 'skills', 'notes', 'notes'])
     expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'history' }), [])[0]?.key).toBe('history')
     expect(questionPaneBlocks(openWith({ title: 'T', lines: [], kind: 'improver' }), [])[0]?.key).toBe('improver')
+  })
+})
+
+describe('withLoader (D-257)', () => {
+  const shown = [paneBlock('roles')]
+
+  test('with no long step running, the blocks are drawn as they are', () => {
+    expect(withLoader(shown, null)).toEqual(shown)
+    expect(withLoader(shown, '')).toEqual(shown)
+    expect(withLoader([], null)).toEqual([])
+  })
+
+  test('a running step draws its label first, as a title with no lines, then the blocks', () => {
+    expect(withLoader(shown, 'cadre: scanning the repo…')).toEqual([
+      { key: 'loader', title: 'cadre: scanning the repo…', lines: [] },
+      paneBlock('roles'),
+    ])
+    expect(withLoader([], 'cadre: scanning the repo…')).toEqual([
+      { key: 'loader', title: 'cadre: scanning the repo…', lines: [] },
+    ])
+  })
+
+  test('the label is cleaned and not cut, so it cannot add a row or hide text (T-02.2-08)', () => {
+    const long = `cadre: ${'x'.repeat(300)}`
+    expect(withLoader([], `${long}${BIDI_OVERRIDE}\n`)[0]?.title).toBe(long)
+  })
+
+  test('it never changes the blocks it is given', () => {
+    const blocks = [paneBlock('scan')]
+    withLoader(blocks, 'cadre: scanning the repo…')
+    expect(blocks).toEqual([paneBlock('scan')])
   })
 })
 

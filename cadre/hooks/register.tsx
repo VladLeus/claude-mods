@@ -38,6 +38,7 @@ import {
   paneView,
   questionPaneBlocks,
   questionScroll,
+  withLoader,
 } from './ui/pane'
 import { answersFromNotes, dialogPlan, latestColumns, tuiTranscriptRows } from './ui/preview'
 import { surfaceOf } from './ui/surface'
@@ -56,6 +57,11 @@ const initPane = atom({ plugin: 'cadre', key: 'initPane' }, NO_BLOCKS)
  * draws its own context, the newest block when it has none or none is open (questionPaneBlocks).
  */
 const openQuestion = atom({ plugin: 'cadre', key: 'openQuestion' }, null)
+/**
+ * The label of the long step a run on a pane surface waits for now (D-257): set by the init port's progress, cleared
+ * as the next question opens and when the run ends, however it ends; the pane draws it on top (withLoader).
+ */
+const loader = atom({ plugin: 'cadre', key: 'loader' }, null)
 /**
  * The placement the last terminal render of the cadre init pane reported (D3); null before any. A run resets it when
  * it opens the pane and clears it when it closes the pane, so a dialog after the run never carries the pane.
@@ -180,10 +186,13 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * dialog only its options, header and multi-select (D-203, D-229). `show` puts a block into the side pane's state and
  * opens the pane on the first block of the run, which also replaces whatever an earlier run left; a pane the host
  * cannot open or a state write it refuses is swallowed, so a block never cancels init (D-133, T-02-50). The first show
- * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On the
- * TUI default `show` neither writes the pane's state nor opens it, at any time of the run (D-208); there `progress`
- * sets the one status line (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a context too
- * long for the preview above it (beforeTuiDialog, D-228).
+ * records the open in the run's pane handle, and the command handler closes the pane once the run settles (D2). On a
+ * pane surface `progress` puts the step's label into the loader state, which the pane draws on top, and opens the pane
+ * as the run's first block does when nothing opened it yet, the last run's blocks dropped (D-257, OC-02-L); `ask`
+ * clears the loader before it puts the question into the openQuestion state. On the TUI default `show` neither writes
+ * the pane's state nor opens it, at any time of the run (D-208); there `progress` sets the one status line
+ * (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a context too long for the preview above
+ * it (beforeTuiDialog, D-228).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -195,6 +204,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
         context: context ?? null,
         acceptsTyped: acceptsTyped === true,
       }
+      await update($, loader, () => null).catch(() => undefined)
       await update($, openQuestion, () => open).catch(() => undefined)
       // Each new question scrolls an open pane back to its start (D-209); a scroll the host refuses never blocks it.
       const scroll = questionScroll(PANE, open, pane.isOpened)
@@ -221,9 +231,21 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       lastPlacement = null
       await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
-    // Progress is one status line on the TUI default only; a pane surface shows none (D-232).
+    // Progress is one status line on the TUI default (D-232) and the loader on top of the pane on a pane surface
+    // (D-257); there the run's first progress opens the pane as its first block does, the last run's blocks dropped
+    // (OC-02-L). A state write or an open the host refuses is swallowed.
     progress: async text => {
-      if (pane.surface === 'tui-default') $.ui.status(text ?? undefined)
+      if (pane.surface === 'tui-default') {
+        $.ui.status(text ?? undefined)
+        return
+      }
+      if (pane.surface !== 'pane') return
+      await update($, loader, () => text).catch(() => undefined)
+      if (pane.isOpened) return
+      await update($, initPane, () => NO_BLOCKS).catch(() => undefined)
+      pane.isOpened = true
+      lastPlacement = null
+      await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
@@ -420,8 +442,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A run decides its surface before it opens anything (D-208), and a run that opened the cadre-init pane closes it
-  // once it settles: finished, cancelled, refused or thrown (D2).
+  // A run decides its surface before it opens anything (D-208), and once it settles (finished, cancelled, refused or
+  // thrown) it clears the loader, whatever its surface (D-257), and closes the cadre-init pane if it opened it (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
@@ -432,20 +454,21 @@ export const register: Register = on => {
     try {
       return await commandReply($, e.args, pane)
     } finally {
+      await update($, loader, () => null).catch(() => undefined)
       if (pane.isOpened) await closePane($)
     }
   })
 
   // The cadre init side pane (D-133): one block, the own context of the question cadre has open now (D-203,
-  // questionPaneBlocks), else the newest block, in the rows of paneRows wrapped to the columns of the pane's body
-  // (paneColumns, D-231), coloured by paneSpans (D1). A terminal render records where the pane is seated (D3) and the
-  // width it was drawn at (#163).
+  // questionPaneBlocks), else the newest block, under the loader of the long step a run waits for (D-257, withLoader),
+  // in the rows of paneRows wrapped to the columns of the pane's body (paneColumns, D-231), coloured by paneSpans (D1).
+  // A terminal render records where the pane is seated (D3) and the width it was drawn at (#163).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.surface === 'terminal') lastPlacement = panePlacement(e.props)
     if (e.surface === 'terminal' && isObject(e.viewport)) viewportColumns = e.viewport.columns
     const blocks = await read($, initPane)
-    const shown = questionPaneBlocks(await read($, openQuestion), blocks)
+    const shown = withLoader(questionPaneBlocks(await read($, openQuestion), blocks), await read($, loader))
     if (shown.length === 0) return <Text>{t('register.paneEmpty')}</Text>
 
     return (

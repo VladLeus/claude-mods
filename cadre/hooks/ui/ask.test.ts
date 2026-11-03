@@ -101,6 +101,7 @@ describe('init pane (G-02-1)', () => {
       instructions: 'Instruction parts',
       skills: 'Your own skills',
       improver: 'Improver changes',
+      loader: 'Working',
     })
     expect(Object.isFrozen(PANE_TITLES)).toBe(true)
   })
