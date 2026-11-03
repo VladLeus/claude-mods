@@ -84,13 +84,14 @@ describe('autonomy hunks', () => {
     expect(asked.spec.header).toBe('Hunk 3 of 3')
   })
 
-  test('a hunk context is of the hunk kind and a pane surface asks the key line and the after line (D-300)', () => {
+  test('a hunk context is of the hunk kind; its summary, the after line, is asked under the key line (D-310)', () => {
     const { question, spec } = hunkQuestion({ proposal: MODE, before: 'interactive' }, 1, 2)
 
     expect([spec.context?.kind, spec.context?.pane]).toEqual([
       'hunk',
       { asked: question, text: `${question}\n  after:  "yolo"` },
     ])
+    expect(spec.context).toMatchObject({ summary: '  after:  "yolo"' })
   })
 
   test('the header of the last GSD hunk fits the 12 characters a dialog chip allows', () => {

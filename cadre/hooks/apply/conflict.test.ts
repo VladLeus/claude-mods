@@ -9,6 +9,7 @@ describe('conflict question context (D-236)', () => {
       title: 'Conflict: .cadre/be/ROLE.md',
       lines: ['Take new: 2 lines added, 1 removed', '- edited by hand', '+ new text', '+ more'],
       kind: 'conflict-diff',
+      summary: 'Take new: 2 lines added, 1 removed',
     })
   })
 
@@ -40,6 +41,7 @@ describe('conflict question context (D-236)', () => {
       title: 'Conflict: .cadre/be/ROLE.md',
       lines: ['Your version could not be read, so no diff is shown.'],
       kind: 'conflict-diff',
+      summary: 'Your version could not be read, so no diff is shown.',
     })
   })
 })

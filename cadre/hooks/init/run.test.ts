@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type {
+  AskContext,
   AskSpec,
   CadreState,
   Choice,
@@ -5915,27 +5916,79 @@ describe('every pane-surface ask carries a context (D-300)', () => {
     return run.specs
   }
 
-  /** The chip of each ask with no context of its own, which a pane surface would ask over an empty pane. */
-  function bare(specs: readonly AskSpec[]): (string | null)[] {
-    return specs.flatMap(spec => (spec.context === undefined ? [spec.header ?? null] : []))
+  /** The summary a context holds, '' when it holds none or there is no context (D-310). */
+  function summaryOf(context: AskContext | undefined): string {
+    if (context === undefined || !('summary' in context) || typeof context.summary !== 'string') return ''
+
+    return context.summary
   }
 
-  test('every ask of every golden init world has a context', async () => {
+  /**
+   * Whether a pane surface asks the question of `context` as D-310 has it: the context holds a summary, and its pane
+   * text is the question's sentence (the first line of that text), then the summary on the next line, then on a paged
+   * Review page the page's title.
+   */
+  function isSummarised(context: AskContext): boolean {
+    const summary = summaryOf(context)
+    const text = context.pane?.text ?? ''
+    const [sentence = ''] = text.split('\n')
+    const marker = context.kind === 'review' && context.title !== t('init.review.title') ? `\n${context.title}` : ''
+
+    return summary.length > 0 && text === `${withContext(sentence, summary)}${marker}`
+  }
+
+  /**
+   * The chip of each ask a pane surface would ask badly: with no context of its own, so over an empty pane (D-300), or
+   * with no summary under its sentence (D-310).
+   */
+  function bare(specs: readonly AskSpec[]): (string | null)[] {
+    return specs.flatMap(spec => {
+      const isAsked = spec.context !== undefined && isSummarised(spec.context)
+
+      return isAsked ? [] : [spec.header ?? null]
+    })
+  }
+
+  test('every ask of every golden init world has a context and asks its summary under its sentence', async () => {
     for (const { world, answers } of Object.values(GOLDEN_WORLDS)) {
       const specs = await initSpecs(world, answers)
       expect([specs.length > 0, bare(specs)]).toEqual([true, []])
     }
   })
 
-  test('every ask of the many-names world has a context', async () => {
+  test('every ask of the many-names world has a context and asks its summary under its sentence', async () => {
     const specs = await initSpecs(manyNamesWorld(), INIT_ANSWERS)
     expect([specs.length > 0, bare(specs)]).toEqual([true, []])
   })
 
-  test('every ask of the regen of beOnlyWorld has a context', async () => {
+  test('every ask of the regen of beOnlyWorld has a context and asks its summary under its sentence', async () => {
     const run = memIo(beOnlyWorld(), {})
     await runRegen(run.io, { id: 'be', dryRun: true })
-    expect(bare(run.specs)).toEqual([])
+    expect([run.specs.length > 0, bare(run.specs)]).toEqual([true, []])
+  })
+
+  test('the roles question asks its sentence, then how many roles it proposes and their ids (D-310)', async () => {
+    const { world, answers } = GOLDEN_WORLDS.nothing
+    const run = memIo(world, answers)
+    await runInit(run.io, { dryRun: true })
+    const context = run.specs[firstLines(run.asked).indexOf(ROLES_QUESTION)]?.context
+    const summary = '3 roles: pm, tl, security'
+    expect([summaryOf(context), context?.pane?.text]).toEqual([summary, `${ROLES_QUESTION}\n${summary}`])
+  })
+
+  test('the MCP entry counts the servers and the recommended ones; a server asks its own (D-310)', async () => {
+    const run = memIo(tableMatchWorld({ replies: ['{"servers":{"M1":["fe","qa"],"M2":[]}}'] }), MCP_ONE_BY_ONE)
+    await runInit(run.io, { dryRun: true })
+    const summaryAt = (name: string): string => {
+      const at = firstLines(run.asked).findIndex(line => line.startsWith(`Which roles get the ${name}`))
+
+      return summaryOf(run.specs[at]?.context)
+    }
+    expect(['MCP servers', 'github', 'sentry'].map(summaryAt)).toEqual([
+      '2 servers, 1 recommended',
+      'Recommended: fe, qa',
+      'Recommended: none',
+    ])
   })
 
   test('the MCP entry lists every server with the roles recommended for it', async () => {

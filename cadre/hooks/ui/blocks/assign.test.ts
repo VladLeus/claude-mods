@@ -48,15 +48,14 @@ describe('MCP server contexts (D-211)', () => {
       title: 'MCP: github',
       lines: ['Source: .mcp.json', 'Tools: 2 (create_issue, list_prs)', 'Recommended: be, qa'],
       kind: 'mcp-server',
+      summary: 'Recommended: be, qa',
     })
   })
 
   test('a server the session lists no tool for says so, and no recommendation reads none', () => {
-    expect(mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS).lines).toEqual([
-      'Source: session',
-      'Tools: none listed',
-      'Recommended: none',
-    ])
+    const sentry = mcpServerContext({ name: 'sentry', source: 'session' }, TOOLS, [], SCREEN_LIST_WORDS)
+    expect(sentry.lines).toEqual(['Source: session', 'Tools: none listed', 'Recommended: none'])
+    expect(sentry).toMatchObject({ summary: 'Recommended: none' })
   })
 
   test('50 tools show 12 names, then how many more (T-02.1-73); a name never adds a line (T-02.1-71)', () => {
@@ -84,6 +83,7 @@ describe('skill contexts (D-211)', () => {
         'codex:setup: No description. Recommended: be.',
       ],
       kind: 'skill-group',
+      summary: '2 skills. Recommended: none',
     })
   })
 
@@ -93,10 +93,12 @@ describe('skill contexts (D-211)', () => {
       title: 'Skill 1 of 2',
       lines: ['codex:rescue: Delegate a stuck task. Used 3 times in the last 50 sessions. Recommended: none.'],
       kind: 'skill',
+      summary: 'Recommended: none',
     })
     expect(second === undefined ? null : skillContext(second, 2, 2).lines).toEqual([
       'codex:setup: No description. Recommended: be.',
     ])
+    expect(second === undefined ? null : skillContext(second, 2, 2)).toMatchObject({ summary: 'Recommended: be' })
   })
 
   test('every skill value is cleaned; a long name is cut to 60 code points (T-02.1-71)', () => {
@@ -106,6 +108,7 @@ describe('skill contexts (D-211)', () => {
       title: 'Skills: own',
       lines: [`${'n'.repeat(59)}…: Do it. Recommended: qa.`],
       kind: 'skill-group',
+      summary: '1 skill. Recommended: none',
     })
   })
 
@@ -163,6 +166,7 @@ describe('mcpGroupContext (D-250)', () => {
         'jira: claude.ai, 1 tool. Recommended: none.',
       ],
       kind: 'mcp-server',
+      summary: '3 servers, 1 recommended',
     })
   })
 })

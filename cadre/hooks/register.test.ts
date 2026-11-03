@@ -2754,15 +2754,22 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.asks).toEqual(TUI_ASKS_AT_BASE)
   })
 
-  test('in fullscreen a question with a context asks its sentence and one line, kept open (D-255)', async ($, on) => {
+  test('in fullscreen a question with a context asks its sentence, then its summary (D-310)', async ($, on) => {
     const log = newLog()
     fakeHost(on, skillWorld(), log)
     await $.command.run({ ...TUI_RUN, presentation: { isFullscreen: true, columns: 120 } })
     const opened = log.paneStates.map(openOf).filter(isObject)
     const contextual = opened.filter(open => isObject(open.context))
-    // A hunk question asks its key line, and on a pane surface its after line under it (D-287, D-300).
-    const long = contextual.flatMap(open => (String(open.question).split('\n').length > 2 ? [open.question] : []))
-    expect([contextual.length > 10, long]).toEqual([true, []])
+    // Its sentence, its context's summary on the next line, and on a paged Review page the page's title last.
+    const unsummarised = contextual.flatMap(open => {
+      const context = isObject(open.context) ? open.context : {}
+      const [sentence, line, ...rest] = String(open.question).split('\n')
+      const isPaged = context.kind === 'review' && rest.length === 1 && rest[0] === context.title
+      const hasSummary = typeof context.summary === 'string' && context.summary !== '' && line === context.summary
+
+      return hasSummary && (rest.length === 0 || isPaged) ? [] : [sentence]
+    })
+    expect([contextual.length > 10, unsummarised]).toEqual([true, []])
     // The dialog asks the open question's text itself, so the dialog hook pairs the two (dialogPlan).
     expect(opened.map(open => `ask ${String(open.question)}`)).toEqual(log.asks)
   })

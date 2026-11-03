@@ -18,9 +18,12 @@ const CONSENT_DRAFT = { locations: DEFAULT_LOCATIONS }
 /** The consent question as every surface but a pane asks it: the question, then its context line (D-136). */
 const CONSENT_ASKED = withContext(CLAUDE_JSON_QUESTION, CLAUDE_JSON_CONTEXT)
 
+/** The summary of the consent's context: the one file it reads, and only the MCP server names in it (D-310). */
+const CONSENT_SUMMARY = '1 file, MCP server names only'
+
 /**
  * The dialog spec of the consent: its two answers, its chip and its own context, the one line stating what is read
- * (D-287, D-300), with what a pane surface asks.
+ * (D-287, D-300), with its summary, which a pane surface asks under the question (D-310).
  */
 const CONSENT_SPEC = {
   options: CLAUDE_JSON_OPTIONS,
@@ -29,7 +32,8 @@ const CONSENT_SPEC = {
     title: 'Read ~/.claude.json?',
     lines: [CLAUDE_JSON_CONTEXT],
     kind: 'consent',
-    pane: { asked: CONSENT_ASKED, text: CONSENT_ASKED },
+    summary: CONSENT_SUMMARY,
+    pane: { asked: CONSENT_ASKED, text: withContext(CLAUDE_JSON_QUESTION, CONSENT_SUMMARY) },
   },
 }
 

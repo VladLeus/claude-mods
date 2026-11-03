@@ -325,7 +325,7 @@ describe('the GSD check (D-243)', () => {
     expect(after).toEqual(['security', 'none', [UNPROVEN]])
   })
 
-  test('a pane surface asks the check with the install it runs as its one line (D-255, edge #39)', () => {
+  test('the check summary names the install it runs, which a pane surface asks under it (D-310, edge #39)', () => {
     const asked = gsdAt([UNPROVEN])
     const context = asked.effect.kind === 'ask' ? asked.effect.spec.context : null
     const line = '~/.claude/gsd-core: found, not proven'
@@ -333,6 +333,7 @@ describe('the GSD check (D-243)', () => {
       title: context?.title,
       lines: [line],
       kind: 'detection',
+      summary: line,
       pane: { asked: QUESTION, text: withContext(QUESTION, line) },
     })
   })

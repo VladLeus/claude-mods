@@ -23,6 +23,7 @@ describe('regen question context (D-236)', () => {
       title: 'Regen 1 of 2',
       lines: ['CLAUDE.md > Git', 'Changed since init.', 'Recommended: yes'],
       kind: 'regen-part',
+      summary: 'Recommended: yes',
     })
     const top = { ...GIT_PART, heading: '' }
     const added = { kind: 'part', part: top, change: 'new' } satisfies RegenAsk
@@ -42,6 +43,7 @@ describe('regen question context (D-236)', () => {
       title: 'Regen 1 of 1',
       lines: ['memory squad.md: Unsigned commits.', 'Changed since init.', 'Recommended: no'],
       kind: 'regen-part',
+      summary: 'Recommended: no',
     })
     expect(context.lines.join('\n')).not.toContain(squad.folder)
   })

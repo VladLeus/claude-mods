@@ -99,6 +99,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Scan',
       lines: [...scanSummaryLines(repo, setup, '/repo', SCREEN_LIST_WORDS), 'warning: could not list src'],
       kind: 'scan',
+      summary: '0 plugins, 0 MCP servers, 0 CLAUDE.md files',
     })
   })
 
@@ -108,6 +109,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Roles',
       lines: proposalLines(proposal.roles, proposal.changes),
       kind: 'roles',
+      summary: '5 roles: pm, tl, be, qa, security',
     })
   })
 
@@ -120,7 +122,9 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Frameworks',
       lines: ['GSD: in use 1.2.3 (.planning/; gsd-core)', 'superpowers: not found'],
       kind: 'detection',
+      summary: '1 framework found: gsd',
     })
+    expect(detectionContext(detections.slice(1))).toMatchObject({ summary: 'No framework found' })
   })
 
   test('securityContext names each missing plugin with what it does', () => {
@@ -133,6 +137,7 @@ describe('question contexts (D-203, D-236)', () => {
         'other@market',
       ],
       kind: 'security',
+      summary: '3 plugins to install: claude-security, security-guidance, other',
     })
   })
 
@@ -151,6 +156,7 @@ describe('question contexts (D-203, D-236)', () => {
         '  squad.md',
       ],
       kind: 'instructions',
+      summary: '4 files, 1 memory',
     })
     const none = { hasGlobalClaudeMd: false, claudeMd: [], memoryFiles: [] }
     expect(instructionsContext(none, { rules: null, hasAgentsMd: false }, '/repo', SCREEN_LIST_WORDS).lines).toEqual([
@@ -167,6 +173,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Instruction parts',
       lines: instructionLines(scan, TOPICS, RECOMMENDED),
       kind: 'instructions',
+      summary: '2 topics, 0 memories, 2 recommended',
     })
   })
 
@@ -179,6 +186,7 @@ describe('question contexts (D-203, D-236)', () => {
         '  recommended: security',
       ],
       kind: 'topic',
+      summary: 'Recommended: security',
     })
   })
 
@@ -189,6 +197,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Memory 2 of 3',
       lines: ['squad.md: Unsigned commits.', '  recommended: none'],
       kind: 'memory',
+      summary: 'Recommended: none',
     })
     expect(context.lines.join('\n')).not.toContain(squad.folder)
   })
@@ -198,15 +207,18 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Global CLAUDE.md',
       lines: ['~/.claude/CLAUDE.md and the files it imports'],
       kind: 'memory-group',
+      summary: '1 file',
     })
     expect(memoryGroupContext('auto-memory', ['a.md', 'b.md'], SCREEN_LIST_WORDS)).toEqual({
       title: 'Auto-memories',
       lines: ['a.md', 'b.md'],
       kind: 'memory-group',
+      summary: '2 files',
     })
     const many = Array.from({ length: 14 }, (_, at) => `<repo>/f${at}/CLAUDE.md`)
     const project = memoryGroupContext('project-claude-md', many, SCREEN_LIST_WORDS)
     expect([project.title, project.lines.length, project.lines.at(-1)]).toEqual(['Project CLAUDE.md', 13, '+2 more'])
+    expect(project).toMatchObject({ summary: '14 files' })
   })
 
   test('envContext is the env block: its heading, then each name', () => {
@@ -214,6 +226,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Env variables',
       lines: ['Env variable names in your settings (values are never read):', '  API_KEY', '  JIRA_URL'],
       kind: 'env',
+      summary: '2 env names',
     })
   })
 
@@ -222,6 +235,7 @@ describe('question contexts (D-203, D-236)', () => {
       title: 'Improver install',
       lines: ['Built CLAUDE.md files it would tidy:', '  be: .cadre/be/CLAUDE.md', '  qa: .cadre/qa/CLAUDE.md'],
       kind: 'improver-install',
+      summary: '2 roles: be, qa',
     })
   })
 
@@ -234,6 +248,7 @@ describe('question contexts (D-203, D-236)', () => {
         'Launchers: .cadre/bin/pm, .cadre/bin/be',
       ],
       kind: 'launch',
+      summary: '2 launchers',
     })
   })
 
@@ -248,6 +263,8 @@ describe('question contexts (D-203, D-236)', () => {
     ])
     expect([context.lines.length, context.lines.at(-1)]).toEqual([14, '  +1 more'])
     expect(launchDirContext([], SCREEN_LIST_WORDS).lines).toEqual(['No folder with code was found in this repo.'])
+    expect(context).toMatchObject({ summary: '13 code folders' })
+    expect(launchDirContext([], SCREEN_LIST_WORDS)).toMatchObject({ summary: '0 code folders' })
   })
 
   test('reviewContext is the review block, each line cleaned as a report cell (T-02.1-71)', () => {
