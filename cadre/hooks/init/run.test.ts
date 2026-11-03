@@ -55,7 +55,7 @@ import { roleClaudeMdText } from '../generate/docs'
 import { desiredFiles } from '../generate/files'
 import { GIT_TRACKING_UNKNOWN_WARNING, untrackedPartsWarning } from '../generate/gittrack'
 import { GIT_COMMON_DIR_ARGV } from '../git/common-dir'
-import { infraPluginWorld, manyNamesWorld, tableMatchWorld } from '../golden/worlds'
+import { beOnlyWorld, GOLDEN_WORLDS, infraPluginWorld, manyNamesWorld, tableMatchWorld } from '../golden/worlds'
 import { homeRootReply } from '../guards/refusals'
 import { isPartsFlowRole } from '../launch/links'
 import { PANE_LIST_WORDS, t } from '../locales/t'
@@ -5899,6 +5899,49 @@ describe('lists on pane surfaces (D-256)', () => {
       `  skills: 14; agents: 0; MCP servers: ${twelve(fourteen('mcp'))}`,
       `  global ~/.claude/CLAUDE.md: no; memories: 0; CLAUDE.md files: ${twelve(files)}`,
       `Tools: 14 (${twelve(fourteen('tool'))})`,
+    ])
+  })
+})
+
+describe('every pane-surface ask carries a context (D-300)', () => {
+  /** The spec of every ask of a dry run of `world`, each question answered by its longest prefix in `answers`. */
+  async function initSpecs(world: MemWorld, answers: Readonly<Record<string, string>>): Promise<readonly AskSpec[]> {
+    const run = memIo(world, answers)
+    await runInit(run.io, { dryRun: true })
+
+    return run.specs
+  }
+
+  /** The chip of each ask with no context of its own, which a pane surface would ask over an empty pane. */
+  function bare(specs: readonly AskSpec[]): (string | null)[] {
+    return specs.flatMap(spec => (spec.context === undefined ? [spec.header ?? null] : []))
+  }
+
+  test('every ask of every golden init world has a context', async () => {
+    for (const { world, answers } of Object.values(GOLDEN_WORLDS)) {
+      const specs = await initSpecs(world, answers)
+      expect([specs.length > 0, bare(specs)]).toEqual([true, []])
+    }
+  })
+
+  test('every ask of the many-names world has a context', async () => {
+    const specs = await initSpecs(manyNamesWorld(), INIT_ANSWERS)
+    expect([specs.length > 0, bare(specs)]).toEqual([true, []])
+  })
+
+  test('every ask of the regen of beOnlyWorld has a context', async () => {
+    const run = memIo(beOnlyWorld(), {})
+    await runRegen(run.io, { id: 'be', dryRun: true })
+    expect(bare(run.specs)).toEqual([])
+  })
+
+  test('the MCP entry lists every server with the roles recommended for it', async () => {
+    const run = memIo(tableMatchWorld({ replies: ['{"servers":{"M1":["tl"],"M2":["be","qa"]}}'] }), MCP_ONE_BY_ONE)
+    await runInit(run.io, { dryRun: true })
+    const at = firstLines(run.asked).findIndex(line => line.startsWith('Which roles get the MCP servers'))
+    expect([at >= 0, run.specs[at]?.context?.lines]).toEqual([
+      true,
+      ['github: session, 1 tool. Recommended: tl.', 'sentry: session, 1 tool. Recommended: be, qa.'],
     ])
   })
 })

@@ -2503,7 +2503,8 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
 /**
  * What the TUI default asked in the init dry run of skillWorld (TUI_RUN), as the fake host saw each dialog, at the base
  * of plan 02.2-02, pasted as printed: D-255 and D-283 change only what a pane surface asks, so the TUI default goes on
- * asking exactly these texts (checker warning 5). No later commit of the plan edits it.
+ * asking exactly these texts (checker warning 5). The one edit since: 02.2-03 asks a hunk by its key line alone, its
+ * before, after and why moving into its context (D-287, D-300).
  */
 const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Read ~/.claude.json for MCP server names? Only server names are kept; account data is never ' +
@@ -2530,12 +2531,8 @@ const TUI_ASKS_AT_BASE: readonly string[] = [
   'ask Which roles get your own skills (1)? (e.g. BE, QA, or none)\nRoles: pm, tl, security. A role ' +
     'given these skills can run them in its session; a role not given them cannot.\nOr press n, type ' +
     'your own answer, then Enter.',
-  'ask .planning/config.json: mode\n  before: not set (GSD default)\n  after:  "yolo"\nWhy: ' +
-    'interactive mode stops for confirmations; yolo lets an autopilot role run phases ' +
-    'unattended\nRequired for unattended GSD roles.',
-  'ask .planning/config.json: workflow.text_mode\n  before: not set (GSD default)\n  after:  ' +
-    'false\nWhy: text mode turns menus into plain-text questions autopilot cannot deny, so the role ' +
-    'would stall\nRequired for unattended GSD roles.',
+  'ask .planning/config.json: mode',
+  'ask .planning/config.json: workflow.text_mode',
   'ask Git policy for .cadre/?\nCommit definitions: .cadre/ is committed except .cadre/*/.runtime/. ' +
     'Commit all: only per-user files are ignored. Ignore all: nothing in .cadre/ is committed.',
   'ask Where should the role launchers start their sessions? (asked once for this repo)\nThe ' +

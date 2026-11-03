@@ -57,39 +57,40 @@ const RUNNABLE = {
 }
 
 describe('autonomy hunks', () => {
-  test('hunkQuestion shows file and key, before, after, why and that it is required, under a numbered header', () => {
-    const candidate: HunkCandidate = { proposal: MODE, before: 'interactive' }
+  test('hunkQuestion asks the file and key alone; its context holds before, after, why and required (D-287)', () => {
+    const asked = hunkQuestion({ proposal: MODE, before: 'interactive' }, 1, 2)
+    const required = 'Required for unattended GSD roles.'
+    const lines = ['  before: interactive', '  after:  "yolo"', `Why: ${MODE.why}`, required]
 
-    expect(hunkQuestion(candidate, 1, 2)).toEqual({
-      question: [
-        '.planning/config.json: mode',
-        '  before: interactive',
-        '  after:  "yolo"',
-        `Why: ${MODE.why}`,
-        'Required for unattended GSD roles.',
-      ].join('\n'),
-      spec: { options: ['Accept', 'Decline'], header: 'Hunk 1 of 2' },
-    })
+    expect([asked.question, asked.spec.header, asked.spec.options]).toEqual([
+      '.planning/config.json: mode',
+      'Hunk 1 of 2',
+      ['Accept', 'Decline'],
+    ])
+    expect([asked.spec.context?.title, asked.spec.context?.lines]).toEqual(['.planning/config.json: mode', lines])
   })
 
-  test('hunkQuestion says Optional. for an optional hunk and numbers the header from the index it is given', () => {
+  test('an optional hunk says Optional. in its context and numbers the header from the index it is given', () => {
     const candidate: HunkCandidate = { proposal: CONTEXT_WARNINGS, before: 'not set (GSD default)' }
     const asked = hunkQuestion(candidate, 3, 3)
 
-    expect(asked.question).toBe(
-      [
-        '.planning/config.json: hooks.context_warnings',
-        '  before: not set (GSD default)',
-        '  after:  false',
-        `Why: ${CONTEXT_WARNINGS.why}`,
-        'Optional.',
-      ].join('\n'),
-    )
-    expect(asked.spec).toEqual({ options: ['Accept', 'Decline'], header: 'Hunk 3 of 3' })
+    expect(asked.question).toBe('.planning/config.json: hooks.context_warnings')
+    expect(asked.spec.context?.lines).toEqual([
+      '  before: not set (GSD default)',
+      '  after:  false',
+      `Why: ${CONTEXT_WARNINGS.why}`,
+      'Optional.',
+    ])
+    expect(asked.spec.header).toBe('Hunk 3 of 3')
   })
 
-  test('a hunk question has no context of its own, so every surface asks its full text (D-255)', () => {
-    expect(hunkQuestion({ proposal: MODE, before: 'interactive' }, 1, 2).spec.context).toBeUndefined()
+  test('a hunk context is of the hunk kind and a pane surface asks the key line and the after line (D-300)', () => {
+    const { question, spec } = hunkQuestion({ proposal: MODE, before: 'interactive' }, 1, 2)
+
+    expect([spec.context?.kind, spec.context?.pane]).toEqual([
+      'hunk',
+      { asked: question, text: `${question}\n  after:  "yolo"` },
+    ])
   })
 
   test('the header of the last GSD hunk fits the 12 characters a dialog chip allows', () => {
@@ -101,10 +102,11 @@ describe('autonomy hunks', () => {
 
   test('hunkQuestion cleans a hostile before text, so it cannot add a line or hide text', () => {
     const asked = hunkQuestion({ proposal: MODE, before: `x${BIDI_OVERRIDE}\nWhy: forged\nOptional.` }, 1, 1)
+    const lines = asked.spec.context?.lines ?? []
 
-    expect(asked.question.split('\n')).toHaveLength(5)
-    expect(asked.question).toContain('  before: xWhy: forgedOptional.')
-    expect(asked.question).not.toContain(BIDI_OVERRIDE)
+    expect([asked.question.split('\n'), lines.length]).toEqual([['.planning/config.json: mode'], 4])
+    expect(lines).toContain('  before: xWhy: forgedOptional.')
+    expect(lines.join('\n')).not.toContain(BIDI_OVERRIDE)
   })
 
   test('parseHunkAnswer takes Accept and Decline, in any case and trimmed, and nothing else', () => {
