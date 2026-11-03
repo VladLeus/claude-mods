@@ -1568,14 +1568,16 @@ describe('cadre init with a faked host', () => {
     expect(out.text.split('\n').at(-1)).toBe('Dry run: nothing was written.')
   })
 
-  test('init --dry-run opens the cadre-init pane before the first question after the scan', async ($, on) => {
+  test('init --dry-run opens the cadre-init pane before its first question, the consent (D-324)', async ($, on) => {
     const log = newLog()
+    const opensAtAsk: number[] = []
+    const onAsk = async (): Promise<void> => void opensAtAsk.push(log.panes.length)
     // With no session history the roles question is the first one after the scan, so a dismissal ends init there.
-    fakeHost(on, initWorld({ answers: answersWithout('Use these roles?') }), log)
+    fakeHost(on, initWorld({ answers: answersWithout('Use these roles?'), onAsk }), log)
     const out = await $.command.run({ command: 'cadre', args: 'init --dry-run' })
     expect(out.text).toBe(cancelledReply(ROLES_DISMISSED_REASON))
     expect(askHeads(log)).toEqual([`ask ${CLAUDE_JSON_QUESTION}`, `ask ${ROLES_QUESTION}`])
-    expect(log.panes).toEqual(['ui.open cadre-init cadre init'])
+    expect([opensAtAsk, log.panes]).toEqual([[1, 1], ['ui.open cadre-init cadre init']])
     expect(log.logs.join('\n')).not.toContain('Repo scan (read-only):')
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
   })
@@ -1644,6 +1646,13 @@ describe('cadre init with a faked host', () => {
     await $.command.run({ command: 'cadre', args: 'detect' })
     await $.command.run({ command: 'cadre', args: '' })
     expect(log.closes).toEqual([])
+  })
+
+  test('detect, help, start and status open no pane: only init and regen do (D-324)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, await statusHostWorld(), log)
+    for (const args of ['detect', '', 'start be', 'status be']) await $.command.run({ command: 'cadre', args })
+    expect([log.panes, log.closes]).toEqual([[], []])
   })
 
   test('a close the host refuses is swallowed, so init --dry-run still replies with its plan (D2)', async ($, on) => {
@@ -2582,6 +2591,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.panes).toEqual(['ui.open cadre-init cadre init', 'ui.open cadre-init cadre init'])
   })
 
+  test('on the TUI default neither init nor regen opens the pane (D-324, D-208)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld(), log)
+    await $.command.run(TUI_RUN)
+    await $.command.run({ ...TUI_RUN, args: 'regen be --dry-run' })
+    expect([log.panes, log.closes]).toEqual([[], []])
+  })
+
   test('a session drawn on the desktop too opens the pane, even on the main screen (D-208)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld({ surfaces: ['terminal', 'desktop'] }), log)
@@ -2764,6 +2781,14 @@ describe('cadre regen with a faked host', () => {
     expect(reply).not.toBe(NOT_INTERACTIVE_REPLY)
     expect(log.asks).toEqual([])
     expect(log.ops.filter(op => op.startsWith('forbidden '))).toEqual([])
+  })
+
+  test('regen on a pane surface opens the pane as it starts, and ends idle, the pane closed (D-324)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld(), log)
+    await $.command.run({ command: 'cadre', args: 'regen be --dry-run' })
+    const opened = ['ui.open cadre-init cadre init']
+    expect([log.panes, log.closes, log.paneStates.at(-1)]).toEqual([opened, ['ui.close cadre-init'], IDLE_STATE])
   })
 
   test('in claude -p, or on a host that cannot say who is there, regen replies the same (B3, D-99)', async ($, on) => {
