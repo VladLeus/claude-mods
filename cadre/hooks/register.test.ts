@@ -21,6 +21,7 @@ import { GIT_POLICY_DISMISSED_REASON, GIT_POLICY_QUESTION, policyLine } from './
 import { PRIVATE_FILES_HEADING, REVIEW_QUESTION } from './init/stages/review'
 import { ROLES_DISMISSED_REASON, ROLES_QUESTION } from './init/stages/roles'
 import { SECURITY_INSTALL_PREFIX } from './init/stages/security'
+import { t } from './locales/t'
 import { autopilotReply } from './scan/autopilot'
 import { REGEN_NO_STATE, regenNoRole } from './team'
 import {
@@ -157,6 +158,8 @@ type HostLog = {
   readonly questionWrites: unknown[]
   /** Each value written to the loader state, null for a clear (D-257). */
   readonly loaderWrites: unknown[]
+  /** Each value written to the one pane state, its open question and its loader in one (D-303). */
+  readonly paneStates: unknown[]
   /** Each status line the plugin set, null for a clear (D-232). */
   readonly statuses: (string | null)[]
   readonly writes: string[]
@@ -205,6 +208,7 @@ function newLog(): HostLog {
     headerWrites: [],
     questionWrites: [],
     loaderWrites: [],
+    paneStates: [],
     statuses: [],
     writes: [],
   }
@@ -501,6 +505,12 @@ function fakeHost(on: HostOn, world: World, log: HostLog): void {
   // The init pane's blocks, the question open now and the loader are the plugin's own state (D-133, T-02-49, R1,
   // D-203, D-257); the open question and the loader are never refused, and a write of any other state is forbidden.
   on('state.set', async (_$, e, next) => {
+    if (e.plugin === 'cadre' && e.key === 'pane') {
+      log.paneStates.push(e.value)
+      if (world.denyPane) return { deny: 'no pane state' }
+
+      return next(e)
+    }
     if (e.plugin === 'cadre' && e.key === 'openQuestion') {
       const open: unknown = e.value
       log.questionWrites.push(open)
@@ -2300,12 +2310,65 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     }
   }
 
-  test('after a run, a mount of the pane draws only the newest block: the review', async ($, on) => {
+  /** The pane state with no question open and no loader: what a run writes when it ends (D-303, D-304). */
+  const IDLE_STATE = { open: null, loader: null }
+
+  /** What a drawing of the idle pane shows: the empty text alone, with no rows (D-299, D-324). */
+  const EMPTY_DRAWN: Drawn = { first: t('register.paneEmpty'), rows: 0 }
+
+  test('after a run, a mount of the pane draws the idle frame, no block of the run (D-299, D-304)', async ($, on) => {
     const log = newLog()
     fakeHost(on, initWorld(), log)
     await $.command.run(DRY_RUN)
-    expect(paneOf(log)[0]?.key).toBe('review')
-    expect(await drawPane($, INLINE_PANE)).toEqual(blockDrawn(log, 'review'))
+    expect(await drawPane($, INLINE_PANE)).toEqual(EMPTY_DRAWN)
+  })
+
+  test('each ask writes one pane state with its question open, its answer the idle one (D-303)', async ($, on) => {
+    const log = newLog()
+    const atAsk: { readonly at: number; readonly state: unknown }[] = []
+    const onAsk = async (): Promise<void> => {
+      atAsk.push({ at: log.paneStates.length, state: log.paneStates.at(-1) })
+    }
+    fakeHost(on, initWorld({ onAsk }), log)
+    await $.command.run(DRY_RUN)
+    const opened = atAsk.map(({ state }) =>
+      isObject(state) && isObject(state.open) && state.loader === null ? `ask ${String(state.open.question)}` : null,
+    )
+    expect([opened.length > 5, opened]).toEqual([true, log.asks])
+    expect(atAsk.map(({ at }) => log.paneStates[at])).toEqual(atAsk.map(() => IDLE_STATE))
+  })
+
+  test('a run that finishes writes the idle pane state last and closes the pane (D-304)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld(), log)
+    await $.command.run(DRY_RUN)
+    expect([log.paneStates.at(-1), log.closes]).toEqual([IDLE_STATE, ['ui.close cadre-init']])
+  })
+
+  test('a run cancelled by a dismissed dialog writes the idle state last, its pane closed (D-304)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, initWorld({ answers: answersWithout('Git policy') }), log)
+    const out = await $.command.run(DRY_RUN)
+    expect(out.text).toBe(cancelledReply(GIT_POLICY_DISMISSED_REASON))
+    expect([log.paneStates.at(-1), log.closes]).toEqual([IDLE_STATE, ['ui.close cadre-init']])
+  })
+
+  test('while the history question is open the pane draws its own context, the scan (D-299)', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    fakeHost(on, historyHostWorld({ onAsk: drawWhileOpen($, log, INLINE_PANE, open, HISTORY_QUESTION) }), log)
+    await $.command.run(DRY_RUN)
+    expect(open.map(entry => [entry.drawn.first, entry.drawn.rows > 1])).toEqual([['Scan', true]])
+  })
+
+  test('while the MCP entry question is open the pane draws the empty frame, no old block (D-299)', async ($, on) => {
+    const log = newLog()
+    const open: Open[] = []
+    const tools = [{ name: 'mcp__sentry__issues', description: 'Issues.', mcp: true }]
+    const onAsk = drawWhileOpen($, log, INLINE_PANE, open, 'Which roles get the MCP servers')
+    fakeHost(on, initWorld({ tools, onAsk }), log)
+    await $.command.run(DRY_RUN)
+    expect(open.map(entry => entry.drawn)).toEqual([EMPTY_DRAWN])
   })
 
   test('an inline pane drawn while a question is open shows its block, the newest once it settles', async ($, on) => {
@@ -2388,12 +2451,12 @@ describe('the init pane draws the block of the question being asked (R1)', () =>
     return initWorld(onComplete === undefined ? world : { ...world, onComplete })
   }
 
-  test('the pane drawn while a model call runs starts with the label of the call (D-257)', async ($, on) => {
+  test('the pane drawn while a model call runs draws the label of the call alone (D-257, D-299)', async ($, on) => {
     const log = newLog()
     const drawn: Drawn[] = []
     fakeHost(on, oneCallWorld(async () => void drawn.push(await drawPane($, INLINE_PANE))), log)
     await $.command.run(DRY_RUN)
-    expect(drawn.map(entry => entry.first)).toEqual([MODEL_PROGRESS.skills])
+    expect(drawn).toEqual([{ first: MODEL_PROGRESS.skills, rows: 1 }])
   })
 
   test('the pane drawn at the next question shows its own context, with no loader row (D-257)', async ($, on) => {
