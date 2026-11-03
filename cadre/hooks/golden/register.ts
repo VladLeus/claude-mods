@@ -13,9 +13,8 @@
  * at each ask, as a terminal main screen keeps it drawn. The claude.json consent and the hunk questions have no
  * context of their own, so they have no preview and no Describe your own option; of the others, only a question that
  * takes a typed answer gets Describe your own (D-234). The Review is paged (D-233, ASKED #19): its first page, with
- * Next page, Confirm and Change something…. "Use these roles?" has no preview either, and that is a
- * test-kit artifact: the kit draws the pane only on a mount, the first block of a run clears its seat (D3), and the
- * re-seat at that ask lands after its options were rewritten, while a terminal draws the pane as soon as it opens.
+ * Next page, Confirm and Change something…. The pane opens as the run starts (D-324), so the seat the kit records at
+ * the consent holds for every later question, "Use these roles?" included.
  */
 export const GOLDEN_PREVIEWS: readonly {
   readonly header: string | null
@@ -41,9 +40,9 @@ export const GOLDEN_PREVIEWS: readonly {
       "Describe my own structure"
     ],
     "previews": [
-      null,
-      null,
-      null
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```",
+      "**Roles**\n```\nProposed roles:\n  PM (pm)                 Owns product decisions: scope, requirements and acceptance.\n  Team Lead (tl)          Owns architecture and QA decisions; reviews and merges the work.\n  Security (security)     Owns security decisions and reviews.\nChanges from the scan:\n  dropped be: no source code found\n  dropped fe: no frontend framework found (react, vue, next, svelte, angular)\n  dropped qa: no tests or E2E setup found\n```"
     ]
   },
   {

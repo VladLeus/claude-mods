@@ -554,9 +554,9 @@ export type PaneState = {
 
 /**
  * The side-pane state of one /cadre run (D-303): `pane`, the one value the cadre init pane draws. register.tsx alone
- * writes it, in one `update` per change (an ask, its answer, a step's progress, the run's end), and the Pane render
- * reads it once per drawing; the AskUserQuestion hook reads its open question. It is declared in this types contract
- * because `claude plugin validate` takes a plugin's state keys from the manifest's `types` file only.
+ * writes it, in one `update` per change (an ask, its answer, a step's progress, the run's start and end), and the
+ * Pane render reads it once per drawing; the AskUserQuestion hook reads its open question. It is declared in this
+ * types contract because `claude plugin validate` takes a plugin's state keys from the manifest's `types` file only.
  */
 declare module 'claude-code' {
   interface PluginState {

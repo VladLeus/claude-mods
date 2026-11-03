@@ -45,8 +45,8 @@ const IDLE_PANE: PaneState = { open: null, loader: null }
 /**
  * The one value the cadre init pane draws (D-303): the question cadre has open now and the long step a run on a pane
  * surface waits for, written in one update per change, by the init port's ask, its answer and its progress and by the
- * run's end, and read once per drawing; the pane draws the open question's own context, else the loader alone, else
- * its empty frame (paneBlockOf, D-299, D-301).
+ * run's start and end, and read once per drawing; the pane draws the open question's own context, else the loader
+ * alone, else its empty frame (paneBlockOf, D-299, D-301).
  */
 const paneState = atom({ plugin: 'cadre', key: 'pane' }, IDLE_PANE)
 /**
@@ -138,9 +138,10 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 }
 
 /**
- * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first progress on a pane
- * surface and read once the run settles, where the run shows its context (D-208), decided before anything opens, the
- * context the TUI default printed last, and whether the run set a status line.
+ * One command run's pane handle: whether it opened the cadre-init pane (D2), set when an init or regen run on a pane
+ * surface opens it as it starts (openPane, D-324) and read once the run settles, where the run shows its context
+ * (D-208), decided before anything opens, the context the TUI default printed last, and whether the run set a status
+ * line.
  */
 type PaneRun = {
   isOpened: boolean
@@ -180,11 +181,11 @@ function beforeTuiDialog($: EngineInterface, pane: PaneRun, context: AskContext 
  * context line (paneQuestionText, D-255), so the dialog hook still pairs the dialog with it. `show` draws nothing on
  * any surface: it stays for the port (D-326), as the pane draws only the open question's context or the loader
  * (D-299). On a pane surface `progress` writes the step's label as the loader in one update, which the pane draws
- * alone between questions (D-301), and opens the pane when nothing opened it yet; a state write or an open the host
- * refuses is swallowed, so neither cancels init (D-133, T-02-50). The open is recorded in the run's pane handle, and
- * the command handler writes the idle state and closes the pane once the run settles (D2, D-304). On the TUI default
- * `progress` sets the one status line (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a
- * context too long for the preview above it (beforeTuiDialog, D-228).
+ * alone between questions (D-301); a state write the host refuses is swallowed, so it never cancels init (D-133,
+ * T-02-50). The pane itself is opened by the command handler as an init or regen run starts (openPane, D-324), which
+ * also writes the idle state and closes the pane once the run settles (D2, D-304). On the TUI default `progress` sets
+ * the one status line (`$.ui.status`), and `ask` clears it before each dialog (D-232) and prints a context too long
+ * for the preview above it (beforeTuiDialog, D-228).
  */
 function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
   return {
@@ -221,8 +222,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
     // Kept for the port (D-326): the pane draws only the open question's context or the loader (D-299).
     show: async () => undefined,
     // Progress is one status line on the TUI default (D-232) and, on a pane surface, the loader in the pane state,
-    // drawn alone between questions (D-301); there the run's first progress opens the pane (D2). A state write or an
-    // open the host refuses is swallowed.
+    // drawn alone between questions (D-301); a state write the host refuses is swallowed.
     progress: async text => {
       if (pane.surface === 'tui-default') {
         if (text !== null) pane.hasStatus = true
@@ -233,10 +233,6 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
       await update($, paneState, state =>
         text === null ? { ...state, loader: null } : { open: state.open, loader: { label: text, summary: null } },
       ).catch(() => undefined)
-      if (pane.isOpened) return
-      pane.isOpened = true
-      lastPlacement = null
-      await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
     },
     complete: async (prompt, system) => {
       const model = await $.session.model().catch(() => null)
@@ -364,8 +360,22 @@ function hostIoOf($: EngineInterface): HostIo {
 }
 
 /**
- * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo whose first show records the
- * open of the cadre-init pane in `pane` (D2).
+ * Opens the cadre-init pane as an init or regen run on a pane surface starts (D-324), before its first question, so
+ * the ~/.claude.json consent shows its context: the pane state is written idle first, so the pane draws its empty
+ * frame until a question opens or a step runs, the open is recorded in the run's pane handle (D2), and the placement
+ * an earlier run reported is dropped (D3). A write or an open the host refuses is swallowed, so neither cancels the run
+ * (T-02-50).
+ */
+async function openPane($: EngineInterface, pane: PaneRun): Promise<void> {
+  await update($, paneState, () => IDLE_PANE).catch(() => undefined)
+  pane.isOpened = true
+  lastPlacement = null
+  await $.ui.open({ id: PANE, title: PANE_TITLE }).catch(() => undefined)
+}
+
+/**
+ * The reply of one `/cadre` run: the subcommand parsed from `args`, run with an InitIo over `pane`. An init or regen
+ * run on a pane surface opens the cadre-init pane as it starts (openPane, D-324); no other command opens it.
  */
 async function commandReply($: EngineInterface, args: string, pane: PaneRun): Promise<{ text: string }> {
   const command = parseCommand(args)
@@ -379,12 +389,14 @@ async function commandReply($: EngineInterface, args: string, pane: PaneRun): Pr
       const options: InitOptions = command.dryRun
         ? { dryRun: true, surface }
         : { dryRun: false, host: hostIoOf($), surface }
+      if (surface === 'pane') await openPane($, pane)
 
       return { text: await runInit(initIoOf($, pane), options) }
     }
     case 'regen': {
       const { id } = command
       const options: RegenOptions = command.dryRun ? { id, dryRun: true } : { id, dryRun: false, host: hostIoOf($) }
+      if (pane.surface === 'pane') await openPane($, pane)
 
       return { text: await runRegen(initIoOf($, pane), options) }
     }
