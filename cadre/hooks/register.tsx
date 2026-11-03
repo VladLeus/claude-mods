@@ -151,15 +151,20 @@ async function portRead($: EngineInterface, path: string, maxBytes: number): Pro
 }
 
 /**
- * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first show and read once
- * the run settles, where the run shows its context (D-208), decided before anything opens, and the context the TUI
- * default printed last.
+ * One command run's pane handle: whether it opened the cadre-init pane (D2), set by the run's first show or progress
+ * and read once the run settles, where the run shows its context (D-208), decided before anything opens, the context
+ * the TUI default printed last, and whether the run set a status line.
  */
 type PaneRun = {
   isOpened: boolean
   readonly surface: Surface
   /** The context the TUI default last printed above a dialog this run (WD-S4); null before any. */
   printed: AskContext | null
+  /**
+   * Whether the run set a status line on the TUI default, set by its first progress with a text and read once the run
+   * settles, which then clears the line; a run that set none clears none (D-257, edge #2, U-11).
+   */
+  hasStatus: boolean
 }
 
 /**
@@ -236,6 +241,7 @@ function initIoOf($: EngineInterface, pane: PaneRun): InitIo {
     // (OC-02-L). A state write or an open the host refuses is swallowed.
     progress: async text => {
       if (pane.surface === 'tui-default') {
+        if (text !== null) pane.hasStatus = true
         $.ui.status(text ?? undefined)
         return
       }
@@ -443,18 +449,24 @@ export const register: Register = on => {
   })
 
   // A run decides its surface before it opens anything (D-208), and once it settles (finished, cancelled, refused or
-  // thrown) it clears the loader, whatever its surface (D-257), and closes the cadre-init pane if it opened it (D2).
+  // thrown) it clears the loader, whatever its surface (D-257), the status line when it set one (D-257, edge #2), and
+  // closes the cadre-init pane if it opened it (D2).
   on('command.run', { command: 'cadre' }, async ($, e) => {
     // A command a test kit runs, or one from a host that stamps no presentation, may carry none (previewColumns).
     const presentation: unknown = e.presentation
     presentationColumns = isObject(presentation) ? presentation.columns : null
     viewportColumns = null
     runSurface = surfaceOf(presentation, await $.session.surfaces().catch(() => null))
-    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null }
+    const pane: PaneRun = { isOpened: false, surface: runSurface, printed: null, hasStatus: false }
     try {
       return await commandReply($, e.args, pane)
     } finally {
       await update($, loader, () => null).catch(() => undefined)
+      try {
+        if (pane.hasStatus) $.ui.status(undefined)
+      } catch {
+        // A status line the host cannot clear never fails the run's end.
+      }
       if (pane.isOpened) await closePane($)
     }
   })

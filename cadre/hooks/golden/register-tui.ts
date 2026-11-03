@@ -42,6 +42,7 @@ export const GOLDEN_TUI: {
     null,
     null,
     null,
+    null,
     null
   ],
   "logs": [

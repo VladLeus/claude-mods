@@ -2535,6 +2535,14 @@ describe('the TUI default: the terminal main screen draws no side pane (D-208)',
     expect(log.statuses.includes(MODEL_PROGRESS.skills)).toBe(true)
   })
 
+  test('a run with no progress makes no status call, not even a clear when it ends (edge #2, U-11)', async ($, on) => {
+    const log = newLog()
+    fakeHost(on, regenHostWorld(), log)
+    await $.command.run({ ...TUI_RUN, args: 'regen be --dry-run' })
+    await $.command.run({ ...TUI_RUN, args: '' })
+    expect(log.statuses).toEqual([])
+  })
+
   /**
    * initWorld with 25 skills of the user's own, the third one's description holding a control character built at run
    * time, so the own-skills question's context is longer than the preview (D-228); `onAsk` runs at each dialog.
