@@ -16,6 +16,7 @@ import {
   skillRef,
   stageStep,
   stateAt,
+  templateRole,
   valueOf,
 } from '../../testkit'
 import { NO_USABLE_ANSWER_REASON, withContext } from '../../ui/ask'
@@ -477,6 +478,55 @@ describe('the assign stage (D-230)', () => {
     // The entry's own context holds the own-skills block; no block of its own (D-302).
     expect([entry.outputs, entry.openQuestion?.spec.context?.title]).toEqual([[], 'Your own skills'])
     expect(entry.openQuestion?.question.split('\n')[0]).toBe(`${OWN_SKILLS_ENTRY_PREFIX} (1)?`)
+  })
+})
+
+describe('the MCP servers by recommended role (D-309, D-333)', () => {
+  /** BE, FE and QA of the template. */
+  const team = [templateRole('be'), templateRole('fe'), templateRole('qa')]
+  /** Servers a to d and the claude.ai connectors Gmail and Notion; the session lists tools for all but d and Notion. */
+  const servers = ['a', 'b', 'c', 'd', 'claude_ai_Gmail', 'claude_ai_Notion'].map(session)
+  const toolNames = ['mcp__a__x', 'mcp__b__x', 'mcp__c__x', 'mcp__claude_ai_Gmail__x']
+  const setup = emptySetupScan({ mcp: servers })
+  const gathered = { facts: { facts: EMPTY_FACTS, gsdUserDir: null }, repo: repoScan(), setup }
+  /** The mcp call recommends a for BE and FE, and c for QA. */
+  const result = new Map([['a', ['be', 'fe']], ['c', ['qa']]])
+  const recommended: Answer = { kind: 'model', result: { id: 'mcp', result } }
+
+  /** A server of the list as an item row with no roles, so the pane draws its name alone (D-309). */
+  const item = (label: string): unknown => ({ role: 'item', label, text: '', indent: 2 })
+
+  /** A section per role in team order, a server under each role it is recommended for, then the rest. */
+  const byRole = [
+    { title: 'be: BE', rows: [item('a')] },
+    { title: 'fe: FE', rows: [item('a')] },
+    { title: 'qa: QA', rows: [item('c')] },
+    {
+      title: 'Not recommended',
+      rows: [
+        item('b'),
+        item('claude_ai_Gmail (claude.ai)'),
+        item('claude_ai_Notion (claude.ai, not connected)'),
+        item('d (not connected)'),
+      ],
+    },
+  ]
+
+  test('the MCP entry and the question for all the servers list the servers under each role', () => {
+    const calling = assignStage.enter(stateAt('assign', { roles: team, gathered, hints: new Map() }, { toolNames }))
+    const entry = nextStage(calling, recommended)
+    expect(entry.openQuestion?.spec.context?.rows).toEqual(byRole)
+    expect(entry.openQuestion?.spec.context?.summary).toBe('6 servers, 2 recommended')
+    const whole = nextStage(entry, { kind: 'answer', text: 'Whole group' })
+    expect(whole.openQuestion?.spec.context?.rows).toEqual(byRole)
+    expect(whole.openQuestion?.spec.context?.lines).toEqual([
+      'a: session, 1 tool. Recommended: be, fe.',
+      'b: session, 1 tool. Recommended: none.',
+      'c: session, 1 tool. Recommended: qa.',
+      'claude_ai_Gmail: claude.ai, 1 tool. Recommended: none.',
+      'claude_ai_Notion: claude.ai, 0 tools. Recommended: none.',
+      'd: session, 0 tools. Recommended: none.',
+    ])
   })
 })
 

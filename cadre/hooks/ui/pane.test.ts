@@ -572,6 +572,21 @@ describe('paneDrawn (D-313, D-322, D-323)', () => {
     ])
   })
 
+  test('an item row with no text draws its name alone, no arrow or roles; one with a text keeps them (D-309)', () => {
+    const section: ContextSection = {
+      title: 'be: BE',
+      rows: [
+        { role: 'item', label: 'figma-desktop (not connected)', text: '', indent: 2 },
+        { role: 'item', label: 'github', text: 'be', indent: 2 },
+      ],
+    }
+    expect(paneDrawn(rowsBlock([section]), null).slice(1)).toEqual([
+      { spans: [{ text: 'be: BE', bold: true }] },
+      { spans: [{ text: '  figma-desktop (not connected)' }] },
+      { spans: [{ text: '  github → ' }, { text: 'be', bold: true }] },
+    ])
+  })
+
   test('the title, the summary and a section title wrap to the width, none cut (D-231)', () => {
     const title = `Conflict: ${'docs/'.repeat(14)}x.md`
     const block: PaneBlock = { title, summary: 'a summary', rows: [{ title: 'Section', rows: [] }], lines: [] }
