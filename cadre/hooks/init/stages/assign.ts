@@ -336,6 +336,8 @@ type GroupChoice =
 /**
  * The question of a plugin group (D-53, D-251): its question, chip and own context, the answers of groupOptions with a
  * typed role list (D-234); the labels are read first, then the role list (parseRoleList), and what its refusal lists.
+ * Paged on a pane surface, Go one by one shows on every page, Accept recommendation on the last page only, and None
+ * and All roles on no page, a typed role list still read on any page (pageOptions, D-328).
  */
 function groupAsk(
   item: AssignItem,
@@ -343,6 +345,7 @@ function groupAsk(
   roles: readonly RoleSpec[],
 ): ChoiceAsk<GroupChoice> & { readonly dismissedReason: string } {
   const options = groupOptions(recommended)
+  const pageOptions = { always: [ONE_BY_ONE_LABEL], dropped: ROLE_LIST_OPTIONS }
   const accept: Labelled<GroupChoice> = { label: ACCEPT_RECOMMENDATION_LABEL, value: { kind: 'accept' } }
   const oneByOne: Labelled<GroupChoice> = { label: ONE_BY_ONE_LABEL, value: { kind: 'one-by-one' } }
   const labels = recommended.length === 0 ? [oneByOne] : [accept, oneByOne]
@@ -356,7 +359,7 @@ function groupAsk(
 
   return {
     question: item.question,
-    spec: { options, header: item.header, context: item.context, acceptsTyped: true },
+    spec: { options, header: item.header, pageOptions, context: item.context, acceptsTyped: true },
     parse,
     accepts: t('init.memory.roleListAccepts', { quotedLabels: quotedLabels(options), ids: idsOf(roles) }),
     dismissedReason: ASSIGNMENT_DISMISSED_REASON,
