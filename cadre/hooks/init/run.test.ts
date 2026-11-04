@@ -6310,6 +6310,15 @@ describe('an oversize run on a pane surface (D-305, D-306, D-307, D-334)', () =>
     ])
   })
 
+  test('a pane seated inline asks the own-skills entry once, unpaged, with its own options (N-02)', async () => {
+    const run = memIo(oversizeWorld({ replies }), answers)
+    await runInit(run.io, { dryRun: true, surface: 'pane', isPaneInline: () => true })
+    const entries = run.specs.filter((_, at) => (run.asked[at] ?? '').startsWith(OWN_SKILLS_ENTRY_PREFIX))
+    expect(entries.map(spec => [spec.context?.page, spec.options])).toEqual([
+      [undefined, ['Accept recommendations', 'Go one by one', 'Whole group']],
+    ])
+  })
+
   test("every question's frame fits both caps at the fallback width, and each page ends with its marker", async () => {
     const run = memIo(oversizeWorld({ replies }), answers)
     await runInit(run.io, { dryRun: true })

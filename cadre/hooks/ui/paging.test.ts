@@ -159,6 +159,18 @@ describe('withPagedAsks (D-305, D-306, D-307, D-308)', () => {
     expect(await withPagedAsks(inner.io, 'pane', () => null).ask(entry.question, fitting)).toBe('Whole group')
     expect(inner.specs).toEqual([fitting])
   })
+
+  test('a pane seated inline asks an over-cap context once, unpaged; else it pages as before (N-02)', async () => {
+    const entry = await oversizeEntry()
+    const inline = memIo(memWorld({}), ['Go one by one'])
+    const answer = await withPagedAsks(inline.io, 'pane', () => null, () => true).ask(entry.question, entry.spec)
+    expect([answer, inline.asked, inline.specs]).toEqual(['Go one by one', [entry.question], [entry.spec]])
+    for (const isInline of [() => false, undefined]) {
+      const docked = memIo(memWorld({}), [NEXT_PAGE_LABEL, NEXT_PAGE_LABEL, 'Go one by one'])
+      await withPagedAsks(docked.io, 'pane', () => null, isInline).ask(entry.question, entry.spec)
+      expect(pageIndexes(docked)).toEqual([0, 1, 2])
+    }
+  })
 })
 
 describe('a paged plugin group (D-328)', () => {
