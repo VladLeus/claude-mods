@@ -363,7 +363,7 @@ function reviewLines(
 
   return [
     t('init.review.rolesHeading'),
-    ...draft.roles.map(role => t('init.review.roleRow', { title: role.title, id: role.id })),
+    ...draft.roles.map(role => t('init.review.roleRow', { title: redactedText(role.title), id: role.id })),
     ...cardLines(draft.roles, scopes),
     ...handoutLines(draft, words),
     ...privateRows,

@@ -214,18 +214,19 @@ function mcpItemLabel(line: McpLine): string {
 
 /**
  * The rows of the list of all the MCP servers on pane surfaces (D-309, D-333): a section per role of `roles` in team
- * order, titled with the role's id and title, holding each server recommended for it, so a server recommended for
- * several roles is listed under each, then a section titled Not recommended holding the servers recommended for none;
- * a role no server is recommended for has no section, and nor has Not recommended when every server has a role. Each
- * server, in the order given, is an item row with its name and tags (mcpItemLabel) and no roles, which the pane draws
- * as its name alone; its source, tools and details stay in its own question (mcpServerContext).
+ * order, titled with the role's id and title, the title's secret-like spans hidden (redactedText, E1, N-05), holding
+ * each server recommended for it, so a server recommended for several roles is listed under each, then a section
+ * titled Not recommended holding the servers recommended for none; a role no server is recommended for has no
+ * section, and nor has Not recommended when every server has a role. Each server, in the order given, is an item row
+ * with its name and tags (mcpItemLabel) and no roles, which the pane draws as its name alone; its source, tools and
+ * details stay in its own question (mcpServerContext).
  */
 function mcpRoleSections(lines: readonly McpLine[], roles: readonly RoleSpec[]): ContextSection[] {
   const itemOf = (line: McpLine): ContextRow => ({ role: 'item', label: mcpItemLabel(line), text: '', indent: 2 })
   const sections = roles.flatMap(role => {
     const given = lines.filter(line => line.recommended.includes(role.id))
     if (given.length === 0) return []
-    const title = t('ui.assign.mcpRoleSection', { id: shown(role.id), title: shown(role.title) })
+    const title = t('ui.assign.mcpRoleSection', { id: shown(role.id), title: shown(redactedText(role.title)) })
 
     return [{ title, rows: given.map(itemOf) }]
   })
