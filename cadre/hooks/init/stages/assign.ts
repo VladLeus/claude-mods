@@ -539,9 +539,9 @@ function afterItem(state: InitState, plan: AssignPlan, cursor: ItemCursor, answe
 /**
  * The model's recommendation for the own skills (G-02-1b): the entry question of their hand-out, with every own skill,
  * what it does, its own use count and the roles recommended for it (ownSkillLines) as its own context
- * (ownSkillsContext, D-236; no block of its own, D-302), its summary counting the skills and those the model's map
- * recommends a role for (D-310). In the hand-out items, a skill the model's map has no entry for gets the roles the
- * skill table seeds for it as its recommendation (D-280); the context lines show the model's map.
+ * (ownSkillsContext, D-236; no block of its own, D-302), its summary counting the skills and those recommended a role
+ * (D-310). The context and the hand-out items both show the model's map with each missing entry filled by the roles
+ * the skill table seeds for that skill (D-280), so the screen names what Accept gives (S-01, D-307).
  */
 function afterSkillsModel(
   state: InitState,
@@ -556,10 +556,10 @@ function afterSkillsModel(
     const seed = plan.skills.seeds.get(skill.name)
     if (!seeded.has(ownSkillId(index)) && seed !== undefined) seeded.set(ownSkillId(index), seed)
   })
-  const lines = ownSkillLines(skills, plan.counts, recommended)
-  const rows = ownSkillContextRows(skills, plan.counts, recommended)
+  const lines = ownSkillLines(skills, plan.counts, seeded)
+  const rows = ownSkillContextRows(skills, plan.counts, seeded)
   const items = ownSkillItems(skills, plan.counts, seeded)
-  const withRoles = skills.filter((_, index) => (recommended.get(ownSkillId(index)) ?? []).length > 0).length
+  const withRoles = skills.filter((_, index) => (seeded.get(ownSkillId(index)) ?? []).length > 0).length
   const context = ownSkillsContext(lines, rows, skills.length, withRoles)
   const entry = { ...ownSkillsEntry(skills.length), context }
 

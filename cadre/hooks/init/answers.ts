@@ -110,8 +110,8 @@ function ownSkillRows(skill: SkillRef, count: number, ids: readonly string[]): s
  * The own-skills block of the side pane (G-02-1b, D-139): OWN_SKILLS_HEADING, then per skill, in the order given, its
  * name and purpose (NO_SKILL_PURPOSE when the engine gave none) and a row with how often the history scan saw it
  * (skillUsesText; left out at 0, which a run without the history scan gives) and the roles recommended for it, or
- * none. `recommended` is keyed S1, S2, ... by the skills' places in the list; an empty map means the model gave no
- * usable recommendation, and then a last row says so.
+ * none. `recommended` is keyed S1, S2, ... by the skills' places in the list; an empty map means that neither the model
+ * nor the skill table recommends a role for any own skill, and then a last row says so.
  */
 export function ownSkillLines(
   skills: readonly SkillRef[],
@@ -145,7 +145,8 @@ function ownSkillItemRows(skill: SkillRef, count: number, ids: readonly string[]
 /**
  * The structured rows of the own-skills block the pane draws (D-311, D-313, D-323), from the skills ownSkillLines
  * lists: OWN_SKILLS_HEADING as a heading row, each skill as its item rows (ownSkillItemRows), then the
- * no-recommendation row as a plain row when the model gave none.
+ * no-recommendation row as a plain row when `recommended` is empty, which means that neither the model nor the skill
+ * table recommends a role for any own skill.
  */
 export function ownSkillContextRows(
   skills: readonly SkillRef[],
