@@ -947,3 +947,42 @@ describe('unsafe CLAUDE_CONFIG_DIR (D-238)', () => {
     ])
   })
 })
+
+describe('.mcp.json servers a settings file rejects or has not approved (D-332, OC-05-A)', () => {
+  /** A .mcp.json that declares the servers db, github, jira and pending. */
+  const DECLARED = JSON.stringify({ mcpServers: { db: {}, github: {}, jira: {}, pending: {} } })
+
+  /** The tool entries of a session that connects db and jira. */
+  const CONNECTED: readonly unknown[] = [{ name: 'mcp__db__query' }, { name: 'mcp__jira__search' }]
+
+  /** The names a scan of DECLARED and CONNECTED offers with the three settings sources given. */
+  async function offered(user: unknown, project: unknown = {}, local: unknown = {}): Promise<string[]> {
+    const files = { [MCP_JSON_PATH]: DECLARED }
+    const world = memWorld({ files, settings: { user, project, local }, tools: CONNECTED })
+
+    return (await scanOf(world)).mcp.map(ref => ref.name)
+  }
+
+  test('a server the session connects is offered; one neither connected nor approved is not', async () => {
+    expect(await offered({})).toEqual(['db', 'jira'])
+  })
+
+  test('disabledMcpjsonServers in any settings file removes a server, even one the session connects', async () => {
+    expect(await offered({}, {}, { disabledMcpjsonServers: ['db'] })).toEqual(['jira'])
+    expect(await offered({ disabledMcpjsonServers: ['db'] })).toEqual(['jira'])
+    expect(await offered({ enableAllProjectMcpServers: true, disabledMcpjsonServers: ['db'] })).toEqual([
+      'github',
+      'jira',
+      'pending',
+    ])
+  })
+
+  test('enableAllProjectMcpServers or enabledMcpjsonServers approves a server the session lacks', async () => {
+    expect(await offered({ enableAllProjectMcpServers: true })).toEqual(['db', 'github', 'jira', 'pending'])
+    expect(await offered({}, { enabledMcpjsonServers: ['github'] })).toEqual(['db', 'github', 'jira'])
+    expect(await offered({ enableAllProjectMcpServers: 'true' }, { enabledMcpjsonServers: 'github' })).toEqual([
+      'db',
+      'jira',
+    ])
+  })
+})

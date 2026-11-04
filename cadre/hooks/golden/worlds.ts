@@ -1015,3 +1015,22 @@ export function oversizeGroupWorld(over: Partial<MemWorld> = {}): MemWorld {
 
   return gitWorld({ commands, ...over })
 }
+
+/**
+ * gitWorld whose ~/.claude.json disables MCP servers for the repo (D-332): the session connects github, jira and the
+ * claude.ai connectors Slack and Gmail (one tool each); the `/repo` project of ~/.claude.json lists github and the
+ * connector `claude.ai Slack`, by its display name, in its `disabledMcpServers`, and the `/other` project lists jira.
+ * It is no golden world. `over` changes the fields it names.
+ */
+export function disabledMcpWorld(over: Partial<MemWorld> = {}): MemWorld {
+  const servers = ['github', 'jira', 'claude_ai_Slack', 'claude_ai_Gmail']
+  const tools = servers.map(server => ({ name: `mcp__${server}__search`, description: 'Search.', mcp: true }))
+  const claudeJson = JSON.stringify({
+    projects: {
+      '/repo': { disabledMcpServers: ['github', 'claude.ai Slack'] },
+      '/other': { disabledMcpServers: ['jira'] },
+    },
+  })
+
+  return gitWorld({ tools, files: { '/home/u/.claude.json': claudeJson }, ...over })
+}

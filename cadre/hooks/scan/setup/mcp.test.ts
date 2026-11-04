@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { SetupScan } from '../../../types'
+import { disabledMcpWorld } from '../../golden/worlds'
 import { t } from '../../locales/t'
 import { BIDI_OVERRIDE, CTX, memWorld, runOf } from '../../testkit'
 import type { MemWorld } from '../../testkit'
@@ -227,5 +228,37 @@ describe('~/.claude.json under an unsafe CLAUDE_CONFIG_DIR (D-238, SR-1)', () =>
       expect([configDir, reads.filter(path => path.endsWith('.claude.json')), scan.mcp.map(ref => ref.name), warned])
         .toEqual([configDir, [CLAUDE_JSON_PATH], ['jira', 'linear'], 1])
     }
+  })
+})
+
+/** The line a scan without the consent gives when it scanned a server (D-332). */
+const DISABLED_UNCHECKED = 'MCP servers disabled for this project could not be checked (~/.claude.json was not read).'
+
+describe('MCP servers disabled for the project (D-332)', () => {
+  test('with consent the scan offers no server the repo project disabled, a connector by its shown name', async () => {
+    const scan = await scanOf(disabledMcpWorld(), true)
+    expect(scan.mcp).toEqual([
+      { name: 'claude_ai_Gmail', source: 'session' },
+      { name: 'jira', source: 'session' },
+    ])
+    expect(scan.warnings).toEqual([])
+  })
+
+  test('a disabledMcpServers that is not a list, or holds no string, disables nothing', async () => {
+    const offered: string[][] = []
+    for (const listed of ['github', { github: true }, [42, null, {}]]) {
+      const claudeJson = JSON.stringify({ projects: { '/repo': { disabledMcpServers: listed } } })
+      const scan = await scanOf(disabledMcpWorld({ files: { [CLAUDE_JSON_PATH]: claudeJson } }), true)
+      offered.push(scan.mcp.map(ref => ref.name))
+    }
+    const all = ['claude_ai_Gmail', 'claude_ai_Slack', 'github', 'jira']
+    expect(offered).toEqual([all, all, all])
+  })
+
+  test('without consent every scanned server is offered, with one line that says none was checked', async () => {
+    const scan = await scanOf(disabledMcpWorld(), false)
+    expect(scan.mcp.map(ref => ref.name)).toEqual(['claude_ai_Gmail', 'claude_ai_Slack', 'github', 'jira'])
+    expect(scan.warnings).toEqual([DISABLED_UNCHECKED])
+    expect((await scanOf(memWorld({}), false)).warnings).toEqual([])
   })
 })
